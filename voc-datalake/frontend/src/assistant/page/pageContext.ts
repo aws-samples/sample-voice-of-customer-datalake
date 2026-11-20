@@ -91,6 +91,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'members', kind: 'other' },
   // A workspace's brand and plugins: no assistant pack either.
   { route: 'workspace-settings', kind: 'other' },
+  // The Documents Library (docs/documents-library.md): no pack of its own; its items are `#slug` on every page.
+  { route: 'library', kind: 'other' },
   // Participants (docs/participants.md): its own kind — core + the participants pack (lists, add people).
   { route: 'participants/*', kind: 'participants' },
   // The in-app feature-request board (docs/feature-requests.md): no assistant pack either.

@@ -53,6 +53,8 @@
     "toolSteps": "Steps taken",
     "feedbackSources": "Related feedback",
     "webSources": "Web sources",
+    "librarySources": "Library documents used",
+    "openLibraryItem": "Open {{name}} ({{marker}}) in the Library",
     "personaAnswers": "Persona answers",
     "toolGroupRunning_other": "Looking at {{count, number}} things…",
     "toolGroupRunning_one": "Looking at {{count, number}} thing…",
@@ -286,6 +288,7 @@
   },
   "mentions": {
     "placeholder": "Ask about this project. Type @ for a persona, # for a document…",
+    "placeholderLibrary": "Ask about your feedback, projects or this page. Type # for a library document…",
     "allLabel": "Every persona",
     "allHint": "every persona answers",
     "heading": {
@@ -296,16 +299,20 @@
       "prd": "PRD",
       "prfaq": "PR/FAQ",
       "prototypes": "Prototypes",
-      "documents": "Documents"
+      "documents": "Documents",
+      "library": "Library"
     },
     "limit": {
       "persona": "At most {{max, number}} personas per message.",
-      "document": "At most {{max, number}} documents per message."
+      "document": "At most {{max, number}} documents per message.",
+      "library": "At most {{max, number}} library documents per message."
     },
     "loading": "Loading the project…",
+    "loadingLibrary": "Loading the library…",
     "empty": {
       "persona": "No persona matches.",
-      "document": "No document matches."
+      "document": "No document matches.",
+      "library": "No library document matches. Add documents on the Library page."
     },
     "count_one": "{{count, number}} suggestion",
     "count_other": "{{count, number}} suggestions",
@@ -313,6 +320,8 @@
     "remove": "Remove {{name}}",
     "insertPersona": "Mention a persona",
     "insertDocument": "Tag a document",
+    "insertLibrary": "Mention a library document",
+    "largeItem": "{{name}} is large: about {{tokens, number}} tokens each time it is sent.",
     "allCapped": "@all asks the first {{max, number}} of {{total, number}} personas: {{names}}."
   },
   "scope": {

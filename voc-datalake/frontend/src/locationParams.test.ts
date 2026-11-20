@@ -66,6 +66,8 @@ const ALLOWED: Readonly<Record<string, Allowed>> = {
   'pages/FeedbackForms/results/ResultsTab.tsx': { kind: 'filter', keys: [], reason: 'reads and writes the Results filters through resultFilters.ts' },
   // The review modal.
   'hooks/useReviewModal.ts': { kind: 'overlay', keys: ['review', 'reviewBrand'], reason: 'one review over whatever page is open; Back closes it' },
+  // The Documents Library's preview drawer (7.62.00).
+  'pages/Library/libraryParams.ts': { kind: 'overlay', keys: ['item', 'page'], reason: 'the preview drawer over the Library list, at the item and page the assistant\'s citation chips link to (`[#slug p.N]` → `/library?item=<id>&page=<n>`); Back closes it' },
   // Prefilled forms.
   'pages/Connect/Connect.tsx': { kind: 'prefill', keys: ['project'], reason: 'the token form\'s initial project pin (the project header\'s "Connect MCP")' },
   'pages/ProjectDetail/decisions/decisionDraft.ts': { kind: 'prefill', keys: ['newDecision', 'title', 'verdict', 'rationale', 'feedback'], via: 'name', reason: 'a decision draft from a deep link, read once and dropped' },

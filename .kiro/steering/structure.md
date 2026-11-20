@@ -590,6 +590,23 @@ Reads (`GET /company-personas` → `{personas, can_edit}`, `GET /company-persona
 `POST …/{persona_id}/regenerate-avatar` (202). Stored in the reserved container `PROJECT#company_personas` (no `gsi1pk`);
 every `/projects/company_personas/...` route is 404, admins included. The assistant never sees company personas.
 
+### Documents Library (`shared/library_routes.py`, included by projects_handler.py) — docs/documents-library.md
+On `/projects/{proxy+}` (`library` is a reserved segment, `NON_PROJECT_SEGMENTS`); workspace-scoped (`X-Workspace-Id`, a
+member's own membership; every route in the cross-workspace suite); reads for every member, writes for editors and admins
+(without a workspace: every signed-in user), a delete for an admin or the uploader.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/projects/library?q=&tag=&project_id=&sort=&cursor=&limit=` | The library's items, filtered, sorted, paged, with every tag in use |
+| GET | `/projects/library/suggest?q=` | At most 8 ready items, for the composer's `#` |
+| POST | `/projects/library` | 201 `{item, upload}`: a pending item and a 15-minute presigned PUT (length, type, `If-None-Match: *`); 25 MB, images 3.75 MB |
+| POST | `/projects/library/{id}/uploaded` | 202: the upload checked, the extraction started on the assist twin (`library_extract`) |
+| POST | `/projects/library/{id}/retry` | 202: a failed item extracted again |
+| GET | `/projects/library/{id}` | `{item, preview: {text_excerpt, text_parts, original_url}}` (a 5-minute presigned GET) |
+| GET | `/projects/library/{id}/text?page=` | One page or part of the extracted text |
+| PUT | `/projects/library/{id}` | Metadata with `expected_version` (409 `stale`, `slug_taken`) |
+| DELETE | `/projects/library/{id}` | An admin or the uploader: row, slug, passages, every object version; `AUDIT#delete` / `AUDIT#WS#{ws}` |
+| POST | `/projects/library/context` | The stream's and MCP's read: `{item_ids?, slugs?, query, native_slots?, budget?}` → native presigned GETs and passages |
+
 ### Document comments and review links (`shared/document_review_routes.py`, included by projects_handler.py) — docs/document-review.md
 | Method | Path | Description |
 |--------|------|-------------|

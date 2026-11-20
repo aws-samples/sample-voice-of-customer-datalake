@@ -765,7 +765,8 @@ class TestTheWalkHandsOver:
         ({'links_done': True, 'ids': [LIVE], 'part': 'series', 'series_listed': True}, 'project_done'),
         ({'links_done': True, 'ids': [LIVE], 'part': 'personas'}, 'personas'),
         ({'links_done': True, 'registry_done': True}, 'library'),
-        ({'links_done': True, 'registry_done': True, 'library': True}, 'done'),
+        ({'links_done': True, 'registry_done': True, 'library': True}, 'documents_library'),
+        ({'links_done': True, 'registry_done': True, 'library': True, 'documents_library_done': True}, 'done'),
     ])
     def test_each_hand_made_cursor_names_its_step(self, at, state):
         assert project_people.ProjectPeopleEraser.state(at) == state

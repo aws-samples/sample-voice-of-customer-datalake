@@ -313,7 +313,10 @@ describe('cdk-nag acknowledgements', () => {
       // 139 -> 141 (7.60.00): the fine-grained connections' write tokens' path (`/[<prefix>-]voc/engineering-token/*`):
       // the broker's read (engineering-broker.ts grantWriteTokenReads) and a second finding of the Agents API's put
       // and delete acknowledgement (api-assistant-lambdas.ts grantConnectionCredentialWrites).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 141, used: 141 });
+      // 141 -> 145 (7.62.00): the Documents Library's objects: the projects API's `library/*` and `ws/{one id}/library/*`
+      // (its workspace-objects statement) and voc-retention's reads of their extracted text (`library/*\/extracted`,
+      // `ws/{one id}/library/*\/extracted`), each its own finding of an existing acknowledgement.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 145, used: 145 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

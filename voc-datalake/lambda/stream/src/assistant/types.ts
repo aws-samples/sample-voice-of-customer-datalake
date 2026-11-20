@@ -50,6 +50,15 @@ export interface WebSourceRef {
   url: string;
 }
 
+/** A Documents Library item the answer used (a `#` mention or `library_search`): its citation chip opens it. */
+export interface LibrarySourceRef {
+  item_id: string;
+  slug: string;
+  title: string;
+  /** The page of the passage cited (a PDF's page, a slide); absent for a native document or an unpaged text. */
+  page?: number;
+}
+
 /** Everything a tool needs about the current run. */
 export interface AssistantRunContext {
   claims: CallerClaims;
@@ -76,6 +85,7 @@ export interface ServerToolResult {
   content: string;
   sources?: FeedbackSource[];
   webSources?: WebSourceRef[];
+  librarySources?: LibrarySourceRef[];
 }
 
 export interface ServerToolDefinition {

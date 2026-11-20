@@ -21,7 +21,8 @@ workspace layer (shared/ws_repo.py):
 * from voc-projects, voc-jobs and voc-participants (7.39.00, projects 3g-a, jobs/workspace_export/projects.py): the
   workspace's projects, found through its registry (a deleted project skipped and counted), each project's rows,
   personas, document versions, comment threads, jobs and list links, and the workspace's review links, found through
-  its link registry; each entity only the fields or row kinds it lists.
+  its link registry; each entity only the fields or row kinds it lists;
+* from voc-projects (7.62.00, jobs/workspace_export/library.py): the Documents Library's items, ``library``.
 
 The members' conversations in voc-conversations are their own: not included; only how many people have any is
 counted (7.24.00, jobs/workspace_export/conversations.py).
@@ -37,6 +38,8 @@ from collections.abc import Mapping
 from datetime import date, timedelta
 from typing import Any, Final
 
+from jobs.workspace_export.library import ENTITIES as LIBRARY_ENTITIES
+from jobs.workspace_export.library import LibrarySource
 from jobs.workspace_export.memory import ENTITIES as MEMORY_ENTITIES
 from jobs.workspace_export.memory import MemorySource
 from jobs.workspace_export.pages import TABLE_KEY, Page, Row, items, key, last_key, sort_key, start
@@ -70,7 +73,7 @@ __all__ = ['ENTITIES', 'FILE_CAP', 'ExportRefused', 'Source', 'encode_row', 'man
 #: The project entities (7.39.00) come last, after the memory's.
 ENTITIES: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
                    'members', 'audit', 'plugin_config_history', *MEMORY_ENTITIES, *PROJECT_ENTITIES,
-                   'feedback_form_tests')
+                   'feedback_form_tests', *LIBRARY_ENTITIES)
 #: The most one JSONL file holds (before compression): a longer entity continues in its next file.
 FILE_CAP: Final = 256 * 1024 * 1024
 #: The index key of a feedback row: its table key and gsi1's, the cursor that resumes after it.
@@ -104,6 +107,8 @@ NOT_EXPORTED: Final = {
                      '(project_lists).'),
     'project_assists': ("Operational: a project's assist job rows (assist_*, request plumbing the Background jobs "
                         'panel does not show either); its other jobs are in project_jobs.'),
+    'library_bookkeeping': ("Routing: the Documents Library's slug guards and item count (SLUG#, META in LIBRARY); "
+                            'the items they name are in library.'),
     'project_bookkeeping': ("Routing: the project and review link registries (PROJECT_IDS, DOCSHARE_IDS), each "
                             "project's list of its commented series (COMMENT_SERIES#), a series' pointer to its "
                             "current review link (SHARE) and each link's routing row; the projects and links they "
@@ -114,6 +119,9 @@ EXCLUDED: Final = {
     'credentials': ("A workspace's plugin credentials (SSM Parameter Store SecureStrings) are never exported: the "
                     'export job has no permission to read them. Save them again where the data is imported.'),
     'erasure_value_hash': "An erasure job's value hash is left out of erasure_jobs.",
+    'library_passages': ("A library item's passages (LIBRARY_CHUNKS#: each an embedding and a slice of its extracted "
+                         'text) are left out: derived, they are recomputed when the item is extracted again; the '
+                         'text itself and the original are among the objects.'),
     'email_hashes': "An audit row's email hash (a new account's) is left out of audit.",
     'memory_embeddings': ("A memory's embedding (a vector computed from its statement) is left out of memory_company: "
                           'it is derived, and is recomputed from the statement.'),
@@ -223,13 +231,15 @@ class Source:
     (read by ``control_query`` only), voc-memory (``memory``) and the project tables (``projects``)."""
 
     def __init__(self, scope: WorkspaceScope, feedback: WorkspaceTable, aggregates: WorkspaceTable,
-                 workspaces: Any, memory: WorkspaceTable, projects: ProjectSource) -> None:
+                 workspaces: Any, memory: WorkspaceTable, projects: ProjectSource,
+                 library: LibrarySource | None = None) -> None:
         self.scope = scope
         self._feedback = feedback
         self._aggregates = aggregates
         self._workspaces = workspaces
         self.memory = MemorySource(scope, memory)
         self.projects = projects
+        self.library = library
 
     # ── Where each entity starts ────────────────────────────────────────────────────────────────────────────
 
@@ -269,6 +279,9 @@ class Source:
         if entity in PROJECT_ENTITIES:
             # Already only the fields each project entity exports (projects.py ``_SHOWN``).
             return self.projects.page(entity, cursor)
+        if entity in LIBRARY_ENTITIES:
+            # Already only the fields library.py ``FIELDS`` lists; none without its view (an older caller's).
+            return self.library.page(entity, dict(cursor)) if self.library is not None else Page([], None)
         if entity in _AGGREGATE_PARTITIONS:
             partition, condition, values = _AGGREGATE_PARTITIONS[entity](self.scope)
             page = self._aggregates.query('pk', partition, **sort_key(condition, values), **start(cursor.get('start')))

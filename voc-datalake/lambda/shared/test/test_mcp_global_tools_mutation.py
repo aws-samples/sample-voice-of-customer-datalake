@@ -256,6 +256,20 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
          'Saved versions are untouched.'),
         _object({'project_id': ID, 'document_id': ID, 'draft_id': ID}, 'document_id', 'draft_id'),
         True, False, True),
+    # The Documents Library (7.62.00, docs/documents-library.md): its passages and one item's text, as the minter.
+    'library_search': (
+        'Search the library',
+        ('Search the Documents Library (uploaded reports, transcripts, decks; not feedback) for passages answering '
+         '`query`, in `items` (up to 3 ids or slugs) or the items whose title or tags match. Cite [#slug p.N].'),
+        _object({'query': {'type': 'string', 'maxLength': 500},
+                 'items': {'type': 'array', 'maxItems': 3, 'items': {'type': 'string'}}}, 'query'),
+        False, False, False),
+    'library_get': (
+        'Read a library item',
+        ("Read a library item's text by `item_id`, one `page` at a time (a PDF page, a slide or 20,000 "
+         'characters).'),
+        _object({'item_id': ID, 'page': {'type': 'integer', 'minimum': 1, 'maximum': 500}}, 'item_id'),
+        False, False, False),
     'agents_list': (
         'List agents',
         ('List the autonomous agents you can see, with their status. Use it to find the `agent_id` the agents_ '
@@ -439,7 +453,9 @@ class TestTheOldNames:
                           'documents_discard_prototype_draft',
                           # (7.53.00, MCP for runs)
                           'engineering_runs_list', 'engineering_run_get', 'engineering_run_analysis',
-                          'engineering_run_steer', 'engineering_run_request'}
+                          'engineering_run_steer', 'engineering_run_request',
+                          # (7.62.00, the Documents Library)
+                          'library_search', 'library_get'}
         assert set(tools.RENAMED.values()) == listed - new_since_6_10
 
     @pytest.mark.parametrize(('old', 'new'), list(RENAMED_IN_6_10.items()))
@@ -887,3 +903,25 @@ class TestProjections:
     def test_tools_without_a_projection_return_the_body_itself(self, name):
         payload = {'pk': 'route already public', 'url': 'u'}
         assert _shape(name, payload) is payload
+
+
+class TestTheLibraryTools:
+    """``library_search`` and ``library_get`` (7.62.00): the projects API's library routes, read as the minter."""
+
+    def test_search_sends_ids_and_slugs_apart_and_never_asks_for_a_file(self):
+        request = _build('library_search', {'query': ' growth ', 'items': ['lib_20261101000000_0000a001', '#Q3-Market']})
+        assert (request.method, request.path) == ('POST', '/projects/library/context')
+        assert request.body == {'query': 'growth', 'native_slots': 0, 'item_ids': ['lib_20261101000000_0000a001'],
+                                'slugs': ['q3-market']}
+        assert _build('library_search', {'query': 'q'}).body == {'query': 'q', 'native_slots': 0}
+
+    @pytest.mark.parametrize('items', [[], ['a', 'b', 'c', 'd'], 'x', [' ']])
+    def test_search_refuses_items_it_cannot_send(self, items):
+        with pytest.raises(tools.InvalidToolArgument, match='items must list'):
+            _build('library_search', {'query': 'q', 'items': items})
+
+    def test_get_reads_one_page_of_the_text(self):
+        request = _build('library_get', {'item_id': 'lib_20261101000000_0000a001', 'page': 3})
+        assert (request.method, request.path, request.query) == (
+            'GET', '/projects/library/lib_20261101000000_0000a001/text', {'page': 3})
+        assert _build('library_get', {'item_id': 'lib_20261101000000_0000a001'}).query == {'page': 1}

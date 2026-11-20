@@ -150,11 +150,12 @@ everyone who uses the same browser.
 | Feedback boards, company domains, participant email | Administration → Privacy & access → Boards | |
 | Workspaces, the deployment's brand | Administration → Workspaces → All workspaces, Deployment brand | platform admins only |
 | This workspace's own settings and members | Administration → Workspaces → This workspace, Members | also the Workspace settings and Members pages, for every member |
-| The engineering agents' hard cap, each role's model, GitHub connections | Administration → Engineering agents | the hard cap is also on Agents › Spend; a role's model is chosen on its Registry card |
+| The engineering agents' hard cap, each role's model, GitHub connections | Administration → Engineering agents | the hard cap is also on Agents › Spend; a role's model is chosen on its Registry card; the connections themselves, a fine-grained token's Replace token included (7.60.00), are on Agents › Connections, and the tokens to replace are listed here and counted in Needs attention |
 | AI models per surface, model test, capacity | Administration → AI models | per-agent models are on the agent's Models tab |
 | Logs, alerting, alert email recipients | Administration → System → Logs | ops recipients for the deployment, not personal notifications |
 | App version and changelog | Administration → System → Version | |
 | Company vision and objectives, design system, company personas | Company (`/company`) | shared knowledge: admins edit, everyone reads |
+| Reports, transcripts and decks for the assistant (`#slug` in any chat) | Library (`/library`, the menu's Knowledge section; 7.62.00) | shared content, not a setting: everyone reads and mentions it, a workspace's editors (anyone outside a workspace) upload; never feedback ([Documents Library](documents-library.md)) |
 | Resolved problem marks | Problem Analysis | shared team state |
 | Scrapers, feedback forms, agents and workflows | their own pages | feature objects, not settings |
 | Plugin and menu visibility | `cdk.context.json` | deploy-time configuration, no UI |

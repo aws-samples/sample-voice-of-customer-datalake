@@ -430,7 +430,10 @@ class TestTheDeploymentsWalkHandsOver:
         ({'found': 'registry', 'links_done': True, 'pairs_done': True, 'ids': ['p'], 'part': 'series'},
          'project_done'),
         ({'found': 'scan', 'links_done': True, 'pairs_done': True, 'projects_done': True}, 'library'),
-        ({'found': 'scan', 'links_done': True, 'pairs_done': True, 'projects_done': True, 'library': True}, 'done'),
+        ({'found': 'scan', 'links_done': True, 'pairs_done': True, 'projects_done': True, 'library': True},
+         'documents_library'),
+        ({'found': 'scan', 'links_done': True, 'pairs_done': True, 'projects_done': True, 'library': True,
+          'documents_library_done': True}, 'done'),
     ])
     def test_each_hand_made_cursor_names_its_step(self, at, state):
         assert project_people.ProjectPeopleEraser.deployment_state(at) == state

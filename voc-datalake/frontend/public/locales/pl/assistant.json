@@ -59,6 +59,8 @@
     "toolSteps": "Wykonane kroki",
     "feedbackSources": "Powiązane opinie",
     "webSources": "Źródła z sieci",
+    "librarySources": "Użyte dokumenty z biblioteki",
+    "openLibraryItem": "Otwórz {{name}} ({{marker}}) w Bibliotece",
     "personaAnswers": "Odpowiedzi person",
     "toolGroupRunning_other": "Przeglądam {{count, number}} rzeczy…",
     "toolGroupRunning_one": "Przeglądam {{count, number}} rzecz…",
@@ -322,6 +324,7 @@
   },
   "mentions": {
     "placeholder": "Zapytaj o ten projekt. Wpisz @, aby wskazać personę, # dla dokumentu…",
+    "placeholderLibrary": "Zapytaj o opinie, projekty lub tę stronę. Wpisz #, aby wybrać dokument z biblioteki…",
     "allLabel": "Wszystkie persony",
     "allHint": "odpowiadają wszystkie persony",
     "heading": {
@@ -332,16 +335,20 @@
       "prd": "PRD",
       "prfaq": "PR/FAQ",
       "prototypes": "Prototypy",
-      "documents": "Dokumenty"
+      "documents": "Dokumenty",
+      "library": "Biblioteka"
     },
     "limit": {
       "persona": "Najwyżej {{max, number}} person na wiadomość.",
-      "document": "Najwyżej {{max, number}} dokumenty na wiadomość."
+      "document": "Najwyżej {{max, number}} dokumenty na wiadomość.",
+      "library": "Najwyżej {{max, number}} dokumenty z biblioteki na wiadomość."
     },
     "loading": "Wczytywanie projektu…",
+    "loadingLibrary": "Wczytywanie biblioteki…",
     "empty": {
       "persona": "Brak pasującej persony.",
-      "document": "Brak pasującego dokumentu."
+      "document": "Brak pasującego dokumentu.",
+      "library": "Żaden dokument z biblioteki nie pasuje. Dodaj dokumenty na stronie Biblioteka."
     },
     "count_one": "{{count, number}} propozycja",
     "count_few": "{{count, number}} propozycje",
@@ -351,6 +358,8 @@
     "remove": "Usuń {{name}}",
     "insertPersona": "Wspomnij personę",
     "insertDocument": "Oznacz dokument",
+    "insertLibrary": "Wspomnij dokument z biblioteki",
+    "largeItem": "{{name}} jest duży: około {{tokens, number}} tokenów przy każdym wysłaniu.",
     "allCapped": "@all pyta pierwsze {{max, number}} z {{total, number}} person: {{names}}."
   },
   "scope": {

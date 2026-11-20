@@ -28,6 +28,8 @@ from shared.document_comments import put_thread, thread_item, user_author
 from shared.document_share import create_share
 from shared.form_test_responses import TEST_RESPONSES_PK
 from shared.import_runs import LIST_PK
+from shared.library_keys import chunks_pk as library_chunks_pk
+from shared.library_keys import item_key as library_item_key
 from shared.memory_store import append_event, company_pk, cursor_key, import_key, scope_pk, status_partition
 from shared.onboarding import FEEDBACK_FORM_PK
 from shared.participants_keys import list_partition, participants_index_key, person_key
@@ -133,6 +135,16 @@ def _my_context(world: World) -> Probe:
     put_my_context(world.aggregates, 'sub-fam', {'objectives': []}, updated_at='2026-11-02T00:00:00+00:00',
                    workspace=SCOPE)
     return Probe('aggregates', my_context_key('sub-fam', SCOPE))
+
+
+#: A library item of the workspace (shared/library_keys.py ``lib_`` + stamp + 8 hex).
+_FAM_ITEM = 'lib_20261102000000_0000fa11'
+
+
+def _library_passage(world: World) -> Probe:
+    """A passage of a library item, listed by the item's row (as the extraction writes them)."""
+    world.projects.put_item(Item={**library_item_key(_FAM_ITEM, workspace=SCOPE), 'item_id': _FAM_ITEM})
+    return _put(world, 'projects', {'pk': library_chunks_pk(_FAM_ITEM, workspace=SCOPE), 'sk': 'C#00001', 'text': 'x'})
 
 
 #: A project of the workspace the family seeds sit in: registered (its registry row and claim), as a create writes.
@@ -299,6 +311,9 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     'participants_partition': _participant,
     'PARTICIPANTS': lambda w: _put(w, 'participants', participants_index_key(
         list_partition('lst_0123456789abcdef', workspace=SCOPE), workspace=SCOPE)),
+    # A library item's row and one of its passages (7.62.00): the passages through the item, the item last.
+    'library_pk': lambda w: _put(w, 'projects', {**library_item_key(_FAM_ITEM, workspace=SCOPE), 'item_id': _FAM_ITEM}),
+    'chunks_pk': _library_passage,
     # A member's assist outside a project (7.29.00): its row expires a day after it starts (TTL).
     'owner_pk': None,
     # A conversation owner's row, and a conversation and its Stop marker in that owner's partition, as the writers

@@ -71,6 +71,9 @@ FAMILIES: Final = {
     # and EMAIL# partition and the gsi1 LISTS and PEOPLE partitions (participants_partition), found through the
     # workspace's index WS#{ws}#PARTICIPANTS. A project's links to them are in its own partition (projects, above).
     'participants_partition': 'participants', 'PARTICIPANTS': 'participants',
+    # The workspace's Documents Library (7.62.00, shared/library_keys.py): its items, slug guards and count, and each
+    # item's passages (listed by its item row).
+    'library_pk': 'library', 'chunks_pk': 'library',
     # A member's assists outside a project in voc-jobs (7.29.00, shared/assist_jobs.py owner_pk; no route writes one
     # yet): their rows hold the assist's input and answer for a day.
     'owner_pk': ('TTL: voc-jobs WS#{ws}#ASSIST#{sub} assist rows expire a day after they start (ASSIST_JOB_TTL); '

@@ -25,6 +25,8 @@ export const DataExplorer = lazy(() => import('./pages/DataExplorer/DataExplorer
 export const Vote = lazy(() => import('./pages/Vote/Vote'))
 export const Memory = lazy(() => import('./pages/Memory/Memory'))
 export const Company = lazy(() => import('./pages/Company/Company'))
+// The Documents Library (7.62.00): its preview drawer is `?item=<id>&page=<n>` (Library/libraryParams.ts).
+export const Library = lazy(() => import('./pages/Library/Library'))
 // Agent orchestration (7.52.00): the shell of its tabs and the tabs it draws itself, one chunk.
 const orchestration = () => import('./pages/Agents/Agents')
 export const Agents = lazy(orchestration)

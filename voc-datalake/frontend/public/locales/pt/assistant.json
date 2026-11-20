@@ -53,6 +53,8 @@
     "toolSteps": "Etapas executadas",
     "feedbackSources": "Feedback relacionado",
     "webSources": "Fontes da web",
+    "librarySources": "Documentos da biblioteca usados",
+    "openLibraryItem": "Abrir {{name}} ({{marker}}) na Biblioteca",
     "personaAnswers": "Respostas das personas",
     "toolGroupRunning_other": "Consultando {{count, number}} fontes…",
     "toolGroupRunning_many": "Analisando {{count, number}} de itens…",
@@ -288,6 +290,7 @@
   },
   "mentions": {
     "placeholder": "Pergunte sobre este projeto. Digite @ para uma persona, # para um documento…",
+    "placeholderLibrary": "Pergunte sobre seu feedback, projetos ou esta página. Digite # para um documento da biblioteca…",
     "allLabel": "Todas as personas",
     "allHint": "todas as personas respondem",
     "heading": {
@@ -298,16 +301,20 @@
       "prd": "PRD",
       "prfaq": "PR/FAQ",
       "prototypes": "Protótipos",
-      "documents": "Documentos"
+      "documents": "Documentos",
+      "library": "Biblioteca"
     },
     "limit": {
       "persona": "No máximo {{max, number}} personas por mensagem.",
-      "document": "No máximo {{max, number}} documentos por mensagem."
+      "document": "No máximo {{max, number}} documentos por mensagem.",
+      "library": "No máximo {{max, number}} documentos da biblioteca por mensagem."
     },
     "loading": "Carregando o projeto…",
+    "loadingLibrary": "Carregando a biblioteca…",
     "empty": {
       "persona": "Nenhuma persona corresponde.",
-      "document": "Nenhum documento corresponde."
+      "document": "Nenhum documento corresponde.",
+      "library": "Nenhum documento da biblioteca corresponde. Adicione documentos na página Biblioteca."
     },
     "count_one": "{{count, number}} sugestão",
     "count_other": "{{count, number}} sugestões",
@@ -316,6 +323,8 @@
     "remove": "Remover {{name}}",
     "insertPersona": "Mencionar uma persona",
     "insertDocument": "Marcar um documento",
+    "insertLibrary": "Mencionar um documento da biblioteca",
+    "largeItem": "{{name}} é grande: cerca de {{tokens, number}} tokens a cada envio.",
     "allCapped": "@all pergunta às primeiras {{max, number}} de {{total, number}} personas: {{names}}."
   },
   "scope": {

@@ -79,3 +79,21 @@ describe('NavigationChips', () => {
     expect(mode()).toBe('fullscreen')
   })
 })
+
+describe('library citation chips', () => {
+  it('open the Library at the item and page cited', async () => {
+    const user = renderAt('/dashboard', <SourcesBlock sources={{ feedback: [], web: [], library: [
+      { item_id: 'lib_20261101000000_0000a001', slug: 'q3-market', title: 'Q3 market report', page: 4 },
+      { item_id: 'lib_20261101000000_0000a002', slug: 'notes', title: '' },
+    ] }} />)
+    expect(screen.getByText('Library documents used')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open Q3 market report (#q3-market p.4) in the Library' }))
+    expect(location()).toBe('/library?item=lib_20261101000000_0000a001&page=4')
+    expect(screen.getByRole('button', { name: 'Open notes (#notes) in the Library' })).toBeInTheDocument()
+  })
+
+  it('render nothing for a saved answer without sources', () => {
+    renderAt('/dashboard', <SourcesBlock sources={{ feedback: [], web: [] }} />)
+    expect(screen.queryByText('Library documents used')).toBeNull()
+  })
+})

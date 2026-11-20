@@ -200,7 +200,7 @@ describe('the voc-workspace-delete job', () => {
       'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
       'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
       'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
-      'participants', 'conversations', 'control_rows']);
+      'participants', 'library', 'conversations', 'control_rows']);
     expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['aggregates', 'controlRows', 'conversations',
       'credentials', 'docshares', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'participants',
       'projects', 'radar', 'tombstones', 'watermarks']);
@@ -223,8 +223,9 @@ describe('the voc-workspace-delete job', () => {
   });
 
   it('voc-projects: one workspace\'s registries, project, comment and link partitions; claims\' GetItem and DeleteItem, routes\' DeleteItem', () => {
+    // With the Documents Library's (7.62.00): its partition and its items' passages, which the library sweep deletes.
     expect(PROJECTS_TABLE_PARTITIONS).toStrictEqual([`WS#${ONE}#PROJECT#*`, `WS#${ONE}#DOCUMENT_VERSIONS#PROJECT#*`,
-      `WS#${ONE}#DCOMMENTS#*`, `WS#${ONE}#PROJECT_IDS`]);
+      `WS#${ONE}#DCOMMENTS#*`, `WS#${ONE}#PROJECT_IDS`, `WS#${ONE}#LIBRARY`, `WS#${ONE}#LIBRARY_CHUNKS#*`]);
     expect([PROJECT_CLAIM_PARTITIONS, REVIEW_LINK_ROUTE_PARTITIONS]).toStrictEqual([['PROJECT_ID#*'], ['DOCSHARE#*']]);
     expect([REVIEW_LINK_REGISTRY, REVIEW_LINK_ROWS]).toStrictEqual([[`WS#${ONE}#DOCSHARE_IDS`], [`WS#${ONE}#DOCSHARE#*`]]);
     expect(on('Projects')).toStrictEqual(sorted([

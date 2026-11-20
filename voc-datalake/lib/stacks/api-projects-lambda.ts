@@ -11,7 +11,10 @@ import { PROJECTS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
+import { embeddingModelArn } from '../utils/model-allowlist';
 import { grantWorkspaceObjects } from '../utils/workspace-object-deletes';
+import { grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
+import { WORKSPACE_LIBRARY_PREFIX } from './core-buckets';
 import {
   ASSIST_WORKER_ENV, PROJECTS_ASSIST_FUNCTION_BASE_NAME, assistWorkerName, createAssistWorker, grantAssistWorkerInvoke,
 } from './api-assist-workers';
@@ -25,6 +28,11 @@ export interface ProjectsLambda {
   projectTablesEnvironment: Record<string, string>;
 }
 
+/** CDK's `grantReadData` actions but its stream reads, and its `grantWriteData` writes (lib/utils/table-write-grants.ts). */
+const TABLE_READS = ['dynamodb:BatchGetItem', 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:Scan',
+  'dynamodb:ConditionCheckItem', 'dynamodb:DescribeTable'] as const;
+const TABLE_WRITES = ['dynamodb:BatchWriteItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'] as const;
+
 export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
@@ -34,15 +42,18 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
 
   // Projects API
   const projectsRole = ctx.role('ProjectsLambdaRole');
-  feedbackTable.grantReadData(projectsRole);
+  // CDK's read grant without its stream reads: GetRecords and GetShardIterator act on a stream's ARN only, so on the
+  // table's and its indexes' they grant nothing and only cost the role's inline quota (api-stack-mcp.test.ts; 7.62.00
+  // made the room the Documents Library's grants need). The table's key: kmsKey.grantEncryptDecrypt below.
+  feedbackTable.grant(projectsRole, ...TABLE_READS);
   // Prioritization rows, room votes, user flags (Put + Update). Its aggregates deletes are workspace rows only: a
   // Prioritization row with its ballots (PRIORITIZATION) and a closed vote's pointer (VOTING_SESSION_ROW).
   grantReadAndWrites(aggregatesTable, projectsRole, ['PutItem', 'UpdateItem']);
   grantKeyScopedWrites(aggregatesTable, projectsRole, ['DeleteItem'], ['PRIORITIZATION', 'VOTING_SESSION_ROW']);
   // Workspace artifacts (owner decision: really deleted when their owner deletes them): every write, batches included
   // (a project delete sweeps its rows and its jobs with batch_writer, lambda/api/projects.py delete_project).
-  projectsTable.grantReadWriteData(projectsRole);
-  jobsTable.grantReadWriteData(projectsRole);
+  projectsTable.grant(projectsRole, ...TABLE_READS, ...TABLE_WRITES);
+  jobsTable.grant(projectsRole, ...TABLE_READS, ...TABLE_WRITES);
   kmsKey.grantEncryptDecrypt(projectsRole);
   projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['states:StartExecution'], resources: [researchStateMachine.stateMachineArn] }));
   // Claude models through the stack's shared customer-managed policies (lib/utils/claude-model-grant.ts),
@@ -50,9 +61,11 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   const projectsClaudePolicies = grantClaudeModels(projectsRole, 'stream');
   // Persona avatar image generation: the in-Region image model, exact ARN. Single-sourced in
   // model-allowlist.ts so the grant tracks the model through its EOL migration.
+  // With it, the Documents Library's embedder (7.62.00, lambda/shared/library_index.py): Titan Text Embeddings V2,
+  // in-Region and invoked directly, its exact ARN; in the same statement, as the inline quota asks (api-stack-mcp.test.ts).
   projectsRole.addToPolicy(new iam.PolicyStatement({
     actions: ['bedrock:InvokeModel'],
-    resources: [ctx.avatarImageModelArn],
+    resources: [ctx.avatarImageModelArn, embeddingModelArn(stack.region)],
   }));
   // The image model is a Marketplace listing (issue #274).
   grantMarketplaceSubscription(projectsRole);
@@ -60,7 +73,10 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   // Avatars, product docs (presigned PUT URLs, extracted text, deletes) and prototypes (a duplicated document copies
   // its HTML, projects.py _copy_prototype_html): read, write and delete, every version of a deleted object, in one
   // statement (lib/utils/workspace-object-deletes.ts).
-  grantWorkspaceObjects(rawDataBucket, projectsRole, ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*']);
+  // The Documents Library's objects (7.62.00): the deployment's library/ and one workspace id's ws/{id}/library/ (the
+  // presigned PUT and GET, the extracted text, every version of a deleted item; lambda/shared/library_objects.py).
+  grantWorkspaceObjects(rawDataBucket, projectsRole, ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*',
+    'library/*', `${WORKSPACE_LIBRARY_PREFIX}*`]);
   // Signs the avatar and prototype URLs returned by GET /projects/{id}.
   // Explicit statement rather than secret.grantRead(): that adds a KMS
   // key-policy entry naming this role, and the key lives in CoreStack, so it
@@ -77,6 +93,11 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
     actions: ['cognito-idp:ListUsers'],
     resources: [userPool.userPoolArn],
   }));
+  // The Documents Library is a workspace's (7.62.00, lambda/shared/library_routes.py): its routes resolve the request's
+  // X-Workspace-Id through the stack's one workspace-resolution policy (an attachment, no new resource) and write a
+  // workspace's delete audit row (AUDIT#WS#*) through it. Without a platform admin's elevation (a member's own
+  // membership only), so no Cognito Admin* read joins ListUsers above.
+  const libraryWorkspaceEnv = grantWorkspaceResolution(ctx.props.workspacesTable, projectsRole);
 
   // The tables the project workflows read or write — the Projects API and the
   // generation jobs it dispatches. The persona importer reads no feedback and
@@ -123,6 +144,7 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
       POWERTOOLS_SERVICE_NAME: 'voc-projects-api',
       LOG_LEVEL: 'INFO',
       [ASSIST_WORKER_ENV]: projectsWorkerName,
+      ...libraryWorkspaceEnv,
       // The release this function runs (7.48.00): the review registries' backfill reads it (with the operator's own
       // credentials) and writes its marker only once every writer of links, threads and projects runs 7.48.0 or later.
       APP_VERSION: appVersion(),

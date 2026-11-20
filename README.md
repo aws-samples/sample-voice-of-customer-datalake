@@ -53,6 +53,7 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 - **Decisions and prioritization**: decision records per project, and Prioritization rows scored on your team's metrics with individual or room votes ([Prioritization](docs/prioritization.md))
 - **Autonomous agents**: agents watch a feedback scope and, when a trigger fires, run a workflow from research to a reviewed prototype, with human decision points ([Autonomous Agents](docs/autonomous-agents.md))
 - **Autonomous engineering**: engineering agents (builder, fixer, reviewers, gate runner, coach and more) turn an issue into a reviewed pull request on your repository, or on any public repository through a fork. They run in AgentCore sandboxes, on the native harness or Kiro, on the model you choose per role or per run, behind quality gates and a person's go ([Autonomous Engineering](docs/autonomous-engineering.md))
+- **Documents Library**: upload a market report, transcripts or a deck once, tag it, and mention it in any chat with `#slug`: the assistant reads the file itself or searches it and cites the passages. Library items are never feedback ([Documents Library](docs/documents-library.md))
 - **Memory and company context**: company and personal memory learned from conversations and agent runs, plus the company vision, objectives and design system that ground every output ([Memory](docs/memory.md), [Company Context](docs/company-context.md))
 
 ### Extend
@@ -249,6 +250,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Prioritization Scoring](docs/prioritization.md) | The workspace scoring setup: metrics, weights, directions, the composite formula, templates, routes |
 | [Assistant Plan Mode](docs/assistant-plan-mode.md) | Multi-step requests the assistant proposes and runs after approval |
 | [Assistant Mentions](docs/assistant-mentions.md) | `@persona`, `@all` and `#document` in the project assistant |
+| [Documents Library](docs/documents-library.md) | Reports, transcripts and decks uploaded once, referenced in any chat with `#slug`, read natively or searched and cited; never feedback |
 | [Assistant Chat Scope](docs/assistant-chat-scope.md) | The `/chat` filter panel and the filter floor the assistant's feedback tools cannot read past |
 | [Autonomous Agents](docs/autonomous-agents.md) | Agents, triggers, workflows, runs, decisions and plans |
 | [Autonomous Engineering](docs/autonomous-engineering.md) | Engineering agents from an issue to a reviewed pull request: connections, runtime, harnesses (native, Kiro), models, gates, learning |

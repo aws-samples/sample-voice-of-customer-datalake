@@ -64,6 +64,7 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'requests': { labelKey: 'common:breadcrumbs.featureRequests', path: '/feature-requests' },
   'memory': { labelKey: 'common:breadcrumbs.memory' },
   'company': { labelKey: 'common:breadcrumbs.company' },
+  'library': { labelKey: 'common:breadcrumbs.library' },
   'agents': { labelKey: 'common:breadcrumbs.agents' },
   // `/agents/workflows/:id` — the library is the Workflows tab of /agents (`/agents/workflows`), the crumb's link.
   'workflows': { labelKey: 'common:breadcrumbs.workflows' },

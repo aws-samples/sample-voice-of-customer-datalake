@@ -29,6 +29,7 @@ from typing import Any, Final
 
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
 from shared.document_sections import SECTION_ORDER, newest_edit_first, row_section
+from shared.library_keys import is_item_id
 from shared.mcp_global_kit import (
     BOOL_SCHEMA,
     DOMAIN_AGENTS,
@@ -469,6 +470,36 @@ def _search_feature_requests(args: Mapping[str, Any], _project: str | None) -> R
     return RouteRequest(DOMAIN_ENGAGEMENT, 'GET', '/feature-requests/search', query=query)
 
 
+#: Items one library search names, as one chat message mentions at most (shared/library_routes.py takes up to 5).
+MAX_LIBRARY_ITEMS: Final = 3
+
+
+def _search_library(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
+    """The library's passages for ``query`` (shared/library_routes.py ``library_context``, no file: ``native_slots`` 0),
+    in the named items (ids or slugs) or, without them, in those whose metadata shares the query's words."""
+    query = text_arg(args, 'query', max_length=MAX_QUERY_LENGTH, required=True)
+    items = args.get('items')
+    if items is not None and (not isinstance(items, list) or not 1 <= len(items) <= MAX_LIBRARY_ITEMS
+                              or not all(isinstance(item, str) and item.strip() for item in items)):
+        raise InvalidToolArgument(f'items must list 1 to {MAX_LIBRARY_ITEMS} item ids or slugs')
+    named = [item.strip().removeprefix('#') for item in items or []]
+    ids = [item for item in named if is_item_id(item)]
+    slugs = [item.lower() for item in named if not is_item_id(item)]
+    body: dict[str, Any] = {'query': query, 'native_slots': 0,
+                            **({'item_ids': ids} if ids else {}), **({'slugs': slugs} if slugs else {})}
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', '/projects/library/context', body=body)
+
+
+def _get_library_item(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
+    """One page or part of an item's extracted text (shared/library_routes.py, ``/projects/library/{id}/text``)."""
+    query = {'page': int_arg(args, 'page', default=1, low=1, high=MAX_LIBRARY_PAGE)}
+    return RouteRequest(DOMAIN_PROJECTS, 'GET', f"/projects/library/{id_arg(args, 'item_id')}/text", query=query)
+
+
+#: A library text's pages or parts (a 500-page PDF's at most; shared/library_extract.py MAX_PAGES).
+MAX_LIBRARY_PAGE: Final = 500
+
+
 def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     return RouteRequest(DOMAIN_AGENTS, 'POST', f"/agents/{id_arg(args, 'agent_id')}/run")
 
@@ -477,8 +508,8 @@ def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 # Every name starts with its area (AREAS), so a client that lists or searches tools finds an area's tools
 # together; each description says what the tool does, its nouns and verbs, when to use it and its key
 # arguments (the whole list's budget: test_mcp_global_tools_budget.py).
-AREAS: Final[tuple[str, ...]] = ('feedback', 'memory', 'company', 'projects', 'documents', 'agents', 'engineering',
-                                 'feature_requests', 'radar', 'prioritization')
+AREAS: Final[tuple[str, ...]] = ('feedback', 'memory', 'company', 'projects', 'documents', 'library', 'agents',
+                                 'engineering', 'feature_requests', 'radar', 'prioritization')
 
 _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
@@ -556,6 +587,22 @@ _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
                 'status': {'type': 'string', 'enum': list(PIN_STATUSES)}}, ('document_id',)),
         _list_prototype_feedback, _prototype_feedback, project_scoped=True),
+    GlobalTool(
+        'library_search', 'Search the library',
+        'Search the Documents Library (uploaded reports, transcripts, decks; not feedback) for passages answering '
+        f'`query`, in `items` (up to {MAX_LIBRARY_ITEMS} ids or slugs) or the items whose title or tags match. '
+        'Cite [#slug p.N].',
+        schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
+                'items': {'type': 'array', 'maxItems': MAX_LIBRARY_ITEMS, 'items': {'type': 'string'}}},
+               ('query',)),
+        _search_library, stripped),
+    GlobalTool(
+        'library_get', 'Read a library item',
+        "Read a library item's text by `item_id`, one `page` at a time (a PDF page, a slide or 20,000 "
+        'characters).',
+        schema({'item_id': ID_SCHEMA, 'page': {'type': 'integer', 'minimum': 1, 'maximum': MAX_LIBRARY_PAGE}},
+               ('item_id',)),
+        _get_library_item, stripped),
     GlobalTool(
         'agents_list', 'List agents',
         'List the autonomous agents you can see, with their status. Use it to find the `agent_id` the agents_ '

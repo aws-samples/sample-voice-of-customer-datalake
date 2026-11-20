@@ -42,7 +42,7 @@ import { dataProtection, type DataProtection } from '../utils/data-protection';
  * added here; `core-buckets.test.ts` checks every grant on the bucket in lib/stacks against this list.
  */
 export const RAW_BUCKET_WORKSPACE_PREFIXES = [
-  'avatars/', 'company-context/', 'engineering/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/',
+  'avatars/', 'company-context/', 'engineering/', 'library/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/',
 ] as const;
 /** The bronze layer: written once (If-None-Match), never overwritten or expired. */
 export const RAW_LAYER_PREFIX = 'raw/';
@@ -72,6 +72,11 @@ export const WORKSPACE_RAW_LAYER_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_I
  * reads it: lambda/shared/memory_store.py `import_object_key`): as `memory-imports/`.
  */
 export const WORKSPACE_MEMORY_IMPORTS_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/memory-imports/`;
+/**
+ * A tenant workspace's Documents Library, `ws/{ws}/library/` (7.62.00: the projects API's presigned uploads, the
+ * extraction's text and the deletes, lambda/shared/library_objects.py): as `library/`.
+ */
+export const WORKSPACE_LIBRARY_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/library/`;
 /** A tenant workspace's Silver history, `ws/{ws}/silver/`: as `silver/` (the processor writes it for a workspace's messages, 7.00.00). */
 export const WORKSPACE_SILVER_HISTORY_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${SILVER_HISTORY_PREFIX}`;
 /**

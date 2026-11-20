@@ -21,6 +21,7 @@
     "projects": "プロジェクト",
     "scrapers": "データソース",
     "memory": "メモリ",
+    "library": "ライブラリ",
     "company": "会社",
     "agents": "エージェントオーケストレーション",
     "agent": "エージェント",
@@ -102,6 +103,7 @@
       "admin": "管理"
     },
     "memory": "メモリ",
+    "library": "ライブラリ",
     "company": "会社",
     "admin": "管理",
     "connect": "MCP とスキル",

@@ -163,6 +163,10 @@
     {
       "key": "MICRO_CREDITS::lambda/engineering/runtime/interface.py,lambda/engineering/runtime/unit_runner.py",
       "reason": "a Kiro session's credits count on its tokens per model (7.58.00): the runtime's rule (engineering/runtime/interface.py) and the unit runner's, which ships alone in the agent image and imports nothing of the repository; held equal by engineering/runtime/test/test_engineering_kiro_credits.py"
+    },
+    {
+      "key": "SLUG_PARTITION_PREFIX|SLUG_SK_PREFIX::lambda/shared/library_keys.py,lambda/shared/ws_repo.py",
+      "reason": "a Documents Library item's slug guard, a sort key inside one library partition of voc-projects (shared/library_keys.py, 7.62.00), and a workspace's slug guard, a partition of voc-workspaces (shared/ws_repo.py): the same word in two tables, separate keys and lifecycles"
     }
   ]
 }

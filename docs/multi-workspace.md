@@ -1265,7 +1265,8 @@ controller's own request, with its stated basis and a tombstone per deleted item
 1. A workspace admin or a platform admin asks to delete the workspace; the web app offers **Export first** (on by
    default).
 2. The export job writes JSONL per entity (feedback, projects and documents, personas, memory, agents and workflows,
-   conversations (only counted since 7.24.00, below), settings) plus the raw objects into one zip under `ws/{ws}/exports/`, with a `manifest.json` that
+   conversations (only counted since 7.24.00, below), settings, the Documents Library's items since 7.62.00,
+   `library`: [documents-library.md](documents-library.md)) plus the raw objects into one zip under `ws/{ws}/exports/`, with a `manifest.json` that
    says what it holds and what it leaves out (a workspace's credentials are never exported). When it ends, the
    person who started it gets a job notice (when the job could write its outcome: one the timeout killed shows as
    failed an hour later); the export page then offers a download for 7 days (each link, asked for with
@@ -1514,7 +1515,10 @@ controller's own request, with its stated basis and a tombstone per deleted item
      guard; each named
      `WS#{ws}#LIST#…`, `WS#{ws}#PERSON#…` or `WS#{ws}#EMAIL#…` partition deleted in full through
      `WorkspaceTable.batch_delete`, every read of keys alone, then the index last; a project's links to them went with
-     its partition, above); the members' conversations
+     its partition, above); the Documents Library (7.62.00: an owner list over `WS#{ws}#LIBRARY` in voc-projects, each
+     `ITEM#` row naming its passages' `WS#{ws}#LIBRARY_CHUNKS#{item}`, deleted in full, every read of keys alone, then
+     the library partition itself, its items, slug guards and count, last; its files are under `ws/{ws}/library/`,
+     which the objects sweep takes; [documents-library.md](documents-library.md)); the members' conversations
      (7.28.00: an owner list over `WS#{ws}#CONVERSANTS` in voc-conversations, one row per person who ever kept a
      conversation in the workspace, a former member too; for each, the whole `WS#{ws}#USER#{sub}`, its `CONV#` and
      `RUNCANCEL#` rows, through `WorkspaceTable.batch_delete`, every read of keys alone; the list last, so a delete

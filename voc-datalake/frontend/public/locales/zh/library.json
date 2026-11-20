@@ -1,0 +1,158 @@
+{
+  "title": "文档资料库",
+  "subtitle": "在聊天中提及后，助手即可阅读的报告、研究、演示文稿和图片。",
+  "configureFirst": "请先在“管理 → 常规”中连接 API 端点。",
+  "readOnly": "你可以阅读此资料库。添加或更改条目需要在此工作区中拥有编辑者或管理员角色。",
+  "intro": {
+    "label": "关于资料库",
+    "notFeedback": "资料库条目是参考文档，而不是反馈：它们永远不会计入指标、情感或类别。要从 CSV 或 JSON 文件导入反馈，请使用",
+    "importLink": "数据源",
+    "mention": "在助手中输入 # 加上条目的短名称（例如 #q3-market），即可将该文档加入聊天。"
+  },
+  "toolbar": {
+    "label": "筛选资料库",
+    "search": "搜索资料库",
+    "searchPlaceholder": "搜索标题、短名称、来源和标签",
+    "tag": "标签",
+    "anyTag": "任意标签",
+    "project": "项目",
+    "anyProject": "任意项目",
+    "sort": "排序",
+    "sorts": {
+      "newest": "最新",
+      "oldest": "最早",
+      "title": "标题",
+      "docDate": "文档日期"
+    }
+  },
+  "status": {
+    "pending": "等待文件",
+    "extracting": "读取中",
+    "ready": "就绪",
+    "failed": "失败"
+  },
+  "row": {
+    "dated": "日期：{{date}}",
+    "added": "添加于 {{date}}",
+    "addedBy": "{{name}} 添加于 {{date}}"
+  },
+  "list": {
+    "label": "资料库条目",
+    "loading": "正在加载资料库…",
+    "loadFailed": "无法加载资料库。请检查网络连接后重试。",
+    "noMatch": "没有符合这些筛选条件的资料库条目。",
+    "loadMore": "加载更多"
+  },
+  "empty": {
+    "title": "还没有文档",
+    "text": "报告、调查导出、演示文稿或图片只需上传一次，之后在任何聊天中用 # 加短名称即可引用。",
+    "textReadOnly": "还没有人向此资料库添加文档。"
+  },
+  "upload": {
+    "open": "上传文件",
+    "title": "上传到资料库",
+    "description": "每个文件成为一个资料库条目。上传后会读取一次其文本。",
+    "dropHint": "将文件拖放到这里，或选择文件。",
+    "choose": "选择文件",
+    "limits": "PDF、Word、Excel、PowerPoint、CSV、HTML、文本、Markdown，或 PNG、JPEG、GIF、WebP 图片。文件最大 25 MB，图片最大 3.75 MB。",
+    "filesLabel": "要上传的文件",
+    "moreDetails": "更多详情",
+    "remove": "移除 {{name}}",
+    "progressLabel": "{{name}} 的上传",
+    "start": "上传（{{count, number}}）",
+    "cancel": "取消",
+    "done": "完成",
+    "phase": {
+      "creating": "正在准备上传…",
+      "uploading": "正在上传… {{percent}}",
+      "finishing": "正在开始读取文件…",
+      "done": "已上传。正在读取文本：就绪后列表会显示。"
+    },
+    "refused": {
+      "unsupported": "不支持此文件类型。请上传以下类型之一：{{accepted}}。",
+      "empty": "此文件为空。",
+      "tooLarge": "此文件超过资料库条目的上限 25 MB。",
+      "imageTooLarge": "此图片超过图片的上限 3.75 MB。"
+    }
+  },
+  "fields": {
+    "title": "标题",
+    "slug": "短名称",
+    "slugHint": "在聊天中 # 后输入的名称：小写字母、数字和连字符。留空则根据标题生成。",
+    "source": "来源",
+    "docDate": "文档日期",
+    "tags": "标签",
+    "tagsHint": "用逗号分隔，例如：market, q3。",
+    "project": "项目",
+    "noProject": "无项目",
+    "titleRequired": "请为条目填写标题。",
+    "badSlug": "短名称由 1 到 64 个小写字母、数字和连字符组成，并以字母或数字开头和结尾。",
+    "tooManyTags": "一个条目最多有 {{max, number}} 个标签。",
+    "tagTooLong": "一个标签最多 {{max, number}} 个字符。"
+  },
+  "errors": {
+    "slugTaken": "另一个资料库条目已在使用此短名称。请另选一个。",
+    "libraryFull": "此资料库已有 1,000 个条目，已达上限。请先删除一些。",
+    "unsupported": "不支持此文件类型。",
+    "tooLarge": "文件过大：文件最大 25 MB，图片最大 3.75 MB。",
+    "stale": "自你打开后此条目已被更改。请重新加载后重试。",
+    "notUploaded": "文件未送达。请重试。",
+    "uploadMismatch": "上传的文件与声明的文件不符。请重试。",
+    "writeForbidden": "添加或更改资料库条目需要在此工作区中拥有编辑者或管理员角色。",
+    "deleteForbidden": "只有管理员或上传者本人可以删除此条目。",
+    "notFound": "此资料库条目已不存在。",
+    "notFailed": "只有失败的条目才能重新读取。",
+    "uploadRefused": "无法上传文件。请重试。",
+    "network": "上传已中断：请检查网络连接后重试。",
+    "other": "出现问题。请重试。"
+  },
+  "preview": {
+    "title": "资料库条目",
+    "loading": "正在加载条目…",
+    "loadFailed": "无法加载此条目。请检查网络连接后重试。",
+    "notFound": "此资料库条目不存在或已被删除。",
+    "pending": "正在等待文件。如果上传未完成，请删除此条目并重新上传文件。",
+    "extracting": "正在读取文本。就绪后此页面会更新。",
+    "failed": "无法读取其文本。",
+    "download": "下载原始文件",
+    "newTab": "（在新标签页中打开）",
+    "retry": "重新读取",
+    "edit": "编辑详情",
+    "delete": "删除",
+    "mentionHint": "在助手中输入 {{slug}}，即可将此文档加入聊天。"
+  },
+  "details": {
+    "none": "无",
+    "file": "文件",
+    "pages": "页数",
+    "assistant": "助手如何读取",
+    "native": "在聊天中提及时读取文件本身",
+    "passages": "读取文本中与问题相关的段落",
+    "added": "添加",
+    "changed": "最近更改",
+    "byOn": "{{name}}，{{date}}"
+  },
+  "edit": {
+    "label": "编辑条目详情",
+    "save": "保存",
+    "cancel": "取消",
+    "reload": "重新加载"
+  },
+  "text": {
+    "title": "文本",
+    "loading": "正在加载文本…",
+    "loadFailed": "无法加载文本。请重试。",
+    "empty": "此页面没有找到文本。",
+    "pagesLabel": "文本页面",
+    "pageOf": "第 {{current, number}} 页，共 {{total, number}} 页",
+    "partOf": "第 {{current, number}} 部分，共 {{total, number}} 部分",
+    "previous": "上一页",
+    "next": "下一页",
+    "truncated": "此文档非常长：只读取了第一部分。"
+  },
+  "delete": {
+    "title": "删除此资料库条目？",
+    "message": "“{{title}}”将连同其文件和文本被永久删除。提及过它的聊天会保留原有内容。",
+    "confirm": "删除"
+  }
+}

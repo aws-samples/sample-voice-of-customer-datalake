@@ -87,7 +87,7 @@ def test_the_entries_run_in_the_designs_order():
         'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
         'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
         'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
-        'participants', 'conversations', 'control_rows']
+        'participants', 'library', 'conversations', 'control_rows']
 
 
 def test_only_the_feedback_and_the_memory_are_tombstoned():

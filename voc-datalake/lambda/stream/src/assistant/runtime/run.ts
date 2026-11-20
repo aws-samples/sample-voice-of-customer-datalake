@@ -10,13 +10,14 @@
  * stays 200 because the SSE headers are already sent.
  */
 import type { Message as AguiMessage, ResumeEntry, UserMessage } from '@ag-ui/core';
-import type { Message } from '@aws-sdk/client-bedrock-runtime';
-import { AGUI_PROTOCOL_VERSION, CUSTOM_EVENTS, type ForwardedProps } from '../contract.js';
+import type { ContentBlock, Message } from '@aws-sdk/client-bedrock-runtime';
+import { AGUI_PROTOCOL_VERSION, CUSTOM_EVENTS, type ForwardedProps, type Mentions } from '../contract.js';
 import type {
   AssistantRunContext,
   AssistantToolset,
   CallerClaims,
   FeedbackSource,
+  LibrarySourceRef,
   ToolsetOptions,
   WebSourceRef,
 } from '../types.js';
@@ -43,6 +44,9 @@ import { logUsage, toAguiUsage } from './usage.js';
 import { createSessionEmitter, startRunSession, type SessionEmitter, type SessionPersistence } from '../session/run-session.js';
 import { watchForStop, type CancelWatch } from '../session/cancel.js';
 import type { PersonaRound } from './persona-round.js';
+import {
+  supportsDocumentBlocks, withLibraryDocuments, type LibraryMentions, type LibraryMentionsInput,
+} from './library-mentions.js';
 import { resolveSessionOwner, type SessionOwner } from '../session/workspace-member.js';
 
 export interface RuntimeDeps {
@@ -69,6 +73,8 @@ export interface RuntimeDeps {
   sessions?: SessionPersistence;
   /** The @persona / @all round before the model's turn (persona-round.ts). Absent = mentions only name documents. */
   personaRound?: PersonaRound;
+  /** `#slug` Documents Library mentions (library-mentions.ts). Absent = library mentions are ignored. */
+  resolveLibrary?: (input: Omit<LibraryMentionsInput, 'invoke'>) => Promise<LibraryMentions>;
 }
 
 export function dedupeFeedback(sources: readonly FeedbackSource[]): FeedbackSource[] {
@@ -76,6 +82,16 @@ export function dedupeFeedback(sources: readonly FeedbackSource[]): FeedbackSour
   return sources.filter((source) => {
     if (!source.feedback_id || seen.has(source.feedback_id)) return false;
     seen.add(source.feedback_id);
+    return true;
+  });
+}
+
+export function dedupeLibrary(sources: readonly LibrarySourceRef[]): LibrarySourceRef[] {
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    const key = `${source.item_id}#${String(source.page)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -118,14 +134,25 @@ interface ConversationInput {
   toolset: AssistantToolset;
   /** Data blocks for the newest user message, in order: `<context>` (page-context.ts), `<memory>` (memory-recall.ts). */
   dataBlocks: readonly (string | undefined)[];
+  /** Library files attached to the newest user message (library-mentions.ts), after the person's own. */
+  documents: readonly ContentBlock[];
 }
 
-/** Mentions name a project's personas and documents, so they are refused off a project page. */
+/** A project's personas and documents are mentioned on its page only; a library item on any page. */
 function enforceMentionsPage(props: ForwardedProps): void {
-  if (props.mentions === undefined) return;
+  const mentions = props.mentions;
+  if (mentions?.personas === undefined && mentions?.documents === undefined) return;
   if (props.page.kind !== 'project' || props.page.projectId === undefined) {
     throw new ValidationError('Mentions (@persona, #document) are only available on a project page');
   }
+}
+
+/** The project mentions alone (the persona round's), or undefined when the message names none. */
+function projectMentions(mentions: Mentions | undefined): Mentions | undefined {
+  const personas = mentions?.personas;
+  const documents = mentions?.documents;
+  if (personas === undefined && documents === undefined) return undefined;
+  return { ...(personas === undefined ? {} : { personas }), ...(documents === undefined ? {} : { documents }) };
 }
 
 interface MentionRoundInput {
@@ -138,26 +165,43 @@ interface MentionRoundInput {
 
 /** The `<mentions>` block: the persona round when personas were mentioned, else the tagged documents only. */
 async function mentionsForRun({ deps, props, question, ctx, signal }: MentionRoundInput): Promise<string | undefined> {
-  if (props.mentions === undefined || deps.personaRound === undefined) return undefined;
+  const mentions = projectMentions(props.mentions);
+  if (mentions === undefined || deps.personaRound === undefined) return undefined;
   // The round fails open itself; this keeps a rejecting injection from skipping the stop-watch cleanup.
   try {
-    return await deps.personaRound({ mentions: props.mentions, question, ctx, ...(signal === undefined ? {} : { signal }) });
+    return await deps.personaRound({ mentions, question, ctx, ...(signal === undefined ? {} : { signal }) });
   } catch (err) {
     console.warn(`persona round rejected (${err instanceof Error ? err.name : 'unknown'})`);
     return undefined;
   }
 }
 
-function buildConversation({ split, resume, toolset, dataBlocks }: ConversationInput): Conversation {
+const NO_LIBRARY: LibraryMentions = { block: undefined, documents: [], sources: [] };
+
+/** The message's `#slug` library mentions (library-mentions.ts; fails open itself). */
+async function libraryForRun(deps: RuntimeDeps, props: ForwardedProps, user: UserMessage, modelId: string,
+  claims: CallerClaims): Promise<LibraryMentions> {
+  if (props.mentions?.library === undefined || deps.resolveLibrary === undefined) return NO_LIBRARY;
+  const attachedDocuments = typeof user.content === 'string' ? 0
+    : user.content.filter((part) => part.type === 'document').length;
+  return deps.resolveLibrary({
+    mentions: props.mentions, question: textOfParts(user.content), claims, attachedDocuments,
+    nativeAllowed: supportsDocumentBlocks(modelId),
+  });
+}
+
+function buildConversation({ split, resume, toolset, dataBlocks, documents }: ConversationInput): Conversation {
   const history = flatTurnsToBedrock(flattenHistory(split.before));
   const structured = split.idsValid && split.toolNames.every((name) => toolset.byName.has(name));
   const tail = buildTail(split.user, split.after, resume, structured ? 'structured' : 'text');
   const fallback = structured && tail.hasToolCalls ? buildTail(split.user, split.after, resume, 'text') : undefined;
   // The tail opens on the newest user message, right after the flattened history.
   const userIndex = history.length;
+  const shaped = (messages: Message[]) => withLibraryDocuments(withDataBlocks(messages, userIndex, dataBlocks), userIndex,
+    documents);
   return {
-    messages: withDataBlocks([...history, ...tail.messages], userIndex, dataBlocks),
-    ...(fallback ? { fallbackMessages: withDataBlocks([...history, ...fallback.messages], userIndex, dataBlocks) } : {}),
+    messages: shaped([...history, ...tail.messages]),
+    ...(fallback ? { fallbackMessages: shaped([...history, ...fallback.messages]) } : {}),
     ...(history.length > 0 ? { cacheMessageIndex: history.length - 1 } : {}),
   };
 }
@@ -237,6 +281,7 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
   const stopWatch = stopWatchFor(session, input);
   // Review-only persona answers, allowed in every way of working (the model's own turn keeps its mode).
   const mentionsBlock = await mentionsForRun({ deps, props, question: textOfParts(split.user.content), ctx, signal: stopWatch?.signal });
+  const library = await libraryForRun(deps, props, split.user, modelId, claims);
   const toolset = toolsetForRun(pageToolset, projectPreload, aiWriting);
   const conversation = buildConversation({
     split,
@@ -244,13 +289,15 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
     toolset,
     dataBlocks: [
       buildCompanyBlock(companyBrief), buildPageContextBlock({ page, projectPreload, scope: props.scope }), buildMemoryBlock(memories), mentionsBlock,
+      library.block,
     ],
+    documents: library.documents,
   });
   console.log(JSON.stringify({
     event: 'assistant_run', page: page.kind, packs: toolset.packs, model: modelId,
     tools: toolset.tools.length, messages: input.messages.length, resumed: (input.resume ?? []).length > 0,
     projectPreload: projectPreload?.status ?? 'none', memories: memories.length, aiMode: aiWriting.mode,
-    mentions: props.mentions === undefined ? 'none' : 'present',
+    mentions: props.mentions === undefined ? 'none' : 'present', libraryFiles: library.documents.length,
   }));
 
   const result = await runAgentLoop({
@@ -270,6 +317,7 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
   emitter.emit(events.custom(CUSTOM_EVENTS.sources, {
     feedback: dedupeFeedback(result.sources),
     web: dedupeWeb(result.webSources),
+    library: dedupeLibrary([...library.sources, ...result.librarySources]),
   }));
   logUsage(result.usage, result.modelId);
   emitter.emit(events.runFinished(input.threadId, input.runId, result.outcome, toAguiUsage(result.usage, result.modelId)));

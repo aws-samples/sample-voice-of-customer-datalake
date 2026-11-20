@@ -7,7 +7,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Brain, CheckCircle2, ChevronDown, ChevronRight, Globe, Loader2, MessageSquareQuote, Navigation, ShieldQuestion, XCircle,
+  Brain, CheckCircle2, ChevronDown, ChevronRight, Globe, Library, Loader2, MessageSquareQuote, Navigation, ShieldQuestion,
+  XCircle,
 } from 'lucide-react'
 import { humanizeToolName } from './messageHelpers'
 import { classifyHref } from '../../components/Document/read/safeHref'
@@ -16,10 +17,11 @@ import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useReviewModal } from '../../hooks/useReviewModal'
 import { useRouteNavigate } from '../../hooks/useRouteNavigate'
 import { TruncatedText } from '../../components/Tooltip/TruncatedText'
+import { Tooltip } from '../../components/Tooltip/Tooltip'
 import type { PersonaResponse } from './messageHelpers'
 import type { ToolCall } from '@ag-ui/core'
 import type { Tone } from '../../theme/tones'
-import type { MessageSources, NavigationSuggestion, ToolCallStatus } from '../thread/types'
+import type { LibrarySourceRef, MessageSources, NavigationSuggestion, ToolCallStatus } from '../thread/types'
 
 export function ReasoningBlock({ text }: Readonly<{ text: string }>) {
   const { t } = useTranslation('assistant')
@@ -119,12 +121,52 @@ export function ToolSteps({ calls, statuses }: Readonly<{ calls: readonly ToolCa
 /** More cards than this crowd the bubble; the answer cites the rest. */
 const MAX_FEEDBACK_CARDS = 6
 
+/** The Library page opened at a cited item (and page): the preview drawer reads `?item=` and `&page=`. */
+function libraryHref(source: LibrarySourceRef): string {
+  const page = source.page === undefined ? '' : `&page=${String(source.page)}`
+  return `/library?item=${encodeURIComponent(source.item_id)}${page}`
+}
+
+/** The library items the answer used, as chips that open each at the page cited (`[#slug p.N]`). */
+function LibraryChips({ items }: Readonly<{ items: readonly LibrarySourceRef[] }>) {
+  const { t } = useTranslation('assistant')
+  const openRoute = useRouteNavigate()
+  if (items.length === 0) return null
+  return (
+    <div>
+      <p className="mb-1 text-[12px] font-medium text-muted">{t('message.librarySources')}</p>
+      <ul className="flex flex-wrap gap-1.5">
+        {items.map((item) => {
+          const marker = item.page === undefined ? `#${item.slug}` : `#${item.slug} p.${String(item.page)}`
+          return (
+            <li key={`${item.item_id}-${String(item.page)}`}>
+              <Tooltip kind="label" content={item.title || item.slug}>
+                <button
+                  type="button"
+                  onClick={() => openRoute(libraryHref(item))}
+                  aria-label={t('message.openLibraryItem', { name: item.title || item.slug, marker })}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[12px] text-text hover:border-border-strong hover:bg-bg-hover"
+                >
+                  <Library size={12} aria-hidden />
+                  <span className="truncate">{marker}</span>
+                </button>
+              </Tooltip>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 export function SourcesBlock({ sources }: Readonly<{ sources: MessageSources }>) {
   const { t } = useTranslation('assistant')
   const labels = useDisplayLabels()
-  if (sources.feedback.length === 0 && sources.web.length === 0) return null
+  const library = sources.library ?? []
+  if (sources.feedback.length === 0 && sources.web.length === 0 && library.length === 0) return null
   return (
     <div className="mt-2 space-y-2">
+      <LibraryChips items={library} />
       {sources.feedback.length > 0 && (
         <div>
           <p className="mb-1 text-[12px] font-medium text-muted">{t('message.feedbackSources')}</p>

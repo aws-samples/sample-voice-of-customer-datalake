@@ -26,7 +26,9 @@ export function dependencyLayer(scope: Construct, id: string, layerDir: string, 
 /**
  * cryptography (+ cffi, pycparser): the RSA-SHA1 primitive of `shared/cloudfront_signing.py`, and the RS256
  * signature of the engineering broker's GitHub App JWT (`engineering/connectors/github.py`; its own copy of the
- * layer, lib/stacks/engineering-broker.ts).
+ * layer, lib/stacks/engineering-broker.ts). And pypdf (7.62.00): the Documents Library's PDF text reader
+ * (`shared/library_extract.py`, run by the projects API's assist twin), here because this is the projects API's own
+ * layer and VocApiStack has no room for another (api-engagement-budget.test.ts).
  */
 export const SIGNING_LAYER_DIR = 'lambda/layers/signing-deps';
 

@@ -21,6 +21,7 @@
     "projects": "프로젝트",
     "scrapers": "데이터 소스",
     "memory": "메모리",
+    "library": "라이브러리",
     "company": "회사",
     "agents": "에이전트 오케스트레이션",
     "agent": "에이전트",
@@ -102,6 +103,7 @@
       "admin": "관리"
     },
     "memory": "메모리",
+    "library": "라이브러리",
     "company": "회사",
     "admin": "관리",
     "connect": "MCP 및 스킬",

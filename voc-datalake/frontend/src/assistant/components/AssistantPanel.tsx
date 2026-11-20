@@ -16,6 +16,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { isMenuItemEnabled } from '../../config/menuConfig'
 import clsx from 'clsx'
 import { useAssistant } from '../runtime/useAssistant'
 import { shownMode, useAssistantUiStore, useThreadStore } from '../store/assistantStore'
@@ -162,6 +163,7 @@ function ConversationPane({ column, draft, onDraft, accessory }: Readonly<{
         blockedReason={blockedReason}
         webSearchAvailable={webSearchAvailable}
         projectId={page.kind === 'project' ? page.projectId : undefined}
+        libraryEnabled={isMenuItemEnabled('library')}
         onSend={(content, mentions) => {
           void send(content, mentions)
         }}

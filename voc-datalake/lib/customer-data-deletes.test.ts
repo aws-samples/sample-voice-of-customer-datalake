@@ -97,9 +97,10 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     [DELETE_ROLE]: {
       scope: ['DOCSHARE#*', 'PROJECT_ID#*', `WS#${ONE_WORKSPACE}#DCOMMENTS#*`, `WS#${ONE_WORKSPACE}#DOCSHARE#*`,
         `WS#${ONE_WORKSPACE}#DOCSHARE_IDS`, `WS#${ONE_WORKSPACE}#DOCUMENT_VERSIONS#PROJECT#*`,
+        `WS#${ONE_WORKSPACE}#LIBRARY`, `WS#${ONE_WORKSPACE}#LIBRARY_CHUNKS#*`,
         `WS#${ONE_WORKSPACE}#PROJECT#*`, `WS#${ONE_WORKSPACE}#PROJECT_IDS`],
       why: 'a workspace\'s hard delete (decision 17): its projects, comments and review links, their registries, their '
-        + 'id claims and link routes',
+        + 'id claims and link routes, and (7.62.00) its Documents Library and the items\' passages',
     },
     // 7.48.00 (3g-d): the review registries' backfill marker reset (lib/stacks/review-registries-marker.ts), on its
     // create and its delete. DOCSHARE_IDS also holds the deployment's link registry; IAM cannot pin the sort key, so
@@ -229,6 +230,9 @@ const RAW_BUCKET_PREFIXES: Readonly<Record<string, readonly string[]>> = {
     'company-context/design/icons_abc.svg', 'company-context/design/logo_preview_abc.png', 'company-context/brief.md',
   ],
   'memory-imports/': ['memory-imports/imp_1.json'],
+  // The Documents Library (7.62.00): an uploaded original and its extracted text, the deployment's and a workspace's.
+  'library/': ['library/lib_20261101000000_0000a001/original', 'library/lib_20261101000000_0000a001/extracted'],
+  'ws/*/library/': ['ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/library/lib_20261101000000_0000a001/original'],
 };
 
 /** Prefix → who may delete objects there (any S3 delete action, versions included). */
@@ -266,6 +270,11 @@ const RAW_BUCKET_DELETERS: Readonly<Record<string, Readonly<Record<string, strin
   },
   'company-context/': { [SETTINGS_API]: 'the design-capture previews (icons_*, logo_preview_*) it replaces' },
   'memory-imports/': {},
+  'library/': { [PROJECTS_API]: 'a library item\'s delete, by an admin or its uploader: every version of its objects' },
+  'ws/*/library/': {
+    [PROJECTS_API]: 'a workspace library item\'s delete, by its admin or its uploader: every version of its objects',
+    [DELETE_ROLE]: 'a workspace\'s hard delete (decision 17): every version under ws/{one id}/',
+  },
 };
 
 const LeadingKeysSchema = z.object({
@@ -439,5 +448,38 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
       .filter((g) => g.actions.some((a) => DYNAMO_DELETE.test(a) || S3_DELETE.test(a)))
       .filter((g) => g.resource.includes('Table') || g.resource.includes('RawDataBucket'));
     expect(inManaged.map((g) => g.role)).toStrictEqual([]);
+  });
+});
+
+describe('the Documents Library is reached by the projects API alone (7.62.00, docs/documents-library.md)', () => {
+  const ITEM = 'lib_20261101000000_0000a001';
+  const keys = (folder: string) => [`${folder}${ITEM}/original`, `${folder}${ITEM}/extracted`];
+  const S3_ANY = /^s3:/;
+  /** Every role holding any S3 action on a key of `samples`, by role. */
+  const reachers = (samples: readonly string[]) => [...new Set(grants
+    .filter((grant) => grant.actions.some((action) => S3_ANY.test(action)))
+    .filter((grant) => rawBucketGlobs(grant).some((glob) => samples.some((key) => globMatches(glob, key))))
+    .map((grant) => grant.role))].sort(byCodeUnit);
+
+  // The admin data explorer reads the whole raw bucket by design (admins only, api/data_explorer_handler.py).
+  const DATA_EXPLORER = 'VocApiStack/DataExplorerLambdaRole';
+
+  it("the deployment's library: the projects API (and its assist twin, the same role), voc-retention's text read", () => {
+    expect(reachers(keys('library/'))).toStrictEqual([DATA_EXPLORER, PROJECTS_API, RETENTION_ROLE].sort(byCodeUnit));
+    // voc-retention reads the extracted text only, never an original (an erasure lists a match for review).
+    expect(reachers([`library/${ITEM}/original`])).toStrictEqual([DATA_EXPLORER, PROJECTS_API].sort(byCodeUnit));
+  });
+
+  it("a workspace's library: the projects API, and the roles that hold the whole of one workspace's objects", () => {
+    expect(reachers(keys('ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/library/'))).toStrictEqual([
+      DATA_EXPLORER, PROJECTS_API, RETENTION_ROLE, 'VocProcessingStack/WorkspaceExportWorkerExportRole', DELETE_ROLE,
+    ].sort(byCodeUnit));
+  });
+
+  it('no feedback role, metrics API or forms Lambda reaches it: a library item is never feedback (tenet 1)', () => {
+    const everyone = reachers([...keys('library/'), ...keys('ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/library/')]);
+    for (const role of everyone) {
+      expect(role, role).not.toMatch(/Processor|Aggregator|Ingest|Metrics|FeedbackForm|Scraper|Plugin/i);
+    }
   });
 });

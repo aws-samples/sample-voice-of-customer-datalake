@@ -184,7 +184,8 @@ describe('VocCoreStack bucket versioning', () => {
       EXPORT_RULE,
     ]);
     expect(RAW_BUCKET_WORKSPACE_PREFIXES).toStrictEqual(
-      ['avatars/', 'company-context/', 'engineering/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/']);
+      ['avatars/', 'company-context/', 'engineering/', 'library/', 'memory-imports/', 'projects/', 'prototypes/',
+        'scratch/']);
   });
 
   it('every expiring rule is a prefix rule or the export tag rule, never a tag rule of any other tag', () => {

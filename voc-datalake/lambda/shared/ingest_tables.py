@@ -16,9 +16,10 @@ here too, always with a scope.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any, overload
 
+from shared.dynamo_paging import iter_query
 from shared.ws_repo import WorkspaceScope, WorkspaceTable, partition_query, ws_table
 
 __all__ = ['DeploymentTable', 'ingest_table', 'scoped_calls', 'table_view', 'update_with_key']
@@ -53,6 +54,12 @@ class DeploymentTable:
               **kwargs: Any) -> dict:
         """One page of a Query of ``partition``, the request built as ``WorkspaceTable.query`` builds it."""
         return self._table.query(**partition_query(partition_attribute, partition, sort_condition, kwargs))
+
+    def iter_query(self, partition_attribute: str, partition: str, *, sort_condition: str | None = None,
+                   max_items: int | None = None, **kwargs: Any) -> Iterator[dict]:
+        """Every item of ``query`` across its pages (at most ``max_items``), as ``WorkspaceTable.iter_query``."""
+        return iter_query(self._table, partition_query(partition_attribute, partition, sort_condition, kwargs),
+                          max_items=max_items)
 
 
 @overload

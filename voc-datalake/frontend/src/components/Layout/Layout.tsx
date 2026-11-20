@@ -37,6 +37,7 @@ import {
   Plug,
   Lightbulb,
   Contact,
+  Library,
 } from 'lucide-react'
 import { getDateRangeParams } from '../../api/client'
 import { useBrandName } from '../../hooks/useBrandSettings'
@@ -92,6 +93,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/participants', icon: Contact, labelKey: 'nav.participants', menuKey: 'participants', section: 'nav.section.validate' },
   { to: '/company', icon: Compass, labelKey: 'nav.company', menuKey: 'company', section: 'nav.section.knowledge' },
   { to: '/memory', icon: Brain, labelKey: 'nav.memory', menuKey: 'memory', section: 'nav.section.knowledge' },
+  { to: '/library', icon: Library, labelKey: 'nav.library', menuKey: 'library', section: 'nav.section.knowledge' },
   { to: '/connect', icon: Plug, labelKey: 'nav.connect', menuKey: 'connect', section: 'nav.section.connect' },
   // menuKey stays `settings` so existing cdk.context.json menuStatus files keep working.
   { to: '/admin', icon: Settings, labelKey: 'nav.admin', menuKey: 'settings', adminOnly: true, section: 'nav.section.admin' },

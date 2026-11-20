@@ -37,6 +37,9 @@
  *     DeleteItem (no read) of the links' routing rows `DOCSHARE#*`, which
  *     name no workspace in their key (the deployment's own links share it): the code deletes one only while it names
  *     this workspace (shared/ws_repo.py release_share_route's condition), of an id from that workspace's registry;
+ *   - `library` (the Documents Library, 7.62.00) uses the `projects` grant: Query and BatchWriteItem of
+ *     `WS#{id}#LIBRARY` (its items, slug guards and count) and of the passages' partitions its items name,
+ *     `WS#{id}#LIBRARY_CHUNKS#*`, keys only (sweeps.py `KEYS_ONLY`);
  *   - `participants`: in voc-participants, Query and BatchWriteItem of the workspace's index `WS#{id}#PARTICIPANTS`
  *     and of the partitions it names, `WS#{id}#LIST#*`, `WS#{id}#PERSON#*` and `WS#{id}#EMAIL#*` only, never the
  *     deployment's; every Query for the keys alone (`dynamodb:Attributes` `pk` and `sk`, named, and
@@ -78,6 +81,7 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
   docshares: ['docshares'],
   projects: ['projects'],
   participants: ['participants'],
+  library: ['projects'],
   conversations: ['conversations'],
   control_rows: ['controlRows', 'aggregates'],
 };
@@ -92,7 +96,7 @@ export const REQUIRED_DELETE_SWEEPS: readonly string[] = [
   'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
   'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
   'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
-  'participants', 'conversations', 'control_rows',
+  'participants', 'library', 'conversations', 'control_rows',
 ];
 
 /** Throws, naming them, when `registry` lacks any of `REQUIRED_DELETE_SWEEPS`. */

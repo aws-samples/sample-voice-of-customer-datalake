@@ -21,6 +21,7 @@
     "projects": "Projects",
     "scrapers": "Data sources",
     "memory": "Memory",
+    "library": "Library",
     "company": "Company",
     "agents": "Agent orchestration",
     "agent": "Agent",
@@ -102,6 +103,7 @@
       "admin": "Administration"
     },
     "memory": "Memory",
+    "library": "Library",
     "company": "Company",
     "admin": "Administration",
     "connect": "MCP & skills",

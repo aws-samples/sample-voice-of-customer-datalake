@@ -49,12 +49,20 @@ function scopeFor(page: PageContext, scope: ChatScope | undefined): { scope?: Ch
   return { scope: parsed.success ? parsed.data : REFUSED_SCOPE }
 }
 
-/** Mentions only travel from a project page, and only when they pass the contract. */
+/** Mentions travel only when they pass the contract: personas and documents from a project page, library items from
+ *  any page. */
 function mentionsFor(page: PageContext, mentions: Mentions | undefined): { mentions?: Mentions } {
-  if (mentions === undefined || page.kind !== 'project' || page.projectId === undefined) return {}
+  if (mentions === undefined) return {}
   const parsed = mentionsSchema.safeParse(mentions)
-  if (!parsed.success || (parsed.data.personas === undefined && parsed.data.documents === undefined)) return {}
-  return { mentions: parsed.data }
+  if (!parsed.success) return {}
+  const onProject = page.kind === 'project' && page.projectId !== undefined
+  const { personas, documents, library } = parsed.data
+  const kept: Mentions = {
+    ...(onProject && personas !== undefined ? { personas } : {}),
+    ...(onProject && documents !== undefined ? { documents } : {}),
+    ...(library === undefined ? {} : { library }),
+  }
+  return Object.keys(kept).length === 0 ? {} : { mentions: kept }
 }
 
 export function buildForwardedProps({ page, language, useWebSearch, mentions, scope }: ForwardedPropsInput): ForwardedProps {

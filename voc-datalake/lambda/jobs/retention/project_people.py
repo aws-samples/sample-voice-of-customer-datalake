@@ -109,6 +109,12 @@ first being walked), and for that workspace where its link registry, its links, 
 and the current project's part are; each state (``ProjectPeopleEraser.state``) has its own step. A page of threads,
 personas or product documents is cut after a row when the invocation's time runs low (the next step resumes after
 that row), so no step outlasts the hand-over reserve by more than one row's writes.
+
+The Documents Library (7.62.00, docs/documents-library.md): after the persona library, each scope's library items
+(``LIBRARY`` / ``WS#{ws}#LIBRARY``, ``ITEM#`` rows, ``DOCS_PAGE`` a step) are judged as product documents are: an
+item whose title, file name, source or tags hold the address, or whose extracted text (``library/{item}/extracted``)
+does, is listed in ``files_needing_review`` by its original's key (and closes the workspace's exports); one not
+extracted yet, or whose text cannot be read, in ``files_not_checked``. Never changed: the file is the team's.
 """
 from __future__ import annotations
 
@@ -135,6 +141,10 @@ from shared.aws import is_conditional_check_failure
 from shared.digests import sha256_hex
 from shared.document_comments import AUTHOR_REVIEWER, COMMENT_SK_PREFIX, MAX_NAME_CHARS, TEAM_MEMBER_NAME
 from shared.ingest_tables import DeploymentTable, table_view
+from shared.library_keys import ITEM_SK_PREFIX as LIBRARY_ITEM_SK_PREFIX
+from shared.library_keys import extracted_key as library_extracted_key
+from shared.library_keys import is_item_id, library_pk
+from shared.library_keys import original_key as library_original_key
 from shared.project_keys import (
     COMMENT_SERIES_PREFIX,
     DEPLOYMENT_LINK_REGISTRY_PK,
@@ -201,7 +211,7 @@ ERASED_FIELDS: Final = {
 }
 #: The fields of a product document's record that can hold an address: never rewritten (the record names a file the
 #: team uploaded), but a record whose field holds it is listed for review (``_product_doc``).
-LISTED_FIELDS: Final = {'product_doc': ('filename',)}
+LISTED_FIELDS: Final = {'product_doc': ('filename',), 'library_item': ('title', 'filename', 'source', 'tags')}
 #: The product document records one docs step reads (each may be one or two object reads).
 DOCS_PAGE: Final = 5
 #: The attributes each kind's write reads and conditions on (its projection), and the attributes any write of this
@@ -344,7 +354,8 @@ class ProjectPeopleEraser:
         end (the next page of projects is each scope's own state: ``registry``, ``projects``)."""
         return {'link': self._link_step, 'threads': self._threads_step, _META: self._meta_step,
                 _DOCS: self._docs_step, _PERSONAS: self._personas_step, 'project_done': self._project_done_step,
-                'library': self._library_step, 'done': self._done_step}
+                'library': self._library_step, 'documents_library': self._documents_library_step,
+                'done': self._done_step}
 
     @staticmethod
     def state(at: Mapping[str, Any]) -> str:
@@ -393,7 +404,9 @@ class ProjectPeopleEraser:
             return part
         if not at.get('registry_done' if workspace else 'projects_done'):
             return 'registry' if workspace else 'projects'
-        return 'done' if at.get('library') else 'library'
+        if not at.get('library'):
+            return 'library'
+        return 'done' if at.get('documents_library_done') else 'documents_library'
 
     def _cut(self, rows: list[dict[str, Any]], n: int) -> dict[str, Any] | None:
         """The key to resume after row ``n`` of a page when the time ran low and rows remain, else None."""
@@ -508,6 +521,43 @@ class ProjectPeopleEraser:
     def _library_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
         """The scope's company persona library (workspaces.py ``library_step``), walked as a project last."""
         return workspaces.library_step(at, **_project_start(scope))
+
+    def _documents_library_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
+        """One page of the scope's Documents Library items (7.62.00, shared/library_keys.py), each judged as a product
+        document is (``_library_item``), last; cut after an item when the time runs low."""
+        rows, following = query_page(self._view(scope), library_pk(workspace=scope),
+                                     checked_key(at.get('documents_library_from')), Limit=DOCS_PAGE,
+                                     ConsistentRead=True,
+                                     **merged(sort_key(SK_BEGINS, {':sk': LIBRARY_ITEM_SK_PREFIX}), _LIBRARY_PROJECTION))
+        for n, row in enumerate(rows):
+            self._library_item(scope, row)
+            if (cut := self._cut(rows, n)) is not None:
+                return {**at, 'documents_library_from': cut}
+        if following:
+            return {**at, 'documents_library_from': following}
+        return {**at, 'documents_library_done': True, 'documents_library_from': None}
+
+    def _library_item(self, scope: WorkspaceScope | None, row: Mapping[str, Any]) -> None:
+        """Judge one library item (docs/documents-library.md "Erasure"): its metadata or its extracted text holds the
+        address, it is listed for review by its original's key (and a workspace's exports close); one not extracted, or
+        whose text cannot be read, is listed apart as not checked. Nothing is changed: the file is the team's."""
+        item_id = str(row.get('sk', '')).removeprefix(LIBRARY_ITEM_SK_PREFIX)
+        if not is_item_id(item_id):
+            workspaces.count(self._run, MALFORMED_ID_COUNTER)
+            return
+        original = library_original_key(item_id, workspace=scope)
+        if any(self._wanted in value.casefold() for name in LISTED_FIELDS['library_item']
+               for value in _texts_of(row.get(name))):
+            self._holds_it(scope, original)
+            return
+        if row.get('status') != _EXTRACTED:
+            self._not_checked(original)
+            return
+        verdict = self._holds_address(library_extracted_key(item_id, workspace=scope))
+        if verdict is None:
+            self._not_checked(original)
+        elif verdict:
+            self._holds_it(scope, original)
 
     def _series_step(self, scope: WorkspaceScope, at: dict[str, Any]) -> dict[str, Any]:
         project_id = self._project(at)
@@ -815,6 +865,12 @@ class ProjectPeopleEraser:
         return True
 
 
+def _texts_of(value: object) -> list[str]:
+    """The text values of one attribute: itself when it is text, its text members when it is a list (tags)."""
+    values: list[object] = list(value) if isinstance(value, list) else [value]
+    return [entry for entry in values if isinstance(entry, str)]
+
+
 def _projection(kind: str) -> dict[str, Any]:
     """A Query's projection to a row's key and the attributes its kind judges (a link's project too, and a
     ``META``'s delete state: ``_meta_step``)."""
@@ -830,6 +886,13 @@ _DOC_PROJECTION: Final = {
     'ProjectionExpression': '#pk, #sk, #raw, #type, #status, #text, #file',
     'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', '#raw': 's3_raw_key', '#type': 'content_type',
                                  '#status': 'status', '#text': 's3_extracted_key', '#file': 'filename'},
+}
+#: What the documents library step reads of an item (lib/stacks/retention-worker.ts holds the deployment's Query to
+#: these among DEPLOYMENT_QUERY_ATTRIBUTES): its key, status and the metadata a person typed.
+_LIBRARY_PROJECTION: Final = {
+    'ProjectionExpression': '#pk, #sk, #status, #title, #file, #source, #tags',
+    'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', '#status': 'status', '#title': 'title',
+                                 '#file': 'filename', '#source': 'source', '#tags': 'tags'},
 }
 #: The per-project part of a workspace's cursor, as a project starts.
 _PROJECT_START: Final = {'part': _META, 'docs_from': None, 'personas_from': None, 'series': [], 'series_from': None,

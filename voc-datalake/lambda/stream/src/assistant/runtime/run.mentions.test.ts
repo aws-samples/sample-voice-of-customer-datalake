@@ -75,3 +75,59 @@ describe('runAssistant — mentions', () => {
     expect(textOfBlocks(nth(h.calls, 0).messages.at(-1)?.content)).not.toContain('<mentions>');
   });
 });
+
+describe('runAssistant — #slug library mentions (any page)', () => {
+  const ITEM = 'lib_20261101000000_0000a001';
+  const DASHBOARD = { kind: 'dashboard', path: '/' };
+  const FILE = { document: { format: 'pdf' as const, name: 'Library document 1', source: { bytes: new Uint8Array([1]) } } };
+
+  it('resolves library mentions off a project page and hands the model the block and the file', async () => {
+    const h = harness([{ text: 'Sales grew [#q3-market].' }]);
+    const seen: unknown[] = [];
+    h.deps.personaRound = () => Promise.reject(new Error('must not run'));
+    h.deps.resolveLibrary = (input) => {
+      seen.push({ mentions: input.mentions, attached: input.attachedDocuments, native: input.nativeAllowed });
+      return Promise.resolve({ block: '<library>\nQ3\n</library>', documents: [FILE],
+        sources: [{ item_id: ITEM, slug: 'q3-market', title: 'Q3 market' }] });
+    };
+    const events = await run(body(DASHBOARD, { library: [{ item_id: ITEM }] }), h);
+
+    expect(seen).toStrictEqual([{ mentions: { library: [{ item_id: ITEM }] }, attached: 0, native: true }]);
+    const userTurn = nth(h.calls, 0).messages.at(-1);
+    expect({ block: textOfBlocks(userTurn?.content).includes('<library>'), file: userTurn?.content?.at(-1) })
+      .toStrictEqual({ block: true, file: FILE });
+    const sources = events.find((event) => event.type === EventType.CUSTOM && 'name' in event
+      && event.name === 'assistant.sources');
+    expect(sources).toMatchObject({ value: { library: [{ item_id: ITEM, slug: 'q3-market' }] } });
+    expect(finished(events)).toMatchObject({ outcome: { type: 'success' } });
+  });
+
+  it('keeps persona and document mentions on a project page only, even beside a library mention', async () => {
+    const h = harness([{ text: 'never' }]);
+    const events = await run(body(DASHBOARD, { personas: 'all', library: [{ item_id: ITEM }] }), h);
+    expect(h.calls).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: EventType.RUN_ERROR, message: expect.stringContaining('only available on a project page') });
+  });
+
+  it('runs the persona round without the library mentions on a project page', async () => {
+    const h = harness([{ text: 'ok' }]);
+    const rounds: PersonaRoundInput[] = [];
+    h.deps.personaRound = (input) => {
+      rounds.push(input);
+      return Promise.resolve(undefined);
+    };
+    h.deps.resolveLibrary = () => Promise.resolve({ block: undefined, documents: [], sources: [] });
+    await run(body(PROJECT_PAGE, { personas: 'all', library: [{ item_id: ITEM }] }), h);
+    expect(rounds.map((input) => input.mentions)).toStrictEqual([{ personas: 'all' }]);
+  });
+
+  it.each([
+    ['four library items', { library: [1, 2, 3, 4].map((n) => ({ item_id: `lib_2026110100000${String(n)}_0000a001` })) }],
+    ['an id that is not a library id', { library: [{ item_id: 'proj_1' }] }],
+  ])('rejects %s', async (_label, mentions) => {
+    const h = harness([{ text: 'never' }]);
+    const events = await run(body(DASHBOARD, mentions), h);
+    expect(h.calls).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: EventType.RUN_ERROR, message: expect.stringContaining('Invalid forwardedProps at mentions') });
+  });
+});

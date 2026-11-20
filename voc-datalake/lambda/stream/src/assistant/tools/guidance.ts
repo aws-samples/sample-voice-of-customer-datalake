@@ -97,6 +97,8 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + '/radar.',
     '- Feedback boards (feature requests people posted, with +1 supporters): search_feature_requests. They are a '
       + 'separate source from reviews: never add them to review counts or metrics, and cite each as [FR:<request_id>].',
+    '- The Documents Library (reports, transcripts, decks the team uploaded; never customer feedback, never in counts): '
+      + 'library_search, with the #slugs the user mentioned earlier when there are; cite each passage as [#slug p.N].',
     PLAN_GUIDANCE,
     MEMORY_GUIDANCE,
   ].join('\n'),

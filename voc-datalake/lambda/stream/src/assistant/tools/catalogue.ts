@@ -32,6 +32,7 @@ import { createFeatureRequestServerTools } from './server/feature-requests.js';
 import { createParticipantServerTools } from './server/participants.js';
 import { createCoreServerTools } from './server/core.js';
 import { createInsightsServerTools } from './server/insights.js';
+import { createLibraryServerTools } from './server/library.js';
 import { createMemoryServerTools } from './server/memory.js';
 import { createProjectServerTools } from './server/project.js';
 import { createUserServerTools } from './server/users.js';
@@ -57,6 +58,7 @@ export function buildCatalogue(deps: ToolDeps): AssistantToolDefinition[] {
     ...createCompanyServerTools(deps),
     ...createRadarServerTools(deps),
     ...createFeatureRequestServerTools(deps),
+    ...createLibraryServerTools(deps),
     ...createParticipantServerTools(deps),
     ...createProjectClientTools(deps),
     ...createWorkspaceClientTools(),

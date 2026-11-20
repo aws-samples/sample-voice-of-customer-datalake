@@ -56,6 +56,7 @@ from shared.export_jobs import mark_erased
 from shared.form_test_responses import TEST_RESPONSES_PK
 from shared.import_runs import LIST_PK
 from shared.indexes import AGGREGATES_BY_METRIC_TYPE_INDEX, FEEDBACK_BY_DATE_INDEX
+from shared.library_keys import library_pk, listed_chunk_partitions
 from shared.logging import logger
 from shared.memory_partitions import memory_partitions
 from shared.metric_keys import (
@@ -748,6 +749,11 @@ OWNER_LISTS: Final = {
     # or EMAIL# partition of the workspace, never the deployment's. Read for keys alone: no address or name is read.
     'participants': OwnerList('participants', lambda ctx: ctx.participants, participants_index_pk,
                               indexed_partitions, KEYS_ONLY),
+    # The workspace's Documents Library in voc-projects (7.62.00, shared/library_keys.py): WS#{ws}#LIBRARY's item rows
+    # each name their passages' WS#{ws}#LIBRARY_CHUNKS#{item}, deleted in full, then the library itself (its items,
+    # slug guards and count) LAST. Keys only; its objects are under ws/{ws}/library/, which the objects sweep takes.
+    'library': OwnerList('projects', lambda ctx: ctx.projects, lambda scope: library_pk(workspace=scope),
+                         listed_chunk_partitions, KEYS_ONLY),
 }
 
 
@@ -1212,6 +1218,8 @@ SWEEPS: Final = (
     # and address guard's partition, each deleted in full (its META, its members or list mirrors), then the index
     # LAST, so a stopped sweep resumes from it (a project's links to them went with its partition, above). Keys only.
     owner_list_sweep('participants', OWNER_LISTS['participants']),
+    # The Documents Library (7.62.00): each item's passages, then the library partition LAST (OWNER_LISTS above).
+    owner_list_sweep('library', OWNER_LISTS['library']),
     # The members' conversations: the owner list in voc-conversations (conversants_pk, one row per sub) names each
     # owner's partition in the workspace, with their conversations and Stop markers. Each listed partition goes in
     # full, then the list LAST, so a stopped sweep resumes from it; every read is of keys alone (KEYS_ONLY, which the

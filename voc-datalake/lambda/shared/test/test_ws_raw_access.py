@@ -165,11 +165,12 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: 7.31.00): only shared/participants_keys.py spells them. ``DCOMMENTS#`` and ``DCRATE#`` are a series' comment
 #: partition and a reviewer's daily counter (since 7.37.00): only shared/project_keys.py spells them; ``DOCSHARE#`` is
 #: a review link's row (a workspace's link's routing row): only shared/review_share_audience.py (the trigger bundle's
-#: stdlib copy) spells it.
+#: stdlib copy) spells it. ``LIBRARY`` (and ``LIBRARY_CHUNKS#``) and ``library/`` are the Documents Library's partitions
+#: and objects (since 7.62.00): only shared/library_keys.py spells them.
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
                                 'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#',
                                 'STATUS#', 'LIST#', 'PERSON#', 'EMAIL#', 'LISTS', 'PEOPLE', 'DCOMMENTS#', 'DCRATE#',
-                                'DOCSHARE#')
+                                'DOCSHARE#', 'LIBRARY', 'library/')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: The layer's review link route writer (``route_share_id``, since 7.37.00) and the one module that may call it: the
@@ -437,6 +438,16 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # voc-participants' keys, moved here in 7.31.00 from shared/participants_store.py, participants_lists.py,
     # participants_asks.py and participants_erasure.py (each a workspace's too, through scoped_pk).
     'lambda/shared/participants_keys.py': (3, {'EMAIL#': 1, 'LIST#': 1, 'LISTS': 1, 'PEOPLE': 1, 'PERSON#': 1}),
+    # The Documents Library (7.62.00, docs/documents-library.md): its keys' one spelling (each a workspace's too,
+    # through scoped_pk and scoped_object_key); its routes' and extraction's voc-projects handle (every key through
+    # table_view and the participants' transact, as the project stores'); its passages' batch writer and delete on
+    # the deployment's path (a workspace's through ws_table); and its object view, which checks every key against the
+    # scope's own library prefix before S3 (the presigned PUT and GET, the extracted text's put).
+    'lambda/shared/library_keys.py': (3, {'LIBRARY': 2, 'library/': 1}),
+    'lambda/shared/library_routes.py': (3, {'get_projects_table': 1}),
+    'lambda/shared/library_worker.py': (3, {'get_projects_table': 1}),
+    'lambda/shared/library_index.py': (3, {'batch': 2}),
+    'lambda/shared/library_objects.py': (3, {'generate_presigned_url': 2, 'put_object': 1}),
     # The autonomous engineering agents (voc-autonomous, merged in 7.35.00; built only with -c engineeringAgents=true,
     # administrators only): their own tables and objects (voc-engineering, voc-agents' engineering rows, the
     # voc-eng-workspace bucket, the raw bucket's engineering/ prefix), the deployment's, as every agents module's until

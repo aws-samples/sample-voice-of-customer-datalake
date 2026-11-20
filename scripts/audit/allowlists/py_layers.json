@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "key": "VocProcessingStack/EngineeringBrokerSigningDepsLayer*::pypdf",
+      "kind": "unused-distribution",
+      "reason": "The engineering broker (only with -c engineeringAgents=true) installs its own copy of voc-datalake/lambda/layers/signing-deps for cryptography; since 7.62.00 that directory also pins pypdf, the projects API's Documents Library reader (shared/library_extract.py), which the broker never imports. One requirements file per layer directory, and VocApiStack has no room for a layer of its own (api-engagement-budget.test.ts)."
+    }
+  ]
+}

@@ -2,7 +2,7 @@
  * @fileoverview The `@` / `#` suggestion list above the composer: a listbox the textarea
  * controls (`aria-activedescendant`), so focus never leaves the text. Options are buttons-sized
  * rows for touch; a press picks without blurring the textarea. Documents are listed in the
- * project's sections (PRD, PR/FAQ, Documents), each a named group of options.
+ * project's sections (PRD, PR/FAQ, Documents), then the Documents Library's items, each a named group of options.
  *
  * @module assistant/mentions/MentionMenu
  */
@@ -15,25 +15,30 @@ import { optionId, sectionStartingAt, tokenOf } from './mentionModel'
 import MentionIcon from './MentionIcon'
 import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { MentionMenuState } from './useMentions'
-import type { MentionOption } from './mentionModel'
-import type { DocumentSectionId } from '../../api/documentSections'
+import type { MentionOption, MentionSectionId } from './mentionModel'
 
 function StatusRow({ menu }: Readonly<{ menu: MentionMenuState }>) {
   const { t } = useTranslation('assistant')
   const kind = menu.trigger.kind
   if (menu.limited) {
     const max = kind === 'persona' ? MENTION_LIMITS.maxPersonas : MENTION_LIMITS.maxDocuments
-    return <p className="px-2 py-1.5 text-[12px] text-muted">{t(`mentions.limit.${kind}`, { max })}</p>
+    const line = menu.libraryOnly ? t('mentions.limit.library', { max: MENTION_LIMITS.maxLibraryItems })
+      : t(`mentions.limit.${kind}`, { max })
+    return <p className="px-2 py-1.5 text-[12px] text-muted">{line}</p>
   }
   if (menu.loading) {
     return (
       <p className="flex items-center gap-1.5 px-2 py-1.5 text-[12px] text-muted">
         <Loader2 size={12} className="animate-spin motion-reduce:animate-none" aria-hidden />
-        {t('mentions.loading')}
+        {menu.libraryOnly ? t('mentions.loadingLibrary') : t('mentions.loading')}
       </p>
     )
   }
-  return <p className="px-2 py-1.5 text-[12px] text-muted">{t(`mentions.empty.${kind}`)}</p>
+  return (
+    <p className="px-2 py-1.5 text-[12px] text-muted">
+      {menu.libraryOnly ? t('mentions.empty.library') : t(`mentions.empty.${kind}`)}
+    </p>
+  )
 }
 
 function OptionRow({ listId, option, index, selected, onChoose }: Readonly<{
@@ -62,6 +67,7 @@ function OptionRow({ listId, option, index, selected, onChoose }: Readonly<{
         {option.kind === 'all' ? tokenOf(option) : option.label}
       </TruncatedText>
       {option.kind === 'all' && <span className="ml-auto text-[12px] text-muted">{t('mentions.allHint')}</span>}
+      {option.kind === 'library' && <span className="ml-auto shrink-0 text-[12px] text-muted">{tokenOf(option)}</span>}
     </li>
   )
 }
@@ -71,9 +77,9 @@ interface IndexedOption {
   index: number
 }
 
-/** One run of options: a document section (a named group) or the personas (no group). */
+/** One run of options: a document section or the library (a named group), or the personas (no group). */
 interface OptionRun {
-  section: DocumentSectionId | null
+  section: MentionSectionId | null
   items: IndexedOption[]
 }
 
@@ -88,14 +94,15 @@ function runsOf(options: readonly MentionOption[]): OptionRun[] {
   return runs
 }
 
-/** The document sections' names, as literal keys (a key built at runtime is invisible to the extractor). */
-function useSectionNames(): Readonly<Record<DocumentSectionId, string>> {
+/** The sections' names, as literal keys (a key built at runtime is invisible to the extractor). */
+function useSectionNames(): Readonly<Record<MentionSectionId, string>> {
   const { t } = useTranslation('assistant')
   return {
     prd: t('mentions.sections.prd'),
     prfaq: t('mentions.sections.prfaq'),
     prototypes: t('mentions.sections.prototypes'),
     documents: t('mentions.sections.documents'),
+    library: t('mentions.sections.library'),
   }
 }
 

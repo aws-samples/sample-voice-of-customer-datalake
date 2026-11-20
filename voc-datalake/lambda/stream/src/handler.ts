@@ -29,6 +29,7 @@ import { createWorkspaceMembership } from './assistant/session/workspace-member.
 import { createWorkspaceStatusCheck } from './assistant/session/workspace-status.js';
 import { createRealtimePublisher } from './lib/realtime-publish.js';
 import { createPersonaRound } from './assistant/runtime/persona-round.js';
+import { resolveLibraryMentions } from './assistant/runtime/library-mentions.js';
 import { getDefaultToolDeps } from './assistant/tools/deps.js';
 
 // ── AWS Clients (module-level for connection reuse) ──
@@ -60,6 +61,8 @@ const deps: RuntimeDeps = {
   now: () => new Date(),
   // Lazy like the tool catalogue: the tool deps open their clients on the first mention.
   personaRound: (input) => createPersonaRound(getDefaultToolDeps())(input),
+  // `#slug` Documents Library mentions: the projects API's library, as the caller (library-mentions.ts).
+  resolveLibrary: (input) => resolveLibraryMentions({ ...input, invoke: getInternalApiInvoker() }),
   ...(CONVERSATIONS_TABLE
     ? {
         sessions: {

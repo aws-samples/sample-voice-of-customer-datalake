@@ -14,10 +14,10 @@ import type { VocCoreStack } from '../stacks/core-stack';
 import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
 import {
-  WORKSPACE_EXPORTS_PREFIX, WORKSPACE_MEMORY_IMPORTS_PREFIX, WORKSPACE_OBJECTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX,
-  WORKSPACE_SILVER_HISTORY_PREFIX,
+  WORKSPACE_EXPORTS_PREFIX, WORKSPACE_LIBRARY_PREFIX, WORKSPACE_MEMORY_IMPORTS_PREFIX, WORKSPACE_OBJECTS_PREFIX,
+  WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
 } from '../stacks/core-buckets';
-import { DEPLOYMENT_PRODUCT_DOC_READS, WORKSPACE_PRODUCT_DOC_READS } from '../stacks/retention-worker';
+import { DEPLOYMENT_PRODUCT_DOC_READS, LIBRARY_TEXT_READS, WORKSPACE_PRODUCT_DOC_READS } from '../stacks/retention-worker';
 import { acknowledgeNag } from './nag-ack';
 import {
   rawDataPrefixSuppressions, s3ObjectSuppressions,
@@ -65,6 +65,9 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       // projects/*/product_docs/extracted/*: voc-retention reads the deployment's product documents' extracted text
       // for an erased address (GetObject only, never an upload; 7.48.00).
       ...DEPLOYMENT_PRODUCT_DOC_READS.map((key) => raw.arnForObjects(key)),
+      // library/*/extracted and ws/{one id}/library/*/extracted: voc-retention reads the Documents Library's extracted
+      // text for an erased address (GetObject only, never an original; 7.62.00).
+      ...LIBRARY_TEXT_READS.map((key) => raw.arnForObjects(key)),
     ]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),
   ]);
@@ -85,13 +88,16 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       // ws/{one id}/exports/*: a workspace's export, signed for download by the workspaces API
       // (lib/stacks/api-workspace-export.ts; each object's name is the job's, never a caller's).
       raw.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`),
+      // ws/{one id}/library/*: a workspace's Documents Library, as library/* below for the deployment's (7.62.00: the
+      // projects API's presigned uploads and downloads, extracted text and deletes; lambda/shared/library_objects.py).
+      raw.arnForObjects(`${WORKSPACE_LIBRARY_PREFIX}*`),
       ingestion.s3ImportBucket.arnForObjects('*'),
       core.websiteBucket.arnForObjects('*'),
     ]),
     ...rawDataPrefixSuppressions(raw, [
       'avatars/*', 'company-context/*', 'company-context/design/logo_preview_*', 'company-context/design/icons_*',
-      'memory-imports/*', 'projects/*/product_docs/*', 'projects/*/product_docs/extracted/*', 'prototypes/*',
-      'raw/github_issues/*', 'raw/feedback_form/*', 'raw/feature_requests/*', 'scratch/document_jobs/*',
+      'library/*', 'memory-imports/*', 'projects/*/product_docs/*', 'projects/*/product_docs/extracted/*',
+      'prototypes/*', 'raw/github_issues/*', 'raw/feedback_form/*', 'raw/feature_requests/*', 'scratch/document_jobs/*',
     ]),
   ]);
 }

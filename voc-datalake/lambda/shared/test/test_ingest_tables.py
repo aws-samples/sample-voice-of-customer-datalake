@@ -53,6 +53,23 @@ def test_a_deployment_wide_query_builds_the_condition_as_the_layer_does():
         ExpressionAttributeValues={':start': 'a', ':end': 'b', ':p': 'FAILURES#web'})
 
 
+def test_a_deployment_wide_iter_query_follows_every_page_up_to_its_limit():
+    raw = MagicMock()
+    raw.query.side_effect = [{'Items': [{'sk': 'a'}, {'sk': 'b'}], 'LastEvaluatedKey': {'pk': 'L', 'sk': 'b'}},
+                             {'Items': [{'sk': 'c'}, {'sk': 'd'}]}]
+
+    rows = list(DeploymentTable(raw).iter_query('pk', 'LIBRARY', sort_condition='begins_with(#sk, :s)', max_items=3,
+                                                ExpressionAttributeNames={'#sk': 'sk'},
+                                                ExpressionAttributeValues={':s': 'ITEM#'}))
+
+    assert rows == [{'sk': 'a'}, {'sk': 'b'}, {'sk': 'c'}]
+    assert raw.query.call_args_list[1].kwargs == {
+        'KeyConditionExpression': '#p = :p AND begins_with(#sk, :s)',
+        'ExpressionAttributeNames': {'#sk': 'sk', '#p': 'pk'},
+        'ExpressionAttributeValues': {':s': 'ITEM#', ':p': 'LIBRARY'},
+        'ExclusiveStartKey': {'pk': 'L', 'sk': 'b'}}
+
+
 def test_without_a_scope_the_boto3_table_itself_is_reachable_for_its_own_paging():
     resource = MagicMock()
 

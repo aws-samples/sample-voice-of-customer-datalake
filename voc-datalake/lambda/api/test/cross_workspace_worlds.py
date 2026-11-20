@@ -526,6 +526,71 @@ def agents_world(lambda_context: Any) -> Generator[World]:
 _A_STATEMENT = 'Buyers want clearer refund timelines'
 
 
+# ── voc-projects-api's Documents Library (shared/library_routes.py, 7.62.00): a workspace's own library ──
+
+#: The items each route acts on, in A, in B and in neither, by the state it needs (``lib_`` + a 14-digit stamp + 8
+#: hex: shared/library_keys.py); the deployment's library holds A's ids too (check 3 reads them there).
+_LIBRARY_STATES = {'item_id': 'ready', 'pending_id': 'pending', 'failed_id': 'failed'}
+_LIBRARY_IDS = {
+    side: {name: f'lib_2026111{n}000000_{digit * 8}' for n, name in enumerate(_LIBRARY_STATES)}
+    for side, digit in (('A', 'a'), ('B', 'b'), (UNKNOWN, 'f'))
+}
+_LIBRARY_TEXT = b'Buyers ask about refunds and delivery times.'
+
+
+def _seed_library(table: Any, s3: Any, scope: Any, ids: dict[str, str], mark: str, owner: str) -> None:
+    from boto3.dynamodb.types import Binary
+
+    from shared.library_keys import chunks_pk, extracted_key, item_key, original_key, slug_key
+    from shared.memory_store import encode_embedding
+    from shared.test.memory_fixtures import fake_vector
+
+    for name, item_id in ids.items():
+        slug = f'{mark.replace(" ", "-")}-{name.replace("_", "-")}'
+        table.put_item(Item={**item_key(item_id, workspace=scope), 'item_id': item_id, 'title': f'{mark} report',
+                             'slug': slug, 'tags': [], 'filename': 'report.txt', 'content_type': 'text/plain',
+                             'format': 'txt', 'bytes': len(_LIBRARY_TEXT), 'status': _LIBRARY_STATES[name],
+                             'native': False, 'chunks': 1, 'extracted_chars': len(_LIBRARY_TEXT), 'version': 1,
+                             'created_by': {'sub': owner, 'name': owner}, 'created_at': '2026-11-01T00:00:00+00:00'})
+        table.put_item(Item={**slug_key(slug, workspace=scope), 'item_id': item_id})
+        s3.put_object(Bucket='raw', Key=original_key(item_id, workspace=scope), Body=_LIBRARY_TEXT,
+                      ContentType='text/plain')
+        if _LIBRARY_STATES[name] == 'ready':
+            s3.put_object(Bucket='raw', Key=extracted_key(item_id, workspace=scope), Body=f'{mark} refunds'.encode())
+            table.put_item(Item={'pk': chunks_pk(item_id, workspace=scope), 'sk': 'C#00001', 'text': f'{mark} refunds',
+                                 'chars': 20, 'embedding': Binary(encode_embedding(fake_vector('refunds')))})
+
+
+@contextmanager
+def library_world(lambda_context: Any) -> Generator[World]:
+    import projects_handler
+    from shared import library_index, library_objects, library_routes
+    from shared.test.memory_fixtures import fake_vector
+    from shared.ws_repo import WorkspaceScope
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        projects = pk_sk_table('projects')
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        s3 = boto3.client('s3', region_name='us-east-1')
+        s3.create_bucket(Bucket='raw')
+        library_objects._client.clear()
+        stack.callback(library_objects._client.clear)
+        invoke_async = MagicMock(name='invoke_lambda_async')
+        stack.enter_context(patch.dict('os.environ', {'RAW_DATA_BUCKET': 'raw', 'AWS_REGION': 'us-east-1',
+                                                      'ASSIST_WORKER_FUNCTION': 'voc-projects-assist'}))
+        stack.enter_context(patch.object(library_routes, 'get_projects_table', return_value=projects))
+        stack.enter_context(patch.object(library_routes, 'get_workspaces_table', return_value=workspaces))
+        stack.enter_context(patch.object(library_routes, 'invoke_lambda_async', invoke_async))
+        stack.enter_context(patch.object(library_index, 'embed_text', side_effect=fake_vector))
+        for scope, ids, mark, owner in ((None, _LIBRARY_IDS['A'], 'before workspaces', 'sub-ada'),
+                                        (WorkspaceScope(WS_A), _LIBRARY_IDS['A'], A_MARK, 'sub-ada'),
+                                        (WorkspaceScope(WS_B), _LIBRARY_IDS['B'], B_MARK, f'sub-{B_MARK}-bea')):
+            _seed_library(projects, s3, scope, ids, mark, owner)
+        yield World(call=_caller(projects_handler, lambda_context, projects=projects),
+                    doubles={'cognito': cognito, 'extraction': invoke_async})
+
+
 WORLDS: dict[str, Callable[[Any], Any]] = {
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
@@ -536,6 +601,8 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'agents_handler.py': agents_world,
     # Included by the settings handler (a feedback form's AI draft, 7.55.00).
     'forms_v2_draft_routes.py': settings_world,
+    # Included by the projects handler (the Documents Library, 7.62.00).
+    'library_routes.py': library_world,
 }
 
 #: (handler file, "METHOD /path") -> how to call it: exactly the workspace-scoped routes.
@@ -725,6 +792,34 @@ CASES: dict[tuple[str, str], RouteCase] = {
                   'redact': 'a PII policy, the same words in every workspace'},
         without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     # 7.29.00: the approval resolves the workspace the plan will run in; a member approves there, nobody else.
+    **{('library_routes.py', route): RouteCase(
+        no_ids="the header is its only id: check 1 (each workspace's library is its own)", query=query,
+        literals=literals, without_a_workspace=_AS_BEFORE)
+       for route, query, literals in (
+           ('GET /projects/library', None, {}),
+           ('GET /projects/library/suggest', {'q': 'report'}, {'report': 'what the person typed after #'}))},
+    ('library_routes.py', 'POST /projects/library'): RouteCase(
+        no_ids='the item is new, the workspace is the header: check 1',
+        body={'filename': 'notes.txt', 'content_type': 'text/plain', 'bytes': 12},
+        literals={'notes.txt': 'a file name the person chose', 'text/plain': 'a content type',
+                  '12': "the file's size in bytes"},
+        ok_status=201, without_a_workspace=_AS_BEFORE),
+    **{('library_routes.py', route): RouteCase(
+        ids={side: {'item_id': ids[name]} for side, ids in _LIBRARY_IDS.items()}, body=body, literals=literals,
+        ok_status=ok, without_a_workspace=_AS_BEFORE)
+       for route, name, body, literals, ok in (
+           ('GET /projects/library/<item_id>', 'item_id', None, {}, 200),
+           ('GET /projects/library/<item_id>/text', 'item_id', None, {}, 200),
+           ('PUT /projects/library/<item_id>', 'item_id', {'expected_version': 1, 'title': 'Renamed'},
+            {'Renamed': 'a title the person typed', '1': 'the version the person read'}, 200),
+           ('DELETE /projects/library/<item_id>', 'item_id', None, {}, 200),
+           ('POST /projects/library/<item_id>/uploaded', 'pending_id', None, {}, 202),
+           ('POST /projects/library/<item_id>/retry', 'failed_id', None, {}, 202))},
+    ('library_routes.py', 'POST /projects/library/context'): RouteCase(
+        ids={side: {'item_id': ids['item_id']} for side, ids in _LIBRARY_IDS.items()},
+        body={'item_ids': ['{item_id}'], 'query': 'refunds'}, literals={'refunds': 'a question the person asked'},
+        # An id the workspace does not hold is counted in `missing`, never echoed: B's and an unknown one alike.
+        refused_status=200, without_a_workspace=_AS_BEFORE),
     ('agents_handler.py', 'POST /agents/plans'): RouteCase(
         no_ids='the header is its only id: check 1 (the plan is kept with the workspace its approver is a member of)',
         body={'plan': _PLAN}, literals=_PLAN_LITERALS, ok_status=202,

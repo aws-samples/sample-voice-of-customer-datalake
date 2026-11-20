@@ -116,18 +116,19 @@ describe('voc-retention worker', () => {
     const json = JSON.stringify(template.toJSON());
     expect(json).toContain(JSON.stringify({ 'ForAllValues:StringLike': {
       'dynamodb:LeadingKeys': [`${ws}#PROJECT_IDS`, `${ws}#PROJECT#*`, `${ws}#DCOMMENTS#*`, `${ws}#DOCSHARE_IDS`,
-        `${ws}#DOCSHARE#*`],
+        `${ws}#DOCSHARE#*`, `${ws}#LIBRARY`],
     } }));
     // The deployment's: its own partitions and its registries, each read only for the attributes the erasure and
     // the lineage marks read (7.48.00).
     expect(json).toContain(JSON.stringify({
+      // And (7.62.00) the Documents Library's items, for the address in their metadata (title, source, tags).
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', 'PROJECT_IDS',
-        'DOCSHARE_IDS', 'COMMENT_SERIES_IDS'] },
+        'DOCSHARE_IDS', 'COMMENT_SERIES_IDS', 'LIBRARY'] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'author', 'replies', 'status_by', 'audience',
         'created_by_name', 'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes',
         's3_raw_key', 'content_type', 'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at',
         'completed_at', 'release', 'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
-        'input_feature_request_ids', 'erased_evidence'] },
+        'input_feature_request_ids', 'erased_evidence', 'title', 'source', 'tags'] },
       // A Query naming no attribute would pass ForAllValues and read whole rows: SPECIFIC_ATTRIBUTES is required.
       StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
     }));
@@ -207,13 +208,15 @@ describe('voc-retention worker', () => {
       `"s3:prefix":["raw/*","silver/*","${ws}/raw/*","${ws}/silver/*","${ws}/exports/*"]`);
   });
 
-  it('reads objects only under the product documents (an erasure by email looks for the address there)', () => {
+  it('reads objects only under the product documents and the library\'s text (an erasure by email looks there)', () => {
     const reads = statements().filter((s) => s.effect === 'Allow' && s.actions.includes('s3:GetObject'));
-    // A workspace's text uploads and extracted text (7.43.00); the deployment's extracted text only (7.48.00).
+    // A workspace's text uploads and extracted text (7.43.00); the deployment's extracted text only (7.48.00); the
+    // Documents Library's extracted text, never an original (7.62.00).
     expect(reads.map((s) => [s.actions, [...s.resource.matchAll(/"\/([^"]*)"/g)].flatMap((match) => match[1] ?? [])]))
       .toStrictEqual([[['s3:GetObject'], [`ws/ws_${'?'.repeat(26)}/projects/*/product_docs/raw/*.md`,
         `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/raw/*.txt`,
-        `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/extracted/*`, 'projects/*/product_docs/extracted/*']]]);
+        `ws/ws_${'?'.repeat(26)}/projects/*/product_docs/extracted/*`, 'projects/*/product_docs/extracted/*',
+        'library/*/extracted', `ws/ws_${'?'.repeat(26)}/library/*/extracted`]]]);
   });
 
   it('updates projects in two statements, each on the deployment\'s and one workspace\'s partitions of its rows only', () => {

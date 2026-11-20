@@ -43,7 +43,7 @@ describe('threadReducer — text, reasoning, server tools', () => {
     { type: EventType.TEXT_MESSAGE_END, messageId: 'a2' },
     { type: EventType.CUSTOM, name: 'assistant.navigation', value: { path: '/categories', label: 'Categories' } },
     { type: EventType.CUSTOM, name: 'assistant.navigation', value: { path: '//evil.example', label: 'x' } },
-    { type: EventType.CUSTOM, name: 'assistant.sources', value: { feedback: [{ feedback_id: 'f1', original_text: 'late', source_platform: 'web' }, { nope: 1 }], web: [{ title: 'T', url: 'https://example.com' }, { title: 'bad', url: 'javascript:alert(1)' }] } },
+    { type: EventType.CUSTOM, name: 'assistant.sources', value: { feedback: [{ feedback_id: 'f1', original_text: 'late', source_platform: 'web' }, { nope: 1 }], web: [{ title: 'T', url: 'https://example.com' }, { title: 'bad', url: 'javascript:alert(1)' }], library: [{ item_id: 'lib_20261101000000_0000a001', slug: 'q3', title: 'Q3', page: 2 }, { item_id: 'proj_1', slug: 'x' }] } },
     { type: EventType.RUN_FINISHED, threadId: 't1', runId: 'r1', outcome: { type: 'success' }, usage: [{ inputTokens: 10, cachedInputTokens: 8 }] },
   ]
   const state = run(sequence)
@@ -68,6 +68,8 @@ describe('threadReducer — text, reasoning, server tools', () => {
     expect(state.navigation).toStrictEqual({ a2: [{ path: '/categories', label: 'Categories' }] })
     expect(defined(state.sources.a2, 'sources.a2').feedback).toStrictEqual([{ feedback_id: 'f1', text: 'late', source_platform: 'web', sentiment_label: undefined, rating: undefined }])
     expect(defined(state.sources.a2, 'sources.a2').web).toStrictEqual([{ title: 'T', url: 'https://example.com' }])
+    expect(defined(state.sources.a2, 'sources.a2').library)
+      .toStrictEqual([{ item_id: 'lib_20261101000000_0000a001', slug: 'q3', title: 'Q3', page: 2 }])
   })
 
   it('finishes idle with usage', () => {

@@ -46,15 +46,18 @@
  *     addresses and names an erasure by email rewrites) on the deployment's and one workspace id's `PROJECT#*`,
  *     `DCOMMENTS#*` and `DOCSHARE#*` partitions (the deployment's since 7.48.00) — no delete, no put; and Query of one
  *     workspace id's `PROJECT_IDS`, `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions
- *     (`RETENTION_PROJECT_PARTITIONS`, 7.43.00) and of the deployment's `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE#*`,
- *     `PROJECT_IDS`, `DOCSHARE_IDS` and `COMMENT_SERIES_IDS` (`RETENTION_DEPLOYMENT_PARTITIONS`, 7.48.00, of
+ *     (`RETENTION_PROJECT_PARTITIONS`, 7.43.00; its `LIBRARY` since 7.62.00) and of the deployment's `PROJECT#*`,
+ *     `DCOMMENTS#*`, `DOCSHARE#*`, `PROJECT_IDS`, `DOCSHARE_IDS`, `COMMENT_SERIES_IDS` and (7.62.00) `LIBRARY`
+ *     (`RETENTION_DEPLOYMENT_PARTITIONS`, 7.48.00, of
  *     `DEPLOYMENT_QUERY_ATTRIBUTES` only), no index: the lineage marks and an erasure by email's addresses
  *     (lambda/jobs/retention/lineage.py, project_people.py). IAM holds neither the Query nor the update to one
  *     workspace (the pattern is any one workspace id), only the workspace layer does;
  *   - raw bucket, read: GetObject of a workspace's text product documents only (`WORKSPACE_PRODUCT_DOC_READS`:
  *     `ws/{one id}/projects/*\/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*`, 7.43.00: an erasure by
  *     email reads a text upload or its extracted text for the address) and of the deployment's extracted text only
- *     (`DEPLOYMENT_PRODUCT_DOC_READS`, `projects/*\/product_docs/extracted/*`, 7.48.00). With no ListBucket a missing
+ *     (`DEPLOYMENT_PRODUCT_DOC_READS`, `projects/*\/product_docs/extracted/*`, 7.48.00), and the Documents Library's
+ *     extracted text (`LIBRARY_TEXT_READS`, 7.62.00: `library/*\/extracted`, `ws/{one id}/library/*\/extracted`, listed
+ *     for review when it holds the address). With no ListBucket a missing
  *     key answers 403, which the code takes for "cannot be judged", never a failure;
  *   - feature requests: Scan / GetItem / Query / UpdateItem (an erasure by email de-identifies the person's board
  *     requests: REMOVE their email and name) and PutItem / DeleteItem pinned to `FR#*` (a +1's id derives from the
@@ -109,7 +112,8 @@ const FORM_TEST_RESPONSES_PARTITIONS = ['FEEDBACK_FORM_TEST', `WS#${WORKSPACE_ID
  */
 const RETENTION_PROJECT_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT_IDS`,
   `WS#${WORKSPACE_ID_PATTERN}#PROJECT#*`, `WS#${WORKSPACE_ID_PATTERN}#DCOMMENTS#*`,
-  `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE_IDS`, `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE#*`];
+  `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE_IDS`, `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE#*`,
+  `WS#${WORKSPACE_ID_PATTERN}#LIBRARY`];
 /**
  * The deployment's own project partitions in voc-projects the worker Queries (7.48.00, projects 3g-d:
  * lambda/jobs/retention/project_people.py and lineage.py): each project's own partition (its persona library's too),
@@ -119,7 +123,7 @@ const RETENTION_PROJECT_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT_IDS`,
  * statement above is those).
  */
 const RETENTION_DEPLOYMENT_PARTITIONS = ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', 'PROJECT_IDS', 'DOCSHARE_IDS',
-  'COMMENT_SERIES_IDS'];
+  'COMMENT_SERIES_IDS', 'LIBRARY'];
 /**
  * What the worker's Queries of those partitions may read (`dynamodb:Attributes`, 7.48.00): the keys, what the erasure
  * by email judges of each kind of row (a thread's authors, replies and resolver; a link's audience, names, revocation
@@ -135,7 +139,7 @@ const DEPLOYMENT_QUERY_ATTRIBUTES = ['pk', 'sk', 'author', 'replies', 'status_by
   'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes', 's3_raw_key', 'content_type',
   'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at', 'completed_at', 'release',
   'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
-  'input_feature_request_ids', 'erased_evidence'];
+  'input_feature_request_ids', 'erased_evidence', 'title', 'source', 'tags'];
 /**
  * What the worker's Scan of voc-projects may read (7.48.00; lambda/shared/review_registries.py `SCAN_ATTRIBUTES`, which
  * a test holds to this list): a row's key, a routing row's workspace, a link's project and series, and a link's or a
@@ -168,6 +172,11 @@ const PEOPLE_UPDATE_PARTITIONS = ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', `WS#
  * kind there (a PDF's, an image's description), so only that text is read, never an upload.
  */
 export const DEPLOYMENT_PRODUCT_DOC_READS = ['projects/*/product_docs/extracted/*'];
+/**
+ * The Documents Library's extracted text the worker reads (7.62.00, lambda/jobs/retention/project_people.py
+ * `_library_item`): the deployment's and one workspace id's, never an original (lambda/shared/library_keys.py).
+ */
+export const LIBRARY_TEXT_READS = ['library/*/extracted', `ws/${WORKSPACE_ID_PATTERN}/library/*/extracted`];
 /**
  * A workspace's product documents the worker reads (7.43.00): its text uploads (`.md`, `.txt`) and the extracted
  * text, under one workspace id, never an image or another upload (lambda/jobs/retention/project_people.py; the keys
@@ -334,7 +343,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'ReadWorkspaceProductDocuments',
     actions: ['s3:GetObject'],
-    resources: [...WORKSPACE_PRODUCT_DOC_READS, ...DEPLOYMENT_PRODUCT_DOC_READS]
+    resources: [...WORKSPACE_PRODUCT_DOC_READS, ...DEPLOYMENT_PRODUCT_DOC_READS, ...LIBRARY_TEXT_READS]
       .map((key) => rawDataBucket.arnForObjects(key)),
   }));
   // A workspace's S3 import originals (one file holds many people's rows; no row links an item to its file): no

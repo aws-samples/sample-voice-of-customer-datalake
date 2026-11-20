@@ -92,6 +92,8 @@ Each tool's name starts with its area: `feedback_`, `memory_`, `company_`, `proj
 | `documents_get_prototype_draft` | Read a draft by `document_id` and `draft_id`: its `kind` (`chat` or `feedback`), instruction, the AI's summary of what changed and `base_version`; a feedback draft adds per-pin `outcomes` (done / not_done with a note), `withheld` and `ignored`. No preview link: the user sees the preview on the prototype page. |
 | `documents_apply_prototype_draft` | (write) Save a draft as the next version (`document_id`, `draft_id`); applying it again gives the same version. A feedback draft also marks its Done pins addressed and posts each Not done pin's reason as an AI reply, and answers `incorporation` (marked, replied, not written with a reason). Refused when a version was saved since the draft: ask again on the newest. |
 | `documents_discard_prototype_draft` | (write) Discard a draft by `document_id` and `draft_id`: it is gone for everyone; saved versions are untouched. |
+| `library_search` | Find passages in the Documents Library (reports, transcripts, decks the team uploaded; not customer feedback) for a question, in up to 3 items by id or slug, or in the items whose title or tags match. Cite each passage as `[#slug p.N]`. |
+| `library_get` | Read a library item's text by `item_id`, one `page` at a time. |
 | `agents_list` | Autonomous agents the user can see, with their status. |
 | `agents_get_run` | Follow an agent run: give `run_id` (from `agents_run`) for its status, current step, project and error, or leave it out for the agent's newest runs. |
 | `agents_run` | (write, admin-minted) Start an agent run now. |

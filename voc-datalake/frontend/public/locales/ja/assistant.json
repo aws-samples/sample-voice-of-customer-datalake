@@ -53,6 +53,8 @@
     "toolSteps": "実行したステップ",
     "feedbackSources": "関連するフィードバック",
     "webSources": "Webソース",
+    "librarySources": "使用したライブラリの資料",
+    "openLibraryItem": "{{name}}（{{marker}}）をライブラリで開く",
     "personaAnswers": "ペルソナの回答",
     "toolGroupRunning_other": "{{count, number}} 件を確認中…",
     "toolGroupRunning_one": "{{count, number}} 件を確認中…",
@@ -286,6 +288,7 @@
   },
   "mentions": {
     "placeholder": "このプロジェクトについて質問できます。@ でペルソナ、# でドキュメントを指定…",
+    "placeholderLibrary": "フィードバック、プロジェクト、このページについて質問できます。# でライブラリの資料を指定…",
     "allLabel": "すべてのペルソナ",
     "allHint": "すべてのペルソナが回答します",
     "heading": {
@@ -296,16 +299,20 @@
       "prd": "PRD",
       "prfaq": "PR/FAQ",
       "prototypes": "プロトタイプ",
-      "documents": "ドキュメント"
+      "documents": "ドキュメント",
+      "library": "ライブラリ"
     },
     "limit": {
       "persona": "1 回のメッセージで指定できるペルソナは最大 {{max, number}} 件です。",
-      "document": "1 回のメッセージで指定できるドキュメントは最大 {{max, number}} 件です。"
+      "document": "1 回のメッセージで指定できるドキュメントは最大 {{max, number}} 件です。",
+      "library": "1 件のメッセージに含められるライブラリの資料は最大 {{max, number}} 件です。"
     },
     "loading": "プロジェクトを読み込み中…",
+    "loadingLibrary": "ライブラリを読み込んでいます…",
     "empty": {
       "persona": "一致するペルソナはありません。",
-      "document": "一致するドキュメントはありません。"
+      "document": "一致するドキュメントはありません。",
+      "library": "一致するライブラリの資料はありません。ライブラリページで資料を追加してください。"
     },
     "count_one": "候補 {{count, number}} 件",
     "count_other": "候補 {{count, number}} 件",
@@ -313,6 +320,8 @@
     "remove": "{{name}} を削除",
     "insertPersona": "ペルソナを指定",
     "insertDocument": "ドキュメントを指定",
+    "insertLibrary": "ライブラリの資料を指定",
+    "largeItem": "{{name}} は大きな資料です。送信のたびに約 {{tokens, number}} トークンを使います。",
     "allCapped": "@all は {{total, number}} 件中、最初の {{max, number}} 件のペルソナに質問します: {{names}}。"
   },
   "scope": {

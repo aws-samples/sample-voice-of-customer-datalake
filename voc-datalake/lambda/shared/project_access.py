@@ -459,8 +459,19 @@ def validate_member_role(value: object) -> str:
 
 # First path segments under /projects that are NOT project ids. These routes are
 # workspace-wide and keep their own checks (prioritization uses require_admin
-# and per-reviewer subjects).
-NON_PROJECT_SEGMENTS: Final = frozenset({'prioritization'})
+# and per-reviewer subjects; the Documents Library, shared/library_routes.py, its
+# scope's roles).
+NON_PROJECT_SEGMENTS: Final = frozenset({'prioritization', 'library'})
+#: The Documents Library's segment (shared/library_routes.py): never a project's id, so a project route it reaches
+#: (``/projects/library/jobs``) answers the one 404 (a legacy project called ``prioritization`` keeps its routes).
+LIBRARY_SEGMENT: Final = 'library'
+
+
+def is_library_path(path: str) -> bool:
+    """Whether ``path`` is under ``/projects/library``."""
+    segments = [part for part in path.split('/') if part]
+    return len(segments) >= 2 and segments[0] == 'projects' and segments[1] == LIBRARY_SEGMENT
+
 
 # (method, sub-path after /projects/{id}, level). `*` matches one segment.
 # Anything not listed falls back to: GET -> view, everything else -> edit.

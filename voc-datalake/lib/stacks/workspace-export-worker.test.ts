@@ -117,7 +117,9 @@ describe('the voc-workspace-export job', () => {
   it('only Queries one workspace\'s project partitions of voc-projects, voc-jobs and voc-participants (7.39.00)', () => {
     expect([PROJECT_TABLE_PARTITIONS, PROJECT_PARTITIONS]).toStrictEqual([[`WS#${ONE_WORKSPACE}#PROJECT_IDS`,
       `WS#${ONE_WORKSPACE}#PROJECT#*`, `WS#${ONE_WORKSPACE}#DOCUMENT_VERSIONS#PROJECT#*`,
-      `WS#${ONE_WORKSPACE}#DCOMMENTS#*`, `WS#${ONE_WORKSPACE}#DOCSHARE_IDS`, `WS#${ONE_WORKSPACE}#DOCSHARE#*`],
+      `WS#${ONE_WORKSPACE}#DCOMMENTS#*`, `WS#${ONE_WORKSPACE}#DOCSHARE_IDS`, `WS#${ONE_WORKSPACE}#DOCSHARE#*`,
+      // The Documents Library's items (7.62.00, jobs/workspace_export/library.py): never its passages.
+      `WS#${ONE_WORKSPACE}#LIBRARY`],
     [`WS#${ONE_WORKSPACE}#PROJECT#*`]]);
     // Never a deployment-wide row (a project's, a link's routing row, a claim) nor a reviewer's DCRATE# counters.
     expect(on('Projects')).toStrictEqual([{ actions: ['dynamodb:Query'], condition: keys(PROJECT_TABLE_PARTITIONS) }]);

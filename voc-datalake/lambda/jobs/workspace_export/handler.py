@@ -68,6 +68,7 @@ from botocore.exceptions import (
 
 from jobs.workspace_export.conversations import ConversationCount, carried_state, fresh_state
 from jobs.workspace_export.entities import ENTITIES, FILE_CAP, ExportRefused, Source, encode_row, manifest
+from jobs.workspace_export.library import LibrarySource
 from jobs.workspace_export.memory import COUNTED
 from jobs.workspace_export.objects import (
     BAD_NAME,
@@ -323,7 +324,8 @@ class ExportRun:
         projects = ProjectSource(scope, *(ingest_table(scope, resource, name)
                                           for name in (PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE)))
         self.source = Source(scope, ingest_table(scope, resource, FEEDBACK_TABLE), self.jobs, self.workspaces,
-                             ingest_table(scope, resource, MEMORY_TABLE), projects)
+                             ingest_table(scope, resource, MEMORY_TABLE), projects,
+                             LibrarySource(scope, ingest_table(scope, resource, PROJECTS_TABLE)))
         # voc-conversations through the workspace's view (shared/ingest_tables.py: ``ws_table`` in a workspace).
         self.conversations = ConversationCount(scope, ingest_table(scope, resource, CONVERSATIONS_TABLE))
         s3 = get_s3_client()

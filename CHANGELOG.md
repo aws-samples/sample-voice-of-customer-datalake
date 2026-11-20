@@ -17,6 +17,62 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.62.00] - 2026-11-20
+
+**The Documents Library**: upload a market report, interview transcripts or a deck once, tag it, and mention it in
+any chat with `#slug`; the assistant reads the file itself when it fits, or searches it and cites the passages
+([documents-library.md](docs/documents-library.md), GitHub issue #566). Library items are never feedback. No new API
+Gateway resource (the projects API's `/projects/{proxy+}`), no fixed cost.
+
+### Added
+
+- **The Library page** (`/library`, in a workspace `/workspace/{slug}/library`; Knowledge in the menu): upload one or
+  more files with progress (PDF, Word, Excel, PowerPoint, CSV, HTML, text, Markdown up to 25 MB; PNG, JPEG, GIF, WebP
+  up to 3.75 MB; others refused with a clear message), each with a title, a short name (`slug`), a source, a date,
+  tags and, outside a workspace, an optional project; search, tag and project filters and a sort; a preview with the
+  extracted text page by page and a 5-minute download link; edit (with the version read: a stale edit is refused),
+  retry, and delete for an admin or the uploader.
+- **Text extracted once**, on the projects API's assist twin: the standard library for text, Markdown, CSV and HTML
+  and for Word, Excel and PowerPoint's XML; `pypdf` for a PDF's text layer; Amazon Bedrock (the Documents model) for a
+  scanned PDF, a legacy `.doc` / `.xls` (up to 4.5 MB) and an image's description. Passages of about 1,800 characters,
+  each embedded with Titan Text Embeddings V2 and ranked by cosine in the Lambda (no vector database).
+- **`#slug` in the assistant, on every page** (`mentions.library`, at most 3 a message; on a project page after the
+  project's documents, as a **Library** group): a Converse-native file of at most 4.5 MB (an image 3.75 MB) is
+  attached to that message as "Library document N" while the message's documents stay at 5 or fewer with your own
+  attachments counted; otherwise the best 8 passages (12,000 characters at most) go in a `<library>` data block with
+  `[#slug p.N]` markers. The answer shows **Library documents used**: chips that open the Library at the page cited.
+  A large item says so in the composer ("about N tokens each time it is sent").
+- **`library_search`**, a read tool of the assistant (passages by item id, `#slug` or the question's words), and two
+  MCP read tools on `/mcp/global`, `library_search` and `library_get` ([mcp.md](docs/mcp.md)).
+- Routes on `/projects/library…`: the list, `suggest`, create (a 15-minute presigned PUT bound to the file's length and
+  type and to `If-None-Match: *`), `uploaded`, `retry`, one item, its `text`, edit, delete and `context` (the stream's
+  and MCP's read: presigned GETs for native files, never bytes, and passages).
+
+### Changed
+
+- **Workspaces**: the library is a workspace's own (`WS#{ws}#LIBRARY`, `ws/{ws}/library/`): its export holds the items
+  (`library`), its hard delete sweeps them (`library`), and an erasure by email lists an item whose metadata or text
+  holds the address for review (`files_needing_review`), never changing it. Every route is in the cross-workspace
+  suite.
+- **The projects API's role**: the raw bucket's `library/*` and `ws/{one id}/library/*` in its workspace-objects
+  statement, `bedrock:InvokeModel` on the in-Region Titan V2 model, the stack's workspace-resolution policy (an
+  attachment), and CDK's inert stream reads (`GetRecords`, `GetShardIterator` on tables, which only act on a stream)
+  dropped from it to keep the inline policy under 70 % of its quota. voc-retention reads the library's extracted text
+  and items; the export and delete jobs their workspace's library partitions.
+- A `/projects/library/…` path that matches a project route (`/projects/library/jobs`) answers the one 404.
+
+### Upgrade notes
+
+- **New dependency**: `pypdf==7.1.1` (BSD-3-Clause) in `lambda/layers/signing-deps`, the projects API's own layer
+  ([dependencies.md](docs/dependencies.md)). Install it in the local venv
+  (`.venv/bin/pip install -r lambda/layers/signing-deps/requirements.txt`).
+- **Bedrock**: the projects API now calls Titan Text Embeddings V2 (`amazon.titan-embed-text-v2:0`, in-Region; the
+  memory already uses it): enable model access in the deployment's Region if it is not yet.
+- Pay per use only: a natively attached 50-page PDF is about 50,000 to 75,000 input tokens each time it is attached;
+  extraction with pypdf is free, the model's reading of a scanned PDF about 1 to 3 cents per 10 pages.
+- Not in this release: Library items as evidence for PR/FAQ, PRD and research generation (`evidence_library_ids`;
+  mention them in the assistant meanwhile), sharing across workspaces (copy only), audio and video.
+
 ## [7.61.00] - 2026-11-20
 
 **Forms data quality**: a matrix question that rates several rows on one scale, hidden fields and earlier answers

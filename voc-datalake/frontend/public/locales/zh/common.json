@@ -21,6 +21,7 @@
     "projects": "项目",
     "scrapers": "数据源",
     "memory": "记忆",
+    "library": "资料库",
     "company": "公司",
     "agents": "智能体编排",
     "agent": "智能体",
@@ -102,6 +103,7 @@
       "admin": "管理"
     },
     "memory": "记忆",
+    "library": "资料库",
     "company": "公司",
     "admin": "管理",
     "connect": "MCP 与技能",

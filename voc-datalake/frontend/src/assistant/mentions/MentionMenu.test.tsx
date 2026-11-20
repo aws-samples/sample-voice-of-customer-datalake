@@ -19,7 +19,7 @@ function menu(kind: 'document' | 'persona'): MentionMenuState {
   const options = kind === 'document'
     ? documentMentionOptions(DOCUMENTS, '', [])
     : personaMentionOptions([{ persona_id: 'p1', name: 'Dana' }, { persona_id: 'p2', name: 'Victor' }], '', [], 'Every persona')
-  return { trigger: { kind, start: 0, query: '' }, options, active: 1, limited: false, loading: false }
+  return { trigger: { kind, start: 0, query: '' }, options, active: 1, limited: false, loading: false, libraryOnly: false }
 }
 
 describe('MentionMenu', () => {

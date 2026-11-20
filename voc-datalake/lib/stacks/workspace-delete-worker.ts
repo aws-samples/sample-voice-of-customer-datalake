@@ -71,10 +71,12 @@ export const MEMORY_PARTITIONS = [`WS#${ONE}#MEM#company`, `WS#${ONE}#MEMCURSOR`
   `WS#${ONE}#MEMEVT#*`];
 /** A workspace project's partitions (lambda/shared/project_keys.py `project_partitions`): in voc-projects its own, its
  * document versions and its series' comment partitions (`comments_pk`, listed in its own partition), in voc-jobs and
- * voc-participants its own; and the workspace's registry of its project ids (`project_registry_pk`), in voc-projects. */
+ * voc-participants its own; and the workspace's registry of its project ids (`project_registry_pk`), in voc-projects.
+ * With them, the workspace's Documents Library (7.62.00, lambda/shared/library_keys.py): its `LIBRARY` partition and
+ * its items' passages, `LIBRARY_CHUNKS#{item}` (the `library` sweep). */
 const PROJECT_PARTITION = `WS#${ONE}#PROJECT#*`;
 export const PROJECTS_TABLE_PARTITIONS = [PROJECT_PARTITION, `WS#${ONE}#DOCUMENT_VERSIONS#PROJECT#*`,
-  `WS#${ONE}#DCOMMENTS#*`, `WS#${ONE}#PROJECT_IDS`];
+  `WS#${ONE}#DCOMMENTS#*`, `WS#${ONE}#PROJECT_IDS`, `WS#${ONE}#LIBRARY`, `WS#${ONE}#LIBRARY_CHUNKS#*`];
 const PROJECT_PARTITIONS_ELSEWHERE = [PROJECT_PARTITION];
 /** A project id's claim (lambda/shared/ws_repo.py `PROJECT_ID#{id}` / `CLAIM`): deployment-wide by design, so IAM
  * reaches every claim; the code releases only one that names this workspace, of an id from its own registry. */

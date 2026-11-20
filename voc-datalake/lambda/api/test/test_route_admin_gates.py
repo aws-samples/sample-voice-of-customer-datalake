@@ -441,6 +441,13 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'PATCH /projects/prioritization/rows/<row_id>',
           'PUT /projects/prioritization/rows/<row_id>/lineage-ack', 'PUT /projects/prioritization',
           'PATCH /projects/prioritization'),
+    _open('the Documents Library (7.62.00, owner decision: workspace scope; docs/documents-library.md): with '
+          "X-Workspace-Id the workspace's editors and admins upload, edit and retry, without it every signed-in user "
+          "(the deployment's library); a delete is an admin's or the uploader's (_may_delete, never a delegated "
+          'credential); the context POST only reads, for every member',
+          'library_routes.py', 'POST /projects/library', 'PUT /projects/library/<item_id>',
+          'DELETE /projects/library/<item_id>', 'POST /projects/library/<item_id>/uploaded',
+          'POST /projects/library/<item_id>/retry', 'POST /projects/library/context'),
     _open("resolved problems: the workspace's shared state, every editor or admin of it marks a problem resolved "
           "(without a workspace, the deployment's, every signed-in user, as before)",
           'settings_handler.py', 'PUT /settings/resolved-problems'),

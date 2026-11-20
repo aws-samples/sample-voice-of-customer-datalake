@@ -53,6 +53,8 @@
     "toolSteps": "Étapes effectuées",
     "feedbackSources": "Retours associés",
     "webSources": "Sources web",
+    "librarySources": "Documents de la bibliothèque utilisés",
+    "openLibraryItem": "Ouvrir {{name}} ({{marker}}) dans la Bibliothèque",
     "personaAnswers": "Réponses des personas",
     "toolGroupRunning_other": "Consultation de {{count, number}} sources…",
     "toolGroupRunning_many": "Analyse de {{count, number}} d'éléments…",
@@ -288,6 +290,7 @@
   },
   "mentions": {
     "placeholder": "Posez une question sur ce projet. Tapez @ pour un persona, # pour un document…",
+    "placeholderLibrary": "Posez une question sur vos retours, vos projets ou cette page. Tapez # pour un document de la bibliothèque…",
     "allLabel": "Tous les personas",
     "allHint": "tous les personas répondent",
     "heading": {
@@ -298,16 +301,20 @@
       "prd": "PRD",
       "prfaq": "PR/FAQ",
       "prototypes": "Prototypes",
-      "documents": "Documents"
+      "documents": "Documents",
+      "library": "Bibliothèque"
     },
     "limit": {
       "persona": "Au plus {{max, number}} personas par message.",
-      "document": "Au plus {{max, number}} documents par message."
+      "document": "Au plus {{max, number}} documents par message.",
+      "library": "Au plus {{max, number}} documents de la bibliothèque par message."
     },
     "loading": "Chargement du projet…",
+    "loadingLibrary": "Chargement de la bibliothèque…",
     "empty": {
       "persona": "Aucun persona ne correspond.",
-      "document": "Aucun document ne correspond."
+      "document": "Aucun document ne correspond.",
+      "library": "Aucun document de la bibliothèque ne correspond. Ajoutez des documents sur la page Bibliothèque."
     },
     "count_one": "{{count, number}} suggestion",
     "count_other": "{{count, number}} suggestions",
@@ -316,6 +323,8 @@
     "remove": "Retirer {{name}}",
     "insertPersona": "Mentionner un persona",
     "insertDocument": "Étiqueter un document",
+    "insertLibrary": "Mentionner un document de la bibliothèque",
+    "largeItem": "{{name}} est volumineux : environ {{tokens, number}} jetons à chaque envoi.",
     "allCapped": "@all interroge les {{max, number}} premiers des {{total, number}} personas : {{names}}."
   },
   "scope": {

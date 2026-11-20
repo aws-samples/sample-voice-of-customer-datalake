@@ -23,7 +23,8 @@
  *     the memory counts could. Only the code holds it: one fixed request, `begins_with(sk, 'CONV#')`, `Limit` 1, no
  *     filter, no start key (lambda/jobs/workspace_export/conversations.py, pinned by its tests);
  *   - voc-projects (7.39.00): Query only, of the `PROJECT_IDS`, `PROJECT#*`, `DOCUMENT_VERSIONS#PROJECT#*`,
- *     `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions of any one workspace id, on the table; voc-jobs and
+ *     `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions of any one workspace id, and (7.62.00) its Documents
+ *     Library's `LIBRARY` (the code reads its `ITEM#` rows, never its passages' `LIBRARY_CHUNKS#`), on the table; voc-jobs and
  *     voc-participants: Query only, of any one workspace id's `PROJECT#*` partitions; no write, no index. The
  *     patterns hold the role to that key shape, not to the export's own workspace (only the workspace layer's checks
  *     do); nor can IAM pin the sort key or the attributes, or tell a deleted project's partitions from a live one's:
@@ -124,7 +125,7 @@ export const CONVERSANTS_ATTRIBUTES = ['pk', 'sk'];
 export const PROJECT_TABLE_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT_IDS`,
   `WS#${WORKSPACE_ID_PATTERN}#PROJECT#*`, `WS#${WORKSPACE_ID_PATTERN}#DOCUMENT_VERSIONS#PROJECT#*`,
   `WS#${WORKSPACE_ID_PATTERN}#DCOMMENTS#*`, `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE_IDS`,
-  `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE#*`];
+  `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE#*`, `WS#${WORKSPACE_ID_PATTERN}#LIBRARY`];
 /** A workspace's project partitions in voc-jobs (its jobs) and voc-participants (its links to lists and people). */
 export const PROJECT_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT#*`];
 /** A workspace's two control-plane partitions in voc-workspaces (lambda/shared/ws_repo.py `control_query`). */

@@ -1,0 +1,158 @@
+{
+  "title": "Biblioteca de documentos",
+  "subtitle": "Relatórios, pesquisas, apresentações e imagens que o assistente pode ler quando você os cita em um chat.",
+  "configureFirst": "Conecte primeiro o endpoint da API em Administração → Geral.",
+  "readOnly": "Você pode ler esta biblioteca. Adicionar ou alterar itens exige a função de editor ou administrador neste espaço de trabalho.",
+  "intro": {
+    "label": "Sobre a biblioteca",
+    "notFeedback": "Os itens da biblioteca são documentos de referência, não feedback: nunca entram nas métricas, no sentimento ou nas categorias. Para importar feedback de um arquivo CSV ou JSON, use",
+    "importLink": "Fontes de dados",
+    "mention": "No assistente, digite # e o nome curto de um item (por exemplo #q3-market) para incluir esse documento no chat."
+  },
+  "toolbar": {
+    "label": "Filtrar a biblioteca",
+    "search": "Pesquisar na biblioteca",
+    "searchPlaceholder": "Pesquise títulos, nomes curtos, fontes e etiquetas",
+    "tag": "Etiqueta",
+    "anyTag": "Qualquer etiqueta",
+    "project": "Projeto",
+    "anyProject": "Qualquer projeto",
+    "sort": "Ordenar",
+    "sorts": {
+      "newest": "Mais recentes",
+      "oldest": "Mais antigos",
+      "title": "Título",
+      "docDate": "Data do documento"
+    }
+  },
+  "status": {
+    "pending": "Aguardando o arquivo",
+    "extracting": "Lendo",
+    "ready": "Pronto",
+    "failed": "Falhou"
+  },
+  "row": {
+    "dated": "Data: {{date}}",
+    "added": "Adicionado em {{date}}",
+    "addedBy": "Adicionado em {{date}} por {{name}}"
+  },
+  "list": {
+    "label": "Itens da biblioteca",
+    "loading": "Carregando a biblioteca…",
+    "loadFailed": "Não foi possível carregar a biblioteca. Verifique sua conexão e tente novamente.",
+    "noMatch": "Nenhum item da biblioteca corresponde a estes filtros.",
+    "loadMore": "Carregar mais"
+  },
+  "empty": {
+    "title": "Ainda não há documentos",
+    "text": "Envie uma vez um relatório, uma exportação de pesquisa, uma apresentação ou uma imagem e cite-o em qualquer chat com # e seu nome curto.",
+    "textReadOnly": "Ninguém adicionou um documento a esta biblioteca ainda."
+  },
+  "upload": {
+    "open": "Enviar arquivos",
+    "title": "Enviar para a biblioteca",
+    "description": "Cada arquivo vira um item da biblioteca. O texto dele é lido uma vez, após o envio.",
+    "dropHint": "Solte os arquivos aqui ou escolha-os.",
+    "choose": "Escolher arquivos",
+    "limits": "PDF, Word, Excel, PowerPoint, CSV, HTML, texto, Markdown ou uma imagem PNG, JPEG, GIF ou WebP. Arquivos de até 25 MB, imagens de até 3,75 MB.",
+    "filesLabel": "Arquivos para enviar",
+    "moreDetails": "Mais detalhes",
+    "remove": "Remover {{name}}",
+    "progressLabel": "Envio de {{name}}",
+    "start": "Enviar ({{count, number}})",
+    "cancel": "Cancelar",
+    "done": "Concluído",
+    "phase": {
+      "creating": "Preparando o envio…",
+      "uploading": "Enviando… {{percent}}",
+      "finishing": "Começando a ler o arquivo…",
+      "done": "Enviado. O texto está sendo lido: a lista mostra quando estiver pronto."
+    },
+    "refused": {
+      "unsupported": "Este tipo de arquivo não é compatível. Envie um destes: {{accepted}}.",
+      "empty": "Este arquivo está vazio.",
+      "tooLarge": "Este arquivo tem mais de 25 MB, o máximo de um item da biblioteca.",
+      "imageTooLarge": "Esta imagem tem mais de 3,75 MB, o máximo de uma imagem."
+    }
+  },
+  "fields": {
+    "title": "Título",
+    "slug": "Nome curto",
+    "slugHint": "O que você digita depois de # em um chat: letras minúsculas, dígitos e hifens. Se ficar vazio, é criado a partir do título.",
+    "source": "Fonte",
+    "docDate": "Data do documento",
+    "tags": "Etiquetas",
+    "tagsHint": "Separadas por vírgulas, por exemplo: mercado, q3.",
+    "project": "Projeto",
+    "noProject": "Nenhum projeto",
+    "titleRequired": "Dê um título ao item.",
+    "badSlug": "Um nome curto tem de 1 a 64 letras minúsculas, dígitos e hifens, e começa e termina com uma letra ou um dígito.",
+    "tooManyTags": "Um item tem no máximo {{max, number}} etiquetas.",
+    "tagTooLong": "Uma etiqueta tem no máximo {{max, number}} caracteres."
+  },
+  "errors": {
+    "slugTaken": "Outro item da biblioteca já tem este nome curto. Escolha outro.",
+    "libraryFull": "Esta biblioteca tem 1.000 itens, o seu máximo. Exclua alguns primeiro.",
+    "unsupported": "Este tipo de arquivo não é compatível.",
+    "tooLarge": "Este arquivo é grande demais: arquivos podem ter no máximo 25 MB, imagens no máximo 3,75 MB.",
+    "stale": "Este item foi alterado desde que você o abriu. Recarregue-o e tente novamente.",
+    "notUploaded": "O arquivo não chegou. Tente novamente.",
+    "uploadMismatch": "O arquivo enviado não é o anunciado. Tente novamente.",
+    "writeForbidden": "Adicionar ou alterar itens da biblioteca exige a função de editor ou administrador neste espaço de trabalho.",
+    "deleteForbidden": "Somente um administrador ou a pessoa que o enviou pode excluir este item.",
+    "notFound": "Este item da biblioteca não existe mais.",
+    "notFailed": "Somente um item com falha pode ser lido novamente.",
+    "uploadRefused": "Não foi possível enviar o arquivo. Tente novamente.",
+    "network": "O envio parou: verifique sua conexão e tente novamente.",
+    "other": "Algo deu errado. Tente novamente."
+  },
+  "preview": {
+    "title": "Item da biblioteca",
+    "loading": "Carregando o item…",
+    "loadFailed": "Não foi possível carregar este item. Verifique sua conexão e tente novamente.",
+    "notFound": "Este item da biblioteca não existe ou foi excluído.",
+    "pending": "Aguardando o arquivo. Se o envio não terminou, exclua este item e envie o arquivo novamente.",
+    "extracting": "O texto está sendo lido. Esta página é atualizada quando estiver pronto.",
+    "failed": "Não foi possível ler o texto.",
+    "download": "Baixar o original",
+    "newTab": "(abre em uma nova aba)",
+    "retry": "Ler novamente",
+    "edit": "Editar detalhes",
+    "delete": "Excluir",
+    "mentionHint": "Digite {{slug}} no assistente para incluir este documento em um chat."
+  },
+  "details": {
+    "none": "Nenhum",
+    "file": "Arquivo",
+    "pages": "Páginas",
+    "assistant": "Como o assistente o lê",
+    "native": "O próprio arquivo, quando é citado em um chat",
+    "passages": "Os trechos do texto que respondem à pergunta",
+    "added": "Adicionado",
+    "changed": "Última alteração",
+    "byOn": "{{name}}, {{date}}"
+  },
+  "edit": {
+    "label": "Editar os detalhes do item",
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "reload": "Recarregar"
+  },
+  "text": {
+    "title": "Texto",
+    "loading": "Carregando o texto…",
+    "loadFailed": "Não foi possível carregar o texto. Tente novamente.",
+    "empty": "Nenhum texto foi encontrado nesta página.",
+    "pagesLabel": "Páginas do texto",
+    "pageOf": "Página {{current, number}} de {{total, number}}",
+    "partOf": "Parte {{current, number}} de {{total, number}}",
+    "previous": "Anterior",
+    "next": "Próxima",
+    "truncated": "Este documento é muito longo: só a primeira parte foi lida."
+  },
+  "delete": {
+    "title": "Excluir este item da biblioteca?",
+    "message": "“{{title}}” será excluído permanentemente, com o arquivo e o texto. Os chats que o citaram mantêm o que disseram.",
+    "confirm": "Excluir"
+  }
+}
