@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [7.58.00] - 2026-11-19
+## [7.58.00] - 2026-11-20
 
 **Choose the model an engineering agent runs on**, for Kiro and for the native harness: one choice per role (Auto,
 Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for a whole run from Run now or a flow's Start a run
@@ -80,6 +80,9 @@ Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for 
   text, and a test's unreachable line is gone. Three are recorded as false positives with their reasons
   (`scripts/codeql-summary.mjs`): the learning loop's settings default, the unit runner's traverse-only `0o711`
   socket directory, and the namespaces test copying the image's layout.
+
+### Fixed
+
 - No hidden field is `__proto__`, `constructor` or `prototype` (the names the widget never fills): the API's form
   validation (`shared/forms_v2.py`) refuses them with a 400, "‹id› is a reserved name; choose another", the
   builder's id check says the same, and an AI draft renames one (`constructor_field`). A form saved earlier with
@@ -202,6 +205,9 @@ person's. Merging it stays the upstream maintainers'
   one-click link needs nothing): its callback URL (`https://<domain>/agents/connections/github/authorized`) added on
   GitHub, a new client secret, and **Set the App's OAuth client** under Agents → Connections
   ([deployment.md](docs/deployment.md#the-github-user-authorizations-return-75700)).
+- **Test responses and access (Security above):** from 7.55.00, when form test mode came in, a form's Results,
+  Responses and CSV showed its test responses, testers' contact answers included, to a caller denied the
+  `feedback_form` source or limited to other categories; upgrading closes it. Nothing to migrate.
 - **Needs a live check:** whether GitHub accepts the automatic open with a user token of an App that is installed on
   the fork but not on the upstream (its documentation suggests not); a 403 keeps the one-click link, saying so.
 
