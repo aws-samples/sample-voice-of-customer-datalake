@@ -119,6 +119,17 @@ class TestTheValidationMatrix:
         change(form)
         _refused(form, fragment)
 
+    @pytest.mark.parametrize('reserved', ['__proto__', 'constructor', 'prototype'])
+    def test_a_name_the_widget_never_fills_is_no_hidden_fields_id(self, reserved):
+        """7.58.00: in the widget's script objects these are the prototype's, so the link and the page never fill one;
+        no form declares one (``__proto__``, which the id's pattern refuses anyway, is named as reserved too)."""
+        form = _form()
+        form['hidden_fields'] = [{'id': 'user_id'}, {'id': reserved}]
+        _refused(form, f'hidden_fields[1].id "{reserved}" is a reserved name; choose another')
+        # (a name that only begins like one is any other id)
+        form['hidden_fields'] = [{'id': f'{reserved.strip("_")}_id'}]
+        assert fv2.validate_definition(form)['hidden_fields'] == [{'id': f'{reserved.strip("_")}_id'}]
+
     @pytest.mark.parametrize(('question', 'fragment'), [
         (_choice(options=[]), 'options must be a list of 1 to 50'),
         (_choice(options=[{'code': f'c{n}', 'label': {'en': 'x'}} for n in range(51)]), '1 to 50'),

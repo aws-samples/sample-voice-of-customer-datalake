@@ -1,7 +1,8 @@
 /**
  * @fileoverview The inline row that adds or renames a hidden field (UX §6): an ID checked as you type
- * (`^[a-z][a-z0-9_]{0,39}$`, and not used twice in the form), an optional label, focus on the ID. Once the form has
- * a real response the ID is locked (`Lock`, "Responses are stored under this id.") and only the label changes.
+ * (`^[a-z][a-z0-9_]{0,39}$`, no reserved name, and not used twice in the form), an optional label, focus on the ID.
+ * Once the form has a real response the ID is locked (`Lock`, "Responses are stored under this id.") and only the
+ * label changes.
  *
  * @module pages/FeedbackForms/tabs/hidden/HiddenFieldEditor
  */
@@ -12,12 +13,13 @@ import { CircleX, Lock } from 'lucide-react'
 import { InfoTip } from '../../../../components/Tooltip/InfoTip'
 import type { HiddenField } from '../../model/formsV2'
 import { hiddenIdProblem } from './hiddenIds'
+import type { HiddenIdProblem } from './hiddenIds'
 
 function IdField({ id, value, locked, problem, inputRef, onChange }: Readonly<{
   id: string
   value: string
   locked: boolean
-  problem: 'invalidHiddenId' | 'duplicateHiddenId' | null
+  problem: HiddenIdProblem | null
   inputRef: RefObject<HTMLInputElement | null>
   onChange: (value: string) => void
 }>) {
@@ -33,7 +35,7 @@ function IdField({ id, value, locked, problem, inputRef, onChange }: Readonly<{
         onChange={(event) => onChange(event.target.value)} />
       {problem !== null && (
         <p id={`${id}-problem`} className="mt-1 flex items-start gap-1 text-[12px] text-danger">
-          <CircleX size={13} className="mt-0.5 shrink-0" aria-hidden="true" />{t(`problems.${problem}`)}
+          <CircleX size={13} className="mt-0.5 shrink-0" aria-hidden="true" />{t(`problems.${problem}`, { id: value })}
         </p>
       )}
     </div>

@@ -156,6 +156,7 @@ def test_the_runs_manifest_names_its_agents_sessions_models_cost_and_transcripts
     index = f'ws/default/transcripts-index/01JD3R4NZXQ7Y2W8K4M6P9FLOW/2025-11-16/{RUN_ID}.json'
     assert json.loads(bucket.objects[index])['manifest'] == key
     # Seen again (a resumed run that ends): its next version, and the index entry kept as it was.
-    assert manifest.write(bucket, built) == (f'ws/default/runs/{RUN_ID}/_manifest/v0002.json', False)
+    written = manifest.write(bucket, built)
+    assert written == (f'ws/default/runs/{RUN_ID}/_manifest/v0002.json', False)
     # A run without a flow is indexed apart.
     assert manifest.index_key('', '2025-11-16', RUN_ID).startswith('ws/default/transcripts-index/no-flow/')

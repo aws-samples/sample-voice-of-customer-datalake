@@ -69,7 +69,7 @@ const TEMPLATES = {
 };
 
 /** The versions of each scope (oldest first), by scope ('' shared) and role. */
-const SCOPES = {
+const SCOPE_SEED = {
   '': {
     fixer: [
       version(1, {
@@ -122,6 +122,17 @@ const SCOPES = {
     ],
   },
 };
+/** The versions of each scope by scope and role, as Maps: a request's connection and role are keys, never property
+ * names of an object (CodeQL js/remote-property-injection). */
+const SCOPES = new Map(Object.entries(SCOPE_SEED).map(([scope, byRole]) => [scope, new Map(Object.entries(byRole))]));
+
+/** A scope's versions of a role, made when missing (the one place that writes SCOPES). */
+function versionsIn(connection, role) {
+  if (!SCOPES.has(connection)) SCOPES.set(connection, new Map());
+  const scope = SCOPES.get(connection);
+  if (!scope.has(role)) scope.set(role, []);
+  return scope.get(role);
+}
 
 /** Each shipped version's scorecard on `storefront`, by its session label: the sessions run the shipped skills
  * (fixer@1, coordinator@2 and the coordinator@1 it replaced), never the store's versions above, whose numbers would
@@ -153,11 +164,11 @@ function templateOf(role, versions) {
 }
 
 function roles(connection) {
-  const scope = SCOPES[connection] ?? {};
+  const scope = SCOPES.get(connection) ?? new Map();
   return [200, {
     connection,
-    roles: ROLES.filter((role) => scope[role]).map((role) => {
-      const versions = scope[role];
+    roles: ROLES.filter((role) => scope.has(role)).map((role) => {
+      const versions = scope.get(role);
       const latest = versions.at(-1);
       const current = versions.filter((v) => v.status === 'accepted').at(-1)?.version ?? 0;
       return { role, current_version: current, versions: versions.length,
@@ -190,7 +201,7 @@ function templateDiff(current, template) {
 function templateUpdate(connection, role) {
   const template = TEMPLATES[role];
   if (!template) return [404, { error: `the ${role} role has no template` }];
-  const versions = SCOPES[connection]?.[role] ?? [];
+  const versions = SCOPES.get(connection)?.get(role) ?? [];
   const current = versions.filter((v) => v.status === 'accepted').at(-1);
   return [200, { connection, role, template: templateOf(role, versions), current_version: current?.version ?? 0,
     record: template.record, diff: templateDiff(current, template.record) }];
@@ -200,8 +211,7 @@ function templateUpdate(connection, role) {
 function adopt(connection, role, body) {
   const template = TEMPLATES[role];
   if (!template) return [404, { error: `the ${role} role has no template` }];
-  SCOPES[connection] ??= {};
-  const versions = (SCOPES[connection][role] ??= []);
+  const versions = versionsIn(connection, role);
   const current = versions.filter((v) => v.status === 'accepted').at(-1);
   if (body.expected_current !== (current?.version ?? 0)) return changed('the current version moved');
   if (body.template_version !== template.version) return changed(`the template is v${template.version} now`);
@@ -219,7 +229,7 @@ function adopt(connection, role, body) {
 }
 
 function history(connection, role, page) {
-  const versions = [...(SCOPES[connection]?.[role] ?? [])].reverse();
+  const versions = [...(SCOPES.get(connection)?.get(role) ?? [])].reverse();
   let before = Number.POSITIVE_INFINITY;
   if (page !== '') {
     const parts = Buffer.from(page, 'base64url').toString().split('#');
@@ -233,12 +243,12 @@ function history(connection, role, page) {
   const current = versions.find((v) => v.status === 'accepted')?.version ?? 0;
   const more = below.length > PAGE ? encode(`${connection}#${role}#${shown.at(-1).version}`) : null;
   return [200, { connection, role, current_version: current, versions: shown.map(line), next_page: more,
-    template: templateOf(role, SCOPES[connection]?.[role] ?? []) }];
+    template: templateOf(role, SCOPES.get(connection)?.get(role) ?? []) }];
 }
 
 function detail(connection, role, raw) {
   if (!VERSION.test(raw)) return [400, { error: 'a version is a whole number from 1 to 999999' }];
-  const found = SCOPES[connection]?.[role]?.find((v) => v.version === Number(raw));
+  const found = SCOPES.get(connection)?.get(role)?.find((v) => v.version === Number(raw));
   return found ? [200, { connection, role, version: found }] : [404, { error: 'no such skill version' }];
 }
 
@@ -350,7 +360,7 @@ function rollBack(connection, role, versions, target, body, reason) {
 }
 
 function act(connection, role, raw, name, body) {
-  const versions = SCOPES[connection]?.[role] ?? [];
+  const versions = SCOPES.get(connection)?.get(role) ?? [];
   const target = VERSION.test(raw) ? versions.find((v) => v.version === Number(raw)) : undefined;
   if (!VERSION.test(raw)) return [400, { error: 'a version is a whole number from 1 to 999999' }];
   if (!target) return [404, { error: 'no such skill version' }];
@@ -390,10 +400,10 @@ function templateRoute(req, res, url, send, shared, match) {
 
 /** The version a scope runs of a role: its own current one, else (a connection) the shared skill's. */
 function inUseOf(connection, role) {
-  const own = SCOPES[connection]?.[role] ?? [];
+  const own = SCOPES.get(connection)?.get(role) ?? [];
   const current = currentOf(own);
   if (current !== 0 || connection === '') return { shared: connection === '', version: current, versions: own };
-  const sharedVersions = SCOPES['']?.[role] ?? [];
+  const sharedVersions = SCOPES.get('')?.get(role) ?? [];
   return { shared: true, version: currentOf(sharedVersions), versions: sharedVersions };
 }
 
@@ -416,8 +426,7 @@ function propose(connection, role, body) {
   const before = base?.record ?? TEMPLATES[role]?.record ?? record([], []);
   const next = { ...before, instructions: body.instructions, examples: body.examples };
   if (JSON.stringify(next) === JSON.stringify(before)) return [400, { error: 'the version changes nothing: edit its instructions or its examples' }];
-  SCOPES[connection] ??= {};
-  const versions = (SCOPES[connection][role] ??= []);
+  const versions = versionsIn(connection, role);
   const at = new Date().toISOString();
   const proposed = version(versions.length + 1, {
     status: 'proposed', summary, why: why(typeof body.reason === 'string' ? body.reason : ''), proposed_by: 'sub-admin-demo',

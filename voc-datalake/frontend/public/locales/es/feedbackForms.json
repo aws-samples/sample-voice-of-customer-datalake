@@ -89,6 +89,7 @@
     "invalidEndingId": "El id de una pantalla final empieza por end_ y usa minúsculas, dígitos y _.",
     "duplicateHiddenId": "Ya se usa en este formulario.",
     "invalidHiddenId": "Empieza por una letra; usa minúsculas, dígitos y _.",
+    "reservedHiddenId": "{{id}} es un nombre reservado; elige otro.",
     "duplicateCode": "Dos opciones tienen el código {{code}}.",
     "reservedCode": "Este código está reservado para las filas Otro y Ninguna.",
     "invalidCode": "Un código usa minúsculas, dígitos y _, hasta 40 caracteres.",

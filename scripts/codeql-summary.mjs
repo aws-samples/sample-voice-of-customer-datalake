@@ -73,6 +73,21 @@ const ACCEPTED = [
     prefix: 'voc-datalake/lambda/shared/mcp_oauth_jwt.py',
     reason: 'false positive: `fetch` is a dataclass FIELD defaulting to the plain function `_fetch_jwks`, stored on the instance, so `self.fetch(url)` passes exactly one argument',
   },
+  {
+    rule: 'py/call/wrong-arguments',
+    prefix: 'voc-datalake/lambda/engineering/learning/loop.py',
+    reason: 'false positive: `settings` is a dataclass FIELD of LearningLoop defaulting to the plain function `_default_settings(_run_id)`, stored on the instance, so `self.settings(run_id)` passes exactly its one argument (learning/test/test_loop.py builds the loop without settings and runs it)',
+  },
+  {
+    rule: 'py/overly-permissive-file',
+    prefix: 'voc-datalake/lambda/engineering/runtime/unit_runner.py',
+    reason: 'the namespaces\' socket directory is 0o711, root\'s: others may only traverse it (no read, no write), so `unit` and `code` reach their own 0600 sockets (peer uid checked, SO_PEERCRED); the query counts the world execute bit as "readable" (WeakFilePermissions.ql access(1))',
+  },
+  {
+    rule: 'py/overly-permissive-file',
+    prefix: 'voc-datalake/lambda/engineering/runtime/test/test_engineering_namespaces.py',
+    reason: 'a temporary copy of the image\'s layout for the as-the-image namespace test: 0o755 as /, 0o2755 as /work (images/common/install-base.sh), so `unit` and `code` traverse it as in the image; skipped off the image',
+  },
 ];
 
 function acceptedBy(ruleId, file) {

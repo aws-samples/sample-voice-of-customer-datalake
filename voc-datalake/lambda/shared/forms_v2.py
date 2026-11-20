@@ -82,6 +82,10 @@ QUESTION_ID: Final = re.compile(r'q_[a-z0-9_]{1,40}')
 OPTION_CODE: Final = re.compile(r'[a-z0-9_]{1,40}')
 HIDDEN_ID: Final = re.compile(r'[a-z][a-z0-9_]{0,39}')
 ENDING_ID: Final = re.compile(r'end_[a-z0-9_]{1,40}')
+#: Names no hidden field may take: in the widget's script objects they are the object's own machinery (its
+#: prototype), so the widget never fills them. A form stored before 7.58.00 with one reads as it is; only a save of
+#: its definition refuses it.
+RESERVED_HIDDEN_IDS: Final = frozenset({'__proto__', 'constructor', 'prototype'})
 
 #: Reserved choice codes: the "Other" answer and the exclusive "None of these" (multi only), each reserved only
 #: while the question enables it. A rule names them like any option code.
@@ -621,6 +625,8 @@ def _hidden_fields(value: object) -> list[dict[str, str]]:
         source = _object(entry, at)
         _closed(source, {'id', 'label'}, at)
         hid, label = source.get('id'), source.get('label')
+        if isinstance(hid, str) and hid in RESERVED_HIDDEN_IDS:
+            raise _fail(f'{at}.id "{hid}" is a reserved name; choose another')
         if not isinstance(hid, str) or not HIDDEN_ID.fullmatch(hid):
             raise _fail(f'{at}.id must match [a-z][a-z0-9_]{{0,39}}')
         if hid in seen:

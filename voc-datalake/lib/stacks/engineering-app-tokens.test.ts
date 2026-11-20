@@ -165,11 +165,11 @@ describe('the SPA\'s form-action and voc-agents\' TTL (VocCoreStack)', () => {
     synths.set('on', synthCoreTemplate({ engineeringAgents: true }));
   }, SYNTH_TIMEOUT_MS * 2);
   const template = (key: string): Template => synths.get(key) ?? synthCoreTemplate();
-  /** The SPA's CSP (the one whose connect-src names Cognito), its form-action directive. */
+  /** The SPA's CSP (core-cdn.ts's SecurityHeadersPolicy, found by its logical id), its form-action directive. */
   const formAction = (key: string): string => {
-    const spa = Object.values(template(key).findResources('AWS::CloudFront::ResponseHeadersPolicy'))
-      .map((policy) => JSON.stringify(policy)).find((policy) => policy.includes('amazoncognito.com')) ?? '';
-    return /form-action ([^;]*);/u.exec(spa)?.[1] ?? '';
+    const [, policy] = Object.entries(template(key).findResources('AWS::CloudFront::ResponseHeadersPolicy'))
+      .find(([logicalId]) => logicalId.startsWith('SecurityHeadersPolicy')) ?? [];
+    return /form-action ([^;]*);/u.exec(JSON.stringify(policy ?? {}))?.[1] ?? '';
   };
 
   it('lets the SPA\'s forms post to github.com alone besides itself, only with the engineering agents on', () => {

@@ -48,15 +48,19 @@ import ShareTab from '../tabs/ShareTab'
 import ResultsTab from '../results/ResultsTab'
 import SettingsTab from '../tabs/SettingsTab'
 
-const TAB_CONTENT: Readonly<Record<BuilderTab, () => ReactNode>> = {
-  questions: () => <QuestionsTab />,
-  flow: () => <FlowTab />,
-  languages: () => <LanguagesTab />,
-  'hidden-fields': () => <HiddenFieldsTab />,
-  test: () => <TestTab />,
-  share: () => <ShareTab />,
-  results: () => <ResultsTab />,
-  settings: () => <SettingsTab />,
+/** The active tab's content: a switch over the tab (the address's, checked by builderPaths.ts), never a method read off
+ * an object by a name from the address. */
+function TabContent({ tab }: Readonly<{ tab: BuilderTab }>): ReactNode {
+  switch (tab) {
+    case 'questions': return <QuestionsTab />
+    case 'flow': return <FlowTab />
+    case 'languages': return <LanguagesTab />
+    case 'hidden-fields': return <HiddenFieldsTab />
+    case 'test': return <TestTab />
+    case 'share': return <ShareTab />
+    case 'results': return <ResultsTab />
+    case 'settings': return <SettingsTab />
+  }
 }
 
 /** The one-time notice of a migrated v1 form (UX §3.6), until its first save. */
@@ -120,7 +124,7 @@ function BuilderSession({ loaded, handoff, tab, rest, onCreated, formId }: Sessi
             <LanguageConfirmNotice />
             <AiDraftBanner />
             <BuilderTabs active={active} onSelect={(next) => ui.go(next)} />
-            <div className={clsx(fullHeight && 'min-h-0 flex-1')}>{TAB_CONTENT[active]()}</div>
+            <div className={clsx(fullHeight && 'min-h-0 flex-1')}><TabContent tab={active} /></div>
             <BuilderActionBar />
           </div>
           <ImproveSheet isOpen={improving} onClose={() => setImproving(false)} />

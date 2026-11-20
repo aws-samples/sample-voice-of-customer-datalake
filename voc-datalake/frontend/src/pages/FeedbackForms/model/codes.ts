@@ -5,12 +5,15 @@
  * A code is made from its option's primary-language label when the option is created (UX §4.1): lower case, accents
  * folded (ą→a, ł→l, ß→ss, é→e…), anything else `_`, repeats collapsed, trimmed to 40 characters; a clash gets `_2`,
  * `_3`. `other` and `none` are reserved for the Other and None rows (D3). The server makes the AI's codes the same way.
+ * No hidden field is `__proto__`, `constructor` or `prototype` (7.58.00, shared/forms_v2.py `RESERVED_HIDDEN_IDS`):
+ * the widget never fills those.
  *
  * @module pages/FeedbackForms/model/codes
  */
 
 const MAX_CODE = 40
 const RESERVED_CODES: readonly string[] = ['other', 'none']
+const RESERVED_HIDDEN_IDS: readonly string[] = ['__proto__', 'constructor', 'prototype']
 
 const CODE = /^[a-z0-9_]{1,40}$/
 const QUESTION_ID = /^q_[a-z0-9_]{1,40}$/
@@ -22,6 +25,7 @@ export const isReservedCode = (code: string): boolean => RESERVED_CODES.includes
 export const isValidQuestionId = (id: string): boolean => QUESTION_ID.test(id)
 export const isValidEndingId = (id: string): boolean => ENDING_ID.test(id)
 export const isValidHiddenId = (id: string): boolean => HIDDEN_ID.test(id)
+export const isReservedHiddenId = (id: string): boolean => RESERVED_HIDDEN_IDS.includes(id)
 
 /** Letters NFD does not split into a base and a mark. */
 const SPECIAL_FOLDS: Readonly<Record<string, string>> = {

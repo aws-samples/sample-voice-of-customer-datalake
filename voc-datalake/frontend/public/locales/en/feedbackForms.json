@@ -89,6 +89,7 @@
     "invalidEndingId": "An ending id starts with end_ and uses lower-case letters, digits and _.",
     "duplicateHiddenId": "Already used in this form.",
     "invalidHiddenId": "Start with a letter; use lower-case letters, digits and _.",
+    "reservedHiddenId": "{{id}} is a reserved name; choose another.",
     "duplicateCode": "Two options have the code {{code}}.",
     "reservedCode": "This code is reserved for the Other and None rows.",
     "invalidCode": "A code uses lower-case letters, digits and _, up to 40 characters.",

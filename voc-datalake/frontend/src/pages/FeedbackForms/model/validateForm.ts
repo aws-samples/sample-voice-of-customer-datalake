@@ -19,7 +19,7 @@ import { LIMITS, isChoice } from './formsV2'
 import { keptLiveTheme, palettePairs, paletteOf, shownPalettes } from '../theme/contrast'
 import type { PairId } from '../theme/contrast'
 import { hasText, textIn } from './i18nText'
-import { isReservedCode, isValidCode, isValidEndingId, isValidHiddenId, isValidQuestionId } from './codes'
+import { isReservedCode, isReservedHiddenId, isValidCode, isValidEndingId, isValidHiddenId, isValidQuestionId } from './codes'
 import { ruleProblems } from './ruleProblems'
 import type { ProblemSeverity, RuleProblemCode } from './ruleProblems'
 import { formPaths } from './paths'
@@ -29,7 +29,7 @@ type FormProblemCode = RuleProblemCode
   | 'noQuestions' | 'tooManyQuestions' | 'noEndings' | 'tooManyEndings' | 'tooManyHidden'
   | 'headlineEmpty' | 'optionEmpty' | 'endingTitleEmpty' | 'welcomeTitleEmpty' | 'consentLabelEmpty'
   | 'duplicateQuestionId' | 'invalidQuestionId' | 'duplicateEndingId' | 'invalidEndingId'
-  | 'duplicateHiddenId' | 'invalidHiddenId' | 'duplicateCode' | 'reservedCode' | 'invalidCode'
+  | 'duplicateHiddenId' | 'invalidHiddenId' | 'reservedHiddenId' | 'duplicateCode' | 'reservedCode' | 'invalidCode'
   | 'noOptions' | 'tooManyOptions' | 'minOverMax' | 'maxOverChoices' | 'minOverChoices'
   | 'buttonUrl' | 'buttonLabelEmpty' | 'ctaUrl' | 'contactNoField' | 'contactTwice' | 'maxCharsRange' | 'facesRange'
   | 'aiAddress' | 'missingTranslations' | 'unreachableQuestion' | 'unreachableEnding' | 'chipsLong' | 'dropdownFew'
@@ -177,7 +177,10 @@ function hiddenProblems(form: FormV2): FormProblem[] {
   const found: FormProblem[] = form.hidden_fields.length > LIMITS.hiddenFields ? [formProblem('error', 'tooManyHidden', { kind: 'hidden' })] : []
   form.hidden_fields.forEach((field) => {
     const at: ProblemLocation = { kind: 'hidden', id: field.id }
-    if (!isValidHiddenId(field.id)) found.push(formProblem('error', 'invalidHiddenId', at, { id: field.id }))
+    // (a reserved name, which the widget never fills, as the server refuses it: a form stored with one before
+    // 7.58.00 still opens, and asks for another name before its next save)
+    if (isReservedHiddenId(field.id)) found.push(formProblem('error', 'reservedHiddenId', at, { id: field.id }))
+    else if (!isValidHiddenId(field.id)) found.push(formProblem('error', 'invalidHiddenId', at, { id: field.id }))
     else if (ids.has(field.id)) found.push(formProblem('error', 'duplicateHiddenId', at, { id: field.id }))
     ids.add(field.id)
   })

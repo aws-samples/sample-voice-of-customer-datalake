@@ -240,7 +240,7 @@ class _Ids:
         body = next((s for s in (slug(str(raw or '').removeprefix(self.prefix)), *(slug(t) for t in texts)) if s),
                     self.fallback)
         if body in self.reserved:
-            body = f'{body}_option'
+            body = f'{body}_{self.fallback}'
         if self.letter_first and not body[0].isalpha():
             body = f'h_{body}'
         room = 40 - len(self.prefix)
@@ -349,7 +349,7 @@ def _sanitize_endings(form: Mapping[str, Any], language: str, warnings: list[str
 
 
 def _sanitize_hidden(form: Mapping[str, Any]) -> list[dict[str, Any]]:
-    ids = _Ids('', fv2.HIDDEN_ID, 'field', letter_first=True)
+    ids = _Ids('', fv2.HIDDEN_ID, 'field', fv2.RESERVED_HIDDEN_IDS, letter_first=True)
     return [{'id': ids.make(raw.get('id'), raw.get('label')),
              **({'label': raw['label']} if isinstance(raw.get('label'), str) else {})}
             for raw in form.get('hidden_fields') or [] if isinstance(raw, dict)]

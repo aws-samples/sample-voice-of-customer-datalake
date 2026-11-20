@@ -950,7 +950,10 @@
     if (onOwnPage(formId) && typeof URLSearchParams === 'function') {
       var params = new URLSearchParams(LOAD_QUERY);
       params.forEach(function(value, key) {
-        if (key.indexOf('hf_') === 0) out.hidden[key.slice(3)] = value;
+        // (a hidden field's id only, never a name that reaches the object's prototype: the link only fills fields)
+        var id = key.slice(3);
+        if (key.indexOf('hf_') === 0 && HIDDEN_ID.test(id) && id !== '__proto__' && id !== 'constructor' &&
+            id !== 'prototype') out.hidden[id] = value;
       });
       out.test = params.get('test');
       out.lang = params.get('lang');

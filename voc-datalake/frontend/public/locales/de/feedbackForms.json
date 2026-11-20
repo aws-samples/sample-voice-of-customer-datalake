@@ -89,6 +89,7 @@
     "invalidEndingId": "Eine Abschluss-ID beginnt mit end_ und enthält Kleinbuchstaben, Ziffern und _.",
     "duplicateHiddenId": "Wird in diesem Formular bereits verwendet.",
     "invalidHiddenId": "Mit einem Buchstaben beginnen; Kleinbuchstaben, Ziffern und _ verwenden.",
+    "reservedHiddenId": "{{id}} ist ein reservierter Name; einen anderen wählen.",
     "duplicateCode": "Zwei Optionen haben den Code {{code}}.",
     "reservedCode": "Dieser Code ist für die Zeilen Sonstiges und Keine reserviert.",
     "invalidCode": "Ein Code enthält Kleinbuchstaben, Ziffern und _, höchstens 40 Zeichen.",

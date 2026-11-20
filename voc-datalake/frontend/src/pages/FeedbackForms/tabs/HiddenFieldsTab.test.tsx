@@ -30,6 +30,16 @@ describe('HiddenFieldsTab: declare hidden fields, then copy the link or code tha
     expect(screen.getByText('Already used in this form.')).toBeInTheDocument()
   })
 
+  it('refuses a name the widget never fills, as the server does, and adds nothing', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<HiddenFieldsTab />, withHidden())
+    await user.click(screen.getByRole('button', { name: 'Add field' }))
+    await user.type(screen.getByLabelText('ID'), 'constructor')
+    expect(screen.getByText('constructor is a reserved name; choose another.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    expect(harness.probe.current?.form.hidden_fields).toStrictEqual(withHidden().hidden_fields)
+  })
+
   it('adds a field with its label', async () => {
     const user = userEvent.setup()
     const harness = renderWithDraft(<HiddenFieldsTab />, withHidden())

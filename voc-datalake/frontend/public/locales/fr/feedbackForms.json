@@ -89,6 +89,7 @@
     "invalidEndingId": "L’identifiant d’un écran de fin commence par end_ et utilise des minuscules, des chiffres et _.",
     "duplicateHiddenId": "Déjà utilisé dans ce formulaire.",
     "invalidHiddenId": "Commencez par une lettre ; utilisez des minuscules, des chiffres et _.",
+    "reservedHiddenId": "{{id}} est un nom réservé ; choisissez-en un autre.",
     "duplicateCode": "Deux options ont le code {{code}}.",
     "reservedCode": "Ce code est réservé aux lignes Autre et Aucune.",
     "invalidCode": "Un code utilise des minuscules, des chiffres et _, jusqu’à 40 caractères.",

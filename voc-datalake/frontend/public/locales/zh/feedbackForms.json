@@ -89,6 +89,7 @@
     "invalidEndingId": "结束页 ID 以 end_ 开头，只能使用小写字母、数字和 _。",
     "duplicateHiddenId": "此表单中已使用该 ID。",
     "invalidHiddenId": "以字母开头；只能使用小写字母、数字和 _。",
+    "reservedHiddenId": "{{id}} 是保留名称；请另选一个。",
     "duplicateCode": "有两个选项的代码都是 {{code}}。",
     "reservedCode": "此代码保留给“其他”和“以上都不是”行使用。",
     "invalidCode": "代码只能使用小写字母、数字和 _，最多 40 个字符。",

@@ -89,6 +89,7 @@
     "invalidEndingId": "Um ID de final começa com end_ e usa letras minúsculas, dígitos e _.",
     "duplicateHiddenId": "Já usado neste formulário.",
     "invalidHiddenId": "Comece com uma letra; use letras minúsculas, dígitos e _.",
+    "reservedHiddenId": "{{id}} é um nome reservado; escolha outro.",
     "duplicateCode": "Duas opções têm o código {{code}}.",
     "reservedCode": "Este código é reservado para as linhas Outro e Nenhuma.",
     "invalidCode": "Um código usa letras minúsculas, dígitos e _, com até 40 caracteres.",

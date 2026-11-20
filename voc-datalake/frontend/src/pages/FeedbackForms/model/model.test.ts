@@ -94,6 +94,17 @@ describe('validation (UX §3.6, §5.5)', () => {
     expect(codesOf(formOf([bad]))).toStrictEqual(expect.arrayContaining(['headlineEmpty', 'reservedCode', 'duplicateCode']))
   })
 
+  it('reads a form stored with a reserved hidden field id as it is, and refuses the id before it is saved', () => {
+    // (the names the widget never fills, 7.58.00; a name that only contains one is any other id)
+    const ids = ['__proto__', 'constructor', 'prototype', 'constructor_id']
+    const stored = parseFormV2(toWireForm(sampleForm({ hidden_fields: ids.map((id) => ({ id })) })))
+    expect(stored?.hidden_fields.map((field) => field.id)).toStrictEqual(ids)
+    const problems = validateForm(stored ?? sampleForm()).filter((problem) => problem.at.kind === 'hidden')
+    expect(problems.map((problem) => [problem.code, problem.params.id])).toStrictEqual([
+      ['reservedHiddenId', '__proto__'], ['reservedHiddenId', 'constructor'], ['reservedHiddenId', 'prototype'],
+    ])
+  })
+
   it('refuses min over max, and max over the choices', () => {
     const multi = choice({ type: 'multi_select', min: 3, max: 2 })
     const tooMany = choice({ type: 'multi_select', max: 5 })

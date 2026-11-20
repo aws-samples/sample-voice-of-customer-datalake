@@ -3,7 +3,7 @@
  * boundary: a malformed `stats` reads as null and a malformed row costs only itself.
  */
 import { describe, expect, it } from 'vitest'
-import { parseFormStatsResponse } from './feedbackFormStatsSchema'
+import { normalizeFormStatsMap, parseFormStatsResponse } from './feedbackFormStatsSchema'
 
 const stats = { total_submissions: 12, avg_rating: 4.5, rating_count: 10 }
 
@@ -24,5 +24,22 @@ describe('parseFormStatsResponse', () => {
   it('reads a malformed or missing stats object as null', () => {
     expect(parseFormStatsResponse({ stats: { total_submissions: 'many' } })).toStrictEqual({ stats: null })
     expect(parseFormStatsResponse(null)).toStrictEqual({ stats: null })
+  })
+
+  it('keeps the latest response time and each channel\'s, reading a malformed one as absent', () => {
+    const at = '2026-11-19T08:00:00Z'
+    expect(parseFormStatsResponse({ stats: { ...stats, last_response_at: at, channels: { link: at, script: 7 } } }).stats)
+      .toStrictEqual({ ...stats, last_response_at: at, channels: { link: at, script: undefined } })
+    expect(parseFormStatsResponse({ stats: { ...stats, last_response_at: 12, channels: 'all' } }).stats)
+      .toStrictEqual({ ...stats, last_response_at: undefined, channels: undefined })
+  })
+})
+
+describe('normalizeFormStatsMap', () => {
+  it('keeps each card\'s well-formed stats, drops a malformed entry (that card asks for its own), and no map is null', () => {
+    expect(normalizeFormStatsMap({ f1: stats, f2: { total_submissions: -1 } })).toStrictEqual({ f1: stats })
+    expect(normalizeFormStatsMap({})).toStrictEqual({})
+    expect([normalizeFormStatsMap(null), normalizeFormStatsMap(['f1']), normalizeFormStatsMap('stats')])
+      .toStrictEqual([null, null, null])
   })
 })

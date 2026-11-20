@@ -80,7 +80,7 @@ is a version 1 body: its fields (`title`, `question`, `rating_enabled`…) are m
 | `languages` | The primary plus any translations |
 | `welcome` | `{enabled, title?, description?, button_label?}` (the title is required while it is enabled) |
 | `questions` | 1 to 30 questions ([below](#questions)) |
-| `hidden_fields` | At most 20 `{id, label?}`: `id` matches `^[a-z][a-z0-9_]{0,39}$`, `label` at most 64 characters |
+| `hidden_fields` | At most 20 `{id, label?}`: `id` matches `^[a-z][a-z0-9_]{0,39}$` and is not `constructor` or `prototype` ([Hidden fields](#hidden-fields)), `label` at most 64 characters |
 | `endings` | 1 to 5 `{id, title, description?, button?: {label, url}}`: `id` matches `^end_[a-z0-9_]{1,40}$` |
 | `settings.test` | `{link_enabled, record: tag \| drop}` ([Test mode](#test-mode)); the token is issued by its own route |
 | `theme` | Colours and radius (see [Theming](#theming)) |
@@ -183,6 +183,10 @@ response as `metadata.form_hidden.<id>`, is a Results filter and a Responses col
 dimension ([dimensions.md](dimensions.md)) when the id is that dimension's key and the value is one of its
 values (after the form's `dimension_defaults` and the embed's `dimensions`, which win). Pass ids, not personal
 data.
+
+No hidden field is `__proto__`, `constructor` or `prototype` (7.58.00): the widget never fills those names, so the
+builder and the API refuse them ("‹id› is a reserved name; choose another", a 400). A form saved earlier with one
+still opens and is served as it is; the next save that changes its definition asks for another name.
 
 ### Languages
 

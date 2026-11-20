@@ -40,9 +40,9 @@ def test_a_rust_only_repository_gets_the_rust_pack_alone_and_no_node() -> None:
     assert _packs(files) == ['rust']
     repo = repo_of(files)
     gate = plan(detect(PACKS, repo), repo)
-    assert dict(gate.needs.image) == {'rust': '1.99.1'}
-    assert 'registry.npmjs.org' not in gate.needs.network
-    assert 'static.rust-lang.org' in gate.needs.network
+    # (the rust pack's hosts alone, exactly: no node registry, and the toolchain host rustup fetches from)
+    assert (dict(gate.needs.image), gate.needs.network) == (
+        {'rust': '1.99.1'}, ('index.crates.io', 'static.crates.io', 'static.rust-lang.org'))
 
 
 def test_the_sandbox_layout_is_python_installed_from_requirements_dev_and_tested_with_pytest() -> None:

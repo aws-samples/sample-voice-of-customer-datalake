@@ -179,6 +179,11 @@ CUSTOM = 'voc_web_reviews-AbCdEf0123'
 PROFILE = 'voc_web_reviews-Zy9876XwVu'
 
 
+def _work_that_fails() -> None:
+    """The work inside a browser session, failing (a helper, so what follows its ``pytest.raises`` reads as reached)."""
+    raise RuntimeError('boom')
+
+
 class TestTheBrowserAndProfile:
     @pytest.mark.parametrize(('value', 'expected'), [(CUSTOM, CUSTOM), ('', 'aws.browser.v1'), (None, 'aws.browser.v1')])
     def test_start_and_stop_name_the_environments_browser(
@@ -218,7 +223,7 @@ class TestTheBrowserAndProfile:
         client = started_client()
         with pytest.raises(RuntimeError, match='boom'), \
                 browser_session(300, client=client, opener=Opened(), credentials=PASSED):
-            raise RuntimeError('boom')
+            _work_that_fails()
         client.save_browser_session_profile.assert_called_once()
         client.stop_browser_session.assert_called_once()
 

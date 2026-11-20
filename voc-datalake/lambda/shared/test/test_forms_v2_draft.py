@@ -125,6 +125,15 @@ class TestTheDraft:
         assert fv2.validate_definition({k: v for k, v in form.items() if k != 'name'})
         assert len(model.prompts) == 1
 
+    def test_a_hidden_field_the_widget_never_fills_is_renamed_not_repaired(self):
+        """7.58.00's reserved hidden-field ids: the model's ``constructor`` is made ``constructor_field`` here, so the
+        draft validates first time (no repair round)."""
+        model = FakeModel(_answer({**GOOD, 'hidden_fields': [{'id': 'constructor'}, {'id': 'prototype'},
+                                                             {'id': '__proto__'}]}))
+        result = d.draft(REQUEST, model)
+        assert (result['success'], [h['id'] for h in result['form']['hidden_fields']], len(model.prompts)) == (
+            True, ['constructor_field', 'prototype_field', 'proto'], 1)
+
     def test_addresses_that_are_not_https_are_dropped_with_a_warning(self):
         result = d.draft(REQUEST, FakeModel(_answer(GOOD)))
         assert 'url' not in result['form']['questions'][2]['cta']

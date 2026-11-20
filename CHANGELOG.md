@@ -70,6 +70,20 @@ Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for 
   and the runtime reads the row through one table helper (`engineering/settings.py`, `runtime/handler.py`), so the
   raw-access counts stay as they were; the Registry's Save model row is a `StickyActionBar`; and the cost rollup's
   test reads its concurrently started batches in any order (it depended on thread timing, before 7.58.00 too).
+- The coverage floor: 7.57.00's public-repository and fork code is tested to it (the token function's public
+  actions, a fork's upstream reads and readiness's fork ports: 97 %, 100 % and 86 %), and three SPA files are
+  back over 80 % and out of the baseline (the forms' stats schema, the step palette, the scraper editor's parts).
+- CodeQL's findings, all older than 7.58.00: the iframe page's `hf_<id>` link reads only a hidden field's id,
+  never a prototype's name, like the widget's other hidden values; the skills mock keeps its scopes in Maps; the
+  form builder renders its tab through a `switch`; three tests' asserts no longer have side effects, a rust
+  pack's test asserts its exact hosts, a CDK test finds the SPA's CSP by its logical id rather than a host in its
+  text, and a test's unreachable line is gone. Three are recorded as false positives with their reasons
+  (`scripts/codeql-summary.mjs`): the learning loop's settings default, the unit runner's traverse-only `0o711`
+  socket directory, and the namespaces test copying the image's layout.
+- No hidden field is `__proto__`, `constructor` or `prototype` (the names the widget never fills): the API's form
+  validation (`shared/forms_v2.py`) refuses them with a 400, "‹id› is a reserved name; choose another", the
+  builder's id check says the same, and an AI draft renames one (`constructor_field`). A form saved earlier with
+  one still reads and is served as it is; the next save that changes its definition asks for another name.
 
 ### Removed
 

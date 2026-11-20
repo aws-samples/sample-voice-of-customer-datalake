@@ -89,6 +89,7 @@
     "invalidEndingId": "終了画面IDは end_ で始め、小文字の英字、数字、_ を使います。",
     "duplicateHiddenId": "このフォームですでに使われています。",
     "invalidHiddenId": "英字で始め、小文字の英字、数字、_ を使ってください。",
+    "reservedHiddenId": "{{id}} は予約済みの名前です。別の名前を選んでください。",
     "duplicateCode": "2つの選択肢でコード {{code}} が使われています。",
     "reservedCode": "このコードは「その他」と「該当なし」の行用に予約されています。",
     "invalidCode": "コードには小文字の英字、数字、_ を40文字まで使えます。",

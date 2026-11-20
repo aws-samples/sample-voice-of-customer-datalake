@@ -93,6 +93,7 @@
     "invalidEndingId": "Identyfikator zakończenia zaczyna się od end_ i zawiera małe litery, cyfry oraz _.",
     "duplicateHiddenId": "Już użyte w tym formularzu.",
     "invalidHiddenId": "Zacznij od litery; używaj małych liter, cyfr i _.",
+    "reservedHiddenId": "{{id}} to nazwa zastrzeżona; wybierz inną.",
     "duplicateCode": "Dwie opcje mają kod {{code}}.",
     "reservedCode": "Ten kod jest zarezerwowany dla wierszy „Inne” i „Żadne z powyższych”.",
     "invalidCode": "Kod zawiera małe litery, cyfry i _, maksymalnie 40 znaków.",

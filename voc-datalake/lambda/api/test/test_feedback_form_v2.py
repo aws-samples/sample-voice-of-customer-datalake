@@ -174,10 +174,10 @@ class TestSavesAndRevisions:
         assert status == 200, answer
         legacy = answer['form']
         assert (legacy['form_id'], legacy['schema_version'], legacy['migrated_from']) == ('deadbeef', 2, 1)
-        assert (legacy.pop('response_count'), legacy.pop('can_delete_test_responses'), legacy['has_responses']) == (
-            0, True, False)
-        assert legacy == next(f for f in _call(lambda_context, 'GET', '/feedback-forms')[1]['forms']
-                              if f['form_id'] == 'deadbeef')
+        counts = (legacy.pop('response_count'), legacy.pop('can_delete_test_responses'), legacy['has_responses'])
+        assert counts == (0, True, False)
+        listed = _call(lambda_context, 'GET', '/feedback-forms')[1]['forms']
+        assert legacy == next(f for f in listed if f['form_id'] == 'deadbeef')
         assert _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'enabled': True})[0] == 200
         assert 'migrated_from' not in _call(lambda_context, 'GET', '/feedback-forms/deadbeef')[1]['form']
         assert _call(lambda_context, 'GET', '/feedback-forms/nope0000')[0] == 404
@@ -244,6 +244,29 @@ class TestSavesAndRevisions:
         assert (status, answer['error']) == (400, 'questions[0].headline.en must be at most 500 characters')
         stored = world['aggregates'].get_item(Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#deadbeef'})['Item']
         assert ('schema_version' not in stored, stored['enabled']) == (True, True)
+
+    def test_a_reserved_hidden_field_id_is_refused_and_a_form_stored_with_one_still_reads(self, world, lambda_context):
+        """7.58.00: ``__proto__``, ``constructor`` and ``prototype`` are no hidden field's id (the widget never fills
+        them). A save that declares one is a 400 naming it; a form stored with one before reads, serves its config and
+        takes a save that leaves its definition alone, and its next definition save asks for another name."""
+        hidden = [{'id': 'app_version'}, {'id': 'constructor'}]
+        status, answer = _call(lambda_context, 'POST', '/feedback-forms', body={**V2_FORM, 'hidden_fields': hidden})
+        assert (status, answer['error']) == (400, 'hidden_fields[1].id "constructor" is a reserved name; choose another')
+        form_id = _create(lambda_context)['form_id']
+        world['aggregates'].update_item(Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'},
+                                        UpdateExpression='SET hidden_fields = :h',
+                                        ExpressionAttributeValues={':h': hidden})
+        read = _call(lambda_context, 'GET', f'/feedback-forms/{form_id}')
+        config = _call(lambda_context, 'GET', f'/feedback-forms/{form_id}/config', claims={})
+        assert (read[0], read[1]['form']['hidden_fields'], config[0], config[1]['config']['hidden_fields']) == (
+            200, hidden, 200, hidden)
+        assert _call(lambda_context, 'PUT', f'/feedback-forms/{form_id}', body={'name': 'Renamed'})[0] == 200
+        status, answer = _call(lambda_context, 'PUT', f'/feedback-forms/{form_id}',
+                               body={'hidden_fields': hidden, 'expected_revision': 1})
+        assert (status, answer['error']) == (400, 'hidden_fields[1].id "constructor" is a reserved name; choose another')
+        status, answer = _call(lambda_context, 'PUT', f'/feedback-forms/{form_id}',
+                               body={'hidden_fields': hidden[:1], 'expected_revision': 1})
+        assert (status, answer['form']['hidden_fields'], answer['form']['revision']) == (200, hidden[:1], 2)
 
     def test_a_v1_patch_maps_onto_a_v2_form_where_it_can_and_is_refused_where_it_cannot(self, lambda_context):
         form = _create(lambda_context)

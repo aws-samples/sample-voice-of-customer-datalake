@@ -713,7 +713,8 @@ class TestAnUpdateSetsOnlyWhatWasSent:
         kwargs = table.update_item.call_args.kwargs
         names, values = kwargs['ExpressionAttributeNames'], kwargs['ExpressionAttributeValues']
         sets = {names[f'#f{i}']: values[f':f{i}'] for i in range(len(values) - 1)}
-        assert before <= datetime.fromisoformat(sets.pop('updated_at')) <= after
+        updated_at = datetime.fromisoformat(sets.pop('updated_at'))
+        assert before <= updated_at <= after
         # The definition is written back as read (no change, so no new revision and no snapshot).
         assert sets == {'name': 'N', 'enabled': False, 'schema_version': 2, 'revision': 4, 'updated_by': 'test-user-id',
                         **{key: V2_ITEM[key] for key in h.fv2.DEFINITION_FIELDS}}

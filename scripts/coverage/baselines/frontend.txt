@@ -7,7 +7,6 @@
 # Format: <repo-relative path> <line rate when recorded>   # <covered>/<total>
 voc-datalake/frontend/src/api/decisionsApi.ts 33.33   # 3/9
 voc-datalake/frontend/src/api/documentReviewApi.ts 69.56   # 16/23
-voc-datalake/frontend/src/api/feedbackFormStatsSchema.ts 66.66   # 10/15
 voc-datalake/frontend/src/api/prioritizationConfigApi.ts 22.72   # 5/22
 voc-datalake/frontend/src/assistant/approvals/previews/AgentPreviews.tsx 0.00   # 0/9
 voc-datalake/frontend/src/assistant/approvals/previews/CompanyPreviews.tsx 0.00   # 0/7
@@ -31,7 +30,6 @@ voc-datalake/frontend/src/components/PersonaExportMenu/personaToMarkdown.ts 41.4
 voc-datalake/frontend/src/components/PrototypeRenderer.tsx 47.16   # 25/53
 voc-datalake/frontend/src/components/SourcesManager/SourceProfileEditor.tsx 68.75   # 11/16
 voc-datalake/frontend/src/components/SourcesManager/piiPolicy.ts 66.66   # 2/3
-voc-datalake/frontend/src/components/WorkflowEditor/NodePalette.tsx 70.00   # 7/10
 voc-datalake/frontend/src/config/menuConfig.ts 75.00   # 6/8
 voc-datalake/frontend/src/pages/Agents/AgentPersonas.tsx 0.00   # 0/23
 voc-datalake/frontend/src/pages/Agents/AgentSections.tsx 42.59   # 23/54
@@ -65,7 +63,6 @@ voc-datalake/frontend/src/pages/Scrapers/JsonSkippedItems.tsx 72.72   # 8/11
 voc-datalake/frontend/src/pages/Scrapers/JsonUploadModal.tsx 79.74   # 63/79
 voc-datalake/frontend/src/pages/Scrapers/PluginConfigParts.tsx 64.00   # 16/25
 voc-datalake/frontend/src/pages/Scrapers/ScraperCard.tsx 67.10   # 51/76
-voc-datalake/frontend/src/pages/Scrapers/ScraperEditorParts.tsx 74.07   # 20/27
 voc-datalake/frontend/src/pages/Scrapers/Scrapers.tsx 74.73   # 71/95
 voc-datalake/frontend/src/pages/Scrapers/scraperAnchor.ts 66.66   # 6/9
 voc-datalake/frontend/src/pages/Settings/DataGovernanceSections.tsx 0.00   # 0/5
