@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithDraft, sampleForm } from '../test/draftHarness'
 import { useDraft } from '../builder/formDraftContext'
-import type { Question } from '../model/formsV2'
+import type { FormV2, Question } from '../model/formsV2'
 import QuestionEditor from './QuestionEditor'
 import EndingEditor from './EndingEditor'
 import { requestFocus } from './focusRequest'
@@ -118,5 +118,162 @@ describe('the ending editor', () => {
   it('says which paths end here', () => {
     renderWithDraft(<LiveEnding id="end_thanks" />)
     expect(screen.getByText('the end of the questions (default)')).toBeInTheDocument()
+  })
+})
+
+describe('the ending editor: its rules, its texts and its id', () => {
+  /** A consent whose No ends at end_bye, then a question whose Otherwise does. */
+  const consent: Question = {
+    id: 'q_ok', type: 'consent', headline: { en: 'May we contact you?' }, required: false, label: { en: 'Yes' },
+    logic: [{ when: { op: 'equals', value: false }, then: { jump_to: 'end_bye' } }],
+  }
+  const last: Question = { ...after, required: true, logic: [{ when: { op: 'submitted' }, then: { jump_to: 'end_bye' } }] }
+  const bye = { id: 'end_bye', title: { en: 'Bye' } }
+  const routed = (): FormV2 => sampleForm({ questions: [consent, last], endings: [{ id: 'end_thanks', title: { en: 'Thank you!' } }, bye] })
+
+  /** end_bye's editor, its id field under Advanced replaced by `typed`. */
+  async function typeEndingId(typed: string) {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEnding id="end_bye" />, routed())
+    await user.click(screen.getByRole('button', { name: 'Advanced' }))
+    const field = screen.getByRole('textbox', { name: 'Ending id' })
+    await user.clear(field)
+    await user.type(field, typed)
+    return { user, harness, field }
+  }
+
+  it('names each rule that ends here by its question and condition', () => {
+    renderWithDraft(<LiveEnding id="end_bye" />, routed())
+    expect(screen.getByText('1 is not accepted · 2 otherwise')).toBeInTheDocument()
+  })
+
+  it('says when no rule ends at an ending that is not the default', () => {
+    renderWithDraft(<LiveEnding id="end_bye" />, sampleForm({ endings: [...sampleForm().endings, bye] }))
+    expect(screen.getByText('No rule ends here.')).toBeInTheDocument()
+    expect(screen.queryByText('default')).not.toBeInTheDocument()
+  })
+
+  it('writes its description', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEnding id="end_thanks" />)
+    await user.type(screen.getByRole('textbox', { name: 'Description' }), 'See you soon')
+    expect(harness.probe.current?.form.endings[0]?.description).toStrictEqual({ en: 'See you soon' })
+  })
+
+  it('renames the ending and the rules that end there, and moves the address to the new id', async () => {
+    const { harness } = await typeEndingId('end_later{Enter}')
+    const form = harness.probe.current?.form
+    expect(form?.endings.map((ending) => ending.id)).toStrictEqual(['end_thanks', 'end_later'])
+    expect(form?.questions.map((question) => question.logic?.[0]?.then.jump_to)).toStrictEqual(['end_later', 'end_later'])
+    expect(harness.go).toHaveBeenCalledWith('questions', ['end', 'end_later'], { replace: true })
+  })
+
+  it.each([
+    ['an id that is not an ending id', 'later', 'An ending id starts with end_ and uses lower-case letters, digits and _.'],
+    ["another ending's id", 'end_thanks', 'Another ending has the id end_thanks.'],
+  ])('refuses %s and keeps the old one when the field is left', async (_case, typed, problem) => {
+    const { user, harness, field } = await typeEndingId(typed)
+    expect(screen.getByRole('alert')).toHaveTextContent(problem)
+    await user.tab()
+    expect(field).toHaveValue('end_bye')
+    expect(harness.probe.current?.form.endings.map((ending) => ending.id)).toStrictEqual(['end_thanks', 'end_bye'])
+  })
+
+  it('shows its id read-only once the form has responses', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<LiveEnding id="end_thanks" />, sampleForm(), { meta: { has_responses: true, response_count: 3 } })
+    await user.click(screen.getByRole('button', { name: 'Advanced' }))
+    expect(screen.queryByRole('textbox', { name: 'Ending id' })).not.toBeInTheDocument()
+    expect(screen.getByText('end_thanks')).toBeInTheDocument()
+    expect(screen.getByText("Responses are stored with this id, so it can't change once there are responses.")).toBeInTheDocument()
+  })
+
+  it("gives the onboarding template's newcomer ending its tip", () => {
+    const form = sampleForm({ endings: [...sampleForm().endings, { id: 'end_newcomer', title: { en: 'Welcome aboard' } }] })
+    renderWithDraft(<LiveEnding id="end_newcomer" />, form, { isNew: true, handoff: { templateId: 'onboarding' } })
+    expect(screen.getByText('Add a button to your getting-started guide.')).toBeInTheDocument()
+  })
+})
+
+describe('the consent editor', () => {
+  const consent: Question = { id: 'q_consent', type: 'consent', headline: { en: 'May we contact you?' }, required: false, label: {} }
+
+  it('asks for the checkbox text until it is written', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_consent" />, sampleForm({ questions: [consent] }))
+    expect(screen.getByText('Write the checkbox text.')).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: 'Checkbox text' }), 'Yes, contact me')
+    expect(harness.probe.current?.form.questions[0]).toHaveProperty('label', { en: 'Yes, contact me' })
+    expect(screen.queryByText('Write the checkbox text.')).not.toBeInTheDocument()
+  })
+
+  it('names Required "Must be ticked to continue"', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_consent" />, sampleForm({ questions: [consent] }))
+    await user.click(screen.getByRole('switch', { name: 'Must be ticked to continue' }))
+    expect(harness.probe.current?.form.questions[0]?.required).toBe(true)
+  })
+})
+
+describe('the statement editor', () => {
+  const statement: Question = { id: 'q_note', type: 'statement', headline: { en: 'Thanks for your time.' }, required: false }
+
+  it('names its text "Text" and has no Required', () => {
+    renderWithDraft(<LiveEditor id="q_note" />, sampleForm({ questions: [statement] }))
+    expect(screen.getByRole('textbox', { name: 'Text' })).toHaveValue('Thanks for your time.')
+    expect(screen.queryByRole('switch', { name: 'Required' })).not.toBeInTheDocument()
+  })
+
+  it('adds a link button with its label', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_note" />, sampleForm({ questions: [statement] }))
+    await user.click(screen.getByRole('switch', { name: /^Add a link button/ }))
+    expect(harness.probe.current?.form.questions[0]).toHaveProperty('cta', { label: {}, url: '' })
+    await user.type(screen.getByRole('textbox', { name: 'Button label' }), 'Learn more')
+    expect(harness.probe.current?.form.questions[0]).toHaveProperty('cta.label', { en: 'Learn more' })
+  })
+
+  it("refuses the link's address until it is https", async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_note" />, sampleForm({ questions: [{ ...statement, cta: { label: { en: 'Read' }, url: '' } }] }))
+    await user.type(screen.getByRole('textbox', { name: 'Address' }), 'http://example.com/terms')
+    expect(screen.getByText('The address must start with https://', { selector: 'li span' })).toBeInTheDocument()
+    expect(harness.probe.current?.form.questions[0]).toHaveProperty('cta.url', 'http://example.com/terms')
+  })
+
+  it('drops the link button when it is switched off', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_note" />, sampleForm({ questions: [{ ...statement, cta: { label: { en: 'Read' }, url: 'https://example.com' } }] }))
+    await user.click(screen.getByRole('switch', { name: /^Add a link button/ }))
+    expect(harness.probe.current?.form.questions[0]).toHaveProperty('cta', undefined)
+  })
+})
+
+describe('the text editor', () => {
+  it('turns a long text short, and only then offers an answer type', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_feedback" />)
+    expect(screen.queryByRole('combobox', { name: 'Answer type' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Short' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Answer type' }), 'Email')
+    expect(harness.probe.current?.form.questions[0]).toMatchObject({ long: false, input_type: 'email' })
+  })
+
+  it('writes the placeholder and a limit, a blank limit being none', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_feedback" />)
+    await user.type(screen.getByRole('textbox', { name: 'Placeholder' }), 'Your words')
+    const limit = screen.getByRole('spinbutton', { name: 'Limit (characters)' })
+    await user.type(limit, '200')
+    expect(harness.probe.current?.form.questions[0]).toMatchObject({ placeholder: { en: 'Your words' }, max_chars: 200 })
+    await user.clear(limit)
+    expect(harness.probe.current?.form.questions[0]).toHaveProperty('max_chars', undefined)
+  })
+
+  it('flags a limit over 5,000 characters', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<LiveEditor id="q_feedback" />)
+    await user.type(screen.getByRole('spinbutton', { name: 'Limit (characters)' }), '9000')
+    expect(screen.getByText('The limit is 1 to 5,000 characters.')).toBeInTheDocument()
   })
 })

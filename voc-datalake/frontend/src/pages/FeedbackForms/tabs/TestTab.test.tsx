@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 const rotateTestToken = vi.fn<(formId: string) => Promise<string>>()
 const deleteTestResponses = vi.fn<(formId: string) => Promise<number>>()
 const getResponses = vi.fn<(...args: unknown[]) => Promise<unknown>>()
+const createForm = vi.fn<(form: FormV2) => Promise<LoadedForm>>()
 
 vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/feedbackFormsV2Api')>()
@@ -19,13 +20,14 @@ vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
       rotateTestToken: (formId: string) => rotateTestToken(formId),
       deleteTestResponses: (formId: string) => deleteTestResponses(formId),
       getResponses: (...args: unknown[]) => getResponses(...args),
+      createForm: (form: FormV2) => createForm(form),
     },
   }
 })
 
 import { useConfigStore } from '../../../store/configStore'
-import { renderWithDraft, sampleForm } from '../test/draftHarness'
-import type { FormV2 } from '../model/formsV2'
+import { STORED_META, renderWithDraft, sampleForm } from '../test/draftHarness'
+import type { FormV2, LoadedForm } from '../model/formsV2'
 import TestTab from './TestTab'
 
 const LINK = 'https://api.example.com/feedback-forms/f_test/iframe?test=tk_test'
@@ -46,6 +48,7 @@ describe('TestTab', () => {
     getResponses.mockResolvedValue({ responses: [], next_cursor: null })
     rotateTestToken.mockResolvedValue('tk_new')
     deleteTestResponses.mockResolvedValue(2)
+    createForm.mockImplementation((form) => Promise.resolve({ form, meta: STORED_META }))
   })
 
   it('shows the test link with the form test token while the link is on', () => {
@@ -148,5 +151,81 @@ describe('TestTab', () => {
     expect(screen.getByText('Save the form to get its links.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(getResponses).not.toHaveBeenCalled()
+  })
+
+  it('saves a new form from there', async () => {
+    const user = userEvent.setup()
+    const form = formWith({ link_enabled: true, record: 'tag' })
+    const harness = renderWithDraft(<TestTab />, form, { isNew: true })
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(harness.onCreated).toHaveBeenCalledWith('f_test'))
+    expect(createForm).toHaveBeenCalledWith(form)
+  })
+
+  it('selects the whole test link on focus, copies it, and says Copied', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }))
+    const field = screen.getByRole<HTMLInputElement>('textbox', { name: 'Test link' })
+    await user.click(field)
+    expect([field.selectionStart, field.selectionEnd]).toStrictEqual([0, LINK.length])
+    await user.click(screen.getByRole('button', { name: 'Copy' }))
+    expect(await navigator.clipboard.readText()).toBe(LINK)
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument()
+  })
+
+  it('copies the test link with every hidden field and the language from its menu', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }, [{ id: 'user_id' }, { id: 'app_version' }]))
+    await user.click(screen.getByRole('button', { name: 'More actions for the test link' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Copy with hidden fields' }))
+    expect(await navigator.clipboard.readText()).toBe(`${LINK}&hf_user_id={USER_ID}&hf_app_version={APP_VERSION}&lang=en`)
+  })
+
+  it('shows the test link as a QR code in a dialog, and closes it', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }))
+    await user.click(screen.getByRole('button', { name: 'QR' }))
+    const dialog = screen.getByRole('dialog', { name: 'Test link QR code' })
+    expect(within(dialog).getByRole('img', { name: 'QR code for the Sample form feedback form' })).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('cannot copy or draw a test link before the API address is set, and says why', async () => {
+    const user = userEvent.setup()
+    useConfigStore.setState({ config: { ...useConfigStore.getState().config, apiEndpoint: '' } })
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }))
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'QR' }))
+    expect(within(screen.getByRole('dialog')).getByText(/^QR code unavailable until the API endpoint is configured/)).toBeInTheDocument()
+  })
+
+  it('says when the reset failed, and keeps the old link', async () => {
+    const user = userEvent.setup()
+    rotateTestToken.mockRejectedValue(new Error('Network down'))
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }))
+    await user.click(screen.getByRole('button', { name: 'More actions for the test link' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Reset test link…' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset test link' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't reset the test link. Try again in a moment.")
+    expect(screen.getByRole('textbox', { name: 'Test link' })).toHaveValue(LINK)
+  })
+
+  it('makes the test link of a form that has none yet, once the link is turned on', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<TestTab />, formWith({ link_enabled: false, record: 'tag' }), { testToken: null })
+    await user.click(screen.getByRole('switch', { name: 'Test link' }))
+    expect(screen.getByText('This form has no test link yet.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Make the test link' }))
+    expect(await screen.findByRole('textbox', { name: 'Test link' })).toHaveValue('https://api.example.com/feedback-forms/f_test/iframe?test=tk_new')
+    expect(rotateTestToken).toHaveBeenCalledWith('f_test')
+  })
+
+  it('shows nothing to list under Check only', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'drop' }))
+    expect(screen.getByRole('note')).toHaveTextContent("Check only keeps nothing, so there's nothing to show here.")
+    await user.click(screen.getByRole('radio', { name: /Keep them, marked Test/ }))
+    expect(await screen.findByText('No test responses yet. Open the test link, or scan its QR code on a phone, and send one.')).toBeInTheDocument()
   })
 })

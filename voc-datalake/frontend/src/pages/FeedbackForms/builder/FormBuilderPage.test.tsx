@@ -9,12 +9,11 @@ const api = vi.hoisted(() => ({
   getForm: vi.fn<(formId: string) => Promise<LoadedForm>>(),
   getResults: vi.fn<() => Promise<unknown>>(),
   getResponses: vi.fn<() => Promise<unknown>>(),
+  createForm: vi.fn<(form: FormV2) => Promise<LoadedForm>>(),
 }))
 
-vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../../api/feedbackFormsV2Api')>()
-  return { ...real, feedbackFormsV2Api: { ...real.feedbackFormsV2Api, ...api } }
-})
+vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) =>
+  (await import('../test/formsApiMock')).formsApiWith(importOriginal, api))
 vi.mock('../../../store/configStore', async () => (await import('../feedback-forms-fixtures')).configStoreModule())
 vi.mock('../../../hooks/useCategories', () => ({ useCategoriesConfig: () => ({ data: { categories: [] } }) }))
 vi.mock('../preview/PreviewFrame', async () => import('../test/previewFrameStub'))
@@ -37,6 +36,16 @@ function renderAt(path: string, state?: unknown) {
 }
 
 const stored = (form: FormV2, overrides: Partial<LoadedForm['meta']> = {}): LoadedForm => ({ form, meta: { ...STORED_META, ...overrides } })
+
+/** The stored sample form's builder, with `item` of its ⋯ menu picked. */
+async function pickInStoredForm(item: string | RegExp) {
+  api.getForm.mockResolvedValue(stored(sampleForm()))
+  const user = userEvent.setup()
+  renderAt('/feedback-forms/f_test/questions')
+  await user.click(await screen.findByRole('button', { name: 'More form actions' }))
+  await user.click(screen.getByRole('menuitem', { name: item }))
+  return user
+}
 
 describe('the builder page', () => {
   beforeEach(() => {
@@ -95,11 +104,7 @@ describe('the builder page', () => {
   })
 
   it('below md, offers "Ask the assistant" in the ⋯ and opens the assistant from it', async () => {
-    api.getForm.mockResolvedValue(stored(sampleForm()))
-    const user = userEvent.setup()
-    renderAt('/feedback-forms/f_test/questions')
-    await user.click(await screen.findByRole('button', { name: 'More form actions' }))
-    await user.click(screen.getByRole('menuitem', { name: 'Ask the assistant' }))
+    await pickInStoredForm('Ask the assistant')
     expect(useAssistantUiStore.getState().open).toBe(true)
   })
 
@@ -141,5 +146,46 @@ describe('the builder page', () => {
     await user.click(screen.getByRole('tab', { name: /Flow/ }))
     await user.click(screen.getByRole('tab', { name: /Settings/ }))
     expect(screen.getByLabelText('Internal name')).toHaveValue('Pilot form')
+  })
+
+  it.each([['languages', /^Languages/], ['hidden-fields', /^Hidden fields/], ['test', /^Test/]])('opens the %s tab from its address', async (tab, name) => {
+    api.getForm.mockResolvedValue(stored(sampleForm()))
+    renderAt(`/feedback-forms/f_test/${tab}`)
+    await waitFor(() => { expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true') })
+  })
+
+  it('says once that a version 1 form now uses the new builder', async () => {
+    api.getForm.mockResolvedValue(stored(sampleForm(), { migrated_from_v1: true }))
+    renderAt('/feedback-forms/f_test/questions')
+    expect(await screen.findByRole('note')).toHaveTextContent(/^This form now uses the new builder/)
+  })
+
+  it('opens Improve with AI from the ⋯ menu, and closes it again', async () => {
+    const user = await pickInStoredForm(/^Improve with AI/)
+    await user.click(within(screen.getByRole('dialog', { name: 'Improve with AI' })).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: 'Improve with AI' })).not.toBeInTheDocument() })
+  })
+
+  it('keeps the draft when a new form\'s first save gives the address its id', async () => {
+    api.createForm.mockImplementation((form) => Promise.resolve(stored(form, { form_id: 'f_new', revision: 1 })))
+    const user = userEvent.setup()
+    renderAt('/feedback-forms/new/questions', handoffState({ form: sampleForm({ name: 'From a template' }), templateId: 'blank', ai: null }))
+    await screen.findByRole('heading', { name: 'From a template' })
+    await user.keyboard('{Control>}s{/Control}')
+    // (the header's state chip: the welcome card says Off too)
+    await waitFor(() => { expect(within(screen.getByRole('banner')).getByText('Off')).toBeInTheDocument() })
+    expect(screen.queryByText('Not saved yet')).not.toBeInTheDocument()
+    expect(api.getForm).not.toHaveBeenCalledWith('f_new')
+  })
+
+  it('leaves for the picker without asking when an AI draft is discarded', async () => {
+    const user = userEvent.setup()
+    renderAt('/feedback-forms/new/questions', handoffState({
+      form: sampleForm(), templateId: null, ai: { notes: [], warnings: [], description: 'Ask why people cancel', channel: 'link', addresses: [] },
+    }))
+    await user.click(await screen.findByRole('button', { name: 'Discard draft' }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Discard the AI draft?' })).getByRole('button', { name: 'Discard draft' }))
+    expect(await screen.findByRole('heading', { name: 'New form' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Unsaved changes' })).not.toBeInTheDocument()
   })
 })
