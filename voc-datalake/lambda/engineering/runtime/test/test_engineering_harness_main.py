@@ -12,16 +12,23 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from botocore.awsrequest import AWSResponse
+from botocore.compat import HTTPHeaders
 from botocore.exceptions import ClientError
+from botocore.retries.standard import ExponentialBackoff
 
+from engineering.runtime.caps import Timings
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness.board_client import InboxHttp
 from engineering.runtime.harness.cli import CliNotOffered
 from engineering.runtime.harness.main import Ports, S3Store, build_session, main
+from engineering.runtime.harness.model_wait import WAITING_ON_THE_MODEL, ModelWait
 from engineering.runtime.harness.ports import HarnessPortNotWired, PendingHarnessPorts, TaskBrief
 from engineering.runtime.harness.role_tools import PatchNotJudged
 from engineering.runtime.harness.runner_client import RunnerClient
+from engineering.runtime.liveness import judge
+from engineering.runtime.ports import Lease
 from engineering.runtime.test.conftest import BUCKET
 from engineering.runtime.test.harness_fakes import (
     BRIEF,
@@ -31,7 +38,9 @@ from engineering.runtime.test.harness_fakes import (
     FakeInbox,
     FakeRunner,
     use,
+    world,
 )
+from engineering.runtime.test.test_engineering_caps import SESSION as SUPERVISED
 from engineering.runtime.test.test_engineering_coordinator import FakePlanner
 from engineering.runtime.test.test_engineering_images import DATALAKE, IMAGES, RUNTIME, SHIPPED
 from engineering.runtime.unit_runner import Runner, serve
@@ -406,6 +415,12 @@ def test_run_exits_0_when_done_and_75_when_paused(aws, tmp_path):
     assert main(args, _env(tmp_path), s3=s3, ports=_ports(), bedrock=lambda: paused, runner=FakeRunner()) == 75
 
 
+def _finished_beside(s3: Any, tmp_path: Any, board: FakeBoard, bedrock: type[FakeBedrock]) -> int:
+    """``main``'s exit code for a converse session on ``board`` whose model (a ``bedrock`` fake) answers ``finish``."""
+    return main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
+                runner=FakeRunner(), bedrock=lambda: bedrock([[use('finish', summary='ok')]]))
+
+
 def test_the_lease_is_renewed_while_the_session_runs(aws, tmp_path, monkeypatch):
     s3, _ = aws
     monkeypatch.setattr(harness_main, 'HEARTBEAT_SECONDS', 0.01)
@@ -416,9 +431,7 @@ def test_the_lease_is_renewed_while_the_session_runs(aws, tmp_path, monkeypatch)
             board.beat.wait(5)
             return super().converse(**request)
 
-    args = ['run', '--adapter', 'converse', '--model', 'model-a']
-    assert main(args, _env(tmp_path), s3=s3, ports=_ports(board), runner=FakeRunner(),
-                bedrock=lambda: SlowBedrock([[use('finish', summary='ok')]])) == 0
+    assert _finished_beside(s3, tmp_path, board, SlowBedrock) == 0
     # The first renewal is main's own; the second can only come from the thread renewing while the session runs.
     assert len(board.heartbeats) >= 2
     assert board.heartbeats[1] == ('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'fixer-1')
@@ -449,6 +462,187 @@ def test_a_failed_heartbeat_does_not_end_the_renewals(monkeypatch):
     beating.join(5)
     assert board.failed == 1
     assert board.heartbeats[0] == ('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'fixer-1')
+
+
+# -- a model call in flight counts as liveness (7.58.01, the review gate's R2-3) ---------------------------------------
+IDS = {'VOC_RUN_ID': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'VOC_TASK_ID': 'task-1', 'VOC_AGENT_ID': 'fixer-1'}
+#: The longest a request to the model can run (its connection and its read), and botocore's longest wait before it sends
+#: one again (its backoff's cap, and the most a service's x-amz-retry-after adds to it).
+LONGEST_REQUEST = harness_main.BEDROCK_CONNECT_TIMEOUT + harness_main.BEDROCK_READ_TIMEOUT
+LONGEST_BACKOFF = vars(ExponentialBackoff)['_MAX_BACKOFF'] + vars(ExponentialBackoff)['_RETRY_AFTER_MAX_ADDITIONAL']
+
+
+@dataclass
+class ClockedBoard(FakeBoard):
+    """The task's lease as the supervisor reads it: when it was renewed and its progress reported, on ``clock``."""
+
+    clock: list[float] = field(default_factory=lambda: [0.0])
+    renewed_at: float = 0.0
+    progress_at: float = 0.0
+
+    def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None:
+        super().heartbeat(run_id=run_id, task_id=task_id, agent_id=agent_id)
+        self.renewed_at = self.clock[0]
+
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+        super().progress(run_id, task_id, agent_id, step, waiting=waiting)
+        self.progress_at = self.clock[0]
+
+
+@pytest.mark.parametrize('phase', [0, 1, 30, 59], ids=lambda phase: f'heartbeat-at-{phase}s')
+@pytest.mark.parametrize('reported', [True, False], ids=['reported', 'unreported-as-in-7.58.00'])
+def test_a_model_call_longer_than_the_stall_rule_does_not_get_its_task_stopped(tmp_path, phase, reported):
+    """A reply cut at the cap, then its retry, whose first request times out and is sent again by botocore: every
+    request as long as the harness's client waits for one, 31 minutes in all. The heartbeat beats once a minute (at
+    each ``phase``) and reports each request once; the supervisor judges the task every second. Without the line
+    (7.58.00) the task is stopped mid-call."""
+    timings, now = Timings(), [0.0]
+    board = ClockedBoard(clock=now)
+    wait = ModelWait(after=harness_main.HEARTBEAT_SECONDS, clock=lambda: now[0])
+    supervised, verdicts = [SUPERVISED], []
+
+    def spend(seconds: int) -> None:
+        for _ in range(seconds):
+            now[0] += 1
+            if (now[0] - phase) % harness_main.HEARTBEAT_SECONDS == 0:
+                harness_main.beat(board, IDS, wait if reported else None)
+            lease = Lease(task_id='task-1', agent_id='fixer-1', renewed_at=board.renewed_at,
+                          last_progress_at=board.progress_at)
+            verdict = judge(supervised[0], lease, int(now[0]), timings)
+            if verdict in ('ask_state', 'clear_ask'):
+                supervised[0] = replace(supervised[0], asked_at=int(now[0]) if verdict == 'ask_state' else None)
+            verdicts.append(verdict)
+
+    class LongBedrock(FakeBedrock):
+        def converse(self, **request: Any) -> dict[str, Any]:
+            if len(self.requests) == 1:
+                spend(LONGEST_REQUEST)
+                spend(LONGEST_BACKOFF)
+                wait.sent()   # (botocore's before-send, for the request it sends again)
+            spend(LONGEST_REQUEST)
+            return super().converse(**request)
+
+    w = world(tmp_path)
+    w.session.context.model_wait = wait
+    bedrock = LongBedrock([[use('finish', 't1', summary='fixed')]], cut=frozenset({0}))
+    assert harness_main.ConverseAdapter(bedrock, 'model-a').run(w.session) == 'done'
+    assert len(bedrock.requests) == 2
+    assert timings.stall_after < LONGEST_REQUEST
+    assert now[0] > 2 * (timings.stall_after + timings.answer_window)
+    lines = [step for *_, step in board.progress_seen]
+    if reported:
+        assert lines == [WAITING_ON_THE_MODEL] * 3   # (one line per request, never one a minute)
+        assert not {'stalled', 'crashed'} & set(verdicts)
+    else:
+        assert (lines, 'stalled' in verdicts) == ([], True)
+
+
+def test_no_model_request_outlasts_the_stall_rule_after_its_line():
+    """The bounds the simulation above meets at every phase: a request runs less than ``stall_after`` past its line
+    (reported a minute after it was sent at the earliest), so no question comes while it runs; and the lines of two
+    requests in a row come within ``stall_after`` and the answer window."""
+    timings = Timings()
+    beat = harness_main.HEARTBEAT_SECONDS
+    assert timings.stall_after > LONGEST_REQUEST - beat
+    assert timings.stall_after + timings.answer_window > LONGEST_REQUEST + LONGEST_BACKOFF + beat
+
+
+class _Raw:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def stream(self, **_: Any) -> Any:
+        yield self._body
+
+
+def test_the_bedrock_client_hands_each_request_it_sends_to_the_model_wait(monkeypatch):
+    """The real client: botocore sends the call's request again after a 503, and each send is a request of its own
+    (reported once more, past a minute); its timeouts are the bounded ones."""
+    for name, value in (('AWS_ACCESS_KEY_ID', 'testing'), ('AWS_SECRET_ACCESS_KEY', 'testing')):
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv('AWS_SESSION_TOKEN', raising=False)
+    now = [0.0]
+    wait = ModelWait(after=60, clock=lambda: now[0])
+    client = harness_main.bedrock_client('us-east-1', wait)
+    assert (client.meta.config.connect_timeout, client.meta.config.read_timeout) == (10, 600)
+    answer = {'output': {'message': {'role': 'assistant', 'content': [{'text': 'done'}]}}, 'stopReason': 'end_turn',
+              'usage': {'inputTokens': 1, 'outputTokens': 1, 'totalTokens': 2}, 'metrics': {'latencyMs': 1}}
+    answers = [AWSResponse('https://bedrock.example.org', 503, HTTPHeaders(), _Raw(b'{"message": "busy"}')),
+               AWSResponse('https://bedrock.example.org', 200, HTTPHeaders(), _Raw(json.dumps(answer).encode()))]
+    reported: list[bool] = []
+
+    def send(**_: Any) -> AWSResponse:
+        now[0] += 61
+        request = wait.due()
+        if request is not None:
+            wait.reported(request)
+        reported.append(request is not None)
+        return answers.pop(0)
+
+    client.meta.events.register('before-send.bedrock-runtime.Converse', send)
+    with wait.calling():
+        assert client.converse(modelId='model-a', messages=[{'role': 'user', 'content': [{'text': 'go'}]}])[
+            'stopReason'] == 'end_turn'
+    assert reported == [True, True]   # (with no before-send of its own, the resend would be the first's: reported)
+    now[0] += 61
+    assert wait.due() is None   # (no call in flight)
+
+
+@dataclass
+class RefusingOnceBoard(FakeBoard):
+    """Its first progress report fails (the board unreachable); the next ones are recorded."""
+
+    refused: int = 0
+
+    def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+        if not self.refused:
+            self.refused += 1
+            raise OSError('the board is not answering')
+        super().progress(run_id, task_id, agent_id, step, waiting=waiting)
+
+
+def test_a_model_wait_the_board_did_not_take_is_reported_at_the_next_heartbeat():
+    now = [0.0]
+    wait = ModelWait(after=60, clock=lambda: now[0])
+    board = RefusingOnceBoard()
+    with wait.calling():
+        now[0] = 59
+        harness_main.beat(board, IDS, wait)   # (not a minute yet: nothing)
+        now[0] = 61
+        for _ in range(3):   # refused, reported, then not again
+            harness_main.beat(board, IDS, wait)
+    harness_main.beat(board, IDS, wait)
+    assert (board.refused, [step for *_, step in board.progress_seen]) == (1, [WAITING_ON_THE_MODEL])
+    assert len(board.heartbeats) == 5
+
+
+def test_the_heartbeat_reports_a_long_model_call_once(aws, tmp_path, monkeypatch):
+    """The harness's own heartbeat thread, beside a call that outlasts several heartbeats: one line."""
+    s3, _ = aws
+    monkeypatch.setattr(harness_main, 'HEARTBEAT_SECONDS', 0.01)
+    reported = threading.Event()
+
+    class ReportedBoard(BeatingBoard):
+        """Says when the model wait was reported (``reported``), then when 5 more heartbeats came (``beat``)."""
+
+        def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+            super().progress(run_id, task_id, agent_id, step, waiting=waiting)
+            if step == WAITING_ON_THE_MODEL:
+                self.wanted = len(self.heartbeats) + 5
+                reported.set()
+
+    board = ReportedBoard(wanted=10**9)
+
+    class SlowBedrock(FakeBedrock):
+        def converse(self, **request: Any) -> dict[str, Any]:
+            assert reported.wait(5)
+            assert board.beat.wait(5)
+            return super().converse(**request)
+
+    assert _finished_beside(s3, tmp_path, board, SlowBedrock) == 0
+    steps = [step for *_, step in board.progress_seen]
+    assert steps.count(WAITING_ON_THE_MODEL) == 1
+    assert len(board.heartbeats) >= 6
 
 
 @dataclass

@@ -28,6 +28,10 @@ beside the heartbeat.
 coordinator's continuation first closes the wait its last session may have left open (``CONTINUING``). A reviewer's
 checkout has the submitted patch its task names applied before the session starts, and a patch reader's tool server is
 handed that patch's key (``PATCH_KEY_ENV``) for ``read_patch`` (``review_tools.py``).
+
+7.58.01: a model call in flight counts as liveness: the heartbeat reports each request of the Converse loop's call
+that has run a minute, once (``model_wait.py``), and the Bedrock client's timeouts keep a request inside the stall
+rule's window after that line (``BEDROCK_READ_TIMEOUT``).
 """
 from __future__ import annotations
 
@@ -60,6 +64,7 @@ from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.gate_tools import configured_gates_dir
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
 from engineering.runtime.harness.kiro import KEY_ENV, KIRO_BINARY, KiroAcp, ssm_key
+from engineering.runtime.harness.model_wait import WAITING_ON_THE_MODEL, ModelWait
 from engineering.runtime.harness.ports import (
     Board,
     Broker,
@@ -374,10 +379,39 @@ def _renew(board: Board, ids: Mapping[str, str]) -> None:
         sys.stderr.write(f'harness: the lease was not renewed ({type(error).__name__}); trying again\n')
 
 
-def _heartbeat(board: Board, ids: Mapping[str, str], stop: threading.Event) -> None:
-    """Renew the lease once a minute until ``stop``."""
+def _heartbeat(board: Board, ids: Mapping[str, str], stop: threading.Event, wait: ModelWait | None = None) -> None:
+    """Renew the lease once a minute until ``stop`` (``beat``)."""
     while not stop.wait(HEARTBEAT_SECONDS):
-        _renew(board, ids)
+        beat(board, ids, wait)
+
+
+def beat(board: Board, ids: Mapping[str, str], wait: ModelWait | None) -> None:
+    """One heartbeat: the lease renewed, and (7.58.01) a model request in flight for a minute reported once
+    (``model_wait.py``: the stall rule reads only progress, and the session is busy, not stalled). A failed report, as a
+    failed renewal, is said on stderr, and the next heartbeat tries it again."""
+    _renew(board, ids)
+    request = wait.due() if wait is not None else None
+    if request is None or wait is None:
+        return
+    try:
+        board.progress(ids['VOC_RUN_ID'], ids['VOC_TASK_ID'], ids['VOC_AGENT_ID'], progress_line(WAITING_ON_THE_MODEL))
+    except Exception as error:  # noqa: BLE001 - a failed report must not end the heartbeat
+        sys.stderr.write(f'harness: the model wait was not reported ({type(error).__name__}); trying again\n')
+        return
+    wait.reported(request)
+
+
+def bedrock_client(region: str | None, wait: ModelWait) -> Any:
+    """The Converse loop's Bedrock client: throttling and transient errors retried by botocore itself, backing off,
+    and each request it sends (a resend after a read timeout too) handed to ``wait`` (``before-send``), so the
+    heartbeat reports each one that runs long."""
+    import boto3
+    from botocore.config import Config
+    client = boto3.client('bedrock-runtime', region_name=region,
+                          config=Config(retries={'mode': 'adaptive', 'max_attempts': 8},
+                                        connect_timeout=BEDROCK_CONNECT_TIMEOUT, read_timeout=BEDROCK_READ_TIMEOUT))
+    client.meta.events.register('before-send.bedrock-runtime.Converse', wait.sent)
+    return client
 
 
 #: How often the transcript's clock looks for events held ``FLUSH_SECONDS`` (so a live thread lags by at most both).
@@ -427,9 +461,15 @@ def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
 TOOL_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT',
                    'VOC_ATTEMPT', 'VOC_BOARD_URL', 'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, FENCE_ENV,
                    PATCH_KEY_ENV, 'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
-#: How long the harness's Bedrock client waits for a Converse answer, which comes once the whole reply is written: a
-#: reply of ``converse_loop.MAX_TOKENS`` tokens, thinking included, at a slow model's pace.
-BEDROCK_READ_TIMEOUT: Final = 900
+#: How long the harness's Bedrock client waits for a Converse answer, which comes once the whole reply is written (a
+#: reply of ``converse_loop.MAX_TOKENS`` tokens, thinking included, at 54 tokens a second or more), and for its
+#: connection. 7.58.01: 600 s (900 in 7.58.00, which outlasted the stall rule), so that a request outlives the line the
+#: heartbeat reports for it (``model_wait.py``) by less than the supervisor's ``stall_after``, and the lines of two
+#: requests in a row (botocore's resend after a read timeout) come within its ``stall_after`` and answer window. A test
+#: holds both at the supervisor's default timings, the ones the stack runs (its ``ENGINEERING_TIMINGS`` is ``{}``): a
+#: ``stall_after`` of 9 minutes or less could ask a long request for its state, one of 8½ or less stop it.
+BEDROCK_READ_TIMEOUT: Final = 600
+BEDROCK_CONNECT_TIMEOUT: Final = 10
 #: Beside them, for kiro-cli's tool server: the agent's proxy (its boto3 reaches S3, the board and the broker through
 #: it, as the harness's own does).
 KIRO_TOOL_ENV: Final = ('HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy', 'AWS_SDK_LOAD_CONFIG')
@@ -490,13 +530,11 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         serve(session.tools, files, sys.stdin, sys.stdout)
         return DONE_EXIT_CODE
 
+    # (7.58.01) The model call in flight, which the heartbeat reports once a request of it has run a minute.
+    wait = ModelWait(after=HEARTBEAT_SECONDS)
+
     def _bedrock() -> Any:
-        import boto3
-        from botocore.config import Config
-        # Throttling and transient errors are retried by botocore itself, backing off.
-        return boto3.client('bedrock-runtime', region_name=env.get('AWS_REGION'),
-                            config=Config(retries={'mode': 'adaptive', 'max_attempts': 8},
-                                          read_timeout=BEDROCK_READ_TIMEOUT))
+        return bedrock_client(env.get('AWS_REGION'), wait)
 
     # A session restored from a checkpoint renews its lease first (the supervisor refreshed it when the harness
     # started), then every minute through the restore (a working tree to put back may take minutes) and the session.
@@ -505,11 +543,12 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
     if env.get('VOC_RESTORE_KEY'):
         _renew(ports.board, env)
     stop = threading.Event()
-    threading.Thread(target=_heartbeat, args=(ports.board, env, stop), daemon=True).start()
+    threading.Thread(target=_heartbeat, args=(ports.board, env, stop, wait), daemon=True).start()
     session: AgentSession | None = None
     ending: str = 'crashed'
     try:
         session = build_session(env, s3=s3, ports=ports, runner=runner or RunnerClient())
+        session.context.model_wait = wait
         _start_flusher(session, stop)
         _started(session, args)
         _begun(session)

@@ -164,10 +164,23 @@ class TestSavesAndRevisions:
         _call(lambda_context, 'PUT', f"/feedback-forms/{form['form_id']}", body={'welcome': {
             'enabled': True, 'title': {'pl': 'Witaj'}}})
         status, answer = _call(lambda_context, 'PUT', f"/feedback-forms/{form['form_id']}",
-                               body={'name': 'x', 'expected_revision': 1})
-        assert (status, answer['code'], answer['revision']) == (409, 'revision_conflict', 2)
+                               body={'name': 'x', 'expected_write_count': 0})
+        assert (status, answer['code'], answer['revision'], answer['write_count']) == (409, 'revision_conflict', 2, 1)
         assert answer['updated_by'] == ADMIN['sub']
         assert answer['updated_at']
+
+    @pytest.mark.parametrize('stale', [1, 'one', None], ids=['stale', 'malformed', 'null'])
+    def test_an_old_clients_expected_revision_is_ignored_never_a_409_or_a_400(self, lambda_context, stale):
+        """F7 (7.58.01): ``expected_write_count`` is the precondition (the count moves with every save, a definition's
+        among them); the revision an older builder still sends is ignored, whatever it holds."""
+        form = _create(lambda_context)
+        url = f"/feedback-forms/{form['form_id']}"
+        assert _call(lambda_context, 'PUT', url, body={'welcome': {'enabled': True, 'title': {'pl': 'Witaj'}}})[0] == 200
+        status, answer = _call(lambda_context, 'PUT', url, body={'name': 'x', 'expected_revision': stale})
+        assert (status, answer['form']['name'], answer['form']['revision']) == (200, 'x', 2), answer
+        status, answer = _call(lambda_context, 'PUT', url, body={'name': 'y', 'expected_revision': 2,
+                                                                 'expected_write_count': 1})
+        assert (status, answer['code']) == (409, 'revision_conflict')
 
     def test_one_form_is_read_as_the_list_shows_it_and_says_while_it_is_still_version_1(self, lambda_context):
         status, answer = _call(lambda_context, 'GET', '/feedback-forms/deadbeef')
@@ -873,7 +886,8 @@ class TestTheLockOfAnAnsweredForm:
 
     def test_a_v1_form_answered_only_before_7_55_is_locked_and_marked(self, world, lambda_context):
         """No submit marked it (has_responses unset): a save that changes its definition reads its responses, refuses
-        a headless removal (the assistant turning its rating off) and marks the form, so the next save reads the flag."""
+        a headless removal (a direct REST caller's PUT of a version 1 field, ``rating_enabled``) and marks the form, so
+        the next save reads the flag."""
         world['feedback'].put_item(Item={'pk': 'SOURCE#Acme', 'sk': 'FEEDBACK#old', 'feedback_id': 'old',
                                          'source_platform': 'feedback_form', 'source_channel': 'form_deadbeef',
                                          'source_created_at': '2025-06-01T10:00:00', 'rating': 4, 'original_text': 'ok'})
@@ -884,6 +898,23 @@ class TestTheLockOfAnAnsweredForm:
         status, answer = _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'rating_max': 10})
         assert (status, answer['changed']) == (409, ['q_rating'])
         assert _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'name': 'Kept'})[0] == 200
+
+    def test_a_new_forms_definition_saves_read_no_response_until_its_first_marks_it(self, world, lambda_context,
+                                                                                     monkeypatch):
+        """R2-2 (7.58.01): a form says ``has_responses: false`` from its creation, so a save that changes its
+        definition reads none of the brand's responses (before, each one of an unanswered form did); its first real
+        response marks it, and the lock holds from then on, still with no read."""
+        fid = _create(lambda_context)['form_id']
+        key = {'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{fid}'}
+        assert world['aggregates'].get_item(Key=key)['Item']['has_responses'] is False
+        reads: list[str] = []
+        monkeypatch.setattr(h, '_answered_before', lambda form_id, *_: reads.append(form_id) or True)
+        assert self._put(lambda_context, fid, questions=self._renamed())[0] == 200
+        assert _submit(lambda_context, fid, {'answers': {'q_reason': {'code': 'too_slow'}}})[0] == 200
+        assert world['aggregates'].get_item(Key=key)['Item']['has_responses'] is True
+        status, answer = self._put(lambda_context, fid, questions=V2_FORM['questions'])
+        assert (status, answer['code']) == (409, 'answers_locked')
+        assert reads == []
 
     def test_an_unanswered_v1_form_still_changes_freely(self, world, lambda_context):
         status, answer = _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'rating_enabled': False})

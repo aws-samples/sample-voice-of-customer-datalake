@@ -124,7 +124,9 @@ def test_each_image_installs_the_pinned_kiro_cli_and_ships_the_compiled_configs(
 
 def test_every_image_pins_the_same_kiro_archive():
     pins = {installed('install-kiro.sh', language) for language in sorted(egress.REGISTRY_HOSTS)}
-    assert pins == {(KIRO_CLI_VERSION, '187905a1c931fde45ef0e03edd80d201f4f608e1a844d9508d80f558a593d499')}
+    # (7.58.01: 3.5.0's archive, its sha256 as Kiro's release index lists it and the download hashed: kiro_pin.py)
+    assert pins == {(KIRO_CLI_VERSION, '6b931d7c003eb695b33718187180f6721c89e2218d977fccb63e8430fd504db1')}
+    assert KIRO_CLI_VERSION == '3.5.0'
 
 
 def test_the_kiro_installer_checks_the_published_sha256_and_takes_only_the_binary():
@@ -207,7 +209,7 @@ SUBJECT = Subject(kind='automation', id='agent_1', name='Bug fixer', definition=
                   requires={'image': True}, language='python', budget_usd=Decimal(5))
 SETTINGS = Settings(image_languages=frozenset({'python'}), network=True, kiro_roles=frozenset({'fixer'}),
                     kiro_key_parameter=PARAMETER, kiro_version=KIRO_CLI_VERSION)
-SEEN = SandboxSeen('namespaces', 'namespaces', ('own_device',), '2026-11-18T09:00:00Z', '3.4.0')
+SEEN = SandboxSeen('namespaces', 'namespaces', ('own_device',), '2026-11-18T09:00:00Z', '3.5.0')
 
 
 def _kiro_check(ports: _Ports, settings: Settings = SETTINGS) -> Any:
@@ -228,7 +230,7 @@ def test_the_kiro_check_passes_only_with_the_key_stored_and_the_pinned_cli_seen(
     ports = _Ports(seen=SEEN)
     check = _kiro_check(ports)
     assert check.status == 'pass'
-    assert 'kiro-cli 3.4.0' in check.detail
+    assert 'kiro-cli 3.5.0' in check.detail
     assert ports.asked == [PARAMETER]
 
 
@@ -236,9 +238,9 @@ def test_the_kiro_check_passes_only_with_the_key_stored_and_the_pinned_cli_seen(
     (_Ports(kind=None, seen=SEEN), 'fail', 'no Kiro API key is stored at /voc/engineering-kiro/api-key'),
     (_Ports(kind='String', seen=SEEN), 'fail', 'is a String, not a SecureString'),
     (_Ports(kind=ReadFailed('the Kiro API key: AccessDenied'), seen=SEEN), 'unknown', 'AccessDenied'),
-    (_Ports(seen=None), 'unknown', 'unknown until its first session (it must be 3.4.0)'),
-    (_Ports(seen=replace(SEEN, kiro_cli='')), 'fail', 'had no kiro-cli, not the pinned 3.4.0'),
-    (_Ports(seen=replace(SEEN, kiro_cli='3.3.0')), 'fail', 'had kiro-cli 3.3.0, not the pinned 3.4.0'),
+    (_Ports(seen=None), 'unknown', 'unknown until its first session (it must be 3.5.0)'),
+    (_Ports(seen=replace(SEEN, kiro_cli='')), 'fail', 'had no kiro-cli, not the pinned 3.5.0'),
+    (_Ports(seen=replace(SEEN, kiro_cli='3.4.0')), 'fail', 'had kiro-cli 3.4.0, not the pinned 3.5.0'),
 ])
 def test_the_kiro_check_says_what_is_missing(ports, status, said):
     check = _kiro_check(ports)

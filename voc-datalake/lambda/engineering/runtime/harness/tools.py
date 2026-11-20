@@ -40,6 +40,7 @@ from typing import Any, Final, Protocol
 from engineering.quality_gate.text import REDACTED, data_block, nonce, redact
 from engineering.runtime.checkout import repo_git
 from engineering.runtime.harness import coordinator, review_tools, role_tools
+from engineering.runtime.harness.model_wait import ModelWait
 from engineering.runtime.harness.ports import (
     OUTCOME_UNKNOWN,
     Board,
@@ -182,6 +183,9 @@ class AgentContext:
     waiter: Waiter | None = None
     clock: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
+    #: (7.58.01) The Converse loop's model call in flight, which the harness's heartbeat reports when it runs long
+    #: (``model_wait.py``; ``main.py`` hands its own in, and nothing reads this default one).
+    model_wait: ModelWait = field(default_factory=lambda: ModelWait(after=0))
 
     @property
     def runs_code(self) -> bool:

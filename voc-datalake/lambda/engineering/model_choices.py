@@ -16,8 +16,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
-from engineering.runtime.harness.model_choice import ModelChoiceError, bedrock_model, checked
-from engineering.runtime.harness_switch import HARNESS_ENV, kiro_roles, native_models, not_native
+from engineering.runtime.harness.model_choice import ModelChoiceError, bedrock_model, checked, not_enabled
+from engineering.runtime.harness_switch import HARNESS_ENV, kiro_roles, native_models
 from engineering.runtime.interface import RuntimeRefused
 from engineering.settings import RoleModel
 
@@ -52,7 +52,7 @@ def check(value: object, roles: Iterable[str], env: Mapping[str, str]) -> str:
         return choice
     model = bedrock_model(choice, '')
     if model and model not in enabled_models(env):
-        raise ModelChoiceError(not_native(model))
+        raise ModelChoiceError(not_enabled(model))
     return choice
 
 

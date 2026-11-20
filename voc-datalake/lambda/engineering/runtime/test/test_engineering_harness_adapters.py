@@ -25,7 +25,7 @@ from engineering.runtime.harness.skills import SKILLS, platform_rules
 from engineering.runtime.harness.tool_server import SessionFiles, answer, serve
 from engineering.runtime.harness.tools import ToolResult
 from engineering.runtime.liveness import PAUSED_EXIT_CODE as SUPERVISOR_PAUSED
-from engineering.runtime.test.harness_fakes import FakeBedrock, FakeBoard, opened, use, world
+from engineering.runtime.test.harness_fakes import CUT_PATH, FakeBedrock, FakeBoard, opened, use, world
 
 FIXER = SKILLS['fixer']
 
@@ -39,7 +39,13 @@ def test_a_reply_cut_at_the_output_cap_is_asked_again_and_never_sent_back(tmp_pa
     bedrock = FakeBedrock([[use('finish', 't1', summary='fixed')]], cut=frozenset({0}))
     assert ConverseAdapter(bedrock, 'model-a').run(w.session) == 'done'
     assert len(bedrock.requests) == 2
-    assert bedrock.requests[1]['messages'] == bedrock.requests[0]['messages']   # (the cut reply is not in it)
+    # (each request as it was sent, 7.58.01: the retry's conversation is the first one's, the cut reply not in it)
+    first, retry = (request['messages'] for request in bedrock.requests)
+    assert retry == first
+    assert [message['role'] for message in retry] == ['user']
+    # Its tool call never ran: no file written, no tool result sent.
+    assert not os.path.exists(os.path.join(w.checkout, CUT_PATH))
+    assert 'toolResult' not in json.dumps(retry)
     assert bedrock.requests[0]['inferenceConfig'] == {'maxTokens': MAX_TOKENS} == {'maxTokens': 32_000}
 
 
@@ -50,6 +56,7 @@ def test_a_reply_cut_twice_is_a_crash_after_a_checkpoint(tmp_path):
         ConverseAdapter(bedrock, 'model-a').run(w.session)
     assert len(bedrock.requests) == 2
     assert _checkpoints(w.store)
+    assert not os.path.exists(os.path.join(w.checkout, CUT_PATH))
 
 
 def _checkpoints(store: Any) -> list[dict[str, Any]]:

@@ -954,7 +954,7 @@ def _refuse_native(choice: str, roles: Mapping[str, str], definition: str) -> No
         chosen = model_choice.chosen(choice, roles.get(role, ''))
         model = model_choice.bedrock_model(chosen, '')
         if model and model not in enabled:
-            raise RuntimeRefused(f'the {role} runs on the native harness: {harness_switch.not_native(model)}')
+            raise RuntimeRefused(f'the {role} runs on the native harness: {model_choice.not_enabled(model)}')
 
 
 def _goal(event: Mapping[str, Any]) -> str:

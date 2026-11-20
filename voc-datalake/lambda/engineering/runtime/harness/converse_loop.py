@@ -29,7 +29,8 @@ from engineering.runtime.harness.tools import AgentContext, bedrock_tools
 MAX_TURNS: Final = 150
 #: A call's output cap, thinking included (Claude 5.5 thinks adaptively, and its thinking counts toward the cap): room
 #: for a turn that thinks at length and writes a whole file. Converse answers once the whole reply is written, so a
-#: call can take minutes: the harness's client waits ``main.BEDROCK_READ_TIMEOUT`` for it.
+#: call can take minutes: the harness's client waits ``main.BEDROCK_READ_TIMEOUT`` for it, and (7.58.01) its heartbeat
+#: reports a request still in flight (``model_wait.py``), so the stall rule never stops a task mid-call.
 MAX_TOKENS: Final = 32_000
 #: A call that stops at ``MAX_TOKENS`` (its reply cut short, a tool call perhaps lost) is made again, once; a second
 #: one is a crash (``OutputCut``), never a reply taken as it is.
@@ -55,8 +56,8 @@ def nudge(role: str) -> str:
 #: Claude on Bedrock thinks adaptively by default but sends its thinking with an empty text (``display: omitted``):
 #: ``summarized`` makes the run's thread show what the agent thought (the transcript keeps it; checked live on
 #: global.anthropic.claude-sonnet-5-5, 2026-11-18: the same reasoning block, now with its summary's text). Only a
-#: model that thinks adaptively takes it (``ADAPTIVE_THINKING``); the launch runs no other one here
-#: (``harness_switch.native_models``).
+#: model that thinks adaptively takes it (``ADAPTIVE_THINKING``), so only such a model is asked for it; another one the
+#: deployment grants and prices runs with no thinking field (7.58.01, ``harness_switch.native_models``).
 CLAUDE_THINKING: Final = {'thinking': {'type': 'adaptive', 'display': 'summarized'}}
 #: (7.58.00) The models that think adaptively: the agents' allowlist's ``adaptive_thinking`` rows
 #: (``shared/model_config.py``; this image has no ``shared/`` to read the flag from, and a test keeps the two equal).
@@ -201,10 +202,12 @@ class ConverseAdapter:
         """One model call: its usage (counted on the status report), its message and its stop reason, all three in
         the transcript."""
         started = time.monotonic()
-        answer = self._client.converse(modelId=self._model_id, messages=messages,
-                                       system=[{'text': system_prompt(session.context, session.tools.skill)}],
-                                       toolConfig=tools, inferenceConfig={'maxTokens': MAX_TOKENS},
-                                       **model_request_fields(self._model_id))
+        # (7.58.01: the call in flight, which the harness's heartbeat reports when it runs long: model_wait.py)
+        with session.context.model_wait.calling():
+            answer = self._client.converse(modelId=self._model_id, messages=messages,
+                                           system=[{'text': system_prompt(session.context, session.tools.skill)}],
+                                           toolConfig=tools, inferenceConfig={'maxTokens': MAX_TOKENS},
+                                           **model_request_fields(self._model_id))
         usage = answer.get('usage', {})
         tokens_in, tokens_out = int(usage.get('inputTokens', 0)), int(usage.get('outputTokens', 0))
         session.context.status.add_tokens(self._model_id, tokens_in, tokens_out)

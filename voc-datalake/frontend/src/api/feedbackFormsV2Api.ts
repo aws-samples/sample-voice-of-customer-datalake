@@ -9,8 +9,8 @@
  *   `can_delete_test_responses` (an admin or the form's creator: owner decision 2026-11-18). When the count is
  *   missing (`stats_error`), or the server has no such route (403/404/405: read from `GET /feedback-forms`' list
  *   instead), `GET …/stats`' `total_submissions` is asked for it: what locks codes and ids (D9).
- * - `POST /feedback-forms` (create, Off) and `PUT /feedback-forms/{id}` (save, with `expected_revision` and
- *   `expected_write_count`) → `{form}`, without `response_count` (the builder keeps the count it read:
+ * - `POST /feedback-forms` (create, Off) and `PUT /feedback-forms/{id}` (save, with `expected_write_count`; since
+ *   7.58.01 no `expected_revision`, which the server ignores) → `{form}`, without `response_count` (the builder keeps the count it read:
  *   useFormDraft.ts). A stale save (another save came in between, whatever it changed) is a 409 `{code:
  *   'revision_conflict', revision, write_count, updated_by, updated_at}` (D7); a 400 may carry `errors: [{message,
  *   question_id?}]`, and a retired id taken again is a 400 `{code: 'question_id_reused', question_id}`. On a form with
@@ -28,7 +28,7 @@
  * - `GET /feedback-forms/{id}/report?…` and `GET /feedback-forms/{id}/compare?…` (7.63.00, the Report, with the
  *   Results filters; feedbackFormsReport.ts reads them), and the report's AI summary, `POST /settings/form-reports`
  *   → 202 `{job_id}` polled at `GET /settings/form-reports/{job_id}` as the drafts are.
- * - `POST /settings/form-drafts` `{description, language, channel, base_form?, instruction?}` → 202 `{job_id}`,
+ * - `POST /settings/form-drafts` `{description, language, channel, base_form?, instruction?, retired_ids?}` → 202 `{job_id}`,
  *   polled at `GET /settings/form-drafts/{job_id}` until `{form, notes, warnings}` (feedbackFormsDraftJob.ts): the
  *   settings API's, beside its assist worker, not the forms API's (whose Lambda also serves the public widget). A
  *   job's `invalid_draft` is a 422 with the validator's `errors`, its `no_model` a 503; the start refuses with 429
@@ -295,6 +295,8 @@ export interface DraftRequest {
   readonly channel: Channel
   readonly base_form?: FormV2
   readonly instruction?: string
+  /** The question ids the form retired (and the draft removed): no question of the AI's takes one (7.58.01). */
+  readonly retired_ids?: readonly string[]
 }
 
 /** A model note or warning; `target` is the question or ending it names, when it names one. */
@@ -364,22 +366,20 @@ export const feedbackFormsV2Api = {
       .then((created) => ({ ...created, meta: { ...created.meta, can_delete_test_responses: true } })),
 
   /**
-   * Save the form over `expectedRevision` (and `expectedWriteCount`, the save count it was read at: any save since is
-   * a 409), naming what it `removes` from an answered form (model/removals.ts); a 409 (FormsApiError) when another
-   * save won (D7, `revision_conflict`) or a removal went unnamed or a type changed (`answers_locked`).
+   * Save the form over `expectedWriteCount` (the save count it was read at: any save since is a 409, a definition's
+   * among them, so no revision is sent: 7.58.01), naming what it `removes` from an answered form (model/removals.ts); a
+   * 409 (FormsApiError) when another save won (D7, `revision_conflict`) or a removal went unnamed or a type changed
+   * (`answers_locked`).
    */
-  saveForm: (formId: string, form: FormV2, expectedRevision: number, removes: FormRemovals | null = null,
-    expectedWriteCount: number | null = null): Promise<LoadedForm> =>
+  saveForm: (formId: string, form: FormV2, expectedWriteCount: number, removes: FormRemovals | null = null): Promise<LoadedForm> =>
     fetchApi<unknown>(formPath(formId), put({
-      ...toWireForm(form), expected_revision: expectedRevision, ...(removes === null ? {} : { removes }),
-      ...(expectedWriteCount === null ? {} : { expected_write_count: expectedWriteCount }),
+      ...toWireForm(form), expected_write_count: expectedWriteCount, ...(removes === null ? {} : { removes }),
     })).then(loadedFrom),
 
-  /** Turn the form on or off (the list's switch, Turn off): only `enabled` changes, over what the caller read. */
-  setEnabled: (formId: string, enabled: boolean, expectedRevision?: number, expectedWriteCount?: number): Promise<LoadedForm> =>
+  /** Turn the form on or off (the list's switch, Turn off): only `enabled` changes, over the save count the caller read. */
+  setEnabled: (formId: string, enabled: boolean, expectedWriteCount?: number): Promise<LoadedForm> =>
     fetchApi<unknown>(formPath(formId), put({
-      enabled, ...(expectedRevision === undefined ? {} : { expected_revision: expectedRevision }),
-      ...(expectedWriteCount === undefined ? {} : { expected_write_count: expectedWriteCount }),
+      enabled, ...(expectedWriteCount === undefined ? {} : { expected_write_count: expectedWriteCount }),
     })).then(loadedFrom),
 
   /**
@@ -463,6 +463,7 @@ export const feedbackFormsV2Api = {
         channel: request.channel,
         ...(request.base_form === undefined ? {} : { base_form: toWireForm(request.base_form) }),
         ...(request.instruction === undefined ? {} : { instruction: request.instruction }),
+        ...(request.retired_ids === undefined || request.retired_ids.length === 0 ? {} : { retired_ids: request.retired_ids }),
       }),
       // (spelled out as well: the mock-coverage gate reads a request's method from its options' text)
       method: 'POST',

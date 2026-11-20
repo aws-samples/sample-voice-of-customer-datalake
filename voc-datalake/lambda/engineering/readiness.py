@@ -36,8 +36,7 @@ from typing import Any, Final, Literal, Protocol
 
 from engineering.connectors.hosts import FINE_GRAINED
 from engineering.runtime.harness.kiro_pin import kiro_model
-from engineering.runtime.harness.model_choice import bedrock_model
-from engineering.runtime.harness_switch import not_native
+from engineering.runtime.harness.model_choice import bedrock_model, not_enabled
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODE_HUMAN_DRIVEN, MODES
 from shared.dynamo_values import string_list as _texts
 from shared.workflow_engineering import PUSHING_ROLES
@@ -825,7 +824,7 @@ def _bedrock_models(ctx: _Context) -> Check:
         return Check('bedrock_models', 'fail', 'The flow names no role with a model.', 'Add the flow\'s steps.',
                      MODELS_DOCS)
     chosen = _chosen_native(ctx)
-    refused = [f'The {role}: {not_native(model)}' for role, model, ok in chosen if not ok]
+    refused = [f'The {role}: {not_enabled(model)}' for role, model, ok in chosen if not ok]
     if refused:
         return Check('bedrock_models', 'fail', ' '.join(refused),
                      'Choose another model for the role (Agents → Registry), or have an admin price it.', MODELS_DOCS)

@@ -358,8 +358,8 @@ def test_a_kiro_cli_that_is_missing_or_not_the_pinned_version_is_refused(tmp_pat
     w = world(tmp_path)
     with pytest.raises(KiroNotOffered, match='not an installed kiro-cli'):
         _adapter('kiro-cli', w).run(w.session)
-    binary, _ = _fake(tmp_path, {'version': '3.3.0'})
-    with pytest.raises(KiroNotOffered, match=r'not the pinned kiro-cli 3\.4\.0'):
+    binary, _ = _fake(tmp_path, {'version': '3.4.0'})   # (7.58.01: the pin before)
+    with pytest.raises(KiroNotOffered, match=r'not the pinned kiro-cli 3\.5\.0'):
         _adapter(binary, w).run(w.session)
 
 

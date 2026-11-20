@@ -72,26 +72,13 @@ MODEL_PRICES_ENV: Final = 'ENGINEERING_MODEL_PRICES'
 
 def native_models(env: Mapping[str, str]) -> frozenset[str]:
     """The Bedrock models the native harness may run here: the ones the agents' roles are granted (the Claude
-    allowlist, ``shared/model_config.py`` ``ALLOWED_MODEL_IDS``, in lockstep with the stacks' grant) that think
-    adaptively (the allowlist's ``adaptive_thinking``: the Converse loop asks every session's model for adaptive,
-    summarized thinking, ``converse_loop.CLAUDE_THINKING``, which an older Claude refuses) and that the deployment also
-    prices (``caps.model_prices``), so no model is run that the cost caps cannot price, and no grant is widened for
-    one."""
+    allowlist, ``shared/model_config.py`` ``ALLOWED_MODEL_IDS``, in lockstep with the stacks' grant) that the deployment
+    also prices (``caps.model_prices``), so no model is run that the cost caps cannot price, and no grant is widened for
+    one; a model that does not think adaptively runs too (7.58.01: the Converse loop asks only the ones that do for
+    their thinking, ``converse_loop.model_request_fields``). Any other is ``model_choice.not_enabled``."""
     from engineering.runtime.caps import model_prices
-    from shared.model_config import ALLOWED_MODEL_IDS, uses_adaptive_thinking
-    adaptive = frozenset(model for model in ALLOWED_MODEL_IDS if uses_adaptive_thinking(model))
-    return adaptive & frozenset(model_prices(env.get(MODEL_PRICES_ENV)).prices)
-
-
-def not_native(model: str) -> str:
-    """Why the native harness cannot run ``model`` here, as a person reads it: a granted Claude model that does not
-    think adaptively cannot run on it at all (``native_models``); any other, the deployment neither grants and prices
-    it (``model_choice.not_enabled``)."""
-    from shared.model_config import ALLOWED_MODEL_IDS, uses_adaptive_thinking
-    if model in ALLOWED_MODEL_IDS and not uses_adaptive_thinking(model):
-        return (f"{model} can't run on the native harness: it doesn't think adaptively, which the harness asks of "
-                'every model. Choose another model.')
-    return not_enabled(model)
+    from shared.model_config import ALLOWED_MODEL_IDS
+    return frozenset(ALLOWED_MODEL_IDS) & frozenset(model_prices(env.get(MODEL_PRICES_ENV)).prices)
 
 
 def argv_model(argv: Sequence[str]) -> str:
@@ -114,7 +101,7 @@ def with_model(argv: Sequence[str], role: str, env: Mapping[str, str], choice: s
     if model == default:
         return tuple(argv), default
     if model not in native_models(env):
-        raise RuntimeRefused(not_native(model))
+        raise RuntimeRefused(not_enabled(model))
     if not default:
         raise RuntimeRefused(f'the {role}\'s harness names no model to replace with {model}')
     items = list(argv)

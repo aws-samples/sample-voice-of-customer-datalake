@@ -338,6 +338,92 @@ messages only name the new places.
   [account-vs-admin.md](docs/account-vs-admin.md#administration-mains-tabs-75900)), 7.54.00's readiness links
   (`/admin/people`, `/admin/sources/github_issues?scope=deployment`) included.
 
+## [7.58.01] - 2026-11-21
+
+The review gate's deferred findings on the 7.49–7.58 batch, fixed right after its push: a long model call no longer
+gets a native agent's task stopped as stalled; Improve with AI gives no question a removed question's id; an
+unanswered form's saves stop reading its brand's responses; the Contribute dialog acknowledges the licence GitHub
+answers now; a granted Claude that does not think adaptively runs natively once priced; a form save's precondition is
+its save count alone; and the images pin kiro-cli 3.5.0. Only with `-c engineeringAgents=true` for the engineering
+changes.
+
+### Changed
+
+- **A Claude model that does not think adaptively runs on the native harness once priced** (F6,
+  `runtime/harness_switch.py` `native_models`): the native choice is the agents' grant and the deployment's price
+  (`-c engineeringModelPrices`), nothing more. 7.58.00 also refused a granted model that does not think adaptively
+  (Claude Sonnet 4.6, Haiku 4.5), "which the harness asks of every model"; the Converse loop has asked only the ones
+  that do for their summarized thinking since 7.58.00 (`converse_loop.model_request_fields`), so such a model's calls
+  carry no thinking field and the run's thread shows its words with no thought and no error. Unpriced it is refused as
+  any other ("‹id› isn't enabled in this deployment…"); the Registry's Other model list offers it once priced
+  ([autonomous-engineering.md](docs/autonomous-engineering.md#choosing-the-model-75800)).
+- **A form save's precondition is its save count** (F7, Feedback Forms): `PUT /feedback-forms/{id}` checks
+  `expected_write_count` only, and the builder no longer sends `expected_revision`: every save moves the count, and
+  only a save moves the revision, so the count implies it. `revision` stays the definition's number. An
+  `expected_revision` an older client still sends is **ignored, whatever it holds** (never a `409`, never a `400`), so
+  a builder of 7.57.00 or before left open saves with no stale-save check until it is reloaded; the dev mock answers the
+  same ([docs](docs/feedback-forms.md#revisions)).
+- **The images pin kiro-cli 3.5.0** (3.4.0 before; `runtime/harness/kiro_pin.py` `KIRO_CLI_VERSION`, the four
+  Dockerfiles): the version the credit meter's v3 `turn_completion` was checked on live. Its arm64 musl archive's
+  sha256 (`6b931d7c…4db1`, 137,581,264 bytes) is the one Kiro's release index lists
+  (`https://prod.download.cli.kiro.dev/stable/index.json`, read 2026-11-20, where the 3.4.0 pin's came from), and the
+  download hashed the same; its `BUILD-INFO` says 3.5.0, and the build still refuses a binary whose `--version` says
+  another. The 12 compiled Kiro agent configs pass kiro-cli 3.5.0's `agent validate`. Rebuild the images: upgrade notes.
+- The Claude effort table is its own bound (F8, `harness/effort.py`): `EFFORT_LEVELS` and the check that a pinned level
+  is one of them, which no level could fail, are gone; a test holds the table's three levels.
+- Tests: the Converse loop's cut-reply test compares the two requests as they were sent (the fake Bedrock records a
+  copy: it compared one list with itself), and the cut reply carries a tool call that must not run (R2-4); a restored
+  Kiro session's replayed `turn_completion` adds no credits, and its new turn is counted once (R2-5, on a fake kiro-cli
+  whose `session/load` replays a turn's completion as kiro-cli does).
+- Docs: 7.58.00's Fixed bullet on the answers lock named the assistant turning a version 1 form's rating off as the
+  headless writer; it is a direct REST caller (a `PUT` of a version 1 field such as `rating_enabled`), corrected there
+  and in [feedback-forms.md](docs/feedback-forms.md#the-lock-of-an-answered-form); 7.58.00's upgrade notes no longer
+  call 7.57.00 never released (it shipped together with 7.58.00, in one push) and its Changed bullet says which
+  7.55.00 ceiling it names; `.kiro/steering/structure.md`'s Feedback Forms routes list 7.55.00's (one form, results,
+  responses, the test responses' delete, the test link); and [feedback-forms.md](docs/feedback-forms.md#ai-drafts)
+  says where the AI drafts' rules hold: no way-of-working gate applies to a form (by decision), the drafts save
+  nothing and the server makes the ids and validates every save, but that an AI draft starts Off is its clients' rule
+  only, recorded as a tenet 4 gap in TENETS.md.
+
+### Fixed
+
+- **A long model call no longer gets a native agent's task stopped as stalled** (R2-3; `harness/model_wait.py`,
+  `harness/main.py`): the supervisor's stall rule reads progress only (no report for 10 minutes and it asks the agent
+  its state, none 3 minutes later and it stops the task), and a Converse call answers only once its whole reply of up
+  to 32,000 tokens is written, so one long call, or a cut reply and its retry, could be stopped mid-call and the paid
+  call lost. The harness's heartbeat now reports "waiting on the model" once for each request to Bedrock still in flight
+  a minute after it was sent (one board line a request, never one a minute; a request botocore sends again after a read
+  timeout is a request of its own, told by botocore's `before-send`). Its client waits 600 seconds for an answer (900 in
+  7.58.00) and 10 for a connection, so a request ends within the stall rule's 10 minutes of its line and two requests'
+  lines come within its 13: a test holds both at the supervisor's default timings, the ones the stack runs, and a
+  simulated call of 31 minutes, a cut reply and a resend, is never stopped (it was, without the line)
+  ([autonomous-engineering.md](docs/autonomous-engineering.md#choosing-the-model-75800)).
+- **Improve with AI gives no question a removed question's id** (R2-1): the builder sends the form's `retired_ids`
+  (with those its unsaved edits removed) in the draft request (`POST /settings/form-drafts` `retired_ids`, at most
+  1,000 question ids; anything else is a `400`), and the server's id maker reserves them, so a question the model adds
+  or brings back takes another id (`q_why` → `q_why_2`) and the draft validates first time; before, such a draft
+  failed its save with `question_id_reused`. On an answered form the builder now locks the id field only of a question
+  the stored form has: one added since has no answers under its id, so its id can be changed
+  ([docs](docs/feedback-forms.md#ai-drafts)).
+- **An unanswered form's saves no longer read its brand's responses** (R2-2): a form is created with `has_responses:
+  false`, so a save that changes its definition trusts the flag, which its first real response sets. Only a form with
+  no such field (one created before 7.58.01) is still read for a real response, as before, and marked once one is
+  found ([docs](docs/feedback-forms.md#the-lock-of-an-answered-form)).
+- **The Contribute dialog acknowledges the licence GitHub answers now** (Q22's remainder, Agents → Connections →
+  Contribute → Install the App on your fork): it reads the upstream's licence live, as a fork's Acknowledge the current
+  licence… does (`GET /agents/engineering/public-repositories?q=<owner/name>`), offers that one to tick and sends it.
+  It sent the licence stored at connect time, which the server refuses once the upstream changed it; while the licence
+  is read, when it cannot be, or when there is none now, nothing is offered to tick and Continue asks nothing.
+
+### Upgrade notes
+
+- **Rebuild the four engineering images** where a role runs on Kiro (`-c engineeringHarness`), and deploy their
+  digests with this release (`npm run images:build`, docs/deployment.md `engineeringImages`): the harness accepts only
+  the pinned kiro-cli 3.5.0, so a Kiro session on an image of 7.58.00 or before stops at its start, and readiness's
+  `kiro` check fails ("had kiro-cli 3.4.0, not the pinned 3.5.0"). Let runs on Kiro finish, or stop them, before the
+  switch: a session started before keeps its launch's `--kiro-version 3.4.0`, so its continuation on a new image
+  crashes, and its task goes back to the board. A deployment on the native harness only may rebuild later.
+
 ## [7.58.00] - 2026-11-20
 
 **Choose the model an engineering agent runs on**, for Kiro and for the native harness: one choice per role (on Kiro
@@ -426,7 +512,8 @@ administrator's, behind Cognito.
 - The review gate's records (round 1): the owner's approval of jscpd's three `vi.mock` ignore patterns (2026-11-17, the
   7.51–7.54 batch) is recorded in docs/code-audit.md, checked to match only spec files' mock blocks and the one
   spec-only Prioritization fixture; `.gitleaks.toml`'s fixture allowlists name their quotes (`['"]`, not any character)
-  and say what they are in one line; CHANGELOG 7.55.00 names one ceiling (below).
+  and say what they are in one line; and 7.55.00's API stack bullet (below) says which number is which: its largest
+  shape, 425 resources, at the stack's unchanged gate of 425.
 - The root README explains Autonomous engineering and the agent orchestration templates and links their docs; the
   monitor's overview test names 7.57.00's `upstream_pull_request`.
 - The role's model route is classified (deployment-wide, an administrator's: the cross-workspace tables, the admin
@@ -487,10 +574,10 @@ administrator's, behind Cognito.
   a removed question's type made every save fail.
 - **Version 1 responses stay in Results, Responses and the CSV** once `q_rating` or `q_text` is removed or changed: they
   always count as those two questions (under "Removed questions" when one is gone).
-- **The answers lock holds on a form answered only before 7.55.00**: no submit had marked it, so a headless save (the
-  assistant turning a version 1 form's rating off) went through. A definition change now reads whether the form has a
-  real response stored, every one whoever saves, failing closed, and marks the form. `removes` and the `409` stay:
-  they are what guards such writers.
+- **The answers lock holds on a form answered only before 7.55.00**: no submit had marked it, so a headless save (a
+  direct REST caller's `PUT` of a version 1 field, such as `rating_enabled: false`) went through. A definition change
+  now reads whether the form has a real response stored, every one whoever saves, failing closed, and marks the form.
+  `removes` and the `409` stay: they are what guards such writers.
 - **No funnel against filtered completions**: under a language, ending or hidden-value filter, Results answer
   `funnel: null` (the counters know none of them) and the page shows neither the drop-off nor Completion, Reach saying
   why; the date range keeps it.
@@ -602,8 +689,9 @@ administrator's, behind Cognito.
 
   Then deploy, and once a Kiro session has read the new path, delete the old parameter:
   `aws ssm delete-parameter --region <region> --name /voc/engineering/_kiro/api-key`.
-- **On a deployment that ran 7.57.00** (a test one: 7.57.00 was never released), the GitHub user authorizations'
-  parameters stay in SSM after the function's removal; nothing reads them. List their names with `aws ssm
+- **On a deployment that ran 7.57.00** (7.57.00 shipped together with 7.58.00, in one push, so only a deployment
+  built from 7.57.00's own commit, a test one, ran it), the GitHub user authorizations' parameters stay in SSM after
+  the function's removal; nothing reads them. List their names with `aws ssm
   get-parameters-by-path --region <region> --path /<prefix>-voc/engineering-user-auth/ --recursive --query
   'Parameters[].Name'` and delete them (`aws ssm delete-parameters --names …`); revoking an authorization on GitHub is
   each person's (Settings → Applications → Authorized GitHub Apps).

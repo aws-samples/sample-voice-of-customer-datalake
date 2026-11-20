@@ -1,6 +1,7 @@
 """Fakes for the harness's tests: the runner, the board, the inbox, the broker, the store and Bedrock."""
 from __future__ import annotations
 
+import copy
 import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -206,9 +207,15 @@ class FakeStore:
                              for n, key in enumerate(sorted(self.objects)) if key.startswith(prefix)]}
 
 
+#: The file a cut reply's tool call would write (``FakeBedrock``): never written.
+CUT_PATH = 'src/from_a_cut_reply.py'
+
+
 class FakeBedrock:
-    """Answers ``converse`` with the scripted messages in turn, and records every request. The calls ``cut`` names
-    (0 the first) are answered as a reply that stopped at the output cap, a scripted message unspent."""
+    """Answers ``converse`` with the scripted messages in turn, and records every request as it was sent (a copy: the
+    loop goes on appending to its conversation). The calls ``cut`` names (0 the first) are answered as a reply that
+    stopped at the output cap, a scripted message unspent: its text and a ``write_file`` of ``CUT_PATH``, which must not
+    run (7.58.01: the cut reply is dropped, its tool calls too)."""
 
     def __init__(self, answers: list[list[dict[str, Any]]], tokens: tuple[int, int] = (100, 20),
                  cut: frozenset[int] = frozenset()) -> None:
@@ -218,9 +225,10 @@ class FakeBedrock:
         self.requests: list[dict[str, Any]] = []
 
     def converse(self, **request: Any) -> dict[str, Any]:
-        self.requests.append(request)
+        self.requests.append(copy.deepcopy(request))
         if len(self.requests) - 1 in self._cut:
-            return {'output': {'message': {'role': 'assistant', 'content': [{'text': 'I will now wri'}]}},
+            cut = [{'text': 'I will now wri'}, use('write_file', f'cut-{len(self.requests)}', path=CUT_PATH, text='cut')]
+            return {'output': {'message': {'role': 'assistant', 'content': cut}},
                     'stopReason': 'max_tokens', 'usage': {'inputTokens': self._tokens[0], 'outputTokens': 32_000}}
         content = self._answers.pop(0) if self._answers else [{'text': 'nothing more'}]
         return {'output': {'message': {'role': 'assistant', 'content': content}},

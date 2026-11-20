@@ -52,7 +52,7 @@ def test_a_choice_of_a_role_the_flow_does_not_run_or_on_kiro_is_not_a_bedrock_mo
 ])
 def test_the_kiro_check_names_each_roles_model_and_says_it_is_checked_at_the_sessions_start(choices, cards, said):
     settings = replace(SETTINGS, kiro_roles=frozenset({'fixer'}), kiro_key_parameter='/voc/engineering-kiro/api-key',
-                       kiro_version='3.4.0', model_choices=choices, card_models=cards)
+                       kiro_version='3.5.0', model_choices=choices, card_models=cards)
     detail = checks(settings=settings)['kiro'].detail
     assert said in detail
     assert ("Kiro checks each when the step's session starts: a model it cannot use on this account stops that "

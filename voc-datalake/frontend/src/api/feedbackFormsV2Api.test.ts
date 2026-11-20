@@ -134,15 +134,16 @@ describe('the forms builder client (reconciled with part A)', () => {
   it('names what a save removes from an answered form, and sends no `removes` when it names nothing (D9)', async () => {
     const { sampleForm } = await import('../pages/FeedbackForms/test/draftHarness')
     fetchMock.mockImplementation(async () => json(200, { success: true, form: await record({ response_count: 0 }) }))
-    await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 3, { questions: ['q_old'], options: { q_reason: ['bugs'] } }, 8)
+    await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 8, { questions: ['q_old'], options: { q_reason: ['bugs'] } })
     await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 4)
     const bodies = fetchMock.mock.calls.map(([, init]): object => {
       const parsed: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : null
       return typeof parsed === 'object' && parsed !== null ? parsed : {}
     })
     const field = (body: object, key: string): unknown => Reflect.get(body, key)
+    // (7.58.01: the save count alone is the precondition, no expected_revision)
     expect(bodies.map((body) => [field(body, 'expected_revision'), field(body, 'removes'), field(body, 'expected_write_count')])).toStrictEqual([
-      [3, { questions: ['q_old'], options: { q_reason: ['bugs'] } }, 8], [4, undefined, undefined],
+      [undefined, { questions: ['q_old'], options: { q_reason: ['bugs'] } }, 8], [undefined, undefined, 4],
     ])
     expect(Object.keys(bodies[1] ?? {})).not.toContain('removes')
   })
@@ -192,15 +193,13 @@ describe('the forms builder client (reconciled with part A)', () => {
       expect([loaded.meta.form_id, loaded.form.name]).toStrictEqual(['f_1', 'Sample form'])
     })
 
-    it('turns a form on or off, over its revision when it has one', async () => {
+    it('turns a form on or off, over its save count when it has one', async () => {
       fetchMock.mockImplementation(async () => json(200, { success: true, form: await record({ response_count: 0 }) }))
-      await feedbackFormsV2Api.setEnabled('f_1', false, 3)
       await feedbackFormsV2Api.setEnabled('f_1', true)
-      await feedbackFormsV2Api.setEnabled('f_1', false, 3, 9)
+      await feedbackFormsV2Api.setEnabled('f_1', false, 9)
       expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method, init?.body])).toStrictEqual([
-        ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":false,"expected_revision":3}'],
         ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":true}'],
-        ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":false,"expected_revision":3,"expected_write_count":9}'],
+        ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":false,"expected_write_count":9}'],
       ])
     })
 
@@ -275,6 +274,14 @@ describe('the forms builder client (reconciled with part A)', () => {
         false, [{ message: 'Kept it short.' }, { message: 'Asked for the plan.', target: 'q_feedback' }], [{ message: 'No ending button.' }],
       ])
       expect(sentBody()).toMatchObject({ description: 'A short form', instruction: 'Shorter', base_form: { name: 'Sample form' } })
+      expect(sentBody()).not.toHaveProperty('retired_ids')
+    })
+
+    it("sends the form's retired question ids with an improvement, when it has some (7.58.01)", async () => {
+      fetchMock.mockResolvedValue(json(200, { form: sampleForm(), notes: [], warnings: [] }))
+      await feedbackFormsV2Api.draftForm({ description: 'Ask again', language: 'en', channel: 'link', base_form: sampleForm(), instruction: 'Ask again',
+        retired_ids: ['q_old'] })
+      expect(sentBody()).toMatchObject({ retired_ids: ['q_old'] })
     })
 
     it('rejects a draft that came back without a form', async () => {

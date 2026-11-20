@@ -252,7 +252,7 @@ describe('the ⋯ menu', () => {
     const { user } = renderHeader(sampleForm({ enabled: true }))
     await pick(user, /^Turn off/)
     expect(await screen.findByText('Turned off. Its link shows “Feedback form unavailable.”; the test link keeps working.')).toBeInTheDocument()
-    expect(formsApi.setEnabled).toHaveBeenCalledWith('f_test', false, 3, 5)
+    expect(formsApi.setEnabled).toHaveBeenCalledWith('f_test', false, 5)
   })
 
   it('offers no Turn off for a form that is off', async () => {

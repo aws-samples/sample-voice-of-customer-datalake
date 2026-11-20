@@ -11,7 +11,8 @@ The model reads the contract's types, ops and limits and the thirteen templates'
 description and instruction travel in a ``form_brief`` DATA block and their current form in a ``current_form`` one,
 never as instructions. Its answer goes through ``sanitize`` before the one validator (shared/forms_v2.py
 ``validate_definition``): ids and option codes are made here (slugged, accents folded, de-duplicated, reserved codes
-renamed; a matrix's row and column codes too) and the rules, and every recall placeholder (``{{id}}``), re-pointed at
+renamed; a matrix's row and column codes too; since 7.58.01 no question id the form retired, the request's
+``retired_ids``) and the rules, and every recall placeholder (``{{id}}``), re-pointed at
 them; an address that is not https is dropped with a warning. A draft that still
 fails after one repair with the validator's error is answered ``{success: false, code: 'invalid_draft', errors}``
 (the 422 of a synchronous route), never saved.
@@ -62,11 +63,24 @@ def _text(body: Mapping[str, Any], key: str, limit: int) -> str:
     return value.strip()
 
 
+def _retired(body: Mapping[str, Any]) -> list[str]:
+    """The form's ``retired_ids`` (7.58.01: the ids of the questions it removed, which a draft's new questions never
+    take), as a list of question ids."""
+    value = body.get('retired_ids')
+    if value is None:
+        return []
+    if (not isinstance(value, list) or len(value) > fv2.MAX_RETIRED_IDS
+            or any(not isinstance(qid, str) or not fv2.QUESTION_ID.fullmatch(qid) for qid in value)):
+        raise ValidationError(f'retired_ids must be a list of at most {fv2.MAX_RETIRED_IDS} question ids')
+    return list(dict.fromkeys(value))
+
+
 def validate_request(body: Mapping[str, Any]) -> dict[str, Any]:
-    """``{description, language, channel, base_form?, instruction?}`` checked: a description (to draft a new form) or
-    an instruction with the current form (to improve it), the primary language, where the form runs."""
+    """``{description, language, channel, base_form?, instruction?, retired_ids?}`` checked: a description (to draft a
+    new form) or an instruction with the current form (to improve it), the primary language, where the form runs, and
+    (7.58.01) the removed questions' ids, which no question of the draft takes."""
     unknown = sorted(str(key)[:40] for key in body if key not in {'description', 'language', 'channel', 'base_form',
-                                                                 'instruction'})
+                                                                 'instruction', 'retired_ids'})
     if unknown:
         raise ValidationError(f'the draft request has unknown fields: {", ".join(unknown[:5])}')
     description = _text(body, 'description', MAX_DESCRIPTION_CHARS)
@@ -93,6 +107,9 @@ def validate_request(body: Mapping[str, Any]) -> dict[str, Any]:
         out['base_form'] = json.loads(json.dumps(kept, default=str), parse_float=Decimal)
     if instruction:
         out['instruction'] = instruction
+    retired = _retired(body)
+    if retired:
+        out['retired_ids'] = retired
     return out
 
 
@@ -343,8 +360,10 @@ def _sanitize_matrix(question: dict[str, Any]) -> None:
         question[key] = entries
 
 
-def _sanitize_questions(form: Mapping[str, Any], language: str, warnings: list[str]) -> tuple[list, dict]:
-    ids = _Ids('q_', fv2.QUESTION_ID, 'question')
+def _sanitize_questions(form: Mapping[str, Any], language: str, warnings: list[str],
+                        retired: frozenset[str]) -> tuple[list, dict]:
+    # (7.58.01: a removed question's id is reserved, so a question the model adds, or brings back, takes another)
+    ids = _Ids('q_', fv2.QUESTION_ID, 'question', retired)
     questions, targets, code_maps = [], {}, []
     for index, raw in enumerate(form.get('questions') or []):
         if not isinstance(raw, dict):
@@ -417,13 +436,14 @@ def _repoint_recall(definition: dict[str, Any], names: Mapping[str, str]) -> Non
 
 def sanitize(raw: object, request: Mapping[str, Any]) -> tuple[dict[str, Any], str, list[str]]:
     """``(definition, name, warnings)`` from the model's ``form``: the request's primary language, ids and codes made
-    here (the rules re-pointed at them), non-https addresses dropped. Validation is ``validate_definition``'s."""
+    here (the rules re-pointed at them; no question id among the request's ``retired_ids``), non-https addresses
+    dropped. Validation is ``validate_definition``'s."""
     form = raw if isinstance(raw, Mapping) else {}
     warnings: list[str] = []
     base = request.get('base_form') or {}
     language = str(base['language'] if base.get('language') in fv2.FORM_LOCALES else request['language'])
     languages = [lang for lang in (form.get('languages') or []) if lang in fv2.FORM_LOCALES]
-    questions, maps = _sanitize_questions(form, language, warnings)
+    questions, maps = _sanitize_questions(form, language, warnings, frozenset(request.get('retired_ids') or ()))
     endings, ending_targets = _sanitize_endings(form, language, warnings)
     targets = {**maps['targets'], **ending_targets}
     for index, (question, codes) in enumerate(zip(questions, maps['codes'], strict=True)):

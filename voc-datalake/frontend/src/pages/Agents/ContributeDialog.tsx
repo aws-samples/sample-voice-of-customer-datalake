@@ -5,6 +5,9 @@
  * - **Where the fork goes and the licence.** The person's own account (the default), or an organization they
  *   administer (its login); the deployment's GitHub App the fork is installed with, when there are several; and the
  *   upstream's licence, acknowledged by its SPDX id ("I have read the MIT licence and contribute under it": required).
+ *   (7.58.01) That licence is read live, as ForkLines' Acknowledge the current licence… reads it
+ *   (`useCurrentLicence`: GitHub's answer now, not the connect time's stored one, which the server would refuse once the
+ *   upstream changed it); nothing is offered to tick while it is read, when it cannot be, or when there is none now.
  *   A repository with no licence, or an archived one, is not offered. **Continue** asks the server (`POST
  *   /agents/engineering/connections/<id>/fork`), which reads the upstream again and refuses (409, said in its words)
  *   an archived one, one that opts out of bot pull requests, one with no licence or another licence than the one
@@ -14,7 +17,7 @@
  *   fork and saves its connection (GitHubAppInstalled.tsx).
  *
  * The upstream is its owner's; the fork and the pull requests are the person's: each run ends with its pull request on
- * the upstream one click away (the person clicks Create on GitHub), or opened for them once they authorized the app.
+ * the upstream one click away (the person clicks Create on GitHub).
  *
  * @module pages/Agents/ContributeDialog
  */
@@ -28,6 +31,7 @@ import { ConnectionFormModal } from './ConnectionModals'
 import { useContributionHeld } from './connectionText'
 import { leavingForGitHub } from './githubReturn'
 import { AccountRadios, OrganizationField } from './AccountRadios'
+import { useCurrentLicence } from './useCurrentLicence'
 import type { EngineeringConnection, ForkRequest } from '../../api/engineeringConnectionsApi'
 import type { GitHubApp } from '../../api/githubAppsApi'
 
@@ -56,6 +60,31 @@ function DestinationFields({ account, org, orgInvalid, onAccount, onOrg }: Reado
   )
 }
 
+/** The licence to tick, as GitHub answers it now; or why there is none to tick (being read, unreadable, none). */
+function LicenceField({ repository, current, acknowledged, unticked, onTick }: Readonly<{
+  repository: string; current: ReturnType<typeof useCurrentLicence>; acknowledged: boolean; unticked: boolean
+  onTick: (ticked: boolean) => void
+}>) {
+  const { t } = useTranslation('agents')
+  const hintId = useId()
+  const { licence, failed } = current
+  if (failed) return <p role="alert" className="text-[12px] text-danger">{t('connections.fork.licenceUnread')}</p>
+  if (licence === undefined) return <p className="text-[12px] text-muted">{t('connections.fork.licenceReading')}</p>
+  if (licence === null) return <p className="text-[12px] text-warn">{t('connections.fork.licenceNone', { upstream: repository })}</p>
+  return (
+    <div className="space-y-1">
+      <label className="flex items-start gap-2 text-sm text-text">
+        <input type="checkbox" className="mt-1" checked={acknowledged} aria-invalid={unticked} aria-describedby={hintId}
+          onChange={(event) => { onTick(event.target.checked) }} />
+        {t('connections.contribute.licence', { licence })}
+      </label>
+      <p id={hintId} className={unticked ? 'text-[12px] text-danger' : 'text-[12px] text-muted'}>
+        {unticked ? t('connections.contribute.licenceRequired') : t('connections.contribute.licenceHint')}
+      </p>
+    </div>
+  )
+}
+
 /** The App choice, only when the deployment has more than one. */
 function AppChoice({ apps, appId, onApp }: Readonly<{ apps: readonly GitHubApp[]; appId: string; onApp: (appId: string) => void }>) {
   const { t } = useTranslation('agents')
@@ -75,7 +104,6 @@ export function ContributeDialog({ connection, apps, onClose }: Readonly<{
   connection: EngineeringConnection; apps: readonly GitHubApp[]; onClose: () => void
 }>) {
   const { t } = useTranslation('agents')
-  const licenceId = useId()
   const [account, setAccount] = useState<Account>('user')
   const [org, setOrg] = useState('')
   const [orgInvalid, setOrgInvalid] = useState(false)
@@ -83,17 +111,19 @@ export function ContributeDialog({ connection, apps, onClose }: Readonly<{
   const [acknowledged, setAcknowledged] = useState(false)
   const [unticked, setUnticked] = useState(false)
   const notOffered = useContributionHeld(connection)
-  const licence = connection.public?.licence ?? ''
+  // (7.58.01: the licence GitHub answers now, never the connect time's stored one)
+  const current = useCurrentLicence(connection.repository)
   const fork = useMutation({
     mutationFn: (request: ForkRequest) => engineeringConnectionsApi.fork(connection.connection_id, request),
     // (step 2 of the card: the App's install page, in this tab; GitHub sends the person back to the installed page)
     onSuccess: ({ installUrl }) => { leavingForGitHub(); window.location.assign(installUrl) },
   })
   const submit = () => {
+    const { licence } = current
     const badOrg = account === 'organization' && !ORGANIZATION_LOGIN.test(org.trim())
     setOrgInvalid(badOrg)
-    setUnticked(!acknowledged)
-    if (badOrg || !acknowledged || notOffered !== null) return
+    setUnticked(typeof licence === 'string' && !acknowledged)
+    if (badOrg || !acknowledged || notOffered !== null || typeof licence !== 'string') return
     const workspace = PAGE_WORKSPACE.kind === 'slug' ? { workspace: PAGE_WORKSPACE.slug } : {}
     const destination = account === 'user' ? { account } : { account, org: org.trim() }
     fork.mutate({ ...destination, licence, ...(appId === '' ? {} : { app_id: appId }), ...workspace })
@@ -106,16 +136,8 @@ export function ContributeDialog({ connection, apps, onClose }: Readonly<{
         <>
           <DestinationFields account={account} org={org} orgInvalid={orgInvalid} onAccount={setAccount} onOrg={setOrg} />
           <AppChoice apps={apps} appId={appId} onApp={setAppId} />
-          <div className="space-y-1">
-            <label className="flex items-start gap-2 text-sm text-text">
-              <input type="checkbox" className="mt-1" checked={acknowledged} aria-invalid={unticked} aria-describedby={licenceId}
-                onChange={(event) => { setAcknowledged(event.target.checked); setUnticked(false) }} />
-              {t('connections.contribute.licence', { licence })}
-            </label>
-            <p id={licenceId} className={unticked ? 'text-[12px] text-danger' : 'text-[12px] text-muted'}>
-              {unticked ? t('connections.contribute.licenceRequired') : t('connections.contribute.licenceHint')}
-            </p>
-          </div>
+          <LicenceField repository={connection.repository} current={current} acknowledged={acknowledged} unticked={unticked}
+            onTick={(ticked) => { setAcknowledged(ticked); setUnticked(false) }} />
         </>
       ) : <p role="status" className="text-sm text-warn">{notOffered}</p>}
     </ConnectionFormModal>

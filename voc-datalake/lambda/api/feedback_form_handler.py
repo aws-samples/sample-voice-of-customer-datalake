@@ -663,6 +663,9 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
         'schema_version': fv2.SCHEMA_VERSION,
         'revision': 1,
         'write_count': 0,
+        # (7.58.01) Not answered yet: its first real response marks it (``_mark_answered``), so a definition change
+        # never reads the brand's responses for it (``_plan_update`` does for a form created before, with no flag).
+        'has_responses': False,
         **definition,
         'settings': {'test': test},
     }
@@ -1206,13 +1209,13 @@ def _settings_update(stored: Mapping[str, Any], body: Mapping[str, Any]) -> tupl
 
 
 def _require_update_fields(body: Mapping[str, Any]) -> None:
-    """400 for a PUT that names nothing updatable (before the form is read), or a malformed ``expected_revision`` or
-    ``expected_write_count``."""
+    """400 for a PUT that names nothing updatable (before the form is read), or a malformed ``expected_write_count``.
+    (An old client's ``expected_revision`` is ignored, whatever it holds: 7.58.01.)"""
     if not any(f in body for f in (*UPDATABLE_FIELDS, *fv2.DEFINITION_FIELDS, *fv2.V1_FIELDS, 'settings')):
         raise ValidationError('No fields to update')
-    for name in ('expected_revision', 'expected_write_count'):
-        if body.get(name) is not None and (isinstance(body[name], bool) or not isinstance(body[name], int)):
-            raise ValidationError(f'{name} must be a whole number')
+    count = body.get('expected_write_count')
+    if count is not None and (isinstance(count, bool) or not isinstance(count, int)):
+        raise ValidationError('expected_write_count must be a whole number')
 
 
 def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
@@ -1221,18 +1224,21 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
     does), a version 1 form written back as version 2 (its v1 fields removed), the plain fields as sent, and the row's
     save count one up.
 
-    ``expected_revision`` and ``expected_write_count`` in the body (the ``revision`` and ``write_count`` the editor
-    loaded) are preconditions: another one is a 409. The revision moves only with the definition; the save count with
-    every save, so a stale editor cannot write back what a later save changed (a form turned Off turned on again).
-    Both are read-only (the form API returns them) and ignored as fields. On a form with a real response
+    ``expected_write_count`` in the body (the ``write_count`` the editor loaded) is the precondition: another one is a
+    409. The save count moves with every save, so a stale editor cannot write back what a later save changed (a form
+    turned Off turned on again); the revision moves only with the definition, which only a save changes, so the count
+    implies it (7.58.01: an old client's ``expected_revision`` is ignored, never a 400). Both are read-only (the form
+    API returns them) and ignored as fields. On a form with a real response
     (``has_responses``, else ``answered()``: one answered only before 7.55.00) a definition change that drops a
     question id or an option code without naming it in ``removes``, or gives a question it keeps another type or
-    range, is a 409 ``answers_locked`` (shared/forms_v2.py ``unnamed_removals``, ``reshaped_questions``). A write that
-    leaves the form live while a text shows a placeholder as written is a 409 ``unresolved_placeholder``."""
+    range, is a 409 ``answers_locked`` (shared/forms_v2.py ``unnamed_removals``, ``reshaped_questions``). ``answered``
+    is asked only of a form with no ``has_responses`` at all (7.58.01: one created before, which a submit may never
+    have marked); a form created since says False until its first real response marks it. A write that leaves the
+    form live while a text shows a placeholder as written is a 409 ``unresolved_placeholder``."""
     _require_update_fields(body)
-    expected, revision = body.get('expected_revision'), fv2.revision_of(stored)
+    revision = fv2.revision_of(stored)
     expected_writes, writes = body.get('expected_write_count'), _write_count(stored)
-    if (is_whole(expected) and expected != revision) or (is_whole(expected_writes) and expected_writes != writes):
+    if is_whole(expected_writes) and expected_writes != writes:
         raise ConflictError(_CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(stored))
     current = _definition(stored)
     proposed = _definition_update(stored, current, body)
@@ -1249,7 +1255,7 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
     warnings = fv2.validate_publishable(theme, live=bool(live), was_live=stored.get('enabled') is True,
                                         theme_changed='theme' in body and not fv2.same_theme(theme, stored.get('theme')))
     removes = fv2.validate_removes(body.get('removes'))
-    if changed and (stored.get('has_responses') is True or answered()):
+    if changed and (stored['has_responses'] is True if 'has_responses' in stored else answered()):
         # The lock of an answered form (shared/forms_v2.py): a dropped question id or option code is named, or refused;
         # a question kept with another type or range is refused (its answers would be read on the new scale).
         unnamed = fv2.unnamed_removals(current, definition, removes)
@@ -1343,10 +1349,12 @@ def update_form(form_id: str):
 
 
 def _answered_before(form_id: str, stored: Mapping[str, Any], scope: WorkspaceScope | None) -> bool:
-    """Whether a form not marked ``has_responses`` has a real response stored anyway: one answered only before
-    7.55.00, whose submits never marked it. Read when a save changes its definition (as ``GET /feedback-forms/{id}``
-    counts them, but every real response, whoever saves: the lock never depends on what the saver may read), and
-    marked once found (``_mark_answered``), so the next save reads the flag. A test response is never a feedback item."""
+    """Whether a form with no ``has_responses`` (one created before 7.58.01) has a real response stored anyway: one
+    answered only before 7.55.00, whose submits never marked it. Read when a save changes its definition (as ``GET
+    /feedback-forms/{id}`` counts them, but every real response, whoever saves: the lock never depends on what the saver
+    may read), and marked once found (``_mark_answered``), so the next save reads the flag. A test response is never a
+    feedback item. (A form created since 7.58.01 says ``has_responses: false`` until its first real response, and is
+    never read here: before, every definition save of an unanswered form read the brand's partition.)"""
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
     query_kwargs: dict[str, Any] = {'FilterExpression': 'source_channel = :sc',

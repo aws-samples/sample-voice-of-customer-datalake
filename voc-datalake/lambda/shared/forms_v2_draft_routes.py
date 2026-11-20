@@ -1,6 +1,7 @@
 """A feedback form's AI draft (docs/feedback-forms.md "AI drafts"), included by ``api/settings_handler.py``.
 
-    POST /settings/form-drafts {description, language, channel, base_form?, instruction?}   -> 202 {job_id, status}
+    POST /settings/form-drafts {description, language, channel, base_form?, instruction?, retired_ids?}
+                                                                                            -> 202 {job_id, status}
     GET  /settings/form-drafts/{job_id}                                                     -> the job's poll answer
 
 Served by the SETTINGS API, not by the forms Lambda (the AI review's round 1 on 7.55.00, TENETS.md tenet 6): the forms

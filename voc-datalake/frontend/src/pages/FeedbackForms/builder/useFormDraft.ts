@@ -1,9 +1,9 @@
 /**
  * @fileoverview The builder's draft (formDraftContext.ts) and its saves: Save, Publish, Update live form and Turn off
  * (UX §3.6), the stale-save conflict (D7: a 409 `revision_conflict` offers Compare, Reload and Save mine), and the
- * server's refusals. Every save is made over the revision and the save count the draft read (`expected_revision`,
- * `expected_write_count`), so a save that came in between, an Enable or a Turn off included, is that conflict and is
- * never undone. A save of an answered form names what it removes (`removes`, model/removals.ts), as the server
+ * server's refusals. Every save is made over the save count the draft read (`expected_write_count`; since 7.58.01 no
+ * `expected_revision`: a definition moves only with a save, which the count counts), so a save that came in between,
+ * an Enable or a Turn off included, is that conflict and is never undone. A save of an answered form names what it removes (`removes`, model/removals.ts), as the server
  * requires (D9); its 409 `answers_locked` is a refusal, never the stale-save banner, and so is a retired question id
  * taken again (400 `question_id_reused`, worded with the id), a recall that names what it cannot recall (400
  * `recall_*`) and a live form's placeholder respondents would see as written (409 `unresolved_placeholder`, 7.61.00).
@@ -113,12 +113,11 @@ async function persist(form: FormV2, stored: FormV2 | null, meta: StoredFormMeta
   if (meta === null) {
     const created = await feedbackFormsV2Api.createForm(form)
     if (enabled !== true) return { loaded: created, created: true }
-    const live = await feedbackFormsV2Api.saveForm(created.meta.form_id, { ...created.form, enabled: true }, created.meta.revision, null,
-      created.meta.write_count)
+    const live = await feedbackFormsV2Api.saveForm(created.meta.form_id, { ...created.form, enabled: true }, created.meta.write_count)
     return { loaded: live, created: true }
   }
   const next = enabled === null ? form : { ...form, enabled }
-  const saved = await feedbackFormsV2Api.saveForm(meta.form_id, next, meta.revision, removesFor(stored, meta, next), meta.write_count)
+  const saved = await feedbackFormsV2Api.saveForm(meta.form_id, next, meta.write_count, removesFor(stored, meta, next))
   return { loaded: afterPut(saved, meta), created: false }
 }
 
@@ -232,7 +231,7 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
     if (meta === null) return false
     setStatus({ kind: 'saving' })
     try {
-      const next = afterPut(await feedbackFormsV2Api.setEnabled(meta.form_id, false, meta.revision, meta.write_count), meta)
+      const next = afterPut(await feedbackFormsV2Api.setEnabled(meta.form_id, false, meta.write_count), meta)
       settle(next, { ...form, enabled: false })
       setStatus({ kind: 'saved', message: 'turnedOff' })
       return true
@@ -258,8 +257,8 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
     try {
       const latest = await readLatest()
       // Named against theirs, the version the server now holds (D7's Compare listed what mine removes from it).
-      const saved = await feedbackFormsV2Api.saveForm(latest.meta.form_id, form, latest.meta.revision,
-        removesFor(latest.form, latest.meta, form), latest.meta.write_count)
+      const saved = await feedbackFormsV2Api.saveForm(latest.meta.form_id, form, latest.meta.write_count,
+        removesFor(latest.form, latest.meta, form))
       const next = afterPut(saved, latest.meta)
       settle(next, null)
       setStatus({ kind: 'saved', message: 'saved' })

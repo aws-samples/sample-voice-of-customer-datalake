@@ -141,6 +141,18 @@ describe('QuestionEditor: the question id', () => {
     expect(screen.getByText('q_feedback')).toBeInTheDocument()
     expect(screen.getByText("Answers are stored under this id, so it can't change once there are responses.")).toBeInTheDocument()
   })
+
+  it('lets a question added since the first response change its id, which no answer is stored under (7.58.01)', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<EditorAt at={1} />, sampleForm(), { meta: { has_responses: true, response_count: 2, retired_ids: ['q_ai_price'] } })
+    act(() => { harness.probe.current?.update((form) => ({ ...form, questions: [...form.questions, open('q_ai_price', 'Fair price?')] })) })
+    await user.click(await screen.findByRole('button', { name: 'Advanced' }))
+    const field = screen.getByRole('textbox', { name: 'Question id' })
+    await user.clear(field)
+    await user.type(field, 'q_fair_price')
+    await user.tab()
+    expect(harness.probe.current?.form.questions.map((question) => question.id)).toStrictEqual(['q_feedback', 'q_fair_price'])
+  })
 })
 
 describe('QuestionEditor: the header', () => {

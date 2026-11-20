@@ -10,15 +10,17 @@ from typing import Any
 import pytest
 
 from engineering.board.store import MAX_LINE, BoardError
+from engineering.run_objects import RunObjects
 from engineering.runtime import harness_switch
 from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness import model_choice
+from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.kiro import _offered
 from engineering.runtime.harness.kiro_pin import kiro_model
 from engineering.runtime.harness.skills import HARNESS_ENTRY
 from engineering.runtime.harness.tools import PROGRESS_MAX
 from engineering.runtime.interface import RuntimeRefused
-from engineering.runtime.test.harness_fakes import FakeBoard, World, world
+from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, FakeBedrock, FakeBoard, World, use, world
 from engineering.runtime.test.test_engineering_kiro_harness import (
     _adapter,
     _events,
@@ -27,6 +29,8 @@ from engineering.runtime.test.test_engineering_kiro_harness import (
     _received,
     _transcribed,
 )
+from engineering.thread_items import is_thread_item
+from engineering.views_thread import Event, Subject, _Transcript
 
 PARAMETER = '/voc/engineering-kiro/api-key'
 SONNET = 'global.anthropic.claude-sonnet-5-5'
@@ -244,14 +248,27 @@ def test_another_bedrock_id_runs_only_where_the_deployment_grants_and_prices_it(
 
 
 @pytest.mark.parametrize('model', ['global.anthropic.claude-sonnet-4-6', 'global.anthropic.claude-haiku-4-5-20251001-v1:0'])
-def test_a_granted_claude_that_does_not_think_adaptively_never_runs_natively_even_priced(model):
-    # (Q17) The Converse loop asks every model for adaptive, summarized thinking, which these refuse: the launch runs
-    # only the allowlist's adaptive_thinking models, and says why, not "price it".
+def test_a_granted_claude_that_does_not_think_adaptively_runs_natively_once_priced_and_thinks_unseen(tmp_path, model):
+    """F6 (7.58.01): the native choice is what the deployment grants and prices, nothing more. The Converse loop asks
+    only a model that thinks adaptively for its summarized thinking (``model_request_fields``, 7.54.00), so this one's
+    calls carry no thinking field, and the run's thread shows its words with no thought, and no error."""
+    with pytest.raises(RuntimeRefused, match="isn't enabled"):   # (granted, unpriced: as any other model)
+        harness_switch.with_model(ARGV, 'fixer', _env(), model)
     priced = _env(ENGINEERING_MODEL_PRICES=json.dumps({model: {'input': '3', 'output': '15'}}))
-    assert model not in harness_switch.native_models(priced)
-    with pytest.raises(RuntimeRefused, match=r"can't run on the native harness: it doesn't think adaptively"):
-        harness_switch.with_model(ARGV, 'fixer', priced, model)
-    assert harness_switch.not_native('vendor.model-x') == model_choice.not_enabled('vendor.model-x')
+    assert model in harness_switch.native_models(priced)
+    assert harness_switch.with_model(ARGV, 'fixer', priced, model)[1] == model
+    w = world(tmp_path)
+    _transcribed(w)
+    bedrock = FakeBedrock([[{'text': 'The slice end adds one.'}, use('finish', summary='fixed')]])
+    assert ConverseAdapter(bedrock, model).run(w.session) == 'done'
+    assert [set(request) & {'additionalModelRequestFields'} for request in bedrock.requests] == [set()]
+    subject = Subject(run_id=RUN_ID, agent='fixer-1', role='fixer', task_id='task-1', attempt=1, commit=HARNESS_COMMIT,
+                      status='working')
+    events = [Event(0, index, index + 1, data) for index, data in enumerate(_events(w))]
+    items = [built.item for built in _Transcript(subject, RunObjects(None, '')).build(events)[0]]
+    assert all(is_thread_item(item) for item in items)
+    assert [item['text'] for item in items if item['kind'] == 'said'] == ['The slice end adds one.', 'fixed']
+    assert 'thought' not in {item['kind'] for item in items}
 
 
 @pytest.mark.parametrize(('choice', 'kiro'), [('opus', 'claude-opus-5.5'), ('auto', 'auto'),

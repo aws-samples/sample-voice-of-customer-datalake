@@ -4,7 +4,8 @@
  * with the repository; one already connected says so); a public repository read only is a row of its own card (its
  * badge, the "stays in VoC" note, no CI to attest) with the guided Contribute to ‹upstream›: two steps whose statuses
  * follow the connections (fork it on GitHub's own fork page, in a new tab; let the agents push to the fork, whose dialog
- * needs the licence ticked before it asks the server and then goes to the App's install page), and a summary with the
+ * needs the licence ticked, as GitHub answers it now (7.58.01), before it asks the server and then goes to the App's
+ * install page), and a summary with the
  * real names; an archived repository or one with no licence holds step 2; a fork's row says its upstream, its owner and
  * its runs' one-click outcome, and (7.58.00) only the owner acknowledges a changed upstream licence, read live.
  */
@@ -46,6 +47,11 @@ const forkOf = (fork: Record<string, unknown> = {}) => ({
   fork: { upstream: 'open-tools/lint-kit', upstream_connection: 'lint-kit', upstream_default_branch: 'main', owner: 'alice',
     owned_by_me: true, licence: 'MIT', account: 'alice', account_type: 'User', ...fork },
 })
+
+/** The live licence read (GitHub's answer for the upstream's name), its licence `spdx`. */
+const live = (spdx: string | null) => () => ({ repositories: [result('open-tools/lint-kit', {
+  licence: spdx === null ? null : { spdx, name: spdx } })] })
+const LIVE = 'GET /agents/engineering/public-repositories?q=open-tools%2Flint-kit'
 
 function renderConnections(routes: Record<string, RouteHandler> = {}, connections: unknown[] = [], apps: unknown[] = [githubApp()]) {
   routeFetchApi({ [LIST]: () => ({ connections, limit: 20 }), [APPS]: () => ({ apps, limit: 5 }), ...routes }, { missStatus: 500 })
@@ -197,7 +203,7 @@ describe('Contribute to ‹upstream›, the guided setup', () => {
   })
 
   it('asks nothing of the server until the licence is acknowledged', async () => {
-    renderConnections({ [FORK]: () => links }, [publicRead()])
+    renderConnections({ [LIVE]: live('MIT'), [FORK]: () => links }, [publicRead()])
     const dialog = await openStep2()
     await userEvent.click(dialog.getByRole('button', { name: 'Continue' }))
     expect(dialog.getByText('Tick this to contribute under the repository\'s licence.')).toBeInTheDocument()
@@ -206,11 +212,11 @@ describe('Contribute to ‹upstream›, the guided setup', () => {
 
   it('sends the destination and the licence, then goes to the App\'s install page in this tab', async () => {
     const assign = stubLocationAssign('/agents/connections')
-    renderConnections({ [FORK]: () => links }, [publicRead()])
+    renderConnections({ [LIVE]: live('MIT'), [FORK]: () => links }, [publicRead()])
     const dialog = await openStep2()
     await userEvent.click(dialog.getByLabelText('An organization I administer'))
     await userEvent.type(dialog.getByLabelText('Organization'), 'my-org')
-    await userEvent.click(dialog.getByLabelText('I have read the MIT licence and contribute under it'))
+    await userEvent.click(await dialog.findByLabelText('I have read the MIT licence and contribute under it'))
     await userEvent.click(dialog.getByRole('button', { name: 'Continue' }))
     await waitFor(() => { expect(assign).toHaveBeenCalledWith(links.install_url) })
     expect(sentFetchApiBody('/agents/engineering/connections/lint-kit/fork', 'POST'))
@@ -218,12 +224,36 @@ describe('Contribute to ‹upstream›, the guided setup', () => {
   })
 
   it('says the server\'s refusal in its words (a licence changed, an opt-out)', async () => {
-    renderConnections({ [FORK]: () => { throw new ApiError(409, 'open-tools/lint-kit opts out of bot pull requests (no-bot-prs)') } },
-      [publicRead()])
+    renderConnections({ [LIVE]: live('MIT'),
+      [FORK]: () => { throw new ApiError(409, 'open-tools/lint-kit opts out of bot pull requests (no-bot-prs)') } }, [publicRead()])
     const dialog = await openStep2()
-    await userEvent.click(dialog.getByLabelText('I have read the MIT licence and contribute under it'))
+    await userEvent.click(await dialog.findByLabelText('I have read the MIT licence and contribute under it'))
     await userEvent.click(dialog.getByRole('button', { name: 'Continue' }))
     expect(await dialog.findByRole('alert')).toHaveTextContent('opts out of bot pull requests')
+  })
+
+  it('offers the licence GitHub answers now, not the one stored at connect time, and sends it (7.58.01)', async () => {
+    stubLocationAssign('/agents/connections')
+    renderConnections({ [LIVE]: live('Apache-2.0'), [FORK]: () => links }, [publicRead()])
+    const dialog = await openStep2()
+    await userEvent.click(await dialog.findByLabelText('I have read the Apache-2.0 licence and contribute under it'))
+    expect(dialog.queryByLabelText('I have read the MIT licence and contribute under it')).toBeNull()
+    await userEvent.click(dialog.getByRole('button', { name: 'Continue' }))
+    await waitFor(() => {
+      expect(sentFetchApiBody('/agents/engineering/connections/lint-kit/fork', 'POST')).toMatchObject({ licence: 'Apache-2.0' })
+    })
+  })
+
+  it.each([
+    ['none now', live(null), /has no licence GitHub recognises now/],
+    ['unreadable', () => { throw new ApiError(503, 'GitHub is busy') }, /could not be read on GitHub/],
+  ])('offers nothing to tick and asks nothing of the server when the licence is %s', async (_case, answer, said) => {
+    renderConnections({ [LIVE]: answer, [FORK]: () => links }, [publicRead()])
+    const dialog = await openStep2()
+    expect(await dialog.findByText(said)).toBeInTheDocument()
+    expect(dialog.queryByRole('checkbox')).toBeNull()
+    await userEvent.click(dialog.getByRole('button', { name: 'Continue' }))
+    expect(fetchApi.mock.calls.filter(([path]) => path.endsWith('/fork'))).toHaveLength(0)
   })
 })
 
@@ -239,11 +269,6 @@ describe('a fork connection', () => {
     await userEvent.click(row.getByRole('button', { name: 'Actions for alice/lint-kit' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).not.toContain('Change default branch…')
   })
-
-  /** The live licence read (GitHub's answer for the upstream's name), its licence `spdx`. */
-  const live = (spdx: string | null) => () => ({ repositories: [result('open-tools/lint-kit', {
-    licence: spdx === null ? null : { spdx, name: spdx } })] })
-  const LIVE = 'GET /agents/engineering/public-repositories?q=open-tools%2Flint-kit'
 
   it('lets its owner acknowledge the upstream\'s licence as it is now, read live, once ticked (7.58.00)', async () => {
     renderConnections({ [LIVE]: live('Apache-2.0'), [UPSTREAM]: () => ({ connection: forkOf({ licence: 'Apache-2.0' }) }) },

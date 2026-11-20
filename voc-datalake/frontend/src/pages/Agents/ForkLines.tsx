@@ -13,30 +13,19 @@
  * @module pages/Agents/ForkLines
  */
 import { useId, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { GitFork } from 'lucide-react'
 import { IconBadge } from '../../components/IconBadge/IconBadge'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../api/engineeringConnectionsApi'
-import { publicRepositoriesApi, publicRepositoriesKeys } from '../../api/publicRepositoriesApi'
 import { ConnectionChangeError } from './ConnectionChangeError'
+import { useCurrentLicence } from './useCurrentLicence'
 import type { ConnectionList, EngineeringConnection, ForkFacts } from '../../api/engineeringConnectionsApi'
 
 /** "Fork of owner/name", beside the repository's name. */
 export function ForkBadge({ fork }: Readonly<{ fork: ForkFacts }>) {
   const { t } = useTranslation('agents')
   return <IconBadge toneClass="badge-muted" icon={GitFork}>{t('connections.fork.badge', { upstream: fork.upstream })}</IconBadge>
-}
-
-/** The upstream's licence as GitHub answers it now (its SPDX id; null for none), undefined while it is read. */
-function useCurrentLicence(upstream: string): { licence: string | null | undefined; failed: boolean } {
-  const found = useQuery({
-    queryKey: publicRepositoriesKeys.search(upstream), queryFn: () => publicRepositoriesApi.search(upstream), retry: false,
-  })
-  if (found.isError) return { licence: undefined, failed: true }
-  if (found.data === undefined) return { licence: undefined, failed: false }
-  const match = found.data.repositories.find((repository) => repository.repository.toLowerCase() === upstream.toLowerCase())
-  return { licence: match?.licence?.spdx ?? null, failed: false }
 }
 
 /** The owner's acknowledgement of the upstream's licence as it is now, once they asked for it. */

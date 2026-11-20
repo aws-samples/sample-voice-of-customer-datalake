@@ -2783,7 +2783,10 @@ wait closes.
   the board) and its heartbeat renews its lease. For a running agent, no progress for 10 minutes (2 to 60, per deployment)
   and the supervisor asks it for its state (a `question`); no progress within 3 minutes and it is stopped and its
   task re-posted from its checkpoint (`timed_out`); the run coordinator, which is not a task on the board, is
-  restarted like a crash instead. An agent on an open wait keeps its task and is outside the rule.
+  restarted like a crash instead. An agent on an open wait keeps its task and is outside the rule. A model call in
+  flight is progress (7.58.01): the native harness's heartbeat reports "waiting on the model" once for each request
+  still in flight after a minute ([Choosing the model](#choosing-the-model-75800), "Effort, output cap and wait"),
+  so a long call is never stopped as a stall.
   A lease not renewed for 3 minutes is a crash; so are a session whose calls fail three ticks in a row (gone, or
   never came up; a failing board, bus or launcher counts for nothing) and a boot (checkout and harness start) over
   30 minutes. The board counts re-posts: a task that
@@ -3372,10 +3375,14 @@ and partitions' management hosts and telemetry were refused, and the session wor
 needs that region's two hosts (a code change). The sessions' NAT, and any egress firewall in front of it, must admit
 them.
 
-**The image.** Every image installs kiro-cli 3.4.0 (`templates/orchestration/images/common/install-kiro.sh`: the musl
-build for arm64 from `https://prod.download.cli.kiro.dev/stable/3.4.0/`, checked against the sha256 Kiro publishes in its release
-index; one binary, root's, at `/usr/local/bin/kiro-cli`; its version in `/opt/voc/kiro/VERSION`), so a switch needs no
-other image. The runner reports it (`walls`' `kiro_cli`), the runtime records it with the language's walls
+**The image.** Every image installs kiro-cli 3.5.0 since 7.58.01 (3.4.0 before:
+`templates/orchestration/images/common/install-kiro.sh`, the musl build for arm64 from
+`https://prod.download.cli.kiro.dev/stable/3.5.0/`, checked against the sha256 Kiro publishes in its release index,
+`https://prod.download.cli.kiro.dev/stable/index.json`: `6b931d7c…4db1`, 137,581,264 bytes, read 2026-11-20 and the
+same as the download's own; `runtime/harness/kiro_pin.py` `KIRO_CLI_VERSION`; one binary, root's, at
+`/usr/local/bin/kiro-cli`; its version in `/opt/voc/kiro/VERSION`), so a switch needs no other image. 3.5.0 is the
+version the credit meter's v3 `turn_completion` was checked on live ([What a Kiro credit counts as](#cost)). The runner
+reports it (`walls`' `kiro_cli`), the runtime records it with the language's walls
 (`WS#default#SANDBOX`), and the harness refuses a kiro-cli that is not the pinned version.
 
 **Bounds and failing closed.** Frames over 4 MB, frames that are not JSON objects and answers to no pending request
@@ -4211,11 +4218,11 @@ prices (`caps.DEFAULT_TOKEN_PRICES` and `-c engineeringModelPrices`), so the cos
 widened for it. A choice outside that set is refused when it is saved (the Agents API reads the same price setting,
 `ENGINEERING_MODEL_PRICES`), at the run's start (before anything is written) and at each launch, saying "‹id› isn't
 enabled in this deployment. An admin adds it with -c engineeringModelPrices (docs/deployment.md)." Adding a price
-for a model the allowlist does not hold does not grant it: that is a release's change. Nor does a price enable a
-granted model that does not think adaptively (the allowlist's `adaptive_thinking` false: Claude Sonnet 4.6 and Haiku
-4.5): the harness asks every session's model for adaptive, summarized thinking, which they refuse, so the native
-harness never runs them ("‹id› can't run on the native harness: it doesn't think adaptively, which the harness asks
-of every model. Choose another model.", `harness_switch.not_native`).
+for a model the allowlist does not hold does not grant it: that is a release's change. A granted model that does not
+think adaptively (the allowlist's `adaptive_thinking` false: Claude Sonnet 4.6 and Haiku 4.5) runs once it is priced,
+as any other (7.58.01; 7.58.00 refused it even priced): the Converse loop asks only a model that thinks adaptively for
+its summarized thinking (`converse_loop.model_request_fields`), so its calls carry no thinking field, and the run's
+thread shows its words with no thought, and no error.
 
 **On Kiro, never another model.** A Kiro session always asks for its model: it is in the session's agent config and
 the compiled ones (`model`), and after the mode the harness sets it (`session/set_config_option {configId: model}`)
@@ -4258,7 +4265,19 @@ Unlike a model, an effort Kiro refuses or does not take never stops the step: it
 transcript, and the session goes on at Kiro's. A Converse call's output cap is 32,000 tokens, thinking included
 (`converse_loop.MAX_TOKENS`, 8,192 before): a reply cut at it is asked for again once, the cut one never sent back, and
 a second cut is a crash (`OutputCut`), never a reply taken as it is. Converse answers once the whole reply is written,
-so the harness's Bedrock client waits up to 900 seconds for it (`main.BEDROCK_READ_TIMEOUT`, 300 before).
+so the harness's Bedrock client waits up to 600 seconds for it, 10 for its connection (7.58.01:
+`main.BEDROCK_READ_TIMEOUT`, 900 in 7.58.00, 300 before; a whole 32,000-token reply at 54 tokens a second or more).
+**A model call in flight counts as progress** (7.58.01, `harness/model_wait.py`): the supervisor's stall rule reads
+only progress reports (no report for 10 minutes and the agent is asked its state, none 3 minutes later and its task is
+stopped), and a call of minutes, or a cut reply and its retry, could get a busy agent's task stopped mid-call, the
+paid call lost. The harness's heartbeat now reports "waiting on the model" once for each request to Bedrock still in
+flight a minute after it was sent: a short call reports nothing, a long one one line, never a line a minute; a request
+botocore sends again after a read timeout is a request of its own. The timeouts keep a request's end within the
+stall rule after its line (connection and read, 610 seconds, less the minute, under the 10 minutes), and two requests'
+lines in a row within its 13 minutes (610 seconds, botocore's longest backoff of 25 and the heartbeat's minute): a
+test holds both at the supervisor's default timings, the only ones the stack runs (`ENGINEERING_TIMINGS` is `{}`). A
+`stall_after` of 9 minutes or less, which no deployment sets today, could ask a long request for its state, and one of
+8½ or less stop it.
 
 ## Trust and safety
 

@@ -310,25 +310,20 @@ class TestClaudeThinkingIsShown:
 
     def test_claude_5_5_models_run_at_their_pinned_effort_others_at_their_own_default(self):
         from engineering.runtime.harness.converse_loop import model_request_fields
-        from engineering.runtime.harness.effort import CLAUDE_EFFORT, EFFORT_LEVELS
+        from engineering.runtime.harness.effort import CLAUDE_EFFORT
+        # (the table is its own bound: each a level Claude takes, https://platform.claude.com/docs/en/build-with-claude/effort)
         assert CLAUDE_EFFORT == {'global.anthropic.claude-opus-5-5': 'medium',
                                  'global.anthropic.claude-sonnet-5-5': 'high',
                                  'global.anthropic.claude-haiku-5-5': 'medium'}
-        assert set(CLAUDE_EFFORT.values()) <= set(EFFORT_LEVELS)
         opus = model_request_fields('global.anthropic.claude-opus-5-5')['additionalModelRequestFields']
         assert opus['output_config'] == {'effort': 'medium'}
         older = model_request_fields('global.anthropic.claude-opus-5')['additionalModelRequestFields']
         assert 'output_config' not in older
         assert older['thinking'] == {'type': 'adaptive', 'display': 'summarized'}
 
-    def test_a_level_claude_does_not_take_is_never_sent(self, monkeypatch):
-        from engineering.runtime.harness import effort
-        monkeypatch.setitem(effort.CLAUDE_EFFORT, 'global.anthropic.claude-opus-5-5', 'extreme')
-        assert effort.claude_effort('global.anthropic.claude-opus-5-5') is None
-        assert effort.claude_effort('global.anthropic.claude-sonnet-5-5') == 'high'
-
     def test_a_model_that_does_not_think_adaptively_is_asked_for_neither(self):
-        # (Q17: an older Claude refuses adaptive thinking; the launch runs none on this harness, and none is asked)
+        # (an older Claude refuses adaptive thinking, so it is never asked for it; since 7.58.01, F6, such a model runs
+        # on the native harness once the deployment prices it: harness_switch.native_models)
         from engineering.runtime.harness.converse_loop import model_request_fields
         assert model_request_fields('global.anthropic.claude-sonnet-4-6') == {}
         assert model_request_fields('global.anthropic.claude-haiku-4-5-20251001-v1:0') == {}

@@ -5,9 +5,9 @@
 //                                                    v2 as stored, a v1 record as v1 with `migrated_from: 1` (the
 //                                                    real API serves it migrated; the app migrates it the same way)
 //   POST   /feedback-forms            (schema 2)     create, Off, revision 1, no test token yet
-//   PUT    /feedback-forms/{id}       (schema 2, or a v2 form's {enabled})  save over `expected_revision` and
-//                                                    `expected_write_count` (every save counts one, the revision moves
-//                                                    with the definition only); a stale one is 409 {code:
+//   PUT    /feedback-forms/{id}       (schema 2, or a v2 form's {enabled})  save over `expected_write_count`
+//                                                    (every save counts one, the revision moves with the definition
+//                                                    only; an old client's `expected_revision` is ignored); a stale one is 409 {code:
 //                                                    'revision_conflict', revision, write_count, updated_by, updated_at};
 //                                                    a removed question's id (`retired_ids`) is never taken again (400
 //                                                    question_id_reused); on an answered form, a question id or option
@@ -329,11 +329,11 @@ function unnamedRemovals(item, body) {
   return questions.length > 0 || Object.keys(options).length > 0 ? { questions, options } : {};
 }
 
-/** A stale save (`expected_revision` or `expected_write_count` other than the stored ones), or null. */
+/** A stale save (`expected_write_count` other than the stored one), or null; an old client's `expected_revision` is
+ * ignored (7.58.01: the count moves with every save, a definition's among them). */
 function staleSave(item, body) {
-  const staleRevision = body.expected_revision !== undefined && body.expected_revision !== (item.revision ?? 1);
   const staleCount = body.expected_write_count !== undefined && body.expected_write_count !== (item.write_count ?? 0);
-  return staleRevision || staleCount ? staleError(item) : null;
+  return staleCount ? staleError(item) : null;
 }
 
 /** A 400 of the body itself (its shape, its theme, a retired question id taken again), or null. */
@@ -373,7 +373,7 @@ function applySave(item, body, fields) {
 }
 
 /**
- * A v2 save (or a v2 form's partial `{enabled}`): over `expected_revision` and `expected_write_count` when given;
+ * A v2 save (or a v2 form's partial `{enabled}`): over `expected_write_count` when given;
  * counts one more save, and a new revision when the definition changed (its dropped question ids retired).
  */
 function updateV2(shared, item, body, projectV1) {

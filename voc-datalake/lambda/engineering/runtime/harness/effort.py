@@ -11,10 +11,8 @@ from __future__ import annotations
 
 from typing import Final
 
-#: The levels Claude takes, cheapest first.
-EFFORT_LEVELS: Final = ('low', 'medium', 'high', 'xhigh', 'max')
-
-#: Each Claude model's effort, by its Bedrock id; a model not named runs at its own default.
+#: Each Claude model's effort, by its Bedrock id; a model not named runs at its own default. The table is its own bound
+#: (7.58.01): each level is one Claude takes, as a test holds.
 CLAUDE_EFFORT: Final = {
     'global.anthropic.claude-opus-5-5': 'medium',
     'global.anthropic.claude-sonnet-5-5': 'high',
@@ -23,7 +21,5 @@ CLAUDE_EFFORT: Final = {
 
 
 def claude_effort(model_id: str) -> str | None:
-    """The effort ``model_id`` runs at, None for a model this table does not name (or names at a level Claude does not
-    take, which no request carries)."""
-    level = CLAUDE_EFFORT.get(model_id)
-    return level if level in EFFORT_LEVELS else None
+    """The effort ``model_id`` runs at, None for a model this table does not name."""
+    return CLAUDE_EFFORT.get(model_id)

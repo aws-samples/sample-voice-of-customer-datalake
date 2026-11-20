@@ -9,7 +9,11 @@ from typing import Final
 
 #: The one kiro-cli the images install (templates/orchestration/images/common/install-kiro.sh, at its published
 #: sha256), and the version the harness accepts (``kiro.check``; the launch's argv names it: runtime/harness_switch.py).
-KIRO_CLI_VERSION: Final = '3.4.0'
+#: 7.58.01: 3.5.0 (3.4.0 before), the version the credit meter's v3 ``turn_completion`` was checked on live: its
+#: kirocli-aarch64-linux-musl.tar.gz sha256 6b931d7c…4db1 and size 137,581,264 as https://prod.download.cli.kiro.dev/
+#: stable/index.json lists them (read 2026-11-20, where the 3.4.0 pin's came from too), the download's own sha256 the
+#: same, its BUILD-INFO ``BUILD_VERSION=3.5.0``.
+KIRO_CLI_VERSION: Final = '3.5.0'
 #: The deployment's key parameter: ``/voc/engineering-kiro/api-key``, or ``/<prefix>-voc/…`` on a prefixed one (7.58.00:
 #: beside the connections' ``/voc/engineering/``, outside every grant on it; lib/stacks/engineering-kiro.ts). The old
 #: ``/voc/engineering/_kiro/api-key`` is refused: the launch says no key parameter is named.

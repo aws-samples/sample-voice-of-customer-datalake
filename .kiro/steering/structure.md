@@ -390,7 +390,7 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 | PUT | `/settings/categories` | Save category configuration — admin-only (with `X-Workspace-Id` the workspace's admins, `require_settings_admin`, onto its own row; without it the deployment's `admins`); categories carry `product` + `owners` |
 | POST | `/settings/categories/generate` | AI-generate categories — admin-only (Bedrock spend, #242); the AI panel is hidden for non-admins. 202 + assist job (see Scrapers → Assist jobs) |
 | GET | `/settings/jobs/{job_id}` | Poll a categories assist job (its starter only; 404 otherwise) |
-| POST | `/settings/form-drafts` | Start a feedback form's AI draft `{description, language, channel, base_form?, instruction?}` → 202 assist job (any signed-in user; with `X-Workspace-Id` the workspace's editors and admins, the job its own; 20 per person per hour). Served here, not by the forms Lambda (it serves the public widget routes) — docs/feedback-forms.md "AI drafts" |
+| POST | `/settings/form-drafts` | Start a feedback form's AI draft `{description, language, channel, base_form?, instruction?, retired_ids?}` → 202 assist job (any signed-in user; with `X-Workspace-Id` the workspace's editors and admins, the job its own; 20 per person per hour). Served here, not by the forms Lambda (it serves the public widget routes) — docs/feedback-forms.md "AI drafts" |
 | GET | `/settings/form-drafts/{job_id}` | Poll one of the caller's AI drafts, in the scope it was started in (404 otherwise; the job notice wakes it) |
 | POST | `/settings/form-reports` | Start a form report's AI summary `{form_id, answers: [{response_id, text}], filters?, responses?, last_response_at?}` → 202 assist job (gated as Results: with `X-Workspace-Id` the workspace's editors and admins, only one of its forms; 20 per person per hour); the worker stores `FORMREPORT#{form_id}#{report_id}` (labels and ids only) — docs/feedback-forms.md "The AI summary" (7.63.00) |
 | GET | `/settings/form-reports/{job_id}` | Poll one of the caller's AI summaries, in the scope it was started in (404 otherwise) |
@@ -462,12 +462,16 @@ embeddable widget calls from the customer's own site.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/feedback-forms` | Cognito | List all forms |
+| GET | `/feedback-forms/{id}` | Cognito | One form, as the list shows it, with its `response_count` and `can_delete_test_responses` (7.55.00) |
 | POST | `/feedback-forms` | Cognito | Create form |
-| PUT | `/feedback-forms/{id}` | Cognito | Update form |
+| PUT | `/feedback-forms/{id}` | Cognito | Update form (`expected_write_count`; `removes` on an answered form; an old client's `expected_revision` ignored, 7.58.01) |
 | DELETE | `/feedback-forms/{id}` | Cognito | Delete form |
 | GET | `/feedback-forms/{id}/submissions` | Cognito | Read submitted feedback |
 | GET | `/feedback-forms/{id}/stats` | Cognito | Submission count + average rating |
-| GET | `/feedback-forms/{id}/results` | Cognito | Per-question results; `group_by=hidden.<id>\|q_<id>\|q_<id>.<row>` adds segments of at least 5 (7.63.00) |
+| GET | `/feedback-forms/{id}/results` | Cognito | Per-question results and the drop-off funnel, with the Results filters (7.55.00); `group_by=hidden.<id>\|q_<id>\|q_<id>.<row>` adds segments of at least 5 (7.63.00) |
+| GET | `/feedback-forms/{id}/responses` | Cognito | The responses, paged, or as CSV (`format=csv`; `include_test=only` for the Test tab) (7.55.00) |
+| DELETE | `/feedback-forms/{id}/responses?test=true` | Cognito | Delete the form's test responses (an admin or the form's creator; recorded first) (7.55.00) |
+| POST | `/feedback-forms/{id}/test-link` | Cognito | Issue or rotate the test link and set its `link_enabled` / `record` (admins; the only answer with the token) (7.55.00) |
 | GET | `/feedback-forms/{id}/report` | Cognito | The form's report: KPIs, heatmaps, segments, themes with real quotes, the AI summary (7.63.00; editors and admins, as Results) |
 | GET | `/feedback-forms/{id}/compare` | Cognito | The form beside up to 10 of the scope's forms (`with`), or split by `by=hidden.<id>` (7.63.00; as Results) |
 | GET | `/feedback-forms/{id}/config` | **public** | Form config for the widget |

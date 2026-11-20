@@ -59,6 +59,10 @@ class TestTheRequest:
         ({'instruction': 'Add English', 'language': 'pl'}, 'needs the base_form'),
         ({'description': 'x', 'language': 'pl', 'base_form': []}, 'base_form must be'),
         ({'description': 'x', 'language': 'pl', 'publish': True}, 'unknown fields: publish'),
+        ({'description': 'x', 'language': 'pl', 'retired_ids': 'q_old'}, 'retired_ids must be a list'),
+        ({'description': 'x', 'language': 'pl', 'retired_ids': ['old']}, 'retired_ids must be a list'),
+        ({'description': 'x', 'language': 'pl', 'retired_ids': ['q_a'] * (fv2.MAX_RETIRED_IDS + 1)},
+         f'at most {fv2.MAX_RETIRED_IDS} question ids'),
     ])
     def test_a_bad_request_is_refused_by_name(self, body, fragment):
         with pytest.raises(ValidationError) as exc:
@@ -133,6 +137,30 @@ class TestTheDraft:
         assert result['notes'] == ['Short and in Polish.']
         assert fv2.validate_definition({k: v for k, v in form.items() if k != 'name'})
         assert len(model.prompts) == 1
+
+    def test_a_question_never_takes_a_removed_questions_id(self):
+        """R2-1 (7.58.01): Improve with AI on a form that retired ``q_why`` and ``q_which``. The model's new questions
+        (one bringing ``q_why`` back as it is) take other ids, the rule follows them, and the draft validates
+        against the form's retired ids first time; an id no removed question had stays."""
+        base = {'name': 'Powrót', 'language': 'pl', 'questions': [GOOD['questions'][1]]}
+        request = d.validate_request({'instruction': 'Ask why again', 'language': 'pl', 'base_form': base,
+                                      'retired_ids': ['q_why', 'q_which', 'q_why']})
+        assert request['retired_ids'] == ['q_why', 'q_which']
+        answer = {**GOOD, 'questions': [
+            {**GOOD['questions'][0], 'id': 'q_why'}, GOOD['questions'][1],
+            {'id': 'q_kept', 'type': 'open_text', 'headline': {'pl': 'Coś jeszcze?'}, 'required': False}]}
+        model = FakeModel(_answer(answer))
+        result = d.draft(request, model)
+        assert result['success'] is True, result
+        ids = [q['id'] for q in result['form']['questions']]
+        assert ids == ['q_why_2', 'q_which_2', 'q_kept']
+        assert result['form']['questions'][0]['logic'][0]['then'] == {'jump_to': 'q_which_2'}
+        assert fv2.validate_definition({k: v for k, v in result['form'].items() if k != 'name'},
+                                       retired=request['retired_ids'])
+        assert len(model.prompts) == 1
+        # (without them, as before, the model's q_why stays: the save would refuse it as question_id_reused)
+        unreserved = d.validate_request({k: v for k, v in request.items() if k != 'retired_ids'})
+        assert d.draft(unreserved, FakeModel(_answer(answer)))['form']['questions'][0]['id'] == 'q_why'
 
     def test_a_hidden_field_the_widget_never_fills_is_renamed_not_repaired(self):
         """7.58.00's reserved hidden-field ids: the model's ``constructor`` is made ``constructor_field`` here, so the

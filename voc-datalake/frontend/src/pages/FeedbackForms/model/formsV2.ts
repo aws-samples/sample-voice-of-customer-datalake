@@ -285,7 +285,7 @@ interface TemplateRef {
 /** What the server says about a stored form beside its content. */
 export interface StoredFormMeta {
   readonly form_id: string
-  /** The revision this copy is; a save sends it as `expected_revision` (D7). */
+  /** The revision this copy is: the definition's number (a save sends `write_count` as its precondition, 7.58.01). */
   readonly revision: number
   /** How many saves the stored form has taken; a save sends it as `expected_write_count`, so any save since (an Enable,
    * a theme, not only a definition) is the stale-save conflict (D7). */

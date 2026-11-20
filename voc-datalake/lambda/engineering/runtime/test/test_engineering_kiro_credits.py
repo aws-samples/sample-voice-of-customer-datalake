@@ -8,6 +8,7 @@ The shapes are kiro-cli's own, from live probes on 2026-11-20: the v3 engine (th
 kind ``session_usage``; the v2 engine in ``_kiro.dev/metadata`` (``meteringUsage``, ``turnDurationMs``)."""
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -26,6 +27,7 @@ from engineering.runtime.caps import (
     kiro_credit_price,
 )
 from engineering.runtime.harness.kiro import METADATA_METHOD, TurnCredits, session_credits, turn_credits
+from engineering.runtime.harness.ports import PAUSE, InboxMessage
 from engineering.runtime.interface import MICRO_CREDITS, RuntimeRefused
 from engineering.runtime.runs import RunCaps, RunStore
 from engineering.runtime.sessions import SessionStore
@@ -119,6 +121,34 @@ def test_each_v3_turns_credits_are_counted_once_on_the_sessions_kiro_model_and_r
     assert {event['model'] for event in turns} == {'kiro:claude-sonnet-4.5'}
     (total,) = [event for event in events if event['kind'] == 'kiro_session_credits']
     assert (total['credits'], total['counted_credits']) == (0.03551446766169154, 0.035515)
+
+
+def test_a_restored_sessions_replayed_turn_adds_no_credits_and_its_new_turn_counts_once(tmp_path):
+    """R2-5 (7.58.01): the first session's turn (``turn-1``) is counted there. Its continuation loads the saved
+    session, whose history kiro-cli replays, that turn's ``turn_completion`` with it: it adds nothing (the session that
+    lived it counted it), and the continuation's own turn (``turn-2``), reported twice, is counted once."""
+    first = world(tmp_path / 'first')
+    _transcribed(first)
+    first.inbox.queued = [[], [], [InboxMessage(kind=PAUSE, event_id='ev-pause')]]
+    binary, _ = _fake(tmp_path / 'first', {'turns': [[{'info': V3_TURN}, {'tool': '@voc/save_checkpoint',
+                                                                          'notes': 'half done'}, {'hold': True}]]})
+    assert _adapter(binary, first).run(first.session) == 'paused'
+    assert first.session.context.status.tokens['kiro:claude-sonnet-4.5'][MICRO_CREDITS] == 35_515
+    second = world(tmp_path / 'second')
+    _transcribed(second)
+    second.store.objects.update(first.store.objects)
+    second.session.restored = [json.loads(body) for key, body in sorted(first.store.objects.items())
+                               if '/_checkpoints/' in key][-1]
+    turn_2 = {**V3_TURN, 'turnId': 'turn-2', 'promptTurnSummaries': [{'unit': 'credit', 'usage': 0.5}]}
+    binary, _ = _fake(tmp_path / 'second', {'turns': [[{'info': turn_2}, {'info': turn_2}, _finish()]]})
+    assert _adapter(binary, second).run(second.session) == 'done'
+    events = _events(second)
+    loaded = next(event for event in events if event['kind'] == 'acp_session')
+    assert (loaded['loaded'], loaded['replayed']) == (True, 2)   # (the first prompt, and turn-1's completion)
+    assert second.session.context.status.tokens == {'kiro:claude-sonnet-4.5': {'in': 0, 'out': 0,
+                                                                               MICRO_CREDITS: 500_000}}
+    assert [(event['turn_id'], event['counted']) for event in events if event['kind'] == 'kiro_credits'] == [
+        ('turn-2', True), ('turn-2', False)]
 
 
 def test_a_v2_turns_metadata_is_counted_and_its_other_metadata_and_another_sessions_are_not(tmp_path):

@@ -7,7 +7,7 @@ import type { FormRemovals } from '../model/removals'
 const api = vi.hoisted(() => ({
   getForm: vi.fn<(formId: string) => Promise<LoadedForm>>(),
   createForm: vi.fn<(form: FormV2) => Promise<LoadedForm>>(),
-  saveForm: vi.fn<(formId: string, form: FormV2, revision: number, removes?: FormRemovals | null, writeCount?: number | null) => Promise<LoadedForm>>(),
+  saveForm: vi.fn<(formId: string, form: FormV2, writeCount: number, removes?: FormRemovals | null) => Promise<LoadedForm>>(),
   setEnabled: vi.fn<(formId: string, enabled: boolean, revision?: number, writeCount?: number) => Promise<LoadedForm>>(),
 }))
 
@@ -56,7 +56,7 @@ describe('saving the draft', () => {
   it('saves a stored form over the revision and the save count it was read at (D7)', async () => {
     api.saveForm.mockImplementation((_id, form) => Promise.resolve({ ...stored(form, 4), meta: { ...stored(form, 4).meta, write_count: 6 } }))
     const harness = await editAndSave()
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 3, null, 5) })
+    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 5, null) })
     await waitFor(() => { expect(harness.probe.current?.meta?.revision).toBe(4) })
     // The next save is over the count this one answered.
     expect(harness.probe.current?.meta?.write_count).toBe(6)
@@ -88,7 +88,7 @@ describe('saving the draft', () => {
     await waitFor(() => { expect(harness.probe.current).not.toBeNull() })
     act(() => { harness.probe.current?.update((form) => ({ ...form, questions: form.questions.slice(0, 1) })) })
     await user.click(await screen.findByRole('button', { name: 'Save' }))
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.anything(), 3, null, 5) })
+    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.anything(), 5, null) })
   })
 
   it('a save the lock refuses (answers_locked) is no stale save: it fails with the reason and locks the draft', async () => {
@@ -125,7 +125,7 @@ describe('saving the draft', () => {
     const user = userEvent.setup()
     renderBuilder(sampleForm(), true)
     await user.click(await screen.findByRole('button', { name: 'Publish' }))
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_new', expect.objectContaining({ enabled: true }), 1, null, 0) })
+    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_new', expect.objectContaining({ enabled: true }), 0) })
   })
 
   it('holds Save while a problem blocks it, and says why', async () => {
@@ -177,15 +177,15 @@ describe('a stale save (409, D7)', () => {
 
   it('Save mine saves this draft over the latest revision', async () => {
     await saveMineOver({ ...stored(sampleForm({ name: 'Theirs' }), 5), meta: { ...STORED_META, revision: 5, write_count: 9 } })
-    // Over theirs: its revision and its save count, read again.
-    await waitFor(() => { expect(api.saveForm).toHaveBeenLastCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 5, null, 9) })
+    // Over theirs: its save count, read again (7.58.01: no revision is sent, the count implies it).
+    await waitFor(() => { expect(api.saveForm).toHaveBeenLastCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 9, null) })
     await waitFor(() => { expect(screen.queryByRole('alert')).not.toBeInTheDocument() })
   })
 
   it('Save mine names what it removes from theirs once theirs is answered', async () => {
     const theirs = sampleForm({ name: 'Theirs', questions: [...sampleForm().questions, { id: 'q_more', type: 'open_text', headline: { en: 'More?' }, required: false, long: false, input_type: 'text' }] })
     await saveMineOver({ form: theirs, meta: { ...STORED_META, revision: 5, has_responses: true, can_delete_test_responses: false } })
-    await waitFor(() => { expect(api.saveForm).toHaveBeenLastCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 5, { questions: ['q_more'] }, 5) })
+    await waitFor(() => { expect(api.saveForm).toHaveBeenLastCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 5, { questions: ['q_more'] }) })
   })
 
   it('Reload theirs drops this draft for the latest version', async () => {

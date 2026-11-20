@@ -9,6 +9,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { answeredVersion } from '../builder/formDraftContext'
 import SwitchField from '../../../components/SwitchField/SwitchField'
 import CollapsibleSection from '../../../components/CollapsibleSection/CollapsibleSection'
 import type { Question } from '../model/formsV2'
@@ -98,7 +99,7 @@ export default function QuestionEditor({ question, index }: Readonly<{ question:
       </div>
       <CollapsibleSection size="sm" title={t('question.advanced')} open={advanced} onOpenChange={setAdvanced}>
         <div className="space-y-3">
-          <IdField label={t('question.id')} value={question.id} locked={draft.locked} lockedText={t('question.idLocked')} check={checkId}
+          <IdField label={t('question.id')} value={question.id} locked={answeredVersion(draft, question.id) !== null} lockedText={t('question.idLocked')} check={checkId}
             onCommit={(id) => { draft.update((current) => renameQuestionId(current, question.id, id)); go('questions', [id], { replace: true }) }} />
           <TextField label={t('question.buttonLabel')} value={textIn(question.button_label, lng)} placeholder={t('question.buttonLabelPlaceholder')}
             problems={fieldProblems(problems, 'button_label')}

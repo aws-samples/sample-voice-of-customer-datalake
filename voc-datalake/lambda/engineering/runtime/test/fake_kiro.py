@@ -6,7 +6,7 @@ speaking ACP over stdio the way kiro-cli 3.4.0 did in the 2026-11-17 probe (``in
 
     python -I fake_kiro.py <scenario.json> --version | acp --agent-engine=v3
 
-The scenario: ``version``; ``log`` (a JSON Lines file of every frame read, every answer to its own requests, and what
+The scenario: ``version`` (the pinned 3.5.0 by default); ``log`` (a JSON Lines file of every frame read, every answer to its own requests, and what
 it saw at start: its environment's names, whether the key was set, its working directory, the agents in its home);
 ``turns`` (one list of actions per prompt, in turn): ``say``/``think`` (chunks), ``tool`` (a ``tool_call`` and its
 completion; ``finish: true`` writes the tool server's ``finished`` file, ``notes`` its ``checkpoint`` file), ``ask``
@@ -18,7 +18,8 @@ reason, ``end_turn`` by default), ``exit`` (ends the process mid-turn); ``refuse
 set) and ``model_answer`` (another model said to be current); ``ignore`` (the options this Kiro never changes, as
 ``['effortLevel']``), ``refuse_effort`` (an error for an effort set); and a turn's ``info`` (a v3 ``session_info_update`` with
 those ``_meta.kiro`` fields: ``turn_completion``'s credits, ``session_usage``'s total) or ``metadata`` (a v2
-``_kiro.dev/metadata`` with those params). Its sessions live in ``$HOME/.kiro/sessions/ws/<id>/``.
+``_kiro.dev/metadata`` with those params). Its sessions live in ``$HOME/.kiro/sessions/ws/<id>/``; (7.58.01) a turn's
+``info`` is kept in its history too, and a ``session/load`` replays it with the messages.
 """
 from __future__ import annotations
 
@@ -126,11 +127,11 @@ class Fake:
             self.model, self.effort = wanted, 'medium'
         self.answer(ident, self.options())
 
-    def store(self, kind: str, text: str) -> None:
+    def store(self, kind: str, text: str, **more: Any) -> None:
         folder = os.path.join(self.home, SESSIONS, self.session_id)
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, 'messages.jsonl'), 'a') as stream:
-            stream.write(json.dumps({'kind': kind, 'text': text}) + '\n')
+            stream.write(json.dumps({'kind': kind, 'text': text, **more}) + '\n')
 
     def files(self) -> str:
         config = next(iter(self.configs.values()), {})
@@ -184,6 +185,9 @@ class Fake:
         with open(history) as stream:
             for line in stream:
                 item = json.loads(line)
+                if item['kind'] == 'info':
+                    self.update({'sessionUpdate': 'session_info_update', '_meta': {'kiro': item['info']}})
+                    continue
                 kind = 'user_message_chunk' if item['kind'] == 'user' else 'agent_message_chunk'
                 self.update({'sessionUpdate': kind, 'content': {'type': 'text', 'text': item['text']}})
         self.answer(ident, {})
@@ -226,6 +230,7 @@ class Fake:
             self.update({'sessionUpdate': 'plan', 'entries': action['plan']})
         elif 'info' in action:
             self.update({'sessionUpdate': 'session_info_update', '_meta': {'kiro': action['info']}})
+            self.store('info', '', info=action['info'])
         else:
             self.send({'jsonrpc': '2.0', 'method': '_kiro.dev/metadata',
                        'params': {'sessionId': self.session_id, **action['metadata']}})
@@ -297,7 +302,8 @@ def main(argv: list[str]) -> int:
         scenario = json.load(stream)
     args = argv[1:]
     if args == ['--version']:
-        sys.stdout.write(f'kiro-cli {scenario.get("version", "3.4.0")}\n')
+        # (the pinned one, kiro_pin.KIRO_CLI_VERSION, unless the scenario says another: 7.58.01's 3.5.0)
+        sys.stdout.write(f'kiro-cli {scenario.get("version", "3.5.0")}\n')
         return 0
     if args != ['acp', '--agent-engine=v3']:
         sys.stderr.write(f'fake kiro-cli: not a command it fakes: {args}\n')

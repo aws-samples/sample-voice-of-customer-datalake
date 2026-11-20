@@ -92,7 +92,9 @@ export default function ImproveSheet({ isOpen, onClose }: Readonly<{ isOpen: boo
   }
   const ask = async (text: string) => {
     asked.current = text
-    const answer = await request.run({ description: text, instruction: text, language: draft.form.language, channel: 'link', base_form: draft.form })
+    // (7.58.01: the removed questions' ids, which none of the AI's questions takes)
+    const answer = await request.run({ description: text, instruction: text, language: draft.form.language, channel: 'link', base_form: draft.form,
+      retired_ids: [...draft.retiredIds] })
     if (answer !== null) improve.propose(draft.form, answer)
   }
   const submit = () => {

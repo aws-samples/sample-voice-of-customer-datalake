@@ -25,7 +25,7 @@ RUN sh /tmp/install-build-tools.sh 3.9.16 \
 # publishes in its release index (templates/orchestration/images/common/install-kiro.sh; test_engineering_images.py
 # holds the version equal to harness/kiro.py KIRO_CLI_VERSION).
 COPY templates/orchestration/images/common/install-kiro.sh /tmp/install-kiro.sh
-RUN sh /tmp/install-kiro.sh 3.4.0 187905a1c931fde45ef0e03edd80d201f4f608e1a844d9508d80f558a593d499 \
+RUN sh /tmp/install-kiro.sh 3.5.0 6b931d7c003eb695b33718187180f6721c89e2218d977fccb63e8430fd504db1 \
  && rm /tmp/install-kiro.sh
 
 COPY lambda/engineering/runtime/unit_runner.py /opt/voc/unit_runner.py

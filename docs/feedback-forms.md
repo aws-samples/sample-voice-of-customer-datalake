@@ -102,7 +102,8 @@ is a version 1 body: its fields (`title`, `question`, `rating_enabled`…) are m
 | `project_id`, `document_id` | Optional. The project (and the PRD or PR/FAQ within it) this form validates; `''` validates nothing. Internal: never served publicly |
 | `dimension_defaults`, `tags` | Optional. Dimension values ([dimensions.md](dimensions.md)) and tags every response gets. The defaults **win** over the embed's `dimensions` option |
 | `custom_fields` | Kept as before |
-| `expected_revision` | Optional on a `PUT`: the `revision` the editor loaded. Another one answers `409` (`code: revision_conflict`, with the current `revision`, `updated_by` and `updated_at`) |
+| `expected_write_count` | Optional on a `PUT`: the `write_count` the editor loaded. Another one answers `409` (`code: revision_conflict`, with the current `revision`, `write_count`, `updated_by` and `updated_at`) ([Revisions](#revisions)) |
+| `expected_revision` | Ignored since 7.58.01, whatever it holds (never a `409`, never a `400`): an older builder still sends it. `expected_write_count` implies it, since only a save moves the revision and every save moves the count |
 | `removes` | Optional on a `PUT` of an answered form: `{questions?: [ids], options?: {question_id: [codes]}, rows?: {question_id: [codes]}, columns?: {question_id: [codes]}}`, every question, option code and matrix row or column code the save removes on purpose ([The lock of an answered form](#the-lock-of-an-answered-form)) |
 
 A text is an **I18nText**, `{"<locale>": "text"}`: the primary language's text is required, the others fall back
@@ -114,8 +115,9 @@ The form API answers the form as `item_to_form` projects it: the fields above pl
 (never the token), `form_type`, `brand_name`, `created_at`, `updated_at` and `updated_by`, and:
 
 - `has_responses`: a real response was accepted. The submit route marks the form on its first one (from 7.55.00:
-  one write per form, never one per submission; a test response never marks it). From then on its question ids,
-  their types and ranges, and its option codes are locked, in the builder and on the server
+  one write per form, never one per submission; a test response never marks it), and a form created since 7.58.01
+  says `false` until then (one created before has no such field: [below](#the-lock-of-an-answered-form)). From then
+  on its question ids, their types and ranges, and its option codes are locked, in the builder and on the server
   ([below](#the-lock-of-an-answered-form));
 - `retired_ids` (7.58.00): the ids of the questions the form had and removed. No question may take one again (a
   save that does is a `400` `question_id_reused` with its `question_id`), so the builder never gives one to a new
@@ -133,8 +135,10 @@ that count is not 0 (a form answered only before 7.55.00). A count that cannot b
 ### The lock of an answered form
 
 A form's answers are stored under its question ids and option codes, and read on its questions' types and ranges,
-so once it `has_responses` none of them may change in place. The builder locks the id and code fields, the type
-select ("Answers are stored for this type…", offering only a way back to the stored type) and a rating's points (and
+so once it `has_responses` none of them may change in place. The builder locks the id and code fields (the id
+field of each question the stored form has: one added since has no answers under its id, so its id stays editable,
+7.58.01), the type select ("Answers are stored for this type…", offering only a way back to the stored type) and a
+rating's points (and
 Faces when the stored rating has more than 5), and removes a question or an option only after saying that its answers
 stay in Results. The server enforces the same rule (TENETS.md, tenet 4), so a headless client cannot do more than the
 builder:
@@ -154,12 +158,16 @@ builder:
 - A form without a real response changes freely, and a save that leaves the definition alone (the name, Enable, the
   theme) needs no `removes`. The builder sends `removes` itself, computed from the form it loaded.
 - `removes` and the `409` stay although the builder already locks all of this, because they are what holds the line
-  for a writer that has no builder: the assistant's `update_feedback_form` (turning a version 1 form's rating off),
-  a script on the API.
-- The server's lock reads the stored `has_responses`. A form answered only before 7.55.00 has none, so a save that
-  changes its definition reads first whether the form has a real response stored (every one, not only those the
-  saver may see, and failing closed: a read that fails refuses the save) and marks the form when it has. The
-  builder locks such a form at once, because it reads `has_responses` from the response count.
+  for a writer that has no builder: a direct REST caller, such as a script's `PUT` of a version 1 field
+  (`rating_enabled: false` drops `q_rating`). (7.58.00 named the assistant's `update_feedback_form` here, wrongly: it
+  sends none of the fields that change a definition's questions, [Migration from version 1](#migration-from-version-1).)
+- The server's lock reads the stored `has_responses`. A form created since 7.58.01 has it from its creation (`false`
+  until its first real response marks it), so a save never reads its responses. One created before has no such field
+  until a response marks it, and one answered only before 7.55.00 was never marked, so a save that changes the
+  definition of a form with no `has_responses` at all reads first whether it has a real response stored (every one,
+  not only those the saver may see, and failing closed: a read that fails refuses the save) and marks the form when
+  it has. (Before 7.58.01 every definition save of an unanswered form read the brand's responses so.) The builder
+  locks such a form at once, because it reads `has_responses` from the response count.
 
 ### Questions
 
@@ -301,10 +309,12 @@ forms partition). A response names the revision it answered
 (`form_revision`), so a respondent who opened the form before an edit is checked against what they saw, and Results
 score it against that revision's question; a revision the form has not reached, or one with no snapshot, answers
 `409` (`code: form_changed`): the widget asks the respondent to reload. A save is conditional on the revision and the
-save count (`write_count`) it read, so two saves never overwrite each other silently. A save may also send the ones
-its editor loaded (`expected_revision`, `expected_write_count`; the builder sends both): another one is a `409`
-`revision_conflict` with the stored `revision`, `write_count`, `updated_by` and `updated_at`, so an editor opened
-before the form was turned Off (or renamed, or restyled) cannot turn it back on with a stale copy.
+save count (`write_count`) it read, so two saves never overwrite each other silently. A save may also send the count
+its editor loaded (`expected_write_count`; the builder does): another one is a `409` `revision_conflict` with the
+stored `revision`, `write_count`, `updated_by` and `updated_at`, so an editor opened before the form was turned Off
+(or renamed, or restyled) cannot turn it back on with a stale copy. Since 7.58.01 that count is the only precondition:
+`revision` stays the definition's number, and an `expected_revision` an older builder still sends is ignored (the
+count implies it: only a save moves the revision, and every save moves the count).
 
 ### Migration from version 1
 
@@ -764,7 +774,7 @@ button per language.
 | GET | `/feedback-forms` | List all forms (`?include=stats`: each form's card stats, its headline figure included) |
 | GET | `/feedback-forms/{id}` | One form (`{form}`), as the list shows it, with its `response_count` and `can_delete_test_responses` |
 | POST | `/feedback-forms` | Create a new form (schema version 2; a version 1 body is migrated) |
-| PUT | `/feedback-forms/{id}` | Update form (`expected_revision` optional; `removes` on an answered form, [The lock of an answered form](#the-lock-of-an-answered-form)) |
+| PUT | `/feedback-forms/{id}` | Update form (`expected_write_count` optional, an old client's `expected_revision` ignored; `removes` on an answered form, [The lock of an answered form](#the-lock-of-an-answered-form)) |
 | DELETE | `/feedback-forms/{id}` | Delete form, with its revision snapshots, test responses and funnel rows; recorded first ([Deleting a form](#deleting-a-form)) |
 | GET | `/feedback-forms/{id}/config` | Public config endpoint. **Unauthenticated** and fetched cross-origin by the embedded widget, so it returns only the widget-rendering fields, via a separate allowlist (`item_to_widget_config` in `lambda/api/feedback_form_handler.py`) rather than the projection the authenticated routes use: schema version 2 without the name, the option categories, the hidden fields' labels, the links, the labels or the test settings. `?test=<token>` adds `test: {valid, record?}` beside the config. It only reads: the funnel's open is the widget's `opened` beacon on `…/events` ([The funnel](#the-funnel)) |
 | POST | `/feedback-forms/{id}/submit` | Submit a response (or the version 1 widget's body); responses only |
@@ -1231,9 +1241,11 @@ deferred until they fit the `tools/list` token budget (`lambda/shared/test/test_
 
 "Describe your form" in the template picker, "Improve with AI" in the builder, and the assistant's
 `draft_feedback_form` tool. `POST /settings/form-drafts` takes `{description, language, channel, base_form?,
-instruction?}`: a description (at most 2,000 characters) to draft a new form, or an instruction (at most 2,000)
-with the form being edited (`base_form`) to change it; `language` is the primary locale and `channel` is
-`link`, `embed` or `in_app`. It is for whoever manages forms: **any signed-in editor of the workspace may draft**
+instruction?, retired_ids?}`: a description (at most 2,000 characters) to draft a new form, or an instruction (at
+most 2,000) with the form being edited (`base_form`) to change it; `language` is the primary locale and `channel` is
+`link`, `embed` or `in_app`; `retired_ids` (7.58.01, at most 1,000 question ids) are the ids the form removed, which
+no question of the draft takes (Improve with AI sends the form's `retired_ids` and those its unsaved edits removed). It
+is for whoever manages forms: **any signed-in editor of the workspace may draft**
 (and its admins; a viewer gets `403`), deployment-wide any signed-in user (the owner's decision of
 2026-11-18), 20 per person per hour (`429` `rate_limited` with `retry_after` in seconds), and not gated by the
 person's way of working (a form is not a gated document type). It answers `202 {job_id, status}`: the draft runs
@@ -1267,9 +1279,12 @@ prompt carries the schema's types (the matrix since 7.61.00), ops, limits and re
 examples (a workshop's feedback with a matrix and `{{event}}` among them); the person's text
 travels in a `form_brief` DATA block and their form in a `current_form` one, never as instructions. Its answer
 goes through the same validator as a save, after the server has made the ids and option codes itself (slugged,
-accents folded, de-duplicated, `other` / `none` renamed; since 7.61.00 a matrix's row and column codes too; the rules,
-and every recall placeholder, re-pointed at them) and dropped every address
-that is not https (each one a warning: the person adds an address only after checking it).
+accents folded, de-duplicated, `other` / `none` renamed, a hidden field the widget never fills renamed, since 7.58.01
+no question id among the request's `retired_ids`: the model's `q_why`, retired, comes back `q_why_2`; since 7.61.00 a
+matrix's row and column codes too; the rules, and every recall placeholder, re-pointed at them) and dropped every
+address that is not https (each one a warning: the person adds an address only after checking it). The builder flags
+an id a draft still brings back (from a request without them), and, since 7.58.01, the id field of a question the
+stored form does not have stays editable on an answered form, so such an id can be changed there.
 
 The assistant's `draft_feedback_form` (the `forms` pack, any caller) proposes a whole version 2 form, shown on an
 approval card the person edits (its name, a question left out) before **Approve** creates it disabled
@@ -1277,6 +1292,20 @@ approval card the person edits (its name, a question left out) before **Approve*
 warnings?, channel?}`: the form (`name`, `language`, `languages`, `welcome`, `questions`, `hidden_fields`,
 `endings`), the model's notes and warnings (a sentence, or `{message, target?}` naming a question or ending id),
 and where it runs (`link`, `embed` or `in_app`).
+
+**Where its rules hold (TENETS.md tenets 3 and 4; checked 2026-11-20 for 7.58.01).** No way-of-working gate applies
+to a form's AI draft, on any path: a form is not a gated document type (tenet 3's dial gates the PR/FAQ and the PRD,
+`shared/ai_writing.py`), so a Human-driven person drafts forms with the AI too, by decision. What the server holds,
+whoever calls: the draft routes save no form (`shared/forms_v2_draft.py` `draft` and `run_job` answer the job's
+result; the job row and the hourly counter are their only writes), they are for whoever manages forms, at 20 an hour
+(`shared/forms_v2_draft_routes.py`: a workspace's editors and admins, deployment-wide any signed-in user), the ids,
+codes and reserved names are made there (`sanitize`), and
+every save of a draft, the builder's, the assistant card's Approve or a script's, is `POST /feedback-forms` or `PUT
+/feedback-forms/{id}`, validated whole as any form (`shared/forms_v2.py` `validate_definition`, the lock of an
+answered form). What it does not hold: that an AI draft starts Off. The builder's Save and the assistant card's
+Approve send `enabled: false`, but the server keeps no draft's provenance (UX §12.3) and creates a form live for any
+caller who manages forms (as the builder's Publish does a new form's), so a direct REST caller can publish a drafted
+form in the call that creates it, with no review in between: a recorded gap of tenet 4 (TENETS.md, its row).
 
 ## Custom Fields
 

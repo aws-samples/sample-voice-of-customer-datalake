@@ -64,9 +64,18 @@ describe('ImproveSheet', () => {
   it('asks the AI about the form as it is now, with the instruction', async () => {
     await draftChanges()
     expect(draftForm).toHaveBeenCalledWith(
-      { description: 'Add a price follow-up', instruction: 'Add a price follow-up', language: 'en', channel: 'link', base_form: current() },
+      { description: 'Add a price follow-up', instruction: 'Add a price follow-up', language: 'en', channel: 'link', base_form: current(), retired_ids: [] },
       expect.any(AbortSignal),
     )
+  })
+
+  it('tells the AI the removed questions\' ids, which none of its questions may take (7.58.01)', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<ImproveSheet isOpen onClose={vi.fn<() => void>()} />, current(), { meta: { retired_ids: ['q_old_price'] } })
+    await user.type(screen.getByRole('textbox', { name: 'Instruction' }), 'Ask about the price again')
+    await user.click(screen.getByRole('button', { name: 'Draft changes' }))
+    await screen.findByRole('list', { name: 'Changes from the AI' })
+    expect(draftForm.mock.calls[0]?.[0].retired_ids).toStrictEqual(['q_old_price'])
   })
 
   it('lists each change by id, with the model\'s note', async () => {
