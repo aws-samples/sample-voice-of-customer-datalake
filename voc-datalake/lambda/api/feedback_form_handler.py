@@ -2262,12 +2262,12 @@ _RESULT_FIELDS = {'#fid': 'feedback_id', '#rating': 'rating', '#cat': 'category'
 
 
 def _feedback_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceScope | None,
-                   definition: Mapping[str, Any]) -> Iterator[ResultRow]:
-    """The form's feedback items (category scope applied, as on the stats routes) as results rows. An item tagged
-    ``is_test`` is never one (none should exist: test responses are never queued)."""
+                   definition: Mapping[str, Any], access: category_access.CategoryScope) -> Iterator[ResultRow]:
+    """The form's feedback items that ``access`` admits (the caller's category access AND source access, as on the
+    stats routes and every feedback read: ``admits_item`` reads ``category`` and ``source_platform``) as results
+    rows. An item tagged ``is_test`` is never one (none should exist: test responses are never queued)."""
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
-    access = scope_for_event(app.current_event.raw_event, aggregates_table, workspace)
     query_kwargs: dict[str, Any] = {
         'FilterExpression': 'source_channel = :sc',
         'ExpressionAttributeValues': {':sc': f'form_{form_id}'},
@@ -2324,12 +2324,24 @@ def _include_test(params: Mapping[str, Any], *, allow_only: bool = False) -> str
     return value
 
 
+def _admits_test_rows(access: category_access.CategoryScope, form: Mapping[str, Any]) -> bool:
+    """Whether the caller sees the form's TEST responses. They are no feedback items (no ``source_platform`` or
+    ``category`` of their own), so they are judged as the form files its responses: source ``feedback_form`` (a
+    deployment, or a workspace, may mark it restricted) under the form's own category (``other`` when it routes to
+    none). Fail closed: a caller who could not see a real response of this form sees no test one either."""
+    return category_access.admits_item(access, {'source_platform': FEEDBACK_FORM_SOURCE,
+                                                'category': form.get('category')})
+
+
 def _view_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceScope | None,
                definition: Mapping[str, Any], include_test: str) -> list[ResultRow]:
-    """The rows a Results or Responses view counts: real ones unless ``only``, test ones unless ``false``."""
+    """The rows a Results or Responses view counts (its JSON and its CSV): real ones unless ``only``, test ones
+    unless ``false``; only what the caller's category access and source access admit, against the workspace's
+    configuration in a workspace (``scope_for_event``: a failed read of either is a 500, never "everything")."""
+    access = scope_for_event(app.current_event.raw_event, aggregates_table, workspace)
     try:
-        rows = [] if include_test == 'only' else list(_feedback_rows(form, form_id, workspace, definition))
-        if include_test != 'false':
+        rows = [] if include_test == 'only' else list(_feedback_rows(form, form_id, workspace, definition, access))
+        if include_test != 'false' and _admits_test_rows(access, form):
             rows += list(_test_rows(form_id, workspace, definition))
     except ApiError:
         raise
@@ -2357,7 +2369,9 @@ def _funnel_rows(form_id: str, scope: WorkspaceScope | None, filters: Mapping[st
 @tracer.capture_method
 def get_form_results(form_id: str):
     """The form's results per question of its current revision (docs/feedback-forms.md "Results"): admins and
-    editors in a workspace (a viewer 403), whoever manages forms deployment-wide, the category scope as on stats.
+    editors in a workspace (a viewer 403), whoever manages forms deployment-wide, with the caller's category access
+    and source access applied as on stats (a caller denied the ``feedback_form`` source counts no response, real or
+    test).
 
     ``?include_test=true`` adds the test link's tagged responses (default: real responses only); ``from``, ``to``,
     ``language``, ``ending`` and ``hidden.<id>=<value>`` filter the responses counted (the funnel by its dates only).

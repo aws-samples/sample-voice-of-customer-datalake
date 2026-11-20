@@ -874,6 +874,68 @@ class TestResultsAndResponses:
         _, results = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/results', query={'to': '2026-11-01'})
         assert results['responses'] == 1
 
+    @staticmethod
+    def _restrict_form_responses(world: dict, ws: str | None = None) -> None:
+        """The deployment (or workspace ``ws``) marks the ``feedback_form`` source restricted (its source profiles,
+        ``SETTINGS#sources``)."""
+        world['aggregates'].put_item(Item={'pk': f'WS#{ws}#SETTINGS#sources' if ws else 'SETTINGS#sources',
+                                           'sk': 'config', 'sources': [{'id': 'feedback_form', 'restricted': True}]})
+
+    @staticmethod
+    def _seen(lambda_context: Any, form_id: str, claims: dict) -> tuple[int, int, int, int]:
+        """What ``claims`` sees of the form, test responses included: results' real and test counts, the responses'
+        total, and the CSV's response rows (after its two header rows)."""
+        query = {'include_test': 'true'}
+        _, results = _call(lambda_context, 'GET', f'/feedback-forms/{form_id}/results', query=query, claims=claims)
+        _, page = _call(lambda_context, 'GET', f'/feedback-forms/{form_id}/responses', query=query, claims=claims)
+        status, response = _call(lambda_context, 'GET', f'/feedback-forms/{form_id}/responses', claims=claims,
+                                 query={**query, 'format': 'csv'}, raw=True)
+        assert status == 200
+        csv_rows = list(csv.reader(io.StringIO(response['body'])))[2:]
+        return results['responses'] - results['test_responses'], results['test_responses'], page['total'], len(csv_rows)
+
+    def test_a_caller_denied_the_feedback_form_source_sees_no_response_real_or_test(self, world, seeded,
+                                                                                   lambda_context):
+        """Source access applies with category access (no ``sources`` grant = every non-restricted source): nothing
+        of a restricted source, contact answers included, and its test responses with it."""
+        assert self._seen(lambda_context, seeded, USER) == (3, 1, 4, 4)
+        self._restrict_form_responses(world)
+        assert self._seen(lambda_context, seeded, USER) == (0, 0, 0, 0)
+
+    def test_an_admin_and_a_caller_granted_the_source_still_see_them(self, world, seeded, lambda_context):
+        self._restrict_form_responses(world)
+        world['aggregates'].put_item(Item={'pk': 'CATEGORY_ACCESS', 'sk': f"USER#{OTHER['sub']}",
+                                           'sources': ['feedback_form']})
+        assert self._seen(lambda_context, seeded, ADMIN) == (3, 1, 4, 4)
+        assert self._seen(lambda_context, seeded, OTHER) == (3, 1, 4, 4)
+
+    def test_a_caller_outside_the_forms_category_sees_no_test_response_either(self, world, seeded, lambda_context):
+        """Category access too: a test response is judged as the form files its responses (its own category)."""
+        assert _call(lambda_context, 'PUT', f'/feedback-forms/{seeded}', body={'category': 'billing'})[0] == 200
+        world['aggregates'].put_item(Item={'pk': 'CATEGORY_ACCESS', 'sk': f"USER#{OTHER['sub']}",
+                                           'categories': ['features']})
+        # (the real responses are filed under `features`: those stay; the form's own category is `billing`)
+        assert self._seen(lambda_context, seeded, OTHER) == (3, 0, 3, 3)
+
+    def test_in_a_workspace_its_own_source_profiles_decide(self, world, lambda_context):
+        """A workspace form's test responses follow the WORKSPACE's restricted sources, never the deployment's."""
+        fid = _create(lambda_context, claims=EDITOR, ws=WS)['form_id']
+        TestTheTestResponsesDeleteIsRecorded._tested(lambda_context, fid, ws=WS)
+
+        def tests_seen() -> tuple[int, int]:
+            query = {'include_test': 'only'}
+            _, page = _call(lambda_context, 'GET', f'/feedback-forms/{fid}/responses', query=query, claims=EDITOR,
+                            ws=WS)
+            _, results = _call(lambda_context, 'GET', f'/feedback-forms/{fid}/results', query={'include_test': 'true'},
+                               claims=EDITOR, ws=WS)
+            return page['total'], results['test_responses']
+
+        assert tests_seen() == (1, 1)
+        self._restrict_form_responses(world)
+        assert tests_seen() == (1, 1)   # (the deployment's profiles are not the workspace's)
+        self._restrict_form_responses(world, WS)
+        assert tests_seen() == (0, 0)
+
     def test_responses_page_newest_first_and_the_test_list_is_separate(self, seeded, lambda_context):
         _, page = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/responses', query={'limit': '2'})
         assert ([r['response_id'] for r in page['responses']], page['next_cursor'], page['total']) == \

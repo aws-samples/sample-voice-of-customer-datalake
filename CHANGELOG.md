@@ -169,6 +169,13 @@ person's. Merging it stays the upstream maintainers'
   delete, still no `ssm:GetParameter`; negative pins: no agent role, the cache writer, the token function, the
   ingestor, voc-engineering-start, voc-engineering-issues-config or the runtime names `engineering-user-auth`, and the
   connections' grant does not match it. In Python: the owner's token is sent only in `POST /repos/<upstream>/pulls`.
+- **A form's test responses follow the caller's category and source access** (`feedback_form_handler.py`
+  `_view_rows`, `_admits_test_rows`): Results, Responses and their CSV scoped the real responses by the caller's
+  category access and source access, but added the test responses (`include_test=true` or `only`) to every caller, so
+  one denied the `feedback_form` source, or limited to other categories, still read them, testers' contact answers
+  included. A test response is now judged as the form files its responses (source `feedback_form`, the form's own
+  category), against the workspace's source profiles in a workspace; a caller it does not admit gets none (fail
+  closed, as the stats route counts nothing for them).
 
 ### Upgrade notes
 

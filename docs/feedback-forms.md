@@ -105,7 +105,7 @@ The form API answers the form as `item_to_form` projects it: the fields above pl
 - `migrated_from: 1` while the form is still stored as version 1 ([below](#migration-from-version-1)).
 
 `GET /feedback-forms/{id}` answers `{form}`, one form as the list shows it plus `response_count`: its stored
-responses as `GET …/stats` counts them (the caller's category scope applied), with `has_responses` true also when
+responses as `GET …/stats` counts them (the caller's category access and source access applied), with `has_responses` true also when
 that count is not 0 (a form answered only before 7.55.00). A count that cannot be read is left out, with
 `stats_error`. A save validates the whole definition and answers a `400` naming the field and the rule.
 
@@ -870,10 +870,17 @@ Responses show them only with `include_test`. The editor's preview never submits
 ## Results and responses
 
 `GET /feedback-forms/{id}/results` and `GET /feedback-forms/{id}/responses` read the form's feedback items
-(its `source_channel` in its brand's partition, the caller's category scope applied, as the stats route does)
-and, with `include_test`, its test responses. In a workspace its editors and admins may read them (a viewer
-gets `403`); deployment-wide, whoever manages forms. Both take `from` and `to` (ISO dates or times), `language`,
-`ending` and `hidden.<id>=<value>`.
+(its `source_channel` in its brand's partition) and, with `include_test`, its test responses. In a workspace its
+editors and admins may read them (a viewer gets `403`); deployment-wide, whoever manages forms. Each caller sees only
+what both of their scopes admit, as on every feedback read route: **category access** (an item's `category`) AND
+**source access** (its `source_platform`, `feedback_form`: no `sources` grant means every source that is not
+`restricted`; `shared/category_access.py` `admits_item`), against the workspace's categories and source profiles in
+a workspace. A test response has neither of its own, so it is judged as the form files its responses: source
+`feedback_form` under the form's own category (`other` when it routes to none). So where `feedback_form` is
+restricted, a caller without a grant for it gets empty Results, Responses and CSV (no answers, no contact details, no
+test responses), never a 403, as the stats route counts nothing for them; an admin, or a caller granted the source,
+sees them. A failed read of either scope is a 500, never everything. Both take `from` and `to` (ISO dates or times),
+`language`, `ending` and `hidden.<id>=<value>`.
 
 **Results** (`include_test=false` by default): `{responses, test_responses, last_response_at, questions,
 endings: {id: n}, hidden: {id: n}, removed_questions: [{id, answered}], funnel}`. Each question of the current
