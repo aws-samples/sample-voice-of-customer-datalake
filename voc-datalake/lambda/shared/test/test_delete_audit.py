@@ -5,7 +5,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
-from shared.delete_audit import actor_from_event, record_delete, record_delete_first
+from shared.delete_audit import actor_from_event, record_delete, record_delete_first, record_delete_once
 from shared.test.moto_tables import create_pk_sk_table
 
 
@@ -37,6 +37,29 @@ class TestActorFromEvent:
         assert actor_from_event(board_token, admin=False) == {'sub': 'b-1', 'kind': 'user'}
         assert actor_from_event(_event(sub='u-1'), admin=True) == {'sub': 'u-1', 'kind': 'admin'}
         assert actor_from_event(_event(sub='agent:a'), admin=True)['kind'] == 'agent'
+
+
+class TestRecordDeleteOnceCounts:
+    """A delete recorded once however often it is retried (a feedback form's) says what else it removes: its counts,
+    by name, as the first attempt counted them."""
+
+    def test_it_carries_what_else_the_delete_removes_and_the_first_attempts_count_stays(self):
+        with mock_aws():
+            table = create_pk_sk_table('aggregates')
+            written = [record_delete_once(table, kind='feedback_form', record_id='f1', target={'form_id': 'f1'},
+                                          actor=None, counts={'test_responses_deleted': remaining})
+                       for remaining in (3, 1)]
+            [row] = table.scan()['Items']
+        assert written == [True, False]
+        assert row['test_responses_deleted'] == 3
+
+    @pytest.mark.parametrize('name', ['kind', 'count', 'actor', 'deleted_at'])
+    def test_a_count_never_takes_one_of_the_rows_own_fields(self, name):
+        table = MagicMock()
+        with pytest.raises(ValueError, match='own fields'):
+            record_delete_once(table, kind='feedback_form', record_id='f1', target={'form_id': 'f1'}, actor=None,
+                               counts={name: 1})
+        table.put_item.assert_not_called()
 
 
 class TestRecordDeleteFirst:

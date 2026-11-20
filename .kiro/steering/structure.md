@@ -108,7 +108,7 @@ voice-of-customer-datalake/       # Root repository
     │   └── layers/
     │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4, app-review scrapers
     │       ├── processing-deps/      # Layer (ApiDepsLayer + ProcessingDepsLayer): aws-lambda-powertools, pydantic, requests
-    │       ├── signing-deps/         # Layer: cryptography, only for the 5 functions that sign CloudFront URLs
+    │       ├── signing-deps/         # Layer: cryptography, only for ProjectsApi + ProjectsAssistWorker (they sign CloudFront URLs) and the MCP endpoint (it verifies OAuth tokens)
     │       └── email-intake-deps/    # Layer: lxml, only for the (opt-in) inbound-email intake
     ├── plugins/                      # Data source plugins
     │   ├── _shared/                  # Shared plugin utilities

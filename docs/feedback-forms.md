@@ -848,8 +848,9 @@ A form's **test link** opens it, even while it is disabled, and its responses ne
   `feedback_form_test_responses`, the caller's sub, the form id, `count` and the time), a deployment form as one
   `AUDIT#delete` row of voc-aggregates (the same kind, the form id, the caller as `{sub, kind}`, `count` and the
   time); `count` is the test responses removed, never their content. A row that cannot be written deletes nothing, a
-  delete of nothing records nothing, and each delete is its own row. Real responses are feedback items of the lake and
-  are never deleted there.
+  delete of nothing records nothing, and each delete is its own row. Deleting the form itself takes its test responses
+  with it, counted on the form's own row (`test_responses_deleted`, [Deleting a form](#deleting-a-form)). Real
+  responses are feedback items of the lake and are never deleted there.
 - A tagged test response is kept as answered, without the source's PII policy (it never becomes a feedback item):
   test with sample data, and delete the test responses when you are done. The deployment's legal deletes still
   reach it (`voc-retention`, [source-policies.md](source-policies.md#retention-and-erasure)), in the scopes they reach
@@ -1102,10 +1103,12 @@ audit-row guard, so no role can change or remove it; when it cannot be written, 
 - a deployment form: as the deployment's other deletes are recorded (`lambda/shared/delete_audit.py`
   `record_delete_once`): `AUDIT#delete` / `feedback_form#{form_id}` in `voc-aggregates`, kind `feedback_form`, the
   form id, the actor `{sub, kind}` (never an email) and `deleted_at`; one row per form however often a delete that
-  failed half-way is retried. The deployment's delete stays idempotent: an unknown id answers success and records
-  nothing.
+  failed half-way is retried, with the first attempt's count. The deployment's delete stays idempotent: an unknown
+  id answers success and records nothing.
 
-The delete then removes the form's revision snapshots, test responses and funnel rows, and the form. Its real
+Both rows also say how many of the form's test responses the delete removes with it: `test_responses_deleted` (0
+when it has none; never their content). Their keys are read first, counted on the row, and then those same keys are
+deleted. The delete then removes the form's revision snapshots, test responses and funnel rows, and the form. Its real
 responses are feedback items of the lake and stay there. A delete of a form's test responses alone is recorded the
 same way, in the same partition, with kind `feedback_form_test_responses` and the `count` removed (a deployment
 form's through `record_delete_first`: a new row each time, since each delete is its own event; [Test

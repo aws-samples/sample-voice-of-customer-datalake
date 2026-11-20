@@ -296,12 +296,33 @@ class TestEveryFormDeleteIsRecorded:
         fid = _create(lambda_context, claims=USER)['form_id']
         assert _call(lambda_context, 'DELETE', f'/feedback-forms/{fid}', claims=USER)[0] == 200
         [row] = self._records(world)
-        assert {key: row[key] for key in ('sk', 'kind', 'target', 'actor')} == {
+        assert {key: row[key] for key in ('sk', 'kind', 'target', 'actor', 'test_responses_deleted')} == {
             'sk': f'feedback_form#{fid}', 'kind': 'feedback_form', 'target': {'form_id': fid},
-            'actor': {'sub': USER['sub'], 'kind': 'user'}}
+            'actor': {'sub': USER['sub'], 'kind': 'user'}, 'test_responses_deleted': 0}
         assert row['deleted_at']
         assert 'ttl' not in row
         assert _rows(world, f'FORM#{fid}') == []
+
+    def test_the_row_counts_the_test_responses_that_go_with_the_form(self, world, lambda_context):
+        """A form's delete removes its test responses too (TENETS.md D5): its one row says how many, written first."""
+        fid = _create(lambda_context, claims=USER)['form_id']
+        TestTheTestResponsesDeleteIsRecorded._tested(lambda_context, fid, times=2)
+        assert len(_tests_of(world, fid)) == 2
+        assert _call(lambda_context, 'DELETE', f'/feedback-forms/{fid}', claims=USER)[0] == 200
+        [row] = self._records(world)
+        assert (row['kind'], row['test_responses_deleted'], 'count' in row) == ('feedback_form', 2, False)
+        assert _tests_of(world, fid) == []
+
+    def test_a_workspace_forms_row_counts_its_test_responses_too(self, world, lambda_context):
+        fid = _create(lambda_context, claims=EDITOR, ws=WS)['form_id']
+        TestTheTestResponsesDeleteIsRecorded._tested(lambda_context, fid, times=2, ws=WS)
+        assert _call(lambda_context, 'DELETE', f'/feedback-forms/{fid}', claims=EDITOR, ws=WS)[0] == 200
+        [row] = TestTheTestResponsesDeleteIsRecorded._ws_records(world)
+        assert {key: row[key] for key in ('kind', 'form_id', 'test_responses_deleted')} == {
+            'kind': 'form_deleted', 'form_id': fid, 'test_responses_deleted': 2}
+        assert 'count' not in row
+        assert _tests_of(world, fid, WS) == []
+        assert self._records(world) == []
 
     def test_a_delete_of_an_unknown_id_still_succeeds_and_records_nothing(self, world, lambda_context):
         assert _call(lambda_context, 'DELETE', '/feedback-forms/f_gone')[0] == 200

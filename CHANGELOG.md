@@ -509,7 +509,9 @@ without a rating shows its Question.
 - **Every form delete is recorded** (the owner's decision): a workspace form's in `AUDIT#WS#{ws}` (kind `form_deleted`,
   as before) and now a deployment form's too, as the deployment's other deletes (`shared/delete_audit.py`
   `record_delete_once`: `AUDIT#delete` / `feedback_form#{form_id}` in voc-aggregates, the form id, the actor and the
-  time, one row per form); written first, so a delete whose record fails deletes nothing.
+  time, one row per form); written first, so a delete whose record fails deletes nothing. Both rows carry
+  `test_responses_deleted`, the test responses removed with the form, read and counted before anything is deleted
+  (`record_delete_once`'s new `counts`; a retried delete keeps the first count).
 
 ### Changed
 

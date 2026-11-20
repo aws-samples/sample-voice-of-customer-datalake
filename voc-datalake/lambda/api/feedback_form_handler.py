@@ -1294,17 +1294,21 @@ FORM_DELETED = 'form_deleted'
 FORM_DELETE_KIND = 'feedback_form'
 #: The kind of a test responses' delete's row (``DELETE …/responses?test=true``), in either audit partition.
 TEST_RESPONSES_DELETE_KIND = 'feedback_form_test_responses'
+#: A form delete's row says how many test responses go with the form (TENETS.md D5), under this name.
+TEST_RESPONSES_DELETED = 'test_responses_deleted'
 
 
 def _record_form_delete(scope: WorkspaceScope, form_id: str, *, kind: str = FORM_DELETED,
-                        count: int | None = None) -> None:
-    """The ``AUDIT#WS#{ws}`` row of a workspace form's delete (or of its test responses', with ``count``), written
-    before it (a new row, never an overwrite; raises when it cannot be written)."""
+                        count: int | None = None, test_responses: int | None = None) -> None:
+    """The ``AUDIT#WS#{ws}`` row of a workspace form's delete (with ``test_responses``: how many of its test
+    responses go with it), or of its test responses' (with ``count``), written before it (a new row, never an
+    overwrite; raises when it cannot be written)."""
     at = now_iso()
     put_new_audit_row(configured_table(get_workspaces_table(), 'Workspaces'), {
         'pk': audit_key(scope.ws), 'sk': audit_sort_key(at), 'kind': kind,
         'actor': get_caller_subject(app.current_event.raw_event), 'form_id': form_id, 'at': at,
-        **({'count': count} if count is not None else {})})
+        **({'count': count} if count is not None else {}),
+        **({TEST_RESPONSES_DELETED: test_responses} if test_responses is not None else {})})
 
 
 def _row_keys(scope: WorkspaceScope | None, prefix: str, *, pk: str | None = None,
@@ -1332,14 +1336,15 @@ def _delete_rows(scope: WorkspaceScope | None, prefix: str) -> int:
     return _delete_keys(scope, _row_keys(scope, prefix))
 
 
-def _delete_form_rows(form_id: str, scope: WorkspaceScope | None) -> None:
+def _delete_form_rows(form_id: str, scope: WorkspaceScope | None, tests: list[dict[str, str]]) -> None:
     """Delete the rows that belong to the form: its revision snapshots (``FORMREV#{id}#…``) and funnel counters
-    (``FORMFUNNEL#{id}#…``) in its forms partition, and its test responses (``{id}#…`` in the scope's
-    ``FEEDBACK_FORM_TEST``). The funnel's visit rows (``FORMSESSION#{id}#…``) are left to their 7-day ``ttl``:
-    plumbing, never data, and a busy form's week of them is not worth a delete that could outrun the request."""
+    (``FORMFUNNEL#{id}#…``) in its forms partition, and its test responses (``tests``: their keys in the scope's
+    ``FEEDBACK_FORM_TEST``, as the delete's record counted them). The funnel's visit rows (``FORMSESSION#{id}#…``)
+    are left to their 7-day ``ttl``: plumbing, never data, and a busy form's week of them is not worth a delete that
+    could outrun the request."""
     for prefix in (_REVISION_PREFIX, _FUNNEL_PREFIX):
         _delete_rows(scope, f'{prefix}{form_id}#')
-    _delete_keys(scope, _test_response_keys(form_id, scope))
+    _delete_keys(scope, tests)
 
 
 @app.delete("/feedback-forms/<form_id>")
@@ -1355,8 +1360,11 @@ def delete_form(form_id: str):
       with no audit row;
     * a deployment form as the deployment's other deletes are (shared/delete_audit.py ``record_delete_once``):
       ``AUDIT#delete`` / ``feedback_form#{id}`` in voc-aggregates (kind ``feedback_form``, the form id, the actor
-      ``{sub, kind}``, the time), one row per form however often a failed delete is retried. The deployment's delete
-      stays idempotent: an unknown id answers success and records nothing.
+      ``{sub, kind}``, the time), one row per form however often a failed delete is retried (the first attempt's
+      count stays). The deployment's delete stays idempotent: an unknown id answers success and records nothing.
+
+    Both rows say how many test responses go with the form (``test_responses_deleted``, TENETS.md D5; never their
+    content): their keys are read first, counted on the row, and then those same keys are deleted.
     """
     scope = _request_scope(write=True)
     if scope is None:
@@ -1364,13 +1372,15 @@ def delete_form(form_id: str):
     else:
         _read_form(form_id, 'Failed to delete form', scope)  # 404 for a form this workspace does not hold
     try:
+        tests = _test_response_keys(form_id, scope)
         if scope is not None:
-            _record_form_delete(scope, form_id)
+            _record_form_delete(scope, form_id, test_responses=len(tests))
         elif _forms(None).get_item(_form_key(form_id, None)).get('Item'):
             record_delete_once(_forms_table(), kind=FORM_DELETE_KIND, record_id=form_id, target={'form_id': form_id},
-                               actor=actor_from_event(app.current_event.raw_event))
+                               actor=actor_from_event(app.current_event.raw_event),
+                               counts={TEST_RESPONSES_DELETED: len(tests)})
         # Its revision snapshots and test responses first: a failure here leaves the form, and a retry finishes.
-        _delete_form_rows(form_id, scope)
+        _delete_form_rows(form_id, scope, tests)
         _forms(scope).delete_item(_form_key(form_id, scope))
         if scope is not None:
             release_lookup(configured_table(get_workspaces_table(), 'Workspaces'), form_id, scope)

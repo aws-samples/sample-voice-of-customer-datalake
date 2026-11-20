@@ -85,13 +85,17 @@ def record_delete_once(
     target: Mapping[str, str],
     actor: Mapping[str, str] | None,
     reason: str | None = None,
+    counts: Mapping[str, int] | None = None,
 ) -> bool:
-    """The ``AUDIT#delete`` row of a delete that may be run again until it finishes (a participant's erasure):
-    ``sk`` ``{kind}#{record_id}``, deterministic, put only if absent, so every attempt writes it and one delete has
-    exactly one row, never two and never none. True when this call wrote it, False when an earlier attempt had.
-    Unlike ``record_delete`` it RAISES on any other failure: the delete is not done until its record is."""
+    """The ``AUDIT#delete`` row of a delete that may be run again until it finishes (a participant's erasure, a
+    feedback form's): ``sk`` ``{kind}#{record_id}``, deterministic, put only if absent, so every attempt writes it
+    and one delete has exactly one row, never two and never none. True when this call wrote it, False when an earlier
+    attempt had. ``counts``: what else the delete is about to remove, by name (a form's ``test_responses_deleted``),
+    as the first attempt counted it. Unlike ``record_delete`` it RAISES on any other failure: the delete is not done
+    until its record is."""
     try:
-        _put_record(table, lambda _now: f'{kind}#{record_id}', kind=kind, target=target, actor=actor, reason=reason)
+        _put_record(table, lambda _now: f'{kind}#{record_id}', kind=kind, target=target, actor=actor, reason=reason,
+                    counts=counts)
     except ClientError as error:
         if is_conditional_check_failure(error):
             return False
@@ -116,9 +120,15 @@ def record_delete_first(
                 count=count)
 
 
+#: The fields every ``AUDIT#delete`` row has or may have; a ``counts`` name is never one of them.
+_ROW_FIELDS: Final = frozenset({'pk', 'sk', 'kind', 'target', 'actor', 'deleted_at', 'reason', 'count'})
+
+
 def _put_record(table: Any, sort_key: Callable[[str], str], *, kind: str, target: Mapping[str, str],
-                actor: Mapping[str, str] | None, reason: str | None, count: int | None = None) -> None:
-    """One ``AUDIT#delete`` row (``sort_key`` given the time), put only if its key is new; errors propagate."""
+                actor: Mapping[str, str] | None, reason: str | None, count: int | None = None,
+                counts: Mapping[str, int] | None = None) -> None:
+    """One ``AUDIT#delete`` row (``sort_key`` given the time), put only if its key is new; errors propagate.
+    ``counts`` adds whole-number fields by name, never one of the row's own."""
     now = now_iso()
     item: dict[str, Any] = {
         'pk': AUDIT_PK,
@@ -132,6 +142,10 @@ def _put_record(table: Any, sort_key: Callable[[str], str], *, kind: str, target
         item['reason'] = reason[:_MAX_TEXT]
     if count is not None:
         item['count'] = count
+    for name, value in (counts or {}).items():
+        if name in _ROW_FIELDS:
+            raise ValueError(f'{name!r} is one of the audit row\'s own fields')
+        item[name] = value
     table.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
 
 
