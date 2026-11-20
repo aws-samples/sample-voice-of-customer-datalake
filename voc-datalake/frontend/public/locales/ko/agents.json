@@ -989,15 +989,15 @@
       "switch": "이 저장소의 이슈 읽기",
       "reasons": {
         "off": "이슈를 읽지 않습니다: 스위치가 꺼져 있습니다.",
-        "token": "GitHub Issues 소스가 토큰으로 로그인합니다: 관리 → 데이터 소스에서 이 저장소를 추가하세요.",
+        "token": "GitHub Issues 소스가 토큰으로 로그인합니다: 관리 → 소스 → 소스 설정에서 이 저장소를 추가하세요.",
         "other_app": "GitHub Issues 소스가 다른 GitHub App으로 로그인합니다: 이 저장소의 이슈는 그 앱으로 읽지 않습니다.",
-        "limit": "GitHub Issues 소스는 저장소를 최대 {{limit, number}}개까지 읽습니다: 이 저장소를 읽으려면 관리 → 데이터 소스에서 하나를 빼세요.",
+        "limit": "GitHub Issues 소스는 저장소를 최대 {{limit, number}}개까지 읽습니다: 이 저장소를 읽으려면 관리 → 소스 → 소스 설정에서 하나를 빼세요.",
         "not_app": "배포의 GitHub App으로 만든 연결만 이슈를 자동으로 읽습니다.",
         "not_deployed": "이곳에는 GitHub Issues 소스가 배포되지 않아 이슈를 읽지 않습니다.",
         "pending": "아직 읽지 않음: GitHub Issues 소스 목록에 없습니다.",
         "unknown": "이슈를 읽지 않습니다."
       },
-      "openSources": "관리 → 데이터 소스 열기",
+      "openSources": "관리 → 소스 → 소스 설정 열기",
       "readNow": "지금 이슈 읽기",
       "label": {
         "created": "{{label}} 레이블: 만들었습니다.",
@@ -1007,7 +1007,7 @@
       "follow": {
         "reading_one": "이슈: 저장소 {{count, number}}개에서 자동으로 읽습니다.",
         "reading_other": "이슈: 저장소 {{count, number}}개에서 자동으로 읽습니다.",
-        "token": "GitHub Issues 소스가 토큰으로 로그인합니다: 관리 → 데이터 소스에서 이 저장소들을 추가하세요.",
+        "token": "GitHub Issues 소스가 토큰으로 로그인합니다: 관리 → 소스 → 소스 설정에서 이 저장소들을 추가하세요.",
         "labelsCreated": "{{label}} 레이블: {{list}}에 있습니다.",
         "labelsFailed": "{{list}}에 {{label}} 레이블을 만들지 못했습니다: 설치 확인이 다시 시도합니다.",
         "skipped": {
@@ -1015,7 +1015,7 @@
           "other_app": "읽지 않음(소스가 다른 GitHub App으로 로그인): {{list}}.",
           "limit": "읽지 않음(소스가 이미 저장소 {{limit, number}}개를 읽음): {{list}}."
         },
-        "scheduleOff": "GitHub Issues 소스의 일정이 꺼져 있습니다: 관리 → 데이터 소스에서 켜세요.",
+        "scheduleOff": "GitHub Issues 소스의 일정이 꺼져 있습니다: 관리 → 소스 → 소스 설정에서 켜세요.",
         "error": "GitHub Issues 소스를 자동으로 설정하지 못했습니다: {{error}}"
       },
       "state": {
@@ -1981,8 +1981,8 @@
       "notMet": "할 일",
       "unknown": "아직 알 수 없음",
       "openConnections": "연결 열기",
-      "openDeploymentSources": "관리 → 데이터 소스 열기",
-      "openSources": "관리 → 데이터 소스 열기",
+      "openDeploymentSources": "관리 → 소스 → 소스 설정 열기",
+      "openSources": "관리 → 소스 → 소스 설정 열기",
       "sourcesOutside": "어떤 워크스페이스에도 들어가지 않은 상태에서: 자동화는 배포의 소스만 읽습니다.",
       "deploymentTitle": "이 배포",
       "connectedAs": "App으로 연결됨: {{list}}.",

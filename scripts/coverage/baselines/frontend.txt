@@ -12,7 +12,6 @@ voc-datalake/frontend/src/assistant/approvals/previews/AgentPreviews.tsx 0.00   
 voc-datalake/frontend/src/assistant/approvals/previews/CompanyPreviews.tsx 0.00   # 0/7
 voc-datalake/frontend/src/assistant/approvals/previews/FeedbackCategoryPreview.tsx 10.00   # 1/10
 voc-datalake/frontend/src/assistant/approvals/previews/FieldChangesPreview.tsx 40.00   # 6/15
-voc-datalake/frontend/src/assistant/approvals/registry.ts 73.86   # 65/88
 voc-datalake/frontend/src/assistant/components/Composer.tsx 64.28   # 54/84
 voc-datalake/frontend/src/assistant/components/attachments.ts 66.66   # 22/33
 voc-datalake/frontend/src/assistant/components/exportMarkdown.ts 53.84   # 7/13
@@ -65,8 +64,6 @@ voc-datalake/frontend/src/pages/Scrapers/PluginConfigParts.tsx 64.00   # 16/25
 voc-datalake/frontend/src/pages/Scrapers/ScraperCard.tsx 67.10   # 51/76
 voc-datalake/frontend/src/pages/Scrapers/Scrapers.tsx 74.73   # 71/95
 voc-datalake/frontend/src/pages/Scrapers/scraperAnchor.ts 66.66   # 6/9
-voc-datalake/frontend/src/pages/Settings/DataGovernanceSections.tsx 0.00   # 0/5
-voc-datalake/frontend/src/pages/Settings/IntegrationsSection.tsx 75.00   # 3/4
 voc-datalake/frontend/src/pages/Settings/boards/boardCopy.ts 75.00   # 9/12
 voc-datalake/frontend/src/plugins/index.ts 71.42   # 5/7
 voc-datalake/frontend/src/store/boardSessionStore.ts 56.25   # 9/16

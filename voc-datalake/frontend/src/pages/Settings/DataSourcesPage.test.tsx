@@ -1,13 +1,14 @@
 /**
- * Administration → Data sources (7.54.00, DataSourcesPage.tsx): one page, This workspace | Deployment.
+ * Administration → Sources → Source settings (7.59.00, DataSourcesPage.tsx; 7.54.00's Data sources): This workspace |
+ * Deployment.
  *
  * The real API client runs against a stubbed `fetch`, so these specs read the request headers themselves. In the
  * deployment's scope (`?scope=deployment`, a platform admin's, inside a workspace) no request of the page carries
  * `X-Workspace-Id` (the credentials' status, read and save, the schedules and their pauses, a reset, the GitHub Issues
  * card's App sign-in and the Apps it lists), and the two-sentence notice says what these sources feed;
- * `/admin/sources/github_issues?scope=deployment` opens the GitHub Issues card, scrolled into view. In this workspace's
- * scope every request but the deployment-only schedule switch names the workspace, and the card offers no App sign-in.
- * The cards come health first; Email inbox, Radar and the Design-system tokens sit in the Advanced fold.
+ * `/admin/sources/plugins/github_issues?scope=deployment` opens the GitHub Issues card, scrolled into view. In this
+ * workspace's scope every request but the deployment-only schedule switch names the workspace, and the card offers no
+ * App sign-in. The cards come health first; Email inbox, Radar and Integrations are Sources' other sections (no fold).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
@@ -18,7 +19,6 @@ import { stubElementScrollIntoView } from '@test/stubScrollTo'
 import { ACME } from '@test/workspaceFixtures'
 import { fetchMock, installFetchMock, requestHeaders, requestUrl } from '@test/fetch-mock'
 import type { PluginManifest } from '../../plugins/types'
-import type { AdminSectionId } from './adminTabs'
 
 const API = 'https://api.example.com'
 vi.mock('../../store/configStore', () => import('@test/api-mocks').then((m) => m.configStoreMock('https://api.example.com')))
@@ -28,9 +28,6 @@ vi.mock('../../runtimeConfig', async (importOriginal) => ({
 }))
 vi.mock('../../services/auth', () => import('@test/api-mocks').then((m) => m.authServiceMock()))
 vi.mock('../../components/S3ImportExplorer/S3ImportExplorer', () => ({ default: () => null }))
-vi.mock('./EmailInboxCard', () => ({ default: () => <p>Email inbox card</p> }))
-vi.mock('./RadarSection', () => ({ default: () => <p>Radar card</p> }))
-vi.mock('./IntegrationsSection', () => ({ default: () => <p>Design-system tokens card</p> }))
 
 const ISSUES = 'github_issues'
 const issuesManifest: PluginManifest = {
@@ -96,17 +93,17 @@ afterEach(() => {
   plugins.list = [issuesManifest]
 })
 
-/** The page at `path` for a platform admin (`isPlatformAdmin` false: a plain administrator), the card `section` names. */
-const pageAt = (path: string, isPlatformAdmin = true, section: AdminSectionId | null = null) => (
+/** The section at `path` for a platform admin (`isPlatformAdmin` false: a plain administrator). */
+const pageAt = (path: string, isPlatformAdmin = true) => (
   <TestRouter initialEntries={[path]}>
-    <DataSourcesPage apiEndpoint={`${API}/`} isAdmin isPlatformAdmin={isPlatformAdmin} section={section} />
+    <DataSourcesPage apiEndpoint={`${API}/`} isAdmin isPlatformAdmin={isPlatformAdmin} />
   </TestRouter>)
 
 /** Data sources at `path` for a platform admin (`isPlatformAdmin` false: a plain administrator). */
 const renderPage = (path: string, isPlatformAdmin = true) => renderWithQueryClient(pageAt(path, isPlatformAdmin))
 
 /** The deployment's sources (`?scope=deployment`). */
-const renderDeployment = (path = '/admin/sources') => renderPage(`${path}?scope=deployment`)
+const renderDeployment = (path = '/admin/sources/plugins') => renderPage(`${path}?scope=deployment`)
 
 /** Reset the card's pause, open it and save its credentials (on the deployment's card, choosing the token back). */
 async function useTheCard(withAppSignIn: boolean) {
@@ -142,15 +139,10 @@ describe("the deployment's Data sources", () => {
     expect(await screen.findByRole('button', { name: /GitHub Issues/ })).toBeInTheDocument()
   })
 
-  it('folds no Advanced cards into the deployment\'s view', () => {
-    renderDeployment()
-    expect(screen.queryByRole('button', { name: 'Advanced' })).not.toBeInTheDocument()
-  })
-
-  it('opens the GitHub Issues card from /admin/sources/github_issues?scope=deployment, scrolled into view', async () => {
+  it('opens the GitHub Issues card from /admin/sources/plugins/github_issues?scope=deployment, scrolled into view', async () => {
     const restore = stubElementScrollIntoView()
     try {
-      renderDeployment(`/admin/sources/${ISSUES}`)
+      renderDeployment(`/admin/sources/plugins/${ISSUES}`)
       expect(screen.getByRole('button', { name: /GitHub Issues/ })).toHaveAttribute('aria-expanded', 'true')
       expect(await screen.findByText(/Signs in with your GitHub App/)).toBeInTheDocument()
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1)
@@ -167,7 +159,7 @@ describe("the deployment's Data sources", () => {
 
 describe("this workspace's sources (the page's default)", () => {
   it('still names the workspace on every request but the schedule switch, and offers no App sign-in', async () => {
-    renderPage('/admin/sources')
+    renderPage('/admin/sources/plugins')
     await useTheCard(false)
 
     expect(screen.queryByTestId('github-sign-in')).not.toBeInTheDocument()
@@ -178,7 +170,7 @@ describe("this workspace's sources (the page's default)", () => {
   })
 
   it('switches to the deployment as a radio group (This workspace checked), with no notice yet', async () => {
-    renderPage('/admin/sources')
+    renderPage('/admin/sources/plugins')
     const user = userEvent.setup()
     expect([screen.getByRole('radio', { name: 'This workspace' }).getAttribute('aria-checked'), screen.queryByRole('note')])
       .toStrictEqual(['true', null])
@@ -187,7 +179,7 @@ describe("this workspace's sources (the page's default)", () => {
   })
 
   it('moves between the scopes by the arrow keys, choosing the one it moves to', async () => {
-    renderPage('/admin/sources')
+    renderPage('/admin/sources/plugins')
     const user = userEvent.setup()
     await user.click(screen.getByRole('radio', { name: 'This workspace' }))
     await user.keyboard('{ArrowRight}')
@@ -197,38 +189,27 @@ describe("this workspace's sources (the page's default)", () => {
   })
 
   it('offers no switch to a plain administrator', () => {
-    renderPage('/admin/sources', false)
+    renderPage('/admin/sources/plugins', false)
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
   })
 
   it('offers no switch outside a workspace, where the page is the deployment\'s', () => {
     act(() => setCurrentWorkspace(null))
-    renderPage('/admin/sources')
+    renderPage('/admin/sources/plugins')
     expect([screen.queryByRole('radiogroup'), screen.getByRole('note')]).toStrictEqual([null, expect.anything()])
   })
 
   it('puts a paused source on top (health first)', async () => {
     plugins.list = [scraperManifest, issuesManifest]
-    renderPage('/admin/sources')
+    renderPage('/admin/sources/plugins')
     await waitFor(() => {
       expect(screen.getAllByRole('button', { name: /GitHub Issues|Web Scraper/ }).map((b) => b.textContent))
         .toStrictEqual([expect.stringContaining('GitHub Issues'), expect.stringContaining('Web Scraper')])
     })
   })
 
-  it('folds Email inbox, Radar and the Design-system tokens under Advanced', async () => {
-    renderPage('/admin/sources')
-    const user = userEvent.setup()
-    expect(screen.queryByText('Radar card')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Advanced' }))
-    expect([screen.getByText('Email inbox card'), screen.getByText('Radar card'), screen.getByText('Design-system tokens card')])
-      .toHaveLength(3)
-  })
-
-  it('opens the Advanced fold when the address comes to name one of its cards', () => {
-    const view = renderPage('/admin/sources')
-    expect(screen.queryByText('Radar card')).not.toBeInTheDocument()
-    view.rerender(pageAt('/admin/sources', true, 'radar'))
-    expect(screen.getByText('Radar card')).toBeInTheDocument()
+  it('folds nothing: Email inbox, Radar and Integrations are the other sections of Sources', () => {
+    renderPage('/admin/sources/plugins')
+    expect(screen.queryByRole('button', { name: 'Advanced' })).not.toBeInTheDocument()
   })
 })

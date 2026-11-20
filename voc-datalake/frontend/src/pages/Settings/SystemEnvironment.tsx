@@ -71,7 +71,7 @@ function EnvironmentBody() {
   )
 }
 
-/** `5.44.00 (abc1234)`, from the build stamps shown on Administration → Version. */
+/** `5.44.00 (abc1234)`, from the build stamps shown on Administration → System → Version. */
 function buildEntry(): SystemEnvironmentEntry {
   const text = `${paddedVersion(BUILD_INFO.version)} (${BUILD_INFO.commit})`
   return { key: 'version', value: { kind: 'text', text }, raw: text }

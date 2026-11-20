@@ -1,5 +1,5 @@
 /**
- * Administration → People: one list (Name, Role, Way of working, Flags, Status) with an Edit per row, the page's one
+ * Administration → Privacy & access → Users: one list (Name, Role, Way of working, Flags, Status) with an Edit per row, the page's one
  * primary "Invite person", and the open item the host's path names (`openItem`: a username opens that person's editor
  * sheet, `invite` the invite dialog); every open and close goes through `onOpenItem`.
  */

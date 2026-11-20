@@ -453,7 +453,7 @@ export const api = {
   ),
 
   // Integrations: the current workspace's credentials by default; `scope` 'deployment' the deployment's, inside a
-  // workspace too (Administration → Data sources → Deployment, workspace/configScope.ts).
+  // workspace too (Administration → Sources → Source settings → Deployment, workspace/configScope.ts).
   getIntegrationStatus: (scope: RequestScope = 'workspace') =>
     fetchApi<IntegrationStatus>('/integrations/status', { method: 'GET' }, scope),
 

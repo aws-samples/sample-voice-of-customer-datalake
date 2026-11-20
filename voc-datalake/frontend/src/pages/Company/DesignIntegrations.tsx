@@ -64,6 +64,7 @@ export default function DesignIntegrations({ status }: Readonly<{ status: Integr
         ))}
       </div>
       <SaveRow
+        variant="footer"
         onSave={() => save.mutate()}
         pending={save.isPending}
         saved={save.isSuccess}

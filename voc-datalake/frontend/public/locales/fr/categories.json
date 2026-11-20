@@ -10,7 +10,7 @@
   "categoryDistributionHint": "Cliquez sur une catégorie pour filtrer les résultats ci-dessous",
   "clear": "Effacer",
   "clearFilters": "Effacer les filtres",
-  "configureApiEndpoint": "Veuillez configurer votre endpoint API dans Administration → Marque et apparence",
+  "configureApiEndpoint": "Veuillez configurer votre endpoint API dans Administration → Général",
   "export": "Exporter",
   "feedbackResults": "Résultats des commentaires",
   "filterBySource": "Filtrer par source",

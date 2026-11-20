@@ -1,5 +1,5 @@
 {
-  "configureApi": "Veuillez configurer votre endpoint API dans Administration → Marque et apparence",
+  "configureApi": "Veuillez configurer votre endpoint API dans Administration → Général",
   "filters": {
     "allCategories": "Toutes les catégories",
     "allSources": "Toutes les sources",

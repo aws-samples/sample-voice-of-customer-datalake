@@ -19,7 +19,7 @@
     "submit": "Lembrar"
   },
   "cancel": "Cancelar",
-  "configureFirst": "Conecte primeiro o endpoint da API em Administração → Marca e aparência.",
+  "configureFirst": "Conecte primeiro o endpoint da API em Administração → Geral.",
   "confirm": "+1",
   "confirmHint": "Concordo — conte-me como apoiador",
   "alreadyBacked": "Você já apoia esta memória. Cada pessoa conta uma vez.",

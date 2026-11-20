@@ -1,7 +1,7 @@
 /**
  * @fileoverview People → a person's editor → their name (the Cognito given and family names, `PUT /users/{username}`),
  * saved with its own "Save name". An edited name is under the shared unsaved-changes guard: closing the sheet is a
- * move to `/admin/people`, so the router's blocker asks before the edit is lost (Save, Discard or Cancel).
+ * move to `/admin/access/users`, so the router's blocker asks before the edit is lost (Save, Discard or Cancel).
  * @module components/UserAdmin/UserNameSection
  */
 import { useState } from 'react'

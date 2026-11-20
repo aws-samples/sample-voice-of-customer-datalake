@@ -64,10 +64,10 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 
 ### Operate
 
-- **Administration and Account**: six Administration tabs for the software, and an Account page for personal preferences ([Account or Administration](docs/account-vs-admin.md))
+- **Administration and Account**: Administration's tabs for the software (General, Sources, Taxonomy, Privacy & access, AI models, Workspaces, Engineering agents, System), and an Account page for personal preferences ([Account or Administration](docs/account-vs-admin.md))
 - **Model choice**: a Claude model per AI surface over a curated allowlist, a Test button per model, and automatic fallback when a model has no capacity ([Deployment Guide](docs/deployment.md#pinning-all-ai-surfaces-to-one-model))
 - **Privacy controls**: per-user category and source access, per-source PII redaction, restricted sources, retention and erasure ([Source Policies](docs/source-policies.md))
-- **Diagnostics**: system errors, failure queues and opt-in CloudWatch alarms in Administration → Logs ([Deployment Guide](docs/deployment.md#system-errors-administration--system--logs--system-errors))
+- **Diagnostics**: system errors, failure queues and opt-in CloudWatch alarms in Administration → System → Logs ([Deployment Guide](docs/deployment.md#system-errors-administration--system--logs--system-errors))
 - **Deployment options**: customer data kept on teardown by default (`protectData=false` for demos), EU-only inference, several copies in one account ([Deployment Guide](docs/deployment.md), [EU Deployment](docs/eu-deployment.md))
 - **Security**: Cognito sign-in with opt-in passkeys, least-privilege IAM per Lambda, a customer-managed KMS key, signed CloudFront URLs and Secrets Manager
 - **Nine UI languages**: English, Spanish, French, German, Portuguese, Japanese, Chinese, Korean and Polish, chosen on the Account page

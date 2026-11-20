@@ -8,7 +8,7 @@ the System errors search can read. Nothing secret: no full account id, no ARN, n
 
 Every section is read on its own: one that cannot be read answers `{"unavailable": true}`
 instead of failing the whole answer. The platform version is the SPA's own build constant
-(Administration → Version), not repeated here: a Lambda environment variable carrying
+(Administration → System → Version), not repeated here: a Lambda environment variable carrying
 it would change every template on every release.
 """
 from __future__ import annotations

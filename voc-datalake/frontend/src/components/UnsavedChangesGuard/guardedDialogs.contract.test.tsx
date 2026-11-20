@@ -70,18 +70,18 @@ function personSheetScenario(): GuardedEditorScenario {
     const navigate = useNavigate()
     const [user, setUser] = useState(() => cognitoUser({ username: 'u1', given_name: 'Grace' }))
     useEffect(() => { handle.refresh = () => setUser(cognitoUser({ username: 'u1', given_name: 'Grace' })) })
-    return <UserEditorSheet user={user} onClose={() => { void navigate('/admin/people') }} onDeleted={vi.fn()} />
+    return <UserEditorSheet user={user} onClose={() => { void navigate('/admin/access/users') }} onDeleted={vi.fn()} />
   }
   const router = createMemoryRouter([
-    { path: '/admin/people', element: <p>People list</p> },
-    { path: '/admin/people/:item', element: <Sheet /> },
-  ], { initialEntries: ['/admin/people/u1'] })
+    { path: '/admin/access/users', element: <p>People list</p> },
+    { path: '/admin/access/users/:item', element: <Sheet /> },
+  ], { initialEntries: ['/admin/access/users/u1'] })
   return {
     mount: () => { render(<QueryClientProvider client={createTestQueryClient()}><RouterProvider router={router} /></QueryClientProvider>) },
     edit: async (user) => { await user.type(screen.getByLabelText('First Name'), 'ful') },
     expectDraft: () => expect(screen.getByLabelText('First Name')).toHaveValue('Graceful'),
     leave: pressEscape,
-    expectStayed: () => expect(router.state.location.pathname).toBe('/admin/people/u1'),
+    expectStayed: () => expect(router.state.location.pathname).toBe('/admin/access/users/u1'),
     expectLeft: async () => { expect(await screen.findByText('People list')).toBeInTheDocument() },
     whileDialogOpen: () => { handle.refresh?.(); return Promise.resolve() },
   }

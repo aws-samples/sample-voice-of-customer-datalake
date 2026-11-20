@@ -1007,15 +1007,15 @@
       "switch": "Lire les tickets de ce dépôt",
       "reasons": {
         "off": "Ses tickets ne sont pas lus : l’interrupteur est désactivé.",
-        "token": "La source GitHub Issues se connecte avec un jeton : ajoutez ce dépôt dans Administration → Sources de données.",
+        "token": "La source GitHub Issues se connecte avec un jeton : ajoutez ce dépôt dans Administration → Sources → Réglages des sources.",
         "other_app": "La source GitHub Issues se connecte avec une autre GitHub App : les tickets de ce dépôt ne sont pas lus par elle.",
-        "limit": "La source GitHub Issues lit au plus {{limit, number}} dépôts : retirez-en un dans Administration → Sources de données pour lire celui-ci.",
+        "limit": "La source GitHub Issues lit au plus {{limit, number}} dépôts : retirez-en un dans Administration → Sources → Réglages des sources pour lire celui-ci.",
         "not_app": "Seule une connexion faite via la GitHub App du déploiement voit ses tickets lus automatiquement.",
         "not_deployed": "La source GitHub Issues n’est pas déployée ici : aucun ticket n’est lu.",
         "pending": "Pas encore lu : il n’est pas dans la liste de la source GitHub Issues.",
         "unknown": "Ses tickets ne sont pas lus."
       },
-      "openSources": "Ouvrir Administration → Sources de données",
+      "openSources": "Ouvrir Administration → Sources → Réglages des sources",
       "readNow": "Lire ses tickets maintenant",
       "label": {
         "created": "Libellé {{label}} : créé.",
@@ -1025,7 +1025,7 @@
       "follow": {
         "reading_one": "Tickets : lus automatiquement depuis {{count, number}} dépôt.",
         "reading_other": "Tickets : lus automatiquement depuis {{count, number}} dépôts.",
-        "token": "La source GitHub Issues se connecte avec un jeton : ajoutez ces dépôts dans Administration → Sources de données.",
+        "token": "La source GitHub Issues se connecte avec un jeton : ajoutez ces dépôts dans Administration → Sources → Réglages des sources.",
         "labelsCreated": "Libellé {{label}} : sur {{list}}.",
         "labelsFailed": "Le libellé {{label}} n’a pas pu être créé sur {{list}} : Vérifier l’installation réessaie.",
         "skipped": {
@@ -1033,7 +1033,7 @@
           "other_app": "Non lus (la source se connecte avec une autre GitHub App) : {{list}}.",
           "limit": "Non lus (la source lit déjà {{limit, number}} dépôts) : {{list}}."
         },
-        "scheduleOff": "La planification de la source GitHub Issues est désactivée : activez-la dans Administration → Sources de données.",
+        "scheduleOff": "La planification de la source GitHub Issues est désactivée : activez-la dans Administration → Sources → Réglages des sources.",
         "error": "La source GitHub Issues n’a pas pu être configurée automatiquement : {{error}}"
       },
       "state": {
@@ -2000,8 +2000,8 @@
       "notMet": "À faire",
       "unknown": "Pas encore connu",
       "openConnections": "Ouvrir Connexions",
-      "openDeploymentSources": "Ouvrir Administration → Sources de données",
-      "openSources": "Ouvrir Administration → Sources de données",
+      "openDeploymentSources": "Ouvrir Administration → Sources → Réglages des sources",
+      "openSources": "Ouvrir Administration → Sources → Réglages des sources",
       "sourcesOutside": "Hors de tout espace de travail : les automatisations ne lisent que les sources du déploiement.",
       "deploymentTitle": "Ce déploiement",
       "connectedAs": "Connecté via une App : {{list}}.",

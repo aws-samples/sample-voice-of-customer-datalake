@@ -30,7 +30,7 @@ describe('pageContextFromLocation', () => {
     ['/agents/skills/fixer/versions/2', '', { kind: 'agents', path: '/agents/skills/fixer/versions/2', tab: 'skills' }],
     ['/agents/ag_1/runs', '', { kind: 'agent', path: '/agents/ag_1/runs', agentId: 'ag_1', tab: 'runs' }],
     ['/agents/ag_1', '?tab=runs', { kind: 'agent', path: '/agents/ag_1', agentId: 'ag_1' }],
-    ['/admin/platform/deployment-brand', '', { kind: 'settings', path: '/admin/platform/deployment-brand', tab: 'platform' }],
+    ['/admin/workspaces/deployment-brand', '', { kind: 'settings', path: '/admin/workspaces/deployment-brand', tab: 'workspaces' }],
     ['/memory/personal', '', { kind: 'memory', path: '/memory/personal', tab: 'personal' }],
     ['/company/design', '', { kind: 'company', path: '/company/design', tab: 'design' }],
     ['/account/access', '', { kind: 'other', path: '/account/access', tab: 'access' }],

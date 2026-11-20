@@ -9,7 +9,7 @@
   "categoryDistributionHint": "카테고리를 클릭하면 아래 결과가 필터링됩니다",
   "clear": "초기화",
   "clearFilters": "필터 초기화",
-  "configureApiEndpoint": "관리 → 브랜드 및 모양에서 API 엔드포인트를 구성하세요",
+  "configureApiEndpoint": "관리 → 일반에서 API 엔드포인트를 구성하세요",
   "export": "내보내기",
   "feedbackResults": "피드백 결과",
   "filterBySource": "소스별 필터",

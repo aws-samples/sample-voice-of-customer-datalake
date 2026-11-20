@@ -212,10 +212,11 @@ export const routes: RouteObject[] = [
       { path: 'members', ...page(<Members />) },
       // The current workspace's brand and plugins (the same menu), for every member; "Page not found" outside one.
       { path: 'workspace-settings', ...page(<WorkspaceSettings />) },
-      // Administration (was Settings): admins only. Its tab, section and open board editor are paths
-      // (/admin/boards/<boardId>, Settings/adminPaths.ts); the old /settings path redirects (to /admin).
+      // Administration (was Settings): admins only. Its tab, section and the item open on it are paths, a card the hash
+      // (/admin/access/boards/<boardId>, /admin/general#theme: Settings/adminPaths.ts, which also reads 7.54.00's
+      // addresses); /settings and everything under it redirect to the same place under /admin.
       { path: 'admin/*', ...page(<AdminRoute><Settings /></AdminRoute>) },
-      { path: 'settings', element: <MovedRouteRedirect to="/admin" />, errorElement: <RouteErrorBoundary /> },
+      { path: 'settings/*', element: <MovedRouteRedirect to="/admin" />, errorElement: <RouteErrorBoundary /> },
       // Unknown URLs render a "Page not found" state INSIDE the layout, so the
       // sidebar stays usable. Without it React Router hands the 404 to the root
       // errorElement, which replaces the whole shell.

@@ -1,5 +1,5 @@
 /**
- * @fileoverview The platform console: Administration → Platform, for platform admins only
+ * @fileoverview The platform console: Administration → Workspaces → All workspaces, for platform admins only
  * (docs/multi-workspace.md → Control plane; the section is hidden from everyone else, and the API answers them 403).
  *
  * - Every workspace of the deployment by name, a page at a time: name, slug and status (no credentials badge since

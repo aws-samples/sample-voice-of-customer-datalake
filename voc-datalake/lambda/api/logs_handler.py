@@ -518,7 +518,7 @@ def remove_alert_recipient():
 
 
 # ============================================
-# System errors (Administration → Logs): admin-only
+# System errors (Administration → System → Logs): admin-only
 # ============================================
 # Every ERROR / CRITICAL (optionally WARNING) line of this deployment's Lambdas, read
 # with CloudWatch Logs Insights and grouped (shared/system_logs.py). Admin-only: the

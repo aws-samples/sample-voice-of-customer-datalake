@@ -162,7 +162,7 @@
     "adminOnlyNotice": "Nur Administratoren können die Markenkonfiguration ändern. Sie können sie hier ansehen."
   },
   "categories": {
-    "configureFirst": "Konfigurieren Sie den API-Endpunkt unter Marke & Darstellung → Erweitert, um Kategorien zu verwalten.",
+    "configureFirst": "Konfigurieren Sie den API-Endpunkt unter Allgemein → Erweitert, um Kategorien zu verwalten.",
     "description": "Kategorien und Unterkategorien für die Feedback-Klassifizierung konfigurieren.",
     "title": "Feedback-Kategorien"
   },
@@ -174,12 +174,12 @@
     "resetTitle": "Alle Einstellungen zurücksetzen"
   },
   "dataSources": {
-    "configureFirst": "Konfigurieren Sie den API-Endpunkt unter Marke & Darstellung → Erweitert, um Datenquellen zu verwalten.",
+    "configureFirst": "Konfigurieren Sie den API-Endpunkt unter Allgemein → Erweitert, um Datenquellen zu verwalten.",
     "noPlugins": "Keine Datenquellen-Plugins gefunden. Führen Sie <code>npm run generate:manifests</code> aus, um die Plugin-Manifeste zu erzeugen."
   },
   "logs": {
     "clear": "Löschen",
-    "configureFirst": "Konfigurieren Sie den API-Endpunkt unter Marke & Darstellung → Erweitert, um Protokolle anzuzeigen.",
+    "configureFirst": "Konfigurieren Sie den API-Endpunkt unter Allgemein → Erweitert, um Protokolle anzuzeigen.",
     "daysAgo_one": "vor {{count, number}} T.",
     "daysAgo_other": "vor {{count, number}} T.",
     "errorLabel": "Fehler:",
@@ -385,34 +385,49 @@
       "manual": "Manuell konfigurieren (erweitert)"
     }
   },
-  "subtitle": "Personen, Daten, Kategorien und KI für diese Bereitstellung.",
+  "subtitle": "Die Plattform für alle konfigurieren (nur Administratoren).",
   "tabs": {
-    "sources": "Datenquellen",
+    "general": "Allgemein",
+    "sources": "Quellen",
+    "taxonomy": "Taxonomie",
+    "access": "Datenschutz & Zugriff",
     "ai": "KI-Modelle",
-    "people": "Personen",
-    "logs": "Protokolle",
-    "categories": "Kategorien",
-    "boards": "Feedback-Boards",
-    "brand": "Marke & Darstellung",
-    "privacy": "Datenschutz",
-    "platform": "Plattform",
-    "version": "Version"
+    "workspaces": "Arbeitsbereiche",
+    "agents": "Engineering-Agenten",
+    "system": "System"
   },
   "sections": {
+    "plugins": "Quelleneinstellungen",
+    "integrations": "Integrationen",
     "inbox": "E-Mail-Posteingang",
     "radar": "Radar",
+    "categories": "Kategorien",
     "dimensions": "Dimensionen",
-    "tokens": "Design-System-Tokens",
+    "policies": "Quellenrichtlinien",
+    "users": "Benutzer",
+    "boards": "Boards",
+    "workspace": "Dieser Arbeitsbereich",
+    "members": "Mitglieder",
+    "allWorkspaces": "Alle Arbeitsbereiche",
+    "deploymentBrand": "Marke der Bereitstellung",
+    "logs": "Protokolle",
+    "version": "Version",
+    "brand": "Marke",
+    "theme": "Standard-Farbschema",
+    "api": "API-Endpunkt",
+    "erasure": "Löschung",
     "domains": "Firmendomains",
     "participants": "E-Mail an Teilnehmende",
-    "theme": "Standard-Farbschema",
-    "erasure": "Löschung",
-    "deploymentBrand": "Marke der Bereitstellung",
+    "hardCap": "Harte Obergrenze",
+    "models": "Modelle der Rollen",
+    "connections": "GitHub-Verbindungen",
     "advanced": "Erweitert"
   },
   "title": "Einstellungen",
   "users": {
-    "configureFirst": "Konfigurieren Sie den API-Endpunkt unter Marke & Darstellung → Erweitert, um Personen zu verwalten."
+    "configureFirst": "Konfigurieren Sie den API-Endpunkt im Tab Allgemein, um Benutzer zu verwalten.",
+    "title": "Benutzerverwaltung",
+    "description": "Benutzer, Rollen und Berechtigungen für die VoC-Plattform verwalten."
   },
   "company": {
     "title": "Unternehmen",
@@ -569,7 +584,7 @@
     "kindHints": {
       "website": "Wir öffnen die Seite in einem sicheren Browser und lesen ihre Farben, Schriften und ihr Logo.",
       "github": "Öffentliche Repositorys funktionieren ohne Token. Wir lesen die Theme-, Farb- und Schriftdateien sowie das Logo.",
-      "figma": "Benötigt ein Figma-Token (Administration → Datenquellen → Design-System-Tokens)."
+      "figma": "Benötigt ein Figma-Token (Administration → Quellen → Integrationen)."
     },
     "readingHint": {
       "link": "Wird jetzt gelesen – das kann einige Minuten dauern.",
@@ -731,10 +746,10 @@
     "notConfigured": "Nicht eingerichtet",
     "saveTokens": "Tokens speichern",
     "integrationsMoved": "Figma- und GitHub-Tokens werden festgelegt unter",
-    "integrationsLink": "Administration → Datenquellen → Design-System-Tokens"
+    "integrationsLink": "Administration → Quellen → Integrationen"
   },
   "integrations": {
-    "title": "Design-System-Tokens",
+    "title": "Integrationen",
     "description": "Nur schreibbare Tokens, mit denen die Plattform Ihre Figma-Dateien und GitHub-Repositorys für das Designsystem liest. Sie werden in Secrets Manager gespeichert und nie wieder angezeigt.",
     "mcpHint": "MCP-Zugriff für externe Assistenten wird pro Benutzer eingerichtet unter",
     "mcpLink": "Verbinden"
@@ -805,8 +820,7 @@
       "label": "Quellen von",
       "workspace": "Dieser Arbeitsbereich",
       "deployment": "Bereitstellung"
-    },
-    "advancedHint": "Einmal einzurichten: der E-Mail-Posteingang, die Marken und der Scan von Radar und die Tokens, mit denen das Design-System Figma und GitHub liest."
+    }
   },
   "version": {
     "title": "Version",
@@ -1001,87 +1015,58 @@
   "deploymentSources": {
     "notice": "Diese Quellen bringen bereitstellungsweites Feedback ein, außerhalb jedes Arbeitsbereichs. Es ist das einzige Feedback, das die Engineering-Automationen lesen."
   },
-  "home": {
-    "inWorkspace": "Sie sind im Arbeitsbereich {{name}}: seine eigenen Einstellungen stehen unter <settings>Einstellungen des Arbeitsbereichs</settings>.",
-    "invite": "Person einladen",
-    "version": "Version {{version}} · <notes>Versionshinweise</notes>",
-    "attention": {
-      "title": "Braucht Aufmerksamkeit",
-      "sourcesPaused_one": "{{count, number}} Quelle nach Fehlern pausiert: {{list}}",
-      "sourcesPaused_other": "{{count, number}} Quellen nach Fehlern pausiert: {{list}}",
-      "waysUnset_one": "{{count, number}} Person hat keine Arbeitsweise mit KI festgelegt",
-      "waysUnset_other": "{{count, number}} Personen haben keine Arbeitsweise mit KI festgelegt",
-      "modelsBlocked_one": "{{count, number}} KI-Modell kann in diesem Konto nicht aufgerufen werden",
-      "modelsBlocked_other": "{{count, number}} KI-Modelle können in diesem Konto nicht aufgerufen werden",
-      "reviewSources": "Quellen prüfen",
-      "openPeople": "Personen öffnen",
-      "openModels": "KI-Modelle öffnen"
-    },
-    "groups": {
-      "everyday": "Täglich",
-      "regular": "Regelmäßig",
-      "once": "Einmal einrichten",
-      "rare": "Selten",
-      "elsewhere": "Anderswo"
-    },
-    "jobs": {
-      "people": {
-        "title": "Personen",
-        "hint": "Einladen, entfernen, Rollen und Arbeitsweisen"
-      },
-      "sources": {
-        "title": "Datenquellen",
-        "hint": "Quellen verbinden, planen, pausieren und prüfen"
-      },
-      "logs": {
-        "title": "Protokolle",
-        "hint": "Fehler und fehlgeschlagene Einträge"
-      },
-      "categories": {
-        "title": "Kategorien & Dimensionen",
-        "hint": "Wie Feedback klassifiziert und getaggt wird"
-      },
-      "boards": {
-        "title": "Feedback-Boards",
-        "hint": "Boards, Firmendomains und E-Mail an Teilnehmende"
-      },
-      "ai": {
-        "title": "KI-Modelle",
-        "hint": "Das Modell hinter jeder KI-Funktion und seine Kapazität"
-      },
-      "brand": {
-        "title": "Marke & Darstellung",
-        "hint": "Ihre Marke und das Standard-Farbschema"
-      },
-      "privacy": {
-        "title": "Datenschutz und Löschung",
-        "hint": "Quellenrichtlinien und das Löschen der Daten einer Person oder Quelle"
-      },
-      "platform": {
-        "title": "Plattform: Arbeitsbereiche",
-        "hint": "Arbeitsbereiche und die Marke der Bereitstellung"
-      },
-      "version": {
-        "title": "Version",
-        "hint": "Dieser Build und die Versionshinweise"
-      }
-    },
-    "counts": {
-      "people_one": "{{count, number}} Person",
-      "people_other": "{{count, number}} Personen",
-      "sources": "{{on, number}} an · {{paused, number}} pausiert",
-      "errors_one": "{{count, number}} Fehler in den letzten 24 Stunden",
-      "errors_other": "{{count, number}} Fehler in den letzten 24 Stunden"
-    },
-    "elsewhere": {
-      "cost": "Kosten: Agenten-Orchestrierung › Ausgaben",
-      "github": "GitHub: Agenten-Orchestrierung › Verbindungen",
-      "preferences": "Ihre Einstellungen: Konto › Einstellungen"
+  "tabsLabel": "Tabs der Administration",
+  "tabsScrollStart": "Zu früheren Tabs blättern",
+  "tabsScrollEnd": "Zu weiteren Tabs blättern",
+  "tabHints": {
+    "general": "Ihre Marke und das Standard-Farbschema",
+    "sources": "Quellen verbinden, planen und prüfen; der E-Mail-Posteingang, Radar und die Integrationen",
+    "taxonomy": "Wie Feedback klassifiziert und getaggt wird",
+    "access": "Quellenrichtlinien und Löschung, Benutzer und ihr Zugriff sowie die Feedback-Boards",
+    "ai": "Das Modell hinter jeder KI-Funktion und seine Kapazität",
+    "workspaces": "Die eigenen Einstellungen und Mitglieder dieses Arbeitsbereichs und alle Arbeitsbereiche der Bereitstellung",
+    "agents": "Die harte Obergrenze der Engineering-Agenten, das Modell jeder Rolle und die GitHub-Verbindungen",
+    "system": "Fehler, fehlgeschlagene Einträge und Warnungen; dieser Build und seine Versionshinweise"
+  },
+  "attention": {
+    "title": "Braucht Aufmerksamkeit",
+    "sourcesPaused_one": "{{count, number}} Quelle nach Fehlern pausiert: {{list}}",
+    "sourcesPaused_other": "{{count, number}} Quellen nach Fehlern pausiert: {{list}}",
+    "waysUnset_one": "{{count, number}} Person hat keine Arbeitsweise mit KI festgelegt",
+    "waysUnset_other": "{{count, number}} Personen haben keine Arbeitsweise mit KI festgelegt",
+    "modelsBlocked_one": "{{count, number}} KI-Modell kann in diesem Konto nicht aufgerufen werden",
+    "modelsBlocked_other": "{{count, number}} KI-Modelle können in diesem Konto nicht aufgerufen werden",
+    "reviewSources": "Quellen prüfen",
+    "openUsers": "Benutzer öffnen",
+    "openModels": "KI-Modelle öffnen",
+    "badge_one": "{{count, number}} braucht Aufmerksamkeit",
+    "badge_other": "{{count, number}} brauchen Aufmerksamkeit",
+    "option": "{{tab}} ({{count, number}})"
+  },
+  "header": {
+    "inWorkspace": "Sie sind im Arbeitsbereich {{name}}: seine eigenen Einstellungen stehen unter <settings>Arbeitsbereiche → Dieser Arbeitsbereich</settings>."
+  },
+  "general": {
+    "formBrand": "Neue Feedback-Formulare starten mit Ihrer Formularmarke, festgelegt im Stil-Bereich eines Formulars unter <forms>Feedback-Formulare</forms>."
+  },
+  "agentsTab": {
+    "roleDefault": "Standard der Rolle ({{model}})",
+    "change": "Ändern",
+    "changeModel": "Modell von {{role}} ändern",
+    "modelsDescription": "Die Laufzeitumgebung jeder Rolle in dieser Bereitstellung und das Modell, das sie nutzt. Geändert wird es auf der Registry-Karte der Rolle; es gilt ab dem nächsten Lauf.",
+    "modelsUnread": "Die Modelle der Rollen konnten nicht gelesen werden.",
+    "connectionsDescription": "Woher die Engineering-Agenten ihre Repositories bekommen, was sie kosten und die Schritte vor dem ersten Lauf.",
+    "links": {
+      "connections": "Agenten-Orchestrierung › Verbindungen",
+      "connectionsHint": "GitHub verbinden und die Repositories wählen, an denen die Agenten arbeiten",
+      "spend": "Agenten-Orchestrierung › Ausgaben",
+      "spendHint": "Das Monatsbudget jedes Workflows und was die Läufe kosten",
+      "setup": "Einrichtungsassistent",
+      "setupHint": "Die Schritte vor dem ersten Engineering-Lauf"
     }
   },
   "search": {
     "titles": {
-      "connections": "Verbindungen",
       "spend": "Ausgaben",
       "preferences": "Einstellungen"
     },
@@ -1096,25 +1081,32 @@
     "count_one": "{{count, number}} Einstellung gefunden",
     "count_other": "{{count, number}} Einstellungen gefunden",
     "terms": {
-      "people": "einladen, Person hinzufügen, Benutzer, entfernen, löschen, Rolle, Admin, Arbeitsweise, KI-Modus, Ersatzverantwortliche, Memory-Prüfer, Plattform-Admin, Passwort, deaktivieren, Zugriff, invite",
-      "sources": "verbinden, Quelle, Scraper, Zugangsdaten, Token, Zeitplan, pausieren, fortsetzen, Plugin, Webhook, App-Bewertungen, S3-Import, GitHub Issues, Bereitstellung",
-      "logs": "Fehler, fehlgeschlagen, Validierung, Verarbeitung, Scraper-Läufe, Warnungen, CloudWatch, Systemprotokolle",
-      "categories": "Taxonomie, Kategorie, Unterkategorie, neu verarbeiten, klassifizieren, KI-Vorschläge",
-      "boards": "Feature-Wünsche, Board, Abstimmung, Roadmap, Ideen",
+      "general": "Einstellungen, allgemein, Darstellung",
       "ai": "Modell, Bedrock, Claude, Anthropic, GPT, Kontingent, Kapazität, Modell testen, Tokens pro Minute, Vereinbarung",
-      "brand": "Markenname, Logo, Handles, Hashtags, zu verfolgende URLs, Rebranding, API-Endpunkt",
-      "privacy": "Quellenrichtlinien, Aufbewahrung, personenbezogene Daten, PII, eingeschränkt, DSGVO, GDPR, Datenschutz",
-      "platform": "Arbeitsbereiche, neues Team, Arbeitsbereich anlegen, Plattform-Admins, Arbeitsbereich betreten",
-      "version": "Versionshinweise, Changelog, Commit, Build, Neuigkeiten",
+      "agents": "Engineering, autonome Agenten, Läufe",
+      "plugins": "verbinden, Quelle, Scraper, Zugangsdaten, Token, Zeitplan, pausieren, fortsetzen, Plugin, Webhook, App-Bewertungen, S3-Import, GitHub Issues, Bereitstellung",
+      "integrations": "Figma, GitHub-Token, Design-System, Integrationen",
       "inbox": "E-Mail, Postfach, weiterleiten, eingehende E-Mail, Limits",
       "radar": "Wettbewerber, Marken, News, Releases, Exa, Scan",
-      "tokens": "Figma, GitHub-Token, Design-System, Integrationen",
+      "categories": "Taxonomie, Kategorie, Unterkategorie, neu verarbeiten, klassifizieren, KI-Vorschläge",
       "dimensions": "Dimension, Produkt, Modul, Nutzertyp, Tags, Filter",
+      "policies": "Quellenrichtlinien, Aufbewahrung, personenbezogene Daten, PII, eingeschränkt, DSGVO, GDPR, Datenschutz",
+      "users": "einladen, Person hinzufügen, Benutzer, entfernen, löschen, Rolle, Admin, Arbeitsweise, KI-Modus, Ersatzverantwortliche, Memory-Prüfer, Plattform-Admin, Passwort, deaktivieren, Zugriff, invite",
+      "boards": "Feature-Wünsche, Board, Abstimmung, Roadmap, Ideen",
+      "workspace": "Arbeitsbereich, umbenennen, Plugins, Export, Arbeitsbereich löschen, Marke des Arbeitsbereichs",
+      "members": "Mitglieder, Mitglied einladen, Rolle, Betrachter, Bearbeiter, Arbeitsbereich verlassen",
+      "allWorkspaces": "Arbeitsbereiche, neues Team, Arbeitsbereich anlegen, Plattform-Admins, Arbeitsbereich betreten",
+      "deploymentBrand": "Standardmarke, Bereitstellung, außerhalb der Arbeitsbereiche",
+      "logs": "Fehler, fehlgeschlagen, Validierung, Verarbeitung, Scraper-Läufe, Warnungen, CloudWatch, Systemprotokolle",
+      "version": "Versionshinweise, Changelog, Commit, Build, Neuigkeiten",
+      "brand": "Markenname, Logo, Handles, Hashtags, zu verfolgende URLs, Rebranding, API-Endpunkt",
+      "theme": "Farbschema, Theme, Farbe, dunkel, hell, Darstellung",
+      "api": "API-Endpunkt, URL, Entwicklung, lokal",
+      "erasure": "löschen, Daten löschen, DSGVO, GDPR, Recht auf Vergessenwerden, Quelle löschen",
       "domains": "Firmendomain, E-Mail-Domain, Kollegen, Zielgruppe",
       "participants": "Teilnehmende, Absendername, Tageslimit, externe Personen, E-Mail-Versand",
-      "theme": "Farbschema, Theme, Farbe, dunkel, hell, Darstellung",
-      "erasure": "löschen, Daten löschen, DSGVO, GDPR, Recht auf Vergessenwerden, Quelle löschen",
-      "deploymentBrand": "Standardmarke, Bereitstellung, außerhalb der Arbeitsbereiche",
+      "hardCap": "harte Obergrenze, Budget, Kostengrenze, Läufe stoppen, Ausgabenlimit",
+      "models": "Modell, Kiro, native Laufzeitumgebung, Opus, Sonnet, Haiku, Rolle, Registry",
       "connections": "GitHub, GitHub-App, Repository, Verbindung, installieren, Issues",
       "spend": "Kosten, Ausgaben, Budget, Obergrenze, Abrechnung",
       "preferences": "Sprache, Farbschema, meine Einstellungen, Dunkelmodus"

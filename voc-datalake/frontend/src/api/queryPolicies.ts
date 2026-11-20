@@ -87,7 +87,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'data-quality': 'feedbackData', // Data Explorer usefulness distribution (/metrics/data-quality)
   'decision-review-search': 'feedbackData', // ProjectDetail decision evidence picker (/feedback/search)
   'design-system': 'config',
-  // The GitHub Issues card's stored App id (Administration → Data sources: changes only when an administrator saves it).
+  // The GitHub Issues card's stored App id (Administration → Sources → Source settings: changes only when an administrator saves it).
   'integration-credentials': 'config',
   'dimension-metrics': 'feedbackData',
   'dimensions-config': 'config',

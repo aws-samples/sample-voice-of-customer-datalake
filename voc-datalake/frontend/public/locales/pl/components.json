@@ -382,7 +382,7 @@
     "close": "Zamknij",
     "show": "Pokaż kod QR",
     "title": "Kod QR",
-    "unavailable": "Kod QR będzie dostępny po skonfigurowaniu adresu API w Administracja → Marka i wygląd"
+    "unavailable": "Kod QR będzie dostępny po skonfigurowaniu adresu API w Administracja → Ogólne"
   },
   "personaExport": {
     "copied": "Skopiowano!",
@@ -434,7 +434,7 @@
     "reprocess": {
       "action": "Przetwórz plik ponownie",
       "confirmTitle": "Przetworzyć ponownie {{filename}}?",
-      "confirmMessage": "Plik ponownie przejdzie przez potok importu, ze źródłem {{source}}. Wiersze, które są już w data lake, zostaną pominięte jako duplikaty, więc zaimportowane zostaną tylko brakujące wiersze. Zapisane wiersze nie są ponownie wzbogacane: aby zmienić ich kategorie, użyj „Ponownie przetwórz istniejące opinie” w Administracja → Kategorie.",
+      "confirmMessage": "Plik ponownie przejdzie przez potok importu, ze źródłem {{source}}. Wiersze, które są już w data lake, zostaną pominięte jako duplikaty, więc zaimportowane zostaną tylko brakujące wiersze. Zapisane wiersze nie są ponownie wzbogacane: aby zmienić ich kategorie, użyj „Ponownie przetwórz istniejące opinie” w Administracja → Taksonomia → Kategorie.",
       "confirm": "Przetwórz ponownie",
       "running": "Ponowne przetwarzanie {{filename}}...",
       "failed": "Ponowne przetwarzanie {{filename}} nie powiodło się. Szczegóły są w logach systemowych.",
@@ -549,7 +549,7 @@
       "all": "Wszystkie źródła, również ograniczone",
       "selected": "Tylko wybrane źródła",
       "restricted": "Ograniczone",
-      "noProfiles": "Nie skonfigurowano jeszcze profili źródeł (Administracja → Prywatność)."
+      "noProfiles": "Nie skonfigurowano jeszcze profili źródeł (Administracja → Prywatność i dostęp → Polityki źródeł)."
     },
     "userDeleted": "Użytkownik usunięty",
     "userDisabled": "Użytkownik zablokowany",
@@ -641,7 +641,7 @@
     "sourceRadarHint": "Źródło Radar ({{brand}}): te wiersze trafiają na stronę Radar, nigdy do Twoich własnych pulpitów i metryk.",
     "defaultsTitle": "Wymiary i tagi",
     "defaultsHint": "Każda opinia z tego miejsca otrzymuje te wartości; jej własne wartości mają pierwszeństwo dla każdego wymiaru.",
-    "noDimensions": "Nie skonfigurowano jeszcze żadnych wymiarów (Administracja → Kategorie → Wymiary).",
+    "noDimensions": "Nie skonfigurowano jeszcze żadnych wymiarów (Administracja → Taksonomia → Wymiary).",
     "noDefault": "Brak domyślnej"
   },
   "draftSaveBar": {
@@ -727,7 +727,7 @@
       "summaryOnlyHint": "Zachowywane są wyłącznie pola pochodne (podsumowanie, kategoria, sentyment, wymiary); oryginalny tekst nie jest przechowywany."
     },
     "restrictedLabel": "Ograniczone",
-    "restrictedHint": "Opinie widzą wyłącznie administratorzy oraz osoby, którym przyznano to źródło (Osoby → dostęp danej osoby).",
+    "restrictedHint": "Opinie widzą wyłącznie administratorzy oraz osoby, którym przyznano to źródło (Użytkownicy → dostęp danej osoby).",
     "defaultsTitle": "Wartości wymiarów dla każdej opinii z tego źródła",
     "noDefault": "Brak domyślnej",
     "empty": "Brak profili: każde źródło zachowuje wszystko na zawsze, a wszystkie opinie są widoczne dla wszystkich.",
@@ -746,7 +746,7 @@
       "radarBrand": "{{name}}: podaj markę, którą śledzi to źródło Radar."
     },
     "radarLegacy": "Źródło Radar dla marki {{brand}}: opinie z tego źródła trafiają do Radar.",
-    "radarLegacyHint": "Marki Radar konfiguruje się w sekcji Administracja → Źródła danych → Radar, a scraper lub konektor wybiera markę na stronie Źródła danych.",
+    "radarLegacyHint": "Marki Radar konfiguruje się w sekcji Administracja → Źródła → Radar, a scraper lub konektor wybiera markę na stronie Źródła danych.",
     "radarLegacyLink": "Otwórz ustawienia Radar",
     "keepForever": "Przechowuj opinie bezterminowo",
     "retentionLabel": "Usuń opinie starsze niż (dni)"

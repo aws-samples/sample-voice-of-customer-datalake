@@ -149,7 +149,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/registry/cards', 'POST /agents/<agent_id>/pause', 'POST /agents/<agent_id>/resume',
         'PUT /agents/engineering/registry/<role>/model',
     }),
-    # The deployment's start theme (Administration → Brand & appearance): every person sees it until they pick their own.
+    # The deployment's start theme (Administration → General): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
     # A form's test link (7.55.00): issuing or rotating its token. A token opens the form while it is Off, so only an

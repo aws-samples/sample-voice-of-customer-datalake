@@ -4,14 +4,13 @@
  * - Account `/account/profile|preferences|briefing|objectives|access` (pages/Account/accountSections.ts):
  *   each tab is the selected one (`aria-selected`) and shows its own heading. Both roles (every Account tab is
  *   self-scoped).
- * - Administration (7.54.00, pages/Settings/adminTabs.ts, adminPaths.ts): the home `/admin` (h1 "Administration",
- *   its groups, the footer's Release notes link to `/admin/version`); every tab `/admin/<tab>` and every card a path
- *   names `/admin/<tab>/<section>` (Platform, platform admins only, is workspace-admin.spec.ts's) renders as the admin
- *   at its own path: the tab's name as the h1 under "← Administration" (`/admin`), from `lg` up the left navigation's
- *   link of the tab `aria-current="page"` (none for Version; below `lg` the navigation is not shown), no tab row, the
- *   named card's anchor and a heading of the page; Version shows a `X.YY.ZZ` platform version. A path of before
- *   7.54.00 (`/admin/access/users`, …) is not aliased: it opens the home. e2e-user is redirected off /admin
- *   (AdminRoute).
+ * - Administration (7.59.00, main's tabs again: pages/Settings/adminTabs.ts, adminPaths.ts): `/admin` opens General
+ *   (h1 "Administration", the search, the "Needs attention" region); every tab `/admin/<tab>`, section
+ *   `/admin/<tab>/<section>` and card `#<card>` (Workspaces is workspace-admin.spec.ts's; Engineering agents shows only
+ *   where the engineering module is on) renders as the admin at its own address: the tab selected in the tab row (from
+ *   `md` up a tablist, below it a select), the section selected in its switch, the named card's anchor and a heading
+ *   of it; Version shows a `X.YY.ZZ` platform version. A 7.54.00 address (`/admin/people`, …) is replaced by its new
+ *   one. e2e-user is redirected off /admin (AdminRoute).
  * - Company `/company/vision|design`.
  * - Agents `/agents` and `/agents/workflows`: the admin gets both tabs; e2e-user gets no tabs and the agents
  *   list on `/agents/workflows`.
@@ -88,126 +87,111 @@ test.describe('Account tabs', () => {
 
 // ── Administration ────────────────────────────────────────────────────────────
 
-/** What a place shows: an h2 of its page (the card the location names, when it names one), or a button. */
-type Shows = { heading: string } | { button: string }
-
 interface AdminSurface {
-  /** Under `/admin/`: `<tab>` or `<tab>/<section>` (pages/Settings/adminPaths.ts). */
+  /** Under `/admin/`: `<tab>[/<section>][#<card>]` (pages/Settings/adminPaths.ts). */
   location: string
-  /** The tab's name (settings:tabs.*): the page's h1 and, from `lg` up, the left navigation's current link. */
+  /** The tab's name (settings:tabs.*), selected in the tab row. */
   tab: string
-  shows: Shows
+  /** The section's name (settings:sections.*), selected in the section switch; none on a tab without sections. */
+  section?: string
+  /** An h2 of the section (the card the location names, when it names one). */
+  heading: string
 }
 
-/** The tab Administration's left navigation does not list (the home's footer opens it). */
-const NOT_IN_NAV = 'Version'
-
 const ADMIN_SURFACES: readonly AdminSurface[] = [
-  // People has no card heading of its own (UserAdmin.tsx): the page's one primary is.
-  { location: 'people', tab: 'People', shows: { button: 'Invite person' } },
-  // The source cards carry no heading; the Advanced fold (an h2 disclosure) holds the three cards below.
-  { location: 'sources', tab: 'Data sources', shows: { heading: 'Advanced' } },
-  { location: 'sources/inbox', tab: 'Data sources', shows: { heading: 'Email inbox' } },
-  { location: 'sources/radar', tab: 'Data sources', shows: { heading: 'Radar' } },
-  { location: 'sources/tokens', tab: 'Data sources', shows: { heading: 'Design-system tokens' } },
-  { location: 'logs', tab: 'Logs', shows: { heading: 'System Logs' } },
-  { location: 'categories', tab: 'Categories', shows: { heading: 'Feedback Categories' } },
-  { location: 'categories/dimensions', tab: 'Categories', shows: { heading: 'Dimensions' } },
-  { location: 'boards', tab: 'Feedback boards', shows: { heading: 'Feedback boards' } },
-  { location: 'boards/domains', tab: 'Feedback boards', shows: { heading: 'Company domains' } },
-  { location: 'boards/participants', tab: 'Feedback boards', shows: { heading: 'Participant email' } },
-  { location: 'ai', tab: 'AI models', shows: { heading: 'AI Models' } },
-  { location: 'brand', tab: 'Brand & appearance', shows: { heading: 'Brand Configuration' } },
-  { location: 'brand/theme', tab: 'Brand & appearance', shows: { heading: 'Default theme' } },
-  { location: 'privacy', tab: 'Privacy', shows: { heading: 'Source policies' } },
-  { location: 'privacy/erasure', tab: 'Privacy', shows: { heading: 'Source policies' } },
-  { location: 'version', tab: 'Version', shows: { heading: 'Version' } },
+  { location: 'general', tab: 'General', heading: 'Brand Configuration' },
+  { location: 'general#theme', tab: 'General', heading: 'Default theme' },
+  // The source cards carry no heading; the selected section names the place.
+  { location: 'sources/plugins', tab: 'Sources', section: 'Source settings', heading: '' },
+  { location: 'sources/integrations', tab: 'Sources', section: 'Integrations', heading: 'Integrations' },
+  { location: 'sources/inbox', tab: 'Sources', section: 'Email inbox', heading: 'Email inbox' },
+  { location: 'sources/radar', tab: 'Sources', section: 'Radar', heading: 'Radar' },
+  { location: 'taxonomy/categories', tab: 'Taxonomy', section: 'Categories', heading: 'Feedback Categories' },
+  { location: 'taxonomy/dimensions', tab: 'Taxonomy', section: 'Dimensions', heading: 'Dimensions' },
+  { location: 'access/policies', tab: 'Privacy & access', section: 'Source policies', heading: 'Source policies' },
+  { location: 'access/policies#erasure', tab: 'Privacy & access', section: 'Source policies', heading: 'Source policies' },
+  { location: 'access/users', tab: 'Privacy & access', section: 'Users', heading: 'User Administration' },
+  { location: 'access/boards', tab: 'Privacy & access', section: 'Boards', heading: 'Feedback boards' },
+  { location: 'access/boards#domains', tab: 'Privacy & access', section: 'Boards', heading: 'Company domains' },
+  { location: 'access/boards#participants', tab: 'Privacy & access', section: 'Boards', heading: 'Participant email' },
+  { location: 'ai', tab: 'AI models', heading: 'AI Models' },
+  { location: 'system/logs', tab: 'System', section: 'Logs', heading: 'System Logs' },
+  { location: 'system/version', tab: 'System', section: 'Version', heading: 'Version' },
 ]
 
 /** A padded platform version (`5.34.00`, buildInfo.ts `paddedVersion`). */
 const PLATFORM_VERSION = /^\d+\.\d{2}\.\d{2}$/
 
-/** Tailwind's `lg`: from here up a tab's page has the left navigation (AdminNav.tsx); below it the nav is not shown. */
-const LG_WIDTH = 1024
+/** Tailwind's `md`: from here up the tabs are a tablist; below it a select (Settings.tsx). */
+const MD_WIDTH = 768
 
-const adminNav = (page: Page): Locator => page.getByRole('navigation', { name: 'Administration', exact: true })
+const tabRow = (page: Page): Locator => page.getByRole('tablist', { name: 'Administration tabs', exact: true })
 
-function shown(page: Page, shows: Shows): Locator {
-  return 'heading' in shows
-    ? page.getByRole('heading', { name: shows.heading, exact: true, level: 2 }).first()
-    : page.getByRole('button', { name: shows.button, exact: true })
+/** The card a location names (`#<card>`), by its anchor (adminTabLabels.ts `cardAnchorId`), or null. */
+function cardAnchor(page: Page, location: string): Locator | null {
+  const [, card] = location.split('#')
+  return card === undefined ? null : page.locator(`#admin-card-${card}`)
 }
 
-/** The card a location names (`<tab>/<section>`), by its anchor (adminTabLabels.ts `sectionAnchorId`), or null. */
-function sectionAnchor(page: Page, location: string): Locator | null {
-  const [, section] = location.split('/')
-  return section === undefined ? null : page.locator(`#admin-section-${section}`)
-}
-
-/** Where the tab's page says it is: its header (back link, h1) and, from `lg` up, the navigation's current link. */
-async function expectTabPage(page: Page, tab: string): Promise<void> {
-  await expect(page.getByRole('heading', { name: tab, exact: true, level: 1 })).toBeVisible()
-  await expect(page.getByRole('main').getByRole('link', { name: 'Administration', exact: true })).toHaveAttribute('href', '/admin')
-  const nav = adminNav(page)
-  if ((page.viewportSize()?.width ?? 0) < LG_WIDTH) {
-    await expect(nav).toBeHidden()
-    return
+/** Where the page says it is: the tab selected in the tab row (or the select, below `md`), the section in its switch. */
+async function expectPlace(page: Page, surface: AdminSurface): Promise<void> {
+  await expect(page.getByRole('heading', { name: 'Administration', exact: true, level: 1 })).toBeVisible()
+  if ((page.viewportSize()?.width ?? 0) < MD_WIDTH) {
+    const select = page.getByRole('combobox', { name: 'Administration tabs', exact: true })
+    await expect(select.locator('option:checked')).toHaveText(new RegExp(`^${surface.tab}`))
+  } else {
+    await expect(tabRow(page).getByRole('tab', { selected: true })).toHaveText(new RegExp(`^${surface.tab}`))
   }
-  await expect(nav).toBeVisible()
-  const current = nav.locator('[aria-current="page"]')
-  if (tab === NOT_IN_NAV) {
-    await expect(current).toHaveCount(0)
-    return
+  if (surface.section !== undefined) {
+    const sections = page.getByRole('tablist', { name: surface.tab, exact: true })
+    await expect(sections.getByRole('tab', { selected: true })).toHaveText(surface.section)
   }
-  await expect(nav.getByRole('link', { name: tab, exact: true })).toHaveAttribute('aria-current', 'page')
-  await expect(current).toHaveCount(1)
 }
 
-test.describe('Administration home, tabs and cards', () => {
-  test('/admin is the home: its groups and the Release notes link', async ({ page }, testInfo) => {
+test.describe('Administration tabs, sections and cards', () => {
+  test('/admin opens General: the header, the search and the "Needs attention" region', async ({ page }, testInfo) => {
     const role = roleOf(testInfo)
     test.skip(role !== 'admin', 'admin-only route (the redirect is its own test)')
-    await assertStep(page, role, 'surfaces-admin-home', async () => {
+    await assertStep(page, role, 'surfaces-admin-general', async () => {
       await visit(page, '/admin')
-      expect(where(page), 'already the canonical form').toBe('/admin')
+      await expect.poll(() => where(page), 'replaced by General').toBe('/admin/general')
       await expect(page.getByRole('heading', { name: 'Administration', level: 1 })).toBeVisible()
-      for (const group of ['Everyday', 'Regularly', 'Set up once', 'Rare']) {
-        await expect(page.getByRole('heading', { name: group, exact: true, level: 2 })).toBeVisible()
-      }
-      await expect(page.getByRole('link', { name: 'Release notes', exact: true })).toHaveAttribute('href', '/admin/version')
-      // No tab page here: no left navigation, no back link.
-      await expect(adminNav(page)).toHaveCount(0)
+      await expect(page.getByRole('combobox', { name: 'Search settings', exact: true })).toBeVisible()
+      await expect(page.getByRole('tabpanel', { name: /^General/ }).getByRole('status').first()).toBeAttached()
     })
   })
 
-  test('a path of before 7.54.00 is not aliased: it opens the home', async ({ page }, testInfo) => {
+  test("a 7.54.00 address leads to its new place", async ({ page }, testInfo) => {
     const role = roleOf(testInfo)
     test.skip(role !== 'admin', 'admin-only route (the redirect is its own test)')
     await assertStep(page, role, 'surfaces-admin-old-path', async (recorder) => {
-      for (const old of ['/admin/access/users', '/admin/taxonomy/categories', '/admin/system/logs']) {
+      const moved: readonly (readonly [string, string])[] = [
+        ['/admin/people', '/admin/access/users'], ['/admin/categories', '/admin/taxonomy/categories'],
+        ['/admin/logs', '/admin/system/logs'], ['/admin/brand', '/admin/general'],
+      ]
+      for (const [old, now] of moved) {
         await visit(page, old)
-        await expect.poll(() => where(page), `${old} replaced`).toBe('/admin')
-        await expect(page.getByRole('heading', { name: 'Administration', level: 1 })).toBeVisible()
+        await expect.poll(() => where(page), `${old} replaced`).toBe(now)
         recorder.note(`${old} → ${where(page)}`)
       }
     })
   })
 
   for (const surface of ADMIN_SURFACES) {
-    const label = 'heading' in surface.shows ? surface.shows.heading : surface.shows.button
-    test(`/admin/${surface.location} renders "${label}" for the admin`, async ({ page }, testInfo) => {
+    test(`/admin/${surface.location} shows ${surface.section ?? surface.tab} for the admin`, async ({ page }, testInfo) => {
       const role = roleOf(testInfo)
       test.skip(role !== 'admin', 'admin-only route (the redirect is its own test)')
-      await assertStep(page, role, `surfaces-admin-${surface.location.replace('/', '-')}`, async (recorder) => {
+      await assertStep(page, role, `surfaces-admin-${surface.location.split(/[/#]/).join('-')}`, async (recorder) => {
         await visit(page, `/admin/${surface.location}`)
-        expect(where(page), 'already the canonical form').toBe(`/admin/${surface.location}`)
-        await expectTabPage(page, surface.tab)
-        // One page per tab: no second row of section tabs, no pressed tab buttons.
-        await expect(page.getByRole('main').getByRole('tab')).toHaveCount(0)
-        await expect(shown(page, surface.shows)).toBeVisible()
-        const anchor = sectionAnchor(page, surface.location)
-        if (anchor !== null) await expect(anchor, 'the card the path names').toBeVisible()
-        if (surface.location === 'version') {
+        const url = new URL(page.url())
+        expect(`${url.pathname}${url.hash}`, 'already the canonical form').toBe(`/admin/${surface.location}`)
+        await expectPlace(page, surface)
+        if (surface.heading !== '') {
+          await expect(page.getByRole('heading', { name: surface.heading, exact: true, level: 2 }).first()).toBeVisible()
+        }
+        const anchor = cardAnchor(page, surface.location)
+        if (anchor !== null) await expect(anchor, 'the card the address names').toBeVisible()
+        if (surface.location === 'system/version') {
           const platform = page.getByTestId('platform-version')
           await expect(platform).toHaveText(PLATFORM_VERSION)
           recorder.note(`platform version ${await platform.innerText()}`)
@@ -216,7 +200,7 @@ test.describe('Administration home, tabs and cards', () => {
     })
   }
 
-  test('e2e-user is redirected away from the home and every tab and card', async ({ page }, testInfo) => {
+  test('e2e-user is redirected away from every tab, section and card', async ({ page }, testInfo) => {
     const role = roleOf(testInfo)
     test.skip(MOCK, 'e2e-user needs a real login')
     test.skip(role !== 'user', 'the non-admin redirect')
@@ -225,7 +209,7 @@ test.describe('Administration home, tabs and cards', () => {
         await visit(page, pathname)
         await expect.poll(() => new URL(page.url()).pathname, `${pathname} redirected`).not.toMatch(/^\/admin(\/|$)/)
         await expect(page.getByRole('heading', { name: 'Administration', level: 1 })).toHaveCount(0)
-        await expect(adminNav(page)).toHaveCount(0)
+        await expect(tabRow(page)).toHaveCount(0)
         recorder.note(`${pathname} → ${where(page)}`)
       }
     })

@@ -12,7 +12,7 @@
     "editProject": "编辑项目 {{name}}",
     "owner": "所有者：{{name}}"
   },
-  "configureEndpoint": "请先在“管理 → 品牌与外观”中配置API端点",
+  "configureEndpoint": "请先在“管理 → 常规”中配置API端点",
   "list": {
     "search": "搜索项目",
     "scopeLabel": "谁的项目",

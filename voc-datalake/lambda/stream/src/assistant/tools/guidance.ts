@@ -198,7 +198,7 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'set_user_access with the username the result returned. (3) update_user carries only the fields to change; '
       + 'you cannot change your own role or enabled state. (4) Administrators always see every category — '
       + 'set_user_access is for the `users` role. (5) Deleting users, password resets and user flags are not '
-      + 'available here: point to Administration → People.',
+      + 'available here: point to Administration → Privacy & access → Users.',
   ].join('\n'),
   memory: '- Memory curation: get_memory_review lists proposed company memories and conflicts (administrators and memory '
     + 'reviewers; anyone else is refused — say so). confirm_memory adds the user\u2019s +1; forget_memory '

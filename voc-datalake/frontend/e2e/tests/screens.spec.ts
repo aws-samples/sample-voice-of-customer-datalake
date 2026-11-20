@@ -44,12 +44,11 @@ test.describe('screens', () => {
             if (screen.step === 'not-found') {
               await expect(page.getByText('Page not found')).toBeVisible()
             }
-            if (screen.step === 'settings-redirect' && role === 'admin') {
-              expect(landed).toBe('/admin')
-            }
-            // No Administration path of before 7.54.00 is aliased: a stale one is quietly replaced by the home.
-            if (screen.step.startsWith('admin-') && role === 'admin') {
-              expect(landed, 'the Administration place is its own canonical path').toBe(target)
+            // `/settings` and `/admin` open General (7.59.00); every other Administration location is its own address.
+            if ((screen.step === 'settings-redirect' || screen.step === 'admin-home') && role === 'admin') {
+              expect(landed).toBe('/admin/general')
+            } else if (screen.step.startsWith('admin-') && role === 'admin') {
+              expect(`${landed}${landedUrl.hash}`, 'the Administration place is its own canonical address').toBe(target)
             }
           },
         })

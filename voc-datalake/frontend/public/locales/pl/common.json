@@ -468,7 +468,7 @@
       "resetBubble": "Zresetuj położenie dymka"
     },
     "access": {
-      "hint": "Co widzisz w tej aplikacji. Administrator zmienia to w sekcji Administracja → Osoby.",
+      "hint": "Co widzisz w tej aplikacji. Administrator zmienia to w sekcji Administracja → Prywatność i dostęp → Użytkownicy.",
       "categories": "Kategorie",
       "sources": "Źródła",
       "everyCategory": "Wszystkie kategorie",
@@ -720,7 +720,7 @@
     "problemsOnlyHint": "Błędy, awarie usługi, wydajność, użyteczność, ceny i rozliczenia oraz obsługa klienta. Prośby o funkcje, pochwały, pytania i inne opinie są ukryte.",
     "allTypes": "Wszystkie typy",
     "untyped": "Opinie bez typu: {{n, number}} (nadal widoczne)",
-    "untypedHint": "Opinie zapisane przed wprowadzeniem typów nie mają typu, dopóki administrator nie sklasyfikuje ich w Administracja → Kategorie. Pozostają widoczne przy każdym filtrze typu."
+    "untypedHint": "Opinie zapisane przed wprowadzeniem typów nie mają typu, dopóki administrator nie sklasyfikuje ich w Administracja → Taksonomia → Kategorie. Pozostają widoczne przy każdym filtrze typu."
   },
   "infoTip": {
     "label": "Więcej informacji"

@@ -1,6 +1,6 @@
 /**
  * @fileoverview The one board-delete confirmation, used by the board card (Feedback boards) and
- * the board editor (Administration → Feedback boards). An empty board: a plain confirm.
+ * the board editor (Administration → Privacy & access → Boards). An empty board: a plain confirm.
  * A board with requests: it says the board, its requests and every +1 on them go for good (projects
  * made from them stay), and Delete is enabled only once the board's name is typed. While deleting it
  * stays open and shows how many requests are gone; after a failure it stays open and Delete resumes.

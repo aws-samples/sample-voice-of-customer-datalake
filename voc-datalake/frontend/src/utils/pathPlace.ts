@@ -14,10 +14,12 @@
 import { useCallback, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-/** A pathname and its query (`?…` or ''), as the router's location has them. */
+/** A pathname and its query (`?…` or ''), as the router's location has them; a hash (`#…` or '') when it says where too. */
 export interface Address {
   readonly pathname: string
   readonly search: string
+  /** (7.59.00) Absent: the address keeps whatever hash it has (Administration's cards are its hash: adminPaths.ts). */
+  readonly hash?: string
 }
 
 /** What an area reads in an address: its place, and the address to replace it with (null: the place's own). */
@@ -35,7 +37,7 @@ function decodedSegment(segment: string): string {
 }
 
 /**
- * The segments of `pathname` under `base`, decoded (`/admin/people/u-1` under `/admin` → `['people', 'u-1']`,
+ * The segments of `pathname` under `base`, decoded (`/admin/access/users/u-1` under `/admin` → `['people', 'u-1']`,
  * `/admin` → `[]`), or null when `pathname` is not `base` or under it (`/administration`).
  */
 export function segmentsUnder(base: string, pathname: string): string[] | null {
@@ -58,13 +60,13 @@ export function searchWithout(search: string, names: readonly string[]): string 
 
 /**
  * Replace the current address by `to` in place (no history entry, so Back never returns to the old form), keeping
- * the hash; null: nothing to replace. An effect, not a layout effect: the router takes a navigation only once its
+ * the hash unless `to` names its own; null: nothing to replace. An effect, not a layout effect: the router takes a navigation only once its
  * own effect has run. Meanwhile the page reads its place as the replacement will name it.
  */
 export function useReplaceAddress(to: Address | null): void {
   const { hash } = useLocation()
   const navigate = useNavigate()
-  const target = to === null ? null : `${to.pathname}${to.search}${hash}`
+  const target = to === null ? null : `${to.pathname}${to.search}${to.hash ?? hash}`
   useEffect(() => {
     if (target !== null) void navigate(target, { replace: true })
   }, [navigate, target])

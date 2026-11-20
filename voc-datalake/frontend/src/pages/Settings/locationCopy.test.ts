@@ -1,8 +1,8 @@
 /**
- * Copy that names a place in Administration names one that exists (5.10 sweep, 7.54.00 tabs):
+ * Copy that names a place in Administration names one that exists (5.10 sweep, 7.59.00 tabs):
  * in every locale, each "<Administration> → <tab>[ → <section>]" in any
- * namespace starts with a tab label of that locale and, when the tab has
- * cards a path names and the path goes on, one of those cards' labels. No
+ * namespace starts with a tab label of that locale and, when the path goes on,
+ * one of that tab's sections (on a tab without sections: one of its cards). No
  * string points to the retired "<Settings> → …" page. Third-party UI paths
  * (Figma / GitHub token steps in `settings:integrationGuide`, and the GitHub
  * App's own settings in THIRD_PARTY_KEYS) are not ours.
@@ -11,9 +11,9 @@ import { describe, expect, it } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { z } from 'zod'
-import { ADMIN_GROUPS, visibleSections } from './adminTabs'
-import { sectionLabelKey, tabLabelKey } from './adminTabLabels'
-import type { AdminTabId } from './adminTabs'
+import { cardsOf, hasSections, visibleSections, visibleTabs } from './adminTabs'
+import { cardLabelKey, sectionLabelKey, tabLabelKey } from './adminTabLabels'
+import type { AdminTabId, AdminViewer } from './adminTabs'
 
 const LOCALES_DIR = path.join(__dirname, '../../../public/locales')
 const LOCALES = fs.readdirSync(LOCALES_DIR).filter((name) => fs.statSync(path.join(LOCALES_DIR, name)).isDirectory())
@@ -61,14 +61,18 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
 
 interface Place { readonly label: string; readonly sections: readonly string[] }
 
+/** Every place an administrator may be sent: a platform admin's, a workspace's and the engineering agents' too. */
+const EVERYONE: AdminViewer = { isAdmin: true, isPlatformAdmin: true, inWorkspace: true, agentsShown: true }
+
 function places(locale: string): Place[] {
   const labels = settingsSchema.parse(readJson(locale, 'settings'))
+  const label = (key: string) => labels.sections[key.replace(/^sections\./, '')] ?? key
   const tabLabel = (id: AdminTabId) => labels.tabs[tabLabelKey(id).replace(/^tabs\./, '')] ?? id
-  // Every place an administrator may be sent: a platform admin's (Platform) too, and Version.
-  const tabs: readonly AdminTabId[] = [...ADMIN_GROUPS.flatMap((group) => group.tabs), 'version']
-  return tabs.map((id) => ({
+  return visibleTabs(EVERYONE).map((id) => ({
     label: tabLabel(id),
-    sections: visibleSections(id, true, true).map((section) => labels.sections[sectionLabelKey(section).replace(/^sections\./, '')] ?? section),
+    sections: hasSections(id)
+      ? visibleSections(id, EVERYONE).map((section) => label(sectionLabelKey(section)))
+      : cardsOf(id, null).map((card) => label(cardLabelKey(card))),
   }))
 }
 
@@ -114,10 +118,10 @@ describe('copy naming an Administration place', () => {
 
   it('recognises a stale place (the checker is not vacuous)', () => {
     const known = places('en')
-    expect([namesAPlace('Dimensions).', known), namesAPlace('Taxonomy → Users', known),
-      namesAPlace('General → Brand', known)]).toStrictEqual([false, false, false])
-    expect(namesAPlace('Categories → Dimensions).', known)).toBe(true)
-    expect(namesAPlace('Categories → Users', known)).toBe(false)
-    expect(namesAPlace('AI models.', known)).toBe(true)
+    // 7.54.00's places are gone: People, Data sources → Radar, Categories → Dimensions, Brand & appearance.
+    expect([namesAPlace('People.', known), namesAPlace('Data sources → Radar', known), namesAPlace('Categories → Dimensions).', known),
+      namesAPlace('Brand & appearance', known), namesAPlace('Taxonomy → Users', known)]).toStrictEqual([false, false, false, false, false])
+    expect([namesAPlace('Taxonomy → Dimensions).', known), namesAPlace('Privacy & access → Users', known),
+      namesAPlace('General → Default theme', known), namesAPlace('AI models.', known)]).toStrictEqual([true, true, true, true])
   })
 })

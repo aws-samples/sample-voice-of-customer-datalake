@@ -375,7 +375,7 @@ def start_scan():
     brands = _visible_brands(_scope())
     brand = _scan_brand_from_body(json_body_value(app), brands)
     if not brands:
-        raise ValidationError('No Radar brand yet: add the brands to track in Administration → Data sources → Radar first')
+        raise ValidationError('No Radar brand yet: add the brands to track in Administration → Sources → Radar first')
     payload: dict[str, Any] = {'mode': 'manual', 'requested_by': caller.subject, **payload_fields()}
     if brand:
         payload['brand'] = brand

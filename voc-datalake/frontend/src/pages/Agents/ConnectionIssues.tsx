@@ -7,7 +7,7 @@
  *   made through one of the deployment's Apps, the "Read this repository's issues" switch (on unless an administrator
  *   turned it off; no confirmation to turn it off, the page's status line says so) with its state as visible text
  *   ("Reading", "Not read", "Off"), and why the source does not read it when it does not (switched off; the source
- *   signs in with a token, which an administrator manages under Administration → Data sources; another App; its 20
+ *   signs in with a token, which an administrator manages under Administration → Sources → Source settings; another App; its 20
  *   repositories taken; no source deployed here; not in its list yet, with "Read its issues now"). A GitLab
  *   connection, or one with a pasted key, shows "—" (read only through the App: said to screen readers);
  * - {@link LabelCell}, its Label column: the `voc-agent` label on the repository (`ok`), or that it could not be created
@@ -31,7 +31,7 @@ import { issuesOf, viaApp } from './connectionStatus'
 import type { ConnectionIssues as Issues, IssuesFollow, IssuesSkipReason, IssuesSourceView } from '../../api/issuesSourceApi'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 
-/** The deployment's GitHub Issues card (Administration → Data sources), where a token-signed source is managed. */
+/** The deployment's GitHub Issues card (Administration → Sources → Source settings), where a token-signed source is managed. */
 const ISSUES_CARD = deploymentSourcePath('github_issues')
 /** The most repositories the source reads (plugins/_shared/github_config.py MAX_REPOS). */
 const MAX_REPOSITORIES = 20

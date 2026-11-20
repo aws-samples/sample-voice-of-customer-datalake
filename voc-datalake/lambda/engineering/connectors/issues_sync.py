@@ -3,7 +3,7 @@
 makes its issues read, with no separate Data sources step.
 
 **What changes.** The source's settings are the github_issues plugin's keys in the deployment's shared secret (what
-Administration → Data sources writes and the ingestor reads): ``repos``, ``github_app_id`` and, written only by the
+Administration → Sources → Source settings writes and the ingestor reads): ``repos``, ``github_app_id`` and, written only by the
 connections, ``repos_managed`` (the repositories they added, one ``owner/name`` per line). ``plan`` is the pure rule:
 
 * a repository a connection reads is ADDED to ``repos`` (``MAX_REPOS`` at most: past it, skipped as ``limit``) and to
@@ -92,7 +92,7 @@ LABEL_STATES: Final = ('created', 'present', 'failed')
 LABEL_WORKERS: Final = 8
 NOT_DEPLOYED: Final = 'the GitHub Issues source is not deployed here (pluginStatus.github_issues)'
 NOT_APP: Final = ('only a connection made through the deployment\'s GitHub App (Connect GitHub) can read its issues '
-                  'automatically: add its repository under Administration → Data sources → GitHub Issues instead')
+                  'automatically: add its repository under Administration → Sources → Source settings → GitHub Issues instead')
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
 SignIn = Literal['app', 'token', 'none']

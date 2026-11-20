@@ -2,7 +2,7 @@
  * @fileoverview Account → "My access" (read-only): my role and the category and
  * source scope every list and count is filtered by server-side
  * (`GET /feedback/access`, the same route the filters use). An administrator
- * changes it in Administration → People.
+ * changes it in Administration → Privacy & access → Users.
  *
  * @module pages/Account/AccessSection
  */

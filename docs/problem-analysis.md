@@ -103,7 +103,7 @@ The review-type pills filter by review type (the built-in `feedback_type` dimens
   is no type filter again, not Problems only.
 - Each pill shows its count in the window. Reviews with no type yet (stored before review types
   existed) are always kept in view, and the page says how many: an administrator classifies them
-  with the reprocess job in Administration → Categories. While most reviews are untyped, a type
+  with the reprocess job in Administration → Taxonomy → Categories. While most reviews are untyped, a type
   choice changes little, because those reviews stay in every view.
 - The choice is in the URL: absent = Problems only, `types=all` = every type,
   `types=bug,praise` = those types.

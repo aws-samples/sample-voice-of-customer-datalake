@@ -15,20 +15,18 @@ export interface Screen {
   needs?: 'project' | 'agent' | 'feedback' | 'workflow'
 }
 
-// pages/Settings/adminTabs.ts (7.54.00): every tab (`/admin/<tab>`, one page) and every card of it a path may name
-// (`/admin/<tab>/<section>`), in the navigation's order; the home `/admin` is its own step. Platform (platform admins
-// only) is workspace-admin.spec.ts's. No path of before 7.54.00 is aliased: a stale one lands on the home, which
-// screens.spec.ts refuses (an admin lands on each location's own path).
+// pages/Settings/adminTabs.ts (7.59.00, main's tabs again): every tab and section (`/admin/<tab>[/<section>]`) and every
+// card a link may name (`#<card>`), in the tabs' order. Workspaces (inside a workspace or a platform admin's) is
+// workspace-admin.spec.ts's; Engineering agents shows only where the engineering module is on, so it is not a step.
+// `/admin` and every 7.54.00 address are replaced by their new form, which screens.spec.ts checks (an admin lands on
+// each location's own address).
 const ADMIN_LOCATIONS = [
-  'people',
-  'sources', 'sources/inbox', 'sources/radar', 'sources/tokens',
-  'logs',
-  'categories', 'categories/dimensions',
-  'boards', 'boards/domains', 'boards/participants',
+  'general', 'general#theme',
+  'sources/plugins', 'sources/integrations', 'sources/inbox', 'sources/radar',
+  'taxonomy/categories', 'taxonomy/dimensions',
+  'access/policies', 'access/policies#erasure', 'access/users', 'access/boards', 'access/boards#domains', 'access/boards#participants',
   'ai',
-  'brand', 'brand/theme',
-  'privacy', 'privacy/erasure',
-  'version',
+  'system/logs', 'system/version',
 ] as const
 // pages/ProjectDetail/types.ts TAB_IDS. No 'mcp': the Export / MCP tab was removed (projects-mcp-removed.spec.ts).
 const PROJECT_TABS = ['overview', 'personas', 'product', 'documents', 'decisions', 'participants'] as const
@@ -44,7 +42,7 @@ const PARTICIPANT_TABS = ['lists', 'people', 'asks'] as const
 const MEMORY_TABS = ['company', 'personal', 'review', 'imports'] as const
 
 /** `a/b` → `a-b`, `a` → `a`. */
-const adminStep = (location: string): string => location.split('/').join('-')
+const adminStep = (location: string): string => location.split(/[/#]/).join('-')
 
 export const SCREENS: readonly Screen[] = [
   { step: 'home', path: '/' },

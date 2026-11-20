@@ -54,15 +54,15 @@ REQUIRED: Final = frozenset({'connection', 'ci_attestation', 'image', 'bedrock_m
 #: The ways of working that let a run push and open a pull request (connectors/dial.py PUSHING_MODES; the modes are
 #: shared/ai_mode.py's ``MODES``, and the roles whose work leaves as code shared/workflow_engineering.py's).
 PUSHING_MODES: Final = frozenset({MODE_AI_ASSISTED, MODE_AI_DRIVEN})
-#: Where an administrator sets a person's way of working (Administration → People, 7.54.00).
-USERS_PATH: Final = '/admin/people'
-#: The deployment's GitHub Issues card (Administration → Data sources in its Deployment scope, opened at it:
-#: frontend adminPaths.ts, 7.54.00).
-ISSUES_CARD_PATH: Final = '/admin/sources/github_issues?scope=deployment'
+#: Where an administrator sets a person's way of working (Administration → Privacy & access → Users, 7.59.00).
+USERS_PATH: Final = '/admin/access/users'
+#: The deployment's GitHub Issues card (Administration → Sources → Source settings in its Deployment scope, opened at it:
+#: frontend adminPaths.ts, 7.59.00; 7.54.00's /admin/sources/github_issues is redirected there).
+ISSUES_CARD_PATH: Final = '/admin/sources/plugins/github_issues?scope=deployment'
 #: The label the connections create on each repository (connectors/connections.py ISSUE_LABEL): the only one whose
 #: presence readiness knows.
 CREATED_LABEL: Final = 'voc-agent'
-#: Each way of working by the name Administration → People shows it under.
+#: Each way of working by the name Administration → Privacy & access → Users shows it under.
 MODE_NAMES: Final = {MODE_HUMAN_DRIVEN: 'Human-driven', MODE_AI_ASSISTED: 'AI-assisted', MODE_AI_DRIVEN: 'AI-driven'}
 #: Learn's model, as ``flow_models`` names its caller (the run-end step, plan §5; the coach's card has no model).
 LEARN: Final = 'learn'
@@ -612,7 +612,7 @@ def _issues_source(ctx: _Context) -> Check:
     if not _starts_from_issues(ctx):
         return _not_needed('issues_source', 'nothing here starts a run from a GitHub issue')
     fix = (f'Agents → Connections: turn on "Read this repository\'s issues" on its connection (7.50.02: connecting it '
-           f'through the deployment\'s GitHub App does it), or add it under Administration → Data sources → GitHub '
+           f'through the deployment\'s GitHub App does it), or add it under Administration → Sources → Source settings → GitHub '
            f'Issues (Deployment) ({ISSUES_CARD_PATH}).')
     if ctx.row is None:
         return Check('issues_source', 'unknown', 'No stored connection to look the repository up for.', fix)
@@ -667,7 +667,7 @@ def mode_names(modes: Collection[str]) -> str:
 def _dial(ctx: _Context) -> Check:
     allowed = allowed_modes(ctx.subject)
     who = ctx.subject.person_name or 'the administrator who enables the agent'
-    fix = (f'An administrator sets the way of working of {who} to {mode_names(allowed)} in Administration → People '
+    fix = (f'An administrator sets the way of working of {who} to {mode_names(allowed)} in Administration → Privacy & access → Users '
            f'({USERS_PATH})' + ('; with AI-assisted, each push waits for a person\'s go on the run.'
                                 if MODE_AI_ASSISTED in allowed else '.'))
     if not ctx.subject.person:

@@ -143,7 +143,7 @@ export function CredentialsSection({
           ))}
         </div>
 
-        <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-2 py-2">
+        <StickyActionBar variant="footer" className="flex flex-wrap items-center gap-2 py-2">
           <button onClick={onToggleSecrets} className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2">
             {showSecrets ? <EyeOff size={14} /> : <Eye size={14} />}
             {showSecrets ? t('sourceCard.hide') : t('sourceCard.show')}

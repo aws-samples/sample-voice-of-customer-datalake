@@ -31,7 +31,7 @@ function DomainsForm({ stored, canSave, saved, onSavedChange }: Readonly<{
         onChange={(next) => { onSavedChange(false); setDomains(next) }} />
       <p className="text-xs text-muted">{t('boards.domains.hint')}</p>
       {canSave ? (
-        <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-3 py-2">
+        <StickyActionBar variant="footer" className="flex flex-wrap items-center gap-3 py-2">
           <button type="submit" className="btn btn-primary btn-sm" disabled={!dirty || save.isPending}>
             {save.isPending ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
             {t('boards.domains.save')}

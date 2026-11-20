@@ -1,5 +1,5 @@
 /**
- * @fileoverview Boards → one board's editor (`/admin/boards/<id>`): basics,
+ * @fileoverview Boards → one board's editor (`/admin/access/boards/<id>`): basics,
  * audience, fields, statuses, then Archive / Delete. One Save = one PUT of the whole configuration;
  * a 409 (`slug_taken`, `status_in_use`) is explained in words. The shared unsaved-changes guard
  * catches leaving with edits (Back to boards, another section or page, closing the tab).
@@ -44,7 +44,7 @@ function SaveBar({ dirty, problems, pending, error, saved, onSave }: Readonly<{
 }>) {
   const { t } = useTranslation('settings')
   return (
-    <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-3 py-2">
+    <StickyActionBar variant="footer" className="flex flex-wrap items-center gap-3 py-2">
       <button type="button" className="btn btn-primary btn-sm" disabled={!dirty || problems.length > 0 || pending} onClick={onSave}>
         {pending ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
         {t('boards.editor.save')}

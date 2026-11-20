@@ -9,13 +9,13 @@
  *   (`mode: 'bogus'`, a 400 for an admin) → 403, so the probe can never write.
  * - Colour themes (6.01.00): Account → Preferences → Colour theme. The pick is the person's own and
  *   kept in this browser (`voc-theme` in localStorage, theme/themeStore.ts), so a reload keeps it;
- *   the spec restores exactly the choice it found. Admin: Administration → Brand & appearance → Default theme
- *   (`/admin/brand/theme`) shows the card, read only here (never saved).
+ *   the spec restores exactly the choice it found. Admin: Administration → General → Default theme
+ *   (`/admin/general#theme`) shows the card, read only here (never saved).
  * - Board Insights and search (6.02.00, docs/feature-requests.md): the Insights tab of the seeded
  *   Sales board, `GET /feature-requests/insights` and `GET /feature-requests/search` (no `email` /
  *   `name` anywhere in the results).
  * - Unsaved changes with two editors on one page (6.01.00), admin: brand name + Default theme draft
- *   on Administration → Brand & appearance, both unsaved; leaving shows ONE "Unsaved changes" dialog at a time
+ *   on Administration → General, both unsaved; leaving shows ONE "Unsaved changes" dialog at a time
  *   (one per dirty editor, in turn); Cancel stays, Discard ×2 leaves; nothing is written.
  */
 import { expect, type Page, type Request } from '@playwright/test'
@@ -211,14 +211,14 @@ test.describe('colour themes (6.01.00)', () => {
     }
   })
 
-  test('admin: Administration → Brand & appearance shows the Default theme card (read only here)', async ({ page }, testInfo) => {
+  test('admin: Administration → General shows the Default theme card (read only here)', async ({ page }, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', '/admin is admin-only')
     const writes = recordWrites(page)
     const { record, problems } = await runStep({
       page, role: 'admin', theme: 'dark', step: '6x-default-theme-card',
       action: async (r) => {
         const appearance = page.waitForResponse((res) => isApi(res, 'GET', /\/settings\/appearance$/))
-        await page.goto(site('/admin/brand/theme'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin/general#theme'), { waitUntil: 'domcontentloaded' })
         const body = await jsonOf(await appearance)
         const saved = String(body['default_theme'] ?? '')
         r.note(`GET /settings/appearance default_theme=${saved}`)
@@ -331,12 +331,12 @@ const sidebarHome = (page: Page) => page.getByRole('navigation', { name: 'Main',
 
 test.describe('unsaved changes, two editors on one page (6.01.00)', () => {
   test('admin: brand + Default theme both unsaved → one dialog at a time; nothing is written', async ({ page }, testInfo) => {
-    test.skip(roleOf(testInfo) !== 'admin', 'the only page with two editors that open without a save is Administration → Brand & appearance (admin-only)')
+    test.skip(roleOf(testInfo) !== 'admin', 'the only page with two editors that open without a save is Administration → General (admin-only)')
     const writes = recordWrites(page)
     const { record, problems } = await runStep({
       page, role: 'admin', theme: 'dark', step: '6x-unsaved-two-editors', audit: false,
       action: async (r) => {
-        await page.goto(site('/admin/brand'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin/general'), { waitUntil: 'domcontentloaded' })
         await settle(page, 600)
         const brand = page.getByLabel('Brand Name')
         await expect(brand).toBeVisible()
@@ -351,7 +351,7 @@ test.describe('unsaved changes, two editors on one page (6.01.00)', () => {
         await expect(dialogNamed(page, GUARD)).toHaveCount(1)
         await dialogNamed(page, GUARD).getByRole('button', { name: 'Cancel', exact: true }).click()
         await expect(dialogNamed(page, GUARD)).toHaveCount(0)
-        await expect(page).toHaveURL(/\/admin\/brand$/)
+        await expect(page).toHaveURL(/\/admin\/general$/)
         await expect(brand, 'Cancel keeps the brand edit').toHaveValue(`${brandBefore} e2e-unsaved`)
         await expect(page.getByRole('button', { name: 'Save theme' }), 'Cancel keeps the theme pick').toBeEnabled()
 

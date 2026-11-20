@@ -162,7 +162,7 @@
     "adminOnlyNotice": "Seuls les administrateurs peuvent modifier la configuration de la marque. Vous pouvez la consulter ici."
   },
   "categories": {
-    "configureFirst": "Configurez le point de terminaison API dans Marque et apparence → Avancé pour gérer les catégories.",
+    "configureFirst": "Configurez le point de terminaison API dans Général → Avancé pour gérer les catégories.",
     "description": "Configurez les catégories et sous-catégories pour la classification des retours.",
     "title": "Catégories de retours"
   },
@@ -174,12 +174,12 @@
     "resetTitle": "Réinitialiser tous les paramètres"
   },
   "dataSources": {
-    "configureFirst": "Configurez le point de terminaison API dans Marque et apparence → Avancé pour gérer les sources de données.",
+    "configureFirst": "Configurez le point de terminaison API dans Général → Avancé pour gérer les sources de données.",
     "noPlugins": "Aucun plugin de source de données trouvé. Exécutez <code>npm run generate:manifests</code> pour générer les manifestes des plugins."
   },
   "logs": {
     "clear": "Effacer",
-    "configureFirst": "Configurez le point de terminaison API dans Marque et apparence → Avancé pour voir les journaux.",
+    "configureFirst": "Configurez le point de terminaison API dans Général → Avancé pour voir les journaux.",
     "daysAgo_one": "il y a {{count, number}} j",
     "daysAgo_other": "il y a {{count, number}} j",
     "errorLabel": "Erreur :",
@@ -402,34 +402,49 @@
       "manual": "Configurer manuellement (avancé)"
     }
   },
-  "subtitle": "Personnes, données, catégories et IA de ce déploiement.",
+  "subtitle": "Configurez la plateforme pour tout le monde (administrateurs uniquement).",
   "tabs": {
-    "sources": "Sources de données",
+    "general": "Général",
+    "sources": "Sources",
+    "taxonomy": "Taxonomie",
+    "access": "Confidentialité et accès",
     "ai": "Modèles d'IA",
-    "people": "Personnes",
-    "logs": "Journaux",
-    "categories": "Catégories",
-    "boards": "Tableaux de retours",
-    "brand": "Marque et apparence",
-    "privacy": "Confidentialité",
-    "platform": "Plateforme",
-    "version": "Version"
+    "workspaces": "Espaces de travail",
+    "agents": "Agents d’ingénierie",
+    "system": "Système"
   },
   "sections": {
+    "plugins": "Réglages des sources",
+    "integrations": "Intégrations",
     "inbox": "Boîte de réception e-mail",
     "radar": "Radar",
+    "categories": "Catégories",
     "dimensions": "Dimensions",
-    "tokens": "Jetons du design system",
+    "policies": "Politiques des sources",
+    "users": "Utilisateurs",
+    "boards": "Tableaux",
+    "workspace": "Cet espace de travail",
+    "members": "Membres",
+    "allWorkspaces": "Tous les espaces de travail",
+    "deploymentBrand": "Marque du déploiement",
+    "logs": "Journaux",
+    "version": "Version",
+    "brand": "Marque",
+    "theme": "Thème par défaut",
+    "api": "Point de terminaison API",
+    "erasure": "Effacement",
     "domains": "Domaines de l’entreprise",
     "participants": "E-mail aux participants",
-    "theme": "Thème par défaut",
-    "erasure": "Effacement",
-    "deploymentBrand": "Marque du déploiement",
+    "hardCap": "Plafond strict",
+    "models": "Modèles des rôles",
+    "connections": "Connexions GitHub",
     "advanced": "Avancé"
   },
   "title": "Paramètres",
   "users": {
-    "configureFirst": "Configurez le point de terminaison API dans Marque et apparence → Avancé pour gérer les personnes."
+    "configureFirst": "Configurez le point de terminaison API dans l'onglet Général pour gérer les utilisateurs.",
+    "title": "Administration des utilisateurs",
+    "description": "Gérez les utilisateurs, les rôles et les permissions pour la plateforme VoC."
   },
   "company": {
     "title": "Entreprise",
@@ -586,7 +601,7 @@
     "kindHints": {
       "website": "Nous ouvrons la page dans un navigateur sécurisé et lisons ses couleurs, polices et logo.",
       "github": "Les dépôts publics fonctionnent sans jeton. Nous lisons ses fichiers de thème, de couleurs et de polices, ainsi que son logo.",
-      "figma": "Nécessite un jeton Figma (Administration → Sources de données → Jetons du design system)."
+      "figma": "Nécessite un jeton Figma (Administration → Sources → Intégrations)."
     },
     "readingHint": {
       "link": "Lecture en cours : cela peut prendre quelques minutes.",
@@ -757,10 +772,10 @@
     "notConfigured": "Non configuré",
     "saveTokens": "Enregistrer les jetons",
     "integrationsMoved": "Les jetons Figma et GitHub se configurent dans",
-    "integrationsLink": "Administration → Sources de données → Jetons du design system"
+    "integrationsLink": "Administration → Sources → Intégrations"
   },
   "integrations": {
-    "title": "Jetons du design system",
+    "title": "Intégrations",
     "description": "Jetons en écriture seule utilisés par la plateforme pour lire vos fichiers Figma et dépôts GitHub pour le design system. Ils sont stockés dans Secrets Manager et ne sont plus jamais affichés.",
     "mcpHint": "L'accès MCP pour les assistants externes est propre à chaque utilisateur, dans",
     "mcpLink": "Connexion"
@@ -831,8 +846,7 @@
       "label": "Sources de",
       "workspace": "Cet espace de travail",
       "deployment": "Déploiement"
-    },
-    "advancedHint": "À configurer une fois : la boîte de réception e-mail, les marques et l’analyse de Radar, et les jetons avec lesquels le design system lit Figma et GitHub."
+    }
   },
   "version": {
     "title": "Version",
@@ -1030,92 +1044,62 @@
   "deploymentSources": {
     "notice": "Ces sources apportent des retours de tout le déploiement, hors de tout espace de travail. Ce sont les seuls retours que lisent les automatisations d’ingénierie."
   },
-  "home": {
-    "inWorkspace": "Vous êtes dans l’espace de travail {{name}} : ses propres réglages sont dans <settings>Réglages de l’espace de travail</settings>.",
-    "invite": "Inviter une personne",
-    "version": "Version {{version}} · <notes>Notes de version</notes>",
-    "attention": {
-      "title": "À traiter",
-      "sourcesPaused_one": "{{count, number}} source suspendue après des erreurs : {{list}}",
-      "sourcesPaused_other": "{{count, number}} sources suspendues après des erreurs : {{list}}",
-      "sourcesPaused_many": "{{count, number}} sources suspendues après des erreurs : {{list}}",
-      "waysUnset_one": "{{count, number}} personne n’a pas de façon de travailler définie",
-      "waysUnset_other": "{{count, number}} personnes n’ont pas de façon de travailler définie",
-      "waysUnset_many": "{{count, number}} personnes n’ont pas de façon de travailler définie",
-      "modelsBlocked_one": "{{count, number}} modèle d’IA ne peut pas être appelé dans ce compte",
-      "modelsBlocked_other": "{{count, number}} modèles d’IA ne peuvent pas être appelés dans ce compte",
-      "modelsBlocked_many": "{{count, number}} modèles d’IA ne peuvent pas être appelés dans ce compte",
-      "reviewSources": "Voir les sources",
-      "openPeople": "Ouvrir Personnes",
-      "openModels": "Ouvrir Modèles d'IA"
-    },
-    "groups": {
-      "everyday": "Au quotidien",
-      "regular": "Régulièrement",
-      "once": "À configurer une fois",
-      "rare": "Rarement",
-      "elsewhere": "Ailleurs"
-    },
-    "jobs": {
-      "people": {
-        "title": "Personnes",
-        "hint": "Inviter, retirer, rôles et façons de travailler"
-      },
-      "sources": {
-        "title": "Sources de données",
-        "hint": "Connecter, planifier, suspendre et vérifier les sources"
-      },
-      "logs": {
-        "title": "Journaux",
-        "hint": "Erreurs et éléments en échec"
-      },
-      "categories": {
-        "title": "Catégories et dimensions",
-        "hint": "Comment les retours sont classés et étiquetés"
-      },
-      "boards": {
-        "title": "Tableaux de retours",
-        "hint": "Tableaux, domaines de l’entreprise et e-mail aux participants"
-      },
-      "ai": {
-        "title": "Modèles d'IA",
-        "hint": "Le modèle de chaque fonction d’IA et sa capacité"
-      },
-      "brand": {
-        "title": "Marque et apparence",
-        "hint": "Votre marque et le thème par défaut"
-      },
-      "privacy": {
-        "title": "Confidentialité et effacement",
-        "hint": "Politiques des sources, et effacement des données d’une personne ou d’une source"
-      },
-      "platform": {
-        "title": "Plateforme : espaces de travail",
-        "hint": "Espaces de travail et marque du déploiement"
-      },
-      "version": {
-        "title": "Version",
-        "hint": "Ce build et les notes de version"
-      }
-    },
-    "counts": {
-      "people_one": "{{count, number}} personne",
-      "people_other": "{{count, number}} personnes",
-      "people_many": "{{count, number}} personnes",
-      "sources": "{{on, number}} actives · {{paused, number}} suspendues",
-      "errors_one": "{{count, number}} erreur ces dernières 24 heures",
-      "errors_other": "{{count, number}} erreurs ces dernières 24 heures",
-      "errors_many": "{{count, number}} erreurs ces dernières 24 heures"
-    },
-    "elsewhere": {
-      "cost": "Coût : Orchestration d'agents › Dépenses",
-      "github": "GitHub : Orchestration d'agents › Connexions",
-      "preferences": "Vos préférences : Compte › Préférences"
+  "tabsLabel": "Onglets de l’administration",
+  "tabsScrollStart": "Faire défiler vers les onglets précédents",
+  "tabsScrollEnd": "Faire défiler vers d’autres onglets",
+  "tabHints": {
+    "general": "Votre marque et le thème par défaut",
+    "sources": "Connecter, planifier et vérifier les sources ; la boîte de réception e-mail, Radar et les intégrations",
+    "taxonomy": "Comment les retours sont classés et étiquetés",
+    "access": "Politiques des sources et effacement, utilisateurs et leur accès, et les tableaux de retours",
+    "ai": "Le modèle de chaque fonction d’IA et sa capacité",
+    "workspaces": "Les réglages et les membres propres à cet espace de travail, et tous les espaces du déploiement",
+    "agents": "Le plafond strict des agents d’ingénierie, le modèle de chaque rôle et les connexions GitHub",
+    "system": "Erreurs, éléments en échec et alertes ; ce build et ses notes de version"
+  },
+  "attention": {
+    "title": "À traiter",
+    "sourcesPaused_one": "{{count, number}} source suspendue après des erreurs : {{list}}",
+    "sourcesPaused_other": "{{count, number}} sources suspendues après des erreurs : {{list}}",
+    "sourcesPaused_many": "{{count, number}} sources suspendues après des erreurs : {{list}}",
+    "waysUnset_one": "{{count, number}} personne n’a pas de façon de travailler définie",
+    "waysUnset_other": "{{count, number}} personnes n’ont pas de façon de travailler définie",
+    "waysUnset_many": "{{count, number}} personnes n’ont pas de façon de travailler définie",
+    "modelsBlocked_one": "{{count, number}} modèle d’IA ne peut pas être appelé dans ce compte",
+    "modelsBlocked_other": "{{count, number}} modèles d’IA ne peuvent pas être appelés dans ce compte",
+    "modelsBlocked_many": "{{count, number}} modèles d’IA ne peuvent pas être appelés dans ce compte",
+    "reviewSources": "Voir les sources",
+    "openUsers": "Ouvrir Utilisateurs",
+    "openModels": "Ouvrir Modèles d'IA",
+    "badge_one": "{{count, number}} demande de l’attention",
+    "badge_many": "{{count, number}} demandent de l’attention",
+    "badge_other": "{{count, number}} demandent de l’attention",
+    "option": "{{tab}} ({{count, number}})"
+  },
+  "header": {
+    "inWorkspace": "Vous êtes dans l’espace de travail {{name}} : ses propres réglages sont dans <settings>Espaces de travail → Cet espace de travail</settings>."
+  },
+  "general": {
+    "formBrand": "Les nouveaux formulaires de retour partent de votre marque de formulaire, définie depuis le panneau Style d’un formulaire dans <forms>Formulaires de retour</forms>."
+  },
+  "agentsTab": {
+    "roleDefault": "Par défaut du rôle ({{model}})",
+    "change": "Modifier",
+    "changeModel": "Modifier le modèle de {{role}}",
+    "modelsDescription": "L’environnement d’exécution de chaque rôle dans ce déploiement et le modèle qu’il utilise. Il se change sur la carte du rôle dans le Registre et s’applique à partir de la prochaine exécution.",
+    "modelsUnread": "Impossible de lire les modèles des rôles.",
+    "connectionsDescription": "D’où les agents d’ingénierie tirent leurs dépôts, ce qu’ils coûtent et les étapes avant la première exécution.",
+    "links": {
+      "connections": "Orchestration d'agents › Connexions",
+      "connectionsHint": "Connecter GitHub et choisir les dépôts sur lesquels travaillent les agents",
+      "spend": "Orchestration d'agents › Dépenses",
+      "spendHint": "Le budget mensuel de chaque workflow et le coût des exécutions",
+      "setup": "Guide de configuration",
+      "setupHint": "Les étapes avant la première exécution d’ingénierie"
     }
   },
   "search": {
     "titles": {
-      "connections": "Connexions",
       "spend": "Dépenses",
       "preferences": "Préférences"
     },
@@ -1131,25 +1115,32 @@
     "count_other": "{{count, number}} réglages trouvés",
     "count_many": "{{count, number}} réglages trouvés",
     "terms": {
-      "people": "inviter, ajouter une personne, utilisateur, retirer, supprimer, rôle, admin, façon de travailler, mode IA, responsable de secours, réviseur de mémoire, admin de plateforme, mot de passe, désactiver, accès, invite",
-      "sources": "connecter, source, scraper, identifiants, jeton, planification, suspendre, reprendre, plugin, webhook, avis d’applications, import S3, GitHub Issues, déploiement",
-      "logs": "erreurs, échecs, validation, traitement, exécutions des scrapers, alertes, CloudWatch, journaux système",
-      "categories": "taxonomie, catégorie, sous-catégorie, retraiter, classer, suggestions d’IA",
-      "boards": "demandes de fonctionnalités, tableau, vote, feuille de route, idées",
+      "general": "réglages, général, apparence",
       "ai": "modèle, Bedrock, Claude, Anthropic, GPT, quota, capacité, tester le modèle, jetons par minute, accord",
-      "brand": "nom de marque, logo, comptes, hashtags, URL à suivre, changement de marque, point de terminaison API",
-      "privacy": "politiques des sources, conservation, données personnelles, PII, restreint, RGPD, GDPR, protection des données",
-      "platform": "espaces de travail, nouvelle équipe, créer un espace de travail, admins de plateforme, entrer",
-      "version": "notes de version, journal des modifications, commit, build, nouveautés",
+      "agents": "ingénierie, agents autonomes, exécutions",
+      "plugins": "connecter, source, scraper, identifiants, jeton, planification, suspendre, reprendre, plugin, webhook, avis d’applications, import S3, GitHub Issues, déploiement",
+      "integrations": "Figma, jeton GitHub, design system, intégrations",
       "inbox": "e-mail, boîte aux lettres, transférer, e-mail entrant, limites",
       "radar": "concurrents, marques, actualités, versions, Exa, analyse",
-      "tokens": "Figma, jeton GitHub, design system, intégrations",
+      "categories": "taxonomie, catégorie, sous-catégorie, retraiter, classer, suggestions d’IA",
       "dimensions": "dimension, produit, module, type d’utilisateur, étiquettes, filtre",
+      "policies": "politiques des sources, conservation, données personnelles, PII, restreint, RGPD, GDPR, protection des données",
+      "users": "inviter, ajouter une personne, utilisateur, retirer, supprimer, rôle, admin, façon de travailler, mode IA, responsable de secours, réviseur de mémoire, admin de plateforme, mot de passe, désactiver, accès, invite",
+      "boards": "demandes de fonctionnalités, tableau, vote, feuille de route, idées",
+      "workspace": "espace de travail, renommer, plugins, export, supprimer l’espace de travail, marque de l’espace",
+      "members": "membres, inviter un membre, rôle, lecteur, éditeur, quitter l’espace de travail",
+      "allWorkspaces": "espaces de travail, nouvelle équipe, créer un espace de travail, admins de plateforme, entrer",
+      "deploymentBrand": "marque par défaut, déploiement, hors des espaces de travail",
+      "logs": "erreurs, échecs, validation, traitement, exécutions des scrapers, alertes, CloudWatch, journaux système",
+      "version": "notes de version, journal des modifications, commit, build, nouveautés",
+      "brand": "nom de marque, logo, comptes, hashtags, URL à suivre, changement de marque, point de terminaison API",
+      "theme": "thème, couleur, sombre, clair, apparence",
+      "api": "point de terminaison API, URL, développement, local",
+      "erasure": "effacer, supprimer des données, RGPD, GDPR, droit à l’oubli, supprimer une source",
       "domains": "domaine de l’entreprise, domaine e-mail, collègues, audience",
       "participants": "participants, nom de l’expéditeur, plafond quotidien, personnes externes, envoi d’e-mails",
-      "theme": "thème, couleur, sombre, clair, apparence",
-      "erasure": "effacer, supprimer des données, RGPD, GDPR, droit à l’oubli, supprimer une source",
-      "deploymentBrand": "marque par défaut, déploiement, hors des espaces de travail",
+      "hardCap": "plafond strict, budget, plafond de coût, arrêter les exécutions, limite de dépenses",
+      "models": "modèle, Kiro, environnement natif, Opus, Sonnet, Haiku, rôle, Registre",
       "connections": "GitHub, application GitHub, dépôt, connexion, installer, issues",
       "spend": "coût, dépenses, budget, plafond, facturation",
       "preferences": "langue, thème, mes préférences, mode sombre"

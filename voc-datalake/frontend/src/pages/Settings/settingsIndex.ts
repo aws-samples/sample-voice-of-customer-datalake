@@ -1,77 +1,86 @@
 /**
- * @fileoverview What Administration's search looks in (7.54.00, SettingsSearch.tsx): every tab and every section (a
- * card a path names) of adminTabs.ts, plus the settings that live elsewhere (Agents › Spend and Connections, Account ›
- * Preferences), each with its path and the words someone might type for it: its title, its tab, and its terms
- * (`settings:search.terms.<id>`, the field labels and synonyms of that place in the reader's language, so "invite",
- * "GDPR", "quota" or "theme" find the place that holds them).
+ * @fileoverview What Administration's search looks in (7.54.00's search, 7.59.00's tabs; SettingsSearch.tsx): every
+ * tab, every section and every card a link may name (adminTabs.ts), plus the settings that live elsewhere (Agents ›
+ * Spend, Account › Preferences), each with its address and the words someone might type for it: its title, its tab,
+ * and its terms (`settings:search.terms.<id>`, the field labels and synonyms of that place in the reader's language,
+ * so "invite", "GDPR", "quota" or "theme" find the place that holds them). A tab with sections has no terms of its
+ * own: its sections carry them.
  *
  * The matching is plain and predictable: every word of the query must appear in the entry's words (case and accents
  * ignored); a title that starts with the query ranks first, then a title that contains it, then a term that is it,
- * then a term that starts with it, then the rest, each in the index's own order (the navigation's).
+ * then a term that starts with it, then the rest, each in the index's own order (the tabs').
  *
  * @module pages/Settings/settingsIndex
  */
 import { agentsPath } from '../Agents/agentsPaths'
 import { accountTabPath } from '../Account/accountSections'
 import { adminPath } from './adminPaths'
-import { ADMIN_GROUPS, isVisibleTab, visibleSections } from './adminTabs'
-import type { AdminSectionId, AdminTabId } from './adminTabs'
-import { sectionLabelKey, tabLabelKey } from './adminTabLabels'
+import { cardsOf, hasSections, sectionOfCard, visibleSections, visibleTabs } from './adminTabs'
+import type { AdminCardId, AdminSectionId, AdminTabId, AdminViewer } from './adminTabs'
+import { cardLabelKey, sectionLabelKey, tabLabelKey } from './adminTabLabels'
 
 /** One place the search can open. */
 interface SettingsEntry {
-  /** Unique: the tab, `<tab>/<section>`, or `elsewhere/<place>`. */
+  /** Unique: the tab, `<tab>/<section>`, `<tab>#<card>`, or `elsewhere/<place>`. */
   readonly id: string
-  /** `settings:` keys of its title, of the page it is on (null: a tab, which is its own page), and of its terms. */
+  /** `settings:` keys of its title, of the tab it is on (null: a tab, its own place), and of its terms (null: none). */
   readonly titleKey: string
   readonly placeKey: string | null
-  readonly termsKey: string
+  readonly termsKey: string | null
   readonly path: string
 }
 
 /** Each place's terms key (`settings:search.terms.*`), spelled out so the i18n audit sees every key. */
-const TERMS_KEYS: Readonly<Record<AdminTabId | AdminSectionId | 'connections' | 'spend' | 'preferences', string>> = {
-  people: 'search.terms.people', sources: 'search.terms.sources', logs: 'search.terms.logs',
-  categories: 'search.terms.categories', boards: 'search.terms.boards', ai: 'search.terms.ai', brand: 'search.terms.brand',
-  privacy: 'search.terms.privacy', platform: 'search.terms.platform', version: 'search.terms.version',
-  inbox: 'search.terms.inbox', radar: 'search.terms.radar', tokens: 'search.terms.tokens',
-  dimensions: 'search.terms.dimensions', domains: 'search.terms.domains', participants: 'search.terms.participants',
-  theme: 'search.terms.theme', erasure: 'search.terms.erasure', 'deployment-brand': 'search.terms.deploymentBrand',
-  connections: 'search.terms.connections', spend: 'search.terms.spend', preferences: 'search.terms.preferences',
-}
-const termsKeyOf = (id: keyof typeof TERMS_KEYS): string => TERMS_KEYS[id]
-
-function tabEntry(tab: AdminTabId): SettingsEntry {
-  return { id: tab, titleKey: tabLabelKey(tab), placeKey: null, termsKey: termsKeyOf(tab), path: adminPath({ tab, section: null }) }
+const TAB_TERMS: Readonly<Partial<Record<AdminTabId, string>>> = {
+  general: 'search.terms.general', ai: 'search.terms.ai', agents: 'search.terms.agents',
 }
 
-function sectionEntry(tab: AdminTabId, section: AdminSectionId): SettingsEntry {
-  return {
-    id: `${tab}/${section}`, titleKey: sectionLabelKey(section), placeKey: tabLabelKey(tab), termsKey: termsKeyOf(section),
+const SECTION_TERMS: Readonly<Record<AdminSectionId, string>> = {
+  plugins: 'search.terms.plugins', integrations: 'search.terms.integrations', inbox: 'search.terms.inbox',
+  radar: 'search.terms.radar', categories: 'search.terms.categories', dimensions: 'search.terms.dimensions',
+  policies: 'search.terms.policies', users: 'search.terms.users', boards: 'search.terms.boards',
+  settings: 'search.terms.workspace', members: 'search.terms.members', all: 'search.terms.allWorkspaces',
+  'deployment-brand': 'search.terms.deploymentBrand', logs: 'search.terms.logs', version: 'search.terms.version',
+}
+
+const CARD_TERMS: Readonly<Record<AdminCardId, string>> = {
+  brand: 'search.terms.brand', theme: 'search.terms.theme', api: 'search.terms.api', erasure: 'search.terms.erasure',
+  domains: 'search.terms.domains', participants: 'search.terms.participants', 'hard-cap': 'search.terms.hardCap',
+  models: 'search.terms.models', connections: 'search.terms.connections',
+}
+
+function tabEntries(tab: AdminTabId, viewer: AdminViewer): SettingsEntry[] {
+  const sections = visibleSections(tab, viewer)
+  const first = hasSections(tab) ? sections[0] ?? null : null
+  const own: SettingsEntry = { id: tab, titleKey: tabLabelKey(tab), placeKey: null, termsKey: TAB_TERMS[tab] ?? null, path: adminPath({ tab, section: first }) }
+  const place = tabLabelKey(tab)
+  const sectionEntries = sections.map((section): SettingsEntry => ({
+    id: `${tab}/${section}`, titleKey: sectionLabelKey(section), placeKey: place, termsKey: SECTION_TERMS[section],
     path: adminPath({ tab, section }),
-  }
+  }))
+  const cards = (hasSections(tab) ? sections.flatMap((section) => cardsOf(tab, section)) : cardsOf(tab, null))
+    // (the API endpoint is a development build's alone: GeneralTab.tsx)
+    .filter((card) => card !== 'api' || import.meta.env.DEV)
+  const cardEntries = cards.map((card): SettingsEntry => ({
+    id: `${tab}#${card}`, titleKey: cardLabelKey(card), placeKey: place, termsKey: CARD_TERMS[card],
+    path: adminPath({ tab, section: sectionOfCard(tab, card), card }),
+  }))
+  return [own, ...sectionEntries, ...cardEntries]
 }
-
-/** The tabs in the navigation's order, then Version (the home's footer). */
-const ORDERED_TABS: readonly AdminTabId[] = [...ADMIN_GROUPS.flatMap((group) => group.tabs), 'version']
 
 /** What lives outside Administration but an administrator looks for in it. */
 const ELSEWHERE: readonly (SettingsEntry & { readonly needsAgents: boolean })[] = [
-  { id: 'elsewhere/connections', titleKey: 'search.titles.connections', placeKey: 'search.places.agents', termsKey: termsKeyOf('connections'), path: agentsPath({ view: 'connections' }), needsAgents: true },
-  { id: 'elsewhere/spend', titleKey: 'search.titles.spend', placeKey: 'search.places.agents', termsKey: termsKeyOf('spend'), path: agentsPath({ view: 'spend' }), needsAgents: true },
-  { id: 'elsewhere/preferences', titleKey: 'search.titles.preferences', placeKey: 'search.places.account', termsKey: termsKeyOf('preferences'), path: accountTabPath('preferences'), needsAgents: false },
+  { id: 'elsewhere/spend', titleKey: 'search.titles.spend', placeKey: 'search.places.agents', termsKey: 'search.terms.spend', path: agentsPath({ view: 'spend' }), needsAgents: true },
+  { id: 'elsewhere/preferences', titleKey: 'search.titles.preferences', placeKey: 'search.places.account', termsKey: 'search.terms.preferences', path: accountTabPath('preferences'), needsAgents: false },
 ]
 
 /**
- * Every place this caller may open: the tabs and sections they may see, and the places elsewhere (the Agents ones
- * only when the Agents page is in the menu).
+ * Every place this viewer may open: the tabs, sections and cards they may see, and the places elsewhere (Agents ›
+ * Spend only while the engineering agents are shown).
  */
-export function settingsIndex(isAdmin: boolean, isPlatformAdmin: boolean, agentsShown: boolean): SettingsEntry[] {
-  const admin = ORDERED_TABS.filter((tab) => isVisibleTab(tab, isAdmin, isPlatformAdmin)).flatMap((tab) => [
-    tabEntry(tab),
-    ...visibleSections(tab, isAdmin, isPlatformAdmin).map((section) => sectionEntry(tab, section)),
-  ])
-  const elsewhere = ELSEWHERE.filter((entry) => agentsShown || !entry.needsAgents)
+export function settingsIndex(viewer: AdminViewer): SettingsEntry[] {
+  const admin = visibleTabs(viewer).flatMap((tab) => tabEntries(tab, viewer))
+  const elsewhere = ELSEWHERE.filter((entry) => viewer.agentsShown || !entry.needsAgents)
     .map(({ needsAgents: _needsAgents, ...entry }) => entry)
   return [...admin, ...elsewhere]
 }
@@ -80,9 +89,9 @@ export function settingsIndex(isAdmin: boolean, isPlatformAdmin: boolean, agents
 export interface ResolvedEntry {
   readonly entry: SettingsEntry
   readonly title: string
-  /** The page it is on (null: a tab). */
+  /** The tab it is on (null: a tab). */
   readonly place: string | null
-  /** Its terms, comma-separated in the locale. */
+  /** Its terms, comma-separated in the locale ('' for none). */
   readonly terms: string
 }
 
@@ -94,7 +103,7 @@ function foldText(text: string): string {
 /** Lower is better; null: no match. */
 function rank(resolved: ResolvedEntry, query: string, words: readonly string[]): number | null {
   const title = foldText(resolved.title)
-  const terms = foldText(resolved.terms).split(',').map((term) => term.trim())
+  const terms = foldText(resolved.terms).split(',').map((term) => term.trim()).filter((term) => term !== '')
   const haystack = [title, foldText(resolved.place ?? ''), ...terms].join(' ')
   if (!words.every((word) => haystack.includes(word))) return null
   if (title.startsWith(query)) return 0

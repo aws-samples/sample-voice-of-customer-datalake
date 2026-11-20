@@ -114,7 +114,7 @@
     "publicHint": "Każdy w tym obszarze roboczym może go przeglądać i edytować."
   },
   "aProject": "projekt",
-  "configureEndpoint": "Najpierw skonfiguruj endpoint API w sekcji Administracja → Marka i wygląd",
+  "configureEndpoint": "Najpierw skonfiguruj endpoint API w sekcji Administracja → Ogólne",
   "description": "Twórz projekty, aby na podstawie opinii budować persony, PRD i PR/FAQ",
   "newProject": "Nowy projekt",
   "openProject": "Otwórz projekt",

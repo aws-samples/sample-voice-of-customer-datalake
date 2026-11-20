@@ -402,7 +402,7 @@
       "confirm": "Wyłącz"
     }
   },
-  "configureApiFirst": "Skonfiguruj punkt końcowy API w sekcji Administracja → Marka i wygląd, aby zarządzać formularzami opinii.",
+  "configureApiFirst": "Skonfiguruj punkt końcowy API w sekcji Administracja → Ogólne, aby zarządzać formularzami opinii.",
   "deleteConfirmLabel": "Usuń",
   "deleteConfirmMessage": "Czy na pewno chcesz usunąć ten formularz? Tej operacji nie można cofnąć.",
   "deleteConfirmMessageNamed": "Usunąć formularz „{{name}}”? Tej operacji nie można cofnąć.",
@@ -1128,7 +1128,7 @@
       "aiMode": "Prowadzone przez człowieka: AI nie pisze formularzy za Ciebie. Zacznij od szablonu lub pozwól, aby asystent Cię prowadził.",
       "coachPrompt": "Prowadź mnie, gdy piszę formularz opinii: zapytaj, czego chcę się dowiedzieć, i pomóż mi sformułować pytania oraz odpowiedzi do wyboru.",
       "coachMe": "Prowadź mnie",
-      "changeInPeople": "Zmień to w sekcji Administracja → Osoby",
+      "changeInPeople": "Zmień to w sekcji Administracja → Prywatność i dostęp → Użytkownicy",
       "askAdminMode": "Może to zmienić administrator.",
       "noModel": "Tworzenie szkiców z AI nie jest skonfigurowane w tym obszarze roboczym: brak dostępnego modelu AI.",
       "openAiModels": "Otwórz Administracja → Modele AI",
@@ -1742,7 +1742,7 @@
     "openTest": "Otwórz Test",
     "saveFirst": "Zapisz formularz, aby otrzymać jego linki.",
     "save": "Zapisz",
-    "noEndpoint": "Ustaw punkt końcowy API w sekcji Administracja → Marka i wygląd, aby otrzymać linki tego formularza.",
+    "noEndpoint": "Ustaw punkt końcowy API w sekcji Administracja → Ogólne, aby otrzymać linki tego formularza.",
     "notes": {
       "replace": "Zastąp każde {…} wartością zakodowaną w URL. Nieznane parametry hf_ są ignorowane.",
       "sdk": "Wywołaj to, gdy użytkownik wykona działanie, o które pytasz (np. Przełącz na stary interfejs).",
@@ -2183,7 +2183,7 @@
       "noSubcategory": "— Brak podkategorii",
       "notConfiguredBadge": "Już nieskonfigurowana",
       "pickConfigured": "Wybierz skonfigurowaną kategorię.",
-      "categoryHint": "Kategorie są konfigurowane w sekcji Administracja → Kategorie.",
+      "categoryHint": "Kategorie są konfigurowane w sekcji Administracja → Taksonomia → Kategorie.",
       "taggedAs": "Odpowiedzi z tego formularza są oznaczane jako:",
       "perOption": "Kierowanie według opcji",
       "noChoices": "Ten formularz nie ma pytania z wyborem, więc każda odpowiedź trafia do kategorii formularza.",

@@ -376,7 +376,7 @@
       "confirm": "Turn off"
     }
   },
-  "configureApiFirst": "Configure the API endpoint in Administration → Brand & appearance to manage feedback forms.",
+  "configureApiFirst": "Configure the API endpoint in Administration → General to manage feedback forms.",
   "deleteConfirmLabel": "Delete",
   "deleteConfirmMessage": "Are you sure you want to delete this form? This action cannot be undone.",
   "deleteConfirmMessageNamed": "Delete the form “{{name}}”? This action cannot be undone.",
@@ -1094,7 +1094,7 @@
       "aiMode": "Human-driven: AI doesn't write forms for you. Start from a template, or let the assistant coach you.",
       "coachPrompt": "Coach me while I write a feedback form: ask me what I want to learn, and help me word the questions and the answers to offer.",
       "coachMe": "Coach me",
-      "changeInPeople": "Change it in Administration → People",
+      "changeInPeople": "Change it in Administration → Privacy & access → Users",
       "askAdminMode": "An administrator can change it.",
       "noModel": "AI drafting isn't set up in this workspace: no AI model is available for it.",
       "openAiModels": "Open Administration → AI models",
@@ -1660,7 +1660,7 @@
     "openTest": "Open Test",
     "saveFirst": "Save the form to get its links.",
     "save": "Save",
-    "noEndpoint": "Set the API endpoint in Administration → Brand & appearance to get this form's links.",
+    "noEndpoint": "Set the API endpoint in Administration → General to get this form's links.",
     "notes": {
       "replace": "Replace each {…} with the value, URL-encoded. Unknown hf_ parameters are ignored.",
       "sdk": "Call it when the person takes the action you're asking about (e.g. Switch to the old interface).",
@@ -2071,7 +2071,7 @@
       "noSubcategory": "— No subcategory",
       "notConfiguredBadge": "No longer configured",
       "pickConfigured": "Pick a configured category.",
-      "categoryHint": "Categories are configured in Administration → Categories.",
+      "categoryHint": "Categories are configured in Administration → Taxonomy → Categories.",
       "taggedAs": "Responses from this form are filed as:",
       "perOption": "Per-option routing",
       "noChoices": "This form has no choice question, so every response is filed under the form's category.",

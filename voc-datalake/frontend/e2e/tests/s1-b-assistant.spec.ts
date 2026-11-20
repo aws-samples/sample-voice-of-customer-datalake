@@ -206,7 +206,7 @@ test.describe('s1 assistant', () => {
         r.note(`GET /settings/brand -> ${brand.status} brand_name=${brandName}; /settings/categories -> ${categories.status} ${categoryNames.length} categories; /settings/model -> ${model.status}`)
         // The settings tools load only on Administration's pages (PAGE_TOOL_PACKS.settings, admin-only): here its
         // Brand & appearance tab.
-        await page.goto(site('/admin/brand'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin/general'), { waitUntil: 'domcontentloaded' })
         await settle(page, 800)
         await openFloating(page)
         await newChat(page)

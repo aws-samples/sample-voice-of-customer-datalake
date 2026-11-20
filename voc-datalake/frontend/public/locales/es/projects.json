@@ -14,7 +14,7 @@
     "editProject": "Editar el proyecto {{name}}",
     "owner": "Propietario: {{name}}"
   },
-  "configureEndpoint": "Configura primero el endpoint de la API en Administración → Marca y apariencia",
+  "configureEndpoint": "Configura primero el endpoint de la API en Administración → Configuración general",
   "list": {
     "search": "Buscar proyectos",
     "scopeLabel": "De quién son los proyectos",

@@ -1,6 +1,6 @@
 /**
- * @fileoverview The deployment's default brand, in the platform console (Administration → Platform → Deployment brand,
- * `/admin/platform/deployment-brand`): `GET` and `PUT /settings/brand` with NO `X-Workspace-Id` (api/brandApi.ts, the
+ * @fileoverview The deployment's default brand, in the platform console (Administration → Workspaces → Deployment brand,
+ * `/admin/workspaces/deployment-brand`): `GET` and `PUT /settings/brand` with NO `X-Workspace-Id` (api/brandApi.ts, the
  * client's explicit opt-out), so it reaches the deployment-wide row from any address. Before it, nobody with a workspace could reach
  * that row from the web app: the gate always enters a workspace, and inside one the brand form edits the workspace's.
  *

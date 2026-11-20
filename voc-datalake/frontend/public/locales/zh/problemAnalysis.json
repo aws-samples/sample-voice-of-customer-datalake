@@ -1,5 +1,5 @@
 {
-  "configureApi": "请在“管理 → 品牌与外观”中配置您的 API 端点",
+  "configureApi": "请在“管理 → 常规”中配置您的 API 端点",
   "filters": {
     "allCategories": "所有分类",
     "allSources": "所有来源",

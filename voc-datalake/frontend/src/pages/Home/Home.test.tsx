@@ -296,7 +296,7 @@ describe('onboarding buddy', () => {
       categories: hrefOf('Set up categories'), source: hrefOf('Add a source'), form: hrefOf('Create a form'),
       feedback: hrefOf('Browse feedback'), assistant: hrefOf('Open the assistant'), project: hrefOf('Create a project'),
     }).toStrictEqual({
-      categories: '/admin/categories', source: '/scrapers', form: '/feedback-forms',
+      categories: '/admin/taxonomy/categories', source: '/scrapers', form: '/feedback-forms',
       feedback: '/categories', assistant: '/chat', project: '/projects',
     })
   })

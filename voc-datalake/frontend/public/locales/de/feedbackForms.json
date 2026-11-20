@@ -376,7 +376,7 @@
       "confirm": "Ausschalten"
     }
   },
-  "configureApiFirst": "Konfigurieren Sie den API-Endpunkt unter Administration → Marke & Darstellung, um Feedback-Formulare zu verwalten.",
+  "configureApiFirst": "Konfigurieren Sie den API-Endpunkt unter Administration → Allgemein, um Feedback-Formulare zu verwalten.",
   "deleteConfirmLabel": "Löschen",
   "deleteConfirmMessage": "Möchten Sie dieses Formular wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
   "deleteConfirmMessageNamed": "Das Formular „{{name}}“ löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -1094,7 +1094,7 @@
       "aiMode": "Menschgeführt: Die KI schreibt keine Formulare für Sie. Beginnen Sie mit einer Vorlage, oder lassen Sie sich vom Assistenten coachen.",
       "coachPrompt": "Coachen Sie mich, während ich ein Feedback-Formular schreibe: Fragen Sie mich, was ich erfahren möchte, und helfen Sie mir, die Fragen und die Antwortoptionen zu formulieren.",
       "coachMe": "Coaching starten",
-      "changeInPeople": "Unter Administration → Personen ändern",
+      "changeInPeople": "Unter Administration → Datenschutz & Zugriff → Benutzer ändern",
       "askAdminMode": "Ein Administrator kann das ändern.",
       "noModel": "KI-Entwürfe sind in diesem Arbeitsbereich nicht eingerichtet: Dafür ist kein KI-Modell verfügbar.",
       "openAiModels": "Administration → KI-Modelle öffnen",
@@ -1660,7 +1660,7 @@
     "openTest": "Test öffnen",
     "saveFirst": "Speichern Sie das Formular, um seine Links zu erhalten.",
     "save": "Speichern",
-    "noEndpoint": "Legen Sie den API-Endpunkt unter Administration → Marke & Darstellung fest, um die Links dieses Formulars zu erhalten.",
+    "noEndpoint": "Legen Sie den API-Endpunkt unter Administration → Allgemein fest, um die Links dieses Formulars zu erhalten.",
     "notes": {
       "replace": "Ersetzen Sie jedes {…} durch den URL-codierten Wert. Unbekannte hf_-Parameter werden ignoriert.",
       "sdk": "Rufen Sie es auf, wenn die Person die Aktion ausführt, nach der Sie fragen (z. B. Wechsel zur alten Oberfläche).",
@@ -2071,7 +2071,7 @@
       "noSubcategory": "— Keine Unterkategorie",
       "notConfiguredBadge": "Nicht mehr konfiguriert",
       "pickConfigured": "Wählen Sie eine konfigurierte Kategorie.",
-      "categoryHint": "Kategorien werden unter Administration → Kategorien konfiguriert.",
+      "categoryHint": "Kategorien werden unter Administration → Taxonomie → Kategorien konfiguriert.",
       "taggedAs": "Einsendungen dieses Formulars werden abgelegt als:",
       "perOption": "Routing pro Option",
       "noChoices": "Dieses Formular hat keine Auswahlfrage, daher wird jede Einsendung unter der Kategorie des Formulars abgelegt.",

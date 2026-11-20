@@ -5,7 +5,7 @@
  * still running the previous build then asks for a lazy chunk that is gone; CloudFront answers its
  * SPA fallback, `index.html` with 200, and the browser refuses it ("Expected a JavaScript module
  * script but the server responded with a MIME type of text/html"). The page or tab never loads
- * (seen 2026-10-26: Administration → Version showed no changelog after the 5.36.02 deploy).
+ * (seen 2026-10-26: Administration → System → Version showed no changelog after the 5.36.02 deploy).
  *
  * Vite fires `vite:preloadError` on `window` when a dynamic import fails. A fresh load fetches the new
  * `index.html` and with it the current chunk names, so the fix is a reload. Once per build only: when the

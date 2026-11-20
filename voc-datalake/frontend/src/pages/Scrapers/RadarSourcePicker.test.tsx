@@ -1,6 +1,6 @@
 /**
  * "Radar source" on a Scrapers-page source: ticking it offers the brands of GET /radar/brands,
- * one brand is chosen for you, none leads to Administration → Data sources → Radar, unticking sends
+ * one brand is chosen for you, none leads to Administration → Sources → Radar, unticking sends
  * '' (an ordinary source), and a stored key no longer in the list stays selected.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -71,7 +71,7 @@ describe('RadarSourcePicker edge cases', () => {
     const { user } = renderPicker()
     await user.click(box())
     expect(await screen.findByText('No Radar brand yet.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Add a brand in Administration → Data sources → Radar' }))
+    expect(screen.getByRole('link', { name: 'Add a brand in Administration → Sources → Radar' }))
       .toHaveAttribute('href', '/admin/sources/radar')
   })
 

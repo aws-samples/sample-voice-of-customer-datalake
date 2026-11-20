@@ -1,5 +1,5 @@
 /**
- * @fileoverview A brand form in a card of its own, with its own Save: Administration → Brand & appearance's brand, a
+ * @fileoverview A brand form in a card of its own, with its own Save: Administration → General's brand, a
  * workspace's brand on its settings page, and the deployment's default brand on Platform. The caller passes the stored
  * brand's query, the drafts (`useBrandDraft` or `useBrandForm`), whether the caller may save, and the save; a refusal
  * is said in words (`refusals`). After a save the server accepted it says "Saved" until the next edit (the one Saved
@@ -92,7 +92,7 @@ export default function BrandEditorCard({
       <BrandFields values={draft} readOnly={!canEdit} idPrefix={idPrefix} />
       <RefusalAlert error={mutation.error} refusals={refusals} />
       {canEdit ? (
-        <StickyActionBar variant="inline" className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-end">
+        <StickyActionBar variant="footer" className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-end">
           <SavedStatus saved={mutation.isSuccess && !draft.dirty} />
           <button type="button" className="btn btn-primary flex items-center justify-center gap-2" disabled={mutation.isPending}
             onClick={() => mutation.mutate(brandPayload(draft.fields))}>

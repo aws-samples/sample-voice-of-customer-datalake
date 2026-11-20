@@ -14,16 +14,13 @@
  * @module pages/Agents/Registry/RegistryPage
  */
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import PressedChoices from '../../../components/PressedChoices/PressedChoices'
-import { engineeringRegistryApi, engineeringRegistryKeys } from '../../../api/engineeringRegistryApi'
 import { isEngineeringAvailable } from '../../../runtimeConfig'
 import { useIsAdmin } from '../../../store/authStore'
-import { useConfigStore } from '../../../store/configStore'
 import { usePlaceNavigate, useReplaceAddress } from '../../../utils/pathPlace'
 import { ScopePicker } from '../ScopePicker'
 import { AgentCardDetail } from './AgentCardDetail'
@@ -31,19 +28,13 @@ import { CreateCardSheet } from './CreateCardSheet'
 import { GateBriefPage } from './GateBrief'
 import { QualityGates } from './QualityGates'
 import { RegistryCards } from './RegistryCards'
+import { useRegistryList } from './useRegistryList'
 import { REGISTRY_FILTERS, filterOf, readRegistryAddress, registryCardPath, registryPath } from './registryPaths'
 import type { RegistryFilter, RegistryPlace } from './registryPaths'
 
-function useCards(connection: string) {
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  return useQuery({
-    queryKey: engineeringRegistryKeys.list(connection), queryFn: () => engineeringRegistryApi.list(connection), enabled: configured,
-  })
-}
-
 function CardsView({ connection, search, onCreate }: Readonly<{ connection: string; search: string; onCreate: () => void }>) {
   const { t } = useTranslation('agents')
-  const read = useCards(connection)
+  const read = useRegistryList(connection)
   if (read.isLoading) return <div className="skeleton h-32" role="status" aria-label={t('registry.loading')} />
   if (read.isError || read.data === undefined) {
     return <LoadFailed message={t('registry.failed')} onRetry={() => void read.refetch()} retrying={read.isFetching} />
@@ -68,7 +59,7 @@ function Registry({ place }: Readonly<{ place: RegistryPlace }>) {
   const location = useLocation()
   const move = usePlaceNavigate()
   const connection = new URLSearchParams(location.search).get('connection') ?? ''
-  const cards = useCards(connection)
+  const cards = useRegistryList(connection)
   const [creating, setCreating] = useState<string | null>(null)
   const filter = filterOf(place)
   const withScope = (next: string) => {

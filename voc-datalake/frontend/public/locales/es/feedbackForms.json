@@ -376,7 +376,7 @@
       "confirm": "Desactivar"
     }
   },
-  "configureApiFirst": "Configure el endpoint de la API en Administración → Marca y apariencia para gestionar formularios de feedback.",
+  "configureApiFirst": "Configure el endpoint de la API en Administración → Configuración general para gestionar formularios de feedback.",
   "deleteConfirmLabel": "Eliminar",
   "deleteConfirmMessage": "¿Está seguro de que desea eliminar este formulario? Esta acción no se puede deshacer.",
   "deleteConfirmMessageNamed": "¿Eliminar el formulario «{{name}}»? Esta acción no se puede deshacer.",
@@ -1094,7 +1094,7 @@
       "aiMode": "Dirigido por personas: la IA no escribe formularios por ti. Empieza con una plantilla o deja que el asistente te oriente.",
       "coachPrompt": "Oriéntame mientras escribo un formulario de feedback: pregúntame qué quiero saber y ayúdame a redactar las preguntas y las respuestas que puedo ofrecer.",
       "coachMe": "Oriéntame",
-      "changeInPeople": "Cámbialo en Administración → Personas",
+      "changeInPeople": "Cámbialo en Administración → Privacidad y acceso → Usuarios",
       "askAdminMode": "Un administrador puede cambiarlo.",
       "noModel": "La redacción con IA no está configurada en este espacio de trabajo: no hay ningún modelo de IA disponible para ello.",
       "openAiModels": "Abrir Administración → Modelos de IA",
@@ -1660,7 +1660,7 @@
     "openTest": "Abrir Prueba",
     "saveFirst": "Guarda el formulario para obtener sus enlaces.",
     "save": "Guardar",
-    "noEndpoint": "Configura el endpoint de la API en Administración → Marca y apariencia para obtener los enlaces de este formulario.",
+    "noEndpoint": "Configura el endpoint de la API en Administración → Configuración general para obtener los enlaces de este formulario.",
     "notes": {
       "replace": "Sustituye cada {…} por el valor, codificado para URL. Los parámetros hf_ desconocidos se ignoran.",
       "sdk": "Llámalo cuando la persona realice la acción por la que preguntas (p. ej., Cambiar a la interfaz anterior).",
@@ -2071,7 +2071,7 @@
       "noSubcategory": "— Sin subcategoría",
       "notConfiguredBadge": "Ya no está configurada",
       "pickConfigured": "Elige una categoría configurada.",
-      "categoryHint": "Las categorías se configuran en Administración → Categorías.",
+      "categoryHint": "Las categorías se configuran en Administración → Taxonomía → Categorías.",
       "taggedAs": "Las respuestas de este formulario se clasifican como:",
       "perOption": "Enrutamiento por opción",
       "noChoices": "Este formulario no tiene preguntas de opciones, así que todas las respuestas se clasifican en la categoría del formulario.",

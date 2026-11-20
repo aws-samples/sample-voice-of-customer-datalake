@@ -199,7 +199,7 @@ def _summed(namespace: str, metric: str, dimension: str, values: Iterable[str], 
 
 
 def _ingestor_alarm(targets: AlertTargets, slug: str, functions: list[str]) -> dict[str, Any]:
-    description = 'A data-source ingestor reported errors. Check Administration → Logs and the ingestor logs.'
+    description = 'A data-source ingestor reported errors. Check Administration → System → Logs and the ingestor logs.'
     return {
         **_base(targets, slug, description),
         'Metrics': _summed('AWS/Lambda', 'Errors', 'FunctionName', functions, 'Ingestor errors'),

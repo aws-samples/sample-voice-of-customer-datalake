@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Feedback boards → "Participant email" (`/admin/boards/participants`, moved from
+ * @fileoverview Administration → Privacy & access → Boards → "Participant email" (`/admin/access/boards#participants`, moved from
  * Users in 7.54.00; docs/participants.md): whether people outside the company domains may be added as
  * participants, the daily send cap, the sender name — and, read-only, whether email sending
  * is configured (`-c emailFrom`) and the board link to share. The company domains themselves
@@ -28,7 +28,7 @@ import { useSaveEngagementSettings } from './useSaveEngagementSettings'
 /** What this card saves: every engagement setting but the company domains (Boards owns them). */
 type CardInput = Omit<SettingsInput, 'company_domains'>
 
-const DOMAINS_CARD = adminPath({ tab: 'boards', section: 'domains' })
+const DOMAINS_CARD = adminPath({ tab: 'access', section: 'boards', card: 'domains' })
 
 function isValidCap(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= MAX_DAILY_SEND_CAP
@@ -110,7 +110,7 @@ function SettingsForm({ view, canSave, saved, onSavedChange }: Readonly<{
         </label>
       </div>
       {canSave ? (
-        <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-3 py-2">
+        <StickyActionBar variant="footer" className="flex flex-wrap items-center gap-3 py-2">
           <button type="submit" disabled={!ready} className="btn btn-primary btn-sm">
             {save.isPending ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
             {t('actions.save')}

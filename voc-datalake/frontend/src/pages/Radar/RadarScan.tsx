@@ -1,6 +1,6 @@
 /**
  * @fileoverview The Radar release scan's controls, shared by the Radar page header (admins) and
- * Administration → Data sources → Radar: the last scan in words, and "Scan now" (POST /radar/scan, admin-only
+ * Administration → Sources → Radar: the last scan in words, and "Scan now" (POST /radar/scan, admin-only
  * server-side), which web-searches every tracked brand's own domains and the web for its releases and news,
  * ignoring the cadence (docs/radar.md).
  * @module pages/Radar/RadarScan

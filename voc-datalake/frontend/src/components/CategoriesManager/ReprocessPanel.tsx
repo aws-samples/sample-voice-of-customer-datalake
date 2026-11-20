@@ -1,6 +1,6 @@
 /**
  * @fileoverview "Reprocess existing feedback" — re-derive stored reviews after the
- * categories change (admin only): the deployment's in Administration → Categories, a
+ * categories change (admin only): the deployment's in Administration → Taxonomy → Categories, a
  * workspace's own on its Workspace settings page beside its categories (since 7.13.00).
  *
  * Mode choice (re-categorise processed text, reprocess from raw data, re-infer dimensions),
@@ -120,7 +120,7 @@ export default function ReprocessPanel({ inWorkspace = false }: Readonly<{ inWor
       <ReprocessSliceFields form={form} onChange={update} invalid={request === null} withSources={!inWorkspace} />
       <p className="text-xs text-warn">{t('categoriesManager.reprocess.costNote')}</p>
 
-      <StickyActionBar variant="inline" className="py-2">
+      <StickyActionBar variant="footer" className="py-2">
         <button type="button" onClick={() => setConfirming(true)} disabled={busy || request === null || start.isPending} className="btn btn-primary">
           <RefreshCw size={16} aria-hidden="true" />
           {t('categoriesManager.reprocess.start')}

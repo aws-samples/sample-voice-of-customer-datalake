@@ -1,8 +1,9 @@
 /**
- * Administration → Brand & appearance (7.54.00, BrandPage.tsx): the brand saves from its own card (no page-level
- * Save) and says "Saved" until the next edit; read-only, the notice names who may change it (the deployment's
- * administrators outside a workspace, the workspace's admins inside one); the default theme is a platform admin's;
- * the API endpoint is a development build's alone, under Advanced, saved by its own button.
+ * Administration → General (7.59.00, GeneralTab.tsx; 7.54.00's Brand & appearance): the brand saves from its own card
+ * (no page-level Save) and says "Saved" until the next edit; read-only, the notice names who may change it (the
+ * deployment's administrators outside a workspace, the workspace's admins inside one); the card says where the form
+ * brand is set; the default theme is a platform admin's; the API endpoint is a development build's alone, under
+ * Advanced, saved by its own button; each card is an anchor a link may name.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
@@ -23,15 +24,15 @@ vi.mock('./DefaultThemeCard', () => ({
   default: ({ canEdit }: { readonly canEdit: boolean }) => <p data-testid="default-theme-card">{canEdit ? 'editable' : 'read-only'}</p>,
 }))
 
-const { default: BrandPage } = await import('./BrandPage')
+const { default: GeneralTab } = await import('./GeneralTab')
 
 const API = 'https://api.example.com'
 
 function renderPage({ isAdmin = true, isPlatformAdmin = false } = {}) {
   const onApiEndpointChange = vi.fn<(value: string) => void>()
   renderWithQueryClient(
-    <TestRouter initialEntries={['/admin/brand']}>
-      <BrandPage apiEndpoint={API} onApiEndpointChange={onApiEndpointChange} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} />
+    <TestRouter initialEntries={['/admin/general']}>
+      <GeneralTab apiEndpoint={API} onApiEndpointChange={onApiEndpointChange} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} />
     </TestRouter>,
   )
   return { onApiEndpointChange }
@@ -73,6 +74,32 @@ describe('the brand card', () => {
     act(() => setCurrentWorkspace({ ...ACME, role: 'viewer' }))
     renderPage()
     expect(await screen.findByText("Only this workspace's admins can change its brand. You can view it here.")).toBeInTheDocument()
+  })
+})
+
+describe('the brand card\'s save row', () => {
+  it('is a registered action bar in the flow after the fields, never sticky over them (7.59.00)', async () => {
+    renderPage()
+    const row = (await screen.findByRole('button', { name: /save changes/i })).closest('[data-action-bar]')
+    const urls = screen.getByLabelText('URLs to Track (one per line)')
+    const after = row === null ? 0 : row.compareDocumentPosition(urls) & Node.DOCUMENT_POSITION_PRECEDING
+    expect([row === null, row?.classList.contains('sticky'), after > 0]).toStrictEqual([false, false, true])
+  })
+})
+
+describe('the form brand', () => {
+  it('says the form brand is set from a form\'s Style panel, with the way to Feedback forms', async () => {
+    renderPage()
+    expect(await screen.findByRole('link', { name: 'Feedback forms' })).toHaveAttribute('href', '/feedback-forms')
+    expect(screen.getByText(/New feedback forms start on your form brand/)).toBeInTheDocument()
+  })
+})
+
+describe('the cards a link names', () => {
+  it('anchors the brand and the default theme (#brand, #theme)', () => {
+    renderPage()
+    expect([document.getElementById('admin-card-brand'), document.getElementById('admin-card-theme')].map((card) => card?.tabIndex))
+      .toStrictEqual([-1, -1])
   })
 })
 

@@ -470,3 +470,13 @@ describe('write-tool registry', () => {
     }
   })
 })
+
+describe("every write tool's card title", () => {
+  // (the approval card's one line, from the args the tool's schema accepts; the key itself stands in for its text)
+  const t = (key: string) => key
+  it.each(ALL_CLIENT_TOOLS)('%s titles its card from valid args', (name) => {
+    const tool = getWriteTool(name)
+    const args: unknown = tool?.argsSchema.parse(CASES[name].good[0])
+    expect(tool?.title(args, t)).toMatch(/^assistantTools:/)
+  })
+})

@@ -101,9 +101,11 @@ export function BrandSyncStatus({ apiEndpoint, loadingSettings, loadFailed }: Re
   return <span className="badge badge-ok flex items-center gap-1"><CheckCircle2 size={12} /> {t('brand.syncedToBackend')}</span>
 }
 
-function BrandField({ id, label, hint, children }: Readonly<{ id: string; label: string; hint?: string; children: React.ReactNode }>) {
+function BrandField({ id, label, hint, wide = false, children }: Readonly<{
+  id: string; label: string; hint?: string; wide?: boolean; children: React.ReactNode
+}>) {
   return (
-    <div>
+    <div className={wide ? 'md:col-span-2' : undefined}>
       <label htmlFor={id} className="block text-sm font-medium text-text mb-1">{label}</label>
       {children}
       {hint && <p className="text-xs text-muted mt-1">{hint}</p>}
@@ -134,8 +136,9 @@ export interface BrandFieldValues {
 }
 
 /**
- * The four brand fields. `idPrefix` keeps their ids unique where two brand forms could share a page; `readOnly`
- * disables every one of them.
+ * The four brand fields, on a grid (7.59.00): from `md` the name and the hashtags side by side over the handles and
+ * the URLs, each the full width below it. `idPrefix` keeps their ids unique where two brand forms could share a page;
+ * `readOnly` disables every one of them.
  */
 export function BrandFields({ values, readOnly, idPrefix = 'settings-brand' }: Readonly<{
   values: BrandFieldValues
@@ -144,17 +147,17 @@ export function BrandFields({ values, readOnly, idPrefix = 'settings-brand' }: R
 }>) {
   const { t } = useTranslation('settings')
   return (
-    <div className="space-y-4">
+    <div className="grid gap-4 md:grid-cols-2 md:items-start">
       <BrandField id={`${idPrefix}-name`} label={t('brand.nameLabel')}>
         <input id={`${idPrefix}-name`} disabled={readOnly} type="text" value={values.brandName} onChange={(e) => values.setBrandName(e.target.value)} placeholder={t('brand.namePlaceholder')} className="input" />
-      </BrandField>
-      <BrandField id={`${idPrefix}-handles`} label={t('brand.handlesLabel')} hint={t('brand.handlesHint')}>
-        <input id={`${idPrefix}-handles`} disabled={readOnly} type="text" value={values.brandHandles} onChange={(e) => values.setBrandHandles(e.target.value)} placeholder={t('brand.handlesPlaceholder')} className="input" />
       </BrandField>
       <BrandField id={`${idPrefix}-hashtags`} label={t('brand.hashtagsLabel')}>
         <input id={`${idPrefix}-hashtags`} disabled={readOnly} type="text" value={values.hashtags} onChange={(e) => values.setHashtags(e.target.value)} placeholder={t('brand.hashtagsPlaceholder')} className="input" />
       </BrandField>
-      <BrandField id={`${idPrefix}-urls`} label={t('brand.urlsLabel')} hint={t('brand.urlsHint')}>
+      <BrandField id={`${idPrefix}-handles`} label={t('brand.handlesLabel')} hint={t('brand.handlesHint')} wide>
+        <input id={`${idPrefix}-handles`} disabled={readOnly} type="text" value={values.brandHandles} onChange={(e) => values.setBrandHandles(e.target.value)} placeholder={t('brand.handlesPlaceholder')} className="input" />
+      </BrandField>
+      <BrandField id={`${idPrefix}-urls`} label={t('brand.urlsLabel')} hint={t('brand.urlsHint')} wide>
         <textarea id={`${idPrefix}-urls`} disabled={readOnly} value={values.urlsToTrack} onChange={(e) => values.setUrlsToTrack(e.target.value)} placeholder={'https://example.com/reviews\nhttps://forum.example.com'} className="input min-h-[100px]" />
       </BrandField>
     </div>
@@ -198,7 +201,7 @@ export function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
 interface DataSourcesSectionProps {
   readonly apiEndpoint: string
   readonly isAdmin: boolean
-  /** The source whose card the address opens (`/admin/sources/<source>`), or none. */
+  /** The source whose card the address opens (`/admin/sources/plugins/<source>`), or none. */
   readonly openSource?: string | null
 }
 

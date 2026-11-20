@@ -13,7 +13,7 @@ import { useAuthStore, useIsAdmin } from '../../../store/authStore'
 import { adminPath } from '../../Settings/adminPaths'
 import type { AiRefusal } from './aiRefusal'
 
-const AI_MODELS_PATH = adminPath({ tab: 'ai', section: null })
+const AI_MODELS_PATH = adminPath({ tab: 'ai' })
 
 function AdminLink({ to, label }: Readonly<{ to: string; label: string }>) {
   return <Link to={to} className="link text-[13px]">{label}</Link>
@@ -31,7 +31,7 @@ function AiModeNote() {
         <MessageCircleQuestionMark size={14} aria-hidden="true" />{t('ai.refusal.coachMe')}
       </button>
       {isAdmin
-        ? <AdminLink to={adminPath({ tab: 'people', section: null }, username === '' ? null : username)} label={t('ai.refusal.changeInPeople')} />
+        ? <AdminLink to={adminPath({ tab: 'access', section: 'users', item: username === '' ? null : username })} label={t('ai.refusal.changeInPeople')} />
         : <span className="text-muted">{t('ai.refusal.askAdminMode')}</span>}
     </div>
   )

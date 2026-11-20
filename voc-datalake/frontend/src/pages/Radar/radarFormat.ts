@@ -12,7 +12,7 @@ import { formatPercent } from '../../utils/numberFormat'
 export const RADAR_WINDOWS = [7, 30, 90, 365] as const
 export const DEFAULT_RADAR_WINDOW: (typeof RADAR_WINDOWS)[number] = 90
 
-/** Administration → Data sources → Radar: the brands tracked, how Radar works, the scan settings. */
+/** Administration → Sources → Radar: the brands tracked, how Radar works, the scan settings. */
 export const RADAR_SETUP_PATH = adminPath({ tab: 'sources', section: 'radar' })
 
 /** A 0-1 share as a whole percentage in the locale ("62%", de "62 %"); empty when unknown. */

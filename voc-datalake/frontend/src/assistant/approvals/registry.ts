@@ -118,16 +118,16 @@ function defineWriteTool<A>(spec: ToolSpec<A>): WriteToolDefinition {
 
 /** The scraper's card on the Scrapers page (the page scrolls to the hash). */
 const scraperLink = (id: string): ResultLink => ({ to: `/scrapers#${scraperAnchorId(id)}`, labelKey: 'assistantTools:card.openScraper' })
-/** Administration → People, where every user write lands. */
-const USERS_LINK: ResultLink = { to: adminPath({ tab: 'people', section: null }), labelKey: 'assistantTools:card.openUsers' }
-/** Administration → Data sources → Radar, where the brand list is edited by hand. */
+/** Administration → Privacy & access → Users, where every user write lands. */
+const USERS_LINK: ResultLink = { to: adminPath({ tab: 'access', section: 'users' }), labelKey: 'assistantTools:card.openUsers' }
+/** Administration → Sources → Radar, where the brand list is edited by hand. */
 /** The Participants page (its Lists tab is the default). */
 const PARTICIPANTS_LINK: ResultLink = { to: '/participants', labelKey: 'assistantTools:card.openParticipants' }
 const RADAR_SETTINGS_LINK: ResultLink = { to: adminPath({ tab: 'sources', section: 'radar' }), labelKey: 'assistantTools:card.openRadarSettings' }
 /** The categories editor of the categories a save_categories card added to: the workspace's settings inside one, else
- * Administration → Categories (the deployment's). */
+ * Administration → Taxonomy → Categories (the deployment's). */
 const categoriesLink = (): ResultLink => (currentWorkspace() === null
-  ? { to: adminPath({ tab: 'categories', section: null }), labelKey: 'assistantTools:card.openCategories' }
+  ? { to: adminPath({ tab: 'taxonomy', section: 'categories' }), labelKey: 'assistantTools:card.openCategories' }
   : { to: '/workspace-settings', labelKey: 'assistantTools:card.openWorkspaceCategories' })
 /** The set_user_access card names the person only when the model passed their email alias as the username. */
 const userAccessTitle = (username: string, t: Translate) =>

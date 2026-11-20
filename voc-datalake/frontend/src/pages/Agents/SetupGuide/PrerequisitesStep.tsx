@@ -10,7 +10,7 @@
  *   workspace header): "Issues: read automatically from N repositories" (the deployment's GitHub Issues source reads a
  *   connected repository's issues, signed in with that App: the engineering automations read deployment-wide feedback
  *   only), and "Label voc-agent: created" on each repository it reads. Nothing to do for either but connect GitHub;
- *   a source an administrator set to a token says so, with its card (`/admin/sources/github_issues?scope=deployment`).
+ *   a source an administrator set to a token says so, with its card (`/admin/sources/plugins/github_issues?scope=deployment`).
  *
  * Under them, each found automation's prerequisite checks, "for <automation>, once set up", with each fix and its doc
  * link: asked of the deployment's only connection while the automation names none (setupGuideRules.ts
@@ -67,7 +67,7 @@ function SourcesLink() {
   if (platform) return <Link className="link" to={DEPLOYMENT_SOURCES_PATH}>{t('setupGuide.prerequisites.openDeploymentSources')}</Link>
   return (
     <>
-      <Link className="link" to={adminPath({ tab: 'sources', section: null })}>{t('setupGuide.prerequisites.openSources')}</Link>
+      <Link className="link" to={adminPath({ tab: 'sources', section: 'plugins' })}>{t('setupGuide.prerequisites.openSources')}</Link>
       <span className="text-muted">{t('setupGuide.prerequisites.sourcesOutside')}</span>
     </>
   )

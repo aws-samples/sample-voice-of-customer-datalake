@@ -494,7 +494,7 @@ The tone is chosen by **meaning** ([Labels vs status](#labels-vs-status)): a des
 
 The track is `rounded-lg border bg-bg-elevated p-0.5`. Segments are `rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted`. The active segment is a raised card (`bg-card border shadow-sm text-accent-text`); `aria-selected="true"` also activates it. Use the same recipe for segmented filters (grid/list, sort, range pickers).
 
-A row of tabs wider than its screen scrolls sideways and says so: `IconTabs`' `scrollLabels` (7.55.01, the form builder's tabs) gives it the `.tab-strip` end fade and the two scroll buttons of `components/TabStrip/` (shared with the run workspace's agent tabs), and scrolls the active tab into view.
+A row of tabs wider than its screen scrolls sideways and says so: `IconTabs`' `scrollLabels` (7.55.01, the form builder's tabs) gives it the `.tab-strip` end fade and the two scroll buttons of `components/TabStrip/` (shared with the run workspace's agent tabs), and scrolls the active tab into view. With `panel` (7.59.00, Administration's tab row and section switch) `IconTabs` is the whole APG tabs pattern: each tab names the panel it controls, only the selected tab is a tab stop, and the arrow keys, Home and End select the tab they reach; `rail={false}` leaves out the `tabs-rail` hairline for a second row of tabs under a first.
 
 ### Dialogs
 
@@ -533,7 +533,7 @@ A row of tabs wider than its screen scrolls sideways and says so: `IconTabs`' `s
 - `.sheet-panel`: full height, the viewport's width below `sm` and `max-w-[30rem]` from it, `border-s` and `shadow-2xl`, sliding in from the end (`animate-slide-in-end`). Its header, body and footer are `dialog-header` / `dialog-body` / `dialog-footer`: only the body scrolls, so the footer stays in view whatever the sheet holds.
 - `size="wide"` (`sm:max-w-[44rem]`) holds a document: the document component's `sheet` variant is this sheet ([Documents](#documents): the History's Open and Compare), so the app has one side sheet.
 - The title is the sheet's `h2` and its accessible name; the header's `DialogClose` ("Dismiss") closes it. A confirmation opened from inside it (`ConfirmModal`) stacks above it.
-- Prefer a sheet to a stepped dialog when the row it edits should stay in view; a sheet whose item is a place is a path (`/admin/people/<username>`), so Back closes it.
+- Prefer a sheet to a stepped dialog when the row it edits should stay in view; a sheet whose item is a place is a path (`/admin/access/users/<username>`), so Back closes it.
 - `dismissable={false}` while a save is on its way: Escape, the backdrop and its close button wait. An engineering automation's **Set up drawer** (7.52.00, `pages/Agents/Automations/SetupDrawer.tsx`) is one: numbered steps, its readiness under a heading it focuses when opened from "N to fix", and Save / Save and enable in its footer (the form's submit by its id).
 
 ### Saving: one "Saved" per card
@@ -548,7 +548,7 @@ Every settings card saves itself: there is no page-level Save. After a save the 
 
 The form builder's ⋯ menus (`pages/FeedbackForms/ui/ActionsMenu.tsx`) and its Add question type menu open the same way (fixed, in a portal, placed by `utils/fixedMenu.ts`, closed when the page scrolls or the window resizes), so a pane that scrolls on its own never clips them (7.55.01). `placeFixedMenu` measures the menu with its scale-in transform turned off, so a tall menu is not placed off by the animation.
 
-**Keep-clear zones** (7.55.01, `components/StickyActionBar/actionBarRegistry.ts`): floating UI keeps clear of what a page registers with `useRegisterKeepClear(ref, { mode })`. `lift` is a sticky action bar (the assistant launcher rises above it; `useRegisterActionBar` is its shorthand); `beside` is a tall pane at the end edge, such as a form's preview, which the launcher stands beside, on its inline-start side, instead of covering its Next. A spot the person dragged the launcher to stays theirs unless it covers a zone. Save bars (`StickyActionBar` `bar`) are an opaque `bg-card`, never `backdrop-blur`: a backdrop filter makes the bar the containing block of a fixed dialog opened from it, and traps the dialog inside the bar.
+**Keep-clear zones** (7.55.01, `components/StickyActionBar/actionBarRegistry.ts`): floating UI keeps clear of what a page registers with `useRegisterKeepClear(ref, { mode })`. `lift` is a sticky action bar (the assistant launcher rises above it; `useRegisterActionBar` is its shorthand); `beside` is a tall pane at the end edge, such as a form's preview, which the launcher stands beside, on its inline-start side, instead of covering its Next. A spot the person dragged the launcher to stays theirs unless it covers a zone. Save bars (`StickyActionBar` `bar`) are an opaque `bg-card`, never `backdrop-blur`: a backdrop filter makes the bar the containing block of a fixed dialog opened from it, and traps the dialog inside the bar. A settings card's own save row (`StickyActionBar` `footer`, 7.59.00: Administration's and the workspace settings' cards) is not sticky: it sits in the flow after the card's fields, so no field of a card taller than the screen scrolls under it; `inline` stays sticky for an editor page's own rows.
 
 ### Tooltips
 

@@ -12,7 +12,7 @@
     "editProject": "{{name}} 프로젝트 편집",
     "owner": "소유자: {{name}}"
   },
-  "configureEndpoint": "먼저 관리 → 브랜드 및 모양에서 API 엔드포인트를 구성하세요",
+  "configureEndpoint": "먼저 관리 → 일반에서 API 엔드포인트를 구성하세요",
   "list": {
     "search": "프로젝트 검색",
     "scopeLabel": "누구의 프로젝트",

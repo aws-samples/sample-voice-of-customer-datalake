@@ -78,7 +78,7 @@
     "saving": "저장 중...",
     "title": "이 행의 구성"
   },
-  "configureApiEndpoint": "우선순위 지정을 보려면 관리 → 브랜드 및 모양에서 API 엔드포인트를 구성하세요.",
+  "configureApiEndpoint": "우선순위 지정을 보려면 관리 → 일반에서 API 엔드포인트를 구성하세요.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"

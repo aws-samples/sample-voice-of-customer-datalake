@@ -24,8 +24,8 @@ const { default: BoardsSection } = await import('./BoardsSection')
 const { default: AdminSectionContent } = await import('../AdminSectionContent')
 
 /** The editor's path (adminPaths.ts), and the list's. */
-const EDITOR = '/admin/boards/brd_sales'
-const LIST = '/admin/boards'
+const EDITOR = '/admin/access/boards/brd_sales'
+const LIST = '/admin/access/boards'
 
 function mountEditor(client = createTestQueryClient()) {
   const router = createMemoryRouter([{ path: '/admin/*', element: <BoardsSection /> }], { initialEntries: [EDITOR] })
@@ -108,12 +108,13 @@ describe('the board editor guard', () => {
   })
 })
 
-describe('the Feedback boards page', () => {
+describe('the Boards section', () => {
   it('renders nothing for a non-admin, even from a deep link', () => {
+    const viewer = { isAdmin: false, isPlatformAdmin: false, inWorkspace: false, agentsShown: false }
     const router = createMemoryRouter([{
       path: '/admin/*',
-      element: <AdminSectionContent tab="boards" section={null} apiEndpoint="https://api.example.com" onApiEndpointChange={vi.fn()}
-        isAdmin={false} isPlatformAdmin={false} />,
+      element: <AdminSectionContent place={{ tab: 'access', section: 'boards', card: null, item: 'brd_sales' }} viewer={viewer}
+        apiEndpoint="https://api.example.com" onApiEndpointChange={vi.fn()} />,
     }], { initialEntries: [EDITOR] })
     const { container } = renderWithQueryClient(<RouterProvider router={router} />)
     expect(container).toBeEmptyDOMElement()

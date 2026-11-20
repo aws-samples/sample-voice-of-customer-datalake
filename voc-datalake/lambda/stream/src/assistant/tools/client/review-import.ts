@@ -60,7 +60,7 @@ export function createReviewImportClientTools(deps: ToolDeps): ClientToolDefinit
       + '"Support survey Q3"). The reviews go through the normal enrichment pipeline and appear within minutes.',
     properties: {
       source_name: stringProperty('Where the reviews came from (shown as their channel).', L.maxSourceNameChars),
-      source_id: stringProperty('Optional configured source profile id (Administration → Privacy) to file them under; omit for manual_import.', USER_LIMITS.maxSourceIdLength),
+      source_id: stringProperty('Optional configured source profile id (Administration → Privacy & access → Source policies) to file them under; omit for manual_import.', USER_LIMITS.maxSourceIdLength),
       items: { type: 'array', minItems: 1, maxItems: L.maxItems, items: { type: 'object', properties: ITEM_PROPERTIES, required: ['text'], additionalProperties: false } },
     },
     required: ['source_name', 'items'],

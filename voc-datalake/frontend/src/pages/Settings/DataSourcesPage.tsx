@@ -1,49 +1,41 @@
 /**
- * @fileoverview Administration → Data sources (`/admin/sources`, 7.54.00): one page for the sources, whoever's they are
- * (docs/multi-workspace.md "The deployment's Data sources").
+ * @fileoverview Administration → Sources → Source settings (`/admin/sources/plugins`, main's section; 7.54.00's Data
+ * sources page): the sources, whoever's they are (docs/multi-workspace.md "The deployment's Data sources").
  *
  * - **Scope switch, This workspace | Deployment** (inside a workspace, for platform admins: `?scope=deployment`,
  *   adminPaths.ts). This workspace's sources are the current workspace's (every card's calls carry its
  *   `X-Workspace-Id`); the deployment's are its own from any address (workspace/configScope.ts `'deployment'`: no
  *   header on any call, credentials, schedules, pauses and the GitHub Issues App sign-in alike). Outside a workspace
- *   there is nothing to switch: the page is the deployment's. It replaces the separate Data sources tab of 7.50.00.
+ *   there is nothing to switch: the section is the deployment's.
  * - **The deployment's notice**, in two sentences (S3): what they bring in is deployment-wide feedback, the only
  *   feedback the engineering automations read (D8).
  * - **The cards, health first** (SettingsSections.tsx `DataSourcesSection`: paused or failing on top); the GitHub
  *   Issues card keeps 7.50.02's "Managed by your GitHub connection" view and "Configure manually (advanced)".
- *   `/admin/sources/<source>` opens a source's card (the readiness fix and the setup guide open the deployment's
- *   GitHub Issues card at `/admin/sources/github_issues?scope=deployment`).
- * - **Advanced** (folded, administrators, this workspace's view): Email inbox, Radar and the Design-system tokens
- *   (Integrations before 7.54.00), each a card a path names (`/admin/sources/inbox`, `radar`, `tokens`), which opens
- *   the fold.
+ *   `/admin/sources/plugins/<source>` opens a source's card (the readiness fix and the setup guide open the
+ *   deployment's GitHub Issues card at `/admin/sources/plugins/github_issues?scope=deployment`).
+ *
+ * Email inbox, Radar and Integrations (the design-system tokens), 7.54.00's Advanced fold, are Sources' other sections
+ * again (AdminSectionContent.tsx).
  *
  * @module pages/Settings/DataSourcesPage
  */
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { Info } from 'lucide-react'
-import CollapsibleSection from '../../components/CollapsibleSection/CollapsibleSection'
 import Notice from '../../components/Notice/Notice'
 import { RADIO_KEYS, rovingIndex } from '../../utils/rovingIndex'
 import { ConfigScopeContext } from '../../workspace/configScope'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
-import EmailInboxCard from './EmailInboxCard'
-import IntegrationsSection from './IntegrationsSection'
-import RadarSection from './RadarSection'
 import { DataSourcesSection } from './SettingsSections'
 import type { SourceScope } from './adminPaths'
-import type { AdminSectionId } from './adminTabs'
-import { SectionAnchor } from './SectionAnchor'
 import { useSourceInPath, useSourceScope } from './useAdminLocation'
 
 interface DataSourcesPageProps {
   readonly apiEndpoint: string
   readonly isAdmin: boolean
   readonly isPlatformAdmin: boolean
-  /** The card the path names (an Advanced one opens the fold), or null. */
-  readonly section: AdminSectionId | null
 }
 
 const SCOPES: readonly SourceScope[] = ['workspace', 'deployment']
@@ -79,36 +71,12 @@ function ScopeSwitch({ scope, onChange }: Readonly<{ scope: SourceScope; onChang
   )
 }
 
-const ADVANCED_SECTIONS: ReadonlySet<AdminSectionId> = new Set(['inbox', 'radar', 'tokens'])
-
-/** Email inbox, Radar and the Design-system tokens, folded; a path naming one of them opens the fold. */
-function AdvancedSources({ section }: Readonly<{ section: AdminSectionId | null }>) {
-  const { t } = useTranslation('settings')
-  const named = section !== null && ADVANCED_SECTIONS.has(section)
-  const [open, setOpen] = useState(named)
-  const [shownFor, setShownFor] = useState(section)
-  if (shownFor !== section) {
-    setShownFor(section)
-    if (named) setOpen(true)
-  }
-  return (
-    <CollapsibleSection title={t('sections.advanced')} open={open} onOpenChange={setOpen}>
-      <p className="mb-4 text-sm text-muted">{t('sources.advancedHint')}</p>
-      <div className="space-y-4 sm:space-y-6">
-        <SectionAnchor section="inbox"><EmailInboxCard /></SectionAnchor>
-        <SectionAnchor section="radar"><RadarSection /></SectionAnchor>
-        <SectionAnchor section="tokens"><IntegrationsSection /></SectionAnchor>
-      </div>
-    </CollapsibleSection>
-  )
-}
-
 function ScopedCards({ scope, children }: Readonly<{ scope: SourceScope; children: ReactNode }>) {
   // Keyed: each scope's page computes its own health order from its own status.
   return <ConfigScopeContext.Provider key={scope} value={scope}>{children}</ConfigScopeContext.Provider>
 }
 
-export default function DataSourcesPage({ apiEndpoint, isAdmin, isPlatformAdmin, section }: DataSourcesPageProps) {
+export default function DataSourcesPage({ apiEndpoint, isAdmin, isPlatformAdmin }: DataSourcesPageProps) {
   const { t } = useTranslation('settings')
   const workspace = useCurrentWorkspace()
   const [requested, setScope] = useSourceScope()
@@ -126,7 +94,6 @@ export default function DataSourcesPage({ apiEndpoint, isAdmin, isPlatformAdmin,
       <ScopedCards scope={scope}>
         <DataSourcesSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} openSource={openSource} />
       </ScopedCards>
-      {isAdmin && scope === 'workspace' ? <AdvancedSources section={section} /> : null}
     </>
   )
 }

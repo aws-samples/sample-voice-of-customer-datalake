@@ -1050,15 +1050,15 @@
       "switch": "Odczytuj zgłoszenia tego repozytorium",
       "reasons": {
         "off": "Jego zgłoszenia nie są odczytywane: przełącznik jest wyłączony.",
-        "token": "Źródło GitHub Issues loguje się tokenem: dodaj to repozytorium w Administracja → Źródła danych.",
+        "token": "Źródło GitHub Issues loguje się tokenem: dodaj to repozytorium w Administracja → Źródła → Ustawienia źródeł.",
         "other_app": "Źródło GitHub Issues loguje się inną aplikacją GitHub App: zgłoszenia tego repozytorium nie są przez nią odczytywane.",
-        "limit": "Źródło GitHub Issues odczytuje najwyżej {{limit, number}} repozytoriów: usuń jedno w Administracja → Źródła danych, aby odczytywać to.",
+        "limit": "Źródło GitHub Issues odczytuje najwyżej {{limit, number}} repozytoriów: usuń jedno w Administracja → Źródła → Ustawienia źródeł, aby odczytywać to.",
         "not_app": "Tylko połączenie utworzone przez aplikację GitHub App wdrożenia ma automatycznie odczytywane zgłoszenia.",
         "not_deployed": "Źródło GitHub Issues nie jest tu wdrożone, więc żadne zgłoszenia nie są odczytywane.",
         "pending": "Jeszcze nieodczytywane: nie ma go na liście źródła GitHub Issues.",
         "unknown": "Jego zgłoszenia nie są odczytywane."
       },
-      "openSources": "Otwórz Administracja → Źródła danych",
+      "openSources": "Otwórz Administracja → Źródła → Ustawienia źródeł",
       "readNow": "Odczytaj teraz jego zgłoszenia",
       "label": {
         "created": "Etykieta {{label}}: utworzona.",
@@ -1070,7 +1070,7 @@
         "reading_few": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytoriów.",
         "reading_many": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytoriów.",
         "reading_other": "Zgłoszenia: odczytywane automatycznie z {{count, number}} repozytorium.",
-        "token": "Źródło GitHub Issues loguje się tokenem: dodaj te repozytoria w Administracja → Źródła danych.",
+        "token": "Źródło GitHub Issues loguje się tokenem: dodaj te repozytoria w Administracja → Źródła → Ustawienia źródeł.",
         "labelsCreated": "Etykieta {{label}}: w {{list}}.",
         "labelsFailed": "Nie udało się utworzyć etykiety {{label}} w {{list}}: Sprawdź instalację spróbuje ponownie.",
         "skipped": {
@@ -1078,7 +1078,7 @@
           "other_app": "Nieodczytywane (źródło loguje się inną aplikacją GitHub App): {{list}}.",
           "limit": "Nieodczytywane (źródło odczytuje już {{limit, number}} repozytoriów): {{list}}."
         },
-        "scheduleOff": "Harmonogram źródła GitHub Issues jest wyłączony: włącz go w Administracja → Źródła danych.",
+        "scheduleOff": "Harmonogram źródła GitHub Issues jest wyłączony: włącz go w Administracja → Źródła → Ustawienia źródeł.",
         "error": "Nie udało się automatycznie skonfigurować źródła GitHub Issues: {{error}}"
       },
       "state": {
@@ -2060,8 +2060,8 @@
       "notMet": "Do zrobienia",
       "unknown": "Jeszcze nieznane",
       "openConnections": "Otwórz Połączenia",
-      "openDeploymentSources": "Otwórz Administracja → Źródła danych",
-      "openSources": "Otwórz Administracja → Źródła danych",
+      "openDeploymentSources": "Otwórz Administracja → Źródła → Ustawienia źródeł",
+      "openSources": "Otwórz Administracja → Źródła → Ustawienia źródeł",
       "sourcesOutside": "Poza jakimkolwiek obszarem roboczym: automatyzacje czytają tylko źródła wdrożenia.",
       "deploymentTitle": "To wdrożenie",
       "connectedAs": "Połączono przez aplikację: {{list}}.",

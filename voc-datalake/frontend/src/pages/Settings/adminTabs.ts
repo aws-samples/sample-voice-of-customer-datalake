@@ -1,133 +1,164 @@
 /**
- * @fileoverview The Administration page's navigation model (7.54.00): a home (`/admin`) and nine tabs, ordered by the
- * job an administrator comes to do and how often (docs/account-vs-admin.md), in four groups the home and the left
- * navigation share:
+ * @fileoverview The Administration page's navigation model (7.59.00: main's tabbed layout again, docs/account-vs-admin.md):
+ * one page, a row of tabs, and on a tab with several sections the section switch under it (SectionSwitch.tsx).
  *
- * - Everyday: People · Data sources · Logs
- * - Regularly: Categories · Feedback boards
- * - Set up once: AI models · Brand & appearance
- * - Rare: Privacy · Platform (platform admins only)
+ * The tabs, in main's order, then the two main never had (before System, which stays last):
+ * **General · Sources · Taxonomy · Privacy & access · AI models · Workspaces · Engineering agents · System**.
  *
- * Version and the release notes are a tab outside the groups, opened from the home's footer.
+ * - A tab with sections shows one section at a time (`/admin/<tab>/<section>`, adminPaths.ts); a tab without is one page.
+ * - A card a link may name (the default theme, the erasure panels, the company domains, …) is an anchor of its tab or
+ *   section (`/admin/general#theme`, `/admin/access/policies#erasure`): the page scrolls to it and focuses it.
  *
- * A tab is ONE page; its sections are cards on it (`/admin/<tab>/<section>` opens the page with that card scrolled
- * into view and focused, adminPaths.ts), never a second row of navigation. An unknown tab falls back to the home, an
- * unknown or hidden section to its tab, and the page then replaces the address with the canonical path.
- *
- * Visibility: an admin-only tab or section is hidden from everyone else (non-admins keep Data sources, Logs,
- * Categories, AI models and Brand & appearance, read-only where the server says so); Platform is shown to platform
- * admins only (an administrator in `platform-admins`). Anyone else's link to a hidden place falls back like an
- * unknown id.
+ * Visibility ({@link AdminViewer}): an admin-only section is hidden from everyone else, and a tab whose sections are
+ * all hidden is hidden too. Workspaces' This workspace and Members are shown inside a workspace, its All workspaces
+ * and Deployment brand to platform admins; Engineering agents while the Agents page and the engineering module are
+ * on. Anyone's link to a hidden or unknown place falls back to the tab's first section, or to General.
  *
  * @module pages/Settings/adminTabs
  */
 
-const ADMIN_TAB_IDS = ['people', 'sources', 'logs', 'categories', 'boards', 'ai', 'brand', 'privacy', 'platform', 'version'] as const
+const ADMIN_TAB_IDS = ['general', 'sources', 'taxonomy', 'access', 'ai', 'workspaces', 'agents', 'system'] as const
 export type AdminTabId = typeof ADMIN_TAB_IDS[number]
 
-/** The cards a path may name, per tab below. */
-export type AdminSectionId =
-  | 'inbox' | 'radar' | 'tokens'
-  | 'dimensions'
-  | 'domains' | 'participants'
-  | 'theme'
-  | 'erasure'
-  | 'deployment-brand'
+/** The sections of the tabs that have a section switch (a path segment). */
+const ADMIN_SECTION_IDS = [
+  'plugins', 'integrations', 'inbox', 'radar',
+  'categories', 'dimensions',
+  'policies', 'users', 'boards',
+  'settings', 'members', 'all', 'deployment-brand',
+  'logs', 'version',
+] as const
+export type AdminSectionId = typeof ADMIN_SECTION_IDS[number]
 
-/** Who may see a tab or a section: everyone with Administration, administrators, or platform admins. */
-type Audience = 'open' | 'admins' | 'platform'
+/** The cards a link may name inside a tab or a section (the address's hash). */
+const ADMIN_CARD_IDS = ['brand', 'theme', 'api', 'erasure', 'domains', 'participants', 'hard-cap', 'models', 'connections'] as const
+export type AdminCardId = typeof ADMIN_CARD_IDS[number]
+
+/** Who is looking: what decides which tabs and sections they see. */
+export interface AdminViewer {
+  /** In the deployment's `admins` group (`useIsAdmin`). */
+  readonly isAdmin: boolean
+  /** In `platform-admins` (`useIsPlatformAdmin`). */
+  readonly isPlatformAdmin: boolean
+  /** The app is inside a workspace (`useCurrentWorkspace() !== null`). */
+  readonly inWorkspace: boolean
+  /** The Agents page is in the menu and the engineering module is on. */
+  readonly agentsShown: boolean
+}
+
+type Audience = 'open' | 'admins' | 'platform' | 'workspace' | 'agents'
 
 interface SectionDef {
   readonly id: AdminSectionId
   readonly audience: Audience
+  /** The cards of the section a link may name, in page order. */
+  readonly cards: readonly AdminCardId[]
 }
 
 interface TabDef {
   readonly id: AdminTabId
+  /** Who sees a tab without sections (one with sections is seen by whoever sees one of them). */
   readonly audience: Audience
-  /** The cards of the page a path may name, in page order. */
+  /** Empty: the tab is one page. */
   readonly sections: readonly SectionDef[]
+  /** The cards of a one-page tab a link may name, in page order. */
+  readonly cards: readonly AdminCardId[]
 }
 
-const section = (id: AdminSectionId, audience: Audience = 'open'): SectionDef => ({ id, audience })
+const section = (id: AdminSectionId, audience: Audience = 'open', cards: readonly AdminCardId[] = []): SectionDef => ({ id, audience, cards })
+const onePage = (id: AdminTabId, audience: Audience, cards: readonly AdminCardId[] = []): TabDef => ({ id, audience, sections: [], cards })
+const switched = (id: AdminTabId, sections: readonly SectionDef[]): TabDef => ({ id, audience: 'open', sections, cards: [] })
 
 const TABS: readonly TabDef[] = [
-  { id: 'people', audience: 'admins', sections: [] },
-  // Email inbox, Radar and the design-system tokens sit in the page's Advanced fold.
-  { id: 'sources', audience: 'open', sections: [section('inbox', 'admins'), section('radar', 'admins'), section('tokens', 'admins')] },
-  { id: 'logs', audience: 'open', sections: [] },
-  { id: 'categories', audience: 'open', sections: [section('dimensions', 'admins')] },
-  { id: 'boards', audience: 'admins', sections: [section('domains'), section('participants')] },
-  { id: 'ai', audience: 'open', sections: [] },
-  { id: 'brand', audience: 'open', sections: [section('theme')] },
-  { id: 'privacy', audience: 'admins', sections: [section('erasure')] },
-  { id: 'platform', audience: 'platform', sections: [section('deployment-brand')] },
-  { id: 'version', audience: 'admins', sections: [] },
+  onePage('general', 'open', ['brand', 'theme', 'api']),
+  switched('sources', [section('plugins'), section('integrations', 'admins'), section('inbox', 'admins'), section('radar', 'admins')]),
+  switched('taxonomy', [section('categories'), section('dimensions', 'admins')]),
+  switched('access', [section('policies', 'admins', ['erasure']), section('users', 'admins'), section('boards', 'admins', ['domains', 'participants'])]),
+  onePage('ai', 'open'),
+  switched('workspaces', [section('settings', 'workspace'), section('members', 'workspace'), section('all', 'platform'), section('deployment-brand', 'platform')]),
+  onePage('agents', 'agents', ['hard-cap', 'models', 'connections']),
+  switched('system', [section('logs'), section('version', 'admins')]),
 ]
 
-/** The navigation's groups, in order; the home lists the same groups. Version is in none (the home's footer). */
-export const ADMIN_GROUPS = [
-  { id: 'everyday', tabs: ['people', 'sources', 'logs'] },
-  { id: 'regular', tabs: ['categories', 'boards'] },
-  { id: 'once', tabs: ['ai', 'brand'] },
-  { id: 'rare', tabs: ['privacy', 'platform'] },
-] as const satisfies ReadonlyArray<{ readonly id: string; readonly tabs: readonly AdminTabId[] }>
-
-export type AdminGroupId = typeof ADMIN_GROUPS[number]['id']
-
-/** Where Administration is: a tab (null: the home) and the card of it a path names (null: none). */
+/** Where Administration is: a tab, its section (null: a tab without sections) and the card a link names (null: none). */
 export interface AdminLocation {
-  readonly tab: AdminTabId | null
+  readonly tab: AdminTabId
   readonly section: AdminSectionId | null
+  readonly card: AdminCardId | null
 }
 
-export const ADMIN_HOME: AdminLocation = { tab: null, section: null }
+/** The tab Administration opens on (`/admin`), and the one an unknown or hidden tab falls back to. */
+export const ADMIN_FIRST_TAB: AdminTabId = 'general'
 
 export function isAdminTabId(value: string): value is AdminTabId {
   return ADMIN_TAB_IDS.some((id) => id === value)
 }
 
+export function isAdminSectionId(value: string): value is AdminSectionId {
+  return ADMIN_SECTION_IDS.some((id) => id === value)
+}
+
+export function isAdminCardId(value: string): value is AdminCardId {
+  return ADMIN_CARD_IDS.some((id) => id === value)
+}
+
 function tabDef(id: AdminTabId): TabDef {
-  return TABS.find((tab) => tab.id === id) ?? { id, audience: 'admins', sections: [] }
+  return TABS.find((tab) => tab.id === id) ?? onePage(id, 'admins')
 }
 
-function admits(audience: Audience, isAdmin: boolean, isPlatformAdmin: boolean): boolean {
-  if (audience === 'platform') return isAdmin && isPlatformAdmin
-  return audience === 'open' || isAdmin
+function admits(audience: Audience, viewer: AdminViewer): boolean {
+  switch (audience) {
+    case 'open': return true
+    case 'admins': return viewer.isAdmin
+    case 'platform': return viewer.isAdmin && viewer.isPlatformAdmin
+    case 'workspace': return viewer.isAdmin && viewer.inWorkspace
+    case 'agents': return viewer.isAdmin && viewer.agentsShown
+  }
 }
 
-/** Whether this caller may see `tab`. */
-export function isVisibleTab(tab: AdminTabId, isAdmin: boolean, isPlatformAdmin: boolean): boolean {
-  return admits(tabDef(tab).audience, isAdmin, isPlatformAdmin)
+/** Whether `tab` has a section switch (its sections are path segments). */
+export function hasSections(tab: AdminTabId): boolean {
+  return tabDef(tab).sections.length > 0
 }
 
-/** The sections (cards a path may name) of `tab` this caller may see, in page order: none on a tab they may not see. */
-export function visibleSections(tab: AdminTabId, isAdmin: boolean, isPlatformAdmin: boolean): AdminSectionId[] {
-  if (!isVisibleTab(tab, isAdmin, isPlatformAdmin)) return []
-  return tabDef(tab).sections.filter((def) => admits(def.audience, isAdmin, isPlatformAdmin)).map((def) => def.id)
+/** The sections of `tab` this viewer may see, in order. */
+export function visibleSections(tab: AdminTabId, viewer: AdminViewer): AdminSectionId[] {
+  return tabDef(tab).sections.filter((def) => admits(def.audience, viewer)).map((def) => def.id)
 }
 
-/** The groups and their tabs this caller may see, a group with none left out. */
-export function visibleGroups(isAdmin: boolean, isPlatformAdmin: boolean): { id: AdminGroupId; tabs: AdminTabId[] }[] {
-  return ADMIN_GROUPS
-    .map((group) => ({ id: group.id, tabs: group.tabs.filter((tab) => isVisibleTab(tab, isAdmin, isPlatformAdmin)) }))
-    .filter((group) => group.tabs.length > 0)
+/** Whether this viewer may see `tab`: one without sections by its audience, one with by a section left to see. */
+export function isVisibleTab(tab: AdminTabId, viewer: AdminViewer): boolean {
+  const def = tabDef(tab)
+  return def.sections.length === 0 ? admits(def.audience, viewer) : visibleSections(tab, viewer).length > 0
 }
 
-/** Whether `value` names a section of `tab` this caller may see. */
-export function isVisibleSection(tab: AdminTabId, value: string, isAdmin: boolean, isPlatformAdmin: boolean): value is AdminSectionId {
-  return visibleSections(tab, isAdmin, isPlatformAdmin).some((id) => id === value)
+/** The tabs this viewer may see, in order. */
+export function visibleTabs(viewer: AdminViewer): AdminTabId[] {
+  return ADMIN_TAB_IDS.filter((tab) => isVisibleTab(tab, viewer))
+}
+
+/** The cards a link may name on `tab` (its own, or its `section`'s), in page order. */
+export function cardsOf(tab: AdminTabId, sectionId: AdminSectionId | null): readonly AdminCardId[] {
+  const def = tabDef(tab)
+  if (sectionId === null) return def.cards
+  return def.sections.find((candidate) => candidate.id === sectionId)?.cards ?? []
+}
+
+/** The section of `tab` whose card `card` is (`erasure` → `policies` on Privacy & access), or null. */
+export function sectionOfCard(tab: AdminTabId, card: AdminCardId): AdminSectionId | null {
+  return tabDef(tab).sections.find((candidate) => candidate.cards.includes(card))?.id ?? null
 }
 
 /**
- * A tab + a section, from the path → the location to show: a tab unknown or hidden from this caller is the home; a
- * section unknown or hidden from this caller is no section (its tab). The tab ids of before 7.54.00 (`access`,
- * `taxonomy`, `system`, `data-sources`, `brand`'s General) are not aliased: the ones that are no tab now open the home.
+ * A tab, a section and a card, as an address names them → the location to show this viewer: an unknown or hidden tab
+ * is General; on a tab with sections an unknown or hidden section is its first visible one (on one without, none);
+ * a card that is not on the location shown is dropped.
  */
-export function resolveAdminLocation(
-  tab: string | null, sectionId: string | null, isAdmin: boolean, isPlatformAdmin: boolean,
-): AdminLocation {
-  if (tab === null || !isAdminTabId(tab) || !isVisibleTab(tab, isAdmin, isPlatformAdmin)) return ADMIN_HOME
-  const shown = sectionId !== null && isVisibleSection(tab, sectionId, isAdmin, isPlatformAdmin) ? sectionId : null
-  return { tab, section: shown }
+export function resolveAdminLocation(tab: string | null, sectionId: string | null, card: string | null,
+  viewer: AdminViewer): AdminLocation {
+  const shownTab = tab !== null && isAdminTabId(tab) && isVisibleTab(tab, viewer) ? tab : ADMIN_FIRST_TAB
+  const sections = visibleSections(shownTab, viewer)
+  const shownSection = hasSections(shownTab) ? sections.find((id) => id === sectionId) ?? sections[0] ?? null : null
+  const shownCard = cardsOf(shownTab, shownSection).find((id) => id === card) ?? null
+  return { tab: shownTab, section: shownSection, card: shownCard }
 }

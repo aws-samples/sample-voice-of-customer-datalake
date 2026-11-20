@@ -989,15 +989,15 @@
       "switch": "このリポジトリの Issue を読み取る",
       "reasons": {
         "off": "Issue は読み取られていません: スイッチがオフです。",
-        "token": "GitHub Issues ソースはトークンでサインインしています: 管理 → データソースでこのリポジトリを追加してください。",
+        "token": "GitHub Issues ソースはトークンでサインインしています: 管理 → ソース → ソース設定でこのリポジトリを追加してください。",
         "other_app": "GitHub Issues ソースは別の GitHub App でサインインしています: このリポジトリの Issue はそれでは読み取られません。",
-        "limit": "GitHub Issues ソースが読み取るリポジトリは最大 {{limit, number}} 件です: このリポジトリを読み取るには、管理 → データソースで 1 件外してください。",
+        "limit": "GitHub Issues ソースが読み取るリポジトリは最大 {{limit, number}} 件です: このリポジトリを読み取るには、管理 → ソース → ソース設定で 1 件外してください。",
         "not_app": "デプロイの GitHub App 経由の接続だけが、Issue を自動で読み取ります。",
         "not_deployed": "ここには GitHub Issues ソースがデプロイされていないため、Issue は読み取られません。",
         "pending": "まだ読み取られていません: GitHub Issues ソースの一覧にありません。",
         "unknown": "Issue は読み取られていません。"
       },
-      "openSources": "管理 → データソースを開く",
+      "openSources": "管理 → ソース → ソース設定を開く",
       "readNow": "今すぐ Issue を読み取る",
       "label": {
         "created": "ラベル {{label}}: 作成済み。",
@@ -1007,7 +1007,7 @@
       "follow": {
         "reading_one": "Issue: {{count, number}} 件のリポジトリから自動で読み取ります。",
         "reading_other": "Issue: {{count, number}} 件のリポジトリから自動で読み取ります。",
-        "token": "GitHub Issues ソースはトークンでサインインしています: 管理 → データソースでこれらのリポジトリを追加してください。",
+        "token": "GitHub Issues ソースはトークンでサインインしています: 管理 → ソース → ソース設定でこれらのリポジトリを追加してください。",
         "labelsCreated": "ラベル {{label}}: {{list}} にあります。",
         "labelsFailed": "{{list}} にラベル {{label}} を作成できませんでした: 「インストールを確認」で再試行されます。",
         "skipped": {
@@ -1015,7 +1015,7 @@
           "other_app": "読み取りなし (ソースは別の GitHub App でサインイン): {{list}}。",
           "limit": "読み取りなし (ソースはすでに {{limit, number}} 件のリポジトリを読み取り中): {{list}}。"
         },
-        "scheduleOff": "GitHub Issues ソースのスケジュールがオフです: 管理 → データソースでオンにしてください。",
+        "scheduleOff": "GitHub Issues ソースのスケジュールがオフです: 管理 → ソース → ソース設定でオンにしてください。",
         "error": "GitHub Issues ソースを自動で設定できませんでした: {{error}}"
       },
       "state": {
@@ -1981,8 +1981,8 @@
       "notMet": "未完了",
       "unknown": "まだ不明",
       "openConnections": "接続を開く",
-      "openDeploymentSources": "管理 → データソース を開く",
-      "openSources": "管理 → データソース を開く",
+      "openDeploymentSources": "管理 → ソース → ソース設定 を開く",
+      "openSources": "管理 → ソース → ソース設定 を開く",
       "sourcesOutside": "どのワークスペースにも入らずに行います。自動化はデプロイのソースだけを読みます。",
       "deploymentTitle": "このデプロイ",
       "connectedAs": "App で接続済み: {{list}}。",

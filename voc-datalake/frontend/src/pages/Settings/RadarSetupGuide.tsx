@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Data sources → Radar, above the scan settings: the brand list editor
+ * @fileoverview Administration → Sources → Radar, above the scan settings: the brand list editor
  * (RadarBrandsEditor, with the 90-day review counts from GET /radar) and how Radar works in
  * three steps (docs/radar.md → "Turning it on").
  * @module pages/Settings/RadarSetupGuide

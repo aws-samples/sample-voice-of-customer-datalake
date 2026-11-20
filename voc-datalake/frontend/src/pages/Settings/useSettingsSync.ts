@@ -138,7 +138,7 @@ export function useBrandDraft(initial: BrandFields, backendSettings: BrandSettin
 }
 
 /**
- * The brand form of a page that also keeps the brand in this browser's config store (Administration → Brand & appearance, and
+ * The brand form of a page that also keeps the brand in this browser's config store (Administration → General, and
  * a workspace's settings page, whose config store is the workspace's own, workspace/workspaceStorage.ts): the drafts
  * of {@link useBrandDraft}, starting from the store, and the payload mirrored into the store via an effect.
  */

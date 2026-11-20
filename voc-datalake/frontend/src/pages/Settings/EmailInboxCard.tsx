@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Data sources → Email inbox (admin-only): whether the inbox is deployed
+ * @fileoverview Administration → Sources → Email inbox (admin-only): whether the inbox is deployed
  * (`-c inboundEmailDomain`), the addresses it answers, the personal-data policy, today's
  * counters (accepted, dropped by reason, deduplicated) and the daily caps.
  * Server side: `/settings/email-inbox*`, docs/email-intake.md.

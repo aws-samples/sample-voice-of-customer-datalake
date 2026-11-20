@@ -3,9 +3,9 @@
  * @module pages/Settings/SourceCard
  * 
  * Renders a data source configuration card based on plugin manifest. Its reads and writes are the current
- * workspace's, or in the deployment's scope (Administration → Data sources → Deployment, workspace/configScope.ts) the
+ * workspace's, or in the deployment's scope (Administration → Sources → Source settings → Deployment, workspace/configScope.ts) the
  * deployment's, inside a workspace too: they then never send `X-Workspace-Id`. A card the address opens
- * (`/admin/sources/<source>`, `initiallyOpen`) starts expanded and is scrolled into view.
+ * (`/admin/sources/plugins/<source>`, `initiallyOpen`) starts expanded and is scrolled into view.
  */
 
 import { useEffect, useRef, useState, useId, type ReactNode } from 'react'
@@ -54,7 +54,7 @@ interface SourceCardProps {
    *  indication it had been refused. A disabled control fails visibly; that one
    *  failed silently. */
   readonly isAdmin: boolean
-  /** The card the address opens (`/admin/sources/<source>`): it starts expanded, scrolled into view. */
+  /** The card the address opens (`/admin/sources/plugins/<source>`): it starts expanded, scrolled into view. */
   readonly initiallyOpen?: boolean
 }
 

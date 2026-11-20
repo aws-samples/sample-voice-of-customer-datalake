@@ -159,9 +159,9 @@ The other pages (each area's `*Paths.ts` in `frontend/src/pages/`, the shared pa
 |---|---|
 | `/admin` | Administration's home (7.54.00) |
 | `/admin/<tab>[/<section>]` | an Administration tab, its one page, opened at one of its cards ([account-vs-admin.md](account-vs-admin.md)) |
-| `/admin/boards/<boardId>` | a feedback board's editor |
-| `/admin/people/<username>`, `/admin/people/invite` | a person's editor, the invite dialog |
-| `/admin/sources/<source>` | Data sources opened at one source's card |
+| `/admin/access/boards/<boardId>` | a feedback board's editor |
+| `/admin/access/users/<username>`, `/admin/access/users/invite` | a person's editor, the invite dialog |
+| `/admin/sources/plugins/<source>` | Data sources opened at one source's card |
 | `/account/<tab>` | an Account tab |
 | `/company/<tab>`, `/memory/<tab>`, `/participants/<tab>` | that page's tab |
 | `/data-explorer/raw` (`/data-explorer`), `/data-explorer/processed` | the Data Explorer's tab |
@@ -184,7 +184,7 @@ What stays in the query, and why:
 
 | Kind | Keys |
 |---|---|
-| Filters and search | Categories' `q`, `source`, `sentiment`, `usefulness`, `category`, `subcategory`, `rating`, `rating_dir`, `urgent`, `channel`, `dims`, `tag`, `types`; Problem Analysis' too, and `resolved`, `similarity`; the Dashboard's facets; Radar's `brand` and `days`; Administration → Data sources' `scope` (`deployment`: the deployment's own sources, platform admins); a board list's `q`, `status`, `sort`; Insights' `board`, `days`; Agents → Spend's `month`, `by`, `workflow`; Agents → Skills' scope, `connection` |
+| Filters and search | Categories' `q`, `source`, `sentiment`, `usefulness`, `category`, `subcategory`, `rating`, `rating_dir`, `urgent`, `channel`, `dims`, `tag`, `types`; Problem Analysis' too, and `resolved`, `similarity`; the Dashboard's facets; Radar's `brand` and `days`; Administration → Sources → Source settings' `scope` (`deployment`: the deployment's own sources, platform admins); a board list's `q`, `status`, `sort`; Insights' `board`, `days`; Agents → Spend's `month`, `by`, `workflow`; Agents → Skills' scope, `connection` |
 | The review modal | `review`, `reviewBrand`: one review over whatever page is open (Back closes it), so no one page's path |
 | A form's prefill, read once | Connect's `project` (the token's pin); a project's Decisions `newDecision`, `title`, `verdict`, `rationale`, `feedback` |
 | External callbacks | GitHub's App returns, `/agents/connections/github/created?code=&state=` and `…/installed?installation_id=&setup_action=&state=`; the MCP OAuth consent's authorize request; the emailed board sign-in link's `email`, `code`; the unsubscribe link's `t`. Each is the other party's by design, and each page takes it once and strips it |

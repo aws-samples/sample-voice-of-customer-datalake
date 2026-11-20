@@ -6,7 +6,7 @@ and the person's ask mirrors. Each recipient row it had keeps ONLY ``person_id``
 its delivery status (the response token hash and any error code are removed), so an
 ask's counts stay true while nothing on it can identify the person any more.
 Feedback a person already submitted is customer data in voc-feedback: erase it with
-Administration -> Privacy (``POST /settings/erasure``), docs/source-policies.md.
+Administration → Privacy & access → Source policies (``POST /settings/erasure``), docs/source-policies.md.
 
 An erasure states its legal basis (``shared/legal_basis.py``) and is recorded before
 anything is deleted (TENETS.md D4, D5), in voc-participants, with no email and no name:

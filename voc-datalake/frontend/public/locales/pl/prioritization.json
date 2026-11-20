@@ -353,7 +353,7 @@
     "lineageTitle": "Co oznacza etykieta w wierszu",
     "rowNote": "{{label}} — wyjaśnione w sekcji „Jak to jest oceniane” powyżej listy."
   },
-  "configureApiEndpoint": "Skonfiguruj punkt końcowy API w Administracja → Marka i wygląd, aby wyświetlić priorytetyzację.",
+  "configureApiEndpoint": "Skonfiguruj punkt końcowy API w Administracja → Ogólne, aby wyświetlić priorytetyzację.",
   "loading": "Ładowanie dokumentów...",
   "rowCount_one": "{{count, number}} propozycja",
   "rowCount_other": "{{count, number}} propozycji",

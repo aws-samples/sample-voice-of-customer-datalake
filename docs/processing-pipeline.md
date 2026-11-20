@@ -82,7 +82,7 @@ A message that fails validation is:
   `ValidationFailures` metric;
 - failed as a batch item (`MessageRejectedError`), so SQS keeps it and, after 3 receives, moves it
   to the processing DLQ for inspection and re-drive. It is never deleted;
-- listed under **Administration → Logs**.
+- listed under **Administration → System → Logs**.
 
 The aggregator's DynamoDB stream source likewise retries a failing batch 3 times and then records
 the discarded shard range on the `voc-aggregator-stream-failures` queue instead of dropping it.
@@ -144,7 +144,7 @@ When dimensions are configured, the same call also infers their values.
 ### Categories
 
 Categories are read from the aggregates table (`SETTINGS#categories`) and cached for 5 minutes.
-Configure them in **Administration → Categories**, where each category is also mapped
+Configure them in **Administration → Taxonomy → Categories**, where each category is also mapped
 to a product and its owners ([categories.md](categories.md)). Changes apply to new feedback within
 the cache period. To re-categorize stored feedback, use **Reprocess existing feedback** in the same
 editor ([Categories → Reprocess](categories.md#reprocessing-existing-feedback)).
@@ -209,7 +209,7 @@ Bedrock is still throttling, the record fails (`BedrockThrottleRetry`), is logge
 ### Processing errors
 
 Other errors are logged to the aggregates table (`LOGS#processing#<source>`, 7-day TTL) and shown in
-**Administration → Logs**. The record fails and SQS retries it.
+**Administration → System → Logs**. The record fails and SQS retries it.
 
 ## Idempotency
 
@@ -416,9 +416,9 @@ Aggregator metrics (one per behaviour, so a reversal is not hidden behind an ins
 
 - CloudWatch Logs: `/aws/lambda/voc-feedback-processor-<account>-<region>` and
   `/aws/lambda/voc-aggregation-processor-<account>-<region>`.
-- **Administration → Logs**: validation and processing errors, and **System errors**
+- **Administration → System → Logs**: validation and processing errors, and **System errors**
   (every Lambda ERROR and timeout from CloudWatch, grouped; [deployment.md](deployment.md)).
-- **Administration → Logs → Alerts** creates CloudWatch alarms on the processor and
+- **Administration → System → Logs → Alerts** creates CloudWatch alarms on the processor and
   aggregator errors, the processing DLQ and the stream-failure queue. None exists until an
   administrator turns alerting on.
 

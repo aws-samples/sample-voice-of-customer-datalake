@@ -24,11 +24,23 @@ describe('MovedRouteRedirect', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/admin?tab=categories#top')
   })
 
-  it('is what the route table mounts at /settings', () => {
+  it('is what the route table mounts at /settings and under it', () => {
     const children = routes.find((r) => r.path === '/')?.children ?? []
-    const settings = children.find((r) => r.path === 'settings')
+    const settings = children.find((r) => r.path === 'settings/*')
     expect(settings?.element).toStrictEqual(<MovedRouteRedirect to="/admin" />)
     expect(children.some((r) => r.path === 'admin/*')).toBe(true)
+  })
+
+  it('keeps the rest of the path, its query and its hash (7.59.00: /settings/<tab>#<section> deep-links)', () => {
+    render(
+      <TestRouter initialEntries={['/settings/access#users', '/settings/general?x=1#theme']} initialIndex={0}>
+        <Routes>
+          <Route path="/settings/*" element={<MovedRouteRedirect to="/admin" />} />
+          <Route path="/admin/*" element={<LocationProbe />} />
+        </Routes>
+      </TestRouter>,
+    )
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/access#users')
   })
 
   it('lets a query on the target win over the same parameter of the old URL, and keeps the rest', () => {

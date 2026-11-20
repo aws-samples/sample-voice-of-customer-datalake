@@ -1,9 +1,9 @@
 /**
- * @fileoverview /admin/brand edits under the shared unsaved-changes guard, in a DATA router (`useBlocker` live),
+ * @fileoverview /admin/general edits under the shared unsaved-changes guard, in a DATA router (`useBlocker` live),
  * through the shared contract (3.00.00 R2): Cancel keeps the brand draft and the next leave is guarded again, even
- * when the brand settings land — first load or refetch — while the dialog is open. Since 7.54.00 the draft lives on
- * the Brand & appearance page, in its BrandEditorCard (the card saves itself), so leaving that tab asks too; an
- * overlay (`?review=`) does not.
+ * when the brand settings land — first load or refetch — while the dialog is open. The draft lives on General (7.59.00;
+ * 7.54.00's Brand & appearance), in its BrandEditorCard (the card saves itself), so opening another tab asks too; a
+ * card's hash (`#theme`) and an overlay (`?review=`) do not.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -22,16 +22,20 @@ vi.mock('../../api/client', () => ({
   api: {
     getBrandSettings: () => getBrandSettings(),
     saveBrandSettings: (settings: unknown) => saveBrandSettings(settings),
-    getLogsSummary: () => Promise.resolve({ summary: { total_validation_failures: 0, total_processing_errors: 0 }, days: 1 }),
+    getUsers: () => Promise.resolve({ success: true, users: [] }),
+    getSourcesStatus: () => Promise.resolve({ sources: {} }),
+    getModelCapacity: () => Promise.resolve({ models: [], image: null }),
   },
 }))
-vi.mock('../../store/authStore', () => ({ useIsAdmin: () => true, useIsPlatformAdmin: () => false }))
+vi.mock('../../store/authStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../store/authStore')>(), useIsAdmin: () => true, useIsPlatformAdmin: () => false,
+}))
 vi.mock('./LogsSection', () => ({ default: () => <p>Logs</p> }))
 vi.mock('./DefaultThemeCard', () => ({ default: () => null }))
 
 const { default: Settings } = await import('./Settings')
 
-const BRAND = '/admin/brand'
+const BRAND = '/admin/general'
 
 const stored = (brandName: string, hashtags: string[] = ['#stored']): BrandSettingsResponse => ({
   brand_name: brandName, brand_handles: ['@stored'], hashtags, urls_to_track: [],
@@ -58,7 +62,7 @@ beforeEach(() => {
   }))
 })
 
-describe('/admin/brand brand form — Cancel keeps the draft and stays guarded (R2)', () => {
+describe('/admin/general brand form — Cancel keeps the draft and stays guarded (R2)', () => {
   it('when the first brand load lands while the dialog is open', async () => {
     // The inputs are editable while the load is in flight; production typed before it landed.
     const load: { resolve?: (value: BrandSettingsResponse) => void } = {}
@@ -98,10 +102,10 @@ async function draftTheBrandName() {
   return { router, user }
 }
 
-describe('/admin/brand brand form — the tab is the draft\'s page', () => {
+describe('/admin/general brand form — the tab is the draft\'s page', () => {
   it('asks before another tab is opened, and Cancel keeps the draft on the brand page', async () => {
     const { router, user } = await draftTheBrandName()
-    await user.click(screen.getByRole('link', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'System' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect([dialog.isConnected, router.state.location.pathname]).toStrictEqual([false, BRAND])
@@ -110,10 +114,9 @@ describe('/admin/brand brand form — the tab is the draft\'s page', () => {
 
   it('saves the draft from the dialog\'s Save, then opens the other tab', async () => {
     const { router, user } = await draftTheBrandName()
-    const logs = screen.getByRole('link', { name: 'Logs' })
-    await user.click(logs)
+    await user.click(screen.getByRole('tab', { name: 'System' }))
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save' }))
-    await waitFor(() => { expect(router.state.location.pathname).toBe(logs.getAttribute('href')) })
+    await waitFor(() => { expect(router.state.location.pathname).toBe('/admin/system/logs') })
     expect(saveBrandSettings).toHaveBeenCalledWith(expect.objectContaining({ brand_name: 'Stored brand draft' }))
   })
 
@@ -121,5 +124,12 @@ describe('/admin/brand brand form — the tab is the draft\'s page', () => {
     const { router } = await draftTheBrandName()
     await act(() => router.navigate(`${BRAND}?review=fb_1`))
     expect([router.state.location.search, screen.queryByRole('dialog')]).toStrictEqual(['?review=fb_1', null])
+  })
+
+  it('lets a card of the tab be named (#theme) without asking', async () => {
+    const { router } = await draftTheBrandName()
+    await act(() => router.navigate(`${BRAND}#theme`))
+    expect([router.state.location.hash, screen.queryByRole('dialog')]).toStrictEqual(['#theme', null])
+    expect(brandField()).toHaveDisplayValue(/draft$/)
   })
 })

@@ -595,7 +595,7 @@ test user who is NOT an administrator, then once with an administrator for `agen
 ## Alarms and concurrency
 
 **Alarms (runtime-managed).** Like every operational alert, the endpoint's alarms exist only
-while an admin has alerting on (**Administration → Logs → Alerts**, [deployment.md](deployment.md)):
+while an admin has alerting on (**Administration → System → Logs → Alerts**, [deployment.md](deployment.md)):
 the logs API creates them under the deployment's `voc-alerts-<account>-<region>-` prefix and they notify the
 ops SNS topic. Each is the Sum of one custom metric (namespace `VoC-MCP-Global`, dimension
 `service=voc-mcp-global-api`) over one 5-minute period, above a named constant in

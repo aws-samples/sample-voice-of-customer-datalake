@@ -1007,15 +1007,15 @@
       "switch": "Ler as issues deste repositório",
       "reasons": {
         "off": "Suas issues não são lidas: o interruptor está desligado.",
-        "token": "A fonte GitHub Issues entra com um token: adicione este repositório em Administração → Fontes de dados.",
+        "token": "A fonte GitHub Issues entra com um token: adicione este repositório em Administração → Fontes → Configurações de fontes.",
         "other_app": "A fonte GitHub Issues entra com outro GitHub App: as issues deste repositório não são lidas por ele.",
-        "limit": "A fonte GitHub Issues lê no máximo {{limit, number}} repositórios: remova um em Administração → Fontes de dados para ler este.",
+        "limit": "A fonte GitHub Issues lê no máximo {{limit, number}} repositórios: remova um em Administração → Fontes → Configurações de fontes para ler este.",
         "not_app": "Só uma conexão feita pelo GitHub App da implantação tem suas issues lidas automaticamente.",
         "not_deployed": "A fonte GitHub Issues não está implantada aqui, então nenhuma issue é lida.",
         "pending": "Ainda não lido: não está na lista da fonte GitHub Issues.",
         "unknown": "Suas issues não são lidas."
       },
-      "openSources": "Abrir Administração → Fontes de dados",
+      "openSources": "Abrir Administração → Fontes → Configurações de fontes",
       "readNow": "Ler suas issues agora",
       "label": {
         "created": "Rótulo {{label}}: criado.",
@@ -1025,7 +1025,7 @@
       "follow": {
         "reading_one": "Issues: lidas automaticamente de {{count, number}} repositório.",
         "reading_other": "Issues: lidas automaticamente de {{count, number}} repositórios.",
-        "token": "A fonte GitHub Issues entra com um token: adicione estes repositórios em Administração → Fontes de dados.",
+        "token": "A fonte GitHub Issues entra com um token: adicione estes repositórios em Administração → Fontes → Configurações de fontes.",
         "labelsCreated": "Rótulo {{label}}: em {{list}}.",
         "labelsFailed": "Não foi possível criar o rótulo {{label}} em {{list}}: Verificar instalação tenta de novo.",
         "skipped": {
@@ -1033,7 +1033,7 @@
           "other_app": "Não lidos (a fonte entra com outro GitHub App): {{list}}.",
           "limit": "Não lidos (a fonte já lê {{limit, number}} repositórios): {{list}}."
         },
-        "scheduleOff": "O agendamento da fonte GitHub Issues está desligado: ligue-o em Administração → Fontes de dados.",
+        "scheduleOff": "O agendamento da fonte GitHub Issues está desligado: ligue-o em Administração → Fontes → Configurações de fontes.",
         "error": "Não foi possível configurar a fonte GitHub Issues automaticamente: {{error}}"
       },
       "state": {
@@ -2000,8 +2000,8 @@
       "notMet": "A fazer",
       "unknown": "Ainda não se sabe",
       "openConnections": "Abrir Conexões",
-      "openDeploymentSources": "Abrir Administração → Fontes de dados",
-      "openSources": "Abrir Administração → Fontes de dados",
+      "openDeploymentSources": "Abrir Administração → Fontes → Configurações de fontes",
+      "openSources": "Abrir Administração → Fontes → Configurações de fontes",
       "sourcesOutside": "Fora de qualquer espaço de trabalho: as automações leem só as fontes da implantação.",
       "deploymentTitle": "Esta implantação",
       "connectedAs": "Conectado por um App: {{list}}.",

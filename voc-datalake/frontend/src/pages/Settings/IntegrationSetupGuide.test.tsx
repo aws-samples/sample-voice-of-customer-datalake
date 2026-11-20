@@ -32,9 +32,9 @@ describe('IntegrationSetupGuide', () => {
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
   })
 
-  it('points data-source credentials to the Data sources cards', () => {
+  it('points data-source credentials to the source cards of the Sources tab', () => {
     renderGuide()
-    expect(screen.getByText(/each source card in the Data sources tab/i)).toBeInTheDocument()
+    expect(screen.getByText(/each source card in the Sources tab/i)).toBeInTheDocument()
   })
 
   it('opens a labelled region with the steps, leaving the other provider collapsed', async () => {

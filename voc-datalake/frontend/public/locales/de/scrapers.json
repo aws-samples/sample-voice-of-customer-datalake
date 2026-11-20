@@ -31,7 +31,7 @@
     "choose": "Marke wählen",
     "unknownBrand": "{{key}} (nicht in der Markenliste)",
     "noBrand": "Noch keine Radar-Marke.",
-    "addBrand": "Marke unter Administration → Datenquellen → Radar hinzufügen",
+    "addBrand": "Marke unter Administration → Quellen → Radar hinzufügen",
     "needsBrand": "Wählen Sie eine Marke, sonst bleibt dies eine normale Quelle.",
     "loading": "Radar-Marken werden geladen...",
     "loadFailed": "Die Radar-Marken konnten nicht geladen werden."

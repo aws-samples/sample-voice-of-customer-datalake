@@ -1,15 +1,16 @@
 /**
- * Wave 4 copy findings, kept through 7.54.00: the Radar notes sent people to a "Scrapers page" the navigation no
- * longer has (it is "Data sources" since 5.x), and Administration's sources tab is called what its page is called.
+ * Wave 4 copy findings: the Radar notes sent people to a "Scrapers page" the navigation no longer has (it is "Data
+ * sources" since 5.x). Administration's sources tab has main's names again (7.59.00): the tab "Sources", its cards'
+ * section "Source settings", so neither reads as the sidebar's "Data sources" page.
  */
 import { describe, it, expect } from 'vitest'
 import i18n from 'i18next'
 
 const say = (key: string, ns: string) => i18n.t(key, { ns })
 
-describe('Administration → Data sources copy', () => {
-  it('names the tab after its page, "Data sources" (no "Sources" / "Source settings" pair any longer)', () => {
-    expect([say('tabs.sources', 'settings'), say('home.jobs.sources.title', 'settings')]).toStrictEqual(['Data sources', 'Data sources'])
+describe('Administration → Sources copy', () => {
+  it('names the tab and its cards\' section with main\'s names, "Sources" and "Source settings"', () => {
+    expect([say('tabs.sources', 'settings'), say('sections.plugins', 'settings')]).toStrictEqual(['Sources', 'Source settings'])
   })
 
   it.each([

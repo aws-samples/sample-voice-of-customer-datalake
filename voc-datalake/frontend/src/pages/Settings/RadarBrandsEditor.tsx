@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Data sources → Radar, "Brands tracked": the one place to set up the
+ * @fileoverview Administration → Sources → Radar, "Brands tracked": the one place to set up the
  * brands Radar follows (docs/radar.md). Add a brand with its name and website domains (and,
  * optionally, its search language and news feeds), edit them, remove it (a confirm says its reviews are kept), then Save brands = one
  * PUT /radar/brands with the whole list. A legacy brand named only by a source profile is listed
@@ -143,7 +143,7 @@ function blockedBy(draft: readonly BrandDraft[]): Blocked {
 function SaveBar({ dirty, blocked, save, onSave }: Readonly<{ dirty: boolean; blocked: Blocked; save: SaveState; onSave: () => void }>) {
   const { t } = useTranslation('radar')
   return (
-    <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-3 py-2">
+    <StickyActionBar variant="footer" className="flex flex-wrap items-center gap-3 py-2">
       <button type="button" className="btn btn-primary btn-sm" disabled={save.isPending || !dirty || blocked !== null} onClick={onSave}>
         <Save size={14} aria-hidden="true" />
         {t('brands.save')}

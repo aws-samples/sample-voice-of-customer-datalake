@@ -9,7 +9,7 @@ assistant.
 
 ## Source profiles
 
-An admin manages profiles in **Administration → Privacy** (`/admin/privacy`, the Source policies card; `GET/PUT /settings/sources`). They are
+An admin manages profiles in **Administration → Privacy & access → Source policies** (`/admin/access/policies`, the Source policies card; `GET/PUT /settings/sources`). They are
 stored in `voc-aggregates` as `pk=SETTINGS#sources, sk=config`, up to 50 of them:
 
 | Field | Values | Default |
@@ -31,7 +31,7 @@ writes its own **name** (`name` in its config; the page's host name when it has 
 profile, name the scraper in the id format (for example `example_air_reviews`) and create a
 profile with exactly that id. A scraper whose name has spaces, capitals or dots (such as
 `Shop Reviews` or `www.example.com`) cannot have a profile until it is renamed, and renaming it
-changes the source of its new reviews only. **Administration → Privacy → Source policies** suggests the scraper names
+changes the source of its new reviews only. **Administration → Privacy & access → Source policies** suggests the scraper names
 that fit the format, and never suggests `webscraper`.
 
 `GET /settings/sources` returns the full profiles to an admin. Everyone else gets
@@ -113,7 +113,7 @@ Related routes:
 - `GET /users/{u}/category-access` returns `{categories, sources}`. **`sources` is `null`
   when no grant is stored** (the default rule above applies).
 - A `PUT` with `sources` omitted leaves the grant unchanged; `sources: null` clears a stored
-  list back to the default rule (Administration → People → the person's editor → Change access… → "Every source that is
+  list back to the default rule (Administration → Privacy & access → Users → the person's editor → Change access… → "Every source that is
   not restricted").
 - `GET /feedback/access` returns `{all, categories, sources_all, sources, source_rule, sources_denied}`
   for the caller. `source_rule` is `all` (nothing hidden), `allow` (exactly `sources`) or `deny`
@@ -143,7 +143,7 @@ creator can also delete them from the form, [feedback-forms.md → Test mode](fe
 |---|---|---|
 | `retention` | Daily schedule, 04:15 UTC | Items (in `voc-feedback` and `voc-radar`) of sources whose profile sets `retention_days`, with `date` older than the cutoff, under the profile's `retention_legal_basis`; with the `feedback_form` source's window, also the forms' test responses (`FEEDBACK_FORM_TEST` in `voc-aggregates`, the deployment's and every workspace's) created before the cutoff |
 | `erase` | `POST /settings/erasure` (admin) `{field, value, source?, legal_basis}` | Items where `field == value`. `field` is `author`, `source_id`, `csv_row_id` or `email` (`metadata.email` / `metadata.submitter_email`); optionally limited to one `source`, which is **required** for `source_id` and `csv_row_id` (an id is unique only within its source; 400 without it). An `email` or `author` erasure (no source, or `feedback_form`) also deletes the forms' test responses (`FEEDBACK_FORM_TEST` in `voc-aggregates`) whose contact email or name it is (by email every workspace's too, by name the deployment's) |
-| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy → **Delete all data from a source** (the erasure panels, `/admin/privacy/erasure`) | Every item whose `source_platform` is the source, its Radar reviews, its whole-file uploads, then every object version left under `raw/<source>/` and `silver/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)); for `feedback_form`, the deployment's forms' test responses (`FEEDBACK_FORM_TEST`) too, never a form itself |
+| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy & access → Source policies → **Delete all data from a source** (the erasure panels, `/admin/access/policies#erasure`) | Every item whose `source_platform` is the source, its Radar reviews, its whole-file uploads, then every object version left under `raw/<source>/` and `silver/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)); for `feedback_form`, the deployment's forms' test responses (`FEEDBACK_FORM_TEST`) too, never a form itself |
 | `erase` in one workspace (since 7.09.00) | `POST /settings/erasure` with `X-Workspace-Id` (that workspace's member admin) `{field, value, source?, legal_basis}` | That workspace's items only where `field == value` (`author`, `source_id`, `csv_row_id` or `email`; a whole source is refused, 400), with their copies under `ws/<ws>/` (see Workspace items, below), and (by `email` or `author`) that workspace's forms' test responses |
 
 How it works:
@@ -527,7 +527,7 @@ workspace artifacts. Copies derived from a review before it was erased stay wher
 | Archives named before 3.06.00 for ids that were not filename-safe | `raw/<source>/…` | See the archive naming note above |
 | A form response's contact name, for an erasure by name | `metadata.submitter_name` of the `feedback_form` item in `voc-feedback` (a workspace's too) | An `author` erasure matches `author`, and a form's response carries none: its contact name is `metadata.submitter_name`. Erase the person by email (it matches `metadata.submitter_email`), or by the item's `source_id`. The form's test responses, kept apart, are matched by the contact name as well |
 | A workspace export holding items a daily retention window deleted (an erasure deletes the workspace's exports at once) | `ws/<ws>/exports/…` | It expires by its tag 10 days after it was written; to remove it sooner, delete every version under that export's folder with an admin role |
-| The person's account in the user pool (email, name) | Cognito, the deployment's directory (not the lake) | Delete the user (`DELETE /users/{username}`, Administration → People → the person's editor → Delete), which also removes their workspace memberships; while the account exists, a workspace's members list shows its email from Cognito |
+| The person's account in the user pool (email, name) | Cognito, the deployment's directory (not the lake) | Delete the user (`DELETE /users/{username}`, Administration → Privacy & access → Users → the person's editor → Delete), which also removes their workspace memberships; while the account exists, a workspace's members list shows its email from Cognito |
 | An old value kept only in a Silver version (an `author` or email a CSV correction or an edit replaced) | `silver/<source>/<feedback_id>/` | A field erasure matches items as they are stored now, so it reaches every kept version of an item that still holds the value, but not a version whose item has moved on. Erase by the item's current value as well, or delete every version under that item's folder with an admin role |
 
 **The corpus ids on generated artefacts.** A persona, research report, PRD, PR/FAQ or

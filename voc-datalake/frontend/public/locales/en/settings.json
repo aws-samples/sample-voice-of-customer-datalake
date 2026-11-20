@@ -162,7 +162,7 @@
     "adminOnlyNotice": "Only admins can change the brand configuration. You can view it here."
   },
   "categories": {
-    "configureFirst": "Configure the API endpoint under Brand & appearance → Advanced to manage categories.",
+    "configureFirst": "Configure the API endpoint under General → Advanced to manage categories.",
     "description": "Configure categories and subcategories for feedback classification.",
     "title": "Feedback Categories"
   },
@@ -174,12 +174,12 @@
     "resetTitle": "Reset All Settings"
   },
   "dataSources": {
-    "configureFirst": "Configure the API endpoint under Brand & appearance → Advanced to manage data sources.",
+    "configureFirst": "Configure the API endpoint under General → Advanced to manage data sources.",
     "noPlugins": "No data source plugins found. Run <code>npm run generate:manifests</code> to generate plugin manifests."
   },
   "logs": {
     "clear": "Clear",
-    "configureFirst": "Configure the API endpoint under Brand & appearance → Advanced to view logs.",
+    "configureFirst": "Configure the API endpoint under General → Advanced to view logs.",
     "daysAgo_one": "{{count, number}}d ago",
     "daysAgo_other": "{{count, number}}d ago",
     "errorLabel": "Error:",
@@ -385,34 +385,49 @@
       "manual": "Configure manually (advanced)"
     }
   },
-  "subtitle": "People, data, categories and AI for this deployment.",
+  "subtitle": "Configure the platform for everyone (administrators only).",
   "tabs": {
-    "sources": "Data sources",
+    "general": "General",
+    "sources": "Sources",
+    "taxonomy": "Taxonomy",
+    "access": "Privacy & access",
     "ai": "AI models",
-    "people": "People",
-    "logs": "Logs",
-    "categories": "Categories",
-    "boards": "Feedback boards",
-    "brand": "Brand & appearance",
-    "privacy": "Privacy",
-    "platform": "Platform",
-    "version": "Version"
+    "workspaces": "Workspaces",
+    "agents": "Engineering agents",
+    "system": "System"
   },
   "sections": {
+    "plugins": "Source settings",
+    "integrations": "Integrations",
     "inbox": "Email inbox",
     "radar": "Radar",
+    "categories": "Categories",
     "dimensions": "Dimensions",
-    "tokens": "Design-system tokens",
+    "policies": "Source policies",
+    "users": "Users",
+    "boards": "Boards",
+    "workspace": "This workspace",
+    "members": "Members",
+    "allWorkspaces": "All workspaces",
+    "deploymentBrand": "Deployment brand",
+    "logs": "Logs",
+    "version": "Version",
+    "brand": "Brand",
+    "theme": "Default theme",
+    "api": "API endpoint",
+    "erasure": "Erasure",
     "domains": "Company domains",
     "participants": "Participant email",
-    "theme": "Default theme",
-    "erasure": "Erasure",
-    "deploymentBrand": "Deployment brand",
+    "hardCap": "Hard cap",
+    "models": "Roles' models",
+    "connections": "GitHub connections",
     "advanced": "Advanced"
   },
   "title": "Administration",
   "users": {
-    "configureFirst": "Configure the API endpoint under Brand & appearance → Advanced to manage people."
+    "configureFirst": "Configure the API endpoint in the General tab to manage users.",
+    "title": "User Administration",
+    "description": "Manage users, roles, and permissions for the VoC platform."
   },
   "company": {
     "title": "Company",
@@ -569,7 +584,7 @@
     "kindHints": {
       "website": "We open the page in a secure browser and read its colors, fonts and logo.",
       "github": "Public repositories work without a token. We read its theme, color and font files and its logo.",
-      "figma": "Needs a Figma token (Administration → Data sources → Design-system tokens)."
+      "figma": "Needs a Figma token (Administration → Sources → Integrations)."
     },
     "readingHint": {
       "link": "Reading it now — this takes up to a few minutes.",
@@ -731,10 +746,10 @@
     "notConfigured": "Not configured",
     "saveTokens": "Save tokens",
     "integrationsMoved": "Figma and GitHub tokens are set in",
-    "integrationsLink": "Administration → Data sources → Design-system tokens"
+    "integrationsLink": "Administration → Sources → Integrations"
   },
   "integrations": {
-    "title": "Design-system tokens",
+    "title": "Integrations",
     "description": "Write-only tokens the platform uses to read your Figma files and GitHub repositories for the design system. They are stored in Secrets Manager and never shown again.",
     "mcpHint": "MCP access for external assistants is per user, in",
     "mcpLink": "Connect"
@@ -805,8 +820,7 @@
       "label": "Sources of",
       "workspace": "This workspace",
       "deployment": "Deployment"
-    },
-    "advancedHint": "Set up once: the email inbox, Radar's brands and scan, and the tokens the design system reads Figma and GitHub with."
+    }
   },
   "version": {
     "title": "Version",
@@ -1001,87 +1015,58 @@
   "deploymentSources": {
     "notice": "These sources bring in deployment-wide feedback, outside every workspace. It is the only feedback the engineering automations read."
   },
-  "home": {
-    "inWorkspace": "You are in workspace {{name}}: its own settings are in <settings>Workspace settings</settings>.",
-    "invite": "Invite person",
-    "version": "Version {{version}} · <notes>Release notes</notes>",
-    "attention": {
-      "title": "Needs attention",
-      "sourcesPaused_one": "{{count, number}} source paused after errors: {{list}}",
-      "sourcesPaused_other": "{{count, number}} sources paused after errors: {{list}}",
-      "waysUnset_one": "{{count, number}} person has no way of working set",
-      "waysUnset_other": "{{count, number}} people have no way of working set",
-      "modelsBlocked_one": "{{count, number}} AI model can't be called in this account",
-      "modelsBlocked_other": "{{count, number}} AI models can't be called in this account",
-      "reviewSources": "Review sources",
-      "openPeople": "Open People",
-      "openModels": "Open AI models"
-    },
-    "groups": {
-      "everyday": "Everyday",
-      "regular": "Regularly",
-      "once": "Set up once",
-      "rare": "Rare",
-      "elsewhere": "Elsewhere"
-    },
-    "jobs": {
-      "people": {
-        "title": "People",
-        "hint": "Invite, remove, roles and ways of working"
-      },
-      "sources": {
-        "title": "Data sources",
-        "hint": "Connect, schedule, pause and check sources"
-      },
-      "logs": {
-        "title": "Logs",
-        "hint": "Errors and failed items"
-      },
-      "categories": {
-        "title": "Categories & dimensions",
-        "hint": "How feedback is classified and tagged"
-      },
-      "boards": {
-        "title": "Feedback boards",
-        "hint": "Boards, company domains and participant email"
-      },
-      "ai": {
-        "title": "AI models",
-        "hint": "The model behind each AI feature, and its capacity"
-      },
-      "brand": {
-        "title": "Brand & appearance",
-        "hint": "Your brand and the default theme"
-      },
-      "privacy": {
-        "title": "Privacy and erasure",
-        "hint": "Source policies, and erasing a person's or a source's data"
-      },
-      "platform": {
-        "title": "Platform: workspaces",
-        "hint": "Workspaces and the deployment's brand"
-      },
-      "version": {
-        "title": "Version",
-        "hint": "This build and the release notes"
-      }
-    },
-    "counts": {
-      "people_one": "{{count, number}} person",
-      "people_other": "{{count, number}} people",
-      "sources": "{{on, number}} on · {{paused, number}} paused",
-      "errors_one": "{{count, number}} error in the last 24 hours",
-      "errors_other": "{{count, number}} errors in the last 24 hours"
-    },
-    "elsewhere": {
-      "cost": "Cost: Agent orchestration › Spend",
-      "github": "GitHub: Agent orchestration › Connections",
-      "preferences": "Your preferences: Account › Preferences"
+  "tabsLabel": "Administration tabs",
+  "tabsScrollStart": "Scroll to earlier tabs",
+  "tabsScrollEnd": "Scroll to more tabs",
+  "tabHints": {
+    "general": "Your brand and the default theme",
+    "sources": "Connect, schedule and check sources; the email inbox, Radar and the integrations",
+    "taxonomy": "How feedback is classified and tagged",
+    "access": "Source policies and erasure, users and their access, and the feedback boards",
+    "ai": "The model behind each AI feature, and its capacity",
+    "workspaces": "This workspace's own settings and members, and every workspace of the deployment",
+    "agents": "The engineering agents' hard cap, each role's model and the GitHub connections",
+    "system": "Errors, failed items and alerts; this build and its release notes"
+  },
+  "attention": {
+    "title": "Needs attention",
+    "sourcesPaused_one": "{{count, number}} source paused after errors: {{list}}",
+    "sourcesPaused_other": "{{count, number}} sources paused after errors: {{list}}",
+    "waysUnset_one": "{{count, number}} person has no way of working set",
+    "waysUnset_other": "{{count, number}} people have no way of working set",
+    "modelsBlocked_one": "{{count, number}} AI model can't be called in this account",
+    "modelsBlocked_other": "{{count, number}} AI models can't be called in this account",
+    "reviewSources": "Review sources",
+    "openUsers": "Open Users",
+    "openModels": "Open AI models",
+    "badge_one": "{{count, number}} needs attention",
+    "badge_other": "{{count, number}} need attention",
+    "option": "{{tab}} ({{count, number}})"
+  },
+  "header": {
+    "inWorkspace": "You are in workspace {{name}}: its own settings are in <settings>Workspaces → This workspace</settings>."
+  },
+  "general": {
+    "formBrand": "New feedback forms start on your form brand, set from a form's Style panel in <forms>Feedback forms</forms>."
+  },
+  "agentsTab": {
+    "roleDefault": "Role default ({{model}})",
+    "change": "Change",
+    "changeModel": "Change the model of {{role}}",
+    "modelsDescription": "The harness each role runs on in this deployment and the model it uses. A change is made on the role's Registry card and applies from the next run.",
+    "modelsUnread": "Couldn't read the roles' models.",
+    "connectionsDescription": "Where the engineering agents get their repositories, what they cost, and the steps before the first run.",
+    "links": {
+      "connections": "Agent orchestration › Connections",
+      "connectionsHint": "Connect GitHub and choose the repositories the agents work on",
+      "spend": "Agent orchestration › Spend",
+      "spendHint": "Each workflow's monthly budget and what the runs cost",
+      "setup": "Setup guide",
+      "setupHint": "The steps before the first engineering run"
     }
   },
   "search": {
     "titles": {
-      "connections": "Connections",
       "spend": "Spend",
       "preferences": "Preferences"
     },
@@ -1096,25 +1081,32 @@
     "count_one": "{{count, number}} setting found",
     "count_other": "{{count, number}} settings found",
     "terms": {
-      "people": "invite, add person, user, remove, delete user, role, admin, way of working, AI mode, fallback owner, memory reviewer, platform admin, password, disable, access",
-      "sources": "connect, source, scraper, credentials, token, schedule, pause, resume, plugin, webhook, app reviews, S3 import, GitHub Issues, deployment",
-      "logs": "errors, failed, validation, processing, scraper runs, alerts, CloudWatch, system logs",
-      "categories": "taxonomy, category, subcategory, reprocess, classify, AI suggestions",
-      "boards": "feature requests, board, voting, roadmap, ideas",
+      "general": "settings, general, appearance",
       "ai": "model, Bedrock, Claude, Anthropic, GPT, quota, capacity, test model, tokens per minute, agreement",
-      "brand": "brand name, logo, handles, hashtags, URLs to track, rebrand, API endpoint",
-      "privacy": "source policies, retention, personal data, PII, restricted, GDPR, data protection",
-      "platform": "workspaces, new team, create workspace, platform admins, enter workspace",
-      "version": "release notes, changelog, commit, build, what is new",
+      "agents": "engineering, autonomous agents, runs",
+      "plugins": "connect, source, scraper, credentials, token, schedule, pause, resume, plugin, webhook, app reviews, S3 import, GitHub Issues, deployment",
+      "integrations": "Figma, GitHub token, design system, integrations",
       "inbox": "email, mailbox, forward, inbound email, caps",
       "radar": "competitors, brands, news, releases, Exa, scan",
-      "tokens": "Figma, GitHub token, design system, integrations",
+      "categories": "taxonomy, category, subcategory, reprocess, classify, AI suggestions",
       "dimensions": "dimension, product, module, user type, tags, filter",
+      "policies": "source policies, retention, personal data, PII, restricted, GDPR, data protection",
+      "users": "invite, add person, user, remove, delete user, role, admin, way of working, AI mode, fallback owner, memory reviewer, platform admin, password, disable, access",
+      "boards": "feature requests, board, voting, roadmap, ideas",
+      "workspace": "workspace, rename, plugins, export, delete workspace, workspace brand",
+      "members": "members, invite member, role, viewer, editor, leave workspace",
+      "allWorkspaces": "workspaces, new team, create workspace, platform admins, enter workspace",
+      "deploymentBrand": "default brand, deployment, outside workspaces",
+      "logs": "errors, failed, validation, processing, scraper runs, alerts, CloudWatch, system logs",
+      "version": "release notes, changelog, commit, build, what is new",
+      "brand": "brand name, logo, handles, hashtags, URLs to track, rebrand, API endpoint",
+      "theme": "theme, colour, color, dark, light, appearance",
+      "api": "API endpoint, URL, development, local",
+      "erasure": "erase, delete data, GDPR, right to be forgotten, delete a source",
       "domains": "company domain, email domain, colleagues, audience",
       "participants": "participants, sender name, daily cap, external people, email sending",
-      "theme": "theme, colour, color, dark, light, appearance",
-      "erasure": "erase, delete data, GDPR, right to be forgotten, delete a source",
-      "deploymentBrand": "default brand, deployment, outside workspaces",
+      "hardCap": "hard cap, budget, cost cap, stop runs, spend limit",
+      "models": "model, Kiro, native harness, Opus, Sonnet, Haiku, role, Registry",
       "connections": "GitHub, GitHub App, repository, connection, install, issues",
       "spend": "cost, spend, budget, hard cap, billing",
       "preferences": "language, theme, my preferences, dark mode"

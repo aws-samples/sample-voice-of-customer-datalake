@@ -7,7 +7,7 @@
  *   `/feedback-forms/new` → the Blank form template → "Use this template". Each tab is clicked and its own content
  *   checked, then the form is left through the builder's back link with Discard: NOTHING is saved (no POST/PUT/DELETE
  *   under /feedback-forms is sent), so it is safe in production.
- * - Administration → Logs (`/admin/logs`): Validation Failures / Processing Errors / Scraper Runs (admin
+ * - Administration → System → Logs (`/admin/system/logs`): Validation Failures / Processing Errors / Scraper Runs (admin
  *   only). Each sub-tab is pressed, its panel's GET answers, and the panel shows
  *   its own content (rows or its empty state). Read only. Also the 2.12 "logs
  *   show no customer data" check: no rendered text block over 200 characters.
@@ -129,7 +129,7 @@ test.describe('in-page tabs', () => {
     const { record, problems } = await runStep({
       page, role, theme: 'dark', step: 'p3-admin-logs-tabs',
       action: async (recorder) => {
-        await page.goto(site('/admin/logs'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/admin/system/logs'), { waitUntil: 'domcontentloaded' })
         await expect(page.getByRole('heading', { name: 'System Logs' })).toBeVisible()
         for (const [index, tab] of LOGS_TABS.entries()) {
           const button = page.getByRole('button', { name: tab.name, exact: true })

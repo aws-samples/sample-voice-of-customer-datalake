@@ -11,7 +11,7 @@
  * several), the token behind "Use a fine-grained token instead". What is stored always wins: an App's id is the App;
  * `none` (saved when the token was chosen), or repositories saved without an App's id, is the token.
  *
- * Only on the deployment's card: outside a workspace, or in the deployment's scope (Administration → Data sources → Deployment,
+ * Only on the deployment's card: outside a workspace, or in the deployment's scope (Administration → Sources → Source settings → Deployment,
  * workspace/configScope.ts) from any address, whose reads then send no `X-Workspace-Id`. A run in a workspace ignores
  * `github_app_id` (the Apps are the deployment's), so a workspace's card keeps its plain fields. The credentials route
  * skips an empty value (it never deletes one), so choosing the token saves `github_app_id` as {@link NO_APP}, which

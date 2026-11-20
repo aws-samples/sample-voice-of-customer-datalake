@@ -376,7 +376,7 @@
       "confirm": "Désactiver"
     }
   },
-  "configureApiFirst": "Configurez le point de terminaison API dans Administration → Marque et apparence pour gérer les formulaires de feedback.",
+  "configureApiFirst": "Configurez le point de terminaison API dans Administration → Général pour gérer les formulaires de feedback.",
   "deleteConfirmLabel": "Supprimer",
   "deleteConfirmMessage": "Êtes-vous sûr de vouloir supprimer ce formulaire ? Cette action est irréversible.",
   "deleteConfirmMessageNamed": "Supprimer le formulaire « {{name}} » ? Cette action est irréversible.",
@@ -1094,7 +1094,7 @@
       "aiMode": "Piloté par l’humain : l’IA ne rédige pas les formulaires à votre place. Partez d’un modèle, ou laissez l’assistant vous accompagner.",
       "coachPrompt": "Accompagnez-moi pendant que je rédige un formulaire de feedback : demandez-moi ce que je veux apprendre, et aidez-moi à formuler les questions et les réponses à proposer.",
       "coachMe": "M’accompagner",
-      "changeInPeople": "Modifiez-le dans Administration → Personnes",
+      "changeInPeople": "Modifiez-le dans Administration → Confidentialité et accès → Utilisateurs",
       "askAdminMode": "Un administrateur peut le modifier.",
       "noModel": "La rédaction par IA n’est pas configurée dans cet espace de travail : aucun modèle d’IA n’est disponible pour cela.",
       "openAiModels": "Ouvrir Administration → Modèles d'IA",
@@ -1660,7 +1660,7 @@
     "openTest": "Ouvrir Test",
     "saveFirst": "Enregistrez le formulaire pour obtenir ses liens.",
     "save": "Enregistrer",
-    "noEndpoint": "Définissez le point de terminaison API dans Administration → Marque et apparence pour obtenir les liens de ce formulaire.",
+    "noEndpoint": "Définissez le point de terminaison API dans Administration → Général pour obtenir les liens de ce formulaire.",
     "notes": {
       "replace": "Remplacez chaque {…} par la valeur, encodée pour l’URL. Les paramètres hf_ inconnus sont ignorés.",
       "sdk": "Appelez-le quand la personne effectue l’action sur laquelle vous l’interrogez (par ex. Revenir à l’ancienne interface).",
@@ -2071,7 +2071,7 @@
       "noSubcategory": "— Aucune sous-catégorie",
       "notConfiguredBadge": "N’est plus configurée",
       "pickConfigured": "Choisissez une catégorie configurée.",
-      "categoryHint": "Les catégories sont configurées dans Administration → Catégories.",
+      "categoryHint": "Les catégories sont configurées dans Administration → Taxonomie → Catégories.",
       "taggedAs": "Les réponses de ce formulaire sont classées comme :",
       "perOption": "Routage par option",
       "noChoices": "Ce formulaire n’a pas de question à choix : chaque réponse est donc classée dans la catégorie du formulaire.",

@@ -30,7 +30,7 @@
     "choose": "Wybierz markę",
     "unknownBrand": "{{key}} (brak na liście marek)",
     "noBrand": "Brak marek w Radarze.",
-    "addBrand": "Dodaj markę w Administracja → Źródła danych → Radar",
+    "addBrand": "Dodaj markę w Administracja → Źródła → Radar",
     "needsBrand": "Wybierz markę, w przeciwnym razie to pozostanie zwykłym źródłem.",
     "loading": "Ładowanie marek Radaru...",
     "loadFailed": "Nie udało się wczytać marek Radaru."

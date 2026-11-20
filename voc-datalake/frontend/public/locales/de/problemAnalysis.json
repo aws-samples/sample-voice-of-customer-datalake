@@ -1,5 +1,5 @@
 {
-  "configureApi": "Bitte konfigurieren Sie Ihren API-Endpunkt unter Administration → Marke & Darstellung",
+  "configureApi": "Bitte konfigurieren Sie Ihren API-Endpunkt unter Administration → Allgemein",
   "filters": {
     "allCategories": "Alle Kategorien",
     "allSources": "Alle Quellen",

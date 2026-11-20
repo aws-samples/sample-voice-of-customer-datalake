@@ -78,7 +78,7 @@
     "saving": "Speichern...",
     "title": "Was diese Zeile enthält"
   },
-  "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt unter Administration → Marke & Darstellung, um die Priorisierung anzuzeigen.",
+  "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt unter Administration → Allgemein, um die Priorisierung anzuzeigen.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"

@@ -14,14 +14,18 @@
  * state until it knows the role the server applies (`/current`). Outside a workspace
  * the address is not a page (the app's "Page not found"), and the header offers no link to it.
  *
+ * The same list is Administration → Workspaces → Members (7.59.00, {@link WorkspaceMembers}): a section there, under
+ * a section heading instead of the page's title.
+ *
  * @module pages/Members
  */
 import { useTranslation } from 'react-i18next'
-import { Info, LogOut } from 'lucide-react'
+import { Info, LogOut, UsersRound } from 'lucide-react'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import CursorPagesList from '../../components/CursorPagesList/CursorPagesList'
 import Notice from '../../components/Notice/Notice'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
+import { SectionHeader } from '../Company/ContextParts'
 import PageLoader from '../../components/PageLoader/PageLoader'
 import NotFound from '../../components/RouteErrorBoundary/NotFound'
 import type { CursorPagesQuery } from '../../hooks/useCursorPages'
@@ -51,13 +55,18 @@ export default function Members() {
  * shown the read-only page for a moment. If that read fails for another reason than a 404 (the gate's not-found),
  * the membership's role stays, as in the gate; the server decides every write either way.
  */
-function MembersFor({ workspace }: Readonly<{ workspace: CurrentWorkspace }>) {
+function MembersFor({ workspace, embedded = false }: Readonly<{ workspace: CurrentWorkspace; embedded?: boolean }>) {
   const role = useServerRole(workspace)
   if (role === null) return <PageLoader />
-  return <MembersView workspace={workspace} role={role} />
+  return <MembersView workspace={workspace} role={role} embedded={embedded} />
 }
 
-function MembersView({ workspace, role }: Readonly<{ workspace: CurrentWorkspace; role: WorkspaceRole }>) {
+/** The current workspace's members as a section of another page (Administration → Workspaces → Members). */
+export function WorkspaceMembers({ workspace }: Readonly<{ workspace: CurrentWorkspace }>) {
+  return <MembersFor workspace={workspace} embedded />
+}
+
+function MembersView({ workspace, role, embedded }: Readonly<{ workspace: CurrentWorkspace; role: WorkspaceRole; embedded: boolean }>) {
   const { t } = useTranslation()
   const selfSub = useAuthStore((state) => state.user?.sub)
   const { data: mine } = useMyWorkspaces()
@@ -67,18 +76,23 @@ function MembersView({ workspace, role }: Readonly<{ workspace: CurrentWorkspace
   // Leave is for a member (a platform admin who entered without a membership has nothing to leave).
   const canLeave = selfSub !== undefined && (mine ?? []).some((own) => own.id === workspace.id)
 
+  const subtitle = t('workspaces.members.subtitle', { name: workspace.name })
+  const leave = canLeave ? (
+    <button type="button" className="btn btn-danger gap-2 justify-center" disabled={actions.busy}
+      onClick={() => actions.setPending({ kind: 'leave' })}>
+      <LogOut size={16} aria-hidden="true" />
+      {t('workspaces.members.leave')}
+    </button>
+  ) : null
+
   return (
-    <div className="max-w-4xl mx-auto min-w-0 w-full space-y-4 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <PageTitle title={t('workspaces.members.title')} subtitle={t('workspaces.members.subtitle', { name: workspace.name })} />
-        {canLeave ? (
-          <button type="button" className="btn btn-danger gap-2 justify-center" disabled={actions.busy}
-            onClick={() => actions.setPending({ kind: 'leave' })}>
-            <LogOut size={16} aria-hidden="true" />
-            {t('workspaces.members.leave')}
-          </button>
-        ) : null}
-      </div>
+    <div className={embedded ? 'min-w-0 space-y-4 sm:space-y-6' : 'max-w-4xl mx-auto min-w-0 w-full space-y-4 sm:space-y-6'}>
+      {embedded ? <SectionHeader icon={UsersRound} title={t('workspaces.members.title')} description={subtitle} aside={leave} /> : (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <PageTitle title={t('workspaces.members.title')} subtitle={subtitle} />
+          {leave}
+        </div>
+      )}
 
       <Notice variant="banner" tone="warn" role="note" icon={Info} text={t('workspaces.sharedData')} />
 

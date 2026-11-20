@@ -19,7 +19,9 @@
  *   deployment that turns it on (config.json `features.workspaceDelete`, runtimeConfig.ts); nobody else sees it.
  *
  * The deployment's own sections of Administration stay there, for the deployment's `admins`: this page holds only
- * what the server keys by workspace. The server decides every save; the page only hides what the caller's role
+ * what the server keys by workspace. Its cards are also Administration → Workspaces → This workspace (7.59.00,
+ * {@link WorkspaceSettingsCards}), for the deployment's administrators inside a workspace; this page stays for every
+ * member. The server decides every save; the page only hides what the caller's role
  * cannot do, and shows the loading state until it knows that role. Outside a workspace the address is not a page
  * (the app's "Page not found"), and the header offers no link to it.
  *
@@ -63,17 +65,34 @@ function WorkspaceSettingsFor({ workspace }: Readonly<{ workspace: CurrentWorksp
   const { t } = useTranslation()
   const role = useServerRole(workspace)
   if (role === null) return <PageLoader />
-  const isAdmin = role === 'admin'
   return (
     <div className="max-w-4xl mx-auto min-w-0 w-full space-y-4 sm:space-y-6">
       <PageTitle title={t('workspaces.settings.title')} subtitle={t('workspaces.settings.subtitle', { name: workspace.name })} />
+      <WorkspaceCards workspace={workspace} isAdmin={role === 'admin'} />
+    </div>
+  )
+}
+
+/**
+ * The workspace's cards as a section of another page (Administration → Workspaces → This workspace), once the role the
+ * server applies here is known.
+ */
+export function WorkspaceSettingsCards({ workspace }: Readonly<{ workspace: CurrentWorkspace }>) {
+  const role = useServerRole(workspace)
+  if (role === null) return <PageLoader />
+  return <WorkspaceCards workspace={workspace} isAdmin={role === 'admin'} />
+}
+
+function WorkspaceCards({ workspace, isAdmin }: Readonly<{ workspace: CurrentWorkspace; isAdmin: boolean }>) {
+  return (
+    <>
       <WorkspaceNameCard workspace={workspace} isAdmin={isAdmin} />
       <WorkspaceBrandCard isAdmin={isAdmin} />
       <WorkspacePluginsCard workspaceId={workspace.id} isAdmin={isAdmin} />
       <WorkspaceConfigCards isAdmin={isAdmin} />
       <WorkspaceExportCard workspaceId={workspace.id} isAdmin={isAdmin} />
       {isAdmin && isWorkspaceDeleteAvailable() ? <WorkspaceDeleteCard workspace={workspace} /> : null}
-    </div>
+    </>
   )
 }
 
@@ -118,7 +137,7 @@ function WorkspaceConfigCards({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
   )
 }
 
-/** The workspace's brand, kept in the workspace's own browser record too (as Administration → Brand & appearance does). */
+/** The workspace's brand, kept in the workspace's own browser record too (as Administration → General does). */
 function WorkspaceBrandCard({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

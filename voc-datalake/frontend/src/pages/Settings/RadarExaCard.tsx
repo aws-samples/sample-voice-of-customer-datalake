@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Data sources → Radar, "Exa (second search index)" (docs/radar.md):
+ * @fileoverview Administration → Sources → Radar, "Exa (second search index)" (docs/radar.md):
  * whether an Exa API key is stored, a password box to store or replace it
  * (PUT /radar/settings/exa-key) and Remove behind a confirm (DELETE). The key is never shown
  * back: the box is cleared once it is saved and the server only ever says `exa_configured`.
@@ -83,7 +83,7 @@ export default function RadarExaCard({ configured }: Readonly<{ configured: bool
             placeholder={configured ? t('exa.replacePlaceholder') : t('exa.placeholder')} aria-invalid={invalid}
             onChange={(e) => { save.reset(); remove.reset(); setKey(e.target.value) }} />
         </div>
-        <StickyActionBar variant="inline" className="flex flex-wrap gap-2">
+        <StickyActionBar variant="footer" className="flex flex-wrap gap-2">
           <button type="submit" className="btn btn-primary btn-sm" disabled={trimmed === '' || save.isPending}>
             <Save size={14} aria-hidden="true" />{t('exa.save')}
           </button>

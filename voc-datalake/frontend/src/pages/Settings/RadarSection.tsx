@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Data sources → Radar (admin): the brands tracked and how Radar
+ * @fileoverview Administration → Sources → Radar (admin): the brands tracked and how Radar
  * works (RadarSetupGuide), the news-scan cadence and its cost guards, the Exa key (RadarExaCard),
  * the last scan, and "Scan now" (docs/radar.md).
  * @module pages/Settings/RadarSection
@@ -67,7 +67,7 @@ function SettingsForm({ initial }: Readonly<{ initial: RadarScanSettings }>) {
         onChange={(value) => setDraft({ ...draft, max_brands: value })} />
       <NumberField label={t('settings.queryCap')} hint={t('settings.queryCapHint')} value={draft.query_cap}
         max={QUERY_CAP_LIMIT} onChange={(value) => setDraft({ ...draft, query_cap: value })} />
-      <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-3 py-2">
+      <StickyActionBar variant="footer" className="flex flex-wrap items-center gap-3 py-2">
         <button type="submit" className="btn btn-primary btn-sm" disabled={save.isPending}>{t('settings.save')}</button>
         <SavedStatus saved={save.isSuccess} label={t('settings.saved')} small />
         {save.isError ? <p role="alert" className="text-xs text-danger">{t('settings.saveFailed')}</p> : null}

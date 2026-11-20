@@ -83,8 +83,8 @@ const CASES: readonly OverlayCase[] = [
   { step: 'source-template-selector', path: '/scrapers', trigger: byName('New source') },
   { step: 'create-agent', path: '/agents', adminOnly: true, trigger: byName('New agent') },
   // People: the first person's editor sheet, then its "Change access…" (the Category access dialog over the sheet).
-  { step: 'category-access', path: '/admin/people', adminOnly: true, prepare: openPersonEditor, trigger: byName('Change access…') },
-  { step: 'data-source-wizard', path: '/admin/sources', adminOnly: true, trigger: byName(/^(Add (data )?source|New Source|Add Data Source)$/i) },
+  { step: 'category-access', path: '/admin/access/users', adminOnly: true, prepare: openPersonEditor, trigger: byName('Change access…') },
+  { step: 'data-source-wizard', path: '/admin/sources/plugins', adminOnly: true, trigger: byName(/^(Add (data )?source|New Source|Add Data Source)$/i) },
   { step: 'time-range-listbox', path: '/dashboard', trigger: (p) => p.locator('button[aria-haspopup="listbox"]').first() },
   { step: 'time-range-custom', path: '/dashboard', trigger: byName(/^Custom/) },
   { step: 'project-share', path: '/projects/{project}', trigger: byName(/^Share/) },

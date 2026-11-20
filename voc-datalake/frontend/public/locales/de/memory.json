@@ -19,7 +19,7 @@
     "submit": "Merken"
   },
   "cancel": "Abbrechen",
-  "configureFirst": "Verbinden Sie zuerst den API-Endpunkt unter Administration → Marke & Darstellung.",
+  "configureFirst": "Verbinden Sie zuerst den API-Endpunkt unter Administration → Allgemein.",
   "confirm": "+1",
   "confirmHint": "Ich stimme zu – zählt mich als Unterstützer",
   "alreadyBacked": "Sie unterstützen diese Erinnerung bereits. Jede Person zählt einmal.",

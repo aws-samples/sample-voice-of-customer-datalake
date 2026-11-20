@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Logs → Scraper runs: the custom
+ * @fileoverview Administration → System → Logs → Scraper runs: the custom
  * scrapers' run history and, beside them, the last run of each review-page and
  * app connector (Web Reviews, iOS, Android).
  *

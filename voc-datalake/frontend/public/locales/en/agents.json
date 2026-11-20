@@ -935,15 +935,15 @@
       "switch": "Read this repository's issues",
       "reasons": {
         "off": "Its issues are not read: the switch is off.",
-        "token": "The GitHub Issues source signs in with a token: add this repository under Administration → Data sources.",
+        "token": "The GitHub Issues source signs in with a token: add this repository under Administration → Sources → Source settings.",
         "other_app": "The GitHub Issues source signs in with another GitHub App: this repository's issues are not read through it.",
-        "limit": "The GitHub Issues source reads at most {{limit, number}} repositories: remove one under Administration → Data sources to read this one.",
+        "limit": "The GitHub Issues source reads at most {{limit, number}} repositories: remove one under Administration → Sources → Source settings to read this one.",
         "not_app": "Only a connection made through the deployment's GitHub App has its issues read automatically.",
         "not_deployed": "The GitHub Issues source is not deployed here, so no issues are read.",
         "pending": "Not read yet: it is not in the GitHub Issues source's list.",
         "unknown": "Its issues are not read."
       },
-      "openSources": "Open Administration → Data sources",
+      "openSources": "Open Administration → Sources → Source settings",
       "readNow": "Read its issues now",
       "label": {
         "created": "Label {{label}}: created.",
@@ -953,7 +953,7 @@
       "follow": {
         "reading_one": "Issues: read automatically from {{count, number}} repository.",
         "reading_other": "Issues: read automatically from {{count, number}} repositories.",
-        "token": "The GitHub Issues source signs in with a token: add these repositories under Administration → Data sources.",
+        "token": "The GitHub Issues source signs in with a token: add these repositories under Administration → Sources → Source settings.",
         "labelsCreated": "Label {{label}}: on {{list}}.",
         "labelsFailed": "The {{label}} label could not be created on {{list}}: Check installation tries again.",
         "skipped": {
@@ -961,7 +961,7 @@
           "other_app": "Not read (the source signs in with another GitHub App): {{list}}.",
           "limit": "Not read (the source already reads {{limit, number}} repositories): {{list}}."
         },
-        "scheduleOff": "The GitHub Issues source's schedule is off: turn it on under Administration → Data sources.",
+        "scheduleOff": "The GitHub Issues source's schedule is off: turn it on under Administration → Sources → Source settings.",
         "error": "The GitHub Issues source could not be set up automatically: {{error}}"
       },
       "state": {
@@ -1927,8 +1927,8 @@
       "notMet": "To do",
       "unknown": "Not known yet",
       "openConnections": "Open Connections",
-      "openDeploymentSources": "Open Administration → Data sources",
-      "openSources": "Open Administration → Data sources",
+      "openDeploymentSources": "Open Administration → Sources → Source settings",
+      "openSources": "Open Administration → Sources → Source settings",
       "sourcesOutside": "Outside any workspace: the automations read only the deployment's sources.",
       "deploymentTitle": "This deployment",
       "connectedAs": "Connected through an App: {{list}}.",

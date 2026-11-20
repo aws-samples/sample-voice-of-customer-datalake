@@ -176,7 +176,7 @@ def test_scan_now_without_any_radar_brand_points_at_the_brand_list(tables, lambd
     aggregates.put_item(Item={**PROFILES, 'sources': [{'id': 'web'}]})
     status, body, start = _call(tables, lambda_context, 'POST', '/radar/scan', claims=ADMIN)
     assert status == 400
-    assert 'Administration → Data sources → Radar' in body['error']
+    assert 'Administration → Sources → Radar' in body['error']
     start.assert_not_called()
 
 

@@ -368,7 +368,7 @@ describe('the deployment-only operator calls name no workspace, inside one too',
 })
 
 describe("the Data sources calls: the workspace's by default, the deployment's on request (7.50.00)", () => {
-  // Administration → Data sources → Deployment (pages/Settings/DataSourcesPage.tsx) asks for 'deployment' inside a workspace.
+  // Administration → Sources → Source settings → Deployment (pages/Settings/DataSourcesPage.tsx) asks for 'deployment' inside a workspace.
   afterEach(() => setCurrentWorkspace(null))
 
   const calls: [string, (scope?: 'deployment') => Promise<unknown>][] = [

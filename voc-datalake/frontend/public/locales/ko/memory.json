@@ -19,7 +19,7 @@
     "submit": "기억하기"
   },
   "cancel": "취소",
-  "configureFirst": "먼저 관리 → 브랜드 및 모양에서 API 엔드포인트를 연결하세요.",
+  "configureFirst": "먼저 관리 → 일반에서 API 엔드포인트를 연결하세요.",
   "confirm": "+1",
   "confirmHint": "동의합니다 — 지지자로 추가",
   "alreadyBacked": "이미 이 기억을 지지하고 있습니다. 한 사람당 한 번만 집계됩니다.",

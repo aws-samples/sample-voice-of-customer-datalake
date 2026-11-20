@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → People (7.54.00): everyone who can sign in, in ONE list (Name, Role, Way of working,
+ * @fileoverview Administration → Privacy & access → Users (7.54.00): everyone who can sign in, in ONE list (Name, Role, Way of working,
  * Flags, Status), and the one primary of the page, **Invite person**.
  *
  * Everything set per person is set in that person's editor, a SideSheet (UserEditorSheet.tsx): role, way of working
@@ -7,7 +7,7 @@
  * only), the name, the account actions and Delete. The four lists of before (users, flags, platform admins, ways of
  * working) are gone.
  *
- * Where the page is lives in its path (`/admin/people[/<username>|/invite]`, pages/Settings/adminPaths.ts): the host
+ * Where the page is lives in its path (`/admin/access/users[/<username>|/invite]`, pages/Settings/adminPaths.ts): the host
  * passes the open item (`openItem`: a username, or `invite` for the invite dialog) and the move that opens one
  * (`onOpenItem`, null: none), so Back closes the editor and a copied link opens it. A username the list does not hold
  * opens nothing. Only visible to users in the `admins` group (the routes are admin-only server-side).

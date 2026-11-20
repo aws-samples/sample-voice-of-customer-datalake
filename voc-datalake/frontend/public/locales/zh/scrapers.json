@@ -31,7 +31,7 @@
     "choose": "选择品牌",
     "unknownBrand": "{{key}}(不在品牌列表中)",
     "noBrand": "还没有雷达品牌。",
-    "addBrand": "在 管理 → 数据来源 → 雷达 中添加品牌",
+    "addBrand": "在 管理 → 来源 → 雷达 中添加品牌",
     "needsBrand": "请选择品牌,否则这仍是普通来源。",
     "loading": "正在加载雷达品牌...",
     "loadFailed": "无法加载雷达品牌。"

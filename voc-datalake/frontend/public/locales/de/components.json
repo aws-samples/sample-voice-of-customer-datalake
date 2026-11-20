@@ -344,7 +344,7 @@
     "close": "Schließen",
     "show": "QR-Code anzeigen",
     "title": "QR-Code",
-    "unavailable": "QR-Code nicht verfügbar, bis der API-Endpunkt unter Administration → Marke & Darstellung konfiguriert ist"
+    "unavailable": "QR-Code nicht verfügbar, bis der API-Endpunkt unter Administration → Allgemein konfiguriert ist"
   },
   "personaExport": {
     "copied": "Kopiert!",
@@ -392,7 +392,7 @@
     "reprocess": {
       "action": "Datei neu verarbeiten",
       "confirmTitle": "{{filename}} neu verarbeiten?",
-      "confirmMessage": "Die Datei durchläuft die Import-Pipeline erneut, unter ihrer Quelle {{source}}. Zeilen, die schon im Data Lake sind, werden als Duplikate übersprungen, also werden nur fehlende Zeilen importiert. Gespeicherte Zeilen werden nicht neu angereichert: Um sie neu zu kategorisieren, nutzen Sie „Vorhandenes Feedback neu verarbeiten“ unter Administration → Kategorien.",
+      "confirmMessage": "Die Datei durchläuft die Import-Pipeline erneut, unter ihrer Quelle {{source}}. Zeilen, die schon im Data Lake sind, werden als Duplikate übersprungen, also werden nur fehlende Zeilen importiert. Gespeicherte Zeilen werden nicht neu angereichert: Um sie neu zu kategorisieren, nutzen Sie „Vorhandenes Feedback neu verarbeiten“ unter Administration → Taxonomie → Kategorien.",
       "confirm": "Neu verarbeiten",
       "running": "{{filename}} wird neu verarbeitet...",
       "failed": "Die Neuverarbeitung von {{filename}} ist fehlgeschlagen. Details stehen in den Systemprotokollen.",
@@ -511,7 +511,7 @@
       "all": "Alle Quellen, einschließlich eingeschränkter",
       "selected": "Nur ausgewählte Quellen",
       "restricted": "Eingeschränkt",
-      "noProfiles": "Noch keine Quellprofile konfiguriert (Administration → Datenschutz)."
+      "noProfiles": "Noch keine Quellprofile konfiguriert (Administration → Datenschutz & Zugriff → Quellenrichtlinien)."
     },
     "invite": "Person einladen",
     "edit": "Bearbeiten",
@@ -595,7 +595,7 @@
     "sourceRadarHint": "Radar-Quelle ({{brand}}): Diese Zeilen landen auf der Radar-Seite, nie in Ihren eigenen Dashboards und Kennzahlen.",
     "defaultsTitle": "Dimensionen und Tags",
     "defaultsHint": "Jede Bewertung von hier erhält diese Werte; ihre eigenen Werte haben pro Dimension Vorrang.",
-    "noDimensions": "Noch keine Dimensionen konfiguriert (Administration → Kategorien → Dimensionen).",
+    "noDimensions": "Noch keine Dimensionen konfiguriert (Administration → Taxonomie → Dimensionen).",
     "noDefault": "Kein Standard"
   },
   "draftSaveBar": {
@@ -683,7 +683,7 @@
       "summaryOnlyHint": "Nur abgeleitete Felder (Zusammenfassung, Kategorie, Stimmung, Dimensionen) bleiben erhalten; der Originaltext wird nicht gespeichert."
     },
     "restrictedLabel": "Eingeschränkt",
-    "restrictedHint": "Nur Admins und Personen, denen diese Quelle gewährt wurde (Personen → Zugriff einer Person), sehen ihre Bewertungen.",
+    "restrictedHint": "Nur Admins und Personen, denen diese Quelle gewährt wurde (Benutzer → Zugriff einer Person), sehen ihre Bewertungen.",
     "defaultsTitle": "Dimensionswerte für jede Bewertung aus dieser Quelle",
     "noDefault": "Kein Standard",
     "empty": "Noch keine Profile: Jede Quelle behält alles, unbegrenzt und für alle sichtbar.",
@@ -702,7 +702,7 @@
       "radarBrand": "{{name}}: Geben Sie die Marke an, die diese Radar-Quelle beobachtet."
     },
     "radarLegacy": "Radar-Quelle für {{brand}}: Die Bewertungen dieser Quelle gehen an Radar.",
-    "radarLegacyHint": "Radar-Marken werden unter Administration → Datenquellen → Radar eingerichtet, und ein Scraper oder Connector wählt seine Marke auf der Seite Datenquellen.",
+    "radarLegacyHint": "Radar-Marken werden unter Administration → Quellen → Radar eingerichtet, und ein Scraper oder Connector wählt seine Marke auf der Seite Datenquellen.",
     "radarLegacyLink": "Radar-Einstellungen öffnen"
   },
   "erasure": {

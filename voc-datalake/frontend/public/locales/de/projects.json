@@ -12,7 +12,7 @@
     "editProject": "Projekt {{name}} bearbeiten",
     "owner": "Inhaber: {{name}}"
   },
-  "configureEndpoint": "Bitte konfigurieren Sie zuerst den API-Endpunkt unter Administration → Marke & Darstellung",
+  "configureEndpoint": "Bitte konfigurieren Sie zuerst den API-Endpunkt unter Administration → Allgemein",
   "list": {
     "search": "Projekte durchsuchen",
     "scopeLabel": "Wessen Projekte",

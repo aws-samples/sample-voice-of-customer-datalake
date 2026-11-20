@@ -35,7 +35,7 @@ const VIEWPORTS = [
 const ACTION_PAGES: Record<'admin' | 'user', readonly string[]> = {
   admin: [
     '/feedback-forms', '/scrapers', '/projects', '/company', '/company/design', '/account/profile',
-    '/account/objectives', '/connect', '/memory', '/admin/brand', '/admin/sources', '/admin/categories',
+    '/account/objectives', '/connect', '/memory', '/admin/general', '/admin/sources/plugins', '/admin/taxonomy/categories',
   ],
   user: ['/feedback-forms', '/projects', '/company', '/account/profile', '/account/objectives', '/connect', '/memory'],
 }

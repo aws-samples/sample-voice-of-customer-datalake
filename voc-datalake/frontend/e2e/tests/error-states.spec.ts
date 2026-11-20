@@ -12,7 +12,7 @@
  *   instead of "No feedback in this time range" / "No categories" / "No projects
  *   yet" / "No scrapers configured" / "No Documents Found" (all of which these
  *   pages used to claim when the read failed).
- * - Administration → Brand & appearance (`/admin/brand`): the brand card's own `role=alert` ("Could not load
+ * - Administration → General (`/admin/general`): the brand card's own `role=alert` ("Could not load
  *   this section.") with Retry, and its "Not synced" badge.
  * - Memory: "Could not load memories." (list) instead of the empty state.
  *
@@ -116,7 +116,7 @@ const CASES: readonly ErrorCase[] = [
   },
   {
     step: 'error-admin-brand-500',
-    path: '/admin/brand',
+    path: '/admin/general',
     adminOnly: true,
     injections: [{ method: 'GET', path: /\/settings\/brand$/, failure: FAIL_500 }],
     expectShown: async (page) => {

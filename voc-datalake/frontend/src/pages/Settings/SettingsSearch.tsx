@@ -1,11 +1,13 @@
 /**
- * @fileoverview Administration's search (7.54.00): a WAI-ARIA combobox (APG "list autocomplete") over settingsIndex.ts.
+ * @fileoverview Administration's search (7.54.00; 7.59.00 in the page's header): a WAI-ARIA combobox (APG "list
+ * autocomplete") over settingsIndex.ts.
  *
- * - Typing lists the matching places in a listbox ("Radar in Data sources"); the count is announced in a polite
- *   status ("3 settings found", or "No setting matches …").
+ * - Typing lists the matching places in a listbox ("Radar in Sources"); the count is announced in a polite status
+ *   ("3 settings found", or "No setting matches …").
  * - ArrowDown / ArrowUp move the active option (`aria-activedescendant`, focus stays in the input), Enter or a click
- *   opens its path (a section's card is then scrolled into view and focused, Settings.tsx), Escape clears the query.
- * - `/` focuses it on Administration pages (Settings.tsx `useSlashFocus`); ⌘K is left alone.
+ *   opens its address: the tab and section, and a card is then scrolled into view and focused (Settings.tsx); Escape
+ *   clears the query.
+ * - `/` focuses it on Administration (Settings.tsx `useSlashFocus`); ⌘K is left alone.
  *
  * @module pages/Settings/SettingsSearch
  */
@@ -15,19 +17,20 @@ import type { KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
-import { isMenuItemEnabled } from '../../config/menuConfig'
 import { searchSettings, settingsIndex } from './settingsIndex'
 import type { ResolvedEntry } from './settingsIndex'
+import type { AdminViewer } from './adminTabs'
 
 /** The input's id: `/` focuses it. */
 export const SETTINGS_SEARCH_ID = 'admin-settings-search'
 
-function useResolvedIndex(isAdmin: boolean, isPlatformAdmin: boolean): ResolvedEntry[] {
+function useResolvedIndex(viewer: AdminViewer): ResolvedEntry[] {
   const { t } = useTranslation('settings')
-  const agentsShown = isMenuItemEnabled('agents')
-  return useMemo(() => settingsIndex(isAdmin, isPlatformAdmin, agentsShown).map((entry) => ({
-    entry, title: t(entry.titleKey), place: entry.placeKey === null ? null : t(entry.placeKey), terms: t(entry.termsKey),
-  })), [t, isAdmin, isPlatformAdmin, agentsShown])
+  const { isAdmin, isPlatformAdmin, inWorkspace, agentsShown } = viewer
+  return useMemo(() => settingsIndex({ isAdmin, isPlatformAdmin, inWorkspace, agentsShown }).map((entry) => ({
+    entry, title: t(entry.titleKey), place: entry.placeKey === null ? null : t(entry.placeKey),
+    terms: entry.termsKey === null ? '' : t(entry.termsKey),
+  })), [t, isAdmin, isPlatformAdmin, inWorkspace, agentsShown])
 }
 
 /** The polite announcement of what the list holds (nothing while the query is empty). */
@@ -36,14 +39,13 @@ function countText(t: (key: string, options?: Record<string, unknown>) => string
   return count === 0 ? t('search.empty', { q: query.trim() }) : t('search.count', { count })
 }
 
-export default function SettingsSearch({ isAdmin, isPlatformAdmin, className }: Readonly<{
-  isAdmin: boolean
-  isPlatformAdmin: boolean
+export default function SettingsSearch({ viewer, className }: Readonly<{
+  viewer: AdminViewer
   className?: string
 }>) {
   const { t } = useTranslation('settings')
   const navigate = useNavigate()
-  const index = useResolvedIndex(isAdmin, isPlatformAdmin)
+  const index = useResolvedIndex(viewer)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const [open, setOpen] = useState(false)

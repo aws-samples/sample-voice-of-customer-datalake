@@ -111,8 +111,8 @@ describe('admin-only controls', () => {
     renderPage(ADMIN)
     const service = await card('brd_service')
     expect(service.getByRole('link', { name: 'Edit Customer service issues' }))
-      .toHaveAttribute('href', '/admin/boards/brd_service')
-    expect(screen.getByRole('link', { name: 'Configure boards' })).toHaveAttribute('href', '/admin/boards')
+      .toHaveAttribute('href', '/admin/access/boards/brd_service')
+    expect(screen.getByRole('link', { name: 'Configure boards' })).toHaveAttribute('href', '/admin/access/boards')
   })
 
   it('give an admin Pause and Archive on a board in use, but no Delete', async () => {
@@ -170,12 +170,12 @@ describe('admin-only controls', () => {
     expect(board.api.deleteBoard).toHaveBeenCalledExactlyOnceWith('brd_beta')
   })
 
-  it('links an admin with no boards yet to Administration → Feedback boards', async () => {
+  it('links an admin with no boards yet to Administration → Privacy & access → Boards', async () => {
     renderPage(ADMIN, '/feature-requests', (api) => {
       vi.mocked(api.listBoards).mockResolvedValue({ boards: [], viewer: ADMIN })
     })
-    expect(await screen.findByRole('link', { name: 'Administration → Feedback boards' }))
-      .toHaveAttribute('href', '/admin/boards')
+    expect(await screen.findByRole('link', { name: 'Administration → Privacy & access → Boards' }))
+      .toHaveAttribute('href', '/admin/access/boards')
   })
 })
 

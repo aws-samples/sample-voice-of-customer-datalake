@@ -4,7 +4,7 @@
  * A colour theme is a palette in two modes: index.css / styles/theme-palettes.css key
  * each one on `[data-theme="<id>-<mode>"]`. Which theme a person sees:
  * their own choice on /account, or `workspace` (the default) = the theme an
- * administrator picked for everyone (Administration → Brand & appearance, `GET
+ * administrator picked for everyone (Administration → General, `GET
  * /settings/appearance`). The mode (light / dark / system) stays a separate,
  * personal preference (themeStore.ts).
  *

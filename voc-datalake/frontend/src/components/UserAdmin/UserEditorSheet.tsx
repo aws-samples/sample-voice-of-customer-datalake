@@ -1,5 +1,5 @@
 /**
- * @fileoverview People → one person's editor (`/admin/people/<username>`, 7.54.00): a SideSheet that holds everything
+ * @fileoverview People → one person's editor (`/admin/access/users/<username>`, 7.54.00): a SideSheet that holds everything
  * set per person, where four lists used to repeat everyone (the users table, flags, platform admins and ways of
  * working):
  *

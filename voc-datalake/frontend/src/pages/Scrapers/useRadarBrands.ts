@@ -1,6 +1,6 @@
 /**
  * @fileoverview GET /radar/brands for the Scrapers page: the brands a Radar source may name
- * (the same cache entry Administration → Data sources → Radar writes after a save).
+ * (the same cache entry Administration → Sources → Radar writes after a save).
  * @module pages/Scrapers/useRadarBrands
  */
 import { useQuery } from '@tanstack/react-query'

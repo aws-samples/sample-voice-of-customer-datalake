@@ -32,7 +32,7 @@ deployment holds; this catalogue lists what the fields are.
 - `key`: a table or index key (how an item is found, not what it says).
 - `pii`: `customer_text` (the customer's words or a translation of them), `personal` (data about a
   person), `derived_text` (model-written text that may quote the customer), `none`.
-- `under_redact` / `under_summary_only`: what the source's PII policy (Administration → Privacy →
+- `under_redact` / `under_summary_only`: what the source's PII policy (Administration → Privacy & access → Source policies →
   source profiles, [source-policies.md](source-policies.md)) does to the field: `kept`, `redacted`,
   `dropped`, `from_redacted` (made from the redacted text) or `replaced`.
 - `values`: the allowed values of an enum field, read from the code that enforces them.

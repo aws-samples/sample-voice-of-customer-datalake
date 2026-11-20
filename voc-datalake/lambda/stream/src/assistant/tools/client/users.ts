@@ -13,7 +13,7 @@
  * `GET /settings/sources`). The SPA re-checks right before it executes.
  *
  * Not tools, on purpose: deleting a user, password resets and the user flags
- * (fallback owner, memory reviewer) — the assistant points to Administration → People.
+ * (fallback owner, memory reviewer) — the assistant points to Administration → Privacy & access → Users.
  */
 import { z } from 'zod';
 import type { AssistantRunContext, ClientToolDefinition } from '../../types.js';

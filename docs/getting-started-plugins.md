@@ -333,7 +333,7 @@ region, and starts with the deployment prefix when you use one.
 
 ## Step 7: Configure and run it
 
-1. Sign in as an administrator and open **Administration → Data sources** (`/admin/sources`).
+1. Sign in as an administrator and open **Administration → Sources → Source settings** (`/admin/sources/plugins`).
 2. Open the **My Reviews** card, enter the API key and product ID, and save.
 3. Click **Run now**. The card shows the run until it completes or fails.
 4. Check the results: the new reviews appear on the Dashboard after processing, and the raw copies

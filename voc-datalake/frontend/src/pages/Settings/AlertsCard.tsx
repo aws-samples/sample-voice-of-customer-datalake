@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Logs → Alerts (admin-only): turn the operational
+ * @fileoverview Administration → System → Logs → Alerts (admin-only): turn the operational
  * CloudWatch alarms on or off, and manage who gets their email.
  *
  * No alarm exists until an admin turns alerting on (each one is billed every

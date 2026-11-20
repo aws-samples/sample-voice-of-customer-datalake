@@ -114,7 +114,7 @@ _PLAIN: tuple[tuple[re.Pattern[str], Callable[[re.Match[str]], str]], ...] = tup
             WRONG_DOCUMENT)),
         (r'^agents and plans write a', _fixed(
             'The person this agent writes for does not work AI-driven, so agents may not write a PR/FAQ or PRD '
-            'for them. An administrator can change that in Administration → People.')),
+            'for them. An administrator can change that in Administration → Privacy & access → Users.')),
         (r'^the \w+ job failed', _fixed(f'The background work for this step failed, so the run stopped. {RERUN}')),
         (r'not executed by the node Lambda|^poll without a pending job|^agent or run not found|^run is not running',
          _fixed(INTERNAL_FAILURE)),

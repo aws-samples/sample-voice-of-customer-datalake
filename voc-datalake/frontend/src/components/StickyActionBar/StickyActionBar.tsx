@@ -11,6 +11,10 @@
  * - `inline`: a form's own button row inside a card — sticky and registered
  *   the same way, but only a background so it reads as part of the card; the
  *   caller's `className` gives the row its layout.
+ * - `footer` (7.59.00, Administration's and the workspace settings' cards): the
+ *   card's own button row in the flow AFTER its fields, registered the same way
+ *   but never sticky, so no field of a card taller than the screen scrolls under
+ *   it (the brand card's URLs did); the caller's `className` gives its layout.
  *
  * @module components/StickyActionBar/StickyActionBar
  */
@@ -22,22 +26,23 @@ import type { ReactNode } from 'react'
 interface StickyActionBarProps {
   readonly children: ReactNode
   readonly className?: string
-  readonly variant?: 'bar' | 'inline'
+  readonly variant?: 'bar' | 'inline' | 'footer'
 }
 
 // An opaque card, never a backdrop blur: a backdrop filter makes the bar the containing block of every `fixed`
 // descendant, so a confirmation its buttons open (ConfirmModal, which is not portalled) rendered inside the bar's
 // box instead of over the page (7.55.01: the form builder's Update live form on a phone).
 const VARIANT_CLASSES: Readonly<Record<NonNullable<StickyActionBarProps['variant']>, string>> = {
-  bar: 'flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm',
-  inline: 'bg-card',
+  bar: 'sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm',
+  inline: 'sticky bottom-0 z-10 bg-card',
+  footer: '',
 }
 
 export default function StickyActionBar({ children, className, variant = 'bar' }: StickyActionBarProps) {
   const ref = useRef<HTMLDivElement>(null)
   useRegisterActionBar(ref)
   return (
-    <div ref={ref} data-action-bar="" className={clsx('sticky bottom-0 z-10', VARIANT_CLASSES[variant], className)}>
+    <div ref={ref} data-action-bar="" className={clsx(VARIANT_CLASSES[variant], className)}>
       {children}
     </div>
   )

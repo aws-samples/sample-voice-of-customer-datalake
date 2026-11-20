@@ -46,6 +46,6 @@ describe('CategoriesSection', () => {
   it('asks for an API endpoint before it manages categories', () => {
     render(<CategoriesSection apiEndpoint="" />)
     expect(screen.getByRole('heading', { name: 'Feedback Categories' })).toBeInTheDocument()
-    expect(screen.getByText('Configure the API endpoint under Brand & appearance → Advanced to manage categories.')).toBeInTheDocument()
+    expect(screen.getByText('Configure the API endpoint under General → Advanced to manage categories.')).toBeInTheDocument()
   })
 })

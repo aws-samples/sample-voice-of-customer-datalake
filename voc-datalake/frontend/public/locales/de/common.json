@@ -500,7 +500,7 @@
       "resetBubble": "Position der Blase zurücksetzen"
     },
     "access": {
-      "hint": "Was Sie in dieser App sehen können. Ein Administrator ändert es unter Administration → Personen.",
+      "hint": "Was Sie in dieser App sehen können. Ein Administrator ändert es unter Administration → Datenschutz & Zugriff → Benutzer.",
       "categories": "Kategorien",
       "sources": "Quellen",
       "everyCategory": "Alle Kategorien",
@@ -710,7 +710,7 @@
     "problemsOnlyHint": "Fehler, Dienstausfälle, Leistung, Bedienbarkeit, Preise und Abrechnung sowie Support-Erfahrung. Funktionswünsche, Lob, Fragen und sonstige Bewertungen werden ausgeblendet.",
     "allTypes": "Alle Arten",
     "untyped": "Noch nicht typisierte Bewertungen: {{n, number}} (bleiben sichtbar)",
-    "untypedHint": "Bewertungen, die vor Einführung der Bewertungsarten gespeichert wurden, haben keine Art, bis ein Administrator sie unter Administration → Kategorien klassifiziert. Sie bleiben bei jedem Artenfilter sichtbar."
+    "untypedHint": "Bewertungen, die vor Einführung der Bewertungsarten gespeichert wurden, haben keine Art, bis ein Administrator sie unter Administration → Taxonomie → Kategorien klassifiziert. Sie bleiben bei jedem Artenfilter sichtbar."
   },
   "infoTip": {
     "label": "Weitere Informationen"

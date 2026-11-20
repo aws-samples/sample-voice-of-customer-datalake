@@ -3,7 +3,7 @@
  * (a custom scraper, a Web Reviews page, an app connector, a CSV/JSON upload). Ticked, a select
  * of the Radar brands (GET /radar/brands) picks the brand; the source then saves
  * `radar_brand: <brand key>` and its reviews go to Radar only (docs/radar.md). With no brand
- * yet, an inline link leads to Administration → Data sources → Radar. Unticked = `''` (an ordinary
+ * yet, an inline link leads to Administration → Sources → Radar. Unticked = `''` (an ordinary
  * source). A stored key that is no longer in the list stays selected, marked as such, so a
  * save never drops it silently.
  * @module pages/Scrapers/RadarSourcePicker

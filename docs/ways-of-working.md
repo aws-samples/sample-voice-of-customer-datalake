@@ -1,8 +1,8 @@
 # Ways of working with AI
 
 Each person has a **way of working with AI** for PR/FAQs and PRDs, and (with the engineering agents) for whether those
-agents may push and open pull requests for them. An administrator sets it per person in **Administration → People**:
-the person's editor (Edit on their row, a side sheet at `/admin/people/<username>`), section **Way of working with AI**
+agents may push and open pull requests for them. An administrator sets it per person in **Administration → Privacy & access → Users**:
+the person's editor (Edit on their row, a side sheet at `/admin/access/users/<username>`), section **Way of working with AI**
 (7.54.00; the Users page's ways-of-working panel before). The People table shows each person's in its **Way of
 working** column. Every other document type (research, custom, prototypes, decisions) behaves the same in every
 mode.

@@ -142,7 +142,7 @@ class IssuesConfig:
         payload = json.dumps(dict(secrets))
         if len(payload.encode()) > MAX_SECRET_BYTES:
             raise IssuesSettingsFull('the data sources\' settings are full: remove some entries under Administration → '
-                                     'Data sources')
+                                     'Sources → Source settings')
         try:
             self._secrets().put_secret_value(SecretId=self._secret_id, SecretString=payload,
                                              ClientRequestToken=self._request_token())

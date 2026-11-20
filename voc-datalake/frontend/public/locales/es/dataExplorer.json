@@ -41,7 +41,7 @@
     "search": "Buscar comentarios"
   },
   "newFile": "Nuevo Archivo",
-  "notConfigured": "Configura el endpoint de API en Administración → Marca y apariencia para explorar datos",
+  "notConfigured": "Configura el endpoint de API en Administración → Configuración general para explorar datos",
   "refresh": "Actualizar",
   "s3Browser": {
     "back": "Atrás",
@@ -84,7 +84,7 @@
     "loading": "Cargando la calidad de los datos…",
     "empty": "No hay comentarios en este periodo.",
     "unratedShare": "El {{share}} de los comentarios de este periodo aún no está valorado.",
-    "backfillHint": "Los comentarios guardados antes de que existieran las valoraciones no tienen banda; un reprocesado de categorías (Administración → Categorías) los valora.",
+    "backfillHint": "Los comentarios guardados antes de que existieran las valoraciones no tienen banda; un reprocesado de categorías (Administración → Taxonomía → Categorías) los valora.",
     "chartTop_one": "El gráfico muestra la fuente con más actividad; la tabla incluye todas las fuentes.",
     "chartTop_other": "El gráfico muestra las {{count, number}} fuentes con más actividad; la tabla incluye todas las fuentes.",
     "chartTop_many": "El gráfico muestra las {{count, number}} fuentes más activas; la tabla enumera todas las fuentes.",

@@ -3,7 +3,7 @@
 A storefront (an App Store country, a Google Play locale) that answers an error is
 otherwise indistinguishable from one with no reviews: the run "completes" with 0
 items. These helpers make that visible in the places an admin can read without AWS
-access — Administration → Logs (WARNING lines) and the source's run row
+access — Administration → System → Logs (WARNING lines) and the source's run row
 (``errors``):
 
 * ``StorefrontFetch`` — one storefront's reviews plus the short cause it failed with;

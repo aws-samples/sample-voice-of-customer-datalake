@@ -38,7 +38,7 @@ plugins/<id>/manifest.json ──► lib/plugin-loader.ts (Zod validation, cross
    `enabled` flag from `pluginStatus`, to `frontend/src/plugins/manifests.json`. The SPA's
    `prebuild` runs it.
 4. **Run time.** An administrator saves credentials and turns the schedule on in
-   **Administration → Data sources** (`/admin/sources`). The ingestor fetches items, archives each raw
+   **Administration → Sources → Source settings** (`/admin/sources/plugins`). The ingestor fetches items, archives each raw
    item to S3 and sends normalized messages to the processing queue.
 
 Adding a plugin, or changing which plugins are enabled, needs a deploy. Turning a deployed
@@ -643,7 +643,7 @@ event names no workspace, and per workspace for a run in one ([multi-workspace.m
   workspace's scheduled runs too, until the source is turned back on. A workspace's own trip stops
   only that workspace's runs.
 - **While tripped,** every run of that breaker returns `skipped` at once. A successful run deletes the row.
-- **Recovery:** the source card in **Administration → Data sources** (paused cards first) shows "Paused
+- **Recovery:** the source card in **Administration → Sources → Source settings** (paused cards first) shows "Paused
   after repeated failures" with the time, count and reason. Turning the source back on
   (`PUT /sources/<source>/enable`) closes the breaker and enables the schedule; **Reset**
   (`POST /sources/<source>/reset`) only closes the breaker. Those routes read and clear the
@@ -679,10 +679,10 @@ fields @timestamp, audit_event.details.reason
 `WebhookItemsIngested`, `WebhookErrors`, `WebhookRejected` and the two circuit-breaker metrics.
 
 **Alarms.** No alarm is deployed by CDK. An administrator turns alerting on in
-**Administration → Logs → Alerts**; the logs API then creates alarms on ingestor errors,
+**Administration → System → Logs → Alerts**; the logs API then creates alarms on ingestor errors,
 the processing DLQ and the schedule DLQ, among others, and sends them to one SNS topic
 ([deployment.md](deployment.md)). Per-request diagnosis is under
-**Administration → Logs → System errors**.
+**Administration → System → Logs → System errors**.
 
 ## Frontend
 
@@ -693,7 +693,7 @@ file with Zod at load and exposes `getPluginManifests()`, `getEnabledPlugins()` 
 `getSyntheticPlugins()`.
 
 The UI is driven by the manifest; a plugin cannot ship its own components. Enabled plugins appear
-as cards in **Administration → Data sources** (`SourceCard`, one opened at `/admin/sources/<id>`): the config form, the
+as cards in **Administration → Sources → Source settings** (`SourceCard`, one opened at `/admin/sources/<id>`): the config form, the
 webhook URL (`<api>/webhooks/<id>`) when `webhooks` is set, setup steps, the schedule toggle,
 **Run now**, run history and the circuit-breaker notice. The **Data sources** page (`/scrapers`)
 lists sources too, and offers `synthetic` plugins as generators.

@@ -21,7 +21,7 @@ export const brandSettingsKey = () => ['brand-settings'] as const
 
 /**
  * `GET /settings/brand` (the current workspace's brand inside one, the deployment's outside), once there is an API:
- * one cache entry for the shell, Administration → Brand & appearance and the workspace's settings page.
+ * one cache entry for the shell, Administration → General and the workspace's settings page.
  */
 export function useBrandSettings(apiEndpoint: string) {
   return useQuery({

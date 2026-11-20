@@ -78,7 +78,7 @@
     "saving": "Enregistrement...",
     "title": "Ce que contient cette ligne"
   },
-  "configureApiEndpoint": "Configurez le point de terminaison API dans Administration → Marque et apparence pour afficher la priorisation.",
+  "configureApiEndpoint": "Configurez le point de terminaison API dans Administration → Général pour afficher la priorisation.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"

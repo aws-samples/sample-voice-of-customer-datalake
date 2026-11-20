@@ -19,7 +19,7 @@
     "submit": "覚える"
   },
   "cancel": "キャンセル",
-  "configureFirst": "先に「管理 → ブランドと外観」で API エンドポイントを接続してください。",
+  "configureFirst": "先に「管理 → 一般」で API エンドポイントを接続してください。",
   "confirm": "+1",
   "confirmHint": "同意します（支持者に加える）",
   "alreadyBacked": "この記憶はすでに支持しています。1人につき1回だけ数えられます。",

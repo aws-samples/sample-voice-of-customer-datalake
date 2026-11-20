@@ -363,7 +363,7 @@
     "close": "Fechar",
     "show": "Mostrar código QR",
     "title": "Código QR",
-    "unavailable": "Código QR indisponível até que o endpoint da API seja configurado em Administração → Marca e aparência"
+    "unavailable": "Código QR indisponível até que o endpoint da API seja configurado em Administração → Geral"
   },
   "personaExport": {
     "copied": "Copiado!",
@@ -413,7 +413,7 @@
     "reprocess": {
       "action": "Reprocessar arquivo",
       "confirmTitle": "Reprocessar {{filename}}?",
-      "confirmMessage": "O arquivo passa de novo pelo pipeline de importação, com a origem {{source}}. As linhas que já estão no data lake são ignoradas como duplicadas, então só as linhas que faltam são importadas. As linhas armazenadas não são enriquecidas de novo: para recategorizá-las, use \"Reprocessar o feedback existente\" em Administração → Categorias.",
+      "confirmMessage": "O arquivo passa de novo pelo pipeline de importação, com a origem {{source}}. As linhas que já estão no data lake são ignoradas como duplicadas, então só as linhas que faltam são importadas. As linhas armazenadas não são enriquecidas de novo: para recategorizá-las, use \"Reprocessar o feedback existente\" em Administração → Taxonomia → Categorias.",
       "confirm": "Reprocessar",
       "running": "Reprocessando {{filename}}...",
       "failed": "Falha ao reprocessar {{filename}}. Os logs do sistema têm os detalhes.",
@@ -534,7 +534,7 @@
       "all": "Todas as fontes, incluindo as restritas",
       "selected": "Somente as fontes selecionadas",
       "restricted": "Restrita",
-      "noProfiles": "Ainda não há perfis de fonte (Administração → Privacidade)."
+      "noProfiles": "Ainda não há perfis de fonte (Administração → Privacidade e acesso → Políticas de fontes)."
     },
     "invite": "Convidar pessoa",
     "edit": "Editar",
@@ -618,7 +618,7 @@
     "sourceRadarHint": "Fonte do Radar ({{brand}}): estas linhas vão para a página Radar, nunca para os seus próprios painéis e métricas.",
     "defaultsTitle": "Dimensões e etiquetas",
     "defaultsHint": "Cada avaliação daqui recebe estes valores; os valores próprios prevalecem em cada dimensão.",
-    "noDimensions": "Ainda não há dimensões (Administração → Categorias → Dimensões).",
+    "noDimensions": "Ainda não há dimensões (Administração → Taxonomia → Dimensões).",
     "noDefault": "Sem padrão"
   },
   "draftSaveBar": {
@@ -706,7 +706,7 @@
       "summaryOnlyHint": "Somente os campos derivados (resumo, categoria, sentimento, dimensões) são mantidos; o texto original não é guardado."
     },
     "restrictedLabel": "Restrita",
-    "restrictedHint": "Somente administradores e as pessoas com acesso a esta fonte (Pessoas → acesso de uma pessoa) veem suas avaliações.",
+    "restrictedHint": "Somente administradores e as pessoas com acesso a esta fonte (Usuários → acesso de uma pessoa) veem suas avaliações.",
     "defaultsTitle": "Valores de dimensão para cada avaliação desta fonte",
     "noDefault": "Sem padrão",
     "empty": "Ainda não há perfis: toda fonte mantém tudo, para sempre, visível para todos.",
@@ -725,7 +725,7 @@
       "radarBrand": "{{name}}: indique a marca que esta fonte do Radar acompanha."
     },
     "radarLegacy": "Fonte do Radar para {{brand}}: as avaliações desta fonte vão para o Radar.",
-    "radarLegacyHint": "As marcas do Radar são configuradas em Administração → Fontes de dados → Radar, e cada scraper ou conector escolhe a sua marca na página Fontes de dados.",
+    "radarLegacyHint": "As marcas do Radar são configuradas em Administração → Fontes → Radar, e cada scraper ou conector escolhe a sua marca na página Fontes de dados.",
     "radarLegacyLink": "Abrir as definições do Radar"
   },
   "erasure": {

@@ -1007,15 +1007,15 @@
       "switch": "Leer las incidencias de este repositorio",
       "reasons": {
         "off": "Sus incidencias no se leen: el interruptor está desactivado.",
-        "token": "La fuente GitHub Issues inicia sesión con un token: añade este repositorio en Administración → Fuentes de datos.",
+        "token": "La fuente GitHub Issues inicia sesión con un token: añade este repositorio en Administración → Fuentes → Configuración de fuentes.",
         "other_app": "La fuente GitHub Issues inicia sesión con otra GitHub App: las incidencias de este repositorio no se leen a través de ella.",
-        "limit": "La fuente GitHub Issues lee como máximo {{limit, number}} repositorios: quita uno en Administración → Fuentes de datos para leer este.",
+        "limit": "La fuente GitHub Issues lee como máximo {{limit, number}} repositorios: quita uno en Administración → Fuentes → Configuración de fuentes para leer este.",
         "not_app": "Solo una conexión hecha mediante la GitHub App del despliegue lee sus incidencias automáticamente.",
         "not_deployed": "La fuente GitHub Issues no está desplegada aquí, así que no se leen incidencias.",
         "pending": "Aún no se lee: no está en la lista de la fuente GitHub Issues.",
         "unknown": "Sus incidencias no se leen."
       },
-      "openSources": "Abrir Administración → Fuentes de datos",
+      "openSources": "Abrir Administración → Fuentes → Configuración de fuentes",
       "readNow": "Leer sus incidencias ahora",
       "label": {
         "created": "Etiqueta {{label}}: creada.",
@@ -1025,7 +1025,7 @@
       "follow": {
         "reading_one": "Incidencias: se leen automáticamente de {{count, number}} repositorio.",
         "reading_other": "Incidencias: se leen automáticamente de {{count, number}} repositorios.",
-        "token": "La fuente GitHub Issues inicia sesión con un token: añade estos repositorios en Administración → Fuentes de datos.",
+        "token": "La fuente GitHub Issues inicia sesión con un token: añade estos repositorios en Administración → Fuentes → Configuración de fuentes.",
         "labelsCreated": "Etiqueta {{label}}: en {{list}}.",
         "labelsFailed": "No se pudo crear la etiqueta {{label}} en {{list}}: Comprobar instalación lo vuelve a intentar.",
         "skipped": {
@@ -1033,7 +1033,7 @@
           "other_app": "No se leen (la fuente inicia sesión con otra GitHub App): {{list}}.",
           "limit": "No se leen (la fuente ya lee {{limit, number}} repositorios): {{list}}."
         },
-        "scheduleOff": "La programación de la fuente GitHub Issues está desactivada: actívala en Administración → Fuentes de datos.",
+        "scheduleOff": "La programación de la fuente GitHub Issues está desactivada: actívala en Administración → Fuentes → Configuración de fuentes.",
         "error": "No se pudo configurar automáticamente la fuente GitHub Issues: {{error}}"
       },
       "state": {
@@ -2000,8 +2000,8 @@
       "notMet": "Pendiente",
       "unknown": "Aún no se sabe",
       "openConnections": "Abrir Conexiones",
-      "openDeploymentSources": "Abrir Administración → Fuentes de datos",
-      "openSources": "Abrir Administración → Fuentes de datos",
+      "openDeploymentSources": "Abrir Administración → Fuentes → Configuración de fuentes",
+      "openSources": "Abrir Administración → Fuentes → Configuración de fuentes",
       "sourcesOutside": "Fuera de cualquier espacio de trabajo: las automatizaciones solo leen las fuentes del despliegue.",
       "deploymentTitle": "Esta implementación",
       "connectedAs": "Conectado mediante una App: {{list}}.",

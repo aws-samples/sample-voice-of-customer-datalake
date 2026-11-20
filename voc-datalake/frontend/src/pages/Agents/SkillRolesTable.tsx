@@ -7,10 +7,8 @@
  *
  * @module pages/Agents/SkillRolesTable
  */
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { engineeringRegistryApi, engineeringRegistryKeys } from '../../api/engineeringRegistryApi'
-import { useConfigStore } from '../../store/configStore'
+import { useRegistryList } from './Registry/useRegistryList'
 import { SkillStatusBadge } from './SkillHistory'
 import { TemplateBadge } from './SkillTemplateUpdate'
 import { useSkillFormats } from './skillFormats'
@@ -20,10 +18,7 @@ import type { SkillRole, SkillRoleLine } from '../../api/engineeringSkillsApi'
 
 /** Each role's card in a scope (its template and whether it is newer), from the Registry (none while unread). */
 function useRoleCards(connection: string): { readonly failed: boolean; readonly cards: ReadonlyMap<string, RegistryCard> } {
-  const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  const read = useQuery({
-    queryKey: engineeringRegistryKeys.list(connection), queryFn: () => engineeringRegistryApi.list(connection), enabled: configured,
-  })
+  const read = useRegistryList(connection)
   const roles = (read.data ?? []).filter((card) => card.kind === 'role')
   return { failed: read.isError, cards: new Map(roles.map((card) => [card.id, card])) }
 }

@@ -49,7 +49,7 @@ describe('the participant settings card', () => {
     renderCard()
     expect(await screen.findByText(/Company domains: example\.com\./)).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: /company email domains/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Edit them under Company domains' })).toHaveAttribute('href', '/admin/boards/domains')
+    expect(screen.getByRole('link', { name: 'Edit them under Company domains' })).toHaveAttribute('href', '/admin/access/boards#domains')
   })
 
   it('saves the external-people switch, the cap and the sender name, never the domains', async () => {

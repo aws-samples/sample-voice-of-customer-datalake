@@ -20,7 +20,7 @@ import { ApiError } from '../../lib/errors'
 import { useAuthStore } from '../../store/authStore'
 import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
 import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
-import Members from './Members'
+import Members, { WorkspaceMembers } from './Members'
 
 const MEMBERS = '/me/workspaces/current/members'
 const ADA = { sub: 'sub-ada', role: 'admin', email: 'ada@example.com', name: 'Ada Admin', invited_by: '', joined_at: '2026-10-13T09:00:00Z' }
@@ -228,5 +228,25 @@ describe('Members for an editor or a viewer', () => {
     // The list that decides it has answered (naming acme and juniper, not this one), so the absence is its verdict.
     await waitFor(() => expect(client.getQueryState(['my-workspaces'])?.status).toBe('success'))
     expect(screen.queryByRole('button', { name: 'Leave workspace' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Members as a section of Administration (Workspaces → Members, 7.59.00)', () => {
+  it('heads the list with a section heading, keeps Leave beside it, and manages the members alike', async () => {
+    routeFetchApi({
+      'GET /me/workspaces': () => ({ workspaces: [ACME, JUNIPER] }),
+      'GET /me/workspaces/current': () => ({ workspace: ACME }),
+      [`GET ${MEMBERS}`]: () => ({ members: [ADA, VIC], next_cursor: null }),
+    })
+    act(() => setCurrentWorkspace(ACME))
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <TestRouter initialEntries={['/admin/workspaces/members']}><WorkspaceMembers workspace={ACME} /></TestRouter>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('vic@example.com')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)[0]).toBe('Members')
+    expect(await screen.findByRole('button', { name: 'Leave workspace' })).toBeInTheDocument()
   })
 })

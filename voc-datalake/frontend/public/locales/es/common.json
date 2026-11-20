@@ -504,7 +504,7 @@
       "resetBubble": "Restablecer posición de la burbuja"
     },
     "access": {
-      "hint": "Lo que puedes ver en esta aplicación. Un administrador lo cambia en Administración → Personas.",
+      "hint": "Lo que puedes ver en esta aplicación. Un administrador lo cambia en Administración → Privacidad y acceso → Usuarios.",
       "categories": "Categorías",
       "sources": "Fuentes",
       "everyCategory": "Todas las categorías",
@@ -715,7 +715,7 @@
     "problemsOnlyHint": "Errores, fallos del servicio, rendimiento, usabilidad, precios y facturación, y experiencia de soporte. Se ocultan las solicitudes de funciones, los elogios, las preguntas y otras reseñas.",
     "allTypes": "Todos los tipos",
     "untyped": "Reseñas aún sin tipo: {{n, number}} (se siguen mostrando)",
-    "untypedHint": "Las reseñas guardadas antes de que existieran los tipos no tienen tipo hasta que un administrador las clasifique en Administración → Categorías. Siguen visibles con cualquier filtro de tipo."
+    "untypedHint": "Las reseñas guardadas antes de que existieran los tipos no tienen tipo hasta que un administrador las clasifique en Administración → Taxonomía → Categorías. Siguen visibles con cualquier filtro de tipo."
   },
   "infoTip": {
     "label": "Más información"

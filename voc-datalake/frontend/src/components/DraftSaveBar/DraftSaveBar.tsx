@@ -44,7 +44,7 @@ export default function DraftSaveBar({ dirty, blockedReason, pending, saved, err
           <AlertCircle size={14} aria-hidden="true" /> {blockedReason}
         </p>
       )}
-      <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-2 py-2">
+      <StickyActionBar variant="footer" className="flex flex-wrap items-center gap-2 py-2">
         <button type="button" onClick={onSave} disabled={!dirty || blockedReason !== null || pending} className="btn btn-primary">
           <Save size={14} aria-hidden="true" /> {t('save')}
         </button>

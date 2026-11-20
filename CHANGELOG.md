@@ -17,6 +17,75 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.59.00] - 2026-11-20
+
+**Administration is back to main's tabbed layout**, with everything voc-multiplayer added since put in the tab it
+belongs to: main's header, its tabs in main's order (**General · Sources · Taxonomy · Privacy & access · AI models ·
+System**) with main's names, and on a tab with several sections main's section switch; two new tabs for what main never
+had, **Workspaces** and **Engineering agents**, before System. 7.54.00's search and "Needs attention" stay, inside the
+tabs; every address of 7.54.00 leads to its new place
+([account-vs-admin.md](docs/account-vs-admin.md#administration-mains-tabs-75900)). No API change: the backend's
+messages only name the new places.
+
+### Added
+
+- **Workspaces** (`/admin/workspaces/<section>`): inside a workspace, **This workspace** (the Workspace settings page's
+  cards: name, brand, plugins, categories, dimensions, source policies, export, delete) and **Members**, for the
+  deployment's administrators (the two pages stay for every member); for platform admins, **All workspaces** (the
+  platform console) and **Deployment brand** (7.54.00's Platform).
+- **Engineering agents** (`/admin/agents`, while the Agents page and the engineering module are on): the **Hard cap**
+  (Agents › Spend's switch, the same card), **Roles' models** (each role, the harness it runs on, Kiro or native, and
+  its model, each linked to its Registry card, where it is chosen) and **GitHub connections** (Connections, Spend and
+  the setup guide).
+- **Deep links to a card**: `#<card>` scrolls to a card and focuses it (`/admin/general#theme`,
+  `/admin/access/policies#erasure`, `/admin/access/boards#domains`, `/admin/agents#models`); `/admin/<tab>#<section>`
+  and `/settings/<tab>[#<section>]` lead to `/admin/<tab>/<section>`. General's brand card says where the form brand
+  (`form_theme`) is set: a form's Style panel in Feedback forms.
+
+### Changed
+
+- **The layout** (`pages/Settings/Settings.tsx`): the page header holds the title, its one line, the workspace the app
+  is in and the search (`/` focuses it; a result opens its tab, its section and its card); the tabs are a WAI-ARIA
+  tablist from `md` up (one tab stop, the arrow keys, Home and End select; it scrolls sideways with its fade and
+  buttons when it does not fit, the `IconTabs` strip) and a select below `md` (no overflow at 390 px); each tab's panel
+  starts with its one line, then the section switch (main's `SectionSwitch`, wrapping on a phone) and the section's
+  cards. The page scrolls as one.
+- **Where things are** (main's places): People → Privacy & access → **Users** (`/admin/access/users[/<username>|/invite]`);
+  Data sources → Sources → **Source settings** (`/admin/sources/plugins[/<source>]`, with its This workspace |
+  Deployment switch); its Advanced fold's Email inbox, Radar and Design-system tokens → Sources' own sections (Email
+  inbox, Radar, **Integrations**); Logs and Version → **System**; Categories and Dimensions → **Taxonomy**; Feedback
+  boards → Privacy & access → **Boards** (with Company domains and Participant email); Brand & appearance → **General**;
+  Privacy → Privacy & access → **Source policies** (with the erasure panels); Platform → **Workspaces**.
+- **Needs attention**: a compact strip on General (paused sources, people with no way of working, AI models this
+  account cannot call), and a count badge on the Sources, Privacy & access and AI models tabs (in words for a screen
+  reader, and in the phone's select).
+- **Copy**: every "Administration → …" in 9 locales names the new places, and the app's links use them (Agents'
+  readiness and setup guide, the assistant's cards, onboarding, Feedback forms, Radar, Company, Scrapers); the Users
+  card has main's heading again; the page's subtitle is main's.
+- **The backend's messages name the new places too** (text only: no route or payload change): the assistant's
+  guidance and `import_reviews`' `source_id` hint, an agent's failure reason, a source id an archive import does not
+  know, a design reference's token errors (and their copies in Administration → Sources → Integrations' setup help,
+  word for word), Radar's "no brand yet", the GitHub Issues source's full settings and its repository already read
+  through a connection, the ingestor alert's description, and the engineering readiness fixes, whose links now open
+  `/admin/access/users` and `/admin/sources/plugins/github_issues?scope=deployment` directly.
+- **A settings card's Save row sits after its fields** (`StickyActionBar` `footer`): no longer sticky, so a card taller
+  than the screen (General's brand, the workspace's brand, Source policies, Dimensions, Radar, Boards, the
+  integrations' tokens, …) never has a field scrolling under its Save. Editor pages keep their sticky bars.
+
+### Removed
+
+- 7.54.00's home (`SettingsHome.tsx`: its groups, the Everyday counts, Elsewhere and the version footer) and its left
+  navigation (`AdminNav.tsx`); `SectionAnchor.tsx` (now `CardAnchor.tsx`); `BrandPage.tsx` (now `GeneralTab.tsx`);
+  Source settings' Advanced fold; the `settings:home.*` keys in 9 locales.
+
+### Upgrade notes
+
+- Bookmarks and links keep working: `/admin` opens `/admin/general`, and every 7.54.00 address is replaced in place by
+  its new one (`/admin/people/<username>` → `/admin/access/users/<username>`, `/admin/brand/theme` →
+  `/admin/general#theme`, `/admin/platform` → `/admin/workspaces/all`, …; the table in
+  [account-vs-admin.md](docs/account-vs-admin.md#administration-mains-tabs-75900)), 7.54.00's readiness links
+  (`/admin/people`, `/admin/sources/github_issues?scope=deployment`) included.
+
 ## [7.58.00] - 2026-11-20
 
 **Choose the model an engineering agent runs on**, for Kiro and for the native harness: one choice per role (on Kiro

@@ -1,6 +1,6 @@
 /**
- * Administration → Integrations: Figma / GitHub tokens are write-only (moved
- * here from the Company design-system tab).
+ * Administration → Sources → Integrations: Figma / GitHub tokens are write-only (moved
+ * here from the Company design-system tab); a status that cannot be read says so and retries.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -49,5 +49,12 @@ describe('IntegrationsSection', () => {
     renderWithQueryClient(<TestRouter><IntegrationsSection /></TestRouter>)
     expect(await screen.findByRole('button', { name: /figma personal access token/i })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('button', { name: /github fine-grained personal access token/i })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('says when the tokens\' status cannot be read, and reads it again on Retry', async () => {
+    fetchApi.mockRejectedValueOnce(new Error('down')).mockResolvedValue(DESIGN)
+    renderWithQueryClient(<TestRouter><IntegrationsSection /></TestRouter>)
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+    expect(await screen.findByLabelText(/figma token/i)).toHaveValue('')
   })
 })

@@ -101,8 +101,8 @@ describe('a connection\'s issues', () => {
     renderConnections({ [ISSUES]: () => view([entry('billing-api', { reading: false, reason: 'token', label: 'present' })],
       { signs_in: 'token', app_id: null }) })
     const billing = await issuesOf('billing-api')
-    expect(billing.getByText(/signs in with a token: add this repository under Administration → Data sources/)).toBeInTheDocument()
-    expect(billing.getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/sources/github_issues?scope=deployment')
+    expect(billing.getByText(/signs in with a token: add this repository under Administration → Sources → Source settings/)).toBeInTheDocument()
+    expect(billing.getByRole('link', { name: 'Open Administration → Sources → Source settings' })).toHaveAttribute('href', '/admin/sources/plugins/github_issues?scope=deployment')
     expect(billing.getByText('Not read')).toBeInTheDocument()
     expect((await rowOf('billing-api')).getByText('voc-agent')).toBeInTheDocument()
   })

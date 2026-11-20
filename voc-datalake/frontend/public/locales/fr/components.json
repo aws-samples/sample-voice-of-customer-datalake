@@ -363,7 +363,7 @@
     "close": "Fermer",
     "show": "Afficher le code QR",
     "title": "Code QR",
-    "unavailable": "Code QR indisponible jusqu'à la configuration du point de terminaison API dans Administration → Marque et apparence"
+    "unavailable": "Code QR indisponible jusqu'à la configuration du point de terminaison API dans Administration → Général"
   },
   "personaExport": {
     "copied": "Copié !",
@@ -413,7 +413,7 @@
     "reprocess": {
       "action": "Retraiter le fichier",
       "confirmTitle": "Retraiter {{filename}} ?",
-      "confirmMessage": "Le fichier repasse dans le pipeline d'import, sous sa source {{source}}. Les lignes déjà présentes dans le data lake sont ignorées comme doublons : seules les lignes manquantes sont importées. Les lignes stockées ne sont pas ré-enrichies : pour les recatégoriser, utilisez « Retraiter les retours existants » dans Administration → Catégories.",
+      "confirmMessage": "Le fichier repasse dans le pipeline d'import, sous sa source {{source}}. Les lignes déjà présentes dans le data lake sont ignorées comme doublons : seules les lignes manquantes sont importées. Les lignes stockées ne sont pas ré-enrichies : pour les recatégoriser, utilisez « Retraiter les retours existants » dans Administration → Taxonomie → Catégories.",
       "confirm": "Retraiter",
       "running": "Retraitement de {{filename}}...",
       "failed": "Le retraitement de {{filename}} a échoué. Les journaux système donnent le détail.",
@@ -534,7 +534,7 @@
       "all": "Toutes les sources, y compris les restreintes",
       "selected": "Uniquement les sources sélectionnées",
       "restricted": "Restreinte",
-      "noProfiles": "Aucun profil de source n'est encore configuré (Administration → Confidentialité)."
+      "noProfiles": "Aucun profil de source n'est encore configuré (Administration → Confidentialité et accès → Politiques des sources)."
     },
     "invite": "Inviter une personne",
     "edit": "Modifier",
@@ -618,7 +618,7 @@
     "sourceRadarHint": "Source Radar ({{brand}}) : ces lignes vont sur la page Radar, jamais dans vos propres tableaux de bord ni métriques.",
     "defaultsTitle": "Dimensions et étiquettes",
     "defaultsHint": "Chaque avis venant d'ici porte ces valeurs ; ses propres valeurs l'emportent par dimension.",
-    "noDimensions": "Aucune dimension n'est encore configurée (Administration → Catégories → Dimensions).",
+    "noDimensions": "Aucune dimension n'est encore configurée (Administration → Taxonomie → Dimensions).",
     "noDefault": "Aucune valeur par défaut"
   },
   "draftSaveBar": {
@@ -706,7 +706,7 @@
       "summaryOnlyHint": "Seuls les champs dérivés (résumé, catégorie, sentiment, dimensions) sont conservés ; le texte d'origine n'est pas gardé."
     },
     "restrictedLabel": "Restreinte",
-    "restrictedHint": "Seuls les administrateurs et les personnes ayant accès à cette source (Personnes → accès d’une personne) voient ses avis.",
+    "restrictedHint": "Seuls les administrateurs et les personnes ayant accès à cette source (Utilisateurs → accès d’une personne) voient ses avis.",
     "defaultsTitle": "Valeurs de dimension pour chaque avis de cette source",
     "noDefault": "Aucune valeur par défaut",
     "empty": "Aucun profil pour l'instant : chaque source conserve tout, indéfiniment, visible par tous.",
@@ -725,7 +725,7 @@
       "radarBrand": "{{name}} : indiquez la marque suivie par cette source Radar."
     },
     "radarLegacy": "Source Radar pour {{brand}} : les avis de cette source vont dans Radar.",
-    "radarLegacyHint": "Les marques Radar se configurent dans Administration → Sources de données → Radar, et chaque scraper ou connecteur choisit sa marque sur la page Sources de données.",
+    "radarLegacyHint": "Les marques Radar se configurent dans Administration → Sources → Radar, et chaque scraper ou connecteur choisit sa marque sur la page Sources de données.",
     "radarLegacyLink": "Ouvrir les réglages Radar"
   },
   "erasure": {

@@ -162,7 +162,7 @@
     "adminOnlyNotice": "브랜드 구성은 관리자만 변경할 수 있습니다. 여기에서 확인할 수 있습니다."
   },
   "categories": {
-    "configureFirst": "카테고리을(를) 관리하려면 브랜드 및 모양 → 고급에서 API 엔드포인트를 구성하세요.",
+    "configureFirst": "카테고리을(를) 관리하려면 일반 → 고급에서 API 엔드포인트를 구성하세요.",
     "description": "피드백 분류를 위한 카테고리 및 하위 카테고리를 구성합니다.",
     "title": "피드백 카테고리"
   },
@@ -174,12 +174,12 @@
     "resetTitle": "모든 설정 초기화"
   },
   "dataSources": {
-    "configureFirst": "데이터 소스을(를) 관리하려면 브랜드 및 모양 → 고급에서 API 엔드포인트를 구성하세요.",
+    "configureFirst": "데이터 소스을(를) 관리하려면 일반 → 고급에서 API 엔드포인트를 구성하세요.",
     "noPlugins": "데이터 소스 플러그인을 찾을 수 없습니다. <code>npm run generate:manifests</code>를 실행하여 플러그인 매니페스트를 생성하세요."
   },
   "logs": {
     "clear": "지우기",
-    "configureFirst": "로그를 보려면 브랜드 및 모양 → 고급에서 API 엔드포인트를 구성하세요.",
+    "configureFirst": "로그를 보려면 일반 → 고급에서 API 엔드포인트를 구성하세요.",
     "daysAgo_one": "{{count, number}}일 전",
     "daysAgo_other": "{{count, number}}일 전",
     "errorLabel": "오류:",
@@ -385,34 +385,49 @@
       "manual": "수동으로 구성(고급)"
     }
   },
-  "subtitle": "이 배포의 사용자, 데이터, 카테고리와 AI.",
+  "subtitle": "모든 사용자를 위한 플랫폼을 구성합니다(관리자 전용).",
   "tabs": {
-    "sources": "데이터 소스",
+    "general": "일반",
+    "sources": "소스",
+    "taxonomy": "분류 체계",
+    "access": "개인정보 및 액세스",
     "ai": "AI 모델",
-    "people": "사용자",
-    "logs": "로그",
-    "categories": "카테고리",
-    "boards": "피드백 보드",
-    "brand": "브랜드 및 모양",
-    "privacy": "개인정보",
-    "platform": "플랫폼",
-    "version": "버전"
+    "workspaces": "워크스페이스",
+    "agents": "엔지니어링 에이전트",
+    "system": "시스템"
   },
   "sections": {
+    "plugins": "소스 설정",
+    "integrations": "통합",
     "inbox": "이메일 받은편지함",
     "radar": "레이더",
+    "categories": "카테고리",
     "dimensions": "차원",
-    "tokens": "디자인 시스템 토큰",
+    "policies": "소스 정책",
+    "users": "사용자",
+    "boards": "보드",
+    "workspace": "이 워크스페이스",
+    "members": "구성원",
+    "allWorkspaces": "모든 워크스페이스",
+    "deploymentBrand": "배포 브랜드",
+    "logs": "로그",
+    "version": "버전",
+    "brand": "브랜드",
+    "theme": "기본 테마",
+    "api": "API 엔드포인트",
+    "erasure": "데이터 삭제",
     "domains": "회사 도메인",
     "participants": "참가자 이메일",
-    "theme": "기본 테마",
-    "erasure": "데이터 삭제",
-    "deploymentBrand": "배포 브랜드",
+    "hardCap": "강제 상한",
+    "models": "역할의 모델",
+    "connections": "GitHub 연결",
     "advanced": "고급"
   },
   "title": "설정",
   "users": {
-    "configureFirst": "사용자을(를) 관리하려면 브랜드 및 모양 → 고급에서 API 엔드포인트를 구성하세요."
+    "configureFirst": "사용자를 관리하려면 일반 탭에서 API 엔드포인트를 구성하세요.",
+    "title": "사용자 관리",
+    "description": "VoC 플랫폼의 사용자, 역할 및 권한을 관리합니다."
   },
   "company": {
     "title": "회사",
@@ -569,7 +584,7 @@
     "kindHints": {
       "website": "안전한 브라우저에서 페이지를 열어 색상, 글꼴, 로고를 읽어 옵니다.",
       "github": "공개 저장소는 토큰 없이도 됩니다. 테마·색상·글꼴 파일과 로고를 읽어 옵니다.",
-      "figma": "Figma 토큰이 필요합니다(관리 → 데이터 소스 → 디자인 시스템 토큰)."
+      "figma": "Figma 토큰이 필요합니다(관리 → 소스 → 통합)."
     },
     "readingHint": {
       "link": "지금 읽는 중입니다. 몇 분 걸릴 수 있습니다.",
@@ -731,10 +746,10 @@
     "notConfigured": "설정 안 됨",
     "saveTokens": "토큰 저장",
     "integrationsMoved": "Figma 및 GitHub 토큰 설정 위치:",
-    "integrationsLink": "관리 → 데이터 소스 → 디자인 시스템 토큰"
+    "integrationsLink": "관리 → 소스 → 통합"
   },
   "integrations": {
-    "title": "디자인 시스템 토큰",
+    "title": "통합",
     "description": "디자인 시스템을 위해 플랫폼이 Figma 파일과 GitHub 리포지토리를 읽는 데 사용하는 쓰기 전용 토큰입니다. Secrets Manager에 저장되며 다시 표시되지 않습니다.",
     "mcpHint": "외부 어시스턴트의 MCP 접근은 사용자별로 설정합니다:",
     "mcpLink": "연결"
@@ -805,8 +820,7 @@
       "label": "소스 범위",
       "workspace": "이 워크스페이스",
       "deployment": "배포"
-    },
-    "advancedHint": "한 번만 설정: 이메일 받은편지함, 레이더의 브랜드와 스캔, 디자인 시스템이 Figma와 GitHub를 읽는 토큰."
+    }
   },
   "version": {
     "title": "버전",
@@ -1001,87 +1015,58 @@
   "deploymentSources": {
     "notice": "이 소스들은 어느 워크스페이스에도 속하지 않는 배포 전체의 피드백을 가져옵니다. 엔지니어링 자동화가 읽는 피드백은 이것뿐입니다."
   },
-  "home": {
-    "inWorkspace": "워크스페이스 {{name}}에 있습니다. 이 워크스페이스의 설정은 <settings>워크스페이스 설정</settings>에 있습니다.",
-    "invite": "사용자 초대",
-    "version": "버전 {{version}} · <notes>릴리스 노트</notes>",
-    "attention": {
-      "title": "확인 필요",
-      "sourcesPaused_one": "오류로 일시 중지된 소스 {{count, number}}개: {{list}}",
-      "sourcesPaused_other": "오류로 일시 중지된 소스 {{count, number}}개: {{list}}",
-      "waysUnset_one": "AI와 일하는 방식이 설정되지 않은 사용자 {{count, number}}명",
-      "waysUnset_other": "AI와 일하는 방식이 설정되지 않은 사용자 {{count, number}}명",
-      "modelsBlocked_one": "이 계정에서 호출할 수 없는 AI 모델 {{count, number}}개",
-      "modelsBlocked_other": "이 계정에서 호출할 수 없는 AI 모델 {{count, number}}개",
-      "reviewSources": "소스 확인",
-      "openPeople": "사용자 열기",
-      "openModels": "AI 모델 열기"
-    },
-    "groups": {
-      "everyday": "매일",
-      "regular": "정기적으로",
-      "once": "한 번만 설정",
-      "rare": "가끔",
-      "elsewhere": "다른 곳"
-    },
-    "jobs": {
-      "people": {
-        "title": "사용자",
-        "hint": "초대, 삭제, 역할과 AI와 일하는 방식"
-      },
-      "sources": {
-        "title": "데이터 소스",
-        "hint": "소스 연결, 예약, 일시 중지와 확인"
-      },
-      "logs": {
-        "title": "로그",
-        "hint": "오류와 실패한 항목"
-      },
-      "categories": {
-        "title": "카테고리와 차원",
-        "hint": "피드백을 분류하고 태그하는 방식"
-      },
-      "boards": {
-        "title": "피드백 보드",
-        "hint": "보드, 회사 도메인과 참가자 이메일"
-      },
-      "ai": {
-        "title": "AI 모델",
-        "hint": "각 AI 기능의 모델과 용량"
-      },
-      "brand": {
-        "title": "브랜드 및 모양",
-        "hint": "브랜드와 기본 테마"
-      },
-      "privacy": {
-        "title": "개인정보와 데이터 삭제",
-        "hint": "소스 정책과 개인 또는 소스 데이터 삭제"
-      },
-      "platform": {
-        "title": "플랫폼: 워크스페이스",
-        "hint": "워크스페이스와 배포 브랜드"
-      },
-      "version": {
-        "title": "버전",
-        "hint": "이 빌드와 릴리스 노트"
-      }
-    },
-    "counts": {
-      "people_one": "{{count, number}}명",
-      "people_other": "{{count, number}}명",
-      "sources": "켜짐 {{on, number}} · 일시 중지 {{paused, number}}",
-      "errors_one": "지난 24시간 오류 {{count, number}}건",
-      "errors_other": "지난 24시간 오류 {{count, number}}건"
-    },
-    "elsewhere": {
-      "cost": "비용: 에이전트 오케스트레이션 › 비용",
-      "github": "GitHub: 에이전트 오케스트레이션 › 연결",
-      "preferences": "내 환경설정: 계정 › 환경설정"
+  "tabsLabel": "관리 탭",
+  "tabsScrollStart": "이전 탭으로 스크롤",
+  "tabsScrollEnd": "다른 탭으로 스크롤",
+  "tabHints": {
+    "general": "브랜드와 기본 테마",
+    "sources": "소스 연결, 일정, 확인. 이메일 받은편지함, 레이더, 통합",
+    "taxonomy": "피드백을 분류하고 태그하는 방식",
+    "access": "소스 정책과 데이터 삭제, 사용자와 액세스, 피드백 보드",
+    "ai": "각 AI 기능의 모델과 용량",
+    "workspaces": "이 워크스페이스의 자체 설정과 구성원, 그리고 배포의 모든 워크스페이스",
+    "agents": "엔지니어링 에이전트의 강제 상한, 각 역할의 모델, GitHub 연결",
+    "system": "오류, 실패한 항목, 알림. 이 빌드와 릴리스 노트"
+  },
+  "attention": {
+    "title": "확인 필요",
+    "sourcesPaused_one": "오류로 일시 중지된 소스 {{count, number}}개: {{list}}",
+    "sourcesPaused_other": "오류로 일시 중지된 소스 {{count, number}}개: {{list}}",
+    "waysUnset_one": "AI와 일하는 방식이 설정되지 않은 사용자 {{count, number}}명",
+    "waysUnset_other": "AI와 일하는 방식이 설정되지 않은 사용자 {{count, number}}명",
+    "modelsBlocked_one": "이 계정에서 호출할 수 없는 AI 모델 {{count, number}}개",
+    "modelsBlocked_other": "이 계정에서 호출할 수 없는 AI 모델 {{count, number}}개",
+    "reviewSources": "소스 확인",
+    "openUsers": "사용자 열기",
+    "openModels": "AI 모델 열기",
+    "badge_one": "{{count, number}}개 확인 필요",
+    "badge_other": "{{count, number}}개 확인 필요",
+    "option": "{{tab}} ({{count, number}})"
+  },
+  "header": {
+    "inWorkspace": "워크스페이스 {{name}}에 있습니다. 이 워크스페이스의 설정은 <settings>워크스페이스 → 이 워크스페이스</settings>에 있습니다."
+  },
+  "general": {
+    "formBrand": "새 피드백 양식은 양식 브랜드로 시작하며, <forms>피드백 양식</forms>에서 양식의 스타일 패널로 설정합니다."
+  },
+  "agentsTab": {
+    "roleDefault": "역할 기본값 ({{model}})",
+    "change": "변경",
+    "changeModel": "{{role}}의 모델 변경",
+    "modelsDescription": "이 배포에서 각 역할이 실행되는 하네스와 사용하는 모델입니다. 변경은 역할의 레지스트리 카드에서 하며 다음 실행부터 적용됩니다.",
+    "modelsUnread": "역할의 모델을 읽을 수 없습니다.",
+    "connectionsDescription": "엔지니어링 에이전트가 저장소를 가져오는 곳, 비용, 첫 실행 전 단계입니다.",
+    "links": {
+      "connections": "에이전트 오케스트레이션 › 연결",
+      "connectionsHint": "GitHub를 연결하고 에이전트가 작업할 저장소를 선택",
+      "spend": "에이전트 오케스트레이션 › 비용",
+      "spendHint": "각 워크플로의 월 예산과 실행 비용",
+      "setup": "구성 가이드",
+      "setupHint": "첫 엔지니어링 실행 전 단계"
     }
   },
   "search": {
     "titles": {
-      "connections": "연결",
       "spend": "비용",
       "preferences": "환경설정"
     },
@@ -1096,25 +1081,32 @@
     "count_one": "설정 {{count, number}}개를 찾았습니다",
     "count_other": "설정 {{count, number}}개를 찾았습니다",
     "terms": {
-      "people": "초대, 사용자 추가, 사용자, 삭제, 역할, 관리자, 일하는 방식, AI 모드, 대체 소유자, 메모리 검토자, 플랫폼 관리자, 비밀번호, 비활성화, 접근, invite",
-      "sources": "연결, 소스, 스크레이퍼, 자격 증명, 토큰, 일정, 일시 중지, 재개, 플러그인, 웹훅, 앱 리뷰, S3 가져오기, GitHub Issues, 배포",
-      "logs": "오류, 실패, 검증, 처리, 스크레이퍼 실행, 알림, CloudWatch, 시스템 로그",
-      "categories": "분류 체계, 카테고리, 하위 카테고리, 재처리, 분류, AI 제안",
-      "boards": "기능 요청, 보드, 투표, 로드맵, 아이디어",
+      "general": "설정, 일반, 모양",
       "ai": "모델, Bedrock, Claude, Anthropic, GPT, 할당량, 용량, 모델 테스트, 분당 토큰, 계약",
-      "brand": "브랜드 이름, 로고, 핸들, 해시태그, 추적할 URL, 리브랜딩, API 엔드포인트",
-      "privacy": "소스 정책, 보존, 개인 데이터, PII, 제한, GDPR, 데이터 보호",
-      "platform": "워크스페이스, 새 팀, 워크스페이스 만들기, 플랫폼 관리자, 워크스페이스 들어가기",
-      "version": "릴리스 노트, 변경 기록, 커밋, 빌드, 새로운 기능",
+      "agents": "엔지니어링, 자율 에이전트, 실행",
+      "plugins": "연결, 소스, 스크레이퍼, 자격 증명, 토큰, 일정, 일시 중지, 재개, 플러그인, 웹훅, 앱 리뷰, S3 가져오기, GitHub Issues, 배포",
+      "integrations": "Figma, GitHub 토큰, 디자인 시스템, 통합",
       "inbox": "이메일, 메일함, 전달, 수신 이메일, 한도",
       "radar": "경쟁사, 브랜드, 뉴스, 릴리스, Exa, 스캔",
-      "tokens": "Figma, GitHub 토큰, 디자인 시스템, 통합",
+      "categories": "분류 체계, 카테고리, 하위 카테고리, 재처리, 분류, AI 제안",
       "dimensions": "차원, 제품, 모듈, 사용자 유형, 태그, 필터",
+      "policies": "소스 정책, 보존, 개인 데이터, PII, 제한, GDPR, 데이터 보호",
+      "users": "초대, 사용자 추가, 사용자, 삭제, 역할, 관리자, 일하는 방식, AI 모드, 대체 소유자, 메모리 검토자, 플랫폼 관리자, 비밀번호, 비활성화, 접근, invite",
+      "boards": "기능 요청, 보드, 투표, 로드맵, 아이디어",
+      "workspace": "워크스페이스, 이름 변경, 플러그인, 내보내기, 워크스페이스 삭제, 워크스페이스 브랜드",
+      "members": "구성원, 구성원 초대, 역할, 뷰어, 편집자, 워크스페이스 나가기",
+      "allWorkspaces": "워크스페이스, 새 팀, 워크스페이스 만들기, 플랫폼 관리자, 워크스페이스 들어가기",
+      "deploymentBrand": "기본 브랜드, 배포, 워크스페이스 밖",
+      "logs": "오류, 실패, 검증, 처리, 스크레이퍼 실행, 알림, CloudWatch, 시스템 로그",
+      "version": "릴리스 노트, 변경 기록, 커밋, 빌드, 새로운 기능",
+      "brand": "브랜드 이름, 로고, 핸들, 해시태그, 추적할 URL, 리브랜딩, API 엔드포인트",
+      "theme": "테마, 색상, 다크, 라이트, 모양",
+      "api": "API 엔드포인트, URL, 개발, 로컬",
+      "erasure": "삭제, 데이터 삭제, GDPR, 잊힐 권리, 소스 삭제",
       "domains": "회사 도메인, 이메일 도메인, 동료, 대상",
       "participants": "참가자, 보낸 사람 이름, 일일 한도, 외부 사용자, 이메일 발송",
-      "theme": "테마, 색상, 다크, 라이트, 모양",
-      "erasure": "삭제, 데이터 삭제, GDPR, 잊힐 권리, 소스 삭제",
-      "deploymentBrand": "기본 브랜드, 배포, 워크스페이스 밖",
+      "hardCap": "강제 상한, 예산, 비용 상한, 실행 중지, 지출 한도",
+      "models": "모델, Kiro, 네이티브 하네스, Opus, Sonnet, Haiku, 역할, 레지스트리",
       "connections": "GitHub, GitHub 앱, 저장소, 연결, 설치, 이슈",
       "spend": "비용, 지출, 예산, 상한, 청구",
       "preferences": "언어, 테마, 내 환경설정, 다크 모드"

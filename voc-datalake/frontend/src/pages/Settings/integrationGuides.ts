@@ -70,8 +70,8 @@ const FIGMA_GUIDE: IntegrationGuide = {
   permissionsKey: 'settings:integrationGuide.figma.permissions',
   linkFormatKey: 'settings:integrationGuide.figma.linkFormat',
   failures: [
-    { message: 'No Figma token configured (Administration → Data sources → Design-system tokens)', meaningKey: 'settings:integrationGuide.failMissing' },
-    { message: 'Figma refused access — check the token in Administration → Data sources → Design-system tokens', meaningKey: 'settings:integrationGuide.figma.failRefused' },
+    { message: 'No Figma token configured (Administration → Sources → Integrations)', meaningKey: 'settings:integrationGuide.failMissing' },
+    { message: 'Figma refused access — check the token in Administration → Sources → Integrations', meaningKey: 'settings:integrationGuide.figma.failRefused' },
     { message: 'Figma could not find it (or the token cannot see it)', meaningKey: 'settings:integrationGuide.figma.failNotFound' },
     { message: 'Not a Figma file link (expected https://www.figma.com/file/<key>/… or /design/<key>/…)', meaningKey: 'settings:integrationGuide.failBadLink' },
     rateLimited('Figma'),
@@ -108,7 +108,7 @@ const GITHUB_GUIDE: IntegrationGuide = {
   permissionsKey: 'settings:integrationGuide.github.permissions',
   linkFormatKey: 'settings:integrationGuide.github.linkFormat',
   failures: [
-    { message: 'GitHub refused access — check the token in Administration → Data sources → Design-system tokens', meaningKey: 'settings:integrationGuide.github.failRefused' },
+    { message: 'GitHub refused access — check the token in Administration → Sources → Integrations', meaningKey: 'settings:integrationGuide.github.failRefused' },
     { message: 'GitHub could not find it (or the token cannot see it)', meaningKey: 'settings:integrationGuide.github.failNotFound' },
     { message: 'No design tokens, CSS, Tailwind config or README found at that location', meaningKey: 'settings:integrationGuide.github.failNoFiles' },
     { message: 'Not a GitHub repository link (expected https://github.com/<owner>/<repo>)', meaningKey: 'settings:integrationGuide.failBadLink' },

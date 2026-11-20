@@ -70,7 +70,7 @@ def upload_profile(table: Any, raw_source_id: object) -> dict[str, Any]:
         logger.exception('Source profiles could not be read for an upload')
         raise SourceProfilesUnavailable from e
     if source_id != DEFAULT_UPLOAD_SOURCE and source_id not in {profile['id'] for profile in profiles}:
-        raise ValidationError(f'Unknown source_id "{source_id}": configure it in Administration → Privacy first')
+        raise ValidationError(f'Unknown source_id "{source_id}": configure it in Administration → Privacy & access → Source policies first')
     return profile_for(profiles, source_id)
 
 

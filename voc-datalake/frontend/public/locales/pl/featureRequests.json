@@ -304,7 +304,7 @@
     "configure": "Konfiguruj tablice",
     "emptyTitle": "Brak tablic",
     "empty": "Nie udostępniono Ci jeszcze żadnej tablicy.",
-    "emptyAdmin": "Utwórz tablicę w <admin>Administracja → Tablice opinii</admin>.",
+    "emptyAdmin": "Utwórz tablicę w <admin>Administracja → Prywatność i dostęp → Tablice</admin>.",
     "loadFailed": "Nie udało się wczytać tablic.",
     "notFoundTitle": "Nie znaleziono tablicy",
     "notFound": "Ta tablica nie istnieje lub nie została Ci udostępniona.",

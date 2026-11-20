@@ -989,15 +989,15 @@
       "switch": "Issues dieses Repositorys lesen",
       "reasons": {
         "off": "Seine Issues werden nicht gelesen: Der Schalter ist aus.",
-        "token": "Die GitHub-Issues-Quelle meldet sich mit einem Token an: Fügen Sie dieses Repository unter Administration → Datenquellen hinzu.",
+        "token": "Die GitHub-Issues-Quelle meldet sich mit einem Token an: Fügen Sie dieses Repository unter Administration → Quellen → Quelleneinstellungen hinzu.",
         "other_app": "Die GitHub-Issues-Quelle meldet sich mit einer anderen GitHub-App an: Die Issues dieses Repositorys werden nicht über sie gelesen.",
-        "limit": "Die GitHub-Issues-Quelle liest höchstens {{limit, number}} Repositorys: Entfernen Sie eines unter Administration → Datenquellen, um dieses zu lesen.",
+        "limit": "Die GitHub-Issues-Quelle liest höchstens {{limit, number}} Repositorys: Entfernen Sie eines unter Administration → Quellen → Quelleneinstellungen, um dieses zu lesen.",
         "not_app": "Nur bei einer Verbindung über die GitHub-App der Bereitstellung werden die Issues automatisch gelesen.",
         "not_deployed": "Die GitHub-Issues-Quelle ist hier nicht bereitgestellt, daher werden keine Issues gelesen.",
         "pending": "Noch nicht gelesen: Es steht nicht in der Liste der GitHub-Issues-Quelle.",
         "unknown": "Seine Issues werden nicht gelesen."
       },
-      "openSources": "Administration → Datenquellen öffnen",
+      "openSources": "Administration → Quellen → Quelleneinstellungen öffnen",
       "readNow": "Seine Issues jetzt lesen",
       "label": {
         "created": "Label {{label}}: erstellt.",
@@ -1007,7 +1007,7 @@
       "follow": {
         "reading_one": "Issues: automatisch aus {{count, number}} Repository gelesen.",
         "reading_other": "Issues: automatisch aus {{count, number}} Repositorys gelesen.",
-        "token": "Die GitHub-Issues-Quelle meldet sich mit einem Token an: Fügen Sie diese Repositorys unter Administration → Datenquellen hinzu.",
+        "token": "Die GitHub-Issues-Quelle meldet sich mit einem Token an: Fügen Sie diese Repositorys unter Administration → Quellen → Quelleneinstellungen hinzu.",
         "labelsCreated": "Label {{label}}: in {{list}}.",
         "labelsFailed": "Das Label {{label}} konnte in {{list}} nicht erstellt werden: „Installation prüfen“ versucht es erneut.",
         "skipped": {
@@ -1015,7 +1015,7 @@
           "other_app": "Nicht gelesen (die Quelle meldet sich mit einer anderen GitHub-App an): {{list}}.",
           "limit": "Nicht gelesen (die Quelle liest bereits {{limit, number}} Repositorys): {{list}}."
         },
-        "scheduleOff": "Der Zeitplan der GitHub-Issues-Quelle ist aus: Schalten Sie ihn unter Administration → Datenquellen ein.",
+        "scheduleOff": "Der Zeitplan der GitHub-Issues-Quelle ist aus: Schalten Sie ihn unter Administration → Quellen → Quelleneinstellungen ein.",
         "error": "Die GitHub-Issues-Quelle konnte nicht automatisch eingerichtet werden: {{error}}"
       },
       "state": {
@@ -1981,8 +1981,8 @@
       "notMet": "Offen",
       "unknown": "Noch unbekannt",
       "openConnections": "Verbindungen öffnen",
-      "openDeploymentSources": "Administration → Datenquellen öffnen",
-      "openSources": "Administration → Datenquellen öffnen",
+      "openDeploymentSources": "Administration → Quellen → Quelleneinstellungen öffnen",
+      "openSources": "Administration → Quellen → Quelleneinstellungen öffnen",
       "sourcesOutside": "Außerhalb jedes Arbeitsbereichs: Die Automatisierungen lesen nur die Quellen der Bereitstellung.",
       "deploymentTitle": "Diese Bereitstellung",
       "connectedAs": "Über eine App verbunden: {{list}}.",

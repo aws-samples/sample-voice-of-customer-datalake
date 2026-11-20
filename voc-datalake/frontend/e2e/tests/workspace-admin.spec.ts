@@ -3,7 +3,7 @@
  * workspaces (mock-workspaces.js: the caller, admin-demo, a platform admin, is the admin of Acme Outfitters, slug
  * acme, and an editor of Juniper Trail Co., slug juniper):
  *
- * 1. The platform console (Administration → Platform, `/admin/platform`) creates "Acme Outfitters Field Team"
+ * 1. The platform console (Administration → Workspaces → All workspaces, `/admin/workspaces/all`) creates "Acme Outfitters Field Team"
  *    (acme-field) and enters it: a full page load to `/workspace/acme-field/`, the header naming it with the Admin role.
  * 2. In acme, the members page adds editor@example.com as an Editor, makes them a Viewer, and the caller's own
  *    demotion (the only admin), confirmed first, is refused with the last-admin message.
@@ -67,7 +67,7 @@ const NAME_MAX = 80
 
 /** The console's address inside acme (the gate shows the picker for an address without a workspace): Administration →
  * Platform (7.54.00; Privacy & access → Workspaces before), its Workspaces card and the Deployment brand card. */
-const CONSOLE = '/workspace/acme/admin/platform'
+const CONSOLE = '/workspace/acme/admin/workspaces/all'
 
 /** admin-demo as the app stores a signed-in user (`voc-auth`, store/authStore.ts): the mock caller's sub. */
 async function signInAsMockCaller(page: Page): Promise<void> {

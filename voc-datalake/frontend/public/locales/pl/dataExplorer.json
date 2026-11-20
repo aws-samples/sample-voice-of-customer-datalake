@@ -75,7 +75,7 @@
   },
   "description": "Przeglądaj surowe dane S3 i przetworzone rekordy DynamoDB. Nic stąd nigdy nie jest usuwane, a zapisane surowe pliki są tylko do odczytu.",
   "newFile": "Nowy plik",
-  "notConfigured": "Skonfiguruj endpoint API w Administracja → Marka i wygląd, aby przeglądać dane",
+  "notConfigured": "Skonfiguruj endpoint API w Administracja → Ogólne, aby przeglądać dane",
   "refresh": "Odśwież",
   "title": "Eksplorator danych",
   "dataQuality": {
@@ -84,7 +84,7 @@
     "loading": "Wczytywanie jakości danych…",
     "empty": "Brak opinii w tym okresie.",
     "unratedShare": "{{share}} opinii z tego okresu nie ma jeszcze oceny.",
-    "backfillHint": "Opinie zapisane przed wprowadzeniem ocen nie mają poziomu; ponowne przetworzenie kategorii (Administracja → Kategorie) je oceni.",
+    "backfillHint": "Opinie zapisane przed wprowadzeniem ocen nie mają poziomu; ponowne przetworzenie kategorii (Administracja → Taksonomia → Kategorie) je oceni.",
     "chartTop_one": "Wykres pokazuje najbardziej aktywne źródło; tabela zawiera wszystkie źródła.",
     "chartTop_few": "Wykres pokazuje {{count, number}} najbardziej aktywne źródła; tabela zawiera wszystkie źródła.",
     "chartTop_many": "Wykres pokazuje {{count, number}} najbardziej aktywnych źródeł; tabela zawiera wszystkie źródła.",

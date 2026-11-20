@@ -41,7 +41,7 @@
     "search": "Pesquisar feedback"
   },
   "newFile": "Novo Arquivo",
-  "notConfigured": "Configure o endpoint da API em Administração → Marca e aparência para explorar dados",
+  "notConfigured": "Configure o endpoint da API em Administração → Geral para explorar dados",
   "refresh": "Atualizar",
   "s3Browser": {
     "back": "Voltar",
@@ -84,7 +84,7 @@
     "loading": "Carregando a qualidade dos dados…",
     "empty": "Nenhum feedback neste período.",
     "unratedShare": "{{share}} do feedback deste período ainda não foi avaliado.",
-    "backfillHint": "O feedback salvo antes de existirem avaliações não tem faixa; um reprocessamento de categorias (Administração → Categorias) o avalia.",
+    "backfillHint": "O feedback salvo antes de existirem avaliações não tem faixa; um reprocessamento de categorias (Administração → Taxonomia → Categorias) o avalia.",
     "chartTop_one": "O gráfico mostra a fonte mais ativa; a tabela lista todas as fontes.",
     "chartTop_other": "O gráfico mostra as {{count, number}} fontes mais ativas; a tabela lista todas as fontes.",
     "chartTop_many": "O gráfico mostra as {{count, number}} fontes mais movimentadas; a tabela lista todas as fontes.",

@@ -344,7 +344,7 @@
     "close": "Close",
     "show": "Show QR code",
     "title": "QR code",
-    "unavailable": "QR code unavailable until the API endpoint is configured in Administration → Brand & appearance"
+    "unavailable": "QR code unavailable until the API endpoint is configured in Administration → General"
   },
   "personaExport": {
     "copied": "Copied!",
@@ -392,7 +392,7 @@
     "reprocess": {
       "action": "Reprocess file",
       "confirmTitle": "Reprocess {{filename}}?",
-      "confirmMessage": "This runs the file through the import pipeline again, under its source {{source}}. Rows already in the data lake are skipped as duplicates, so only missing rows are imported. Stored rows are not re-enriched: to re-categorize them, use \"Reprocess existing feedback\" in Administration → Categories.",
+      "confirmMessage": "This runs the file through the import pipeline again, under its source {{source}}. Rows already in the data lake are skipped as duplicates, so only missing rows are imported. Stored rows are not re-enriched: to re-categorize them, use \"Reprocess existing feedback\" in Administration → Taxonomy → Categories.",
       "confirm": "Reprocess",
       "running": "Reprocessing {{filename}}...",
       "failed": "Reprocessing {{filename}} failed. The system logs have the details.",
@@ -511,7 +511,7 @@
       "all": "Every source, restricted ones included",
       "selected": "Only selected sources",
       "restricted": "Restricted",
-      "noProfiles": "No source profiles are configured yet (Administration → Privacy)."
+      "noProfiles": "No source profiles are configured yet (Administration → Privacy & access → Source policies)."
     },
     "invite": "Invite person",
     "edit": "Edit",
@@ -595,7 +595,7 @@
     "sourceRadarHint": "Radar source ({{brand}}): these rows go to the Radar page, never into your own dashboards and metrics.",
     "defaultsTitle": "Dimensions and tags",
     "defaultsHint": "Every review from here carries these values; its own values win per dimension.",
-    "noDimensions": "No dimensions are configured yet (Administration → Categories → Dimensions).",
+    "noDimensions": "No dimensions are configured yet (Administration → Taxonomy → Dimensions).",
     "noDefault": "No default"
   },
   "draftSaveBar": {
@@ -683,7 +683,7 @@
       "summaryOnlyHint": "Only derived fields (summary, category, sentiment, dimensions) are kept; the original text is withheld."
     },
     "restrictedLabel": "Restricted",
-    "restrictedHint": "Only admins and the people granted this source (People → a person's access) see its reviews.",
+    "restrictedHint": "Only admins and the people granted this source (Users → a person's access) see its reviews.",
     "defaultsTitle": "Dimension values for every review from this source",
     "noDefault": "No default",
     "empty": "No profiles yet: every source keeps everything, forever, visible to everyone.",
@@ -702,7 +702,7 @@
       "radarBrand": "{{name}}: name the brand this Radar source tracks."
     },
     "radarLegacy": "Radar source for {{brand}}: this source's reviews go to Radar.",
-    "radarLegacyHint": "Radar brands are set up in Administration → Data sources → Radar, and a scraper or connector picks its brand on the Data sources page.",
+    "radarLegacyHint": "Radar brands are set up in Administration → Sources → Radar, and a scraper or connector picks its brand on the Data sources page.",
     "radarLegacyLink": "Open Radar settings"
   },
   "erasure": {

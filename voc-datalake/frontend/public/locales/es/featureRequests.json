@@ -297,7 +297,7 @@
     "configure": "Configurar tableros",
     "emptyTitle": "Aún no hay tableros",
     "empty": "Todavía no se ha compartido ningún tablero contigo.",
-    "emptyAdmin": "Crea un tablero en <admin>Administración → Tableros de feedback</admin>.",
+    "emptyAdmin": "Crea un tablero en <admin>Administración → Privacidad y acceso → Tableros</admin>.",
     "loadFailed": "No se pudieron cargar los tableros.",
     "notFoundTitle": "Tablero no encontrado",
     "notFound": "Este tablero no existe o no se ha compartido contigo.",

@@ -131,7 +131,7 @@ describe('Company — design system', () => {
     expect(await screen.findByRole('img', { name: 'Color swatch #8e48ff' })).toHaveStyle({ backgroundColor: '#8e48ff' })
     expect(screen.getByRole('img', { name: 'Not a valid color value' })).toBeInTheDocument()
     expect(screen.queryByLabelText(/figma token/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Administration → Data sources → Design-system tokens' })).toHaveAttribute('href', '/admin/sources/tokens')
+    expect(screen.getByRole('link', { name: 'Administration → Sources → Integrations' })).toHaveAttribute('href', '/admin/sources/integrations')
   })
 
   it('shows a reference the API stored as status "error" as Failed, with its reason', async () => {

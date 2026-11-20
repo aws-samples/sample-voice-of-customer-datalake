@@ -31,7 +31,7 @@
     "choose": "Choose a brand",
     "unknownBrand": "{{key}} (not in the brand list)",
     "noBrand": "No Radar brand yet.",
-    "addBrand": "Add a brand in Administration → Data sources → Radar",
+    "addBrand": "Add a brand in Administration → Sources → Radar",
     "needsBrand": "Choose a brand, or this stays an ordinary source.",
     "loading": "Loading the Radar brands...",
     "loadFailed": "The Radar brands could not be loaded."

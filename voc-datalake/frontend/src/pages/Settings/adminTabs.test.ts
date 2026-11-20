@@ -1,78 +1,97 @@
-/** The Administration navigation model (7.54.00): a home, nine tabs in four groups by frequency, their cards. */
+/** The Administration navigation model (7.59.00): main's six tabs in main's order, the two new ones before System. */
 import { describe, expect, it } from 'vitest'
-import { ADMIN_GROUPS, resolveAdminLocation, visibleGroups, visibleSections } from './adminTabs'
+import { cardsOf, hasSections, resolveAdminLocation, sectionOfCard, visibleSections, visibleTabs } from './adminTabs'
+import type { AdminViewer } from './adminTabs'
 import { adminPath, adminTabSegment } from './adminPaths'
 
-describe('the groups', () => {
-  it('orders the tabs by how often they are needed: Everyday, Regularly, Set up once, Rare', () => {
-    expect(ADMIN_GROUPS.map((group) => [group.id, group.tabs])).toStrictEqual([
-      ['everyday', ['people', 'sources', 'logs']],
-      ['regular', ['categories', 'boards']],
-      ['once', ['ai', 'brand']],
-      ['rare', ['privacy', 'platform']],
-    ])
+const viewer = (over: Partial<AdminViewer> = {}): AdminViewer => ({
+  isAdmin: true, isPlatformAdmin: false, inWorkspace: false, agentsShown: false, ...over,
+})
+const EVERYONE = viewer({ isPlatformAdmin: true, inWorkspace: true, agentsShown: true })
+
+describe('the tabs', () => {
+  it("keeps main's tabs and order, and adds Workspaces and Engineering agents before System", () => {
+    expect(visibleTabs(EVERYONE)).toStrictEqual(['general', 'sources', 'taxonomy', 'access', 'ai', 'workspaces', 'agents', 'system'])
   })
 
-  it('shows Platform to a platform admin only', () => {
-    expect([visibleGroups(true, true).at(-1)?.tabs, visibleGroups(true, false).at(-1)?.tabs]).toStrictEqual([
-      ['privacy', 'platform'], ['privacy'],
-    ])
+  it("shows a plain administrator outside a workspace main's six", () => {
+    expect(visibleTabs(viewer())).toStrictEqual(['general', 'sources', 'taxonomy', 'access', 'ai', 'system'])
   })
 
-  it('leaves a non-admin Data sources, Logs, Categories, AI models and Brand & appearance', () => {
-    expect(visibleGroups(false, false)).toStrictEqual([
-      { id: 'everyday', tabs: ['sources', 'logs'] }, { id: 'regular', tabs: ['categories'] }, { id: 'once', tabs: ['ai', 'brand'] },
-    ])
+  it('shows Workspaces inside a workspace or to a platform admin, Engineering agents while Agents is on', () => {
+    expect([visibleTabs(viewer({ inWorkspace: true })).includes('workspaces'), visibleTabs(viewer({ isPlatformAdmin: true })).includes('workspaces'),
+      visibleTabs(viewer({ agentsShown: true })).includes('agents')]).toStrictEqual([true, true, true])
+  })
+
+  it('leaves anyone else General, Sources, Taxonomy, AI models and System', () => {
+    expect(visibleTabs(viewer({ isAdmin: false, isPlatformAdmin: true, inWorkspace: true, agentsShown: true })))
+      .toStrictEqual(['general', 'sources', 'taxonomy', 'ai', 'system'])
   })
 })
 
-describe('the cards a path may name', () => {
+describe('the sections', () => {
   it.each([
-    ['sources', ['inbox', 'radar', 'tokens'], []],
-    ['categories', ['dimensions'], []],
-    ['boards', ['domains', 'participants'], []],
-    ['brand', ['theme'], ['theme']],
-    ['privacy', ['erasure'], []],
-    ['people', [], []],
-  ] as const)('%s: %o for an admin, %o for anyone else', (tab, admin, others) => {
-    expect([visibleSections(tab, true, false), visibleSections(tab, false, false)]).toStrictEqual([admin, others])
+    ['sources', ['plugins', 'integrations', 'inbox', 'radar'], ['plugins']],
+    ['taxonomy', ['categories', 'dimensions'], ['categories']],
+    ['access', ['policies', 'users', 'boards'], []],
+    ['system', ['logs', 'version'], ['logs']],
+    ['general', [], []],
+  ] as const)('%s: %o for an administrator, %o for anyone else', (tab, admin, others) => {
+    expect([visibleSections(tab, viewer()), visibleSections(tab, viewer({ isAdmin: false }))]).toStrictEqual([admin, others])
   })
 
-  it('gives the deployment brand of Platform to a platform admin only', () => {
-    expect([visibleSections('platform', true, true), visibleSections('platform', true, false)]).toStrictEqual([['deployment-brand'], []])
+  it("gives Workspaces this workspace's settings and members inside one, every workspace to a platform admin", () => {
+    expect([visibleSections('workspaces', EVERYONE), visibleSections('workspaces', viewer({ inWorkspace: true })),
+      visibleSections('workspaces', viewer({ isPlatformAdmin: true }))]).toStrictEqual([
+      ['settings', 'members', 'all', 'deployment-brand'], ['settings', 'members'], ['all', 'deployment-brand'],
+    ])
+  })
+
+  it('knows which tabs switch sections and where each card is', () => {
+    expect([hasSections('general'), hasSections('ai'), hasSections('agents'), hasSections('access')]).toStrictEqual([false, false, false, true])
+    expect([cardsOf('general', null), cardsOf('access', 'boards'), cardsOf('agents', null)]).toStrictEqual([
+      ['brand', 'theme', 'api'], ['domains', 'participants'], ['hard-cap', 'models', 'connections'],
+    ])
+    expect([sectionOfCard('access', 'erasure'), sectionOfCard('access', 'participants'), sectionOfCard('general', 'theme')])
+      .toStrictEqual(['policies', 'boards', null])
   })
 })
 
 describe('resolveAdminLocation', () => {
   it.each([
-    [null, null, { tab: null, section: null }],
-    ['people', null, { tab: 'people', section: null }],
-    ['categories', 'dimensions', { tab: 'categories', section: 'dimensions' }],
-    ['categories', 'nope', { tab: 'categories', section: null }],
-    ['brand', 'radar', { tab: 'brand', section: null }],
-  ])('reads /admin/%s/%s as %o', (tab, section, expected) => {
-    expect(resolveAdminLocation(tab, section, true, false)).toStrictEqual(expected)
+    [null, null, null, { tab: 'general', section: null, card: null }],
+    ['general', null, 'theme', { tab: 'general', section: null, card: 'theme' }],
+    ['sources', null, null, { tab: 'sources', section: 'plugins', card: null }],
+    ['sources', 'radar', null, { tab: 'sources', section: 'radar', card: null }],
+    ['access', 'policies', 'erasure', { tab: 'access', section: 'policies', card: 'erasure' }],
+    ['access', 'users', 'erasure', { tab: 'access', section: 'users', card: null }],
+    ['taxonomy', 'nope', null, { tab: 'taxonomy', section: 'categories', card: null }],
+    ['ai', 'radar', 'theme', { tab: 'ai', section: null, card: null }],
+    ['people', null, null, { tab: 'general', section: null, card: null }],
+  ])('reads %s / %s #%s as %o', (tab, section, card, expected) => {
+    expect(resolveAdminLocation(tab, section, card, viewer())).toStrictEqual(expected)
   })
 
-  it.each(['access', 'taxonomy', 'system', 'data-sources', 'general', 'nope'])('opens the home for %s, no alias', (tab) => {
-    expect(resolveAdminLocation(tab, 'users', true, true)).toStrictEqual({ tab: null, section: null })
+  it("sends a hidden tab to General and a hidden section to the tab's first", () => {
+    expect([resolveAdminLocation('workspaces', 'all', null, viewer()), resolveAdminLocation('sources', 'radar', null, viewer({ isAdmin: false }))])
+      .toStrictEqual([{ tab: 'general', section: null, card: null }, { tab: 'sources', section: 'plugins', card: null }])
   })
 })
 
 describe('paths', () => {
   it.each([
-    [{ tab: null, section: null }, null, '/admin'],
-    [{ tab: 'people', section: null }, null, '/admin/people'],
-    [{ tab: 'people', section: null }, 'invite', '/admin/people/invite'],
-    [{ tab: 'boards', section: null }, 'brd_sales', '/admin/boards/brd_sales'],
-    [{ tab: 'boards', section: 'domains' }, 'brd_sales', '/admin/boards/domains'],
-    [{ tab: 'logs', section: null }, 'nothing-open-on-logs', '/admin/logs'],
-  ] as const)('%o with %s is %s', (location, item, path) => {
-    expect(adminPath(location, item)).toBe(path)
+    [{ tab: 'general' }, '/admin/general'],
+    [{ tab: 'general', card: 'theme' }, '/admin/general#theme'],
+    [{ tab: 'access', section: 'users', item: 'invite' }, '/admin/access/users/invite'],
+    [{ tab: 'access', section: 'boards', item: 'brd_sales' }, '/admin/access/boards/brd_sales'],
+    [{ tab: 'access', section: 'boards', card: 'domains' }, '/admin/access/boards#domains'],
+    [{ tab: 'system', section: 'logs', item: 'nothing-open-on-logs' }, '/admin/system/logs'],
+  ] as const)('%o is %s', (target, path) => {
+    expect(adminPath(target)).toBe(path)
   })
 
-  it('reads the tab segment ("" for the home, null outside)', () => {
-    expect([adminTabSegment('/admin'), adminTabSegment('/admin/people/u-1'), adminTabSegment('/administration')])
-      .toStrictEqual(['', 'people', null])
+  it('reads the tab segment ("" for /admin, null outside)', () => {
+    expect([adminTabSegment('/admin'), adminTabSegment('/admin/access/users/u-1'), adminTabSegment('/administration')])
+      .toStrictEqual(['', 'access', null])
   })
 })

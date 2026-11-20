@@ -65,7 +65,7 @@
     "examplesLoading": "Wczytywanie przykładowych recenzji…",
     "examplesFailed": "Nie udało się wczytać przykładowych recenzji."
   },
-  "configureApi": "Skonfiguruj adres API w sekcji Administracja → Marka i wygląd",
+  "configureApi": "Skonfiguruj adres API w sekcji Administracja → Ogólne",
   "title": "Analiza problemów",
   "subtitle": "Powtarzające się problemy klientów pogrupowane według kategorii, wraz z prawdopodobnymi przyczynami źródłowymi"
 }

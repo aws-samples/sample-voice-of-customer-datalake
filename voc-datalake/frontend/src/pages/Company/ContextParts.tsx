@@ -76,7 +76,7 @@ export function QueryState({ isLoading, isError, onRetry }: Readonly<{
 }
 
 /** The save button of a section, with its pending / saved / failed feedback. */
-export function SaveRow({ onSave, onDiscard, pending, saved, failed, disabled = false, label, failedLabel }: Readonly<{
+export function SaveRow({ onSave, onDiscard, pending, saved, failed, disabled = false, label, failedLabel, variant = 'inline' }: Readonly<{
   onSave: () => void
   /** Offered beside Save while there is a draft: drops it and shows the saved value again. */
   onDiscard?: () => void
@@ -87,11 +87,13 @@ export function SaveRow({ onSave, onDiscard, pending, saved, failed, disabled = 
   label?: string
   /** What failed, when the section knows better than "Could not save" (a field the server named). */
   failedLabel?: string
+  /** `footer` (7.59.00, a card of Administration): in the flow after the fields, never sticky over them. */
+  variant?: 'inline' | 'footer'
 }>) {
   const { t } = useTranslation('settings')
   return (
     // Sticky + registered: the full-width Save on a phone sat under the assistant launcher (3.00.00 R3).
-    <StickyActionBar variant="inline" className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 py-3 mt-4 border-t border-border">
+    <StickyActionBar variant={variant} className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 py-3 mt-4 border-t border-border">
       {failed ? (
         <p role="alert" className="text-xs text-danger flex items-center gap-1 sm:mr-auto">
           <AlertCircle size={12} /> {failedLabel ?? t('shared.saveFailed')}

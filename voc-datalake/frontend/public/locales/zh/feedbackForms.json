@@ -376,7 +376,7 @@
       "confirm": "关闭"
     }
   },
-  "configureApiFirst": "请在“管理 → 品牌与外观”中配置API端点以管理反馈表单。",
+  "configureApiFirst": "请在“管理 → 常规”中配置API端点以管理反馈表单。",
   "deleteConfirmLabel": "删除",
   "deleteConfirmMessage": "确定要删除此表单吗？此操作无法撤销。",
   "deleteConfirmMessageNamed": "要删除表单“{{name}}”吗？此操作无法撤销。",
@@ -1094,7 +1094,7 @@
       "aiMode": "人工主导：AI 不会替您撰写表单。请从模板开始，或让助手指导您。",
       "coachPrompt": "在我编写反馈表单时指导我：问我想了解什么，并帮我斟酌问题的措辞和要提供的回答选项。",
       "coachMe": "指导我",
-      "changeInPeople": "在“管理 → 用户”中更改",
+      "changeInPeople": "在“管理 → 隐私与访问 → 用户”中更改",
       "askAdminMode": "管理员可以更改此设置。",
       "noModel": "此工作区尚未设置 AI 草稿功能：没有可用的 AI 模型。",
       "openAiModels": "打开“管理 → AI 模型”",
@@ -1660,7 +1660,7 @@
     "openTest": "打开“测试”",
     "saveFirst": "保存表单即可获取其链接。",
     "save": "保存",
-    "noEndpoint": "请在“管理 → 品牌与外观”中设置 API 端点，以获取此表单的链接。",
+    "noEndpoint": "请在“管理 → 常规”中设置 API 端点，以获取此表单的链接。",
     "notes": {
       "replace": "将每个 {…} 替换为对应的值（需 URL 编码）。未知的 hf_ 参数会被忽略。",
       "sdk": "在用户执行您所询问的操作时调用它（例如“切换回旧版界面”）。",
@@ -2071,7 +2071,7 @@
       "noSubcategory": "— 无子类别",
       "notConfiguredBadge": "已不再配置",
       "pickConfigured": "请选择已配置的类别。",
-      "categoryHint": "类别在“管理 → 分类”中配置。",
+      "categoryHint": "类别在“管理 → 分类体系 → 分类”中配置。",
       "taggedAs": "此表单的回复将归入：",
       "perOption": "按选项路由",
       "noChoices": "此表单没有选择题，因此所有回复都归入表单的类别。",

@@ -989,15 +989,15 @@
       "switch": "读取此仓库的 Issue",
       "reasons": {
         "off": "未读取其 Issue：开关已关闭。",
-        "token": "GitHub Issues 数据源使用令牌登录：请在“管理 → 数据来源”中添加此仓库。",
+        "token": "GitHub Issues 数据源使用令牌登录：请在“管理 → 来源 → 来源设置”中添加此仓库。",
         "other_app": "GitHub Issues 数据源使用另一个 GitHub App 登录：此仓库的 Issue 不通过它读取。",
-        "limit": "GitHub Issues 数据源最多读取 {{limit, number}} 个仓库：要读取此仓库，请在“管理 → 数据来源”中移除一个。",
+        "limit": "GitHub Issues 数据源最多读取 {{limit, number}} 个仓库：要读取此仓库，请在“管理 → 来源 → 来源设置”中移除一个。",
         "not_app": "只有通过部署的 GitHub App 建立的连接才会自动读取 Issue。",
         "not_deployed": "此处未部署 GitHub Issues 数据源，因此不读取任何 Issue。",
         "pending": "尚未读取：它不在 GitHub Issues 数据源的列表中。",
         "unknown": "未读取其 Issue。"
       },
-      "openSources": "打开“管理 → 数据来源”",
+      "openSources": "打开“管理 → 来源 → 来源设置”",
       "readNow": "立即读取其 Issue",
       "label": {
         "created": "标签 {{label}}：已创建。",
@@ -1007,7 +1007,7 @@
       "follow": {
         "reading_one": "Issue：自动从 {{count, number}} 个仓库读取。",
         "reading_other": "Issue：自动从 {{count, number}} 个仓库读取。",
-        "token": "GitHub Issues 数据源使用令牌登录：请在“管理 → 数据来源”中添加这些仓库。",
+        "token": "GitHub Issues 数据源使用令牌登录：请在“管理 → 来源 → 来源设置”中添加这些仓库。",
         "labelsCreated": "标签 {{label}}：已在 {{list}}。",
         "labelsFailed": "无法在 {{list}} 上创建标签 {{label}}：“检查安装”会重试。",
         "skipped": {
@@ -1015,7 +1015,7 @@
           "other_app": "未读取（数据源使用另一个 GitHub App 登录）：{{list}}。",
           "limit": "未读取（数据源已读取 {{limit, number}} 个仓库）：{{list}}。"
         },
-        "scheduleOff": "GitHub Issues 数据源的计划已关闭：请在“管理 → 数据来源”中开启。",
+        "scheduleOff": "GitHub Issues 数据源的计划已关闭：请在“管理 → 来源 → 来源设置”中开启。",
         "error": "无法自动设置 GitHub Issues 数据源：{{error}}"
       },
       "state": {
@@ -1981,8 +1981,8 @@
       "notMet": "待完成",
       "unknown": "尚不清楚",
       "openConnections": "打开连接",
-      "openDeploymentSources": "打开 管理 → 数据来源",
-      "openSources": "打开 管理 → 数据来源",
+      "openDeploymentSources": "打开 管理 → 来源 → 来源设置",
+      "openSources": "打开 管理 → 来源 → 来源设置",
       "sourcesOutside": "在任何工作区之外进行：自动化只读取部署的来源。",
       "deploymentTitle": "此部署",
       "connectedAs": "已通过 App 连接：{{list}}。",

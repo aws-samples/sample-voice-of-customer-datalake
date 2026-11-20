@@ -82,17 +82,21 @@ describe('DeploymentBrandCard', () => {
     expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument()
   })
 
-  it('sits in the platform console below the workspaces', async () => {
+  it('is the Deployment brand section of Workspaces, beside All workspaces', async () => {
     routeFetchApi({ 'GET /settings/brand': () => DEPLOYMENT_BRAND, 'GET /platform/workspaces': () => ({ workspaces: [], next_cursor: null }) })
-    render(
+    const viewer = { isAdmin: true, isPlatformAdmin: true, inWorkspace: true, agentsShown: false }
+    const at = (section: 'all' | 'deployment-brand') => (
       <QueryClientProvider client={createTestQueryClient()}>
-        <TestRouter initialEntries={['/admin/platform']}>
-          <AdminSectionContent tab="platform" section={null} apiEndpoint="https://api.example.com" onApiEndpointChange={vi.fn()}
-            isAdmin isPlatformAdmin />
+        <TestRouter initialEntries={[`/admin/workspaces/${section}`]}>
+          <AdminSectionContent place={{ tab: 'workspaces', section, card: null, item: null }} viewer={viewer}
+            apiEndpoint="https://api.example.com" onApiEndpointChange={vi.fn()} />
         </TestRouter>
-      </QueryClientProvider>,
+      </QueryClientProvider>
     )
-    const headings = await screen.findAllByRole('heading', { level: 2 })
-    expect(headings.map((heading) => heading.textContent)).toStrictEqual(['Workspaces', 'Deployment default brand'])
+    const view = render(at('deployment-brand'))
+    expect((await screen.findAllByRole('heading', { level: 2 })).map((heading) => heading.textContent)).toStrictEqual(['Deployment default brand'])
+    view.unmount()
+    render(at('all'))
+    expect((await screen.findAllByRole('heading', { level: 2 })).map((heading) => heading.textContent)).toStrictEqual(['Workspaces'])
   })
 })

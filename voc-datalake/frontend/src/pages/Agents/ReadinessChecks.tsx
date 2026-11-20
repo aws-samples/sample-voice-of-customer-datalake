@@ -22,7 +22,7 @@ import type { LucideIcon } from 'lucide-react'
 import type { CheckStatus, ReadinessCheck, ReadinessSubject } from '../../api/engineeringReadinessApi'
 
 /** Where an administrator sets their way of working (the dial a run's pushes follow). */
-const USERS_PATH = adminPath({ tab: 'people', section: null })
+const USERS_PATH = adminPath({ tab: 'access', section: 'users' })
 
 const STATUS_LOOK: Readonly<Record<CheckStatus, { icon: LucideIcon; tone: string; badge: string }>> = {
   pass: { icon: CheckCircle2, tone: 'text-ok', badge: 'badge badge-ok' },

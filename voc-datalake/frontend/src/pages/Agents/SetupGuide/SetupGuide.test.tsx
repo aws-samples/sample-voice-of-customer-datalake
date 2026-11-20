@@ -193,15 +193,15 @@ describe('the guide', () => {
       { signs_in: 'token', app_id: null }) })
     const list = within(step).getByRole('list', { name: 'Prerequisites' })
     expect(await within(list).findByText(/the GitHub Issues source signs in with a token/)).toBeInTheDocument()
-    expect(within(list).getByRole('link', { name: 'Open Administration → Data sources' }))
-      .toHaveAttribute('href', '/admin/sources/github_issues?scope=deployment')
+    expect(within(list).getByRole('link', { name: 'Open Administration → Sources → Source settings' }))
+      .toHaveAttribute('href', '/admin/sources/plugins/github_issues?scope=deployment')
   })
 
   it('sends anyone else to the sources outside any workspace when the source signs in with a token', async () => {
     const step = await prerequisites({ [ISSUES_SOURCE]: () => issuesView({ reading: false, reason: 'token', label: null },
       { signs_in: 'token', app_id: null }) })
-    expect(await within(step).findByRole('link', { name: 'Open Administration → Data sources' }))
-      .toHaveAttribute('href', '/admin/sources')
+    expect(await within(step).findByRole('link', { name: 'Open Administration → Sources → Source settings' }))
+      .toHaveAttribute('href', '/admin/sources/plugins')
   })
 
   it('says the ticks are not known yet when the source cannot be read', async () => {

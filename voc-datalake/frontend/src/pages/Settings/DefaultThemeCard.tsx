@@ -1,5 +1,5 @@
 /**
- * @fileoverview Administration → Brand & appearance → "Default theme" (`/admin/brand/theme`): the start theme every
+ * @fileoverview Administration → General → "Default theme" (`/admin/general#theme`): the start theme every
  * person sees until they pick their own in Account → Preferences (`GET|PUT /settings/appearance`).
  *
  * Platform admins pick and Save (the card's own button, like every card's); a saved theme also becomes this
@@ -66,7 +66,7 @@ function DefaultThemeSaveBar({ dirty, pending, saved, error, onSave }: Readonly<
   return (
     <>
       {error ? <SettingsNotice text={t(messageKeyForStatus(error, SAVE_ERROR_KEYS, SAVE_FAILED))} /> : null}
-      <StickyActionBar variant="inline" className="flex flex-wrap items-center justify-end gap-3 py-2">
+      <StickyActionBar variant="footer" className="flex flex-wrap items-center justify-end gap-3 py-2">
         <SavedStatus saved={saved} />
         <button type="button" disabled={!dirty || pending} className="btn btn-primary btn-sm flex items-center gap-1.5" onClick={onSave}>
           {pending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}

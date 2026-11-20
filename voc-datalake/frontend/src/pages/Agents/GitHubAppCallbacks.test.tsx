@@ -125,9 +125,9 @@ describe('the installation\'s return', () => {
       ...answer(), issues: { signs_in: 'token', added: [], reading: [], skipped: [], labels: [], schedule: 'off',
         error: 'the source could not be read: try Check installation' },
     }) })
-    expect(await screen.findByText(/signs in with a token: add these repositories under Administration → Data sources/))
+    expect(await screen.findByText(/signs in with a token: add these repositories under Administration → Sources → Source settings/))
       .toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open Administration → Data sources' })).toHaveAttribute('href', '/admin/sources/github_issues?scope=deployment')
+    expect(screen.getByRole('link', { name: 'Open Administration → Sources → Source settings' })).toHaveAttribute('href', '/admin/sources/plugins/github_issues?scope=deployment')
     expect([screen.getByText(/schedule is off/), screen.getByText(/the source could not be read: try Check installation/)]).toHaveLength(2)
   })
 

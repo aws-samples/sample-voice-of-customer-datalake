@@ -5,7 +5,7 @@
  * which everyone reads and its admins rename; the delete, for its admins on a deployment that turns it on only.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createTestQueryClient } from '../../test/query-client'
@@ -36,7 +36,7 @@ import { ApiError } from '../../lib/errors'
 import { useAuthStore } from '../../store/authStore'
 import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
 import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
-import WorkspaceSettings from './WorkspaceSettings'
+import WorkspaceSettings, { WorkspaceSettingsCards } from './WorkspaceSettings'
 
 const PLUGINS = '/me/workspaces/current/plugins'
 const BRAND = { brand_name: 'Acme Outfitters', brand_handles: ['@acme'], hashtags: ['#trail'], urls_to_track: ['https://example.com/reviews'] }
@@ -260,5 +260,21 @@ describe("WorkspaceSettings: the workspace's name and its delete", () => {
     renderPage(JUNIPER)
     await screen.findByRole('region', { name: 'Workspace name' })
     expect(screen.queryByRole('region', { name: 'Delete workspace' })).not.toBeInTheDocument()
+  })
+})
+
+describe('the cards as a section of Administration (Workspaces → This workspace, 7.59.00)', () => {
+  it('shows the same cards under no page title, once the role is known', async () => {
+    renderPage(ACME)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Workspace settings' })).toBeInTheDocument()
+    cleanup()
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <TestRouter initialEntries={['/admin/workspaces/settings']}><WorkspaceSettingsCards workspace={ACME} /></TestRouter>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByRole('region', { name: 'Workspace name' })).toBeInTheDocument()
+    expect(await screen.findByLabelText('Brand Name')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
   })
 })

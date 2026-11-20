@@ -72,7 +72,7 @@ const SCREEN_DCL_OVERRIDES: readonly PatternBudget[] = [
 /**
  * The slowest API call (excluding the `/chat/stream` SSE, which is long by design)
  * a screen makes while it loads. VERIFY: 193 step records, p95 2,819 ms; the worst
- * READ screen is admin-logs at 3,440 ms (`/logs/summary`, before PERF's parallel
+ * READ screen is admin-system-logs (then admin-logs) at 3,440 ms (`/logs/summary`, before PERF's parallel
  * fix 4e11b7a0).
  */
 export const SCREEN_SLOWEST_CALL_DEFAULT: Budget = {
@@ -82,8 +82,8 @@ export const SCREEN_SLOWEST_CALL_DEFAULT: Budget = {
 
 const SCREEN_SLOWEST_CALL_OVERRIDES: readonly PatternBudget[] = [
   // GET /logs/system is a Logs Insights search, polled up to 18 s by design before it answers `running`. The Logs tab
-  // (`/admin/logs`, the `admin-logs` screen since 7.54.00; `admin-system-logs` before).
-  { pattern: /^admin-logs\b/, p95Ms: 8_000, source: '5.48.06 prod: warm 2,855-3,976 ms (7 days), cold Lambda 4,871-6,381 ms' },
+  // (`/admin/system/logs`, the `admin-system-logs` screen again since 7.59.00; `admin-logs` in 7.54.00).
+  { pattern: /^admin-system-logs\b/, p95Ms: 8_000, source: '5.48.06 prod: warm 2,855-3,976 ms (7 days), cold Lambda 4,871-6,381 ms' },
 ]
 
 // ---------------------------------------------------------------- endpoints

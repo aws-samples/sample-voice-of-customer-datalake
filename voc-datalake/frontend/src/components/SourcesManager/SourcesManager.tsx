@@ -79,7 +79,7 @@ function ProfilesEditor({ stored, withErasure, erasureId }: Readonly<{
       <AddSourceProfile knownIds={knownIds} draft={draft} disabled={draft.length >= MAX_SOURCE_PROFILES} onAdd={(id) => edit([...draft, newProfile(id)])} />
       <DraftSaveBar {...barProps} />
       {withErasure && (
-        // The erasure panels as one target a page can focus (Administration → Privacy → Erasure, `erasureId`).
+        // The erasure panels as one target a page can focus (Administration → Privacy & access → Source policies → Erasure, `erasureId`).
         <div id={erasureId} tabIndex={erasureId === undefined ? undefined : -1} className="space-y-4 scroll-mt-4 rounded-lg focus:outline-none">
           <ErasurePanel profiles={stored} />
           <SourceErasurePanel profiles={stored} />

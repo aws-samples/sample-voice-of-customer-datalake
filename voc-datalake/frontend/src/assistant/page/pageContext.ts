@@ -50,7 +50,7 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   // Administration is the `settings` kind; `/settings`
   // only redirects to it now but keeps its pattern for the redirect's instant.
   { route: 'admin/*', kind: 'settings', label: 'admin' },
-  { route: 'settings', kind: 'settings', label: 'admin' },
+  { route: 'settings/*', kind: 'settings', label: 'admin' },
   { route: 'memory/*', kind: 'memory' },
   { route: 'agents', kind: 'agents' },
   // One library workflow: the agents pack (workflow tools), no agent in context. BEFORE the Workflows view's
