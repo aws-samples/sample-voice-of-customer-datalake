@@ -129,8 +129,8 @@
       "reason": "erasure jobs and category-reprocess jobs are separate job kinds with their own lifecycles"
     },
     {
-      "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py,lambda/shared/forms_v2_draft.py",
-      "reason": "each feature's own model-surface choice (all three the utility surface today, the feedback form's AI draft since 7.55.00); one may move without the others"
+      "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py,lambda/shared/forms_v2_draft.py,lambda/shared/forms_v2_report_ai.py",
+      "reason": "each feature's own model-surface choice (all four the utility surface today: the feedback form's AI draft since 7.55.00, a form report's AI summary since 7.63.00); one may move without the others"
     },
     {
       "key": "ROUTE_WORKSPACE_FIELD|WORKSPACE_FIELD::lambda/shared/review_share_audience.py,lambda/shared/ws_repo.py",

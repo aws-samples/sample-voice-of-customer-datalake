@@ -1020,6 +1020,135 @@
           "description": "We read every message."
         }
       }
+    },
+    "workshop": {
+      "name": "Event or workshop feedback",
+      "purpose": "Ask attendees after a workshop or an event how it went, part by part, why a score was low, and what they'll apply. Comparable across events.",
+      "welcome": {
+        "title": "Thanks for joining {{event|the workshop}}",
+        "description": "A few short questions, about three minutes. Your answers shape the next session.",
+        "button": "Start"
+      },
+      "hidden": {
+        "customer": "Customer",
+        "event": "Event",
+        "event_date": "Event date",
+        "presenter": "Presenter"
+      },
+      "q": {
+        "q_role": {
+          "headline": "What's your role?",
+          "other": "Something else",
+          "options": {
+            "product": "Product",
+            "engineering": "Engineering",
+            "qa": "QA",
+            "scrum_master": "Scrum master",
+            "design": "Design",
+            "ops": "Ops",
+            "leadership": "Leadership"
+          }
+        },
+        "q_familiarity": {
+          "headline": "How familiar were you with the topic before the session?",
+          "options": {
+            "not": "Not familiar",
+            "somewhat": "Somewhat familiar",
+            "very": "Very familiar"
+          }
+        },
+        "q_value": {
+          "headline": "How valuable was {{event|the workshop}} for your work?",
+          "lower": "Not valuable",
+          "upper": "Very valuable"
+        },
+        "q_phases": {
+          "headline": "How effective was each part?",
+          "rows": {
+            "introduction": "Introduction",
+            "demo": "Demonstration",
+            "hands_on": "Hands-on exercises",
+            "wrap_up": "Wrap-up and Q&A"
+          },
+          "columns": {
+            "needs_improvement": "Needs improvement",
+            "satisfactory": "Satisfactory",
+            "very_effective": "Very effective",
+            "exceptional": "Exceptional"
+          }
+        },
+        "q_tooling": {
+          "headline": "How well did the tools and setup work for you?",
+          "lower": "Not well",
+          "upper": "Very well"
+        },
+        "q_tooling_why": {
+          "headline": "You rated the tools {{q_tooling}}. What got in the way?",
+          "placeholder": "Your answer"
+        },
+        "q_content": {
+          "headline": "How relevant was the content to your work?",
+          "lower": "Not relevant",
+          "upper": "Very relevant"
+        },
+        "q_content_why": {
+          "headline": "You rated the content {{q_content}}. What would have made it more relevant?",
+          "placeholder": "Your answer"
+        },
+        "q_presenter": {
+          "headline": "How clear was {{presenter|the presenter}}?",
+          "lower": "Not clear",
+          "upper": "Very clear"
+        },
+        "q_presenter_why": {
+          "headline": "You rated {{presenter|the presenter}} {{q_presenter}}. What could be better?",
+          "placeholder": "Your answer"
+        },
+        "q_nps": {
+          "headline": "How likely are you to recommend {{event|this workshop}} to a colleague?",
+          "lower": "Not at all likely",
+          "upper": "Extremely likely"
+        },
+        "q_nps_reason": {
+          "headline": "What's the main reason for your score of {{q_nps}}?",
+          "placeholder": "Your answer"
+        },
+        "q_apply": {
+          "headline": "Will you apply what you learned in the next month?",
+          "options": {
+            "definitely": "Yes, definitely",
+            "probably": "Probably",
+            "not_sure": "Not sure yet",
+            "unlikely": "Unlikely"
+          }
+        },
+        "q_barriers": {
+          "headline": "What could stop you from applying it?",
+          "other": "Something else",
+          "none": "Nothing",
+          "options": {
+            "time": "Not enough time",
+            "tool_access": "No access to the tools",
+            "skills": "I need more practice",
+            "team_buy_in": "My team isn't on board",
+            "security": "Security or compliance rules"
+          }
+        },
+        "q_takeaway": {
+          "headline": "What's your main takeaway?",
+          "placeholder": "Your answer"
+        },
+        "q_improve": {
+          "headline": "What should we improve next time?",
+          "placeholder": "Your answer"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thank you!",
+          "description": "Your feedback helps us make the next session better."
+        }
+      }
     }
   },
   "picker": {
@@ -1035,7 +1164,8 @@
       "dropoffs": "Drop-offs",
       "product": "Product",
       "onboarding": "Onboarding",
-      "blank": "Blank"
+      "blank": "Blank",
+      "events": "Events"
     },
     "runs": {
       "link": "Link",
@@ -1478,6 +1608,12 @@
       "detractor": "What's the main reason for your score?",
       "promoter": "What do you value most?",
       "done": "Two follow-up questions added: detractors and promoters each get their own."
+    },
+    "askWhy": {
+      "button": "Ask why when the score is low",
+      "hint": "Adds an optional question after this one for scores of {{threshold}} or less, showing the score. You can edit it.",
+      "done": "Follow-up added: only a low score is asked why.",
+      "headline": "What's the main reason for your score of {{recall}}?"
     }
   },
   "text": {
@@ -2016,6 +2152,15 @@
       "from": "Missing from: {{channels}}.",
       "channel": "{{channel}} {{missing}}",
       "unknown": "Unknown"
+    },
+    "reportView": "Report",
+    "skipRate": "Skip rate {{percent}}",
+    "followUpOf": "Follow-up to question {{position}}",
+    "followUpAnswered": "Answered by {{percent}} of those asked",
+    "order": {
+      "label": "Order of the questions",
+      "form": "Form order",
+      "skipped": "Most skipped"
     }
   },
   "theme": {
@@ -2211,5 +2356,92 @@
     "preview": "Respondents see: {{text}}",
     "previewMissing": "Without a value: {{text}}",
     "previewEmpty": "(nothing)"
+  },
+  "report": {
+    "loading": "Loading the report…",
+    "responses": "Responses",
+    "kpiAnswered_one": "{{formatted}} answered",
+    "kpiAnswered_other": "{{formatted}} answered",
+    "segmentBy": "Segment by",
+    "noSegments": "No segments",
+    "emptyTitle": "Nothing to report yet",
+    "empty": "Once responses come in under these filters, the report shows their scores, segments and themes.",
+    "segments": {
+      "title": "By {{segment}}",
+      "hint": "Segments of fewer than {{minimum}} responses are grouped together, so no one can be picked out.",
+      "caption": "Scores by segment",
+      "segment": "Segment",
+      "responses": "Responses",
+      "noValue": "No value",
+      "other": "Other",
+      "merged_one": "Other ({{count, number}} segment of fewer than {{minimum}})",
+      "merged_other": "Other ({{count, number}} segments of fewer than {{minimum}})",
+      "withheld": "Too few responses to show their scores",
+      "none": "No responses to segment."
+    },
+    "heatmap": {
+      "row": "Row",
+      "average": "Average"
+    },
+    "sentiment": {
+      "positive": "Positive",
+      "neutral": "Neutral",
+      "mixed": "Mixed",
+      "negative": "Negative",
+      "unknown": "Not processed"
+    },
+    "themes": {
+      "title": "Themes",
+      "hint": "Grouped by the category each response was filed under, with real quotes. Select a quote to open its response.",
+      "none": "No open answers to group yet.",
+      "unprocessed": "Not processed yet",
+      "answers_one": "{{formatted}} answer",
+      "answers_other": "{{formatted}} answers",
+      "openQuote": "Open the response: {{text}}"
+    },
+    "ai": {
+      "title": "AI summary",
+      "badge": "AI",
+      "stale": "Newer responses since",
+      "start": "Summarize with AI",
+      "again": "Summarize again",
+      "working": "Summarizing…",
+      "intro": "The AI reads up to 300 of the open answers shown here, with your access, names their themes and picks quotes. The quotes are always real responses.",
+      "nothing": "There are no open answers to summarize.",
+      "withheld": "This summary read responses you can't see, so it isn't shown to you. Summarize again to make your own.",
+      "made_one": "Made {{date}} from {{formatted}} response",
+      "made_other": "Made {{date}} from {{formatted}} responses",
+      "rateLimited": "That's 20 AI summaries this hour. Try again later.",
+      "noModel": "No AI model is available in this deployment.",
+      "noSummary": "The AI found no themes in these answers.",
+      "failed": "The AI summary couldn't be made. Try again."
+    },
+    "pdf": {
+      "download": "Download PDF",
+      "failed": "The PDF couldn't be prepared. Try again.",
+      "title": "{{name}}: report",
+      "subtitle_one": "{{formatted}} response · {{dates}}",
+      "subtitle_other": "{{formatted}} responses · {{dates}}",
+      "responses": "Responses",
+      "segments": "Scores by segment",
+      "themes": "Themes and quotes",
+      "footer": "Generated {{date}}. No contact details are included."
+    },
+    "compare": {
+      "title": "Compare",
+      "intro": "Put this form beside up to {{max, number}} others, or split it by a hidden field to see its trend. Questions are matched by id and type; a point of fewer than 5 responses shows no scores.",
+      "forms": "Forms",
+      "noForms": "No other form to compare with.",
+      "sameTemplate": "Same template",
+      "by": "Split by",
+      "byNone": "Don't split",
+      "caption": "Scores by form",
+      "point": "Form",
+      "missing": "Not asked",
+      "different": "Asked differently",
+      "few": "Fewer than {{minimum}}",
+      "merged": "Other values (fewer than {{minimum}} each)",
+      "failed": "The comparison couldn't be loaded."
+    }
   }
 }

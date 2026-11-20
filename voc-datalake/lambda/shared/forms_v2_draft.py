@@ -7,7 +7,7 @@ model call on the deployment's configured model (shared/converse.py, the ``utili
 fallback and Bedrock usage metering every AI feature uses), at most one repair, and nothing saved, ever. The browser
 reads ``GET /settings/form-drafts/{job_id}`` once the worker's job notice arrives (polling as the fallback).
 
-The model reads the contract's types, ops and limits and the twelve templates' flows as examples; the person's
+The model reads the contract's types, ops and limits and the thirteen templates' flows as examples; the person's
 description and instruction travel in a ``form_brief`` DATA block and their current form in a ``current_form`` one,
 never as instructions. Its answer goes through ``sanitize`` before the one validator (shared/forms_v2.py
 ``validate_definition``): ids and option codes are made here (slugged, accents folded, de-duplicated, reserved codes
@@ -43,8 +43,9 @@ MAX_NAME_CHARS: Final = 200
 #: Strict-JSON answers must fit ONE call (shared/converse.py's doctrine), with room for a thinking model.
 MAX_TOKENS: Final = 12_000
 SURFACE: Final = 'utility'
-#: The Bedrock errors that mean no model is available to this deployment (not a transient failure).
-_NO_MODEL_ERRORS: Final = frozenset({'AccessDeniedException', 'ResourceNotFoundException'})
+#: The Bedrock errors that mean no model is available to this deployment (not a transient failure; the report's AI
+#: summary reads them too, shared/forms_v2_report_ai.py).
+NO_MODEL_ERRORS: Final = frozenset({'AccessDeniedException', 'ResourceNotFoundException'})
 # Letters NFKD does not decompose to ASCII (Polish ł, German ß, Nordic ø/æ, …).
 _EXTRA_FOLDS: Final = str.maketrans({'ł': 'l', 'Ł': 'L', 'ß': 'ss', 'đ': 'd', 'Đ': 'D', 'ø': 'o', 'Ø': 'O',
                                      'æ': 'ae', 'Æ': 'AE', 'œ': 'oe', 'Œ': 'OE', 'þ': 'th', 'ð': 'd'})
@@ -185,9 +186,13 @@ SYSTEM_PROMPT: Final = (
     '- Feature satisfaction: a 1-5 rating, an open text for low scores.\n'
     '- Bug report: "What happened?", "What did you expect?", hidden fields app_version and screen.\n'
     '- Onboarding segmentation: "What is your role?", then "What do you want to do first?" (multi-select).\n'
-    '- Workshop or event feedback: a hidden field event; "How was {{event|the event}}?" (a 1-5 rating); a matrix '
-    'rating each part on one scale (Needs improvement, Satisfactory, Very effective, Exceptional, scored 1-4); an open '
-    'text.\n'
+    '- Workshop or event feedback: hidden fields customer, event, event_date and presenter; a welcome "Thanks for '
+    'joining {{event|the workshop}}"; the role (single select) and familiarity (not / somewhat / very); a 1-5 rating '
+    'of the value; a matrix rating each part on one scale (Needs improvement, Satisfactory, Very effective, '
+    'Exceptional, scored 1-4); 1-5 ratings of the tooling, the content and the presenter, each followed by an '
+    'optional "why" open text that a score of 3 or more jumps past; nps, then "What\'s the main reason for your '
+    'score of {{q_nps}}?"; will they apply it (single select), what stands in the way (multi select with Other); '
+    'the main takeaway and what to improve (open texts).\n'
     '- Blank: one open text.\n\n'
     'A complete answer:\n' + json.dumps(_EXAMPLE, ensure_ascii=False)
 )
@@ -484,7 +489,7 @@ def run_job(config: dict) -> dict:
     try:
         return draft(request)
     except ClientError as error:
-        if error.response.get('Error', {}).get('Code') in _NO_MODEL_ERRORS:
+        if error.response.get('Error', {}).get('Code') in NO_MODEL_ERRORS:
             return {'success': False, 'code': 'no_model',
                     'error': 'No AI model is available to draft forms in this deployment.'}
         raise

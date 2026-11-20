@@ -1,7 +1,8 @@
 /**
  * @fileoverview Rating, NPS, CSAT and CES (UX §4.2): a rating's scale (stars, numbers, faces) and points (faces come
  * in 3 to 5), the fixed scales' groups as text, the optional end labels, and NPS's "Ask detractors and promoters
- * different questions" while it has no rules (two long-text follow-ups after it, with Undo). Once the form has a real
+ * different questions" while it has no rules (two long-text follow-ups after it, with Undo), and on every one "Ask why
+ * when the score is low" while it has no rules (7.63.00, AskWhyButton). Once the form has a real
  * response a rating it had keeps its points (D9: its answers are read on them), so no other range, nor Faces on more
  * than 5 points, is offered; the reason says so.
  *
@@ -19,6 +20,7 @@ import { withNpsFollowUps } from './npsHelper'
 import { TextField } from './fields'
 import { fieldProblems } from './fieldHelpers'
 import { useQuestionFields } from './useEditorDraft'
+import AskWhyButton from './AskWhyButton'
 
 type Scaled = RatingQuestion | ScoreQuestion
 
@@ -95,6 +97,7 @@ export default function ScaleEditor({ question, onChange }: Readonly<{ question:
   return (
     <div className="space-y-3">
       {question.type === 'rating' ? <RatingFields question={question} onChange={onChange} /> : <FixedScale question={question} />}
+      <AskWhyButton question={question} />
       <div className="grid gap-2 sm:grid-cols-2">
         <TextField label={t('scale.lowEnd')} value={textIn(question.lower_label, lng)} problems={fieldProblems(problems, 'lower_label')}
           onChange={(value) => onChange({ ...question, lower_label: withText(question.lower_label, lng, value) })} />

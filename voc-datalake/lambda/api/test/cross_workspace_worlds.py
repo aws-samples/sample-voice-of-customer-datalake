@@ -282,6 +282,9 @@ def settings_world(lambda_context: Any) -> Generator[World]:
         stack.enter_context(patch.dict('os.environ', {'ASSIST_WORKER_FUNCTION': 'voc-settings-assist'}))
         for row in _draft_jobs():
             jobs.put_item(Item=row)
+        # A form of the deployment (A's id) and of each workspace, for a report's AI summary (7.63.00).
+        for row in _report_forms():
+            aggregates.put_item(Item=row)
 
         yield World(call=_caller(settings_handler, lambda_context),
                     doubles={'cognito': cognito, 'lambda': invoke, 'assist': assist})
@@ -305,6 +308,23 @@ def _draft_jobs() -> list[dict[str, Any]]:
     return [row('ASSIST#sub-ada', DRAFT_JOB_A, 'before_workspaces'),
             row(f'WS#{WS_A}#ASSIST#sub-ada', DRAFT_JOB_A, A_MARK),
             row(f'WS#{WS_B}#ASSIST#{BEA["sub"]}', DRAFT_JOB_B, B_MARK)]
+
+
+#: A form of each workspace, and one in none, that an AI summary may be asked for (7.63.00).
+REPORT_FORM_A = 'ff_000000000000000000000000000000a1'
+REPORT_FORM_B = 'ff_000000000000000000000000000000b1'
+_REPORT_FORM_IDS = {'A': {'form_id': REPORT_FORM_A}, 'B': {'form_id': REPORT_FORM_B},
+                    UNKNOWN: {'form_id': 'ff_000000000000000000000000000000ff'}}
+
+
+def _report_forms() -> list[dict[str, Any]]:
+    """A form of the deployment (``FEEDBACK_FORM``, A's id) and of each workspace (``WS#{ws}#FEEDBACK_FORM``)."""
+    def row(pk: str, form_id: str, mark: str) -> dict[str, Any]:
+        return {'pk': pk, 'sk': f'FORM#{form_id}', 'form_id': form_id, 'name': f'{mark} workshop', 'schema_version': 2}
+
+    return [row('FEEDBACK_FORM', REPORT_FORM_A, 'before_workspaces'),
+            row(f'WS#{WS_A}#FEEDBACK_FORM', REPORT_FORM_A, A_MARK),
+            row(f'WS#{WS_B}#FEEDBACK_FORM', REPORT_FORM_B, B_MARK)]
 
 
 #: A category reprocess job id of each workspace, and one in none (shared/reprocess_jobs.py ``rp_`` + 12 hex).
@@ -599,8 +619,9 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'memory_handler.py': memory_world,
     'mcp_oauth_consent_routes.py': tokens_world,
     'agents_handler.py': agents_world,
-    # Included by the settings handler (a feedback form's AI draft, 7.55.00).
+    # Included by the settings handler (a feedback form's AI draft, 7.55.00; a form report's AI summary, 7.63.00).
     'forms_v2_draft_routes.py': settings_world,
+    'forms_report_routes.py': settings_world,
     # Included by the projects handler (the Documents Library, 7.62.00).
     'library_routes.py': library_world,
 }
@@ -781,6 +802,17 @@ CASES: dict[tuple[str, str], RouteCase] = {
                   'link': 'a channel, the same words in every workspace'},
         without_a_workspace=_AS_BEFORE),
     ('forms_v2_draft_routes.py', 'GET /settings/form-drafts/<job_id>'): RouteCase(
+        ids=_DRAFT_JOB_IDS, without_a_workspace=_AS_BEFORE),
+    # A form report's AI summary (7.63.00): only a form of the request's own scope, by its editors and admins; the
+    # job and its hourly counter are that scope's; without the header the deployment's form, for any signed-in user.
+    ('forms_report_routes.py', 'POST /settings/form-reports'): RouteCase(
+        ids=_REPORT_FORM_IDS, ok_status=202, without_a_workspace=_AS_BEFORE,
+        body={'form_id': '{form_id}', 'answers': [{'response_id': 'fb_ride_1', 'text': 'The trail map came late'}]},
+        literals={'fb_ride_1': "a response id the browser read with the person's own access: the route reads no "
+                               'feedback row, it only labels what it was sent',
+                  'The trail map came late': 'an answer to summarize, text the browser sent'}),
+    # (its poll answers the caller's own assist job of the request's scope, as the drafts' poll does)
+    ('forms_report_routes.py', 'GET /settings/form-reports/<job_id>'): RouteCase(
         ids=_DRAFT_JOB_IDS, without_a_workspace=_AS_BEFORE),
     ('settings_handler.py', 'GET /settings/sources'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own source profiles)',

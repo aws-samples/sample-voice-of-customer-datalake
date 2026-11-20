@@ -46,8 +46,9 @@ from shared.ws_repo import optional_scope
 
 if TYPE_CHECKING:
     from shared.workspace import WorkspaceContext
+    from shared.ws_repo import WorkspaceScope
 
-__all__ = ['app', 'bind_aggregates_table']
+__all__ = ['aggregates', 'app', 'bind_aggregates_table', 'charge_hourly', 'forms_partition', 'own_job', 'require_editor']
 
 app = Router()
 #: The including handler's voc-aggregates getter (``bind_aggregates_table``); empty until it binds one.
@@ -72,42 +73,55 @@ def bind_aggregates_table(source: Callable[[], Any]) -> None:
     _bound[:] = [source]
 
 
-def _table() -> Any:
+def aggregates() -> Any:
+    """voc-aggregates as the including handler binds it (the forms' AI routes share it: shared/forms_report_routes.py
+    too)."""
     return configured_table(_bound[0]() if _bound else None, 'Aggregates')
 
 
-def _drafting_workspace(public_error: str) -> WorkspaceContext | None:
-    """The workspace the request names (None: the deployment's), resolved from the table (a draft is a write: a
-    member demoted a moment ago cannot draft), and 403 for anyone there but an editor or an admin."""
-    context = request_workspace(app.current_event.raw_event, public_error, fresh=True)
+def forms_partition(scope: WorkspaceScope | None) -> str:
+    """The forms partition of ``scope``'s workspace (``WS#{ws}#FEEDBACK_FORM``), the deployment's without one."""
+    return scope.key(FEEDBACK_FORM_PK) if scope is not None else FEEDBACK_FORM_PK
+
+
+def require_editor(context: WorkspaceContext | None) -> None:
+    """403 for anyone in the request's workspace but an editor or an admin (``context`` None: the deployment's, any
+    signed-in user). The routes resolve the workspace from the table first (``request_workspace(…, fresh=True)``: an AI
+    draft or report is a write, so a member demoted a moment ago cannot start one)."""
     if context is not None and context.role not in EDITING_ROLES:
         raise AuthorizationError(DRAFTS_NEED_AN_EDITOR)
-    return context
 
 
-def _charge_draft(context: WorkspaceContext | None, subject: str) -> None:
-    """Count one draft for ``subject`` this hour in the forms partition of ``context``'s workspace, or 429
-    ``rate_limited`` with ``retry_after`` (seconds to the next hour). Charged before the job starts, so a start that
-    fails still counts toward the hour; a counter that cannot be written is a clean 500, never the AWS error."""
+def own_job(raw_event: Any, context: WorkspaceContext | None, job_id: str) -> dict[str, Any]:
+    """The caller's own assist job ``job_id`` in ``context``'s scope (404 for anyone else's, or from another scope):
+    ``{status, result, error}`` (shared/assist_jobs.py ``view``)."""
+    subject = get_caller_subject(raw_event)
+    return assist_jobs.get(assist_jobs.owner_pk(subject, workspace=context), job_id, workspace=context)
+
+
+def charge_hourly(context: WorkspaceContext | None, subject: str, *, prefix: str, cap: int, noun: str,
+                  failure: str) -> None:
+    """Count one AI call for ``subject`` this hour (``{prefix}{sub}#{hour}`` in the forms partition of ``context``'s
+    workspace, gone by TTL), or 429 ``rate_limited`` with ``retry_after`` (seconds to the next hour) once ``cap`` were
+    counted. Charged before the job starts, so a start that fails still counts toward the hour; a counter that cannot
+    be written is a clean 500 (``failure``), never the AWS error."""
     now = datetime.now(UTC)
     scope = optional_scope(context)
-    partition = scope.key(FEEDBACK_FORM_PK) if scope is not None else FEEDBACK_FORM_PK
     try:
-        table_view(scope, _table()).update_item(
-            {'pk': partition, 'sk': f"{_DRAFT_RATE_PREFIX}{subject}#{now.strftime('%Y-%m-%dT%H')}"},
+        table_view(scope, aggregates()).update_item(
+            {'pk': forms_partition(scope), 'sk': f"{prefix}{subject}#{now.strftime('%Y-%m-%dT%H')}"},
             UpdateExpression='ADD drafts :one SET #ttl = if_not_exists(#ttl, :ttl)',
             ConditionExpression='attribute_not_exists(drafts) OR drafts < :cap',
             ExpressionAttributeNames={'#ttl': 'ttl'},
-            ExpressionAttributeValues={':one': 1, ':cap': MAX_DRAFTS_PER_HOUR,
-                                       ':ttl': int(now.timestamp()) + _DRAFT_RATE_TTL_SECONDS},
+            ExpressionAttributeValues={':one': 1, ':cap': cap, ':ttl': int(now.timestamp()) + _DRAFT_RATE_TTL_SECONDS},
         )
     except ClientError as e:
         if is_conditional_check_failure(e):
             retry_after = 3600 - (now.minute * 60 + now.second)
-            raise TooManyRequestsError(f'At most {MAX_DRAFTS_PER_HOUR} AI drafts an hour: try again later',
+            raise TooManyRequestsError(f'At most {cap} {noun} an hour: try again later',
                                        code='rate_limited', details={'retry_after': retry_after}) from e
-        logger.exception(f'Could not count an AI draft: {type(e).__name__}')
-        raise ServiceError(FAILED_DRAFT_START) from e
+        logger.exception(f'Could not count an AI call: {type(e).__name__}')
+        raise ServiceError(failure) from e
 
 
 @app.post('/settings/form-drafts')
@@ -116,10 +130,12 @@ def start_form_draft():
     """Start an AI draft of a form → 202 ``{success, job_id, status}`` (shared/forms_v2_draft.py ``validate_request``
     checks the body first). The job's result is ``{success: true, form, notes, warnings}`` or ``{success: false, code:
     'invalid_draft' | 'no_model', error, errors?}``. Never saves."""
-    context = _drafting_workspace(FAILED_DRAFT_START)
+    context = request_workspace(app.current_event.raw_event, FAILED_DRAFT_START, fresh=True)
+    require_editor(context)
     request = forms_v2_draft.validate_request(json_object_body(app))
     subject = get_caller_subject(app.current_event.raw_event)
-    _charge_draft(context, subject)
+    charge_hourly(context, subject, prefix=_DRAFT_RATE_PREFIX, cap=MAX_DRAFTS_PER_HOUR, noun='AI drafts',
+                  failure=FAILED_DRAFT_START)
     return assist_jobs.accepted(assist_jobs.start_owned(subject, forms_v2_draft.DRAFT_JOB, request,
                                                         workspace=context))
 
@@ -130,6 +146,6 @@ def get_form_draft(job_id: str):
     """Poll one of the caller's own AI drafts, in the workspace it was started in (404 for anyone else's, or from
     another workspace): ``{status, result, error}`` (shared/assist_jobs.py ``view``). The twin's job notice (its
     ``job_id`` this one) wakes the browser's poll at once (docs/realtime.md)."""
-    context = _drafting_workspace(FAILED_DRAFT_READ)
-    subject = get_caller_subject(app.current_event.raw_event)
-    return assist_jobs.get(assist_jobs.owner_pk(subject, workspace=context), job_id, workspace=context)
+    context = request_workspace(app.current_event.raw_event, FAILED_DRAFT_READ, fresh=True)
+    require_editor(context)
+    return own_job(app.current_event.raw_event, context, job_id)

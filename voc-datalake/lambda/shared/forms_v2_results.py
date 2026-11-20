@@ -18,7 +18,10 @@ counted, never returned here. ``funnel`` (``funnel_counts``, from the daily coun
 form and, of those who left without submitting, at which question; ``None`` when the caller has none for the view (the
 counters know no language, ending or hidden value). A matrix (7.61.00) counts per row and column, with each row's
 average ``score``. ``link_health`` (``link_health``, 7.61.00) says how often the view's responses carried each hidden
-field, overall and per channel, with a warning for one never or mostly missing. Pure.
+field, overall and per channel, with a warning for one never or mostly missing. An open text the builder's "Ask why
+when the score is low" put after a score (7.63.00, ``ask_why_pairs``) names it in ``follow_up_of``. ``score_summary``
+(7.63.00) is the compact figure of a set of rows (each scale question's average and NPS / CSAT / CES, each matrix row's
+average) that the segments and comparisons give per group (shared/forms_v2_segments.py). Pure.
 """
 from __future__ import annotations
 
@@ -50,7 +53,8 @@ from shared.forms_v2 import (
 )
 from shared.forms_v2_responses import CHANNELS
 
-__all__ = ['LEFT_COUNTER_PREFIX', 'ResultRow', 'filter_rows', 'funnel_counts', 'headline', 'legacy_row', 'tally_results']
+__all__ = ['LEFT_COUNTER_PREFIX', 'ResultRow', 'filter_rows', 'funnel_counts', 'headline', 'legacy_row',
+           'measured_questions', 'questions_where', 'score_summary', 'tally_results']
 
 #: Open-text and "Other" answers returned per question, newest first.
 LATEST_ANSWERS: Final = 10
@@ -80,6 +84,9 @@ class ResultRow:
     session: str | None = None
     #: How the widget that sent it ran (``link``, ``iframe``, ``script``; None from before 7.55.01).
     channel: str | None = None
+    #: The processed feedback item's category and subcategory (7.63.00: the report's themes); None for a test response.
+    category: str | None = None
+    subcategory: str | None = None
 
 
 def legacy_row(definition: Mapping[str, Any], rating: object, text: object, created_at: str,
@@ -276,7 +283,31 @@ def _matrix_result(question: Mapping[str, Any], cells: Mapping[str, Mapping[str,
     return out
 
 
-def _question_result(question: Mapping[str, Any], tally: _Tally, primary: str, responses: int) -> dict[str, Any]:
+#: The rule ops that send a high score past an "Ask why" follow-up (the builder's preset writes ``gt``).
+_PAST_FOLLOW_UP_OPS: Final = frozenset({'gt', 'gte'})
+
+
+def ask_why_pairs(questions: Sequence[Mapping[str, Any]]) -> dict[str, str]:
+    """``{follow-up id: score question id}``: each open text right after a rating, NPS, CSAT or CES question whose rules
+    send a high score (``gt`` / ``gte``) past it, the shape the builder's "Ask why when the score is low" makes
+    (7.63.00). Read from the definition, so a follow-up written by hand in that shape counts too."""
+    pairs: dict[str, str] = {}
+    ids = [question.get('id') for question in questions]
+    for index in range(1, len(questions)):
+        score, follow = questions[index - 1], questions[index]
+        if score.get('type') not in SCALE_TYPES or follow.get('type') != OPEN_TEXT:
+            continue
+        for rule in score.get('logic') or []:
+            when = rule.get('when') if isinstance(rule, Mapping) else None
+            target = (rule.get('then') or {}).get('jump_to') if isinstance(rule, Mapping) else None
+            if isinstance(when, Mapping) and when.get('op') in _PAST_FOLLOW_UP_OPS and target not in ids[:index + 1]:
+                pairs[str(follow['id'])] = str(score['id'])
+                break
+    return pairs
+
+
+def _question_result(question: Mapping[str, Any], tally: _Tally, primary: str, responses: int,
+                     follow_up_of: str | None = None) -> dict[str, Any]:
     skipped = max(tally.shown - tally.answered, 0)
     out: dict[str, Any] = {
         'id': question['id'], 'type': question['type'],
@@ -286,6 +317,8 @@ def _question_result(question: Mapping[str, Any], tally: _Tally, primary: str, r
     }
     if tally.earlier:
         out['earlier_version'] = tally.earlier
+    if follow_up_of is not None:
+        out['follow_up_of'] = follow_up_of
     kind = question['type']
     if kind in SCALE_TYPES:
         out.update(_scale_result(question, tally.counts))
@@ -387,6 +420,56 @@ def _asked_in(revisions: Mapping[int, Mapping[str, Any]] | None) -> Asked:
     return asked
 
 
+def _tally_rows(tallies: Sequence[_Tally], rows: Iterable[ResultRow], asked_in: Asked) -> None:
+    """Count each row on every tally, against the question as the row's own revision had it."""
+    for row in rows:
+        asked = asked_in(row)
+        for tally in tallies:
+            tally.add(row, None if asked is None else asked.get(tally.question['id']))
+
+
+#: The question types a score summary measures.
+_MEASURED: Final = frozenset({*SCALE_TYPES, MATRIX})
+
+
+def questions_where(definition: Mapping[str, Any], keep: Callable[[Mapping[str, Any]], bool]) -> list[Mapping[str, Any]]:
+    """The definition's questions that ``keep`` admits, in the form's order."""
+    return [question for question in definition.get('questions') or [] if isinstance(question, Mapping) and keep(question)]
+
+
+def measured_questions(definition: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The rating, NPS, CSAT, CES and matrix questions: what a score summary, a segment and a comparison measure."""
+    return questions_where(definition, lambda question: question.get('type') in _MEASURED)
+
+
+def _figure(question: Mapping[str, Any], tally: _Tally) -> dict[str, Any]:
+    """One question's compact figure: a scale's ``average``, ``scale_max`` and NPS / CSAT / CES score; a matrix's
+    average score per row (``rows``, None for a row none scored)."""
+    out: dict[str, Any] = {'type': question['type'], 'answered': tally.answered}
+    if question['type'] == MATRIX:
+        matrix = _matrix_result(question, tally.cells)
+        out['rows'] = {row['code']: row['average'] for row in matrix['rows']}
+        return out
+    result = _scale_result(question, tally.counts)
+    out.update({'average': result['average'], 'scale_max': result['scale_max']})
+    kind = question['type']
+    if kind in (NPS, CSAT, CES):
+        out[kind] = result[kind]['score'] if tally.answered else None
+    return out
+
+
+def score_summary(definition: Mapping[str, Any], rows: Iterable[ResultRow], *,
+                  revisions: Mapping[int, Mapping[str, Any]] | None = None,
+                  only: Sequence[str] | None = None) -> dict[str, Any]:
+    """``{responses, scores: {question_id: figure}}`` of ``rows``: each rating, NPS, CSAT, CES and matrix question of the
+    definition (``only``: just these ids), each row scored against its own revision as on Results (``_figure``)."""
+    questions = [question for question in measured_questions(definition) if only is None or question.get('id') in only]
+    tallies = [_Tally(question) for question in questions]
+    kept = list(rows)
+    _tally_rows(tallies, kept, _asked_in(revisions))
+    return {'responses': len(kept), 'scores': {q['id']: _figure(q, t) for q, t in zip(questions, tallies, strict=True)}}
+
+
 def tally_results(definition: Mapping[str, Any], rows: Iterable[ResultRow], funnel: Mapping[str, Any] | None = None,
                   *, revisions: Mapping[int, Mapping[str, Any]] | None = None,
                   test_responses: int | None = None) -> dict[str, Any]:
@@ -402,12 +485,10 @@ def tally_results(definition: Mapping[str, Any], rows: Iterable[ResultRow], funn
     tallies = [_Tally(question) for question in questions]
     endings = {ending['id']: 0 for ending in definition.get('endings') or []}
     hidden = {hidden['id']: 0 for hidden in definition.get('hidden_fields') or []}
-    asked_in = _asked_in(revisions)
+    follow_ups = ask_why_pairs(questions)
     kept = list(rows)
+    _tally_rows(tallies, kept, _asked_in(revisions))
     for row in kept:
-        asked = asked_in(row)
-        for tally in tallies:
-            tally.add(row, None if asked is None else asked.get(tally.question['id']))
         if row.ending_id in endings:
             endings[str(row.ending_id)] += 1
         for hid in row.hidden:
@@ -417,7 +498,8 @@ def tally_results(definition: Mapping[str, Any], rows: Iterable[ResultRow], funn
         'responses': len(kept),
         'test_responses': sum(row.is_test for row in kept) if test_responses is None else test_responses,
         'last_response_at': max((row.created_at for row in kept), default=None),
-        'questions': [_question_result(q, t, primary, len(kept)) for q, t in zip(questions, tallies, strict=True)],
+        'questions': [_question_result(q, t, primary, len(kept), follow_ups.get(q['id']))
+                      for q, t in zip(questions, tallies, strict=True)],
         'endings': endings, 'hidden': hidden, 'removed_questions': _removed_questions(questions, kept),
         'funnel': None if funnel is None else {**funnel, 'completed': len(kept)},
         'link_health': link_health(definition, kept),

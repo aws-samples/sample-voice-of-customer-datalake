@@ -126,11 +126,16 @@ class Work:
 
     ``per_workspace``: the work reads nothing but its job's ``config`` (since 7.55.00: a feedback form's AI draft,
     shared/forms_v2_draft.py), so it also runs for a workspace's job, its Bedrock calls counted to that workspace
-    (shared/ws_repo.py ``message_scope``). Every other kind still refuses one (``ASSIST_WORK_STORE``)."""
+    (shared/ws_repo.py ``message_scope``). Every other kind still refuses one (``ASSIST_WORK_STORE``).
 
-    run: Callable[[dict], dict]
+    ``in_scope``: the work also writes its outcome in the job's own scope, which it is handed with its config
+    (``run(config, scope)``, the scope None for the deployment's job; since 7.63.00: a form report's summary,
+    shared/forms_report_routes.py, written to that scope's forms partition only)."""
+
+    run: Callable[..., dict]
     failure_message: str
     per_workspace: bool = False
+    in_scope: bool = False
 
 
 def _now() -> datetime:
@@ -309,7 +314,8 @@ def _run_work(work: Work, row: Mapping[str, Any], event: Mapping[str, Any], *,
         require_deployment(workspace, ASSIST_WORK_STORE)
     else:
         message_scope(event)
-    return work.run(dict(row.get('config') or {}))
+    config = dict(row.get('config') or {})
+    return work.run(config, workspace) if work.in_scope else work.run(config)
 
 
 def run(event: Mapping[str, Any], registry: Mapping[str, Work]) -> dict[str, Any]:

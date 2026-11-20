@@ -392,6 +392,8 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 | GET | `/settings/jobs/{job_id}` | Poll a categories assist job (its starter only; 404 otherwise) |
 | POST | `/settings/form-drafts` | Start a feedback form's AI draft `{description, language, channel, base_form?, instruction?}` → 202 assist job (any signed-in user; with `X-Workspace-Id` the workspace's editors and admins, the job its own; 20 per person per hour). Served here, not by the forms Lambda (it serves the public widget routes) — docs/feedback-forms.md "AI drafts" |
 | GET | `/settings/form-drafts/{job_id}` | Poll one of the caller's AI drafts, in the scope it was started in (404 otherwise; the job notice wakes it) |
+| POST | `/settings/form-reports` | Start a form report's AI summary `{form_id, answers: [{response_id, text}], filters?, responses?, last_response_at?}` → 202 assist job (gated as Results: with `X-Workspace-Id` the workspace's editors and admins, only one of its forms; 20 per person per hour); the worker stores `FORMREPORT#{form_id}#{report_id}` (labels and ids only) — docs/feedback-forms.md "The AI summary" (7.63.00) |
+| GET | `/settings/form-reports/{job_id}` | Poll one of the caller's AI summaries, in the scope it was started in (404 otherwise) |
 | POST | `/settings/categories/reprocess` | Start a reprocess job `{mode: processed\|raw\|dimensions, days \| date_from/date_to, date_basis?, sources?, categories?, include_manual?}` (≤ 50 sources / categories; a source slice is a Scan filtered on `source_platform`) or resume one `{resume: <job_id>}` (a `partial` job, from its cursor, one resumer at a time; a failed or cancelled resumer hands it back) (admin) → 202 `{job}`, 409 if one is active or the job is not resumable, 404 unknown job (docs/categories.md). With `X-Workspace-Id` (since 7.13.00): the workspace's own job (`require_settings_admin`: its admins, never a delegated caller; the one 404 for a non-member), its row and lock in `WS#{ws}#JOB#category_reprocess`, one per workspace, replaying its reviews only with its own categories and dimensions; without it the deployment's, as before |
 | GET | `/settings/categories/reprocess` | Latest reprocess job (`resumable`, `resumed_from` / `resumed_by`, `config`, `raw_fallback_sources`; the `resume_from` cursor stays server-side; a cancelled / failed resumer also names `resumable_job_id`). With `X-Workspace-Id` the workspace's own latest job, for its admins |
 | POST | `/settings/categories/reprocess/{job_id}/cancel` | Cancel a reprocess job (with `X-Workspace-Id` only one of that workspace's: another workspace's id is the 404 of an unknown one) |
@@ -465,6 +467,9 @@ embeddable widget calls from the customer's own site.
 | DELETE | `/feedback-forms/{id}` | Cognito | Delete form |
 | GET | `/feedback-forms/{id}/submissions` | Cognito | Read submitted feedback |
 | GET | `/feedback-forms/{id}/stats` | Cognito | Submission count + average rating |
+| GET | `/feedback-forms/{id}/results` | Cognito | Per-question results; `group_by=hidden.<id>\|q_<id>\|q_<id>.<row>` adds segments of at least 5 (7.63.00) |
+| GET | `/feedback-forms/{id}/report` | Cognito | The form's report: KPIs, heatmaps, segments, themes with real quotes, the AI summary (7.63.00; editors and admins, as Results) |
+| GET | `/feedback-forms/{id}/compare` | Cognito | The form beside up to 10 of the scope's forms (`with`), or split by `by=hidden.<id>` (7.63.00; as Results) |
 | GET | `/feedback-forms/{id}/config` | **public** | Form config for the widget |
 | POST | `/feedback-forms/{id}/submit` | **public** | Submit feedback |
 | POST | `/feedback-forms/{id}/events` | **public** | The widget's funnel beacons (`opened`, `left`), apart from submit |

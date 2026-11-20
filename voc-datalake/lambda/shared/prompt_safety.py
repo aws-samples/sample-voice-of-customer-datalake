@@ -52,6 +52,8 @@ DATA_BLOCK_TAGS = (
     # A feedback form's AI draft (shared/forms_v2_draft.py): what the person asked for, and the form they have now.
     'form_brief',
     'current_form',
+    # A form report's AI summary (shared/forms_v2_report_ai.py): the open-text answers it groups into themes.
+    'form_answers',
 )
 
 _TAG_RE = re.compile(

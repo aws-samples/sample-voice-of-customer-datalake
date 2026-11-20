@@ -366,6 +366,11 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           "X-Workspace-Id the workspace's editors and admins), 20 per person per hour; nothing is saved (served by the "
           'settings API, beside its assist twin, since the AI review\'s round 1)',
           'forms_v2_draft_routes.py', 'POST /settings/form-drafts'),
+    _open("a form report's AI summary (7.63.00, owner decision: AI help on what the person already read): gated as "
+          "Results, whoever manages forms (with X-Workspace-Id the workspace's editors and admins) and only a form of "
+          'that scope, 20 per person per hour; it summarizes the answers the browser sends and stores labels and '
+          'ids only (served by the settings API, beside its assist twin, as the drafts are)',
+          'forms_report_routes.py', 'POST /settings/form-reports'),
     _open("a form's test responses (7.55.00, owner decision 2026-11-18): kept until an admin (of the workspace, else of "
           "the deployment) or the form's creator deletes them, anyone else a 403 (checked in the handler: "
           '_may_delete_test_responses, after the workspace write check)',
@@ -804,6 +809,9 @@ WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
         # too). The AI draft and its poll are the settings API's (shared/forms_v2_draft_routes.py).
         'GET /feedback-forms/<form_id>/results', 'GET /feedback-forms/<form_id>/responses',
         'DELETE /feedback-forms/<form_id>/responses', 'POST /feedback-forms/<form_id>/test-link',
+        # 7.63.00: the report and the comparison, gated as the results (and the report's AI summary, on the settings
+        # API: shared/forms_report_routes.py).
+        'GET /feedback-forms/<form_id>/report', 'GET /feedback-forms/<form_id>/compare',
     }),
 }
 #: How each module resolves the workspace before a route reads: a middleware (module-wide: its name and the call

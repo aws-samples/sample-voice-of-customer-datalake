@@ -21,12 +21,13 @@ async function handedForm() {
 const railButton = (name: RegExp) => within(screen.getByRole('group', { name: 'Goals' })).getByRole('button', { name })
 
 describe('TemplatePicker', () => {
-  it('starts with "Describe your form", then the twelve templates under All, with each goal and its count', () => {
+  it('starts with "Describe your form", then the thirteen templates under All, with each goal and its count', () => {
     renderPicker()
     expect(screen.getByRole('textbox', { name: 'Describe your form' })).toBeInTheDocument()
-    expect(screen.getAllByTestId(/^template-/)).toHaveLength(12)
-    expect(railButton(/^All\s*12$/)).toHaveAttribute('aria-pressed', 'true')
-    expect([railButton(/^Loyalty\s*3$/), railButton(/^Drop-offs\s*3$/), railButton(/^Product\s*4$/), railButton(/^Onboarding\s*1$/)]).toHaveLength(4)
+    expect(screen.getAllByTestId(/^template-/)).toHaveLength(13)
+    expect(railButton(/^All\s*13$/)).toHaveAttribute('aria-pressed', 'true')
+    expect([railButton(/^Loyalty\s*3$/), railButton(/^Drop-offs\s*3$/), railButton(/^Product\s*4$/), railButton(/^Onboarding\s*1$/),
+      railButton(/^Events\s*1$/)]).toHaveLength(5)
   })
 
   it('shows only the templates of the goal picked', async () => {

@@ -96,6 +96,15 @@ class TestThePrompt:
                      'Onboarding segmentation', 'Bug report', '"jump_to"'):
             assert part in d.SYSTEM_PROMPT
 
+    def test_the_system_prompt_lists_the_thirteen_templates_with_the_workshop_as_it_is(self):
+        """7.63.00: the event or workshop template, its hidden fields, its ask-why follow-ups and its NPS reason."""
+        flows = d.SYSTEM_PROMPT.split("The app's templates, as examples of flows:\n")[1].split('\n\n')[0]
+        assert len(flows.splitlines()) == 13
+        workshop = next(line for line in flows.splitlines() if line.startswith('- Workshop or event feedback'))
+        for part in ('customer, event, event_date and presenter', '{{event|the workshop}}', 'scored 1-4',
+                     'a score of 3 or more jumps past', 'score of {{q_nps}}'):
+            assert part in workshop
+
     def test_the_system_prompt_asks_for_a_short_name_not_the_request_copied(self):
         """A form named after its description, cut mid-word ("…with predef"), was the audit's AI draft in the builder."""
         assert '- name: a short title for the form, 2 to 6 words' in d.SYSTEM_PROMPT

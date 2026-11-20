@@ -7,8 +7,12 @@
 // - fv1_legacy: a v1 form whose language is '' (the visitor's browser): the builder migrates it (D15).
 // - fv2_workshop: a workshop's feedback (7.61.00), Live: a matrix of its phases, recall of the `event` hidden field and
 //   of an earlier rating, and a `customer` hidden field no link ever filled (the Results' and Share's link check).
+// - fv2_event_a, fv2_event_b: two workshops made from the Events template (7.63.00, mock-forms-event-seeds.js), whose
+//   Report compares them.
 //
 // Responses are made by a seeded generator, so every mock start serves the same ones.
+
+import { EVENT_FORMS, eventResponses } from './mock-forms-event-seeds.js';
 
 const DAY_MS = 86_400_000;
 const daysAgo = (n) => new Date(Date.now() - n * DAY_MS).toISOString();
@@ -193,7 +197,7 @@ const WORKSHOP = {
   test_token: 'tk_mock_workshop_51d0', updated_by: 'ana@example.com', created_at: daysAgo(6), updated_at: daysAgo(5),
 };
 
-export const SEED_FORMS = [OLD_UI, NPS, LEGACY, WORKSHOP];
+export const SEED_FORMS = [OLD_UI, NPS, LEGACY, WORKSHOP, ...EVENT_FORMS];
 
 /** A small seeded generator (mulberry32), so the responses are the same on every start. */
 function generator(seed) {
@@ -302,7 +306,7 @@ export function seedResponses() {
   const nps = Array.from({ length: 14 }, (_unused, index) => npsResponse(npsRandom, index));
   const workshopRandom = generator(761);
   const workshop = Array.from({ length: 26 }, (_unused, index) => workshopResponse(workshopRandom, index));
-  return new Map([['fv2_old_ui', old], ['fv2_nps', nps], ['fv2_workshop', workshop]]);
+  return new Map([['fv2_old_ui', old], ['fv2_nps', nps], ['fv2_workshop', workshop], ...eventResponses(generator)]);
 }
 
 /** The seed forms' list stats (real responses only, as the list's card figures count them). */
@@ -313,6 +317,8 @@ export function seedStats() {
     fv2_old_ui: { total_submissions: real('fv2_old_ui'), avg_rating: null, rating_count: 0 },
     fv2_nps: { total_submissions: real('fv2_nps'), avg_rating: null, rating_count: 0 },
     fv2_workshop: { total_submissions: real('fv2_workshop'), avg_rating: null, rating_count: 0 },
+    fv2_event_a: { total_submissions: real('fv2_event_a'), avg_rating: null, rating_count: 0 },
+    fv2_event_b: { total_submissions: real('fv2_event_b'), avg_rating: null, rating_count: 0 },
     fv1_legacy: { total_submissions: 12, avg_rating: 4.1, rating_count: 12 },
   };
 }

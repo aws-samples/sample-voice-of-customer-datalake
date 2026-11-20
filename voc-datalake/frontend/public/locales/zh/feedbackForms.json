@@ -1020,6 +1020,135 @@
           "description": "我们会认真阅读每一条留言。"
         }
       }
+    },
+    "workshop": {
+      "name": "活动或工作坊反馈",
+      "purpose": "在工作坊或活动结束后，询问参与者各个环节的效果、评分偏低的原因，以及他们打算如何应用所学。可在不同活动之间比较。",
+      "welcome": {
+        "title": "感谢您参加{{event|本次工作坊}}",
+        "description": "几个简短的问题，大约三分钟。您的回答将用于改进下一场活动。",
+        "button": "开始"
+      },
+      "hidden": {
+        "customer": "客户",
+        "event": "活动",
+        "event_date": "活动日期",
+        "presenter": "讲师"
+      },
+      "q": {
+        "q_role": {
+          "headline": "您的角色是什么？",
+          "other": "其他",
+          "options": {
+            "product": "产品",
+            "engineering": "工程",
+            "qa": "QA",
+            "scrum_master": "Scrum Master",
+            "design": "设计",
+            "ops": "Ops",
+            "leadership": "管理层"
+          }
+        },
+        "q_familiarity": {
+          "headline": "在本场活动之前，您对该主题的熟悉程度如何？",
+          "options": {
+            "not": "不熟悉",
+            "somewhat": "有些熟悉",
+            "very": "非常熟悉"
+          }
+        },
+        "q_value": {
+          "headline": "{{event|本次工作坊}}对您的工作有多大价值？",
+          "lower": "没有价值",
+          "upper": "非常有价值"
+        },
+        "q_phases": {
+          "headline": "每个环节的效果如何？",
+          "rows": {
+            "introduction": "开场介绍",
+            "demo": "演示",
+            "hands_on": "动手练习",
+            "wrap_up": "总结与问答"
+          },
+          "columns": {
+            "needs_improvement": "需要改进",
+            "satisfactory": "满意",
+            "very_effective": "非常有效",
+            "exceptional": "非常出色"
+          }
+        },
+        "q_tooling": {
+          "headline": "工具和环境配置的使用效果如何？",
+          "lower": "不好",
+          "upper": "非常好"
+        },
+        "q_tooling_why": {
+          "headline": "您给工具的评分是 {{q_tooling}}。是什么影响了您的使用？",
+          "placeholder": "您的回答"
+        },
+        "q_content": {
+          "headline": "内容与您的工作有多相关？",
+          "lower": "不相关",
+          "upper": "非常相关"
+        },
+        "q_content_why": {
+          "headline": "您给内容的评分是 {{q_content}}。怎样才能让内容与您的工作更相关？",
+          "placeholder": "您的回答"
+        },
+        "q_presenter": {
+          "headline": "{{presenter|讲师}}的讲解有多清晰？",
+          "lower": "不清晰",
+          "upper": "非常清晰"
+        },
+        "q_presenter_why": {
+          "headline": "您给{{presenter|讲师}}的评分是 {{q_presenter}}。哪些方面可以改进？",
+          "placeholder": "您的回答"
+        },
+        "q_nps": {
+          "headline": "您有多大可能向同事推荐{{event|这次工作坊}}？",
+          "lower": "完全不可能",
+          "upper": "非常可能"
+        },
+        "q_nps_reason": {
+          "headline": "您给出 {{q_nps}} 分的主要原因是什么？",
+          "placeholder": "您的回答"
+        },
+        "q_apply": {
+          "headline": "您会在接下来的一个月里应用所学内容吗？",
+          "options": {
+            "definitely": "会，一定会",
+            "probably": "可能会",
+            "not_sure": "还不确定",
+            "unlikely": "不太可能"
+          }
+        },
+        "q_barriers": {
+          "headline": "什么可能会妨碍您应用所学？",
+          "other": "其他",
+          "none": "没有",
+          "options": {
+            "time": "时间不够",
+            "tool_access": "无法使用相关工具",
+            "skills": "需要更多练习",
+            "team_buy_in": "团队不支持",
+            "security": "安全或合规规定"
+          }
+        },
+        "q_takeaway": {
+          "headline": "您最大的收获是什么？",
+          "placeholder": "您的回答"
+        },
+        "q_improve": {
+          "headline": "下次我们应该改进什么？",
+          "placeholder": "您的回答"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢！",
+          "description": "您的反馈将帮助我们把下一场活动办得更好。"
+        }
+      }
     }
   },
   "picker": {
@@ -1035,7 +1164,8 @@
       "dropoffs": "流失",
       "product": "产品",
       "onboarding": "新用户引导",
-      "blank": "空白"
+      "blank": "空白",
+      "events": "活动"
     },
     "runs": {
       "link": "链接",
@@ -1478,6 +1608,12 @@
       "detractor": "您给出这个分数的主要原因是什么？",
       "promoter": "您最看重我们的哪一点？",
       "done": "已添加两个追问：贬损者和推荐者各有自己的问题。"
+    },
+    "askWhy": {
+      "button": "评分较低时询问原因",
+      "hint": "为 {{threshold}} 分及以下的评分在此问题后添加一个可选问题，并显示所给分数。您可以编辑它。",
+      "done": "已添加追问：仅在评分较低时询问原因。",
+      "headline": "您给出 {{recall}} 分的主要原因是什么？"
     }
   },
   "text": {
@@ -2016,6 +2152,15 @@
       "from": "缺少的来源：{{channels}}。",
       "channel": "{{channel}} {{missing}}",
       "unknown": "未知"
+    },
+    "reportView": "报告",
+    "skipRate": "跳过率 {{percent}}",
+    "followUpOf": "问题 {{position}} 的追问",
+    "followUpAnswered": "被问到的人中有 {{percent}} 作答",
+    "order": {
+      "label": "问题顺序",
+      "form": "表单顺序",
+      "skipped": "跳过最多"
     }
   },
   "theme": {
@@ -2211,5 +2356,92 @@
     "preview": "受访者看到：{{text}}",
     "previewMissing": "没有值时：{{text}}",
     "previewEmpty": "（无）"
+  },
+  "report": {
+    "loading": "正在加载报告…",
+    "responses": "回复",
+    "kpiAnswered_one": "{{formatted}} 人作答",
+    "kpiAnswered_other": "{{formatted}} 人作答",
+    "segmentBy": "细分依据",
+    "noSegments": "不细分",
+    "emptyTitle": "暂无可报告的内容",
+    "empty": "一旦有符合这些筛选条件的回复，报告就会显示其分数、细分和主题。",
+    "segments": {
+      "title": "按{{segment}}",
+      "hint": "回复少于 {{minimum}} 条的细分会合并在一起，因此无法识别出任何人。",
+      "caption": "按细分统计的分数",
+      "segment": "细分",
+      "responses": "回复",
+      "noValue": "无值",
+      "other": "其他",
+      "merged_one": "其他（{{count, number}} 个少于 {{minimum}} 条的细分）",
+      "merged_other": "其他（{{count, number}} 个少于 {{minimum}} 条的细分）",
+      "withheld": "回复太少，无法显示分数",
+      "none": "没有可细分的回复。"
+    },
+    "heatmap": {
+      "row": "行",
+      "average": "平均值"
+    },
+    "sentiment": {
+      "positive": "积极",
+      "neutral": "中性",
+      "mixed": "混合",
+      "negative": "消极",
+      "unknown": "未处理"
+    },
+    "themes": {
+      "title": "主题",
+      "hint": "按每条回复所归入的类别分组，并附上真实引述。选择一条引述即可打开其回复。",
+      "none": "暂无可分组的开放式回答。",
+      "unprocessed": "尚未处理",
+      "answers_one": "{{formatted}} 条回答",
+      "answers_other": "{{formatted}} 条回答",
+      "openQuote": "打开回复：{{text}}"
+    },
+    "ai": {
+      "title": "AI 摘要",
+      "badge": "AI",
+      "stale": "此后有新回复",
+      "start": "用 AI 总结",
+      "again": "重新总结",
+      "working": "正在总结…",
+      "intro": "AI 会以您的访问权限读取此处显示的最多 300 条开放式回答，为其主题命名并挑选引述。引述始终是真实的回复。",
+      "nothing": "没有可总结的开放式回答。",
+      "withheld": "此摘要读取了您无权查看的回复，因此不会向您显示。重新总结即可生成您自己的摘要。",
+      "made_one": "{{date}} 基于 {{formatted}} 条回复生成",
+      "made_other": "{{date}} 基于 {{formatted}} 条回复生成",
+      "rateLimited": "本小时已生成 20 份 AI 摘要。请稍后重试。",
+      "noModel": "此部署中没有可用的 AI 模型。",
+      "noSummary": "AI 未在这些回答中发现主题。",
+      "failed": "无法生成 AI 摘要。请重试。"
+    },
+    "pdf": {
+      "download": "下载 PDF",
+      "failed": "无法准备 PDF。请重试。",
+      "title": "{{name}}：报告",
+      "subtitle_one": "{{formatted}} 条回复 · {{dates}}",
+      "subtitle_other": "{{formatted}} 条回复 · {{dates}}",
+      "responses": "回复",
+      "segments": "按细分统计的分数",
+      "themes": "主题与引述",
+      "footer": "生成于 {{date}}。不包含任何联系方式。"
+    },
+    "compare": {
+      "title": "比较",
+      "intro": "将此表单与最多 {{max, number}} 个其他表单并列比较，或按隐藏字段拆分以查看趋势。问题按 ID 和类型匹配；回复少于 5 条的数据点不显示分数。",
+      "forms": "表单",
+      "noForms": "没有可比较的其他表单。",
+      "sameTemplate": "相同模板",
+      "by": "拆分依据",
+      "byNone": "不拆分",
+      "caption": "按表单统计的分数",
+      "point": "表单",
+      "missing": "未提问",
+      "different": "提问方式不同",
+      "few": "少于 {{minimum}}",
+      "merged": "其他值（每个少于 {{minimum}}）",
+      "failed": "无法加载比较结果。"
+    }
   }
 }

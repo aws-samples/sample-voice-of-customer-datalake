@@ -741,6 +741,8 @@ export interface FeedbackForm extends FeedbackFormFields {
   dimension_defaults?: Record<string, string>
   /** Tags every submission carries. */
   tags?: string[]
+  /** The app template it was made from (7.63.00), when it was made from one: Compare puts its siblings first. */
+  template?: { id: string; version: number }
   created_at: string
   updated_at: string
 }

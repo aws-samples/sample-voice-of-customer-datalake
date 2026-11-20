@@ -37,8 +37,9 @@ const refused = z.object({
 /** How a refusal becomes the caller's error (the forms API's FormsApiError): status, code, message, errors. */
 export type DraftRefusal = (status: number, code: string | undefined, message: string | undefined, errors: readonly unknown[]) => Error
 
-/** The status a job's refusal reads as: 422 for a draft the validator refused twice, 503 for no model. */
-const STATUS_OF: Readonly<Record<string, number>> = { invalid_draft: 422, no_model: 503 }
+/** The status a job's refusal reads as: 422 for a draft the validator refused twice (or a report summary that found
+ * nothing, 7.63.00), 503 for no model, 404 for a form deleted while its summary ran. */
+const STATUS_OF: Readonly<Record<string, number>> = { invalid_draft: 422, no_summary: 422, no_model: 503, form_deleted: 404 }
 
 /** A job's result: the draft, or the refusal it ended with. */
 function resultOf(result: unknown, refuse: DraftRefusal): unknown {

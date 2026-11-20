@@ -42,10 +42,12 @@ __all__ = [
     'question_bounds',
     'reshaped_questions',
     'revision_of',
+    'template_of',
     'test_settings_of',
     'validate_definition',
     'validate_placeholders',
     'validate_publishable',
+    'validate_template',
     'validate_test_settings',
 ]
 
@@ -91,6 +93,9 @@ QUESTION_ID: Final = re.compile(r'q_[a-z0-9_]{1,40}')
 OPTION_CODE: Final = re.compile(r'[a-z0-9_]{1,40}')
 HIDDEN_ID: Final = re.compile(r'[a-z][a-z0-9_]{0,39}')
 ENDING_ID: Final = re.compile(r'end_[a-z0-9_]{1,40}')
+#: A template's id (7.63.00: the app's templates, ``workshop``, ``nps``…) and the highest version a form may name.
+TEMPLATE_ID: Final = re.compile(r'[a-z][a-z0-9_]{0,39}')
+MAX_TEMPLATE_VERSION: Final = 1000
 #: Names no hidden field may take: in the widget's script objects they are the object's own machinery (its
 #: prototype), so the widget never fills them. A form stored before 7.58.00 with one reads as it is; only a save of
 #: its definition refuses it.
@@ -225,6 +230,27 @@ def definition_of(item: Mapping[str, Any], default_locale: str = DEFAULT_LOCALE)
     if is_v2(item):
         return {field: plain(item.get(field)) for field in DEFINITION_FIELDS}
     return migrate_v1(item, default_locale)
+
+
+def validate_template(value: object) -> dict[str, Any]:
+    """A create's ``template`` (7.63.00): ``{id, version}``, the app template the form was made from, so Compare can
+    match the forms made from one template (their question ids are the template's). A 400 naming the field otherwise."""
+    source = _object(value, 'template')
+    _closed(source, {'id', 'version'}, 'template')
+    template_id = source.get('id')
+    if not isinstance(template_id, str) or not TEMPLATE_ID.fullmatch(template_id):
+        raise _fail('template.id must be a template id (lower-case letters, digits and _, at most 40)')
+    return {'id': template_id, 'version': _int(source.get('version', 1), 'template.version', 1, MAX_TEMPLATE_VERSION)}
+
+
+def template_of(item: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The template a stored form was made from (``{id, version}``), None for a form that names none (every form saved
+    before 7.63.00, and a form made blank or by the AI)."""
+    stored = plain(item.get('template'))
+    if not isinstance(stored, Mapping) or not isinstance(stored.get('id'), str):
+        return None
+    version = stored.get('version')
+    return {'id': stored['id'], 'version': version if isinstance(version, int) and not isinstance(version, bool) else 1}
 
 
 def language_assumed(item: Mapping[str, Any]) -> bool:

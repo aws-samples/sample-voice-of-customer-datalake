@@ -18,7 +18,8 @@ import { isFormLanguage } from '../model/formsV2'
 function copyLookup(i18n: I18n, language: FormLanguage): CopyLookup {
   return (key) => {
     const full = `feedbackForms:${key}`
-    return i18n.exists(full, { lng: language }) ? i18n.t(full, { lng: language }) : undefined
+    // (as written: a template's texts hold no i18next variable, but may recall a value, `{{event|the workshop}}`)
+    return i18n.exists(full, { lng: language }) ? i18n.t(full, { lng: language, skipInterpolation: true }) : undefined
   }
 }
 

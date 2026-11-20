@@ -3,18 +3,23 @@
  * drop at Q2", which moves to the funnel; Last response), one card per question in form order, the endings with their
  * counts, the questions removed since (folded), and the drop-off: the funnel when the beacon's counts exist, else
  * Reach. Under a language, ending or hidden-value filter (`funnelFiltered`) neither the funnel nor Completion is
- * shown, whatever the server sent: its counters are every visit's, and Reach says why.
+ * shown, whatever the server sent: its counters are every visit's, and Reach says why. The cards come in form order, or
+ * (7.63.00) the most skipped first: skipped of those asked, a question nobody was asked last.
  *
  * @module pages/FeedbackForms/results/ResultsSummary
  */
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Flag, MessageSquare, TrendingDown } from 'lucide-react'
+import { ArrowDownWideNarrow, Clock, Flag, ListOrdered, MessageSquare, TrendingDown } from 'lucide-react'
 import MetricCard from '../../../components/MetricCard/MetricCard'
 import type { FormFunnel, FormResults } from '../../../api/feedbackFormsV2Results'
 import { formatCount, formatPercent } from '../../../utils/numberFormat'
 import { formatRelativeDate } from '../../../utils/dateUtils'
 import type { FormV2 } from '../model/formsV2'
 import QuestionResultCard from './QuestionResultCard'
+import { orderedCards } from './skipRates'
+import type { CardOrder } from './skipRates'
+import Segmented from '../ui/Segmented'
 import { FunnelCard, ReachCard } from './FunnelCard'
 import { FUNNEL_HEADING_ID, funnelSteps, largestDrop } from './funnelSteps'
 import { endingTitle } from './answers'
@@ -103,12 +108,17 @@ export default function ResultsSummary({ form, results, funnelFiltered = false, 
   /** Open Responses (an open question's "Show all N in Responses"). */
   onShowAll: () => void
 }>) {
+  const { t } = useTranslation('feedbackForms')
+  const [order, setOrder] = useState<CardOrder>('form')
   const shown: FormResults = funnelFiltered ? { ...results, funnel: null } : results
   return (
     <div className="space-y-4">
       <Figures form={form} results={shown} />
-      {form.questions.map((question, index) => (
-        <QuestionResultCard key={question.id} form={form} question={question} number={index + 1} aggregate={shown.questions[question.id]}
+      <Segmented label={t('results.order.label')} value={order} onChange={setOrder}
+        choices={[{ value: 'form', label: t('results.order.form'), icon: ListOrdered },
+          { value: 'skipped', label: t('results.order.skipped'), icon: ArrowDownWideNarrow }]} />
+      {orderedCards(form, shown, order).map(({ question, number }) => (
+        <QuestionResultCard key={question.id} form={form} question={question} number={number} aggregate={shown.questions[question.id]}
           removed={shown.removed_options} funnel={shown.funnel} onShowAll={onShowAll} />
       ))}
       <Endings form={form} results={shown} />

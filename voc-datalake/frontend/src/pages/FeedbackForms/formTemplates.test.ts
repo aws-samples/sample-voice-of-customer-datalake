@@ -34,9 +34,9 @@ function templateKeys(language: FormLanguage): string[] {
   return walk(catalogue(language)['templates'], 'templates').sort((a, b) => a.localeCompare(b))
 }
 
-describe('the twelve templates', () => {
-  it('are twelve, each in one of the five goals, Blank last', () => {
-    expect(FORM_TEMPLATES).toHaveLength(12)
+describe('the thirteen templates', () => {
+  it('are thirteen, each in one of the six goals, Blank last', () => {
+    expect(FORM_TEMPLATES).toHaveLength(13)
     expect(new Set(FORM_TEMPLATES.map((flow) => flow.group))).toStrictEqual(new Set(TEMPLATE_GROUPS))
     expect(FORM_TEMPLATES.at(-1)?.id).toBe('blank')
   })
@@ -76,7 +76,43 @@ describe('the twelve templates', () => {
     expect(form === null ? 0 : minutesToAnswer(form)).toBe(1)
   })
 
+  it('names the template a form is made from, but for Blank (7.63.00: Compare matches the forms of one template)', () => {
+    const made = FORM_TEMPLATES.map((flow) => [flow.id, templateForm(flow, 'en', lookupIn('en')).template])
+    expect(made.filter(([id]) => id !== 'blank').every(([id, ref]) => typeof ref === 'object' && ref.id === id && ref.version === 1)).toBe(true)
+    expect(made.find(([id]) => id === 'blank')?.[1]).toBeUndefined()
+  })
+
   it.each(FORM_LANGUAGES.filter((language) => language !== 'en').map((language) => [language]))('has every template key in %s', (language) => {
     expect(templateKeys(language)).toStrictEqual(templateKeys('en'))
   })
 })
+
+describe('the Events template (7.63.00)', () => {
+  const flow = templateById('workshop')
+  const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
+
+  it('keeps the stable ids forms are compared by, and its hidden fields', () => {
+    expect(form?.questions.map((question) => question.id)).toStrictEqual([
+      'q_role', 'q_familiarity', 'q_value', 'q_phases', 'q_tooling', 'q_tooling_why', 'q_content', 'q_content_why', 'q_presenter',
+      'q_presenter_why', 'q_nps', 'q_nps_reason', 'q_apply', 'q_barriers', 'q_takeaway', 'q_improve',
+    ])
+    expect(form?.hidden_fields.map((field) => field.id)).toStrictEqual(['customer', 'event', 'event_date', 'presenter'])
+    expect(form?.template).toStrictEqual({ id: 'workshop', version: 1 })
+    expect(form?.welcome.title).toStrictEqual({ en: 'Thanks for joining {{event|the workshop}}' })
+  })
+
+  it("rates each part on a matrix scored 1 to 4, and asks why after a low tooling, content or presenter score", () => {
+    const phases = form?.questions.find((question) => question.id === 'q_phases')
+    expect(phases?.type === 'matrix' ? phases.columns.map((column) => [column.code, column.score]) : []).toStrictEqual([
+      ['needs_improvement', 1], ['satisfactory', 2], ['very_effective', 3], ['exceptional', 4],
+    ])
+    const rules = (id: string) => form?.questions.find((question) => question.id === id)?.logic?.map((rule) => [rule.when.op, rule.when.value, rule.then.jump_to])
+    expect([rules('q_tooling'), rules('q_content'), rules('q_presenter')]).toStrictEqual([
+      [['gt', 2, 'q_content']], [['gt', 2, 'q_presenter']], [['gt', 2, 'q_nps']],
+    ])
+    expect(form?.questions.find((question) => question.id === 'q_nps_reason')?.headline).toStrictEqual({ en: "What's the main reason for your score of {{q_nps}}?" })
+    const role = form?.questions[0]
+    expect(role?.type === 'single_select' ? [role.options.length, role.other.enabled] : []).toStrictEqual([7, true])
+  })
+})
+

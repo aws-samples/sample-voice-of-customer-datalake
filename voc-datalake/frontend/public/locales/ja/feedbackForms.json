@@ -1020,6 +1020,135 @@
           "description": "すべてのメッセージに目を通しています。"
         }
       }
+    },
+    "workshop": {
+      "name": "イベント・ワークショップのフィードバック",
+      "purpose": "ワークショップやイベントの後に、各パートの評価、スコアが低かった理由、今後活かすことを参加者に尋ねます。イベント間で比較できます。",
+      "welcome": {
+        "title": "{{event|ワークショップ}}にご参加いただきありがとうございます",
+        "description": "短い質問がいくつかあります（約3分）。いただいた回答は次回のセッションに活かします。",
+        "button": "始める"
+      },
+      "hidden": {
+        "customer": "顧客",
+        "event": "イベント",
+        "event_date": "開催日",
+        "presenter": "講師"
+      },
+      "q": {
+        "q_role": {
+          "headline": "あなたの役割を教えてください",
+          "other": "その他",
+          "options": {
+            "product": "プロダクト",
+            "engineering": "エンジニアリング",
+            "qa": "QA",
+            "scrum_master": "スクラムマスター",
+            "design": "デザイン",
+            "ops": "Ops",
+            "leadership": "経営・管理職"
+          }
+        },
+        "q_familiarity": {
+          "headline": "セッションの前、このテーマにどのくらい詳しかったですか？",
+          "options": {
+            "not": "詳しくなかった",
+            "somewhat": "ある程度詳しかった",
+            "very": "とても詳しかった"
+          }
+        },
+        "q_value": {
+          "headline": "{{event|ワークショップ}}はお仕事にどのくらい役立ちましたか？",
+          "lower": "役立たなかった",
+          "upper": "とても役立った"
+        },
+        "q_phases": {
+          "headline": "各パートはどのくらい効果的でしたか？",
+          "rows": {
+            "introduction": "イントロダクション",
+            "demo": "デモ",
+            "hands_on": "ハンズオン演習",
+            "wrap_up": "まとめと質疑応答"
+          },
+          "columns": {
+            "needs_improvement": "改善が必要",
+            "satisfactory": "満足",
+            "very_effective": "非常に効果的",
+            "exceptional": "特に優れている"
+          }
+        },
+        "q_tooling": {
+          "headline": "ツールや環境はどのくらい問題なく使えましたか？",
+          "lower": "あまり良くなかった",
+          "upper": "とても良かった"
+        },
+        "q_tooling_why": {
+          "headline": "ツールと環境の評価は{{q_tooling}}でした。何が妨げになりましたか？",
+          "placeholder": "回答を入力してください"
+        },
+        "q_content": {
+          "headline": "内容はお仕事にどのくらい関連していましたか？",
+          "lower": "関連していない",
+          "upper": "とても関連している"
+        },
+        "q_content_why": {
+          "headline": "内容の評価は{{q_content}}でした。どうすればもっとお仕事に関連する内容になったと思いますか？",
+          "placeholder": "回答を入力してください"
+        },
+        "q_presenter": {
+          "headline": "{{presenter|講師}}の説明はどのくらいわかりやすかったですか？",
+          "lower": "わかりにくかった",
+          "upper": "とてもわかりやすかった"
+        },
+        "q_presenter_why": {
+          "headline": "{{presenter|講師}}の評価は{{q_presenter}}でした。どうすればもっと良くなりますか？",
+          "placeholder": "回答を入力してください"
+        },
+        "q_nps": {
+          "headline": "{{event|このワークショップ}}を同僚にすすめる可能性はどのくらいありますか？",
+          "lower": "まったくすすめない",
+          "upper": "ぜひすすめたい"
+        },
+        "q_nps_reason": {
+          "headline": "{{q_nps}}というスコアを付けた主な理由は何ですか？",
+          "placeholder": "回答を入力してください"
+        },
+        "q_apply": {
+          "headline": "学んだことを来月中に活かす予定はありますか？",
+          "options": {
+            "definitely": "はい、必ず活かす",
+            "probably": "おそらく活かす",
+            "not_sure": "まだわからない",
+            "unlikely": "おそらく活かさない"
+          }
+        },
+        "q_barriers": {
+          "headline": "活かすうえで妨げになりそうなことは何ですか？",
+          "other": "その他",
+          "none": "特になし",
+          "options": {
+            "time": "時間が足りない",
+            "tool_access": "ツールを利用できない",
+            "skills": "もっと練習が必要",
+            "team_buy_in": "チームの賛同が得られない",
+            "security": "セキュリティやコンプライアンスのルール"
+          }
+        },
+        "q_takeaway": {
+          "headline": "最も大きな学びは何でしたか？",
+          "placeholder": "回答を入力してください"
+        },
+        "q_improve": {
+          "headline": "次回に向けて改善すべき点は何ですか？",
+          "placeholder": "回答を入力してください"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございました！",
+          "description": "いただいたフィードバックは、次回のセッションをより良くするために役立てます。"
+        }
+      }
     }
   },
   "picker": {
@@ -1035,7 +1164,8 @@
       "dropoffs": "離脱",
       "product": "製品",
       "onboarding": "オンボーディング",
-      "blank": "空白"
+      "blank": "空白",
+      "events": "イベント"
     },
     "runs": {
       "link": "リンク",
@@ -1478,6 +1608,12 @@
       "detractor": "このスコアを付けた主な理由は何ですか？",
       "promoter": "最も評価している点は何ですか？",
       "done": "追加の質問を2つ追加しました。批判者と推奨者にそれぞれ専用の質問が表示されます。"
+    },
+    "askWhy": {
+      "button": "スコアが低いときに理由を尋ねる",
+      "hint": "スコアが{{threshold}}以下の場合に、この質問の後にスコアを表示した任意の質問を追加します。内容は編集できます。",
+      "done": "追加の質問を追加しました。スコアが低い場合にのみ理由を尋ねます。",
+      "headline": "{{recall}}というスコアを付けた主な理由は何ですか？"
     }
   },
   "text": {
@@ -2016,6 +2152,15 @@
       "from": "値がない回答: {{channels}}。",
       "channel": "{{channel}} {{missing}}",
       "unknown": "不明"
+    },
+    "reportView": "レポート",
+    "skipRate": "スキップ率 {{percent}}",
+    "followUpOf": "質問{{position}}の追加質問",
+    "followUpAnswered": "表示された人の{{percent}}が回答",
+    "order": {
+      "label": "質問の並び順",
+      "form": "フォームの順",
+      "skipped": "スキップの多い順"
     }
   },
   "theme": {
@@ -2211,5 +2356,92 @@
     "preview": "回答者に表示: {{text}}",
     "previewMissing": "値がない場合: {{text}}",
     "previewEmpty": "（なし）"
+  },
+  "report": {
+    "loading": "レポートを読み込み中…",
+    "responses": "回答数",
+    "kpiAnswered_one": "{{formatted}}人が回答",
+    "kpiAnswered_other": "{{formatted}}人が回答",
+    "segmentBy": "セグメント分け",
+    "noSegments": "セグメントなし",
+    "emptyTitle": "まだレポートする内容がありません",
+    "empty": "このフィルターに一致する回答が届くと、レポートにスコア、セグメント、テーマが表示されます。",
+    "segments": {
+      "title": "{{segment}}別",
+      "hint": "回答が{{minimum}}件未満のセグメントは、個人を特定できないようにまとめて表示されます。",
+      "caption": "セグメント別のスコア",
+      "segment": "セグメント",
+      "responses": "回答数",
+      "noValue": "値なし",
+      "other": "その他",
+      "merged_one": "その他（{{minimum}}件未満のセグメント{{count, number}}個）",
+      "merged_other": "その他（{{minimum}}件未満のセグメント{{count, number}}個）",
+      "withheld": "回答が少ないため、スコアは表示されません",
+      "none": "セグメント分けする回答がありません。"
+    },
+    "heatmap": {
+      "row": "行",
+      "average": "平均"
+    },
+    "sentiment": {
+      "positive": "ポジティブ",
+      "neutral": "ニュートラル",
+      "mixed": "混合",
+      "negative": "ネガティブ",
+      "unknown": "未処理"
+    },
+    "themes": {
+      "title": "テーマ",
+      "hint": "各回答が分類されたカテゴリごとに、実際の引用とともにまとめています。引用を選ぶと、その回答が開きます。",
+      "none": "まとめる自由回答はまだありません。",
+      "unprocessed": "未処理",
+      "answers_one": "{{formatted}}件の回答",
+      "answers_other": "{{formatted}}件の回答",
+      "openQuote": "回答を開く：{{text}}"
+    },
+    "ai": {
+      "title": "AI要約",
+      "badge": "AI",
+      "stale": "その後に新しい回答あり",
+      "start": "AIで要約",
+      "again": "もう一度要約",
+      "working": "要約中…",
+      "intro": "AIは、ここに表示されている自由回答のうち最大300件をあなたのアクセス権限で読み取り、テーマに名前を付けて引用を選びます。引用は常に実際の回答です。",
+      "nothing": "要約できる自由回答がありません。",
+      "withheld": "この要約にはあなたが閲覧できない回答が含まれているため、表示されません。もう一度要約すると、ご自身の要約を作成できます。",
+      "made_one": "{{date}}に{{formatted}}件の回答から作成",
+      "made_other": "{{date}}に{{formatted}}件の回答から作成",
+      "rateLimited": "この1時間のAI要約が20回に達しました。しばらくしてからもう一度お試しください。",
+      "noModel": "このデプロイでは使用できるAIモデルがありません。",
+      "noSummary": "AIはこれらの回答からテーマを見つけられませんでした。",
+      "failed": "AI要約を作成できませんでした。もう一度お試しください。"
+    },
+    "pdf": {
+      "download": "PDFをダウンロード",
+      "failed": "PDFを準備できませんでした。もう一度お試しください。",
+      "title": "{{name}}：レポート",
+      "subtitle_one": "{{formatted}}件の回答 · {{dates}}",
+      "subtitle_other": "{{formatted}}件の回答 · {{dates}}",
+      "responses": "回答数",
+      "segments": "セグメント別のスコア",
+      "themes": "テーマと引用",
+      "footer": "{{date}}に作成。連絡先情報は含まれていません。"
+    },
+    "compare": {
+      "title": "比較",
+      "intro": "このフォームを最大{{max, number}}件のほかのフォームと並べて比較するか、非表示フィールドで分割して推移を確認できます。質問はIDと種類で照合され、回答が5件未満のポイントにはスコアが表示されません。",
+      "forms": "フォーム",
+      "noForms": "比較できるほかのフォームがありません。",
+      "sameTemplate": "同じテンプレート",
+      "by": "分割の基準",
+      "byNone": "分割しない",
+      "caption": "フォーム別のスコア",
+      "point": "フォーム",
+      "missing": "質問なし",
+      "different": "異なる形式で質問",
+      "few": "{{minimum}}件未満",
+      "merged": "その他の値（それぞれ{{minimum}}件未満）",
+      "failed": "比較を読み込めませんでした。"
+    }
   }
 }

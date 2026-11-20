@@ -25,6 +25,9 @@
  *   `GET /feedback-forms/{id}/responses?…` (paged responses; `include_test=only` for the Test tab, `format=csv` for
  *   the export), all with the Results filters and `include_test`; part A's shapes are read through
  *   feedbackFormsResultsAdapter.ts.
+ * - `GET /feedback-forms/{id}/report?…` and `GET /feedback-forms/{id}/compare?…` (7.63.00, the Report, with the
+ *   Results filters; feedbackFormsReport.ts reads them), and the report's AI summary, `POST /settings/form-reports`
+ *   → 202 `{job_id}` polled at `GET /settings/form-reports/{job_id}` as the drafts are.
  * - `POST /settings/form-drafts` `{description, language, channel, base_form?, instruction?}` → 202 `{job_id}`,
  *   polled at `GET /settings/form-drafts/{job_id}` until `{form, notes, warnings}` (feedbackFormsDraftJob.ts): the
  *   settings API's, beside its assist worker, not the forms API's (whose Lambda also serves the public widget). A
@@ -54,6 +57,8 @@ import type { FormResults, ResponsesPage } from './feedbackFormsV2Results'
 import { settleDraft } from './feedbackFormsDraftJob'
 import { FAMILIAR_CSV, dispositionFilename, csvParams } from './feedbackFormsCsv'
 import type { CsvChoice, CsvFile } from './feedbackFormsCsv'
+import { parseFormComparison, parseFormReport } from './feedbackFormsReport'
+import type { FormComparison, FormReport, SummaryAnswer } from './feedbackFormsReport'
 
 /** A refusal from a forms route, with what its body says beyond the message. */
 export class FormsApiError extends ApiError {
@@ -324,6 +329,24 @@ function draftRefusal(status: number, code: string | undefined, message: string 
   return new FormsApiError(status, message, code, { errors: fieldErrors, retryAfterSeconds: null, current: null })
 }
 
+/** What the report's AI summary is asked for: the answers read, and the view they were read under. */
+export interface SummaryRequest {
+  readonly answers: readonly SummaryAnswer[]
+  /** The view's filters as the query string names them (recorded with the summary). */
+  readonly filters: Readonly<Record<string, string>>
+  readonly responses: number
+  readonly lastResponseAt: string | null
+}
+
+const summaryDone = z.object({ report_id: z.string().min(1) })
+
+/** The Results filters as a summary records them: the query's own names, without `include_test`. */
+export function summaryFilters(filters: ResultsFilters): Record<string, string> {
+  const params = new URLSearchParams(filterQuery(filters))
+  params.delete('include_test')
+  return Object.fromEntries(params.entries())
+}
+
 function parseDraft(raw: unknown): DraftAnswer {
   const body = draftAnswer.safeParse(raw)
   const form = body.success ? parseFormV2(body.data.form) : null
@@ -399,6 +422,34 @@ export const feedbackFormsV2Api = {
     if (!response.ok) throw await formsErrorFor(response)
     return { blob: await response.blob(), filename: dispositionFilename(response.headers.get('Content-Disposition')) }
   },
+
+  /** The form's Report under the Results filters (7.63.00), grouped by `groupBy` (`hidden.<id>`, `q_<id>`,
+   * `q_<id>.<row>`) when given. */
+  getReport: (formId: string, filters: ResultsFilters, groupBy: string | null): Promise<FormReport> =>
+    fetchApi<unknown>(`${formPath(formId)}/report?${filterQuery(filters, groupBy === null ? {} : { group_by: groupBy })}`)
+      .then(parseFormReport),
+
+  /** The form beside up to 10 others (`withIds`), split by a hidden field (`by`) when given. */
+  compareForms: (formId: string, filters: ResultsFilters, withIds: readonly string[], by: string | null): Promise<FormComparison> => {
+    const extra: Record<string, string> = withIds.length === 0 ? {} : { with: withIds.join(',') }
+    if (by !== null) extra['by'] = by
+    return fetchApi<unknown>(`${formPath(formId)}/compare?${filterQuery(filters, extra)}`).then(parseFormComparison)
+  },
+
+  /**
+   * The report's AI summary of `request.answers` (read by the caller with their own access): a 202 job polled until it
+   * ends; resolves to the stored report's id (the report then carries the summary). `signal` stops the wait.
+   */
+  summarizeReport: (formId: string, request: SummaryRequest, signal?: AbortSignal): Promise<string> =>
+    fetchApi<unknown>('/settings/form-reports', {
+      ...post({ form_id: formId, answers: request.answers, filters: request.filters, responses: request.responses,
+        last_response_at: request.lastResponseAt }),
+      // (spelled out as well: the mock-coverage gate reads a request's method from its options' text)
+      method: 'POST',
+      signal,
+    }).then((raw) => settleDraft(raw, (jobId) => fetchApi<unknown>(`/settings/form-reports/${encodeURIComponent(jobId)}`, { method: 'GET', signal }),
+      draftRefusal, signal))
+      .then((raw) => summaryDone.parse(raw).report_id),
 
   /**
    * Ask the AI for a form (or for changes to `base_form`): never saved, never published. `signal` cancels it. The

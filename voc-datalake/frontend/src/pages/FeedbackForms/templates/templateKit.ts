@@ -1,5 +1,5 @@
 /**
- * @fileoverview The pieces the twelve templates are written with (UX §2.4): each template is a real v2 flow whose
+ * @fileoverview The pieces the thirteen templates are written with (UX §2.4): each template is a real v2 flow whose
  * questions carry no copy. Their texts live in `public/locales/<lng>/feedbackForms.json` under
  * `templates.<template>.…` (UX §2.3), and formTemplates.ts `templateForm` resolves them in the "Create in"
  * language when a form is made from the template. Option codes are English slugs in every locale.
@@ -7,12 +7,12 @@
  * @module pages/FeedbackForms/templates/templateKit
  */
 import type {
-  Channel, ChoiceQuestion, ChoiceDisplay, ConsentQuestion, ContactField, ContactQuestion, OpenTextQuestion,
-  Question, RatingQuestion, Rule, RuleValue, ScoreQuestion, Shuffle,
+  Channel, ChoiceQuestion, ChoiceDisplay, ConsentQuestion, ContactField, ContactQuestion, MatrixQuestion,
+  OpenTextQuestion, Question, RatingQuestion, Rule, RuleValue, ScoreQuestion, Shuffle,
 } from '../model/formsV2'
 import type { LucideIcon } from 'lucide-react'
 
-export const TEMPLATE_GROUPS = ['loyalty', 'dropoffs', 'product', 'onboarding', 'blank'] as const
+export const TEMPLATE_GROUPS = ['loyalty', 'dropoffs', 'product', 'onboarding', 'events', 'blank'] as const
 export type TemplateGroup = (typeof TEMPLATE_GROUPS)[number]
 
 interface TemplateHiddenField {
@@ -24,6 +24,9 @@ interface TemplateHiddenField {
 /** A template: its flow without copy, and where it is meant to run. */
 export interface TemplateFlow {
   readonly id: string
+  /** Its version (1 when unset), stored with a form made from it (`template: {id, version}`, 7.63.00): bump it when
+   * a question id or code changes, so Compare can tell the forms of each version apart. */
+  readonly version?: number
   readonly group: TemplateGroup
   readonly icon: LucideIcon
   readonly runs: readonly Channel[]
@@ -74,6 +77,22 @@ export function score(type: ScoreQuestion['type'], id: string, logic?: readonly 
 
 export function rating(id: string, scale: RatingQuestion['scale'], range: RatingQuestion['range'], logic?: readonly Rule[]): RatingQuestion {
   return { id, type: 'rating', headline: {}, required: true, scale, range, logic }
+}
+
+/** A matrix rating `rows` on one scale of `columns`, each `[code, score]` (7.61.00). */
+export function matrix(id: string, rows: readonly string[], columns: readonly (readonly [string, number])[]): MatrixQuestion {
+  return {
+    id, type: 'matrix', headline: {}, required: false, rows: rows.map((code) => ({ code, label: {} })),
+    columns: columns.map(([code, points]) => ({ code, label: {}, score: points })), shuffle_rows: false, display: 'auto',
+  }
+}
+
+/**
+ * A 1–5 rating followed by its "Ask why" follow-up (7.63.00, the builder's preset: model/askWhy.ts): an optional open
+ * text that a score above 2 jumps past, to `next`.
+ */
+export function ratingWithWhy(id: string, next: string): [RatingQuestion, OpenTextQuestion] {
+  return [rating(id, 'number', 5, [jumpWhen('gt', 2, next)]), openText(`${id}_why`, { required: false })]
 }
 
 function consent(id: string, logic?: readonly Rule[]): ConsentQuestion {

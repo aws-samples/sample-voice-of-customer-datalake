@@ -3,7 +3,8 @@
  * every card carries ("Answered 140 · Skipped 12 · Not shown 460 (logic)": not shown means the respondent's path
  * jumped past it, so a follow-up's small count reads right), a provenance badge when its options changed while live,
  * and the type's own figures (a matrix's: one chart per row, 7.61.00). A headline that recalls a value shows its
- * placeholder as `[id]`, as the server's results and CSV do.
+ * placeholder as `[id]`, as the server's results and CSV do. Every card that was asked says its skip rate (skipped of
+ * those asked, 7.63.00), and an "Ask why" follow-up says it is one and how many of those asked answered it.
  *
  * @module pages/FeedbackForms/results/QuestionResultCard
  */
@@ -11,19 +12,37 @@ import { useTranslation } from 'react-i18next'
 import { Info } from 'lucide-react'
 import type { QuestionAggregate } from '../../../api/feedbackFormsV2Results'
 import type { FormFunnel } from '../../../api/feedbackFormsV2Results'
-import { formatCount } from '../../../utils/numberFormat'
+import { formatCount, formatPercent } from '../../../utils/numberFormat'
 import { formatDate } from '../../../utils/dateUtils'
 import type { FormV2, Question } from '../model/formsV2'
 import { isChoice, isScale } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
 import { shownAsIds } from '../model/recall'
 import TypeChip from '../ui/TypeChip'
+import { skipRate } from './skipRates'
 import ChoiceResult from './ChoiceResult'
 import MatrixResult from './MatrixResult'
 import ScaleResult from './ScaleResult'
 import { ConsentResult, ContactResult, OpenTextResult } from './OpenTextResult'
 
 const EMPTY: QuestionAggregate = { answered: 0, skipped: 0, not_shown: 0 }
+
+/** "Skip rate 8%", and for a follow-up "Follow-up to question 3 · answered by 92% of those asked". */
+function AskedLine({ form, question, aggregate }: Readonly<{ form: FormV2; question: Question; aggregate: QuestionAggregate }>) {
+  const { t, i18n } = useTranslation('feedbackForms')
+  const rate = skipRate(aggregate)
+  if (rate === null || question.type === 'statement') return null
+  const of = aggregate.follow_up_of
+  const position = of === undefined ? 0 : form.questions.findIndex((other) => other.id === of) + 1
+  return (
+    <p className="text-[12px] text-muted tabular-nums">
+      {position > 0 && <span className="badge badge-info me-2">{t('results.followUpOf', { position })}</span>}
+      {position > 0
+        ? t('results.followUpAnswered', { percent: formatPercent(100 - rate, i18n.language) })
+        : t('results.skipRate', { percent: formatPercent(rate, i18n.language) })}
+    </p>
+  )
+}
 
 type RemovedOptions = Readonly<Record<string, readonly { code: string; label: Record<string, string>; count: number }[]>>
 
@@ -73,6 +92,7 @@ export default function QuestionResultCard({ form, question, number, aggregate, 
       <p className="text-[12px] text-muted tabular-nums">
         {t('results.reach', { answered: count(figures.answered), skipped: count(figures.skipped), hidden: count(figures.not_shown) })}
       </p>
+      <AskedLine form={form} question={question} aggregate={figures} />
       {figures.earlier_version !== undefined && figures.earlier_version > 0 && (
         <p className="text-[12px] text-muted tabular-nums">
           {t('results.earlierVersion', { count: figures.earlier_version, formatted: count(figures.earlier_version) })}

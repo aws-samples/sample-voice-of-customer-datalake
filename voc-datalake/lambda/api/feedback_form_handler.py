@@ -65,6 +65,7 @@ from shared.feedback_form_raw import FEEDBACK_FORM_SOURCE, archive_submission
 from shared.feedback_partitions import source_partition
 from shared.form_test_responses import form_sk_prefix, test_response_key, test_responses_partition
 from shared.form_theme import validate_theme
+from shared.forms_v2_report import REPORT_PREFIX, ai_view, latest_report, report_sections, themes
 from shared.forms_v2_results import (
     LEFT_COUNTER_PREFIX,
     ResultRow,
@@ -73,6 +74,15 @@ from shared.forms_v2_results import (
     headline,
     legacy_row,
     tally_results,
+)
+from shared.forms_v2_segments import (
+    MAX_COMPARED_FORMS,
+    MIN_SEGMENT,
+    FormSide,
+    GroupBy,
+    compare,
+    parse_group_by,
+    segment_results,
 )
 from shared.ingest_tables import table_view
 from shared.onboarding import FEEDBACK_FORM_PK
@@ -639,6 +649,8 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
     test = fv2.test_settings_of({})
     if 'settings' in body:
         test = fv2.validate_test_settings(body['settings'], test)
+    # The app template it was made from (7.63.00): set once, here, so Compare can match the forms one template made.
+    template = fv2.validate_template(body['template']) if body.get('template') is not None else None
     now = now_iso()
     fid = form_id or new_form_id(scope)
 
@@ -656,6 +668,8 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
     }
     if actor:
         item['created_by'] = item['updated_by'] = actor
+    if template is not None:
+        item['template'] = template
 
     # Apply defaults, then override with provided values
     for name, default in DEFAULT_FORM_CONFIG.items():
@@ -785,6 +799,8 @@ def item_to_form(item: dict) -> dict:
         # one form each built prototype gets (shared/prototype_pins.py). Set by
         # the document generator only — not creatable or updatable here.
         'form_type': item.get('form_type') or 'standard',
+        # The app template it was made from (7.63.00), never changed by a save; absent for any other form.
+        **({'template': template} if (template := fv2.template_of(item)) is not None else {}),
         'brand_name': item.get('brand_name', ''),
         'created_at': item.get('created_at', ''),
         'updated_at': item.get('updated_at', ''),
@@ -1395,12 +1411,12 @@ def _delete_rows(scope: WorkspaceScope | None, prefix: str) -> int:
 
 
 def _delete_form_rows(form_id: str, scope: WorkspaceScope | None, tests: list[dict[str, str]]) -> None:
-    """Delete the rows that belong to the form: its revision snapshots (``FORMREV#{id}#…``) and funnel counters
-    (``FORMFUNNEL#{id}#…``) in its forms partition, and its test responses (``tests``: their keys in the scope's
-    ``FEEDBACK_FORM_TEST``, as the delete's record counted them). The funnel's visit rows (``FORMSESSION#{id}#…``)
-    are left to their 7-day ``ttl``: plumbing, never data, and a busy form's week of them is not worth a delete that
-    could outrun the request."""
-    for prefix in (_REVISION_PREFIX, _FUNNEL_PREFIX):
+    """Delete the rows that belong to the form: its revision snapshots (``FORMREV#{id}#…``), funnel counters
+    (``FORMFUNNEL#{id}#…``) and stored AI report summaries (``FORMREPORT#{id}#…``, 7.63.00) in its forms partition, and
+    its test responses (``tests``: their keys in the scope's ``FEEDBACK_FORM_TEST``, as the delete's record counted
+    them). The funnel's visit rows (``FORMSESSION#{id}#…``) are left to their 7-day ``ttl``: plumbing, never data, and
+    a busy form's week of them is not worth a delete that could outrun the request."""
+    for prefix in (_REVISION_PREFIX, _FUNNEL_PREFIX, REPORT_PREFIX):
         _delete_rows(scope, f'{prefix}{form_id}#')
     _delete_keys(scope, tests)
 
@@ -2304,6 +2320,8 @@ def _result_row(item: Mapping[str, Any], definition: Mapping[str, Any]) -> Resul
         'revision': metadata.get('form_revision') if isinstance(metadata.get('form_revision'), int) else None,
         'session': metadata.get('form_session') if isinstance(metadata.get('form_session'), str) else None,
         'channel': metadata.get('form_channel') if isinstance(metadata.get('form_channel'), str) else None,
+        'category': item.get('category') if isinstance(item.get('category'), str) else None,
+        'subcategory': item.get('subcategory') if isinstance(item.get('subcategory'), str) else None,
     }
     created_at = str(item.get('source_created_at') or '')
     answers = metadata.get('form_answers')
@@ -2315,10 +2333,11 @@ def _result_row(item: Mapping[str, Any], definition: Mapping[str, Any]) -> Resul
     return legacy_row(definition, fv2.plain(item.get('rating')), item.get('original_text'), created_at, **extra)
 
 
-#: What the results read of each feedback item (``category`` + ``source_platform``: both access rules read them).
+#: What the results read of each feedback item (``category`` + ``source_platform``: both access rules read them;
+#: ``subcategory`` too, for the report's themes).
 _RESULT_FIELDS = {'#fid': 'feedback_id', '#rating': 'rating', '#cat': 'category', '#src': 'source_platform',
                   '#meta': 'metadata', '#text': 'original_text', '#at': 'source_created_at', '#test': 'is_test',
-                  '#sent': 'sentiment_label'}
+                  '#sent': 'sentiment_label', '#sub': 'subcategory'}
 
 
 def _feedback_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceScope | None,
@@ -2475,22 +2494,133 @@ def get_form_results(form_id: str):
     Counts per option code, rating histograms, NPS / CSAT / CES, the open-text count with the latest answers, the
     reach of each question, the endings, and the widget's open and step counts (shared/forms_v2_results.py), each
     response scored against the revision it answered (the form's snapshots).
+
+    ``group_by`` (7.63.00: ``hidden.<id>``, a single choice ``q_<id>`` or a matrix row ``q_<id>.<row>``) adds
+    ``segments``: the same responses per value, each segment of at least 5 (shared/forms_v2_segments.py).
     """
     workspace = _request_scope(write=True)
+    view = _results_view(workspace, form_id, 'Failed to fetch form results')
+    return {'success': True, 'form_id': form_id, 'revision': fv2.revision_of(view.form),
+            'include_test': view.include_test, **view.results(),
+            **({'segments': view.segments()} if view.group_by is not None else {})}
+
+
+@dataclass(frozen=True)
+class _ResultsView:
+    """One Results-shaped read of a form (its results, segments, report): the form, its definition and revisions,
+    the caller's real rows (every one their access admits, whatever the filters), the view's rows (filtered, with the
+    test ones when asked) and the test rows the view admits."""
+
+    workspace: WorkspaceScope | None
+    form: Mapping[str, Any]
+    definition: Mapping[str, Any]
+    revisions: Mapping[int, Mapping[str, Any]]
+    reals: list[ResultRow]
+    rows: list[ResultRow]
+    tests: list[ResultRow]
+    funnel: dict[str, Any] | None
+    include_test: bool
+    group_by: GroupBy | None
+
+    def results(self) -> dict[str, Any]:
+        return tally_results(self.definition, self.rows, self.funnel, revisions=self.revisions,
+                             test_responses=len(self.tests))
+
+    def segments(self) -> dict[str, Any] | None:
+        return None if self.group_by is None else segment_results(self.definition, self.rows, self.group_by,
+                                                                    revisions=self.revisions)
+
+
+def _results_view(workspace: WorkspaceScope | None, form_id: str, failure_message: str, *,
+                  funnel: bool = True) -> _ResultsView:
+    """The view a Results-shaped GET asks for in ``workspace`` (the route's ``_request_scope(write=True)``: a
+    workspace's editors and admins, a viewer 403): its filters, ``include_test`` and ``group_by`` checked before
+    anything is read. ``funnel`` False: the daily counters are not read (the report shows no funnel)."""
     params = app.current_event.query_string_parameters or {}
-    include_test = _include_test(params)
+    include_test = _include_test(params) == 'true'
     filters = _view_filters(params)
-    form = _load_form_for_query(form_id, 'Failed to fetch form results', workspace)
+    form = _load_form_for_query(form_id, failure_message, workspace)
     definition = _definition(form)
+    group_by = parse_group_by(definition, params['group_by']) if params.get('group_by') else None
     reals, tests = _read_view_rows(form, form_id, workspace, definition, real=True, test=True)
     tests = filter_rows(tests, **filters)
-    rows = filter_rows(reals, **filters) + (tests if include_test == 'true' else [])
-    funnel = None if _funnel_hidden(filters) else funnel_counts(_funnel_rows(form_id, workspace, filters),
-                                                                include_test=include_test == 'true')
-    return {'success': True, 'form_id': form_id, 'revision': fv2.revision_of(form),
-            'include_test': include_test == 'true',
-            **tally_results(definition, rows, funnel, revisions=_revisions(form_id, workspace, form),
-                            test_responses=len(tests))}
+    rows = filter_rows(reals, **filters) + (tests if include_test else [])
+    counted = None if not funnel or _funnel_hidden(filters) else funnel_counts(
+        _funnel_rows(form_id, workspace, filters), include_test=include_test)
+    return _ResultsView(workspace, form, definition, _revisions(form_id, workspace, form), reals, rows, tests, counted,
+                        include_test, group_by)
+
+
+@app.get("/feedback-forms/<form_id>/report")
+@tracer.capture_method
+def get_form_report(form_id: str):
+    """The form's report (7.63.00, docs/feedback-forms.md "Report"), with the access, filters and ``include_test`` of
+    the results: ``{responses, first_response_at, last_response_at, kpis, matrices, segments (with ``group_by``),
+    themes, ai, min_segment}`` (shared/forms_v2_report.py). ``ai`` is the newest stored AI summary as this reader may
+    see it (its quotes joined against their own rows, withheld when it read one they cannot see), None without one.
+    Never a contact detail."""
+    workspace = _request_scope(write=True)
+    view = _results_view(workspace, form_id, 'Failed to fetch the form report', funnel=False)
+    results = view.results()
+    times = [row.created_at for row in view.rows if row.created_at]
+    try:
+        stored = latest_report(view.workspace, _forms_table(), _forms_partition(view.workspace), form_id)
+    except Exception as e:
+        metrics.add_metric(name='FeedbackFormResultsReadFailed', unit='Count', value=1)
+        logger.exception(f"Error reading the report of form {form_id}: {type(e).__name__}")
+        raise ServiceError('Failed to fetch the form report') from e
+    return {'success': True, 'form_id': form_id, 'revision': fv2.revision_of(view.form),
+            'name': view.form.get('name', ''), 'template': fv2.template_of(view.form),
+            'include_test': view.include_test, 'responses': results['responses'],
+            'test_responses': results['test_responses'], 'first_response_at': min(times, default=None),
+            'last_response_at': results['last_response_at'], **report_sections(view.definition, results),
+            'segments': view.segments(), 'themes': themes(view.definition, view.rows),
+            'ai': ai_view(stored, view.definition, view.reals), 'min_segment': MIN_SEGMENT}
+
+
+def _compared_ids(form_id: str, raw: object) -> list[str]:
+    """``with``: up to ``MAX_COMPARED_FORMS`` other form ids, comma-separated (the form itself and repeats dropped)."""
+    ids = [part.strip() for part in str(raw or '').split(',') if part.strip()]
+    if len(ids) > MAX_COMPARED_FORMS:
+        raise ValidationError(f'with names at most {MAX_COMPARED_FORMS} forms')
+    out = []
+    for raw_id in ids:
+        valid = _validated_form_id(raw_id)
+        if valid is None:
+            raise ValidationError('with must be form ids, comma-separated')
+        if valid != form_id and valid not in out:
+            out.append(valid)
+    return out
+
+
+def _form_side(form_id: str, workspace: WorkspaceScope | None, filters: Mapping[str, Any],
+               include_test: bool) -> FormSide:
+    """One form of a comparison, read as Results read it (404 for a form this scope does not hold)."""
+    form = _load_form_for_query(form_id, 'Failed to compare forms', workspace)
+    definition = _definition(form)
+    reals, tests = _read_view_rows(form, form_id, workspace, definition, real=True, test=include_test)
+    rows = filter_rows(reals, **filters) + (filter_rows(tests, **filters) if include_test else [])
+    return FormSide(form_id, str(form.get('name') or ''), fv2.template_of(form), definition, rows,
+                    _revisions(form_id, workspace, form))
+
+
+@app.get("/feedback-forms/<form_id>/compare")
+@tracer.capture_method
+def compare_forms(form_id: str):
+    """The form beside up to 10 others (7.63.00, docs/feedback-forms.md "Compare"): ``with=<form ids,
+    comma-separated>`` (each one of the same scope's forms: another workspace's is the 404) and ``by=hidden.<id>``
+    (each form's responses split by the value, which also gives the trend within one form). Its measured questions are
+    matched in each other form by id and answer shape, every point of at least 5 responses
+    (shared/forms_v2_segments.py ``compare``), with the access, filters and ``include_test`` of the results."""
+    workspace = _request_scope(write=True)
+    params = app.current_event.query_string_parameters or {}
+    include_test = _include_test(params) == 'true'
+    filters = _view_filters(params)
+    others = _compared_ids(form_id, params.get('with'))
+    base = _form_side(form_id, workspace, filters, include_test)
+    by = parse_group_by(base.definition, params['by'], hidden_only=True) if params.get('by') else None
+    sides = [_form_side(other, workspace, filters, include_test) for other in others]
+    return {'success': True, 'form_id': form_id, 'include_test': include_test, **compare(base, sides, by)}
 
 
 MAX_RESPONSES_PAGE = 100

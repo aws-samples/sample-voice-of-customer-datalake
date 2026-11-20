@@ -34,6 +34,8 @@
 //                                                    route (shared/forms_v2_draft_routes.py), served here beside the
 //                                                    builder's other routes
 //   GET    /settings/form-drafts/{job_id}            the draft job: {status, result, error}
+//   GET    /feedback-forms/{id}/report?…             the Report (7.63.00, mock-forms-report.js), and …/compare?with=&by=
+//   POST   /settings/form-reports                    the Report's AI summary: 202 {job_id}; GET …/{job_id} polls it
 //   GET    /feedback-forms/{id}/config  (a v2 form)  {config, test?: {valid, record?}}: the public v2 config, and the
 //                                                    test link's state when `test=<token>` is given
 //   POST   /feedback-forms/{id}/submit  (a v2 form)  a v2 response (`test`: the test token); a body with `event` is
@@ -49,8 +51,9 @@ import { seedResponses } from './mock-forms-seeds.js';
 import { formResults, filteredResponses, headlineOf, responseView, responsesCsv } from './mock-forms-results.js';
 import { draftAnswer, draftJob } from './mock-forms-draft.js';
 import { familiarCsv, familiarFilename } from './mock-forms-csv.js';
+import { formCompare, formReport, startSummary, summaryJob } from './mock-forms-report.js';
 
-const ROUTE = /^\/feedback-forms\/([^/]+)(?:\/(test-link|responses|results|config|submit|events))?$/;
+const ROUTE = /^\/feedback-forms\/([^/]+)(?:\/(test-link|responses|results|report|compare|config|submit|events))?$/;
 /** A beacon's visit id and question id (lambda/shared/forms_v2_responses.py SESSION_ID, forms_v2.py QUESTION_ID). */
 const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const QUESTION_ID = /^q_[a-z0-9_]{1,40}$/;
@@ -526,6 +529,10 @@ function readRoute(shared, op, item, url, projectV1) {
       ?? [200, { success: true, form_id: item.form_id, revision: item.revision ?? 1, include_test: url.searchParams.get('include_test') === 'true',
         ...formResults(item, responsesOf(item.form_id), url.searchParams) }];
     case 'responses': return includeTestError(url, true) ?? pageOf(item, url, filteredResponses(responsesOf(item.form_id), url.searchParams));
+    case 'report': return includeTestError(url, false)
+      ?? formReport(item, filteredResponses(responsesOf(item.form_id), url.searchParams), responsesOf(item.form_id), url.searchParams);
+    case 'compare': return includeTestError(url, false)
+      ?? formCompare(item, shared.mockFeedbackForms, (formId) => filteredResponses(responsesOf(formId), url.searchParams), url.searchParams);
     case 'config': return v2Config(item, url);
     default: return null;
   }
@@ -557,22 +564,32 @@ function deleteTest(item, url) {
   return [200, { success: true, form_id: item.form_id, deleted: all.length - kept.length }];
 }
 
-/** The AI draft's routes: the settings API's (POST to start, GET `/{job_id}` to poll). */
+/** The AI draft's routes: the settings API's (POST to start, GET `/{job_id}` to poll); the Report's AI summary's too. */
 const DRAFTS_ROUTE = '/settings/form-drafts';
+const SUMMARIES_ROUTE = '/settings/form-reports';
+
+/** The settings API's two assist routes these mocks serve (an AI draft, a report's AI summary), each a POST to
+ * start and a GET of `/{job_id}` to poll: the op, null for another method, undefined for another path. */
+function classifyAssist(method, pathname) {
+  for (const [route, start, poll] of [[DRAFTS_ROUTE, 'draft', 'draftJob'], [SUMMARIES_ROUTE, 'summary', 'summaryJob']]) {
+    if (pathname === route) return method === 'POST' ? { op: start } : null;
+    if (pathname.startsWith(`${route}/`)) return method === 'GET' ? { op: poll, jobId: decodeURIComponent(pathname.slice(route.length + 1)) } : null;
+  }
+  return undefined;
+}
 
 /** Which v2 route this is: an op and the form it is about, or null (a v1 route, or none of ours). */
 function classify(method, pathname, shared) {
-  if (pathname === DRAFTS_ROUTE) return method === 'POST' ? { op: 'draft' } : null;
-  if (pathname.startsWith(`${DRAFTS_ROUTE}/`)) {
-    return method === 'GET' ? { op: 'draftJob', jobId: decodeURIComponent(pathname.slice(DRAFTS_ROUTE.length + 1)) } : null;
-  }
+  const assist = classifyAssist(method, pathname);
+  if (assist !== undefined) return assist;
   if (pathname === '/feedback-forms') return method === 'POST' ? { op: 'create' } : null;
   const match = pathname.match(ROUTE);
   if (!match) return null;
   const item = shared.mockFeedbackForms.find((form) => form.form_id === decodeURIComponent(match[1])) ?? null;
   const ops = {
     '': { GET: 'get', PUT: 'update' }, 'test-link': { POST: 'testLink' }, responses: { DELETE: 'deleteTest', GET: 'responses' },
-    results: { GET: 'results' }, config: { GET: 'config' }, submit: { POST: 'submit' }, events: { POST: 'event' },
+    results: { GET: 'results' }, report: { GET: 'report' }, compare: { GET: 'compare' }, config: { GET: 'config' },
+    submit: { POST: 'submit' }, events: { POST: 'event' },
   };
   const op = ops[match[2] ?? '']?.[method];
   if (op === undefined) return null;
@@ -604,6 +621,7 @@ function sendCsv(res, item, url) {
 function writeRoute(shared, route, url, body, projectV1) {
   const input = isPlainObject(body) ? body : {};
   if (route.op === 'draft') return draftAnswer(input);
+  if (route.op === 'summary') return startSummary(shared.mockFeedbackForms, input);
   if (route.op === 'create') return createV2(shared, input, projectV1);
   if (route.op === 'update') return updateV2(shared, route.item, input, projectV1);
   if (route.op === 'submit') return v2Submit(route.item, input);
@@ -619,11 +637,11 @@ function writeRoute(shared, route, url, body, projectV1) {
 export function handleFormV2Routes(req, res, url, send, shared, projectV1) {
   const route = classify(req.method, url.pathname, shared);
   if (route === null) return false;
-  if (route.op === 'draftJob') {
-    send(...draftJob(route.jobId));
+  if (route.op === 'draftJob' || route.op === 'summaryJob') {
+    send(...(route.op === 'draftJob' ? draftJob(route.jobId) : summaryJob(route.jobId)));
     return true;
   }
-  if (route.op !== 'create' && route.op !== 'draft' && route.item === null) {
+  if (route.op !== 'create' && route.op !== 'draft' && route.op !== 'summary' && route.item === null) {
     send(404, { success: false, error: 'Form not found' });
     return true;
   }

@@ -24,7 +24,7 @@ from moto import mock_aws
 from moto_helpers import pk_sk_table, rest_event
 
 import settings_handler
-from shared import forms_v2_draft, forms_v2_draft_routes, request_workspace
+from shared import forms_v2_draft, forms_v2_draft_routes, forms_v2_report_ai, request_workspace
 from shared.workspace import MembershipCache
 
 WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
@@ -87,8 +87,9 @@ class TestTheAiDraftRoutes:
         work = settings_handler.ASSIST_WORK[forms_v2_draft.DRAFT_JOB]
         assert (work.run, work.failure_message, work.per_workspace) == (
             forms_v2_draft.run_job, forms_v2_draft.DRAFT_FAILURE, True)
+        # (and the form report's summary, 7.63.00, test_settings_form_reports.py): no other kind runs in a workspace
         assert all(not w.per_workspace for job, w in settings_handler.ASSIST_WORK.items()
-                   if job != forms_v2_draft.DRAFT_JOB)
+                   if job not in {forms_v2_draft.DRAFT_JOB, forms_v2_report_ai.REPORT_JOB})
 
     def test_a_draft_saves_nothing_but_its_hourly_counter(self, world, lambda_context):
         assert _call(lambda_context, 'POST', '/settings/form-drafts', body=DRAFT)[0] == 202

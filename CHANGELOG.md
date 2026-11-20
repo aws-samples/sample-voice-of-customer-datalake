@@ -17,6 +17,60 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.63.00] - 2026-11-21
+
+**Event feedback**: an event or workshop feedback template whose forms can be compared, "Ask why when the score is
+low" with skip rates on Results, and a report for each form (KPIs, segments of at least 5, heatmaps, themes with real
+quotes, an optional AI summary, a one-page PDF and Compare across forms)
+([feedback-forms.md](docs/feedback-forms.md#report)). No new route resource: the existing forms and settings proxies
+carry it.
+
+### Added
+
+- **Event or workshop feedback**, a template in a new **Events** goal of the picker: role, familiarity, the value,
+  a matrix of the session's parts (Needs improvement to Exceptional, scored 1–4), the tooling, content and presenter
+  with a "why" for a low score, NPS and its reason ("What's the main reason for your score of {{q_nps}}?"), whether
+  people will apply it and what stands in the way, the takeaway and what to improve; hidden fields `customer`,
+  `event`, `event_date` and `presenter` come in the link and the welcome recalls the event. Its copy is in the nine
+  languages, and the AI draft knows it as the thirteenth flow.
+- **A form remembers its template**: `template: {id, version}` is stored when a form is created from a template (any
+  but Blank) and answered with the form; no save changes it. Forms saved before have none.
+- **Ask why when the score is low**, on rating, NPS, CSAT and CES questions without rules of their own: an optional
+  follow-up that recalls the score, reached only by NPS 6 or less, CSAT or CES 3 or less, or a rating of 2 or less
+  on 5 points (scaled for other ranges); ordinary questions and rules, editable, with Undo. AI helps at authoring time
+  only (Improve with AI); there is no live AI probe on the public routes.
+- **Skip rates on Results**: every card says skipped of those asked, a follow-up says how many of those asked answered
+  it (`follow_up_of` on its question in `GET …/results`), and the cards can be ordered Most skipped first.
+- **Results → Report** (`GET /feedback-forms/{id}/report`): the KPIs, each matrix as a heatmap, the themes of the open
+  answers grouped by the processed items' category and subcategory with two or three real quotes each (never a
+  contact detail), the AI summary when there is one, and **Download PDF**, one page through the browser's print
+  dialog (no new dependency).
+- **Segments**: `group_by=hidden.<id> | q_<id> | q_<id>.<row>` on `GET …/results` and the report gives per segment the
+  counts, NPS, CSAT, CES and averages; a segment of fewer than 5 responses is merged into "Other (fewer than 5)",
+  whose scores stay hidden while it is under 5 too, so no one can be picked out.
+- **Compare** (`GET /feedback-forms/{id}/compare?with=<up to 10 form ids>&by=hidden.<id>`): the form beside others of
+  the same workspace (the template's siblings first) or its trend by a hidden field such as `event_date`; questions
+  are matched by id and type, each point has at least 5 responses.
+- **AI summary of a report** (`POST /settings/form-reports`, polled at `GET /settings/form-reports/{job_id}`):
+  optional, one utility model call (about 1–3 cents), 20 per person per hour, gated as Results. The browser sends the
+  open answers it already read with the person's access; the model only labels themes and picks quote ids, and the
+  stored report (`FORMREPORT#{form_id}#{report_id}` in the form's forms partition) keeps labels and ids, never a
+  respondent's text. Its quotes are joined against the reader's own rows, it is marked stale once newer responses
+  exist, and it is withheld from a reader who cannot see a response it read.
+
+### Changed
+
+- **Deleting a form** also deletes its stored report summaries; they are in a workspace's export and its hard delete
+  with the forms partition.
+
+### Upgrade notes
+
+- No new AWS resource, stack, route resource (the API stack stays at 425), permission or flag: the report and
+  compare routes ride `/feedback-forms/{form_id}/{proxy+}`, the AI summary `/settings/{proxy+}` and the settings
+  worker that already runs the AI drafts.
+- The global MCP server gets no forms tools in this release: `forms_get_results` and `forms_get_report` wait for room
+  in the `tools/list` token budget (TENETS.md tenet 4).
+
 ## [7.62.00] - 2026-11-20
 
 **The Documents Library**: upload a market report, interview transcripts or a deck once, tag it, and mention it in

@@ -1020,6 +1020,135 @@
           "description": "Leemos todos los mensajes."
         }
       }
+    },
+    "workshop": {
+      "name": "Opinión sobre un evento o taller",
+      "purpose": "Pregunta a los asistentes, después de un taller o un evento, cómo fue cada parte, por qué una puntuación fue baja y qué van a aplicar. Comparable entre eventos.",
+      "welcome": {
+        "title": "Gracias por participar en {{event|el taller}}",
+        "description": "Unas pocas preguntas breves, unos tres minutos. Sus respuestas darán forma a la próxima sesión.",
+        "button": "Empezar"
+      },
+      "hidden": {
+        "customer": "Cliente",
+        "event": "Evento",
+        "event_date": "Fecha del evento",
+        "presenter": "Ponente"
+      },
+      "q": {
+        "q_role": {
+          "headline": "¿Cuál es su puesto?",
+          "other": "Otra cosa",
+          "options": {
+            "product": "Producto",
+            "engineering": "Ingeniería",
+            "qa": "QA",
+            "scrum_master": "Scrum Master",
+            "design": "Diseño",
+            "ops": "Ops",
+            "leadership": "Dirección"
+          }
+        },
+        "q_familiarity": {
+          "headline": "¿Cuánto conocía el tema antes de la sesión?",
+          "options": {
+            "not": "Nada",
+            "somewhat": "Algo",
+            "very": "Mucho"
+          }
+        },
+        "q_value": {
+          "headline": "¿Hasta qué punto fue valioso {{event|el taller}} para su trabajo?",
+          "lower": "Nada valioso",
+          "upper": "Muy valioso"
+        },
+        "q_phases": {
+          "headline": "¿Hasta qué punto fue eficaz cada parte?",
+          "rows": {
+            "introduction": "Introducción",
+            "demo": "Demostración",
+            "hands_on": "Ejercicios prácticos",
+            "wrap_up": "Cierre y preguntas"
+          },
+          "columns": {
+            "needs_improvement": "Necesita mejorar",
+            "satisfactory": "Satisfactoria",
+            "very_effective": "Muy eficaz",
+            "exceptional": "Excepcional"
+          }
+        },
+        "q_tooling": {
+          "headline": "¿Hasta qué punto le funcionaron bien las herramientas y la configuración?",
+          "lower": "Nada bien",
+          "upper": "Muy bien"
+        },
+        "q_tooling_why": {
+          "headline": "Valoró las herramientas con un {{q_tooling}}. ¿Qué obstáculos encontró?",
+          "placeholder": "Su respuesta"
+        },
+        "q_content": {
+          "headline": "¿Hasta qué punto fue relevante el contenido para su trabajo?",
+          "lower": "Nada relevante",
+          "upper": "Muy relevante"
+        },
+        "q_content_why": {
+          "headline": "Valoró el contenido con un {{q_content}}. ¿Qué lo habría hecho más relevante?",
+          "placeholder": "Su respuesta"
+        },
+        "q_presenter": {
+          "headline": "¿Hasta qué punto fue clara la explicación de {{presenter|quien impartió la sesión}}?",
+          "lower": "Nada clara",
+          "upper": "Muy clara"
+        },
+        "q_presenter_why": {
+          "headline": "Le dio un {{q_presenter}} a {{presenter|quien impartió la sesión}}. ¿Qué se podría mejorar?",
+          "placeholder": "Su respuesta"
+        },
+        "q_nps": {
+          "headline": "¿Qué probabilidad hay de que recomiende {{event|este taller}} a un colega?",
+          "lower": "Nada probable",
+          "upper": "Extremadamente probable"
+        },
+        "q_nps_reason": {
+          "headline": "¿Cuál es el motivo principal de su puntuación de {{q_nps}}?",
+          "placeholder": "Su respuesta"
+        },
+        "q_apply": {
+          "headline": "¿Aplicará lo que aprendió en el próximo mes?",
+          "options": {
+            "definitely": "Sí, sin duda",
+            "probably": "Probablemente",
+            "not_sure": "Aún no lo sé",
+            "unlikely": "Es poco probable"
+          }
+        },
+        "q_barriers": {
+          "headline": "¿Qué podría impedirle aplicarlo?",
+          "other": "Otra cosa",
+          "none": "Nada",
+          "options": {
+            "time": "No hay tiempo suficiente",
+            "tool_access": "No tengo acceso a las herramientas",
+            "skills": "Necesito más práctica",
+            "team_buy_in": "Mi equipo no está convencido",
+            "security": "Normas de seguridad o cumplimiento"
+          }
+        },
+        "q_takeaway": {
+          "headline": "¿Qué es lo más importante que se lleva?",
+          "placeholder": "Su respuesta"
+        },
+        "q_improve": {
+          "headline": "¿Qué deberíamos mejorar la próxima vez?",
+          "placeholder": "Su respuesta"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "¡Gracias!",
+          "description": "Sus comentarios nos ayudan a mejorar la próxima sesión."
+        }
+      }
     }
   },
   "picker": {
@@ -1035,7 +1164,8 @@
       "dropoffs": "Abandonos",
       "product": "Producto",
       "onboarding": "Primeros pasos",
-      "blank": "En blanco"
+      "blank": "En blanco",
+      "events": "Eventos"
     },
     "runs": {
       "link": "Enlace",
@@ -1478,6 +1608,12 @@
       "detractor": "¿Cuál es el motivo principal de su puntuación?",
       "promoter": "¿Qué es lo que más valora?",
       "done": "Se añadieron dos preguntas de seguimiento: detractores y promotores tienen cada uno la suya."
+    },
+    "askWhy": {
+      "button": "Preguntar por qué si la puntuación es baja",
+      "hint": "Añade una pregunta opcional después de esta para puntuaciones de {{threshold}} o menos, que muestra la puntuación. Puedes editarla.",
+      "done": "Pregunta de seguimiento añadida: solo se pregunta el motivo ante una puntuación baja.",
+      "headline": "¿Cuál es el motivo principal de su puntuación de {{recall}}?"
     }
   },
   "text": {
@@ -2016,6 +2152,15 @@
       "from": "Falta en: {{channels}}.",
       "channel": "{{channel}} {{missing}}",
       "unknown": "Desconocido"
+    },
+    "reportView": "Informe",
+    "skipRate": "Tasa de omisión {{percent}}",
+    "followUpOf": "Seguimiento de la pregunta {{position}}",
+    "followUpAnswered": "Respondida por el {{percent}} de las personas a las que se mostró",
+    "order": {
+      "label": "Orden de las preguntas",
+      "form": "Orden del formulario",
+      "skipped": "Más omitidas"
     }
   },
   "theme": {
@@ -2211,5 +2356,92 @@
     "preview": "Lo que ven las personas: {{text}}",
     "previewMissing": "Sin valor: {{text}}",
     "previewEmpty": "(nada)"
+  },
+  "report": {
+    "loading": "Cargando el informe…",
+    "responses": "Respuestas",
+    "kpiAnswered_one": "{{formatted}} respondió",
+    "kpiAnswered_other": "{{formatted}} respondieron",
+    "segmentBy": "Segmentar por",
+    "noSegments": "Sin segmentos",
+    "emptyTitle": "Aún no hay nada que mostrar",
+    "empty": "Cuando lleguen respuestas con estos filtros, el informe mostrará sus puntuaciones, segmentos y temas.",
+    "segments": {
+      "title": "Por {{segment}}",
+      "hint": "Los segmentos con menos de {{minimum}} respuestas se agrupan, para que no se pueda identificar a nadie.",
+      "caption": "Puntuaciones por segmento",
+      "segment": "Segmento",
+      "responses": "Respuestas",
+      "noValue": "Sin valor",
+      "other": "Otros",
+      "merged_one": "Otros ({{count, number}} segmento con menos de {{minimum}})",
+      "merged_other": "Otros ({{count, number}} segmentos con menos de {{minimum}})",
+      "withheld": "Muy pocas respuestas para mostrar sus puntuaciones",
+      "none": "No hay respuestas que segmentar."
+    },
+    "heatmap": {
+      "row": "Fila",
+      "average": "Media"
+    },
+    "sentiment": {
+      "positive": "Positivo",
+      "neutral": "Neutro",
+      "mixed": "Mixto",
+      "negative": "Negativo",
+      "unknown": "Sin procesar"
+    },
+    "themes": {
+      "title": "Temas",
+      "hint": "Agrupadas por la categoría en la que se clasificó cada respuesta, con citas reales. Selecciona una cita para abrir su respuesta.",
+      "none": "Aún no hay respuestas abiertas que agrupar.",
+      "unprocessed": "Aún sin procesar",
+      "answers_one": "{{formatted}} respuesta",
+      "answers_other": "{{formatted}} respuestas",
+      "openQuote": "Abrir la respuesta: {{text}}"
+    },
+    "ai": {
+      "title": "Resumen con IA",
+      "badge": "IA",
+      "stale": "Hay respuestas más recientes",
+      "start": "Resumir con IA",
+      "again": "Volver a resumir",
+      "working": "Resumiendo…",
+      "intro": "La IA lee hasta 300 de las respuestas abiertas que se muestran aquí, con tu acceso, nombra sus temas y elige citas. Las citas son siempre respuestas reales.",
+      "nothing": "No hay respuestas abiertas que resumir.",
+      "withheld": "Este resumen leyó respuestas que no puedes ver, así que no se te muestra. Vuelve a resumir para crear el tuyo.",
+      "made_one": "Creado el {{date}} a partir de {{formatted}} respuesta",
+      "made_other": "Creado el {{date}} a partir de {{formatted}} respuestas",
+      "rateLimited": "Ya van 20 resúmenes con IA en esta hora. Inténtalo de nuevo más tarde.",
+      "noModel": "No hay ningún modelo de IA disponible en esta implementación.",
+      "noSummary": "La IA no encontró temas en estas respuestas.",
+      "failed": "No se pudo crear el resumen con IA. Inténtalo de nuevo."
+    },
+    "pdf": {
+      "download": "Descargar PDF",
+      "failed": "No se pudo preparar el PDF. Inténtalo de nuevo.",
+      "title": "{{name}}: informe",
+      "subtitle_one": "{{formatted}} respuesta · {{dates}}",
+      "subtitle_other": "{{formatted}} respuestas · {{dates}}",
+      "responses": "Respuestas",
+      "segments": "Puntuaciones por segmento",
+      "themes": "Temas y citas",
+      "footer": "Generado el {{date}}. No incluye datos de contacto."
+    },
+    "compare": {
+      "title": "Comparar",
+      "intro": "Coloca este formulario junto a hasta {{max, number}} más, o divídelo por un campo oculto para ver su tendencia. Las preguntas se emparejan por id y tipo; un punto con menos de 5 respuestas no muestra puntuaciones.",
+      "forms": "Formularios",
+      "noForms": "No hay otro formulario con el que comparar.",
+      "sameTemplate": "Misma plantilla",
+      "by": "Dividir por",
+      "byNone": "No dividir",
+      "caption": "Puntuaciones por formulario",
+      "point": "Formulario",
+      "missing": "No se preguntó",
+      "different": "Se preguntó de otra forma",
+      "few": "Menos de {{minimum}}",
+      "merged": "Otros valores (menos de {{minimum}} cada uno)",
+      "failed": "No se pudo cargar la comparación."
+    }
   }
 }

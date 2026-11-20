@@ -1497,6 +1497,64 @@
     ]
   },
   {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "`${formPath(formId)}/report?${filterQuery(filters, groupBy === null ? {} : { group_by: groupBy })}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_event_a/report?include_test=false"
+      },
+      {
+        "path": "/feedback-forms/fv2_event_a/report?include_test=false&group_by=hidden.event_date"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "`${formPath(formId)}/compare?${filterQuery(filters, extra)}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_event_a/compare?with=fv2_event_b&include_test=false"
+      },
+      {
+        "path": "/feedback-forms/fv2_event_a/compare?by=hidden.event_date&include_test=false"
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "POST",
+    "call": "'/settings/form-reports'",
+    "probes": [
+      {
+        "path": "/settings/form-reports",
+        "body": {
+          "form_id": "fv2_event_a",
+          "answers": [
+            {
+              "response_id": "fb_fv2_event_a_0",
+              "text": "The hands-on labs made it click"
+            }
+          ],
+          "filters": {},
+          "responses": 14,
+          "last_response_at": null
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackFormsV2Api.ts",
+    "method": "GET",
+    "call": "`/settings/form-reports/${encodeURIComponent(jobId)}`",
+    "probes": [
+      {
+        "path": "/settings/form-reports/job_probe"
+      }
+    ]
+  },
+  {
     "file": "api/githubAppsApi.ts",
     "method": "GET",
     "call": "APPS_PATH",

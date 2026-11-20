@@ -272,6 +272,14 @@ export interface FormV2 {
   readonly dimension_defaults: Readonly<Record<string, string>>
   readonly tags: readonly string[]
   readonly form_type?: 'standard' | 'prototype_pin'
+  /** The app template it was made from (7.63.00: Compare matches the forms one template made); stored on create. */
+  readonly template?: TemplateRef
+}
+
+/** An app template and its version, as a form made from it stores them. */
+interface TemplateRef {
+  readonly id: string
+  readonly version: number
 }
 
 /** What the server says about a stored form beside its content. */

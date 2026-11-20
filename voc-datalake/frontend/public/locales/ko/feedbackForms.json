@@ -1020,6 +1020,135 @@
           "description": "보내 주신 메시지는 하나하나 모두 읽습니다."
         }
       }
+    },
+    "workshop": {
+      "name": "이벤트 또는 워크숍 피드백",
+      "purpose": "워크숍이나 이벤트가 끝난 뒤 참석자에게 각 순서가 어땠는지, 점수가 낮았던 이유는 무엇인지, 무엇을 적용할지 묻습니다. 이벤트 간에 비교할 수 있습니다.",
+      "welcome": {
+        "title": "{{event|워크숍}}에 참여해 주셔서 감사합니다",
+        "description": "짧은 질문 몇 가지로, 약 3분 걸립니다. 보내 주신 답변은 다음 세션에 반영됩니다.",
+        "button": "시작하기"
+      },
+      "hidden": {
+        "customer": "고객",
+        "event": "이벤트",
+        "event_date": "이벤트 날짜",
+        "presenter": "발표자"
+      },
+      "q": {
+        "q_role": {
+          "headline": "어떤 업무를 맡고 계신가요?",
+          "other": "기타",
+          "options": {
+            "product": "제품",
+            "engineering": "엔지니어링",
+            "qa": "QA",
+            "scrum_master": "스크럼 마스터",
+            "design": "디자인",
+            "ops": "Ops",
+            "leadership": "경영/관리"
+          }
+        },
+        "q_familiarity": {
+          "headline": "세션 전에 이 주제에 얼마나 익숙하셨나요?",
+          "options": {
+            "not": "익숙하지 않음",
+            "somewhat": "어느 정도 익숙함",
+            "very": "매우 익숙함"
+          }
+        },
+        "q_value": {
+          "headline": "{{event|워크숍}}에서 얻은 것이 업무에 얼마나 가치 있었나요?",
+          "lower": "가치 없음",
+          "upper": "매우 가치 있음"
+        },
+        "q_phases": {
+          "headline": "각 순서는 얼마나 효과적이었나요?",
+          "rows": {
+            "introduction": "소개",
+            "demo": "시연",
+            "hands_on": "실습",
+            "wrap_up": "마무리 및 Q&A"
+          },
+          "columns": {
+            "needs_improvement": "개선 필요",
+            "satisfactory": "만족",
+            "very_effective": "매우 효과적",
+            "exceptional": "탁월함"
+          }
+        },
+        "q_tooling": {
+          "headline": "도구와 환경 설정은 얼마나 잘 작동했나요?",
+          "lower": "잘 작동하지 않음",
+          "upper": "매우 잘 작동함"
+        },
+        "q_tooling_why": {
+          "headline": "도구에 {{q_tooling}}점을 주셨습니다. 무엇이 불편하셨나요?",
+          "placeholder": "답변을 입력해 주세요"
+        },
+        "q_content": {
+          "headline": "내용이 업무와 얼마나 관련 있었나요?",
+          "lower": "관련 없음",
+          "upper": "매우 관련 있음"
+        },
+        "q_content_why": {
+          "headline": "내용에 {{q_content}}점을 주셨습니다. 어떻게 하면 업무와 더 관련 있는 내용이 되었을까요?",
+          "placeholder": "답변을 입력해 주세요"
+        },
+        "q_presenter": {
+          "headline": "{{presenter|발표자}}의 설명은 얼마나 명확했나요?",
+          "lower": "명확하지 않음",
+          "upper": "매우 명확함"
+        },
+        "q_presenter_why": {
+          "headline": "{{presenter|발표자}}에게 {{q_presenter}}점을 주셨습니다. 어떤 점이 더 나아지면 좋을까요?",
+          "placeholder": "답변을 입력해 주세요"
+        },
+        "q_nps": {
+          "headline": "동료에게 {{event|이 워크숍}}에 참여해 보라고 추천할 가능성은 얼마나 되나요?",
+          "lower": "전혀 추천하지 않음",
+          "upper": "매우 추천함"
+        },
+        "q_nps_reason": {
+          "headline": "{{q_nps}}점을 주신 가장 큰 이유는 무엇인가요?",
+          "placeholder": "답변을 입력해 주세요"
+        },
+        "q_apply": {
+          "headline": "배운 내용을 다음 한 달 안에 적용하실 건가요?",
+          "options": {
+            "definitely": "네, 꼭 적용할 것입니다",
+            "probably": "아마 적용할 것입니다",
+            "not_sure": "아직 잘 모르겠습니다",
+            "unlikely": "적용하지 않을 것 같습니다"
+          }
+        },
+        "q_barriers": {
+          "headline": "적용하는 데 방해가 될 수 있는 것은 무엇인가요?",
+          "other": "기타",
+          "none": "없음",
+          "options": {
+            "time": "시간 부족",
+            "tool_access": "도구에 접근할 수 없음",
+            "skills": "더 많은 연습이 필요함",
+            "team_buy_in": "팀의 동의를 얻지 못함",
+            "security": "보안 또는 규정 준수 규칙"
+          }
+        },
+        "q_takeaway": {
+          "headline": "가장 크게 얻은 점은 무엇인가요?",
+          "placeholder": "답변을 입력해 주세요"
+        },
+        "q_improve": {
+          "headline": "다음에는 무엇을 개선하면 좋을까요?",
+          "placeholder": "답변을 입력해 주세요"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다!",
+          "description": "보내 주신 피드백은 다음 세션을 더 좋게 만드는 데 도움이 됩니다."
+        }
+      }
     }
   },
   "picker": {
@@ -1035,7 +1164,8 @@
       "dropoffs": "이탈",
       "product": "제품",
       "onboarding": "온보딩",
-      "blank": "빈 양식"
+      "blank": "빈 양식",
+      "events": "이벤트"
     },
     "runs": {
       "link": "링크",
@@ -1478,6 +1608,12 @@
       "detractor": "이 점수를 주신 가장 큰 이유는 무엇인가요?",
       "promoter": "가장 만족스러운 점은 무엇인가요?",
       "done": "후속 질문 두 개를 추가했습니다. 비추천자와 추천자가 각각 다른 질문을 받습니다."
+    },
+    "askWhy": {
+      "button": "점수가 낮으면 이유 묻기",
+      "hint": "{{threshold}}점 이하인 경우 이 질문 뒤에 점수를 보여 주는 선택 질문을 추가합니다. 질문은 수정할 수 있습니다.",
+      "done": "후속 질문을 추가했습니다. 점수가 낮을 때만 이유를 묻습니다.",
+      "headline": "{{recall}}점을 주신 가장 큰 이유는 무엇인가요?"
     }
   },
   "text": {
@@ -2016,6 +2152,15 @@
       "from": "값이 없는 곳: {{channels}}.",
       "channel": "{{channel}} {{missing}}",
       "unknown": "알 수 없음"
+    },
+    "reportView": "보고서",
+    "skipRate": "건너뜀 비율 {{percent}}",
+    "followUpOf": "질문 {{position}}의 후속 질문",
+    "followUpAnswered": "질문을 받은 사람의 {{percent}}가 답변",
+    "order": {
+      "label": "질문 순서",
+      "form": "양식 순서",
+      "skipped": "많이 건너뛴 순"
     }
   },
   "theme": {
@@ -2211,5 +2356,92 @@
     "preview": "응답자에게 표시: {{text}}",
     "previewMissing": "값이 없을 때: {{text}}",
     "previewEmpty": "(없음)"
+  },
+  "report": {
+    "loading": "보고서를 불러오는 중…",
+    "responses": "응답",
+    "kpiAnswered_one": "{{formatted}}명이 답변",
+    "kpiAnswered_other": "{{formatted}}명이 답변",
+    "segmentBy": "세그먼트 기준",
+    "noSegments": "세그먼트 없음",
+    "emptyTitle": "아직 보고할 내용이 없습니다",
+    "empty": "이 필터에 맞는 응답이 들어오면 보고서에 점수, 세그먼트, 주제가 표시됩니다.",
+    "segments": {
+      "title": "{{segment}}별",
+      "hint": "응답이 {{minimum}}개 미만인 세그먼트는 누구도 식별되지 않도록 하나로 묶습니다.",
+      "caption": "세그먼트별 점수",
+      "segment": "세그먼트",
+      "responses": "응답",
+      "noValue": "값 없음",
+      "other": "기타",
+      "merged_one": "기타({{minimum}}개 미만 세그먼트 {{count, number}}개)",
+      "merged_other": "기타({{minimum}}개 미만 세그먼트 {{count, number}}개)",
+      "withheld": "응답이 너무 적어 점수를 표시할 수 없습니다",
+      "none": "세그먼트로 나눌 응답이 없습니다."
+    },
+    "heatmap": {
+      "row": "행",
+      "average": "평균"
+    },
+    "sentiment": {
+      "positive": "긍정적",
+      "neutral": "중립",
+      "mixed": "혼합",
+      "negative": "부정적",
+      "unknown": "처리되지 않음"
+    },
+    "themes": {
+      "title": "주제",
+      "hint": "각 응답이 분류된 카테고리별로 실제 인용문과 함께 묶었습니다. 인용문을 선택하면 해당 응답이 열립니다.",
+      "none": "아직 묶을 서술형 답변이 없습니다.",
+      "unprocessed": "아직 처리되지 않음",
+      "answers_one": "답변 {{formatted}}개",
+      "answers_other": "답변 {{formatted}}개",
+      "openQuote": "응답 열기: {{text}}"
+    },
+    "ai": {
+      "title": "AI 요약",
+      "badge": "AI",
+      "stale": "이후 새 응답 있음",
+      "start": "AI로 요약",
+      "again": "다시 요약",
+      "working": "요약하는 중…",
+      "intro": "AI가 내 접근 권한으로 여기 표시된 서술형 답변을 최대 300개까지 읽고, 주제에 이름을 붙이고 인용문을 고릅니다. 인용문은 항상 실제 응답입니다.",
+      "nothing": "요약할 서술형 답변이 없습니다.",
+      "withheld": "이 요약은 내가 볼 수 없는 응답을 읽었기 때문에 표시되지 않습니다. 다시 요약하면 내 요약을 만들 수 있습니다.",
+      "made_one": "{{date}}에 응답 {{formatted}}개로 작성됨",
+      "made_other": "{{date}}에 응답 {{formatted}}개로 작성됨",
+      "rateLimited": "이번 시간에 AI 요약을 20번 사용했습니다. 나중에 다시 시도하세요.",
+      "noModel": "이 배포에서는 사용할 수 있는 AI 모델이 없습니다.",
+      "noSummary": "AI가 이 답변에서 주제를 찾지 못했습니다.",
+      "failed": "AI 요약을 만들지 못했습니다. 다시 시도하세요."
+    },
+    "pdf": {
+      "download": "PDF 다운로드",
+      "failed": "PDF를 준비하지 못했습니다. 다시 시도하세요.",
+      "title": "{{name}}: 보고서",
+      "subtitle_one": "응답 {{formatted}}개 · {{dates}}",
+      "subtitle_other": "응답 {{formatted}}개 · {{dates}}",
+      "responses": "응답",
+      "segments": "세그먼트별 점수",
+      "themes": "주제 및 인용문",
+      "footer": "{{date}}에 생성되었습니다. 연락처 정보는 포함되지 않습니다."
+    },
+    "compare": {
+      "title": "비교",
+      "intro": "이 양식을 최대 {{max, number}}개의 다른 양식과 나란히 놓거나, 숨겨진 필드로 나누어 추세를 확인하세요. 질문은 ID와 유형으로 대응되며, 응답이 5개 미만인 지점에는 점수가 표시되지 않습니다.",
+      "forms": "양식",
+      "noForms": "비교할 다른 양식이 없습니다.",
+      "sameTemplate": "같은 템플릿",
+      "by": "나누는 기준",
+      "byNone": "나누지 않음",
+      "caption": "양식별 점수",
+      "point": "양식",
+      "missing": "질문하지 않음",
+      "different": "다르게 질문함",
+      "few": "{{minimum}}개 미만",
+      "merged": "기타 값(각각 {{minimum}}개 미만)",
+      "failed": "비교를 불러오지 못했습니다."
+    }
   }
 }

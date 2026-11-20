@@ -8,7 +8,8 @@
  * sentiment?}], none?, removed_options?: {<code>: n}, histogram?: {<score>: n}, average?, count?, latest?: […],
  * accepted?, contacts?, rows?: [{code, answered, counts, average}], scored?, removed_rows?, removed_columns?}],
  * endings, removed_questions: [{id, answered}], funnel: {opened, left: {<qid>: n}, completed} | null, link_health}`
- * (`earlier_version`: answers to a revision where the question had another type or range, counted nowhere else;
+ * (`follow_up_of`, 7.63.00: the score an "Ask why" follow-up asks about;
+ * `earlier_version`: answers to a revision where the question had another type or range, counted nowhere else;
  * `funnel` null under a language, ending or hidden-value filter; a matrix's rows, 7.61.00, kept as `matrix`;
  * `link_health`, 7.61.00, as it is).
  *
@@ -62,6 +63,7 @@ function aggregateOf(question: Record<string, unknown>): Record<string, unknown>
   return {
     answered: question['answered'], skipped: question['skipped'], not_shown: question['not_shown'],
     earlier_version: question['earlier_version'],
+    follow_up_of: question['follow_up_of'],
     counts: countsOf(question),
     other_answers: question['other_latest'] === undefined ? undefined : latestList.parse(question['other_latest']).map((entry) => entry.value),
     distribution: question['histogram'],

@@ -43,6 +43,9 @@ export const KEPT_FIELDS = {
   dimension_defaults: z.record(z.string(), z.string()).catch({}),
   tags: z.array(z.string()).catch([]),
   form_type: FORM_TYPE,
+  /** The app template the form was made from (7.63.00): set on create, never by a save; absent on any other form. */
+  template: z.object({ id: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), version: z.number().int().positive().catch(1) })
+    .optional().catch(undefined),
 }
 
 const ruleValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]).optional().catch(undefined)
@@ -291,5 +294,6 @@ export function toWireForm(form: FormV2): Record<string, unknown> {
     dimension_defaults: form.dimension_defaults,
     tags: form.tags,
     ...(form.form_type === undefined ? {} : { form_type: form.form_type }),
+    ...(form.template === undefined ? {} : { template: form.template }),
   }
 }

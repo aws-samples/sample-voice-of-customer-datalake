@@ -1,6 +1,6 @@
 /**
  * @fileoverview The picker's Start rail (UX §2.2): "Describe it" first (it moves focus to the description), then the
- * goal filter with its counts (`tabular-nums`): All, Loyalty, Drop-offs, Product, Onboarding, Blank. A list on
+ * goal filter with its counts (`tabular-nums`): All, Loyalty, Drop-offs, Product, Onboarding, Events, Blank. A list on
  * desktop; a scrolling row on narrow screens.
  *
  * @module pages/FeedbackForms/picker/GoalRail

@@ -36,8 +36,10 @@ from shared import (
     design_references,
     extracted_design,
     form_theme,
+    forms_report_routes,
     forms_v2_draft,
     forms_v2_draft_routes,
+    forms_v2_report_ai,
     image_model_quota,
     image_model_status,
     model_agreements,
@@ -236,6 +238,9 @@ app.include_router(appearance_routes.app)
 # and no jobs-table action.
 forms_v2_draft_routes.bind_aggregates_table(lambda: aggregates_table)
 app.include_router(forms_v2_draft_routes.app)
+# A form report's AI summary (7.63.00), POST /settings/form-reports and GET /settings/form-reports/{job_id}
+# (shared/forms_report_routes.py): beside the drafts, on their table binding, workspace resolution and hourly counter.
+app.include_router(forms_report_routes.app)
 
 
 def _configured_table():
@@ -1020,6 +1025,10 @@ ASSIST_WORK: Final = {  # job_type → the work the settings worker (ASSIST_WORK
     # this Lambda), run here, on the twin that already holds the Bedrock grant; it reads only its request, so it runs
     # in a workspace too.
     forms_v2_draft.DRAFT_JOB: assist_jobs.Work(forms_v2_draft.run_job, forms_v2_draft.DRAFT_FAILURE, per_workspace=True),
+    # A form report's AI summary (7.63.00): started by POST /settings/form-reports (shared/forms_report_routes.py), run
+    # here on the answers its request carries, its report row written in the job's own scope's forms partition.
+    forms_v2_report_ai.REPORT_JOB: assist_jobs.Work(forms_report_routes.run_job, forms_v2_report_ai.REPORT_FAILURE,
+                                                    per_workspace=True, in_scope=True),
 }
 
 

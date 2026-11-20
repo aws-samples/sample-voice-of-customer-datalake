@@ -1020,6 +1020,135 @@
           "description": "Nous lisons chaque message."
         }
       }
+    },
+    "workshop": {
+      "name": "Avis sur un événement ou un atelier",
+      "purpose": "Demandez aux participants, après un atelier ou un événement, comment s’est passée chaque partie, pourquoi une note était basse et ce qu’ils vont appliquer. Comparable d’un événement à l’autre.",
+      "welcome": {
+        "title": "Merci d’avoir participé à {{event|l’atelier}}",
+        "description": "Quelques questions rapides, environ trois minutes. Vos réponses façonneront la prochaine session.",
+        "button": "Commencer"
+      },
+      "hidden": {
+        "customer": "Client",
+        "event": "Événement",
+        "event_date": "Date de l’événement",
+        "presenter": "Intervenant"
+      },
+      "q": {
+        "q_role": {
+          "headline": "Quelle est votre fonction ?",
+          "other": "Autre chose",
+          "options": {
+            "product": "Produit",
+            "engineering": "Ingénierie",
+            "qa": "QA",
+            "scrum_master": "Scrum Master",
+            "design": "Design",
+            "ops": "Ops",
+            "leadership": "Direction"
+          }
+        },
+        "q_familiarity": {
+          "headline": "Dans quelle mesure connaissiez-vous le sujet avant la session ?",
+          "options": {
+            "not": "Pas du tout",
+            "somewhat": "Un peu",
+            "very": "Très bien"
+          }
+        },
+        "q_value": {
+          "headline": "Quelle a été l’utilité de {{event|l’atelier}} pour votre travail ?",
+          "lower": "Pas utile",
+          "upper": "Très utile"
+        },
+        "q_phases": {
+          "headline": "Quelle a été l’efficacité de chaque partie ?",
+          "rows": {
+            "introduction": "Introduction",
+            "demo": "Démonstration",
+            "hands_on": "Exercices pratiques",
+            "wrap_up": "Conclusion et questions-réponses"
+          },
+          "columns": {
+            "needs_improvement": "À améliorer",
+            "satisfactory": "Satisfaisante",
+            "very_effective": "Très efficace",
+            "exceptional": "Exceptionnelle"
+          }
+        },
+        "q_tooling": {
+          "headline": "Dans quelle mesure les outils et l’environnement ont-ils bien fonctionné pour vous ?",
+          "lower": "Pas bien",
+          "upper": "Très bien"
+        },
+        "q_tooling_why": {
+          "headline": "Vous avez donné la note de {{q_tooling}} aux outils. Qu’est-ce qui a posé problème ?",
+          "placeholder": "Votre réponse"
+        },
+        "q_content": {
+          "headline": "Dans quelle mesure le contenu était-il pertinent pour votre travail ?",
+          "lower": "Pas pertinent",
+          "upper": "Très pertinent"
+        },
+        "q_content_why": {
+          "headline": "Vous avez donné la note de {{q_content}} au contenu. Qu’est-ce qui l’aurait rendu plus pertinent ?",
+          "placeholder": "Votre réponse"
+        },
+        "q_presenter": {
+          "headline": "Dans quelle mesure les explications de {{presenter|l’intervenant}} étaient-elles claires ?",
+          "lower": "Pas claires",
+          "upper": "Très claires"
+        },
+        "q_presenter_why": {
+          "headline": "Vous avez donné la note de {{q_presenter}} à {{presenter|l’intervenant}}. Qu’est-ce qui pourrait être amélioré ?",
+          "placeholder": "Votre réponse"
+        },
+        "q_nps": {
+          "headline": "Quelle est la probabilité que vous recommandiez {{event|cet atelier}} à un collègue ?",
+          "lower": "Pas du tout probable",
+          "upper": "Extrêmement probable"
+        },
+        "q_nps_reason": {
+          "headline": "Quelle est la principale raison de votre note de {{q_nps}} ?",
+          "placeholder": "Votre réponse"
+        },
+        "q_apply": {
+          "headline": "Allez-vous appliquer ce que vous avez appris au cours du mois prochain ?",
+          "options": {
+            "definitely": "Oui, certainement",
+            "probably": "Probablement",
+            "not_sure": "Je ne sais pas encore",
+            "unlikely": "Peu probable"
+          }
+        },
+        "q_barriers": {
+          "headline": "Qu’est-ce qui pourrait vous empêcher de l’appliquer ?",
+          "other": "Autre chose",
+          "none": "Rien",
+          "options": {
+            "time": "Pas assez de temps",
+            "tool_access": "Pas d’accès aux outils",
+            "skills": "J’ai besoin de plus de pratique",
+            "team_buy_in": "Mon équipe n’adhère pas",
+            "security": "Règles de sécurité ou de conformité"
+          }
+        },
+        "q_takeaway": {
+          "headline": "Quel est le principal enseignement que vous en retenez ?",
+          "placeholder": "Votre réponse"
+        },
+        "q_improve": {
+          "headline": "Que devrions-nous améliorer la prochaine fois ?",
+          "placeholder": "Votre réponse"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci !",
+          "description": "Votre avis nous aide à améliorer la prochaine session."
+        }
+      }
     }
   },
   "picker": {
@@ -1035,7 +1164,8 @@
       "dropoffs": "Abandons",
       "product": "Produit",
       "onboarding": "Prise en main",
-      "blank": "Vierge"
+      "blank": "Vierge",
+      "events": "Événements"
     },
     "runs": {
       "link": "Lien",
@@ -1478,6 +1608,12 @@
       "detractor": "Quelle est la principale raison de votre note ?",
       "promoter": "Qu’appréciez-vous le plus ?",
       "done": "Deux questions de suivi ajoutées : détracteurs et promoteurs ont chacun la leur."
+    },
+    "askWhy": {
+      "button": "Demander pourquoi quand la note est basse",
+      "hint": "Ajoute une question facultative après celle-ci pour les notes de {{threshold}} ou moins, qui affiche la note. Vous pouvez la modifier.",
+      "done": "Question de suivi ajoutée : la raison n’est demandée que pour une note basse.",
+      "headline": "Quelle est la principale raison de votre note de {{recall}} ?"
     }
   },
   "text": {
@@ -2016,6 +2152,15 @@
       "from": "Absent de : {{channels}}.",
       "channel": "{{channel}} {{missing}}",
       "unknown": "Inconnu"
+    },
+    "reportView": "Rapport",
+    "skipRate": "Taux d’omission {{percent}}",
+    "followUpOf": "Suivi de la question {{position}}",
+    "followUpAnswered": "Répondue par {{percent}} des personnes à qui elle a été posée",
+    "order": {
+      "label": "Ordre des questions",
+      "form": "Ordre du formulaire",
+      "skipped": "Les plus omises"
     }
   },
   "theme": {
@@ -2211,5 +2356,92 @@
     "preview": "Les répondants voient : {{text}}",
     "previewMissing": "Sans valeur : {{text}}",
     "previewEmpty": "(rien)"
+  },
+  "report": {
+    "loading": "Chargement du rapport…",
+    "responses": "Réponses",
+    "kpiAnswered_one": "{{formatted}} a répondu",
+    "kpiAnswered_other": "{{formatted}} ont répondu",
+    "segmentBy": "Segmenter par",
+    "noSegments": "Aucun segment",
+    "emptyTitle": "Rien à afficher pour l’instant",
+    "empty": "Dès que des réponses arrivent avec ces filtres, le rapport affiche leurs notes, segments et thèmes.",
+    "segments": {
+      "title": "Par {{segment}}",
+      "hint": "Les segments de moins de {{minimum}} réponses sont regroupés, pour que personne ne puisse être identifié.",
+      "caption": "Notes par segment",
+      "segment": "Segment",
+      "responses": "Réponses",
+      "noValue": "Aucune valeur",
+      "other": "Autre",
+      "merged_one": "Autre ({{count, number}} segment de moins de {{minimum}})",
+      "merged_other": "Autre ({{count, number}} segments de moins de {{minimum}})",
+      "withheld": "Trop peu de réponses pour afficher leurs notes",
+      "none": "Aucune réponse à segmenter."
+    },
+    "heatmap": {
+      "row": "Ligne",
+      "average": "Moyenne"
+    },
+    "sentiment": {
+      "positive": "Positif",
+      "neutral": "Neutre",
+      "mixed": "Mixte",
+      "negative": "Négatif",
+      "unknown": "Non traité"
+    },
+    "themes": {
+      "title": "Thèmes",
+      "hint": "Regroupées selon la catégorie attribuée à chaque réponse, avec de vraies citations. Sélectionnez une citation pour ouvrir sa réponse.",
+      "none": "Aucune réponse ouverte à regrouper pour l’instant.",
+      "unprocessed": "Pas encore traité",
+      "answers_one": "{{formatted}} réponse",
+      "answers_other": "{{formatted}} réponses",
+      "openQuote": "Ouvrir la réponse : {{text}}"
+    },
+    "ai": {
+      "title": "Synthèse IA",
+      "badge": "IA",
+      "stale": "Nouvelles réponses depuis",
+      "start": "Synthétiser avec l’IA",
+      "again": "Synthétiser à nouveau",
+      "working": "Synthèse en cours…",
+      "intro": "L’IA lit jusqu’à 300 des réponses ouvertes affichées ici, avec vos droits d’accès, nomme leurs thèmes et choisit des citations. Les citations sont toujours de vraies réponses.",
+      "nothing": "Il n’y a aucune réponse ouverte à synthétiser.",
+      "withheld": "Cette synthèse a lu des réponses que vous ne pouvez pas voir : elle ne vous est donc pas affichée. Synthétisez à nouveau pour créer la vôtre.",
+      "made_one": "Créée le {{date}} à partir de {{formatted}} réponse",
+      "made_other": "Créée le {{date}} à partir de {{formatted}} réponses",
+      "rateLimited": "Cela fait 20 synthèses IA cette heure-ci. Réessayez plus tard.",
+      "noModel": "Aucun modèle d’IA n’est disponible dans ce déploiement.",
+      "noSummary": "L’IA n’a trouvé aucun thème dans ces réponses.",
+      "failed": "La synthèse IA n’a pas pu être créée. Réessayez."
+    },
+    "pdf": {
+      "download": "Télécharger le PDF",
+      "failed": "Le PDF n’a pas pu être préparé. Réessayez.",
+      "title": "{{name}} : rapport",
+      "subtitle_one": "{{formatted}} réponse · {{dates}}",
+      "subtitle_other": "{{formatted}} réponses · {{dates}}",
+      "responses": "Réponses",
+      "segments": "Notes par segment",
+      "themes": "Thèmes et citations",
+      "footer": "Généré le {{date}}. Aucune coordonnée n’est incluse."
+    },
+    "compare": {
+      "title": "Comparer",
+      "intro": "Placez ce formulaire à côté de {{max, number}} autres au maximum, ou divisez-le selon un champ masqué pour voir son évolution. Les questions sont associées par identifiant et par type ; un point de moins de 5 réponses n’affiche aucune note.",
+      "forms": "Formulaires",
+      "noForms": "Aucun autre formulaire à comparer.",
+      "sameTemplate": "Même modèle",
+      "by": "Diviser par",
+      "byNone": "Ne pas diviser",
+      "caption": "Notes par formulaire",
+      "point": "Formulaire",
+      "missing": "Non posée",
+      "different": "Posée autrement",
+      "few": "Moins de {{minimum}}",
+      "merged": "Autres valeurs (moins de {{minimum}} chacune)",
+      "failed": "La comparaison n’a pas pu être chargée."
+    }
   }
 }

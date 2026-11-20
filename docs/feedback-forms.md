@@ -63,6 +63,20 @@ them elsewhere. The floating assistant button steps beside a form's preview inst
 phone the builder hides it and its ⋯ menu has **Ask the assistant**, and the save bar sits at the bottom of the
 tab only when there is something to save. A form that could not load has a link back to Feedback Forms.
 
+**Templates and `template` (7.63.00).** The picker groups the thirteen templates by goal: Loyalty, Drop-offs,
+Product, Onboarding, **Events** and Blank. **Event or workshop feedback** (`workshop`, Events) is the questions asked
+after every session, with stable ids so the forms made from it compare (see [Compare](#compare)): the role (Product,
+Engineering, QA, Scrum master, Design, Ops, Leadership, Other), familiarity with the topic, a 1–5 rating of its
+value, a matrix of its parts (rows to edit for each agenda; Needs improvement, Satisfactory, Very effective and
+Exceptional, scored 1–4), 1–5 ratings of the tooling, the content and the presenter, each with an
+[Ask why](#ask-why-when-the-score-is-low) follow-up, NPS followed by "What's the main reason for your score of
+{{q_nps}}?", whether they will apply it, what stands in the way (multiple choice with Other and Nothing), the main
+takeaway and what to improve. Its hidden fields `customer`, `event`, `event_date` and `presenter` come in the link,
+and the welcome recalls the event ("Thanks for joining {{event|the workshop}}"); its copy is in the nine languages. A
+form made from any template but Blank stores which one, `template: {id, version}` (an optional field of the form,
+set by its create, `POST /feedback-forms`, and never changed by a save; a create's malformed one is a `400`; every
+form saved before 7.63.00, a blank one and an AI draft have none), and the API answers it with the form.
+
 New forms are created **disabled** on purpose: nothing is public until someone
 enables the form. Until it is enabled, the form's link, iframe and embed render
 `Feedback form unavailable.`, and `POST /submit` refuses responses (`code: form_off`), except through the
@@ -756,14 +770,18 @@ button per language.
 | POST | `/feedback-forms/{id}/submit` | Submit a response (or the version 1 widget's body); responses only |
 | POST | `/feedback-forms/{id}/events` | **Unauthenticated**, like `submit`: the widget's funnel beacons (`opened`, `left`), on their own throttle ([The funnel](#the-funnel)) |
 | GET | `/feedback-forms/{id}/iframe` | Embeddable HTML page |
-| GET | `/feedback-forms/{id}/results` | Per-question results ([Results](#results-and-responses)) |
+| GET | `/feedback-forms/{id}/results` | Per-question results ([Results](#results-and-responses)); `group_by` adds the segments ([Report](#report)) |
+| GET | `/feedback-forms/{id}/report` | The form's report: KPIs, heatmaps, segments, themes and the AI summary ([Report](#report)) |
+| GET | `/feedback-forms/{id}/compare` | The form beside up to 10 others, or split by a hidden field ([Compare](#compare)) |
 | GET | `/feedback-forms/{id}/responses` | The responses, paged, or as CSV (`format=csv`, `layout=familiar\|detailed`, `ids=true`; [below](#results-and-responses)) |
 | DELETE | `/feedback-forms/{id}/responses?test=true` | Delete the form's test responses (an admin or the form's creator); recorded first ([Test mode](#test-mode)) |
 | POST | `/feedback-forms/{id}/test-link` | Issue or rotate the test link (admins) |
 | POST | `/settings/form-drafts` | Start an AI draft of a form ([AI drafts](#ai-drafts)); the settings API's |
 | GET | `/settings/form-drafts/{job_id}` | One of the caller's AI drafts; the settings API's |
+| POST | `/settings/form-reports` | Start a report's AI summary ([Report](#the-ai-summary)); the settings API's |
+| GET | `/settings/form-reports/{job_id}` | One of the caller's AI summaries; the settings API's |
 
-The signed-in routes since 7.55.00 (`results`, `responses`, `test-link`) ride one Cognito-authorized proxy under
+The signed-in routes since 7.55.00 (`results`, `responses`, `test-link`; since 7.63.00 `report` and `compare`) ride one Cognito-authorized proxy under
 `/feedback-forms/{id}/` serving GET, POST and DELETE only. The AI draft's two routes are the settings API's, on its own
 `/settings/{proxy+}` (Cognito-authorized too), served by its Lambda (`lambda/shared/forms_v2_draft_routes.py`), not
 the forms Lambda: that one also serves the four public routes, so its role holds no worker invoke and no jobs-table
@@ -986,8 +1004,9 @@ responses the view admits (its filters and the caller's access) whether or not t
 before, 0 whenever they were left out), so the page can say "3 test responses are hidden"; `responses` adds them only
 with `include_test=true`. Each question of the current revision has `shown` (the responses whose path showed it),
 `answered`, `skipped`, `not_shown` (the logic jumped past it), `drop_off_rate` (skipped / shown) and, when there are
-any, `earlier_version` (answers to a revision where the question had another type or range, counted nowhere else),
-and by type:
+any, `earlier_version` (answers to a revision where the question had another type or range, counted nowhere else)
+and `follow_up_of` (7.63.00: an open text in the shape of an [Ask why](#ask-why-when-the-score-is-low) follow-up, right
+after a score whose rules send a high score past it, names that score), and by type:
 
 | Type | Adds |
 |---|---|
@@ -999,6 +1018,11 @@ and by type:
 | `matrix` (7.61.00) | `rows: [{code, answered, counts: {column: n}, average}]` in the question's row order (`average`: the mean `score` of the row's answers whose column has one, `null` without), `scored` (whether any column has a score), and, when there are any, `removed_rows: {code: n}` and `removed_columns: {code: n}` (answers naming a row or a column the revision no longer has) |
 
 Each question's `headline` is its primary-language text with any placeholder shown as `[id]` ([Recall](#recall)).
+
+**Skip rates (7.63.00).** Every card that was asked says its skip rate, skipped of those asked (`skipped / shown`, the
+`drop_off_rate`), and an Ask why follow-up says it is one ("Follow-up to question 3") and how many of those asked
+answered it. The summary can put the most skipped first (Order: Form order or Most skipped; each card keeps its number,
+a question nobody was asked comes last).
 
 **Link checks** (`link_health`, 7.61.00): whether the links that bring respondents fill the form's hidden fields.
 `{responses, hidden: {id: {filled, missing}}, by_channel: {link | iframe | script | unknown: {responses, hidden}},
@@ -1108,6 +1132,100 @@ drop-off as a trend next to the responses, not as an audited count.
 (`results/funnelSteps.ts`: a question whose ways in times ways out equal all the form's paths); a question that only
 some paths show says "on some paths only" and never carries a drop, since few people reach it by design. Its count
 is the people it was shown to, a lower bound, because the paths of those who left are not recorded past it.
+
+## Ask why when the score is low
+
+(7.63.00.) A rating, NPS, CSAT or CES question offers **Ask why when the score is low** in its editor while it has no
+rules of its own (an Otherwise only: its own rules would decide first and could send a low score past the
+follow-up). It inserts, right after the score, an optional open text whose headline recalls the score ("What's the
+main reason for your score of {{q_tooling}}?", in the form's language), and gives the score its rules: a score above
+the threshold jumps past the follow-up to where the form went before (an optional score's skip too), so only a low
+score is asked why. Low is **NPS 6 or less, CSAT 3 or less, CES 3 or less, and a rating of 2 or less on 5 points**,
+scaled for the others (round(points × 2 ÷ 5): 1 of 3, 2 of 4, 3 of 7, 4 of 10). It is ordinary questions and rules,
+editable as any, with Undo; the follow-up's id is new (never a removed question's) and Results name it
+(`follow_up_of`). There is no live AI probe on the public routes (the owner's decision: the forms Lambda that serves
+respondents holds no model access, TENETS.md tenets 6 and 7); AI helps at authoring time only, where **Improve with
+AI** ([AI drafts](#ai-drafts)) can reword a follow-up.
+
+## Report
+
+(7.63.00.) **Results → Report** is the form's auto-report under the Results filters (dates, language, ending,
+hidden values, test responses only when included), with the access of Results: the workspace's editors and admins
+(a viewer gets `403`), deployment-wide whoever manages forms, and each caller's category access AND source access on
+every response it counts, groups, quotes or compares. `GET /feedback-forms/{id}/report` (the same filters, and
+`group_by`) answers `{name, template, responses, test_responses, first_response_at, last_response_at, kpis, matrices,
+segments, themes, ai, min_segment}`:
+
+- `kpis`: each rating, NPS, CSAT and CES question's `{id, type, headline, answered, skipped, average, scale_max}` and
+  its `nps` / `csat` / `ces` as on Results; `matrices`: each matrix as a heatmap (`{id, headline, answered, scored,
+  columns, rows: [{code, answered, counts, average}]}`).
+- `segments` (with `group_by`, else `null`): see [Segments](#segments).
+- `themes`: deterministic first (TENETS.md tenet 3). Per free-text open question (an open text that asks for an email
+  or a phone number is a contact detail: never a theme or a quote), its answers grouped by the processed item's
+  `category` and `subcategory`, the largest first (at most 8): `{question_id, headline, answered, themes: [{category,
+  subcategory, count, sentiment: {label: n}, quotes}]}`, each with two or three real quotes (`{response_id, text,
+  created_at, sentiment}`, newest first, the theme's dominant sentiment first), linked to the response. A response not
+  processed yet is the `''` category. The processed items carry no key phrases, so none are grouped by.
+- `ai`: the newest stored [AI summary](#the-ai-summary) as this reader may see it, or `null`.
+
+Contact details are never in the report. The page shows the KPIs, the segment table, the heatmaps, the AI summary
+(labelled AI), the themes with their quotes (each opens its response) and [Compare](#compare); **Download PDF** prints
+one page through the browser's own print dialog (`utils/printUtils.ts` `openPrintWindow`, as a document's PDF is:
+no PDF library), with the KPIs, the segment table, the heatmaps, the themes and quotes (the AI's labelled), how many
+responses it covers and their dates, in the reader's language and the Kiro Light colours, and never a contact detail.
+
+### Segments
+
+`group_by` on `GET …/results` (which then adds `segments`) or `…/report`: `hidden.<id>` (a hidden field of the form),
+`q_<id>` (a single choice: its option code, `other` for an Other answer) or `q_<id>.<row code>` (a matrix row: the
+column it was given). Anything else is a `400` `group_by_invalid`. `segments` is `{by, min_size: 5, groups: [{value,
+responses, scores}], merged}`: each value with **at least 5 responses**, the largest first (at most 50; responses
+without a value are the `''` segment), and `merged`, `{segments, responses, scores}`, every smaller segment together as
+"Other (fewer than 5)", so no one can be picked out; its `scores` are `null` (withheld) while it is under 5 responses
+too. `scores` is per measured question its compact figure (`{type, answered, average, scale_max, nps | csat | ces}`; a
+matrix `{type, answered, rows: {code: average}}`), each response scored against its own revision as on Results.
+
+### Compare
+
+`GET /feedback-forms/{id}/compare?with=<form ids, comma-separated>&by=hidden.<id>` puts the form beside up to 10 others
+(`with`; each one of the request's own scope: another workspace's form, or an unknown id, is the `404`), or splits its
+responses by a hidden field's value (`by`, e.g. `hidden.event_date`, the trend within one form; with `with`, each
+form's), with the filters, access and `include_test` of Results. It answers `{by, min_size, questions, forms,
+points}`: `questions` are the base form's measured questions; `forms` say for each form (the base first, then in the
+order asked) its `name`, `template`, `same_template` (made from the base's template) and which questions it asks alike
+(`matched`: the same id and answer shape, type and range: a 5-point rating is never compared with a 10-point one) or
+not (`unmatched: {id: 'missing' | 'different'}`); `points` are `{form_id, value, responses, first_response_at,
+last_response_at, scores, merged?}`, one per form (or per value of `by`, ascending, the smaller ones merged), each
+scored against its own form's revisions and `null` under 5 responses. The page lists the workspace's forms with the
+template's siblings first. Comparisons across workspaces, emailed schedules and significance tests are out of scope.
+
+### The AI summary
+
+Optional, one model call when someone asks (**Summarize with AI**; about 1–3 cents; nothing without it).
+`POST /settings/form-reports` `{form_id, answers: [{response_id, text}], filters?, responses?, last_response_at?}` takes
+the open answers the browser already read with the person's own access (`GET …/responses`, the newest 300 of the view:
+each response's free-text answers joined, never a contact detail; at most 300 answers and 60,000 characters), so the
+settings API needs no read of the feedback table. Gated as Results (a workspace's editors and admins, a viewer `403`;
+deployment-wide any signed-in user), only for a form of the request's own scope (`404` otherwise), 20 per person per
+hour (`429` `rate_limited`, `retry_after`; `FORMREPORTRATE#{sub}#{hour}` beside the drafts' counters, two days' TTL),
+it answers `202 {job_id, status}` and runs as an assist job on the settings API's worker, like a draft. The model (the
+deployment's `utility` one, the answers in a `form_answers` DATA block, never as instructions) only labels themes and
+picks which responses belong to each; the worker keeps only ids it was sent, and stores the report in the form's forms
+partition, `FORMREPORT#{form_id}#{report_id}` (`WS#{ws}#FEEDBACK_FORM` in a workspace): `{form_id, report_id,
+created_at, created_by: {sub, kind}, reason: 'ai_summary', responses_counted, last_response_at, filters, response_ids,
+themes: [{label, count, sentiment, quote_ids}], ai: {model, prompt_version, summary}}`, labels and ids only, never a
+respondent's text, and no `ttl`. A form deleted while it ran gets none. `GET /settings/form-reports/{job_id}` polls
+the caller's own job (`{success, form_id, report_id}`, or `{success: false, code: 'no_summary' | 'no_model' |
+'form_deleted'}`); the job's `job` notice wakes the page.
+
+When the report is read, its quote ids are joined against the reader's own rows (an unknown one is dropped), it is
+`stale` once a response newer than the newest it read exists ("Newer responses since"), and it is withheld
+(`{report_id, created_at, created_by, withheld: 'access'}`) from a reader who cannot see a response it read, since its
+labels could describe it. The stored reports are deleted with their form, are in the workspace's export (the forms
+partition, `feedback_forms`) and are swept with it by a workspace's hard delete.
+
+The global MCP server has no forms tools yet (TENETS.md tenet 4): `forms_get_results` and `forms_get_report` are
+deferred until they fit the `tools/list` token budget (`lambda/shared/test/test_mcp_global_tools_budget.py`).
 
 ## AI drafts
 
@@ -1265,7 +1383,8 @@ audit-row guard, so no role can change or remove it; when it cannot be written, 
 
 Both rows also say how many of the form's test responses the delete removes with it: `test_responses_deleted` (0
 when it has none; never their content). Their keys are read first, counted on the row, and then those same keys are
-deleted. The delete then removes the form's revision snapshots, test responses and funnel rows, and the form. Its real
+deleted. The delete then removes the form's revision snapshots, test responses, funnel rows and stored report
+summaries (`FORMREPORT#`, 7.63.00), and the form. Its real
 responses are feedback items of the lake and stay there. A delete of a form's test responses alone is recorded the
 same way, in the same partition, with kind `feedback_form_test_responses` and the `count` removed (a deployment
 form's through `record_delete_first`: a new row each time, since each delete is its own event; [Test
@@ -1289,7 +1408,7 @@ workspace. From 7.06.00 to 7.13.00 creating a form in a workspace and a submissi
 
 - The signed-in routes (`GET`/`POST /feedback-forms`, `PUT`/`DELETE /feedback-forms/{id}`,
   `GET /feedback-forms/{id}/stats` and `/submissions`, and since 7.55.00 `results`, `responses`, `test-link`
-  and the AI drafts) act in the workspace that
+  and the AI drafts; since 7.63.00 `report`, `compare` and the report's AI summary) act in the workspace that
   `X-Workspace-Id` names. Any member reads; only the workspace's editors and admins
   create, update and delete (a viewer gets 403). A caller who is not a member, an
   unknown workspace and one being deleted all get the same 404. Without the header the

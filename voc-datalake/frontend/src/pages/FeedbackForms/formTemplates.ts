@@ -1,11 +1,13 @@
 /**
- * @fileoverview The twelve templates (UX §2.4), grouped by goal, and the form each one makes in a language.
+ * @fileoverview The thirteen templates (UX §2.4; 7.63.00's Events), grouped by goal, and the form each one makes in a
+ * language.
  *
  * Each template is a real v2 flow (`templates/*Templates.ts`: ids, types, codes, display, shuffle, min and max,
  * logic, endings, hidden fields) whose copy is in the catalogue under `templates.<id>.…` in the nine locales. A form
  * made from one has every text in the "Create in" language, the default theme, no category, and is Off and unsaved
  * until its first Save (UX §2.1). Adding a language later fills each text still equal to the template's from that
- * language's catalogue (`fillFromTemplate`, UX §8).
+ * language's catalogue (`fillFromTemplate`, UX §8). A form made from any template but Blank names it (`template: {id,
+ * version}`, 7.63.00), which its first Save stores for good: Compare matches the forms one template made.
  *
  * @module pages/FeedbackForms/formTemplates
  */
@@ -17,11 +19,17 @@ import type { TemplateFlow } from './templates/templateKit'
 import { LOYALTY_TEMPLATES } from './templates/loyaltyTemplates'
 import { DROPOFF_TEMPLATES } from './templates/dropoffTemplates'
 import { BLANK_TEMPLATES, ONBOARDING_TEMPLATES, PRODUCT_TEMPLATES } from './templates/productTemplates'
+import { EVENT_TEMPLATES } from './templates/eventTemplates'
 
-/** Every template in the picker's order: Loyalty, Drop-offs, Product, Onboarding, Blank. */
+/** Every template in the picker's order: Loyalty, Drop-offs, Product, Onboarding, Events, Blank. */
 export const FORM_TEMPLATES: readonly TemplateFlow[] = [
-  ...LOYALTY_TEMPLATES, ...DROPOFF_TEMPLATES, ...PRODUCT_TEMPLATES, ...ONBOARDING_TEMPLATES, ...BLANK_TEMPLATES,
+  ...LOYALTY_TEMPLATES, ...DROPOFF_TEMPLATES, ...PRODUCT_TEMPLATES, ...ONBOARDING_TEMPLATES, ...EVENT_TEMPLATES,
+  ...BLANK_TEMPLATES,
 ]
+
+/** The template a form made from `flow` names (none for Blank: a blank form shares nothing to compare). */
+const templateRef = (flow: TemplateFlow): Pick<FormV2, 'template'> =>
+  (flow.group === 'blank' ? {} : { template: { id: flow.id, version: flow.version ?? 1 } })
 
 export const templateById = (id: string): TemplateFlow | undefined => FORM_TEMPLATES.find((flow) => flow.id === id)
 
@@ -89,6 +97,7 @@ export function templateForm(flow: TemplateFlow, language: FormLanguage, lookup:
     }),
     endings: flow.endings.map((id) => endingCopy(flow, id, language, lookup)),
     ...unsetFormFields(),
+    ...templateRef(flow),
   }
 }
 

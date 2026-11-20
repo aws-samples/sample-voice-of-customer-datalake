@@ -1020,6 +1020,135 @@
           "description": "Wir lesen jede Nachricht."
         }
       }
+    },
+    "workshop": {
+      "name": "Feedback zu Veranstaltung oder Workshop",
+      "purpose": "Teilnehmende nach einem Workshop oder einer Veranstaltung fragen, wie jeder Teil lief, warum eine Bewertung niedrig ausfiel und was sie umsetzen werden. Über Veranstaltungen hinweg vergleichbar.",
+      "welcome": {
+        "title": "Danke für Ihre Teilnahme an {{event|dem Workshop}}",
+        "description": "Ein paar kurze Fragen, etwa drei Minuten. Ihre Antworten prägen die nächste Session.",
+        "button": "Starten"
+      },
+      "hidden": {
+        "customer": "Kunde",
+        "event": "Veranstaltung",
+        "event_date": "Veranstaltungsdatum",
+        "presenter": "Vortragende Person"
+      },
+      "q": {
+        "q_role": {
+          "headline": "Was ist Ihre Rolle?",
+          "other": "Etwas anderes",
+          "options": {
+            "product": "Produkt",
+            "engineering": "Entwicklung",
+            "qa": "QA",
+            "scrum_master": "Scrum Master",
+            "design": "Design",
+            "ops": "Ops",
+            "leadership": "Führung"
+          }
+        },
+        "q_familiarity": {
+          "headline": "Wie vertraut waren Sie vor der Session mit dem Thema?",
+          "options": {
+            "not": "Nicht vertraut",
+            "somewhat": "Etwas vertraut",
+            "very": "Sehr vertraut"
+          }
+        },
+        "q_value": {
+          "headline": "Wie wertvoll war {{event|der Workshop}} für Ihre Arbeit?",
+          "lower": "Nicht wertvoll",
+          "upper": "Sehr wertvoll"
+        },
+        "q_phases": {
+          "headline": "Wie wirkungsvoll war jeder Teil?",
+          "rows": {
+            "introduction": "Einführung",
+            "demo": "Vorführung",
+            "hands_on": "Praktische Übungen",
+            "wrap_up": "Abschluss und Fragerunde"
+          },
+          "columns": {
+            "needs_improvement": "Verbesserungsbedürftig",
+            "satisfactory": "Zufriedenstellend",
+            "very_effective": "Sehr wirkungsvoll",
+            "exceptional": "Herausragend"
+          }
+        },
+        "q_tooling": {
+          "headline": "Wie gut haben die Tools und die Einrichtung für Sie funktioniert?",
+          "lower": "Nicht gut",
+          "upper": "Sehr gut"
+        },
+        "q_tooling_why": {
+          "headline": "Sie haben die Tools mit {{q_tooling}} bewertet. Was hat Sie behindert?",
+          "placeholder": "Ihre Antwort"
+        },
+        "q_content": {
+          "headline": "Wie relevant waren die Inhalte für Ihre Arbeit?",
+          "lower": "Nicht relevant",
+          "upper": "Sehr relevant"
+        },
+        "q_content_why": {
+          "headline": "Sie haben die Inhalte mit {{q_content}} bewertet. Was hätte sie relevanter gemacht?",
+          "placeholder": "Ihre Antwort"
+        },
+        "q_presenter": {
+          "headline": "Wie verständlich hat {{presenter|die vortragende Person}} erklärt?",
+          "lower": "Nicht verständlich",
+          "upper": "Sehr verständlich"
+        },
+        "q_presenter_why": {
+          "headline": "Sie haben {{presenter|die vortragende Person}} mit {{q_presenter}} bewertet. Was könnte besser sein?",
+          "placeholder": "Ihre Antwort"
+        },
+        "q_nps": {
+          "headline": "Wie wahrscheinlich ist es, dass Sie {{event|diesen Workshop}} einem Kollegen weiterempfehlen?",
+          "lower": "Überhaupt nicht wahrscheinlich",
+          "upper": "Äußerst wahrscheinlich"
+        },
+        "q_nps_reason": {
+          "headline": "Was ist der Hauptgrund für Ihre Bewertung von {{q_nps}}?",
+          "placeholder": "Ihre Antwort"
+        },
+        "q_apply": {
+          "headline": "Werden Sie das Gelernte im nächsten Monat anwenden?",
+          "options": {
+            "definitely": "Ja, auf jeden Fall",
+            "probably": "Wahrscheinlich",
+            "not_sure": "Weiß ich noch nicht",
+            "unlikely": "Eher nicht"
+          }
+        },
+        "q_barriers": {
+          "headline": "Was könnte Sie daran hindern, es anzuwenden?",
+          "other": "Etwas anderes",
+          "none": "Nichts",
+          "options": {
+            "time": "Nicht genug Zeit",
+            "tool_access": "Kein Zugang zu den Tools",
+            "skills": "Ich brauche mehr Übung",
+            "team_buy_in": "Mein Team zieht nicht mit",
+            "security": "Sicherheits- oder Compliance-Vorgaben"
+          }
+        },
+        "q_takeaway": {
+          "headline": "Was ist Ihre wichtigste Erkenntnis?",
+          "placeholder": "Ihre Antwort"
+        },
+        "q_improve": {
+          "headline": "Was sollten wir beim nächsten Mal verbessern?",
+          "placeholder": "Ihre Antwort"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Vielen Dank!",
+          "description": "Ihr Feedback hilft uns, die nächste Session besser zu machen."
+        }
+      }
     }
   },
   "picker": {
@@ -1035,7 +1164,8 @@
       "dropoffs": "Abbrüche",
       "product": "Produkt",
       "onboarding": "Onboarding",
-      "blank": "Leer"
+      "blank": "Leer",
+      "events": "Veranstaltungen"
     },
     "runs": {
       "link": "Link",
@@ -1478,6 +1608,12 @@
       "detractor": "Was ist der Hauptgrund für Ihre Bewertung?",
       "promoter": "Was schätzen Sie am meisten?",
       "done": "Zwei Folgefragen hinzugefügt: Kritiker und Promotoren erhalten jeweils eine eigene."
+    },
+    "askWhy": {
+      "button": "Bei niedrigem Wert nach dem Grund fragen",
+      "hint": "Fügt nach dieser Frage eine optionale Frage für Werte von {{threshold}} oder weniger hinzu, die den Wert anzeigt. Sie können sie bearbeiten.",
+      "done": "Folgefrage hinzugefügt: Nur bei einem niedrigen Wert wird nach dem Grund gefragt.",
+      "headline": "Was ist der Hauptgrund für Ihre Bewertung von {{recall}}?"
     }
   },
   "text": {
@@ -2016,6 +2152,15 @@
       "from": "Fehlt bei: {{channels}}.",
       "channel": "{{channel}} {{missing}}",
       "unknown": "Unbekannt"
+    },
+    "reportView": "Bericht",
+    "skipRate": "Übersprungen: {{percent}}",
+    "followUpOf": "Folgefrage zu Frage {{position}}",
+    "followUpAnswered": "Beantwortet von {{percent}} der Gefragten",
+    "order": {
+      "label": "Reihenfolge der Fragen",
+      "form": "Wie im Formular",
+      "skipped": "Am häufigsten übersprungen"
     }
   },
   "theme": {
@@ -2211,5 +2356,92 @@
     "preview": "Befragte sehen: {{text}}",
     "previewMissing": "Ohne Wert: {{text}}",
     "previewEmpty": "(nichts)"
+  },
+  "report": {
+    "loading": "Bericht wird geladen…",
+    "responses": "Einsendungen",
+    "kpiAnswered_one": "{{formatted}} Antwort",
+    "kpiAnswered_other": "{{formatted}} Antworten",
+    "segmentBy": "Segmentieren nach",
+    "noSegments": "Keine Segmente",
+    "emptyTitle": "Noch nichts zu berichten",
+    "empty": "Sobald Einsendungen zu diesen Filtern eingehen, zeigt der Bericht ihre Werte, Segmente und Themen.",
+    "segments": {
+      "title": "Nach {{segment}}",
+      "hint": "Segmente mit weniger als {{minimum}} Einsendungen werden zusammengefasst, damit niemand herauszulesen ist.",
+      "caption": "Werte nach Segment",
+      "segment": "Segment",
+      "responses": "Einsendungen",
+      "noValue": "Kein Wert",
+      "other": "Sonstiges",
+      "merged_one": "Sonstiges ({{count, number}} Segment mit weniger als {{minimum}})",
+      "merged_other": "Sonstiges ({{count, number}} Segmente mit weniger als {{minimum}})",
+      "withheld": "Zu wenige Einsendungen, um ihre Werte anzuzeigen",
+      "none": "Keine Einsendungen zum Segmentieren."
+    },
+    "heatmap": {
+      "row": "Zeile",
+      "average": "Durchschnitt"
+    },
+    "sentiment": {
+      "positive": "Positiv",
+      "neutral": "Neutral",
+      "mixed": "Gemischt",
+      "negative": "Negativ",
+      "unknown": "Nicht verarbeitet"
+    },
+    "themes": {
+      "title": "Themen",
+      "hint": "Gruppiert nach der Kategorie, der jede Einsendung zugeordnet wurde, mit echten Zitaten. Wählen Sie ein Zitat, um seine Einsendung zu öffnen.",
+      "none": "Noch keine offenen Antworten zum Gruppieren.",
+      "unprocessed": "Noch nicht verarbeitet",
+      "answers_one": "{{formatted}} Antwort",
+      "answers_other": "{{formatted}} Antworten",
+      "openQuote": "Einsendung öffnen: {{text}}"
+    },
+    "ai": {
+      "title": "KI-Zusammenfassung",
+      "badge": "KI",
+      "stale": "Seitdem neue Einsendungen",
+      "start": "Mit KI zusammenfassen",
+      "again": "Erneut zusammenfassen",
+      "working": "Wird zusammengefasst…",
+      "intro": "Die KI liest bis zu 300 der hier angezeigten offenen Antworten mit Ihren Zugriffsrechten, benennt ihre Themen und wählt Zitate aus. Die Zitate sind immer echte Einsendungen.",
+      "nothing": "Es gibt keine offenen Antworten zum Zusammenfassen.",
+      "withheld": "Diese Zusammenfassung hat Einsendungen gelesen, die Sie nicht sehen können, daher wird sie Ihnen nicht angezeigt. Fassen Sie erneut zusammen, um Ihre eigene zu erstellen.",
+      "made_one": "Erstellt am {{date}} aus {{formatted}} Einsendung",
+      "made_other": "Erstellt am {{date}} aus {{formatted}} Einsendungen",
+      "rateLimited": "Das waren 20 KI-Zusammenfassungen in dieser Stunde. Versuchen Sie es später erneut.",
+      "noModel": "In dieser Bereitstellung ist kein KI-Modell verfügbar.",
+      "noSummary": "Die KI hat in diesen Antworten keine Themen gefunden.",
+      "failed": "Die KI-Zusammenfassung konnte nicht erstellt werden. Versuchen Sie es erneut."
+    },
+    "pdf": {
+      "download": "PDF herunterladen",
+      "failed": "Das PDF konnte nicht erstellt werden. Versuchen Sie es erneut.",
+      "title": "{{name}}: Bericht",
+      "subtitle_one": "{{formatted}} Einsendung · {{dates}}",
+      "subtitle_other": "{{formatted}} Einsendungen · {{dates}}",
+      "responses": "Einsendungen",
+      "segments": "Werte nach Segment",
+      "themes": "Themen und Zitate",
+      "footer": "Erstellt am {{date}}. Es sind keine Kontaktdaten enthalten."
+    },
+    "compare": {
+      "title": "Vergleichen",
+      "intro": "Stellen Sie dieses Formular bis zu {{max, number}} anderen gegenüber, oder teilen Sie es nach einem versteckten Feld auf, um seinen Verlauf zu sehen. Fragen werden nach ID und Typ zugeordnet; ein Punkt mit weniger als 5 Einsendungen zeigt keine Werte.",
+      "forms": "Formulare",
+      "noForms": "Kein anderes Formular zum Vergleichen.",
+      "sameTemplate": "Gleiche Vorlage",
+      "by": "Aufteilen nach",
+      "byNone": "Nicht aufteilen",
+      "caption": "Werte nach Formular",
+      "point": "Formular",
+      "missing": "Nicht gefragt",
+      "different": "Anders gefragt",
+      "few": "Weniger als {{minimum}}",
+      "merged": "Sonstige Werte (je weniger als {{minimum}})",
+      "failed": "Der Vergleich konnte nicht geladen werden."
+    }
   }
 }

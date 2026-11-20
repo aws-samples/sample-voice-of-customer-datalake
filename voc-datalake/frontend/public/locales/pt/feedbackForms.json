@@ -1020,6 +1020,135 @@
           "description": "Lemos todas as mensagens."
         }
       }
+    },
+    "workshop": {
+      "name": "Feedback de evento ou workshop",
+      "purpose": "Pergunte aos participantes, depois de um workshop ou evento, como foi cada parte, por que uma nota foi baixa e o que eles vão aplicar. Comparável entre eventos.",
+      "welcome": {
+        "title": "Obrigado por participar de {{event|nosso workshop}}",
+        "description": "Algumas perguntas curtas, cerca de três minutos. Suas respostas vão moldar a próxima sessão.",
+        "button": "Começar"
+      },
+      "hidden": {
+        "customer": "Cliente",
+        "event": "Evento",
+        "event_date": "Data do evento",
+        "presenter": "Apresentador"
+      },
+      "q": {
+        "q_role": {
+          "headline": "Qual é a sua função?",
+          "other": "Outra coisa",
+          "options": {
+            "product": "Produto",
+            "engineering": "Engenharia",
+            "qa": "QA",
+            "scrum_master": "Scrum Master",
+            "design": "Design",
+            "ops": "Ops",
+            "leadership": "Liderança"
+          }
+        },
+        "q_familiarity": {
+          "headline": "Quanto você conhecia o tema antes da sessão?",
+          "options": {
+            "not": "Nada",
+            "somewhat": "Um pouco",
+            "very": "Muito"
+          }
+        },
+        "q_value": {
+          "headline": "Quão valioso foi {{event|o workshop}} para o seu trabalho?",
+          "lower": "Nada valioso",
+          "upper": "Muito valioso"
+        },
+        "q_phases": {
+          "headline": "Quão eficaz foi cada parte?",
+          "rows": {
+            "introduction": "Introdução",
+            "demo": "Demonstração",
+            "hands_on": "Exercícios práticos",
+            "wrap_up": "Encerramento e perguntas"
+          },
+          "columns": {
+            "needs_improvement": "Precisa melhorar",
+            "satisfactory": "Satisfatória",
+            "very_effective": "Muito eficaz",
+            "exceptional": "Excepcional"
+          }
+        },
+        "q_tooling": {
+          "headline": "Quão bem as ferramentas e a configuração funcionaram para você?",
+          "lower": "Nada bem",
+          "upper": "Muito bem"
+        },
+        "q_tooling_why": {
+          "headline": "Você deu nota {{q_tooling}} para as ferramentas. O que atrapalhou?",
+          "placeholder": "Sua resposta"
+        },
+        "q_content": {
+          "headline": "Quão relevante foi o conteúdo para o seu trabalho?",
+          "lower": "Nada relevante",
+          "upper": "Muito relevante"
+        },
+        "q_content_why": {
+          "headline": "Você deu nota {{q_content}} para o conteúdo. O que o teria tornado mais relevante?",
+          "placeholder": "Sua resposta"
+        },
+        "q_presenter": {
+          "headline": "Quão clara foi a explicação de {{presenter|quem apresentou}}?",
+          "lower": "Nada clara",
+          "upper": "Muito clara"
+        },
+        "q_presenter_why": {
+          "headline": "Você deu nota {{q_presenter}} para {{presenter|quem apresentou}}. O que poderia ser melhor?",
+          "placeholder": "Sua resposta"
+        },
+        "q_nps": {
+          "headline": "Qual é a probabilidade de você recomendar {{event|este workshop}} a um colega?",
+          "lower": "Nada provável",
+          "upper": "Extremamente provável"
+        },
+        "q_nps_reason": {
+          "headline": "Qual é o principal motivo da sua nota {{q_nps}}?",
+          "placeholder": "Sua resposta"
+        },
+        "q_apply": {
+          "headline": "Você vai aplicar o que aprendeu no próximo mês?",
+          "options": {
+            "definitely": "Sim, com certeza",
+            "probably": "Provavelmente",
+            "not_sure": "Ainda não sei",
+            "unlikely": "Pouco provável"
+          }
+        },
+        "q_barriers": {
+          "headline": "O que poderia impedir você de aplicar isso?",
+          "other": "Outra coisa",
+          "none": "Nada",
+          "options": {
+            "time": "Falta de tempo",
+            "tool_access": "Sem acesso às ferramentas",
+            "skills": "Preciso de mais prática",
+            "team_buy_in": "Minha equipe não está convencida",
+            "security": "Regras de segurança ou conformidade"
+          }
+        },
+        "q_takeaway": {
+          "headline": "Qual é o seu principal aprendizado?",
+          "placeholder": "Sua resposta"
+        },
+        "q_improve": {
+          "headline": "O que devemos melhorar na próxima vez?",
+          "placeholder": "Sua resposta"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Obrigado!",
+          "description": "Seu feedback nos ajuda a melhorar a próxima sessão."
+        }
+      }
     }
   },
   "picker": {
@@ -1035,7 +1164,8 @@
       "dropoffs": "Abandonos",
       "product": "Produto",
       "onboarding": "Primeiros passos",
-      "blank": "Em branco"
+      "blank": "Em branco",
+      "events": "Eventos"
     },
     "runs": {
       "link": "Link",
@@ -1478,6 +1608,12 @@
       "detractor": "Qual é o principal motivo da sua nota?",
       "promoter": "O que você mais valoriza?",
       "done": "Duas perguntas de acompanhamento adicionadas: detratores e promotores recebem cada um a sua."
+    },
+    "askWhy": {
+      "button": "Perguntar o motivo quando a nota for baixa",
+      "hint": "Adiciona uma pergunta opcional depois desta para notas de {{threshold}} ou menos, mostrando a nota. Você pode editá-la.",
+      "done": "Pergunta de acompanhamento adicionada: o motivo só é perguntado quando a nota é baixa.",
+      "headline": "Qual é o principal motivo da sua nota {{recall}}?"
     }
   },
   "text": {
@@ -2016,6 +2152,15 @@
       "from": "Falta em: {{channels}}.",
       "channel": "{{channel}} {{missing}}",
       "unknown": "Desconhecido"
+    },
+    "reportView": "Relatório",
+    "skipRate": "Pulada por {{percent}}",
+    "followUpOf": "Acompanhamento da pergunta {{position}}",
+    "followUpAnswered": "Respondida por {{percent}} das pessoas a quem foi feita",
+    "order": {
+      "label": "Ordem das perguntas",
+      "form": "Ordem do formulário",
+      "skipped": "Mais puladas"
     }
   },
   "theme": {
@@ -2211,5 +2356,92 @@
     "preview": "As pessoas veem: {{text}}",
     "previewMissing": "Sem valor: {{text}}",
     "previewEmpty": "(nada)"
+  },
+  "report": {
+    "loading": "Carregando o relatório…",
+    "responses": "Respostas",
+    "kpiAnswered_one": "{{formatted}} respondeu",
+    "kpiAnswered_other": "{{formatted}} responderam",
+    "segmentBy": "Segmentar por",
+    "noSegments": "Sem segmentos",
+    "emptyTitle": "Nada para mostrar ainda",
+    "empty": "Quando chegarem respostas com estes filtros, o relatório mostrará as notas, os segmentos e os temas delas.",
+    "segments": {
+      "title": "Por {{segment}}",
+      "hint": "Segmentos com menos de {{minimum}} respostas são agrupados, para que ninguém possa ser identificado.",
+      "caption": "Notas por segmento",
+      "segment": "Segmento",
+      "responses": "Respostas",
+      "noValue": "Sem valor",
+      "other": "Outros",
+      "merged_one": "Outros ({{count, number}} segmento com menos de {{minimum}})",
+      "merged_other": "Outros ({{count, number}} segmentos com menos de {{minimum}})",
+      "withheld": "Poucas respostas para mostrar as notas",
+      "none": "Nenhuma resposta para segmentar."
+    },
+    "heatmap": {
+      "row": "Linha",
+      "average": "Média"
+    },
+    "sentiment": {
+      "positive": "Positivo",
+      "neutral": "Neutro",
+      "mixed": "Misto",
+      "negative": "Negativo",
+      "unknown": "Não processado"
+    },
+    "themes": {
+      "title": "Temas",
+      "hint": "Agrupadas pela categoria em que cada resposta foi classificada, com citações reais. Selecione uma citação para abrir a resposta.",
+      "none": "Ainda não há respostas abertas para agrupar.",
+      "unprocessed": "Ainda não processado",
+      "answers_one": "{{formatted}} resposta",
+      "answers_other": "{{formatted}} respostas",
+      "openQuote": "Abrir a resposta: {{text}}"
+    },
+    "ai": {
+      "title": "Resumo da IA",
+      "badge": "IA",
+      "stale": "Há respostas mais recentes",
+      "start": "Resumir com IA",
+      "again": "Resumir de novo",
+      "working": "Resumindo…",
+      "intro": "A IA lê até 300 das respostas abertas mostradas aqui, com o seu acesso, dá nome aos temas e escolhe citações. As citações são sempre respostas reais.",
+      "nothing": "Não há respostas abertas para resumir.",
+      "withheld": "Este resumo leu respostas que você não pode ver, por isso não é mostrado a você. Resuma de novo para criar o seu.",
+      "made_one": "Criado em {{date}} a partir de {{formatted}} resposta",
+      "made_other": "Criado em {{date}} a partir de {{formatted}} respostas",
+      "rateLimited": "Já foram 20 resumos de IA nesta hora. Tente novamente mais tarde.",
+      "noModel": "Nenhum modelo de IA está disponível nesta implantação.",
+      "noSummary": "A IA não encontrou temas nestas respostas.",
+      "failed": "Não foi possível criar o resumo da IA. Tente novamente."
+    },
+    "pdf": {
+      "download": "Baixar PDF",
+      "failed": "Não foi possível preparar o PDF. Tente novamente.",
+      "title": "{{name}}: relatório",
+      "subtitle_one": "{{formatted}} resposta · {{dates}}",
+      "subtitle_other": "{{formatted}} respostas · {{dates}}",
+      "responses": "Respostas",
+      "segments": "Notas por segmento",
+      "themes": "Temas e citações",
+      "footer": "Gerado em {{date}}. Nenhum dado de contato está incluído."
+    },
+    "compare": {
+      "title": "Comparar",
+      "intro": "Coloque este formulário ao lado de até {{max, number}} outros, ou divida-o por um campo oculto para ver a tendência. As perguntas são pareadas por id e tipo; um ponto com menos de 5 respostas não mostra notas.",
+      "forms": "Formulários",
+      "noForms": "Nenhum outro formulário para comparar.",
+      "sameTemplate": "Mesmo modelo",
+      "by": "Dividir por",
+      "byNone": "Não dividir",
+      "caption": "Notas por formulário",
+      "point": "Formulário",
+      "missing": "Não perguntada",
+      "different": "Perguntada de outra forma",
+      "few": "Menos de {{minimum}}",
+      "merged": "Outros valores (menos de {{minimum}} cada)",
+      "failed": "Não foi possível carregar a comparação."
+    }
   }
 }

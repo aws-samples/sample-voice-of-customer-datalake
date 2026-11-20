@@ -179,6 +179,19 @@ const OWN_RESULTS = {
 
 const ownResult = (question, answered) => OWN_RESULTS[question.type]?.(question, answered) ?? {};
 
+/** An "Ask why" follow-up of each score (forms_v2_results.py `ask_why_pairs`, 7.63.00): an open text right after a
+ * scale question whose rules send a high score (gt/gte) past it. */
+function askWhyPairs(questions) {
+  const pairs = {};
+  questions.forEach((follow, index) => {
+    const score = questions[index - 1];
+    if (score === undefined || !SCALES.includes(score.type) || follow.type !== 'open_text') return;
+    const before = questions.slice(0, index + 1).map((question) => question.id);
+    if ((score.logic ?? []).some((rule) => ['gt', 'gte'].includes(rule.when?.op) && !before.includes(rule.then?.jump_to))) pairs[follow.id] = score.id;
+  });
+  return pairs;
+}
+
 /** shown (its path showed it), answered, skipped, not_shown (the path jumped past it), drop_off_rate, then by type. */
 function questionResult(question, rows, primary) {
   const shownRows = rows.filter((row) => (row.shown ?? []).includes(question.id) || row.answers[question.id] !== undefined);
@@ -282,13 +295,18 @@ export function formResults(item, allRows, params) {
     for (const id of Object.keys(row.hidden ?? {})) if (id in hidden) hidden[id] += 1;
   }
   const current = new Set((item.questions ?? []).map((question) => question.id));
+  const followUps = askWhyPairs(item.questions ?? []);
   const removed = {};
   for (const row of rows) for (const id of Object.keys(row.answers)) if (!current.has(id)) removed[id] = (removed[id] ?? 0) + 1;
   return {
     responses: rows.length,
     test_responses: tests.length,
     last_response_at: rows[0]?.submitted_at ?? null,
-    questions: (item.questions ?? []).map((question) => questionResult(question, rows, primary)),
+    questions: (item.questions ?? []).map((question) => {
+      const result = questionResult(question, rows, primary);
+      const of = followUps[question.id];
+      return of === undefined ? result : { ...result, follow_up_of: of };
+    }),
     endings,
     hidden,
     removed_questions: Object.entries(removed).sort().map(([id, answered]) => ({ id, answered })),

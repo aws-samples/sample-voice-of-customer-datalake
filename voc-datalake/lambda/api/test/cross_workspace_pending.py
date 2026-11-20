@@ -49,6 +49,9 @@ PHASE_2: dict[str, frozenset[str]] = {
         'GET /feedback-forms/<form_id>/responses',
         'GET /feedback-forms/<form_id>/results',
         'POST /feedback-forms/<form_id>/test-link',
+        # 7.63.00: the report and the comparison (`_request_scope`, as the results; every compared form the scope's).
+        'GET /feedback-forms/<form_id>/compare',
+        'GET /feedback-forms/<form_id>/report',
     }),
     # Credentials move to the workspace secret.
     'integrations_handler.py': frozenset({

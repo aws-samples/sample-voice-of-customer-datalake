@@ -3,14 +3,16 @@
  * table and a response's side sheet), under filters the address holds, with test responses left out unless asked
  * for: "Include test responses" is never remembered, and when on, a banner says these aren't the real results.
  * Download (the familiar CSV, or from its menu the detailed one) follows the filters. Above the summary, the link
- * checks (7.61.00) say when the links that bring respondents leave a hidden field empty.
+ * checks (7.61.00) say when the links that bring respondents leave a hidden field empty. Report (7.63.00,
+ * report/ReportView.tsx) is the auto-report under the same filters: KPIs, segments, heatmaps, themes, an AI summary,
+ * Compare and a one-page PDF.
  *
  * @module pages/FeedbackForms/results/ResultsTab
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
-import { BarChart3, FlaskConical, Inbox, Rows3, SearchX, Share2 } from 'lucide-react'
+import { BarChart3, FileText, FlaskConical, Inbox, Rows3, SearchX, Share2 } from 'lucide-react'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
 import Notice from '../../../components/Notice/Notice'
 import type { ResultsFilters } from '../../../api/feedbackFormsV2Api'
@@ -26,10 +28,14 @@ import ResponsesTable from './ResponsesTable'
 import DownloadButton from './DownloadButton'
 import LinkHealthNotice from './LinkHealthNotice'
 import { useFormResults } from './useFormResults'
+import ReportView from '../report/ReportView'
 import { CLEAR_FILTERS, apiFilters, hidesFunnel, narrows, readFilters, writeFilters } from './resultFilters'
 import type { ViewFilters } from './resultFilters'
 
-type View = 'summary' | 'responses'
+type View = 'summary' | 'responses' | 'report'
+
+const VIEWS: readonly View[] = ['summary', 'responses', 'report']
+const resultsViewOf = (segment: string | undefined): View => VIEWS.find((view) => view === segment) ?? 'summary'
 
 /** What the summary shows when there is nothing to count; null when there is. */
 function EmptyState({ results, filters, includeTest, onInclude, onClear }: Readonly<{
@@ -92,20 +98,21 @@ export default function ResultsTab() {
   if (formId === null) return <SaveFirstNotice />
   const filters = readFilters(params)
   const view = apiFilters(filters, includeTest)
-  const shown: View = rest[0] === 'responses' ? 'responses' : 'summary'
+  const shown = resultsViewOf(rest[0])
   const setFilters = (next: ViewFilters) => setParams(writeFilters(params, next), { replace: true })
   return (
     <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Segmented label={t('results.view')} value={shown} onChange={(next) => go('results', next === 'responses' ? ['responses'] : [])}
-          choices={[{ value: 'summary', label: t('results.summary'), icon: BarChart3 }, { value: 'responses', label: t('results.responsesView'), icon: Rows3 }]} />
+        <Segmented label={t('results.view')} value={shown} onChange={(next) => go('results', next === 'summary' ? [] : [next])}
+          choices={[{ value: 'summary', label: t('results.summary'), icon: BarChart3 }, { value: 'responses', label: t('results.responsesView'), icon: Rows3 },
+            { value: 'report', label: t('results.reportView'), icon: FileText }]} />
         <DownloadButton formId={formId} filters={view} />
       </div>
       <ResultsFilterBar form={form} filters={filters} onChange={setFilters} includeTest={includeTest} onIncludeTest={setIncludeTest} />
-      {shown === 'summary'
-        ? <Summary formId={formId} filters={filters} view={view} includeTest={includeTest} onInclude={() => setIncludeTest(true)} onClear={() => setFilters(CLEAR_FILTERS)} />
-        : <ResponsesTable form={form} formId={formId} filters={view} openId={rest[1] ?? null}
-            onOpen={(id) => go('results', ['responses', id])} onClose={() => go('results', ['responses'])} />}
+      {shown === 'summary' && <Summary formId={formId} filters={filters} view={view} includeTest={includeTest} onInclude={() => setIncludeTest(true)} onClear={() => setFilters(CLEAR_FILTERS)} />}
+      {shown === 'responses' && <ResponsesTable form={form} formId={formId} filters={view} openId={rest[1] ?? null}
+        onOpen={(id) => go('results', ['responses', id])} onClose={() => go('results', ['responses'])} />}
+      {shown === 'report' && <ReportView formId={formId} view={view} />}
     </div>
   )
 }
