@@ -31,6 +31,7 @@ __all__ = [
     'DEFINITION_FIELDS',
     'FORM_LOCALES',
     'SCHEMA_VERSION',
+    'answer_shape',
     'definition_of',
     'is_v2',
     'language_assumed',
@@ -38,6 +39,7 @@ __all__ = [
     'plain',
     'public_definition',
     'question_bounds',
+    'reshaped_questions',
     'revision_of',
     'test_settings_of',
     'validate_definition',
@@ -527,8 +529,11 @@ def _selection_bounds(source: Mapping[str, Any], where: str, choices: int) -> di
 
 
 def _open_text(source: Mapping[str, Any], where: str, loc: _Locales) -> dict[str, Any]:
-    out: dict[str, Any] = {'long': _bool(source, 'long', where), 'input_type': _choice(
-        source, 'input_type', where, INPUT_TYPES, 'text')}
+    long = _bool(source, 'long', where)
+    input_type = _choice(source, 'input_type', where, INPUT_TYPES, 'text')
+    # A long text is a text box whose answer is any text (the widget draws it so): never an email, number, phone or
+    # web address, whatever input_type a client or an older save sent with it.
+    out: dict[str, Any] = {'long': long, 'input_type': 'text' if long else input_type}
     loc.put(out, source, 'placeholder', where, LABEL_CHARS)
     if source.get('max_chars') is not None:
         out['max_chars'] = _int(source['max_chars'], f'{where}.max_chars', 1, MAX_OPEN_TEXT_CHARS)
@@ -681,6 +686,12 @@ def question_bounds(question: Mapping[str, Any]) -> tuple[int, int] | None:
     return PRESET_BOUNDS.get(str(question.get('type')))
 
 
+def answer_shape(question: Mapping[str, Any]) -> tuple[object, tuple[int, int] | None]:
+    """What a question's answers mean: its type and, for a scale, its range. Two revisions of a question with the same
+    shape take the same answers (a 4 is the same 4); another type or range does not (a 5 of 5 stars is no NPS 5)."""
+    return question.get('type'), question_bounds(question)
+
+
 def _choice_codes(question: Mapping[str, Any]) -> set[str]:
     """The codes a rule may name for a choice question: its options, plus other / none while enabled."""
     codes = {option['code'] for option in question.get('options') or []}
@@ -799,13 +810,15 @@ def retired_ids(previous: Mapping[str, Any], current: Mapping[str, Any], already
 
 # ── The lock of an answered form ─────────────────────────────────────────────────────────────────────────────────
 #
-# Once a form has a real response (``has_responses``), its answers are stored under its question ids and option codes.
-# The builder never changes one in place (the code and id fields lock), and removes a question or an option only after
-# saying that its answers stay in Results as removed. The server holds the same line (TENETS.md tenet 4): a save that
-# drops a question id, or an option code from a question it keeps (a rename is a drop plus an add), must name each one
-# in ``removes``, or it is a 409 ``answers_locked`` naming what it would drop. A named removal is kept as the builder
-# keeps it (the question id retires for good, ``retired_ids``; the answers stay in Results under the removed question or
-# option).
+# Once a form has a real response (``has_responses``), its answers are stored under its question ids and option codes,
+# and read on its questions' types and ranges. The builder never changes one in place (the code and id fields, the type
+# select and a rating's points lock), and removes a question or an option only after saying that its answers stay in
+# Results as removed. The server holds the same line (TENETS.md tenet 4): a save that drops a question id, or an option
+# code from a question it keeps (a rename is a drop plus an add), must name each one in ``removes``, or it is a 409
+# ``answers_locked`` naming what it would drop; a save that gives a question it keeps another type or range
+# (``reshaped_questions``) is that 409 whatever it names, since its old answers would be read on the new scale (to
+# ask it another way, remove it and add a new question). A named removal is kept as the builder keeps it (the question
+# id retires for good, ``retired_ids``; the answers stay in Results under the removed question or option).
 
 #: ``removes`` on a save: what the save takes away from an answered form, on purpose.
 _REMOVES_KEYS = frozenset({'questions', 'options'})
@@ -861,6 +874,18 @@ def unnamed_removals(previous: Mapping[str, Any], proposed: Mapping[str, Any],
         if dropped:
             options[qid] = dropped
     return {**({'questions': questions} if questions else {}), **({'options': options} if options else {})}
+
+
+def reshaped_questions(previous: Mapping[str, Any], proposed: Mapping[str, Any]) -> list[str]:
+    """The ids of the questions ``proposed`` keeps from ``previous`` with another type or range (``answer_shape``), in
+    ``previous``'s order: never allowed on an answered form, named or not."""
+    kept = {question.get('id'): question for question in proposed.get('questions') or [] if isinstance(question, Mapping)}
+    reshaped: list[str] = []
+    for question in previous.get('questions') or []:
+        qid = question.get('id') if isinstance(question, Mapping) else None
+        if isinstance(qid, str) and qid in kept and answer_shape(question) != answer_shape(kept[qid]):
+            reshaped.append(qid)
+    return reshaped
 
 
 def validate_test_settings(value: object, current: Mapping[str, Any]) -> dict[str, Any]:

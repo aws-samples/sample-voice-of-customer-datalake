@@ -3,8 +3,11 @@
  * responses (Keep them marked Test, or Check them and keep nothing), what testers see, and the recent test responses
  * with their hidden values, so an integrator sees at once whether the app passed `app_version`.
  *
- * The switch and Keep / Check only are settings of the form (`settings.test`): they save with it. Resetting the
- * test link and deleting the test responses are immediate (they don't wait for Save).
+ * The switch and Keep / Check only are settings of the form (`settings.test`): they save with it. Making the test
+ * link, resetting it and deleting the test responses are immediate (they don't wait for Save), and never change the
+ * saved settings: they send the stored form's back as they are. Make the test link issues a token only for a form
+ * that has none (never a new one for a link in use), and is not offered while the token is still being read. A
+ * failure says so (`role="alert"`) and keeps the dialog open.
  *
  * @module pages/FeedbackForms/tabs/TestTab
  */
@@ -26,17 +29,17 @@ import ActionsMenu from '../ui/ActionsMenu'
 import { formLink } from './snippets'
 import type { SnippetInput } from './snippets'
 import { LinkField, OpenLink, SaveFirstNotice } from './linkParts'
-import { testTokenKey, useTestToken } from './testToken'
+import { testTokenKey, useStoredTestSettings, useTestTokenState } from './testToken'
 import RecentTestResponses from './RecentTestResponses'
 
-/** The snippet input of this form's test link (`testToken` null: no test token yet). */
-function useTestSnippet(): SnippetInput | null {
+/** The snippet input of this form's test link (null: no test token yet, or it is still being read). */
+function useTestSnippet(): { readonly snippet: SnippetInput | null; readonly loading: boolean } {
   const { form } = useDraft()
   const { formId } = useBuilderUi()
   const apiEndpoint = useConfigStore((state) => state.config.apiEndpoint)
-  const token = useTestToken()
-  if (formId === null || token === null) return null
-  return { apiEndpoint, formId, formName: form.name, language: form.language, hidden: form.hidden_fields, testToken: token }
+  const { token, loading } = useTestTokenState()
+  if (formId === null || token === null) return { snippet: null, loading }
+  return { snippet: { apiEndpoint, formId, formName: form.name, language: form.language, hidden: form.hidden_fields, testToken: token }, loading: false }
 }
 
 function TestLinkSwitch() {
@@ -59,11 +62,12 @@ function TestLink({ snippet }: Readonly<{ snippet: SnippetInput }>) {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  const keep = useStoredTestSettings()
   const reset = async () => {
     setBusy(true)
     setFailed(false)
     try {
-      const token = await feedbackFormsV2Api.rotateTestToken(snippet.formId)
+      const token = await feedbackFormsV2Api.rotateTestToken(snippet.formId, keep)
       queryClient.setQueryData(testTokenKey(snippet.formId), token)
       setConfirming(false)
     } catch {
@@ -84,9 +88,11 @@ function TestLink({ snippet }: Readonly<{ snippet: SnippetInput }>) {
           { label: t('test.reset'), icon: RotateCcw, onSelect: () => setConfirming(true) },
         ]} />
       </LinkField>
-      {failed && <p role="alert" className="text-[12px] text-danger">{t('test.resetFailed')}</p>}
+      {failed && !confirming && <p role="alert" className="text-[12px] text-danger">{t('test.resetFailed')}</p>}
       <ConfirmModal isOpen={confirming} title={t('test.resetTitle')} message={t('test.resetMessage')} confirmLabel={t('test.resetConfirm')}
-        variant="danger" isLoading={busy} onConfirm={() => { void reset() }} onCancel={() => setConfirming(false)} />
+        variant="danger" isLoading={busy} onConfirm={() => { void reset() }} onCancel={() => { setConfirming(false); setFailed(false) }}>
+        {failed && <p role="alert" className="mt-3 text-[13px] text-danger">{t('test.resetFailed')}</p>}
+      </ConfirmModal>
     </>
   )
 }
@@ -94,18 +100,28 @@ function TestLink({ snippet }: Readonly<{ snippet: SnippetInput }>) {
 function MakeTestLink({ formId }: Readonly<{ formId: string }>) {
   const { t } = useTranslation('feedbackForms')
   const queryClient = useQueryClient()
+  const keep = useStoredTestSettings()
   const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
   const make = async () => {
     setBusy(true)
+    setFailed(false)
     try {
-      queryClient.setQueryData(testTokenKey(formId), await feedbackFormsV2Api.rotateTestToken(formId))
+      // (no `rotate`: a form that has a token keeps it, so a link in use never stops working here)
+      const issued = await feedbackFormsV2Api.issueTestLink(formId, keep)
+      queryClient.setQueryData(testTokenKey(formId), issued.token)
+    } catch {
+      setFailed(true)
     } finally {
       setBusy(false)
     }
   }
   return (
-    <Notice variant="banner" tone="warn" icon={FlaskConical} text={t('test.noToken')}
-      action={{ label: t('test.makeLink'), busy, onClick: () => { void make() } }} />
+    <div className="space-y-2">
+      <Notice variant="banner" tone="warn" icon={FlaskConical} text={t('test.noToken')}
+        action={{ label: t('test.makeLink'), busy, onClick: () => { void make() } }} />
+      {failed && <p role="alert" className="text-[12px] text-danger">{t('test.makeLinkFailed')}</p>}
+    </div>
   )
 }
 
@@ -125,10 +141,12 @@ function RecordChoice() {
 }
 
 function TestLinkBody() {
+  const { t } = useTranslation('feedbackForms')
   const { formId } = useBuilderUi()
-  const snippet = useTestSnippet()
+  const { snippet, loading } = useTestSnippet()
   if (formId === null) return <SaveFirstNotice />
-  return snippet === null ? <MakeTestLink formId={formId} /> : <TestLink snippet={snippet} />
+  if (snippet !== null) return <TestLink snippet={snippet} />
+  return loading ? <p role="status" className="text-sm text-muted">{t('test.tokenLoading')}</p> : <MakeTestLink formId={formId} />
 }
 
 export default function TestTab() {

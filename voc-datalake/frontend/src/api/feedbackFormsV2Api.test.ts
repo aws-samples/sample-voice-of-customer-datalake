@@ -78,10 +78,22 @@ describe('the forms builder client (reconciled with part A)', () => {
     expect((await feedbackFormsV2Api.createForm(sampleForm())).meta.can_delete_test_responses).toBe(true)
   })
 
-  it('reads the test token from …/test-link, the only answer that carries it', async () => {
+  it('reads the test token from …/test-link, the only answer that carries it; a reset sends the saved settings back', async () => {
     fetchMock.mockResolvedValue(json(200, { success: true, test: { link_enabled: true, record: 'tag', token: 'tk_abc' }, test_link: 'x' }))
-    expect(await feedbackFormsV2Api.rotateTestToken('f_1')).toBe('tk_abc')
-    expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/feedback-forms/f_1/test-link', expect.objectContaining({ method: 'POST', body: '{"rotate":true}' }))
+    expect(await feedbackFormsV2Api.rotateTestToken('f_1', { link_enabled: false, record: 'drop' })).toBe('tk_abc')
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/feedback-forms/f_1/test-link',
+      expect.objectContaining({ method: 'POST', body: '{"rotate":true,"link_enabled":false,"record":"drop"}' }))
+  })
+
+  it('reads the save count and the retired question ids with the form, and words a reused id with its question', async () => {
+    const { sampleForm } = await import('../pages/FeedbackForms/test/draftHarness')
+    fetchMock.mockResolvedValueOnce(json(200, { success: true, form: await record({ response_count: 0, write_count: 7, retired_ids: ['q_old', 3] }) }))
+    expect((await feedbackFormsV2Api.getForm('f_1')).meta).toMatchObject({ write_count: 7, retired_ids: [] })
+    fetchMock.mockResolvedValueOnce(json(200, { success: true, form: await record({ response_count: 0, write_count: 7, retired_ids: ['q_old'] }) }))
+    expect((await feedbackFormsV2Api.getForm('f_1')).meta).toMatchObject({ write_count: 7, retired_ids: ['q_old'] })
+    fetchMock.mockResolvedValueOnce(json(400, { success: false, error: 'questions: the id "q_old" belonged to a removed question', code: 'question_id_reused', question_id: 'q_old' }))
+    const error = await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 3).catch((e: unknown) => e)
+    expect(error instanceof FormsApiError ? [error.code, error.questionId] : []).toStrictEqual(['question_id_reused', 'q_old'])
   })
 
   /** A stored form as part A's `GET /feedback-forms/{id}` answers it (`settings.test` never carries the token). */
@@ -122,15 +134,15 @@ describe('the forms builder client (reconciled with part A)', () => {
   it('names what a save removes from an answered form, and sends no `removes` when it names nothing (D9)', async () => {
     const { sampleForm } = await import('../pages/FeedbackForms/test/draftHarness')
     fetchMock.mockImplementation(async () => json(200, { success: true, form: await record({ response_count: 0 }) }))
-    await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 3, { questions: ['q_old'], options: { q_reason: ['bugs'] } })
+    await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 3, { questions: ['q_old'], options: { q_reason: ['bugs'] } }, 8)
     await feedbackFormsV2Api.saveForm('f_1', sampleForm(), 4)
     const bodies = fetchMock.mock.calls.map(([, init]): object => {
       const parsed: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : null
       return typeof parsed === 'object' && parsed !== null ? parsed : {}
     })
     const field = (body: object, key: string): unknown => Reflect.get(body, key)
-    expect(bodies.map((body) => [field(body, 'expected_revision'), field(body, 'removes')])).toStrictEqual([
-      [3, { questions: ['q_old'], options: { q_reason: ['bugs'] } }], [4, undefined],
+    expect(bodies.map((body) => [field(body, 'expected_revision'), field(body, 'removes'), field(body, 'expected_write_count')])).toStrictEqual([
+      [3, { questions: ['q_old'], options: { q_reason: ['bugs'] } }, 8], [4, undefined, undefined],
     ])
     expect(Object.keys(bodies[1] ?? {})).not.toContain('removes')
   })
@@ -184,9 +196,11 @@ describe('the forms builder client (reconciled with part A)', () => {
       fetchMock.mockImplementation(async () => json(200, { success: true, form: await record({ response_count: 0 }) }))
       await feedbackFormsV2Api.setEnabled('f_1', false, 3)
       await feedbackFormsV2Api.setEnabled('f_1', true)
+      await feedbackFormsV2Api.setEnabled('f_1', false, 3, 9)
       expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method, init?.body])).toStrictEqual([
         ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":false,"expected_revision":3}'],
         ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":true}'],
+        ['https://api.example.com/feedback-forms/f_1', 'PUT', '{"enabled":false,"expected_revision":3,"expected_write_count":9}'],
       ])
     })
 
@@ -324,6 +338,13 @@ describe('part A\'s results and responses, read as this app\'s', () => {
   it('has no funnel when the beacon counted no open, or fewer opens than the responses it covers', () => {
     expect(parseFormResults(adaptResults({ ...answer, funnel: { opened: 0, left: {}, completed: 10 } })).funnel).toBeNull()
     expect(parseFormResults(adaptResults({ ...answer, funnel: { opened: 4, left: {}, completed: 10 } })).funnel).toBeNull()
+  })
+
+  it('has none when the route answers null (a language, ending or hidden-value filter), and keeps earlier-version answers apart', () => {
+    const [first, ...rest] = answer.questions
+    const results = parseFormResults(adaptResults({ ...answer, funnel: null, questions: [{ ...first, earlier_version: 2 }, ...rest] }))
+    expect([results.funnel, results.questions['q_reason']?.earlier_version, results.questions['q_nps']?.earlier_version])
+      .toStrictEqual([null, 2, undefined])
   })
 
   it('reads a response row\'s created_at and revision as its time and form revision', () => {

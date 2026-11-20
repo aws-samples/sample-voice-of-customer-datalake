@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { stubElementScrollIntoView } from '../../../test/stubScrollTo'
 import { renderWithDraft, sampleForm } from '../test/draftHarness'
@@ -123,6 +123,16 @@ describe('QuestionEditor: the question id', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Another question has the id q_first.')
   })
 
+  it("refuses a removed question's id: ids are never reused", async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<EditorAt at={0} />, sampleForm(), { meta: { retired_ids: ['q_old'] } })
+    await user.click(screen.getByRole('button', { name: 'Advanced' }))
+    const field = screen.getByRole('textbox', { name: 'Question id' })
+    await user.clear(field)
+    await user.type(field, 'q_old')
+    expect(screen.getByRole('alert')).toHaveTextContent('The id q_old belonged to a question removed earlier, and ids are never reused. Choose another.')
+  })
+
   it('shows the id read-only, with the reason, once the form has responses', async () => {
     const user = userEvent.setup()
     renderWithDraft(<EditorAt at={0} />, sampleForm(), { meta: { has_responses: true, response_count: 2 } })
@@ -140,6 +150,13 @@ describe('QuestionEditor: the header', () => {
     await user.click(screen.getByRole('button', { name: 'Duplicate question 1' }))
     expect(harness.probe.current?.form.questions.map((q) => q.id)).toStrictEqual(['q_feedback', 'q_feedback_2'])
     expect(harness.go).toHaveBeenCalledWith('questions', ['q_feedback_2'])
+  })
+
+  it("never gives a copy a removed question's id", async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<EditorAt at={0} />, sampleForm(), { meta: { retired_ids: ['q_feedback_2'] } })
+    await user.click(screen.getByRole('button', { name: 'Duplicate question 1' }))
+    expect(harness.probe.current?.form.questions.map((q) => q.id)).toStrictEqual(['q_feedback', 'q_feedback_3'])
   })
 
   it('moves the question down from its menu, Move up being off on the first', async () => {
@@ -216,6 +233,29 @@ describe('QuestionEditor: the type select', () => {
     renderWithDraft(<EditorAt at={0} />)
     expect(screen.queryByRole('combobox', { name: /Question 1: type/ })).not.toBeInTheDocument()
     expect(screen.getByText('To change its type, add a new question of that type and delete this one.')).toBeInTheDocument()
+  })
+
+  it("keeps an answered question's type, saying why, and offers no other", () => {
+    renderWithDraft(<EditorAt at={0} />, sampleForm({ questions: [picked] }), { meta: { has_responses: true, response_count: 3 } })
+    expect(screen.queryByRole('combobox', { name: /Question 1: type/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/^Answers are stored for this type, so it can't change once the form has responses\./u)).toBeInTheDocument()
+  })
+
+  it('offers an answered question only its way back to the stored type', async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<EditorAt at={0} />, sampleForm({ questions: [picked] }), { meta: { has_responses: true } })
+    // (changed before the lock was known: the form got its first response while this draft was open)
+    act(() => { harness.probe.current?.update((form) => ({ ...form, questions: [{ ...picked, type: 'single_select', none: { enabled: false } }] })) })
+    const select = await screen.findByRole('combobox', { name: /Question 1: type/ })
+    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toStrictEqual(['Single choice', 'Multiple choice'])
+    await user.selectOptions(select, 'Multiple choice')
+    expect(firstOf(harness.probe.current?.form)?.type).toBe('multi_select')
+  })
+
+  it('lets a question added since the first response change its type', async () => {
+    const harness = renderWithDraft(<EditorAt at={1} />, sampleForm({ questions: [open('q_first', 'Hi')] }), { meta: { has_responses: true } })
+    act(() => { harness.probe.current?.update((form) => ({ ...form, questions: [...form.questions, picked] })) })
+    expect(await screen.findByRole('combobox', { name: /Question 2: type/ })).toBeInTheDocument()
   })
 
   it('focuses the type select when Change type… asked for it', () => {

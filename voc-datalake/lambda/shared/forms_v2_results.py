@@ -3,17 +3,20 @@ docs/feedback-forms.md "Results"): per question of the current revision, what it
 
 Each response is a ``ResultRow``: its answers, the questions its logic path showed, its ending, language, revision,
 hidden values and time. Rows come from the form's feedback items (``metadata.form_answers``, ``form_path``,
-``form_ending_id``…; a version 1 item's ``rating`` and text through ``legacy_row``) and, with ``include_test``, from
-its tagged test responses. A question id is stable across revisions, so a row of an older revision counts towards the
-same question; a value that no longer fits the question's current type is left out, an answer to a question the
-current revision no longer has is counted under ``removed_questions``, and a choice code it no longer offers under
-the question's ``removed_options``.
+``form_ending_id``…; a version 1 item's ``rating`` and text through ``legacy_row``, always as ``q_rating`` and
+``q_text``) and, with ``include_test``, from its tagged test responses. A question id is stable across revisions, so a
+row of an older revision counts towards the same question, scored against the question as its own revision had it
+(``revisions``, the form's snapshots): an answer to a revision where the question had another type or range is never
+read on the current one (a 5 of 5 stars is no NPS 5) and is counted under the question's ``earlier_version``; a value
+that does not fit the question's type is left out, an answer to a question the current revision no longer has is
+counted under ``removed_questions``, and a choice code it no longer offers under the question's ``removed_options``.
 
 Per question: ``shown`` (the responses whose path showed it), ``answered``, ``skipped``, ``not_shown`` (the logic
 jumped past it) and ``drop_off_rate`` (skipped / shown), plus by type: counts per option code with the latest "Other"
 texts, a histogram, NPS / CSAT / CES scores, and the open-text count with the latest answers. Contact details are
 counted, never returned here. ``funnel`` (``funnel_counts``, from the daily counter rows) adds how many opened the
-form and, of those who left without submitting, at which question. Pure.
+form and, of those who left without submitting, at which question; ``None`` when the caller has none for the view (the
+counters know no language, ending or hidden value). Pure.
 """
 from __future__ import annotations
 
@@ -37,6 +40,7 @@ from shared.forms_v2 import (
     SINGLE,
     V1_RATING_ID,
     V1_TEXT_ID,
+    answer_shape,
     question_bounds,
     text_in,
 )
@@ -67,17 +71,19 @@ class ResultRow:
 
 def legacy_row(definition: Mapping[str, Any], rating: object, text: object, created_at: str,
                **extra: Any) -> ResultRow | None:
-    """A version 1 submission (a ``rating`` and a text, no ``form_answers``) as a row of its migrated questions, when
-    the form still has them (``q_rating``, ``q_text``); None when it has neither."""
-    questions = {question.get('id'): question.get('type') for question in definition.get('questions') or []}
+    """A version 1 submission (a ``rating`` and a text, no ``form_answers``) as a row of the questions its form became,
+    ``q_rating`` and ``q_text``, whatever the form holds now: a question since removed counts under
+    ``removed_questions``, one since given another type is left out of it (``_fitting``, the row's revision). Its path
+    is what it answered plus those of the two the form still has. None for a submission with neither."""
+    questions = {question.get('id') for question in definition.get('questions') or [] if isinstance(question, Mapping)}
     answers: dict[str, Any] = {}
-    if questions.get(V1_RATING_ID) == RATING and isinstance(rating, int | float) and not isinstance(rating, bool):
+    if isinstance(rating, int | float) and not isinstance(rating, bool):
         answers[V1_RATING_ID] = int(rating)
-    if questions.get(V1_TEXT_ID) == OPEN_TEXT and isinstance(text, str) and text.strip():
+    if isinstance(text, str) and text.strip():
         answers[V1_TEXT_ID] = text.strip()
     if not answers:
         return None
-    path = [qid for qid in (V1_RATING_ID, V1_TEXT_ID) if qid in questions]
+    path = [qid for qid in (V1_RATING_ID, V1_TEXT_ID) if qid in answers or qid in questions]
     return ResultRow(answers, path, None, created_at, **extra)
 
 
@@ -128,12 +134,18 @@ class _Tally:
     question: Mapping[str, Any]
     shown: int = 0
     answered: int = 0
+    #: Answers to a revision where this question had another type or range: never read on the current one.
+    earlier: int = 0
     counts: dict[str, int] = field(default_factory=dict)
     latest: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     other_latest: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
 
-    def add(self, row: ResultRow) -> None:
+    def add(self, row: ResultRow, asked: Mapping[str, Any] | None = None) -> None:
+        """Count ``row`` (``asked``: the question as the row's own revision had it, None when that is this one)."""
         qid = self.question['id']
+        if asked is not None and answer_shape(asked) != answer_shape(self.question):
+            self.earlier += int(row.answers.get(qid) is not None)
+            return
         if qid in row.path or qid in row.answers:
             self.shown += 1
         value = _fitting(self.question, row.answers.get(qid))
@@ -210,8 +222,10 @@ def _question_result(question: Mapping[str, Any], tally: _Tally, primary: str, r
         'id': question['id'], 'type': question['type'],
         'headline': text_in(question.get('headline'), primary, primary),
         'shown': tally.shown, 'answered': tally.answered, 'skipped': skipped,
-        'not_shown': max(responses - tally.shown, 0), 'drop_off_rate': _ratio(skipped, tally.shown),
+        'not_shown': max(responses - tally.shown - tally.earlier, 0), 'drop_off_rate': _ratio(skipped, tally.shown),
     }
+    if tally.earlier:
+        out['earlier_version'] = tally.earlier
     kind = question['type']
     if kind in SCALE_TYPES:
         out.update(_scale_result(question, tally.counts))
@@ -262,32 +276,55 @@ def funnel_counts(daily: Iterable[Mapping[str, Any]], *, include_test: bool) -> 
     return {'opened': opened, 'left': {qid: n for qid, n in by_question.items() if n > 0}}
 
 
-def tally_results(definition: Mapping[str, Any], rows: Iterable[ResultRow],
-                  funnel: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """``{responses, test_responses, last_response_at, questions, endings, hidden, removed_questions, funnel?}``."""
+Asked = Callable[[ResultRow], Mapping[str, Mapping[str, Any]] | None]
+
+
+def _asked_in(revisions: Mapping[int, Mapping[str, Any]] | None) -> Asked:
+    """The questions (by id) of the revision a row answered, from ``revisions``; None when no snapshot is kept for it
+    (the current revision has none). A row that names no revision was sent by a version 1 widget: revision 1."""
+    by_revision = {int(number): {q['id']: q for q in definition.get('questions') or []
+                                 if isinstance(q, Mapping) and isinstance(q.get('id'), str)}
+                   for number, definition in (revisions or {}).items()}
+
+    def asked(row: ResultRow) -> Mapping[str, Mapping[str, Any]] | None:
+        number = row.revision if isinstance(row.revision, int) and not isinstance(row.revision, bool) else 1
+        return by_revision.get(number)
+    return asked
+
+
+def tally_results(definition: Mapping[str, Any], rows: Iterable[ResultRow], funnel: Mapping[str, Any] | None = None,
+                  *, revisions: Mapping[int, Mapping[str, Any]] | None = None,
+                  test_responses: int | None = None) -> dict[str, Any]:
+    """``{responses, test_responses, last_response_at, questions, endings, hidden, removed_questions, funnel}``.
+
+    ``revisions``: the form's earlier revisions' definitions by number (its snapshots), so each row is scored against
+    its own. ``test_responses``: the test responses the view admits, counted whether or not ``rows`` include them
+    (the page says how many it left out); by default the test rows among ``rows``. ``funnel``: ``funnel_counts``' sums
+    for the view, or None when there are none for it (answered as ``null``)."""
     primary = str(definition.get('language') or 'en')
     questions = [question for question in definition.get('questions') or [] if isinstance(question, Mapping)]
     tallies = [_Tally(question) for question in questions]
     endings = {ending['id']: 0 for ending in definition.get('endings') or []}
     hidden = {hidden['id']: 0 for hidden in definition.get('hidden_fields') or []}
+    asked_in = _asked_in(revisions)
     kept = list(rows)
     for row in kept:
+        asked = asked_in(row)
         for tally in tallies:
-            tally.add(row)
+            tally.add(row, None if asked is None else asked.get(tally.question['id']))
         if row.ending_id in endings:
             endings[str(row.ending_id)] += 1
         for hid in row.hidden:
             if hid in hidden:
                 hidden[hid] += 1
-    out: dict[str, Any] = {
-        'responses': len(kept), 'test_responses': sum(row.is_test for row in kept),
+    return {
+        'responses': len(kept),
+        'test_responses': sum(row.is_test for row in kept) if test_responses is None else test_responses,
         'last_response_at': max((row.created_at for row in kept), default=None),
         'questions': [_question_result(q, t, primary, len(kept)) for q, t in zip(questions, tallies, strict=True)],
         'endings': endings, 'hidden': hidden, 'removed_questions': _removed_questions(questions, kept),
+        'funnel': None if funnel is None else {**funnel, 'completed': len(kept)},
     }
-    if funnel is not None:
-        out['funnel'] = {**funnel, 'completed': len(kept)}
-    return out
 
 
 # ── The forms list's headline figure ───────────────────────────────────────────────────────────────────────────

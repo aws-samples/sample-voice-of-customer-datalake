@@ -1,12 +1,15 @@
 /**
  * The Test tab (UX §9.1): the test link with its token, Keep / Check only, the reset and the delete (each asked
- * first), and the recent test responses with their hidden values.
+ * first, a failure said in its dialog), Make the test link (never while the token is read, never a rotation, the saved
+ * settings sent back as they are), and the recent test responses with their hidden values.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-const rotateTestToken = vi.fn<(formId: string) => Promise<string>>()
+type Keep = { link_enabled: boolean; record: 'tag' | 'drop' }
+const rotateTestToken = vi.fn<(formId: string, keep: Keep) => Promise<string>>()
+const issueTestLink = vi.fn<(formId: string, body: Keep) => Promise<{ token: string; link_enabled: boolean; record: 'tag' | 'drop' }>>()
 const deleteTestResponses = vi.fn<(formId: string) => Promise<number>>()
 const getResponses = vi.fn<(...args: unknown[]) => Promise<unknown>>()
 const createForm = vi.fn<(form: FormV2) => Promise<LoadedForm>>()
@@ -17,7 +20,8 @@ vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
     ...actual,
     feedbackFormsV2Api: {
       ...actual.feedbackFormsV2Api,
-      rotateTestToken: (formId: string) => rotateTestToken(formId),
+      rotateTestToken: (formId: string, keep: Keep) => rotateTestToken(formId, keep),
+      issueTestLink: (formId: string, body: Keep) => issueTestLink(formId, body),
       deleteTestResponses: (formId: string) => deleteTestResponses(formId),
       getResponses: (...args: unknown[]) => getResponses(...args),
       createForm: (form: FormV2) => createForm(form),
@@ -47,6 +51,7 @@ describe('TestTab', () => {
     useConfigStore.setState({ config: { ...useConfigStore.getState().config, apiEndpoint: 'https://api.example.com' } })
     getResponses.mockResolvedValue({ responses: [], next_cursor: null })
     rotateTestToken.mockResolvedValue('tk_new')
+    issueTestLink.mockResolvedValue({ token: 'tk_made', link_enabled: false, record: 'tag' })
     deleteTestResponses.mockResolvedValue(2)
     createForm.mockImplementation((form) => Promise.resolve({ form, meta: STORED_META }))
   })
@@ -101,7 +106,8 @@ describe('TestTab', () => {
     expect(rotateTestToken).not.toHaveBeenCalled()
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset test link' }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Test link' })).toHaveValue('https://api.example.com/feedback-forms/f_test/iframe?test=tk_new'))
-    expect(rotateTestToken).toHaveBeenCalledWith('f_test')
+    // (the saved settings go back as they are: a reset never turns the saved link on, nor changes how it records)
+    expect(rotateTestToken).toHaveBeenCalledWith('f_test', { link_enabled: true, record: 'tag' })
   })
 
   it('lists recent test responses with their hidden values, an empty one marked', async () => {
@@ -132,6 +138,21 @@ describe('TestTab', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete test responses' }))
     await waitFor(() => expect(deleteTestResponses).toHaveBeenCalledWith('f_test'))
     await waitFor(() => expect(getResponses).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('says a failed delete in its dialog, which stays open for another try', async () => {
+    const user = userEvent.setup()
+    deleteTestResponses.mockRejectedValueOnce(new Error('Network down'))
+    getResponses.mockResolvedValue({ responses: [TEST_RESPONSE], next_cursor: null })
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete all…' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete test responses' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent("Couldn't delete the test responses. Try again in a moment.")
+    await user.click(within(dialog).getByRole('button', { name: 'Delete test responses' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(deleteTestResponses).toHaveBeenCalledTimes(2)
   })
 
   it('offers Delete all only to an administrator or the form\'s creator, and says to the others who can', async () => {
@@ -207,18 +228,42 @@ describe('TestTab', () => {
     await user.click(screen.getByRole('button', { name: 'More actions for the test link' }))
     await user.click(screen.getByRole('menuitem', { name: 'Reset test link…' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset test link' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't reset the test link. Try again in a moment.")
+    // (in the dialog, which stays open for another try)
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent("Couldn't reset the test link. Try again in a moment.")
     expect(screen.getByRole('textbox', { name: 'Test link' })).toHaveValue(LINK)
   })
 
-  it('makes the test link of a form that has none yet, once the link is turned on', async () => {
+  it('makes the test link of a form that has none yet, once the link is turned on, leaving the saved link off until Save', async () => {
     const user = userEvent.setup()
     renderWithDraft(<TestTab />, formWith({ link_enabled: false, record: 'tag' }), { testToken: null })
     await user.click(screen.getByRole('switch', { name: 'Test link' }))
     expect(screen.getByText('This form has no test link yet.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Make the test link' }))
-    expect(await screen.findByRole('textbox', { name: 'Test link' })).toHaveValue('https://api.example.com/feedback-forms/f_test/iframe?test=tk_new')
-    expect(rotateTestToken).toHaveBeenCalledWith('f_test')
+    expect(await screen.findByRole('textbox', { name: 'Test link' })).toHaveValue('https://api.example.com/feedback-forms/f_test/iframe?test=tk_made')
+    // The saved settings as they are (the link is off until Save), and no rotation: a token in use is kept.
+    expect(issueTestLink).toHaveBeenCalledWith('f_test', { link_enabled: false, record: 'tag' })
+    expect(rotateTestToken).not.toHaveBeenCalled()
+  })
+
+  it('says when the test link could not be made, and offers it again', async () => {
+    const user = userEvent.setup()
+    issueTestLink.mockRejectedValueOnce(new Error('Network down'))
+    renderWithDraft(<TestTab />, formWith({ link_enabled: false, record: 'tag' }), { testToken: null })
+    await user.click(screen.getByRole('switch', { name: 'Test link' }))
+    await user.click(screen.getByRole('button', { name: 'Make the test link' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't make the test link. Try again in a moment.")
+    expect(screen.getByRole('button', { name: 'Make the test link' })).toBeInTheDocument()
+  })
+
+  it('reads the saved link\'s token before offering anything, so a link in use is never made again', async () => {
+    const pending = { answer: (_state: { token: string; link_enabled: boolean; record: 'tag' | 'drop' }) => {} }
+    issueTestLink.mockReturnValueOnce(new Promise((resolve) => { pending.answer = resolve }))
+    renderWithDraft(<TestTab />, formWith({ link_enabled: true, record: 'tag' }), { testToken: null })
+    expect((await screen.findByText('Reading the test link…')).getAttribute('role')).toBe('status')
+    expect(screen.queryByRole('button', { name: 'Make the test link' })).not.toBeInTheDocument()
+    pending.answer({ token: 'tk_live', link_enabled: true, record: 'tag' })
+    expect(await screen.findByRole('textbox', { name: 'Test link' })).toHaveValue('https://api.example.com/feedback-forms/f_test/iframe?test=tk_live')
+    expect(rotateTestToken).not.toHaveBeenCalled()
   })
 
   it('shows nothing to list under Check only', async () => {

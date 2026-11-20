@@ -58,7 +58,7 @@ describe('snippets', () => {
       "    container: '#voc-feedback-form',",
       "    apiEndpoint: 'https://api.example.com/v1',",
       "    formId: 'f_test',",
-      "    language: 'pl',",
+      "    // language: 'pl', // optional: one language for every visitor (else their browser's)",
       "    hidden: { user_id: '{USER_ID}' },",
       "    test: 'tk_1',",
       '  });',
@@ -74,7 +74,7 @@ describe('snippets', () => {
       "  container: '#voc-feedback-form',",
       "  apiEndpoint: 'https://api.example.com/v1',",
       "  formId: 'f_test',",
-      "  language: 'pl',",
+      "  // language: 'pl', // optional: one language for every visitor (else their browser's)",
       "  hidden: { user_id: '{USER_ID}' },",
       '});',
     ].join('\n'))

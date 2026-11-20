@@ -32,13 +32,13 @@
  *
  * The theme (the config's `theme`; every field optional, so an old theme still works): `primary_color`,
  * `background_color` and `text_color` (the light palette; `#rgb` or `#rrggbb`, and a `#rrggbbaa` an old form holds
- * is drawn as its 6-digit colour), `border_radius` ('0px'–'39px'), `mode` ('light' by default, 'dark', or 'auto':
- * the respondent's prefers-color-scheme, followed as it changes), `dark` (the dark palette's three colours, the VoC
- * dark ones by default), `font` ('system' by default, 'serif', 'rounded', 'mono': system stacks, never a web font;
- * 'inherit' takes the page's font on a script embed only) and `text_size` ('default', or 'large': an 18 px body,
- * every size scaled alike). The widget holds the contrast rules of shared/form_theme.py: text under 3:1 on its
- * background is replaced by one that reads, the option edge is raised until it holds 3:1, and a primary under 3:1
- * gets its focus ring and selected edges drawn in the text colour.
+ * is drawn as its 6-digit colour), `border_radius` ('0px'–'99px', as shared/form_theme.py and the editor take it),
+ * `mode` ('light' by default, 'dark', or 'auto': the respondent's prefers-color-scheme, followed as it changes),
+ * `dark` (the dark palette's three colours, the VoC dark ones by default), `font` ('system' by default, 'serif',
+ * 'rounded', 'mono': system stacks, never a web font; 'inherit' takes the page's font on a script embed only) and
+ * `text_size` ('default', or 'large': an 18 px body, every size scaled alike). The widget holds the contrast rules
+ * of shared/form_theme.py: text under 3:1 on its background is replaced by one that reads, the option edge is raised
+ * until it holds 3:1, and a primary under 3:1 gets its focus ring and selected edges drawn in the text colour.
  *
  * The editor's preview: `init({ container, language, preview: { config, seed, scheme } })` renders the given draft
  * and never fetches, submits or counts anything. `seed` (a number) makes Shuffle's order the same for the whole
@@ -58,9 +58,10 @@
  * The drop-off funnel (D6) takes two small beacons on its own route, `…/events` (`eventsEndpoint`;
  * navigator.sendBeacon, a text body), with its own throttle, so a beacon never spends the submit route's limit: one
  * `opened` once per page load per form, when the form is shown (the config read itself never counts or writes
- * anything), and, for a respondent who started and leaves without submitting, one `left` naming the furthest question
- * reached. The response carries the same `session`, so a respondent who comes back and submits is not a drop-off.
- * Never an answer, and nothing from the preview.
+ * anything), and, for a respondent who started and leaves without submitting, a `left` naming the furthest question
+ * reached: once, and again only when they come back and reach further before leaving again. The response carries
+ * the same `session`, so a respondent who comes back and submits is not a drop-off. Never an answer, and nothing
+ * from the preview.
  */
 (function() {
   'use strict';
@@ -1091,7 +1092,8 @@
     var primary = safeColour(palette.primary_color, defaults.primary);
     var bg = safeColour(palette.background_color, defaults.background);
     var text = safeContrast(safeColour(palette.text_color, defaults.text), bg);
-    var radius = /^([0-9]|[1-3][0-9])px$/.test(String(t.border_radius || '')) ? t.border_radius : '8px';
+    // 0px to 99px, the range the API stores (shared/form_theme.py RADIUS) and the editor's Corners offer within.
+    var radius = /^[0-9]{1,2}px$/.test(String(t.border_radius || '')) ? t.border_radius : '8px';
     return {
       scheme: scheme, primary: primary, onPrimary: readableOn(primary), bg: bg, text: text,
       border: rgba(text, alphaFor(text, bg, 0.55, 3)), muted: rgba(text, alphaFor(text, bg, 0.7, 4.5)),
@@ -1179,10 +1181,10 @@
     this.requestedLanguage = opts.language;
     this.session = sessionId();
     // D6: whether the respondent started (passed the welcome card or touched an answer), the furthest question shown,
-    // and whether the one `left` beacon or the response went.
+    // the furthest one a `left` beacon named (-1: none sent), and whether the response went.
     this.started = false;
     this.furthest = -1;
-    this.leftSent = false;
+    this.leftAt = -1;
     this.submitted = false;
     this.timers = [];
     this.listeners = [];
@@ -3022,16 +3024,18 @@
   };
 
   /**
-   * `{event: {kind: 'left', question_id, session, revision?}, test?}` on the events route, at most once, and only
-   * for a respondent who started and has not submitted (nor is sending): the furthest question they reached, which
-   * the server counts.
+   * `{event: {kind: 'left', question_id, session, revision?}, test?}` on the events route, only for a respondent who
+   * started and has not submitted (nor is sending): the furthest question they reached, which the server counts. Sent
+   * again only when they came back and reached further than the last one sent (the server moves the visit's count
+   * there), so a tab switched back and forth sends one beacon per question reached, never one per switch.
    */
   Widget.prototype.left = function() {
-    if (this.preview || this.destroyed || this.leftSent || this.submitted || this.sending || !this.started) return;
+    if (this.preview || this.destroyed || this.submitted || this.sending || !this.started) return;
+    if (this.furthest <= this.leftAt) return;
     var q = this.form.questions[this.furthest];
     var attached = this.container.isConnected !== false && document.documentElement.contains(this.container);
     if (!q || !this.form.beacon || !this.apiEndpoint || !attached) return;
-    this.leftSent = true;
+    this.leftAt = this.furthest;
     this.beacon({ kind: 'left', question_id: q.id, session: this.session });
   };
 

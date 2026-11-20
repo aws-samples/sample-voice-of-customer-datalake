@@ -87,6 +87,49 @@ Opus 5.5, Sonnet 5.5, Haiku 5.5, or "Other model…", an id typed), and one for 
   validation (`shared/forms_v2.py`) refuses them with a 400, "‹id› is a reserved name; choose another", the
   builder's id check says the same, and an AI draft renames one (`constructor_field`). A form saved earlier with
   one still reads and is served as it is; the next save that changes its definition asks for another name.
+  The assistant's `draft_feedback_form` refuses them too, before its card is shown.
+- **An answered question keeps its type and range** (Feedback Forms;
+  [docs](docs/feedback-forms.md#the-lock-of-an-answered-form)): a CSAT or a 5-star rating made an NPS, or a rating's
+  points changed, had its old answers read on the new scale (a 5 of 5 stars counted as an NPS 5; a shrunk range
+  turned old answers into skips). The builder now locks the type select and a rating's points once the form has a
+  response ("Answers are stored for this type…", only a way back to the stored type offered), the server refuses such
+  a save with the `409` `answers_locked` (`changed`), named or not, and Results score every response against its own
+  revision's question (the form's snapshots): an answer to another type or range counts as `earlier_version`, which
+  the card states. The list card's headline stays on the current question.
+- **A removed question's id is never offered again**: the form API answers `retired_ids`, the builder gives no new
+  question, copy or NPS follow-up one of them (nor the id of a question the draft removed), flags one typed in
+  Advanced or brought by an AI draft, and words the server's `400` `question_id_reused` with the id; before, re-adding
+  a removed question's type made every save fail.
+- **Version 1 responses stay in Results, Responses and the CSV** once `q_rating` or `q_text` is removed or changed: they
+  always count as those two questions (under "Removed questions" when one is gone).
+- **The answers lock holds on a form answered only before 7.55.00**: no submit had marked it, so a headless save (the
+  assistant turning a version 1 form's rating off) went through. A definition change now reads whether the form has a
+  real response stored, every one whoever saves, failing closed, and marks the form. `removes` and the `409` stay:
+  they are what guards such writers.
+- **No funnel against filtered completions**: under a language, ending or hidden-value filter, Results answer
+  `funnel: null` (the counters know none of them) and the page shows neither the drop-off nor Completion, Reach saying
+  why; the date range keeps it.
+- **Test responses are counted when left out**: `test_responses` counts the admitted test responses whatever
+  `include_test` is, so "N test responses are hidden" shows again.
+- **A stale save cannot turn a form back on**: the revision moved only with the definition, so a builder opened
+  before the form was turned Off (or renamed, or restyled) saved over it. Every save now counts one (`write_count`),
+  the builder sends `expected_write_count`, another save in between is the `409` it already shows, and every `PUT` is
+  conditional on the count it read. The dev mock answers the same.
+- **Contrast is judged as the widget draws it**: an old `#rrggbbaa` colour is opaque in the widget, while the editor and
+  the server composited its alpha; all three now drop it (one shared vector in the three suites).
+- **The widget's drop-off follows a respondent who comes back**: a `left` beacon is sent again once they reach further
+  (one per question reached, never one per tab switch), so the furthest question counts.
+- **Corners up to 99 px** in the widget, as the API and the editor take them (it drew 0 to 39 px).
+- **A long text takes any text**: its `input_type` is always `text` (the box the widget draws), and the submit no longer
+  checks a long text stored with another one.
+- **The Test tab's test link**: Make the test link no longer turns the saved link on before Save, never rotates a token
+  in use (it issues one only for a form without one) and is not offered while the token is read; Reset sends the saved
+  settings back too. A failed make or delete of the test responses says so (`role="alert"`), the delete's dialog kept
+  open.
+- **The script embed follows the visitor's language**: its `init` call carries `language` as a comment, no longer
+  pinning the primary.
+- **An open text's `equals` rule folds case on both sides alike** (`str.lower` as the widget's `toLowerCase`; `ß` is
+  not `ss`), so the server checks the path the widget took.
 
 ### Removed
 

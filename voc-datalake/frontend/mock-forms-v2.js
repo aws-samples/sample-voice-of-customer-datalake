@@ -5,11 +5,16 @@
 //                                                    v2 as stored, a v1 record as v1 with `migrated_from: 1` (the
 //                                                    real API serves it migrated; the app migrates it the same way)
 //   POST   /feedback-forms            (schema 2)     create, Off, revision 1, no test token yet
-//   PUT    /feedback-forms/{id}       (schema 2, or a v2 form's {enabled})  save over `expected_revision`; a stale one
-//                                                    is 409 {code: 'revision_conflict', revision, updated_by, updated_at};
-//                                                    on an answered form, a question id or option code the save drops
-//                                                    must be named in `removes` ({questions, options: {qid: codes}}),
-//                                                    else 409 {code: 'answers_locked', questions, options}; with
+//   PUT    /feedback-forms/{id}       (schema 2, or a v2 form's {enabled})  save over `expected_revision` and
+//                                                    `expected_write_count` (every save counts one, the revision moves
+//                                                    with the definition only); a stale one is 409 {code:
+//                                                    'revision_conflict', revision, write_count, updated_by, updated_at};
+//                                                    a removed question's id (`retired_ids`) is never taken again (400
+//                                                    question_id_reused); on an answered form, a question id or option
+//                                                    code the save drops must be named in `removes` ({questions,
+//                                                    options: {qid: codes}}), and a question it keeps keeps its type and
+//                                                    range, else 409 {code: 'answers_locked', questions, options,
+//                                                    changed}; with
 //                                                    text under 3:1 on its background, Publish or a live form's
 //                                                    colour change is 400 {code: 'theme_unreadable', palettes,
 //                                                    minimum}, and another save of a live form already on that theme
@@ -83,6 +88,9 @@ function testView(item) {
 
 const realCount = (item, stats) => (isV2(item) ? responsesOf(item.form_id).filter((r) => !r.is_test).length : stats?.total_submissions ?? 0);
 
+/** Has the form a real response (its flag, else a stored one: the handler reads the responses when unmarked)? */
+const answered = (item) => item.has_responses === true || responsesOf(item.form_id).some((r) => !r.is_test);
+
 /**
  * One stored form as the form API answers it: v2 without what only the server keeps; a v1 record as v1 (through
  * `projectV1`) marked `migrated_from: 1`. `counted`: `GET /feedback-forms/{id}`, the one read with `response_count`.
@@ -90,7 +98,8 @@ const realCount = (item, stats) => (isV2(item) ? responsesOf(item.form_id).filte
 function formRecord(item, shared, projectV1, counted) {
   const real = realCount(item, shared.mockFormStats[item.form_id]);
   const meta = {
-    revision: item.revision ?? 1, has_responses: item.has_responses === true || real > 0, updated_by: item.updated_by ?? '',
+    revision: item.revision ?? 1, write_count: item.write_count ?? 0, retired_ids: copy(item.retired_ids ?? []),
+    has_responses: item.has_responses === true || real > 0, updated_by: item.updated_by ?? '',
     // (the dev user is an admin: it may delete test responses, as an admin or the form's creator may)
     ...(counted ? { response_count: real, can_delete_test_responses: true } : {}),
   };
@@ -125,6 +134,7 @@ export function listedStats(item, stats) {
 export function listedForm(item) {
   if (!isV2(item)) return item;
   return { ...without(copy(item), STORED_ONLY), theme: withThemeDefaults(item.theme), settings: { test: testView(item) }, revision: item.revision ?? 1,
+    write_count: item.write_count ?? 0, retired_ids: copy(item.retired_ids ?? []),
     has_responses: item.has_responses === true || responsesOf(item.form_id).some((r) => !r.is_test) };
 }
 
@@ -189,22 +199,18 @@ function withThemeDefaults(theme) {
   return out;
 }
 
-/** A hex colour's 0–1 channels and alpha. */
+/** A hex colour's 0–1 channels as the widget draws it (an old `#rrggbbaa` opaque, its alpha dropped). */
 function channels(hex) {
   const digits = hex.length === 4 ? hex.slice(1).replace(/./g, '$&$&') : hex.slice(1);
   const at = (i) => Number.parseInt(digits.slice(i, i + 2), 16) / 255;
-  return { rgb: [at(0), at(2), at(4)], alpha: digits.length === 8 ? at(6) : 1 };
+  return [at(0), at(2), at(4)];
 }
-const mix = (top, alpha, bottom) => top.map((c, i) => c * alpha + bottom[i] * (1 - alpha));
 const luminance = (rgb) => rgb.map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
   .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
 
-/** The WCAG contrast of `text` painted on `background` (a translucent colour composited first). */
+/** The WCAG contrast of `text` on `background` (form_theme.py `contrast_ratio`: the colours the widget draws). */
 function contrast(text, background) {
-  const bg = channels(background);
-  const under = mix(bg.rgb, bg.alpha, [1, 1, 1]);
-  const fg = channels(text);
-  const [hi, lo] = [luminance(mix(fg.rgb, fg.alpha, under)), luminance(under)].sort((a, b) => b - a);
+  const [hi, lo] = [luminance(channels(text)), luminance(channels(background))].sort((a, b) => b - a);
   return (hi + 0.05) / (lo + 0.05);
 }
 
@@ -260,8 +266,8 @@ function createV2(shared, body, projectV1) {
   const error = v2BodyError(body) ?? (body.theme === undefined ? null : themeError(body.theme));
   if (error) return fail(400, error);
   const now = new Date().toISOString();
-  const item = { form_id: `fd_${randomBytes(16).toString('hex')}`, schema_version: 2, revision: 1,
-    updated_by: 'admin@example.com', created_at: now, updated_at: now };
+  const item = { form_id: `fd_${randomBytes(16).toString('hex')}`, schema_version: 2, revision: 1, write_count: 0,
+    retired_ids: [], updated_by: 'admin@example.com', created_at: now, updated_at: now };
   for (const field of V2_FIELDS) if (body[field] !== undefined) item[field] = copy(body[field]);
   item.settings = savedSettings(item, body.settings);
   item.enabled = false; // a create is always Off
@@ -272,9 +278,26 @@ function createV2(shared, body, projectV1) {
 
 function staleError(item) {
   return fail(409, CHANGED_MEANWHILE, {
-    code: 'revision_conflict', revision: item.revision ?? 1, updated_by: item.updated_by ?? '', updated_at: item.updated_at ?? '',
+    code: 'revision_conflict', revision: item.revision ?? 1, write_count: item.write_count ?? 0, updated_by: item.updated_by ?? '',
+    updated_at: item.updated_at ?? '',
   });
 }
+
+/** What a question's answers mean (forms_v2.py `answer_shape`): its type and, for a rating, its range. */
+const shapeOf = (question) => `${String(question?.type)}:${question?.type === 'rating' ? String(question.range ?? 5) : ''}`;
+
+/** The questions a save keeps from an answered form with another type or range (`reshaped_questions`). */
+function reshaped(item, body) {
+  if (!answered(item) || !Array.isArray(body.questions) || !Array.isArray(item.questions)) return [];
+  const next = new Map(body.questions.filter(isPlainObject).map((question) => [question.id, question]));
+  return item.questions.filter((question) => next.has(question.id) && shapeOf(question) !== shapeOf(next.get(question.id)))
+    .map((question) => question.id);
+}
+
+/** The fields a change of which is a new revision (forms_v2.py DEFINITION_FIELDS). */
+const DEFINITION_FIELDS = ['language', 'languages', 'welcome', 'questions', 'hidden_fields', 'endings'];
+const changesDefinition = (item, body) => DEFINITION_FIELDS.some((field) => body[field] !== undefined
+  && JSON.stringify(body[field]) !== JSON.stringify(item[field]));
 
 const optionCodes = (question) => (Array.isArray(question?.options) ? question.options.map((option) => option?.code) : []);
 
@@ -283,7 +306,7 @@ const optionCodes = (question) => (Array.isArray(question?.options) ? question.o
  * question ids it leaves out, and the option codes it leaves out of a question it keeps. `{}` when nothing is.
  */
 function unnamedRemovals(item, body) {
-  if (item.has_responses !== true || !Array.isArray(body.questions) || !Array.isArray(item.questions)) return {};
+  if (!answered(item) || !Array.isArray(body.questions) || !Array.isArray(item.questions)) return {};
   const named = isPlainObject(body.removes) ? body.removes : {};
   const namedQuestions = Array.isArray(named.questions) ? named.questions : [];
   const namedOptions = isPlainObject(named.options) ? named.options : {};
@@ -301,22 +324,56 @@ function unnamedRemovals(item, body) {
   return questions.length > 0 || Object.keys(options).length > 0 ? { questions, options } : {};
 }
 
-/** A v2 save (or a v2 form's partial `{enabled}`): over `expected_revision` when given; bumps the revision. */
-function updateV2(shared, item, body, projectV1) {
-  const expected = body.expected_revision;
-  if (expected !== undefined && expected !== (item.revision ?? 1)) return staleError(item);
-  if (body.schema_version === 2) {
-    const error = v2BodyError(body);
-    if (error) return fail(400, error);
-  }
-  const badTheme = body.theme === undefined ? null : themeError(body.theme);
-  if (badTheme) return fail(400, badTheme);
+/** A stale save (`expected_revision` or `expected_write_count` other than the stored ones), or null. */
+function staleSave(item, body) {
+  const staleRevision = body.expected_revision !== undefined && body.expected_revision !== (item.revision ?? 1);
+  const staleCount = body.expected_write_count !== undefined && body.expected_write_count !== (item.write_count ?? 0);
+  return staleRevision || staleCount ? staleError(item) : null;
+}
+
+/** A 400 of the body itself (its shape, its theme, a retired question id taken again), or null. */
+function invalidSave(item, body) {
+  const error = (body.schema_version === 2 ? v2BodyError(body) : null) ?? (body.theme === undefined ? null : themeError(body.theme));
+  if (error) return fail(400, error);
+  const reused = Array.isArray(body.questions)
+    ? body.questions.find((question) => (item.retired_ids ?? []).includes(question?.id)) : undefined;
+  return reused === undefined ? null : fail(400, `questions: the id "${String(reused.id)}" belonged to a removed question; ids are never reused`, {
+    code: 'question_id_reused', question_id: reused.id,
+  });
+}
+
+/** The lock of an answered form: a 409 for an unnamed removal or a question given another type or range, or null. */
+function lockedSave(item, body) {
   const unnamed = unnamedRemovals(item, body);
-  if (unnamed.questions !== undefined) {
-    return fail(409, 'This form has responses: name each question or option it removes in `removes`', {
-      code: 'answers_locked', ...unnamed,
-    });
+  const changed = reshaped(item, body);
+  if (unnamed.questions === undefined && changed.length === 0) return null;
+  return fail(409, 'This form has responses: name each question or option it removes in `removes`, and keep each question\'s type and range', {
+    code: 'answers_locked', ...unnamed, ...(changed.length > 0 ? { changed } : {}),
+  });
+}
+
+/** Write `fields` of `body` on `item`: one save more, a new revision when the definition changed (its dropped ids retired). */
+function applySave(item, body, fields) {
+  const newRevision = changesDefinition(item, body);
+  if (newRevision && Array.isArray(body.questions)) {
+    const kept = new Set(body.questions.map((question) => question?.id));
+    item.retired_ids = [...(item.retired_ids ?? []), ...(item.questions ?? []).map((question) => question.id).filter((id) => !kept.has(id))];
   }
+  for (const field of fields) item[field] = field === 'settings' ? savedSettings(item, body.settings) : copy(body[field]);
+  item.schema_version = 2;
+  item.revision = (item.revision ?? 1) + (newRevision ? 1 : 0);
+  item.write_count = (item.write_count ?? 0) + 1;
+  item.updated_at = new Date().toISOString();
+  item.updated_by = 'admin@example.com';
+}
+
+/**
+ * A v2 save (or a v2 form's partial `{enabled}`): over `expected_revision` and `expected_write_count` when given;
+ * counts one more save, and a new revision when the definition changed (its dropped question ids retired).
+ */
+function updateV2(shared, item, body, projectV1) {
+  const refused = staleSave(item, body) ?? invalidSave(item, body) ?? lockedSave(item, body);
+  if (refused) return refused;
   // Publish and a live form's colour change keep readable text; a form that stays (or goes) Off is always saved.
   const { refusal, warnings } = publishCheck(body.theme ?? item.theme, {
     live: body.enabled ?? (item.enabled === true), wasLive: item.enabled === true,
@@ -325,11 +382,7 @@ function updateV2(shared, item, body, projectV1) {
   if (refusal) return refusal;
   const fields = V2_FIELDS.filter((field) => body[field] !== undefined);
   if (fields.length === 0) return fail(400, 'No fields to update');
-  for (const field of fields) item[field] = field === 'settings' ? savedSettings(item, body.settings) : copy(body[field]);
-  item.schema_version = 2;
-  item.revision = (item.revision ?? 1) + 1;
-  item.updated_at = new Date().toISOString();
-  item.updated_by = 'admin@example.com';
+  applySave(item, body, fields);
   return [200, { success: true, form: formRecord(item, shared, projectV1, false), ...(warnings ? { warnings } : {}) }];
 }
 

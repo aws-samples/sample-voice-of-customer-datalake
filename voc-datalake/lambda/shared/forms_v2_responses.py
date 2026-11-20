@@ -145,8 +145,8 @@ def check_envelope(body: Mapping[str, Any]) -> None:
 # ── One answer ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 def _check_input(question: Mapping[str, Any], text: str) -> None:
-    """The open-text ``input_type``'s format (text: any)."""
-    kind = question.get('input_type')
+    """The open-text ``input_type``'s format (text: any; a long text is always text, as the widget draws it)."""
+    kind = 'text' if question.get('long') is True else question.get('input_type')
     if kind == 'email' and (len(text) > _CONTACT_LIMITS['email'] or not _EMAIL.fullmatch(text)):
         raise _bad(question, ' must be an email address')
     if kind == 'phone' and (not _PHONE.fullmatch(text) or sum(ch.isdigit() for ch in text) < 3):
@@ -301,7 +301,9 @@ def _equals(question: Mapping[str, Any], value: object, answer: object) -> bool:
     if question['type'] in SELECT_TYPES:
         return _chosen(answer) == {value}
     if question['type'] == OPEN_TEXT:
-        return isinstance(answer, str) and isinstance(value, str) and answer.casefold() == value.casefold()
+        # Ignoring case as the widget does (JavaScript's toLowerCase, which str.lower matches): the path the widget
+        # took is the path checked here. casefold would also fold ß to ss, which the widget does not.
+        return isinstance(answer, str) and isinstance(value, str) and answer.lower() == value.lower()
     return answer == value
 
 

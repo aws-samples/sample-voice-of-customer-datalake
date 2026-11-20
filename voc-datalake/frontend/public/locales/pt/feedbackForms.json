@@ -84,6 +84,8 @@
     "welcomeTitleEmpty": "A tela de boas-vindas precisa de um título.",
     "consentLabelEmpty": "Escreva o texto da caixa de seleção.",
     "duplicateQuestionId": "Outra pergunta tem o ID {{id}}.",
+    "retiredQuestionId": "O identificador {{id}} pertencia a uma pergunta removida antes, e os identificadores nunca são reutilizados. Escolha outro.",
+    "answeredReshaped": "A pergunta {{number}} tem respostas, por isso o tipo e os pontos não podem mudar. Desfaça a alteração ou adicione uma nova pergunta para isso.",
     "invalidQuestionId": "Um ID de pergunta começa com q_ e usa letras minúsculas, dígitos e _.",
     "duplicateEndingId": "Outro final tem o ID {{id}}.",
     "invalidEndingId": "Um ID de final começa com end_ e usa letras minúsculas, dígitos e _.",
@@ -227,6 +229,7 @@
       "fixToPublishSaveWorks_one": "Corrija {{count, number}} problema para publicar. Salvar continua funcionando.",
       "fixToPublishSaveWorks_other": "Corrija {{count, number}} problemas para publicar. Salvar continua funcionando.",
       "themeRefused": "Não foi possível salvar: um formulário ativo precisa de texto que os respondentes consigam ler, de pelo menos 3:1 sobre o fundo. Altere as cores em Estilo.",
+      "questionIdReused": "Não foi possível salvar: o identificador {{id}} pertencia a uma pergunta removida antes, e os identificadores nunca são reutilizados. Dê outro identificador a essa pergunta em Avançado.",
       "themeHardToRead": "O texto deste formulário é difícil de ler.",
       "themeFix": "Corrigir as cores",
       "save": "Salvar",
@@ -1329,6 +1332,7 @@
   "typeChange": {
     "label": "Pergunta {{number}}: tipo",
     "none": "Para mudar o tipo, adicione uma nova pergunta desse tipo e exclua esta.",
+    "locked": "As respostas são guardadas para este tipo, por isso ele não pode mudar depois que o formulário tem respostas. Para perguntar de outra forma, adicione uma nova pergunta e exclua esta.",
     "confirmTitle": "Alterar o tipo da pergunta?",
     "confirmMessage": "Esta alteração remove: {{lost}}.",
     "confirm": "Alterar tipo",
@@ -1431,6 +1435,7 @@
     },
     "points": "Pontos",
     "facesRange": "As carinhas vão de 3 a 5 pontos.",
+    "rangeLocked": "As respostas são guardadas nestes pontos, por isso eles não podem mudar depois que o formulário tem respostas.",
     "lowEnd": "Rótulo do extremo inferior",
     "highEnd": "Rótulo do extremo superior",
     "fixed": {
@@ -1747,6 +1752,8 @@
     "resetFailed": "Não foi possível redefinir o link de teste. Tente novamente em instantes.",
     "noToken": "Este formulário ainda não tem link de teste.",
     "makeLink": "Criar o link de teste",
+    "makeLinkFailed": "Não foi possível criar o link de teste. Tente novamente em instantes.",
+    "tokenLoading": "Lendo o link de teste…",
     "qrTitle": "Código QR do link de teste",
     "recordTitle": "O que acontece com as respostas de teste",
     "keep": "Manter, marcadas como Teste",
@@ -1763,6 +1770,7 @@
     "deleteTitle": "Excluir todas as respostas de teste?",
     "deleteMessage": "Todas as respostas de teste deste formulário são excluídas. As respostas reais não são afetadas. Isso não pode ser desfeito.",
     "deleteConfirm": "Excluir respostas de teste",
+    "deleteFailed": "Não foi possível excluir as respostas de teste. Tente novamente em instantes.",
     "noneYet": "Ainda não há respostas de teste. Abra o link de teste, ou leia o código QR com um celular, e envie uma.",
     "checkOnlyEmpty": "Verificar não mantém nada, então não há nada para mostrar aqui. Mude para Manter para ver as respostas de teste.",
     "emptyValue": "vazio",
@@ -1830,6 +1838,8 @@
     "openInFeedback": "Abrir no Feedback",
     "reach": "Respondida: {{answered}} · Pulada: {{skipped}} · Não exibida: {{hidden}} (lógica)",
     "changed": "Alterada em {{date}}: as respostas anteriores usavam outras opções",
+    "earlierVersion_one": "{{formatted}} resposta a uma versão anterior desta pergunta (outro tipo ou pontos) não é contada aqui",
+    "earlierVersion_other": "{{formatted}} respostas a uma versão anterior desta pergunta (outro tipo ou pontos) não são contadas aqui",
     "endings": "Finais",
     "defaultEnding": "padrão",
     "removedQuestions": "Perguntas removidas ({{count, number}})",
@@ -1914,7 +1924,8 @@
     "reachCard": {
       "title": "Alcance",
       "answeredBy": "respondida em {{answered}} de {{total}} respostas concluídas",
-      "note": "Saber quantas pessoas param no meio exige rastrear visualizações, o que ainda não é coletado."
+      "note": "Saber quantas pessoas param no meio exige rastrear visualizações, o que ainda não é coletado.",
+      "filtered": "O abandono conta todas as visitas, por isso não é mostrado enquanto você filtra por idioma, final ou um valor oculto."
     },
     "responses": {
       "title": "Nenhuma resposta",

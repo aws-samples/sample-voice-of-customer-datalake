@@ -21,7 +21,7 @@ import { FORMS_LIST_PATH } from './builderPaths'
 import { useBuilderUi } from './builderUi'
 import { goToProblem } from './problemText'
 import type { FormProblem } from '../model/validateForm'
-import { THEME_UNREADABLE } from './useFormDraft'
+import { QUESTION_ID_REUSED, THEME_UNREADABLE } from './useFormDraft'
 import ProblemsPopover from './ProblemsPopover'
 import SaveButtons from './SaveButtons'
 import FormMenu from './FormMenu'
@@ -82,10 +82,15 @@ function savedText(t: TFunction<'feedbackForms'>, message: Extract<FormDraft['st
   }
 }
 
-/** A failed save in words: the server's reason, its refusal of an unreadable theme, or the generic message. */
-function failedText(t: TFunction<'feedbackForms'>, reason: string): string {
+/**
+ * A failed save in words: the server's reason, its refusal of an unreadable theme or of a removed question's id taken
+ * again (with the id), or the generic message.
+ */
+function failedText(t: TFunction<'feedbackForms'>, failed: Extract<FormDraft['status'], { kind: 'failed' }>): string {
+  const { reason } = failed
   if (reason === 'save failed') return t('builder.save.failedGeneric')
   if (reason === THEME_UNREADABLE) return t('builder.save.themeRefused')
+  if (reason === QUESTION_ID_REUSED) return t('builder.save.questionIdReused', { id: failed.questionId ?? '' })
   return t('builder.save.failed', { reason })
 }
 
@@ -97,7 +102,7 @@ function SaveStatus() {
   if (status.kind === 'failed') {
     return (
       <p role="alert" className="flex flex-wrap items-center gap-2 text-[13px] text-danger">
-        {failedText(t, status.reason)}
+        {failedText(t, status)}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => saveIgnoringFailure(draft.save)}>{t('builder.save.retry')}</button>
       </p>
     )

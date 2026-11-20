@@ -84,6 +84,8 @@
     "welcomeTitleEmpty": "Die Begrüßungsseite braucht einen Titel.",
     "consentLabelEmpty": "Text des Kästchens eingeben.",
     "duplicateQuestionId": "Eine andere Frage hat bereits die ID {{id}}.",
+    "retiredQuestionId": "Die ID {{id}} gehörte zu einer früher entfernten Frage, und IDs werden nie wiederverwendet. Wähle eine andere.",
+    "answeredReshaped": "Frage {{number}} hat Antworten, daher lassen sich Typ und Punkte nicht ändern. Mache die Änderung rückgängig oder füge dafür eine neue Frage hinzu.",
     "invalidQuestionId": "Eine Fragen-ID beginnt mit q_ und enthält Kleinbuchstaben, Ziffern und _.",
     "duplicateEndingId": "Ein anderer Abschluss hat bereits die ID {{id}}.",
     "invalidEndingId": "Eine Abschluss-ID beginnt mit end_ und enthält Kleinbuchstaben, Ziffern und _.",
@@ -227,6 +229,7 @@
       "fixToPublishSaveWorks_one": "{{count, number}} Problem beheben, um zu veröffentlichen. Speichern funktioniert weiterhin.",
       "fixToPublishSaveWorks_other": "{{count, number}} Probleme beheben, um zu veröffentlichen. Speichern funktioniert weiterhin.",
       "themeRefused": "Speichern nicht möglich: Ein Live-Formular braucht Text, den Befragte lesen können, mindestens 3:1 auf seinem Hintergrund. Ändern Sie die Farben unter Stil.",
+      "questionIdReused": "Speichern nicht möglich: Die ID {{id}} gehörte zu einer früher entfernten Frage, und IDs werden nie wiederverwendet. Gib dieser Frage unter Erweitert eine andere ID.",
       "themeHardToRead": "Der Text dieses Formulars ist schwer lesbar.",
       "themeFix": "Farben korrigieren",
       "save": "Speichern",
@@ -1329,6 +1332,7 @@
   "typeChange": {
     "label": "Frage {{number}}: Typ",
     "none": "Um den Typ zu ändern, fügen Sie eine neue Frage dieses Typs hinzu und löschen diese.",
+    "locked": "Antworten werden für diesen Typ gespeichert, daher lässt er sich nicht mehr ändern, sobald das Formular Antworten hat. Um anders zu fragen, füge eine neue Frage hinzu und lösche diese.",
     "confirmTitle": "Fragetyp ändern?",
     "confirmMessage": "Dabei geht verloren: {{lost}}.",
     "confirm": "Typ ändern",
@@ -1431,6 +1435,7 @@
     },
     "points": "Punkte",
     "facesRange": "Gesichter gibt es mit 3 bis 5 Punkten.",
+    "rangeLocked": "Antworten werden auf diesen Punkten gespeichert, daher lassen sie sich nicht mehr ändern, sobald das Formular Antworten hat.",
     "lowEnd": "Beschriftung unten",
     "highEnd": "Beschriftung oben",
     "fixed": {
@@ -1747,6 +1752,8 @@
     "resetFailed": "Der Testlink konnte nicht zurückgesetzt werden. Versuchen Sie es gleich noch einmal.",
     "noToken": "Dieses Formular hat noch keinen Testlink.",
     "makeLink": "Testlink erstellen",
+    "makeLinkFailed": "Der Testlink konnte nicht erstellt werden. Versuche es gleich noch einmal.",
+    "tokenLoading": "Testlink wird gelesen…",
     "qrTitle": "QR-Code des Testlinks",
     "recordTitle": "Was mit Testeinsendungen passiert",
     "keep": "Behalten, als Test markiert",
@@ -1763,6 +1770,7 @@
     "deleteTitle": "Alle Testeinsendungen löschen?",
     "deleteMessage": "Alle Testeinsendungen dieses Formulars werden gelöscht. Echte Einsendungen bleiben unberührt. Dies kann nicht rückgängig gemacht werden.",
     "deleteConfirm": "Testeinsendungen löschen",
+    "deleteFailed": "Die Testantworten konnten nicht gelöscht werden. Versuche es gleich noch einmal.",
     "noneYet": "Noch keine Testeinsendungen. Öffnen Sie den Testlink oder scannen Sie seinen QR-Code mit dem Smartphone, und senden Sie eine.",
     "checkOnlyEmpty": "„Nur prüfen“ behält nichts, daher gibt es hier nichts anzuzeigen. Wechseln Sie zu „Behalten“, um Testeinsendungen zu sehen.",
     "emptyValue": "leer",
@@ -1830,6 +1838,8 @@
     "openInFeedback": "In Feedback öffnen",
     "reach": "Beantwortet {{answered}} · Übersprungen {{skipped}} · Nicht angezeigt {{hidden}} (Logik)",
     "changed": "Geändert am {{date}}: Frühere Antworten nutzten andere Optionen",
+    "earlierVersion_one": "{{formatted}} Antwort auf eine frühere Fassung dieser Frage (anderer Typ oder andere Punkte) wird hier nicht gezählt",
+    "earlierVersion_other": "{{formatted}} Antworten auf eine frühere Fassung dieser Frage (anderer Typ oder andere Punkte) werden hier nicht gezählt",
     "endings": "Abschlüsse",
     "defaultEnding": "Standard",
     "removedQuestions": "Entfernte Fragen ({{count, number}})",
@@ -1914,7 +1924,8 @@
     "reachCard": {
       "title": "Reichweite",
       "answeredBy": "beantwortet in {{answered}} von {{total}} abgeschlossenen Einsendungen",
-      "note": "Wie viele Personen unterwegs abbrechen, erfordert Ansichts-Tracking, das noch nicht erfasst wird."
+      "note": "Wie viele Personen unterwegs abbrechen, erfordert Ansichts-Tracking, das noch nicht erfasst wird.",
+      "filtered": "Der Abbruch zählt jeden Besuch, daher wird er nicht angezeigt, solange du nach Sprache, Ende oder einem versteckten Wert filterst."
     },
     "responses": {
       "title": "Keine Einsendungen",

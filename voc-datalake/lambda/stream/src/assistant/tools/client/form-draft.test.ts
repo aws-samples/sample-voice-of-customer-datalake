@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { ADMIN_ONLY_CLIENT_TOOLS, CLIENT_TOOLS } from '../../contract.js';
 import { CARD_ONLY_WRITE_TOOLS, planWriteTools } from '../../plan/schema.js';
 import { clientToolLookup, fakeContext } from '../test-fixtures.js';
-import { FORM_DRAFT_LIMITS, FORM_LOCALES, draftFeedbackFormArgsSchema } from './form-draft-schemas.js';
+import { FORM_DRAFT_LIMITS, FORM_LOCALES, RESERVED_HIDDEN_IDS, draftFeedbackFormArgsSchema } from './form-draft-schemas.js';
 
 const PYTHON = readFileSync(join(__dirname, '../../../../../shared/forms_v2.py'), 'utf8');
 const pythonInt = (name: string) => Number(new RegExp(`^${name}: Final = ([\\d_]+)`, 'm').exec(PYTHON)?.[1]?.replaceAll('_', ''));
@@ -38,6 +38,11 @@ describe('the bounds the form route holds (lambda/shared/forms_v2.py)', () => {
     ['maxLongTextChars', 'LONG_TEXT_CHARS'],
   ] as const)('%s is %s', (ours, theirs) => {
     expect(FORM_DRAFT_LIMITS[ours]).toBe(pythonInt(theirs));
+  });
+
+  it('refuses the hidden-field names the server reserves', () => {
+    const reserved = /^RESERVED_HIDDEN_IDS: Final = frozenset\(\{([^}]*)\}\)/m.exec(PYTHON)?.[1] ?? '';
+    expect(new Set(RESERVED_HIDDEN_IDS)).toStrictEqual(new Set([...reserved.matchAll(/'([a-z_]+)'/g)].map((match) => match[1])));
   });
 
   it('offers the nine locales the server knows', () => {
@@ -81,6 +86,11 @@ describe('draft_feedback_form arguments', () => {
   ])('refuses a form with %s', async (_what, form) => {
     const result = await tool.validate({ ...ARGS, form }, page);
     expect(result.ok).toBe(false);
+  });
+
+  it.each(RESERVED_HIDDEN_IDS)('refuses the reserved hidden field %s, as the form route does', async (id) => {
+    expect((await tool.validate({ ...ARGS, form: { ...FORM, hidden_fields: [{ id }] } }, page)).ok).toBe(false);
+    expect((await tool.validate({ ...ARGS, form: { ...FORM, hidden_fields: [{ id: `${id.replaceAll('_', '')}_field` }] } }, page)).ok).toBe(true);
   });
 
   it('is a forms write any caller may propose, only on its card, never in a plan', () => {

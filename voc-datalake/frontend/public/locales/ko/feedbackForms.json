@@ -84,6 +84,8 @@
     "welcomeTitleEmpty": "환영 화면에는 제목이 필요합니다.",
     "consentLabelEmpty": "확인란 텍스트를 입력하세요.",
     "duplicateQuestionId": "ID {{id}}은(는) 다른 질문에서 이미 사용 중입니다.",
+    "retiredQuestionId": "ID {{id}}는 이전에 삭제한 질문의 것이었으며, ID는 다시 사용되지 않습니다. 다른 ID를 선택하세요.",
+    "answeredReshaped": "질문 {{number}}에 응답이 있어 유형과 점수 단계를 바꿀 수 없습니다. 변경을 취소하거나 새 질문을 추가하세요.",
     "invalidQuestionId": "질문 ID는 q_로 시작하며 영문 소문자, 숫자, _만 사용할 수 있습니다.",
     "duplicateEndingId": "ID {{id}}은(는) 다른 종료 화면에서 이미 사용 중입니다.",
     "invalidEndingId": "종료 화면 ID는 end_로 시작하며 영문 소문자, 숫자, _만 사용할 수 있습니다.",
@@ -227,6 +229,7 @@
       "fixToPublishSaveWorks_one": "게시하려면 문제 {{count, number}}개를 해결하세요. 저장은 됩니다.",
       "fixToPublishSaveWorks_other": "게시하려면 문제 {{count, number}}개를 해결하세요. 저장은 됩니다.",
       "themeRefused": "저장하지 못했습니다. 게시된 양식에는 응답자가 읽을 수 있는 텍스트(배경 대비 3:1 이상)가 필요합니다. 스타일에서 색상을 바꾸세요.",
+      "questionIdReused": "저장하지 못했습니다: ID {{id}}는 이전에 삭제한 질문의 것이며 ID는 다시 사용되지 않습니다. 고급에서 그 질문에 다른 ID를 지정하세요.",
       "themeHardToRead": "이 양식의 텍스트는 읽기 어렵습니다.",
       "themeFix": "색상 수정",
       "save": "저장",
@@ -1329,6 +1332,7 @@
   "typeChange": {
     "label": "질문 {{number}}: 유형",
     "none": "유형을 바꾸려면 해당 유형의 새 질문을 추가하고 이 질문을 삭제하세요.",
+    "locked": "응답이 이 유형으로 저장되므로 양식에 응답이 생긴 뒤에는 바꿀 수 없습니다. 다른 방식으로 물으려면 새 질문을 추가하고 이 질문을 삭제하세요.",
     "confirmTitle": "질문 유형을 변경할까요?",
     "confirmMessage": "이 변경으로 다음 항목이 삭제됩니다: {{lost}}.",
     "confirm": "유형 변경",
@@ -1431,6 +1435,7 @@
     },
     "points": "점수",
     "facesRange": "얼굴 척도는 3~5점입니다.",
+    "rangeLocked": "응답이 이 점수 단계로 저장되므로 양식에 응답이 생긴 뒤에는 바꿀 수 없습니다.",
     "lowEnd": "최저점 레이블",
     "highEnd": "최고점 레이블",
     "fixed": {
@@ -1747,6 +1752,8 @@
     "resetFailed": "테스트 링크를 재설정하지 못했습니다. 잠시 후 다시 시도하세요.",
     "noToken": "이 양식에는 아직 테스트 링크가 없습니다.",
     "makeLink": "테스트 링크 만들기",
+    "makeLinkFailed": "테스트 링크를 만들지 못했습니다. 잠시 후 다시 시도하세요.",
+    "tokenLoading": "테스트 링크를 읽는 중…",
     "qrTitle": "테스트 링크 QR 코드",
     "recordTitle": "테스트 응답 처리 방식",
     "keep": "테스트로 표시해 보관",
@@ -1763,6 +1770,7 @@
     "deleteTitle": "테스트 응답을 모두 삭제할까요?",
     "deleteMessage": "이 양식의 모든 테스트 응답이 삭제됩니다. 실제 응답은 영향을 받지 않습니다. 이 작업은 되돌릴 수 없습니다.",
     "deleteConfirm": "테스트 응답 삭제",
+    "deleteFailed": "테스트 응답을 삭제하지 못했습니다. 잠시 후 다시 시도하세요.",
     "noneYet": "아직 테스트 응답이 없습니다. 테스트 링크를 열거나 휴대폰으로 QR 코드를 스캔해 응답을 보내 보세요.",
     "checkOnlyEmpty": "검사만 모드에서는 아무것도 보관하지 않으므로 여기에 표시할 내용이 없습니다. 테스트 응답을 보려면 보관으로 전환하세요.",
     "emptyValue": "비어 있음",
@@ -1830,6 +1838,8 @@
     "openInFeedback": "피드백에서 열기",
     "reach": "답변 {{answered}} · 건너뜀 {{skipped}} · 표시 안 됨 {{hidden}}(로직)",
     "changed": "{{date}}에 변경됨: 그 이전 답변은 다른 선택지를 사용했습니다",
+    "earlierVersion_one": "이 질문의 이전 버전(다른 유형 또는 점수 단계)에 대한 응답 {{formatted}}개는 여기서 세지 않습니다",
+    "earlierVersion_other": "이 질문의 이전 버전(다른 유형 또는 점수 단계)에 대한 응답 {{formatted}}개는 여기서 세지 않습니다",
     "endings": "종료 화면",
     "defaultEnding": "기본",
     "removedQuestions": "삭제된 질문({{count, number}})",
@@ -1914,7 +1924,8 @@
     "reachCard": {
       "title": "도달",
       "answeredBy": "완료된 응답 {{total}}개 중 {{answered}}개가 답변함",
-      "note": "중도 이탈 인원을 알려면 조회 추적이 필요하며, 아직 수집되지 않습니다."
+      "note": "중도 이탈 인원을 알려면 조회 추적이 필요하며, 아직 수집되지 않습니다.",
+      "filtered": "이탈은 모든 방문을 세므로 언어, 종료 화면 또는 숨김 값으로 필터링하는 동안에는 표시되지 않습니다."
     },
     "responses": {
       "title": "응답 없음",

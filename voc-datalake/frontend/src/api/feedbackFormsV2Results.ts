@@ -5,7 +5,7 @@
  * `GET /feedback-forms/{id}/results` →
  * ```
  * { total, test_count, last_response_at,
- *   questions: { <qid>: { answered, skipped, not_shown, counts?: {<code>|other|none: n}, other_answers?: [text],
+ *   questions: { <qid>: { answered, skipped, not_shown, earlier_version?, counts?: {<code>|other|none: n}, other_answers?: [text],
  *                         distribution?: {<score>: n}, average?, accepted?, contact?: {left, emails, phones},
  *                         latest?: [{text, sentiment?, feedback_id?, submitted_at?, is_test?}], changed_at? } },
  *   endings: { <eid>: n },
@@ -40,6 +40,8 @@ const questionAggregate = z.object({
   answered: count,
   skipped: count,
   not_shown: count,
+  /** Answers to a revision where the question had another type or range: never read on this one. */
+  earlier_version: z.number().int().nonnegative().optional().catch(undefined),
   counts: countMap.optional(),
   other_answers: z.array(z.string()).optional().catch(undefined),
   distribution: countMap.optional(),

@@ -25,7 +25,7 @@ import Segmented from '../ui/Segmented'
 import ResultsFilterBar from './ResultsFilterBar'
 import ResultsSummary from './ResultsSummary'
 import ResponsesTable from './ResponsesTable'
-import { CLEAR_FILTERS, apiFilters, narrows, readFilters, writeFilters } from './resultFilters'
+import { CLEAR_FILTERS, apiFilters, hidesFunnel, narrows, readFilters, writeFilters } from './resultFilters'
 import type { ViewFilters } from './resultFilters'
 
 type View = 'summary' | 'responses'
@@ -109,7 +109,7 @@ function Summary({ formId, filters, view, includeTest, onInclude, onClear }: Rea
     <div className="space-y-4">
       {includeTest && results.test_count > 0 && <IncludingTestBanner count={results.test_count} />}
       <EmptyState results={results} filters={filters} includeTest={includeTest} onInclude={onInclude} onClear={onClear} />
-      {results.total > 0 && <ResultsSummary form={form} results={results} onShowAll={() => go('results', ['responses'])} />}
+      {results.total > 0 && <ResultsSummary form={form} results={results} funnelFiltered={hidesFunnel(filters)} onShowAll={() => go('results', ['responses'])} />}
     </div>
   )
 }

@@ -45,6 +45,15 @@ export function narrows(filters: ViewFilters): boolean {
   return filters.range !== DEFAULT_RANGE || filters.language !== '' || filters.ending !== '' || Object.keys(filters.hidden).length > 0
 }
 
+/**
+ * Does the view narrow its responses by what the drop-off's counters know nothing of (a language, an ending, a hidden
+ * value)? Then there is no funnel: filtered completions against every visit's opens would read as a false drop (the
+ * server answers `funnel: null` too, lambda/api/feedback_form_handler.py `_funnel_hidden`). Dates alone keep it.
+ */
+export function hidesFunnel(filters: ViewFilters): boolean {
+  return filters.language !== '' || filters.ending !== '' || Object.keys(filters.hidden).length > 0
+}
+
 export const CLEAR_FILTERS: ViewFilters = { range: DEFAULT_RANGE, language: '', ending: '', hidden: {} }
 
 /** The request's filters. */

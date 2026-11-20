@@ -36,6 +36,30 @@ describe('the scale editors', () => {
     expect(screen.getByRole('button', { name: '4' })).not.toHaveAttribute('aria-disabled')
   })
 
+  const sevenPoints: Question = { id: 'q_rating', type: 'rating', headline: { en: 'How was it?' }, required: true, scale: 'number', range: 7 }
+  const disabled = (name: string) => screen.getByRole('button', { name }).getAttribute('aria-disabled') === 'true'
+
+  it("keeps an answered rating's points, saying why", () => {
+    renderWithDraft(<LiveEditor id="q_rating" />, sampleForm({ questions: [sevenPoints] }), { meta: { has_responses: true } })
+    expect(['3', '4', '5', '7', '10'].map(disabled)).toStrictEqual([true, true, true, false, true])
+    expect(screen.getAllByText("Answers are stored on these points, so they can't change once the form has responses.").map((node) => node.tagName))
+      .toContain('P')
+  })
+
+  it('offers no Faces to an answered rating of more than 5 points (Faces take 3 to 5), the other scales still', () => {
+    renderWithDraft(<LiveEditor id="q_rating" />, sampleForm({ questions: [sevenPoints] }), { meta: { has_responses: true } })
+    expect(['Faces', 'Stars', 'Numbers'].map(disabled)).toStrictEqual([true, false, false])
+  })
+
+  it("never gives the NPS helper's follow-ups a removed question's id", async () => {
+    const user = userEvent.setup()
+    const harness = renderWithDraft(<LiveEditor id="q_nps" />, sampleForm({
+      questions: [{ id: 'q_nps', type: 'nps', headline: { en: 'Would you recommend us?' }, required: true }, after],
+    }), { meta: { retired_ids: ['q_detractor_reason'] } })
+    await user.click(screen.getByRole('button', { name: 'Ask detractors and promoters different questions' }))
+    expect(harness.probe.current?.form.questions.map((q) => q.id)).toStrictEqual(['q_nps', 'q_detractor_reason_2', 'q_promoter_value', 'q_after'])
+  })
+
   it('asks detractors and promoters different questions with two rules, passives going on as before', async () => {
     const user = userEvent.setup()
     const harness = renderWithDraft(<LiveEditor id="q_nps" />, sampleForm({

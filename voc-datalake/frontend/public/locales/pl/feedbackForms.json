@@ -88,6 +88,8 @@
     "welcomeTitleEmpty": "Ekran powitalny musi mieć tytuł.",
     "consentLabelEmpty": "Wpisz tekst pola wyboru.",
     "duplicateQuestionId": "Inne pytanie ma już identyfikator {{id}}.",
+    "retiredQuestionId": "Identyfikator {{id}} należał do wcześniej usuniętego pytania, a identyfikatory nigdy nie są używane ponownie. Wybierz inny.",
+    "answeredReshaped": "Pytanie {{number}} ma odpowiedzi, więc nie można zmienić jego typu ani skali punktów. Cofnij zmianę albo dodaj do tego nowe pytanie.",
     "invalidQuestionId": "Identyfikator pytania zaczyna się od q_ i zawiera małe litery, cyfry oraz _.",
     "duplicateEndingId": "Inne zakończenie ma już identyfikator {{id}}.",
     "invalidEndingId": "Identyfikator zakończenia zaczyna się od end_ i zawiera małe litery, cyfry oraz _.",
@@ -239,6 +241,7 @@
       "fixToPublishSaveWorks_many": "Popraw {{count, number}} problemów, aby opublikować. Zapisywanie nadal działa.",
       "fixToPublishSaveWorks_other": "Popraw {{count, number}} problemu, aby opublikować. Zapisywanie nadal działa.",
       "themeRefused": "Nie udało się zapisać: aktywny formularz potrzebuje tekstu czytelnego dla respondentów, o kontraście co najmniej 3:1 względem tła. Zmień kolory w sekcji Styl.",
+      "questionIdReused": "Nie udało się zapisać: identyfikator {{id}} należał do wcześniej usuniętego pytania, a identyfikatory nigdy nie są używane ponownie. Nadaj temu pytaniu inny identyfikator w sekcji Zaawansowane.",
       "themeHardToRead": "Tekst tego formularza jest trudny do odczytania.",
       "themeFix": "Popraw kolory",
       "save": "Zapisz",
@@ -1385,6 +1388,7 @@
   "typeChange": {
     "label": "Pytanie {{number}}: typ",
     "none": "Aby zmienić typ, dodaj nowe pytanie tego typu i usuń to.",
+    "locked": "Odpowiedzi są zapisane dla tego typu, więc nie można go zmienić, gdy formularz ma już odpowiedzi. Aby zapytać inaczej, dodaj nowe pytanie i usuń to.",
     "confirmTitle": "Zmienić typ pytania?",
     "confirmMessage": "Ta zmiana usunie: {{lost}}.",
     "confirm": "Zmień typ",
@@ -1501,6 +1505,7 @@
     },
     "points": "Punkty",
     "facesRange": "Skala z buźkami ma od 3 do 5 punktów.",
+    "rangeLocked": "Odpowiedzi są zapisane w tej skali punktów, więc nie można jej zmienić, gdy formularz ma już odpowiedzi.",
     "lowEnd": "Etykieta dolnego końca",
     "highEnd": "Etykieta górnego końca",
     "fixed": {
@@ -1837,6 +1842,8 @@
     "resetFailed": "Nie udało się zresetować linku testowego. Spróbuj ponownie za chwilę.",
     "noToken": "Ten formularz nie ma jeszcze linku testowego.",
     "makeLink": "Utwórz link testowy",
+    "makeLinkFailed": "Nie udało się utworzyć linku testowego. Spróbuj ponownie za chwilę.",
+    "tokenLoading": "Wczytywanie linku testowego…",
     "qrTitle": "Kod QR linku testowego",
     "recordTitle": "Co dzieje się z odpowiedziami testowymi",
     "keep": "Zachowuj je z oznaczeniem Test",
@@ -1853,6 +1860,7 @@
     "deleteTitle": "Usunąć wszystkie odpowiedzi testowe?",
     "deleteMessage": "Wszystkie odpowiedzi testowe tego formularza zostaną usunięte. Prawdziwe odpowiedzi pozostaną nietknięte. Tej operacji nie można cofnąć.",
     "deleteConfirm": "Usuń odpowiedzi testowe",
+    "deleteFailed": "Nie udało się usunąć odpowiedzi testowych. Spróbuj ponownie za chwilę.",
     "noneYet": "Brak odpowiedzi testowych. Otwórz link testowy lub zeskanuj jego kod QR telefonem i wyślij odpowiedź.",
     "checkOnlyEmpty": "Tryb „Sprawdzaj” niczego nie zachowuje, więc nie ma tu nic do pokazania. Przełącz na „Zachowuj”, aby zobaczyć odpowiedzi testowe.",
     "emptyValue": "puste",
@@ -1924,6 +1932,10 @@
     "openInFeedback": "Otwórz opinię",
     "reach": "Odpowiedzi: {{answered}} · Pominięto: {{skipped}} · Nie pokazano: {{hidden}} (logika)",
     "changed": "Zmieniono {{date}}: wcześniejsze odpowiedzi dotyczyły innych opcji",
+    "earlierVersion_one": "{{formatted}} odpowiedź na wcześniejszą wersję tego pytania (inny typ lub skala) nie jest tu liczona",
+    "earlierVersion_few": "{{formatted}} odpowiedzi na wcześniejszą wersję tego pytania (inny typ lub skala) nie są tu liczone",
+    "earlierVersion_many": "{{formatted}} odpowiedzi na wcześniejszą wersję tego pytania (inny typ lub skala) nie jest tu liczonych",
+    "earlierVersion_other": "{{formatted}} odpowiedzi na wcześniejszą wersję tego pytania (inny typ lub skala) nie jest tu liczonych",
     "endings": "Zakończenia",
     "defaultEnding": "domyślne",
     "removedQuestions": "Usunięte pytania ({{count, number}})",
@@ -2018,7 +2030,8 @@
     "reachCard": {
       "title": "Zasięg",
       "answeredBy": "odpowiedzi: {{answered}} z {{total}} ukończonych",
-      "note": "Liczba osób, które przerywają w połowie, wymaga śledzenia wyświetleń, które nie jest jeszcze zbierane."
+      "note": "Liczba osób, które przerywają w połowie, wymaga śledzenia wyświetleń, które nie jest jeszcze zbierane.",
+      "filtered": "Rezygnacje liczą każdą wizytę, więc nie są pokazywane, gdy filtrujesz według języka, zakończenia lub wartości ukrytej."
     },
     "responses": {
       "title": "Brak odpowiedzi",

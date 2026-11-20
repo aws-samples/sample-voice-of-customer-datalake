@@ -194,9 +194,18 @@ export function headlineOf(item, allRows) {
   return { question_id: question.id, type: question.type, value, count: answered.length, scale_max: result.scale_max };
 }
 
-/** GET …/results without its envelope (the route adds form_id, revision and include_test). */
+/** Does the view filter by what the funnel's daily counters know nothing of (the handler's `_funnel_hidden`)? */
+const funnelHidden = (params) => Boolean(params.get('language') || params.get('ending'))
+  || [...params.keys()].some((key) => key.startsWith('hidden.'));
+
+/**
+ * GET …/results without its envelope (the route adds form_id, revision and include_test). `test_responses` counts
+ * the test responses under the filters whether or not they are included; `funnel` is null under a language, ending
+ * or hidden-value filter.
+ */
 export function formResults(item, allRows, params) {
   const rows = filteredResponses(allRows, params);
+  const tests = allRows.filter((row) => row.is_test && matchesFilters(row, params));
   const primary = item.language ?? 'en';
   const endings = Object.fromEntries((item.endings ?? []).map((ending) => [ending.id, 0]));
   const hidden = Object.fromEntries((item.hidden_fields ?? []).map((field) => [field.id, 0]));
@@ -209,13 +218,13 @@ export function formResults(item, allRows, params) {
   for (const row of rows) for (const id of Object.keys(row.answers)) if (!current.has(id)) removed[id] = (removed[id] ?? 0) + 1;
   return {
     responses: rows.length,
-    test_responses: rows.filter((row) => row.is_test).length,
+    test_responses: tests.length,
     last_response_at: rows[0]?.submitted_at ?? null,
     questions: (item.questions ?? []).map((question) => questionResult(question, rows, primary)),
     endings,
     hidden,
     removed_questions: Object.entries(removed).sort().map(([id, answered]) => ({ id, answered })),
-    funnel: { ...funnelOf(item, rows), completed: rows.length },
+    funnel: funnelHidden(params) ? null : { ...funnelOf(item, rows), completed: rows.length },
   };
 }
 

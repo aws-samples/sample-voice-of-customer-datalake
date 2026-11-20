@@ -69,6 +69,11 @@ export default function QuestionResultCard({ form, question, number, aggregate, 
       <p className="text-[12px] text-muted tabular-nums">
         {t('results.reach', { answered: count(figures.answered), skipped: count(figures.skipped), hidden: count(figures.not_shown) })}
       </p>
+      {figures.earlier_version !== undefined && figures.earlier_version > 0 && (
+        <p className="text-[12px] text-muted tabular-nums">
+          {t('results.earlierVersion', { count: figures.earlier_version, formatted: count(figures.earlier_version) })}
+        </p>
+      )}
       {figures.changed_at !== undefined && (
         <span className="badge badge-info inline-flex items-center gap-1">
           <Info size={12} aria-hidden="true" />{t('results.changed', { date: formatDate(figures.changed_at, i18n.language) })}

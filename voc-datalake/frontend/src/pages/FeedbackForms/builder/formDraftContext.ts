@@ -6,7 +6,7 @@
  * @module pages/FeedbackForms/builder/formDraftContext
  */
 import { createContext, useContext } from 'react'
-import type { FormV2, StoredFormMeta } from '../model/formsV2'
+import type { FormV2, Question, StoredFormMeta } from '../model/formsV2'
 import type { FormProblem, ProblemLocation } from '../model/validateForm'
 import type { DraftNote, FormsFieldError } from '../../../api/feedbackFormsV2Api'
 
@@ -30,7 +30,7 @@ export type SaveStatus =
   | { readonly kind: 'idle' }
   | { readonly kind: 'saving' }
   | { readonly kind: 'saved'; readonly message: 'saved' | 'firstSave' | 'published' | 'aiSaved' | 'turnedOff' }
-  | { readonly kind: 'failed'; readonly reason: string }
+  | { readonly kind: 'failed'; readonly reason: string; readonly questionId?: string }
 
 /** Another save won (D7): who and when, as the server said. */
 export interface ConflictInfo {
@@ -56,8 +56,11 @@ export interface FormDraft {
   readonly publishErrors: readonly FormProblem[]
   /** The server's own refusals of the last save (a 400), shown under "Other problems". */
   readonly serverErrors: readonly FormsFieldError[]
-  /** Codes and ids are locked: the form has a real response (D9). */
+  /** Codes, ids, and the stored questions' types and ranges are locked: the form has a real response (D9). */
   readonly locked: boolean
+  /** The question ids no new question, copy or follow-up may take (removed ones: the stored form's `retired_ids`, and
+   * those this draft removed, which retire when it saves). */
+  readonly retiredIds: ReadonlySet<string>
   readonly update: (change: (form: FormV2) => FormV2) => void
   readonly ai: AiState | null
   readonly setAi: (change: (ai: AiState | null) => AiState | null) => void
@@ -84,6 +87,16 @@ export interface FormDraft {
   readonly readTheirs: () => Promise<FormV2>
   /** Throw the edits away (back to the last save; a new form back to how it opened). */
   readonly discard: () => void
+}
+
+/**
+ * The stored version of question `id` when the form has a real response (its answers were given to it), else null: a
+ * question added since has none. Its type and a rating's points lock (D9; the server refuses another, model/removals.ts
+ * `reshapedIds`).
+ */
+export function answeredVersion(draft: Pick<FormDraft, 'locked' | 'baseline'>, id: string): Question | null {
+  if (!draft.locked) return null
+  return draft.baseline?.questions.find((question) => question.id === id) ?? null
 }
 
 export const FormDraftContext = createContext<FormDraft | null>(null)

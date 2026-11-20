@@ -4,9 +4,11 @@
  * app's shape (the dev mock) passes through unchanged.
  *
  * Results: `{responses, test_responses, last_response_at, questions: [{id, type, shown, answered, skipped, not_shown,
- * options?: {<code>: n}, other?, other_latest?: [{value, response_id, created_at, is_test, sentiment?}], none?,
- * removed_options?: {<code>: n}, histogram?: {<score>: n}, average?, count?, latest?: […], accepted?, contacts?}],
- * endings, removed_questions: [{id, answered}], funnel: {opened, left: {<qid>: n}, completed}}`.
+ * earlier_version?, options?: {<code>: n}, other?, other_latest?: [{value, response_id, created_at, is_test,
+ * sentiment?}], none?, removed_options?: {<code>: n}, histogram?: {<score>: n}, average?, count?, latest?: […],
+ * accepted?, contacts?}], endings, removed_questions: [{id, answered}], funnel: {opened, left: {<qid>: n}, completed}
+ * | null}` (`earlier_version`: answers to a revision where the question had another type or range, counted nowhere
+ * else; `funnel` null under a language, ending or hidden-value filter).
  *
  * Responses: rows `{response_id, is_test, created_at, revision, language, ending_id, answers, hidden, path,
  * sentiment?, feedback_id?}`.
@@ -51,6 +53,7 @@ function aggregateOf(question: Record<string, unknown>): Record<string, unknown>
   const contacts = question['contacts']
   return {
     answered: question['answered'], skipped: question['skipped'], not_shown: question['not_shown'],
+    earlier_version: question['earlier_version'],
     counts: countsOf(question),
     other_answers: question['other_latest'] === undefined ? undefined : latestList.parse(question['other_latest']).map((entry) => entry.value),
     distribution: question['histogram'],

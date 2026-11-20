@@ -364,8 +364,9 @@ EMPTY_FORM = {
     'custom_fields': [], 'category': '', 'subcategory': '', 'project_id': '', 'document_id': '',
     'dimension_defaults': {}, 'tags': [], 'form_type': 'standard', 'brand_name': '', 'created_at': '',
     'updated_at': '', 'updated_by': '',
-    # Never answered; and a record without schema_version 2 is a version 1 one, served migrated.
-    'has_responses': False, 'migrated_from': 1,
+    # Never answered, no question removed, never saved; and a record without schema_version 2 is a version 1 one,
+    # served migrated.
+    'has_responses': False, 'retired_ids': [], 'write_count': 0, 'migrated_from': 1,
 }
 #: A stored version 2 record with a value no default could produce in every field.
 V2_ITEM = {
@@ -384,6 +385,7 @@ V2_ITEM = {
     'custom_fields': [{'id': 'c'}], 'category': 'cat', 'subcategory': 'sub', 'project_id': 'proj-1',
     'document_id': 'doc-1', 'dimension_defaults': {'product': 'app'}, 'tags': ['vip'], 'form_type': 'standard',
     'brand_name': 'Acme', 'created_at': 'c-at', 'updated_at': 'u-at', 'updated_by': 'sub-1', 'has_responses': True,
+    'retired_ids': ['q_old'], 'write_count': 7,
 }
 
 
@@ -429,9 +431,12 @@ class TestTheProjectionsDefaultEveryAbsentField:
                                   'token_issued_at': '2026-11-17T10:00:00+00:00'}},
             **{key: V2_ITEM[key] for key in ('custom_fields', 'category', 'subcategory', 'project_id', 'document_id',
                                              'dimension_defaults', 'tags', 'form_type', 'brand_name', 'created_at',
-                                             'updated_at', 'updated_by', 'has_responses')},
+                                             'updated_at', 'updated_by', 'has_responses', 'retired_ids',
+                                             'write_count')},
         }
         assert 'secret-token' not in json.dumps(form)
+        # Neither is published: the public config is its own projection.
+        assert not {'retired_ids', 'write_count'} & set(h.item_to_widget_config(V2_ITEM))
 
     def test_a_stored_boolean_wins_over_its_default(self):
         for value in (True, False):
@@ -712,14 +717,15 @@ class TestAnUpdateSetsOnlyWhatWasSent:
         assert payload == {'success': True, 'form': h.item_to_form({'form_id': FORM_ID, 'name': 'N'})}
         kwargs = table.update_item.call_args.kwargs
         names, values = kwargs['ExpressionAttributeNames'], kwargs['ExpressionAttributeValues']
-        sets = {names[f'#f{i}']: values[f':f{i}'] for i in range(len(values) - 1)}
+        sets = {names[f'#f{i}']: values[f':f{i}'] for i in range(len(values) - 2)}
         updated_at = datetime.fromisoformat(sets.pop('updated_at'))
         assert before <= updated_at <= after
-        # The definition is written back as read (no change, so no new revision and no snapshot).
-        assert sets == {'name': 'N', 'enabled': False, 'schema_version': 2, 'revision': 4, 'updated_by': 'test-user-id',
-                        **{key: V2_ITEM[key] for key in h.fv2.DEFINITION_FIELDS}}
-        assert kwargs['ConditionExpression'] == 'attribute_exists(sk) AND #revision = :expected'
-        assert (names['#revision'], values[':expected']) == ('revision', 4)
+        # The definition is written back as read (no change, so no new revision and no snapshot); one more save.
+        assert sets == {'name': 'N', 'enabled': False, 'schema_version': 2, 'revision': 4, 'write_count': 8,
+                        'updated_by': 'test-user-id', **{key: V2_ITEM[key] for key in h.fv2.DEFINITION_FIELDS}}
+        assert kwargs['ConditionExpression'] == 'attribute_exists(sk) AND #revision = :expected AND #writes = :writes'
+        assert (names['#revision'], values[':expected'], names['#writes'], values[':writes']) == (
+            'revision', 4, 'write_count', 7)
         assert ' REMOVE ' not in kwargs['UpdateExpression']
         assert kwargs['Key'] == FORM_KEY
         assert kwargs['ReturnValues'] == 'ALL_NEW'
@@ -741,11 +747,15 @@ class TestAnUpdateSetsOnlyWhatWasSent:
         response, payload = self._put(api_gateway_event, lambda_context, {'name': 'N'})
         assert (response['statusCode'], payload['code']) == (409, 'revision_conflict')
 
-    def test_an_update_answer_without_attributes_is_a_blank_form(self, table, api_gateway_event, lambda_context):
+    def test_an_update_answer_without_attributes_is_a_blank_form(self, table, feedback, api_gateway_event,
+                                                                 lambda_context):
         table.get_item.return_value = {'Item': {'form_id': FORM_ID}}
         table.update_item.return_value = {}
+        feedback.query.return_value = {'Items': []}
         _, payload = self._put(api_gateway_event, lambda_context, {'title': 'T'})
         assert payload == {'success': True, 'form': EMPTY_FORM}
+        # A definition change of a form never marked answered reads whether it has a response (none here).
+        assert feedback.query.call_args.kwargs['ExpressionAttributeValues'] == {':sc': f'form_{FORM_ID}'}
 
     @pytest.mark.parametrize('body', [None, {'brand_name': 'x'}, {'revision': 3}])
     def test_nothing_updatable_is_refused_by_name(self, table, api_gateway_event, lambda_context, body):

@@ -160,6 +160,16 @@ describe('the state and the save status', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Couldn\'t save. Check your connection and try again.')
   })
 
+  it('words a removed question\'s id taken again with the id, never the server\'s raw message', async () => {
+    formsApi.saveForm.mockRejectedValueOnce(new FormsApiError(400, 'questions: the id "q_old" belonged to a removed question; ids are never reused',
+      'question_id_reused', { errors: [], retryAfterSeconds: null, current: null, questionId: 'q_old' }))
+    const harness = renderHeader()
+    await rename(harness, 'Renamed')
+    await harness.user.click(headerButton('Save'))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't save: the id q_old belonged to a question removed earlier, and ids are never reused. Give that question another id under Advanced.")
+  })
+
   it('lists the server\'s own refusals of the save under Other problems', async () => {
     formsApi.saveForm.mockRejectedValueOnce(new FormsApiError(400, 'Invalid form', undefined, {
       errors: [{ message: 'Question 4 has 52 options' }], retryAfterSeconds: null, current: null,
@@ -242,7 +252,7 @@ describe('the ⋯ menu', () => {
     const { user } = renderHeader(sampleForm({ enabled: true }))
     await pick(user, /^Turn off/)
     expect(await screen.findByText('Turned off. Its link shows “Feedback form unavailable.”; the test link keeps working.')).toBeInTheDocument()
-    expect(formsApi.setEnabled).toHaveBeenCalledWith('f_test', false, 3)
+    expect(formsApi.setEnabled).toHaveBeenCalledWith('f_test', false, 3, 5)
   })
 
   it('offers no Turn off for a form that is off', async () => {

@@ -69,6 +69,12 @@ class TestEveryTypeValidates:
         assert (pick['other'], pick['shuffle'], pick['display']) == ({'enabled': False}, 'none', 'auto')
         assert (rating['scale'], rating['range']) == ('star', 5)
 
+    def test_a_long_text_is_always_text_whatever_input_type_it_was_sent_with(self):
+        """A text box takes any text (the widget draws it so): an email check on it would refuse what it accepts."""
+        [long, short] = fv2.validate_definition(_form(_q('q_a', 'open_text', long=True, input_type='email'),
+                                                      _q('q_b', 'open_text', input_type='email')))['questions']
+        assert (long['input_type'], short['input_type']) == ('text', 'email')
+
     def test_a_statement_is_never_required(self):
         assert fv2.validate_definition(_form(_q('q_s', 'statement', required=True)))['questions'][0]['required'] is False
 
@@ -410,6 +416,18 @@ class TestTheLockOfAnAnsweredForm:
                     {'options': {f'q_{n}': [] for n in range(fv2.MAX_QUESTIONS + 1)}}):
             with pytest.raises(ValidationError):
                 fv2.validate_removes(bad)
+
+    def test_a_kept_question_with_another_type_or_range_is_reshaped(self):
+        """``reshaped_questions``: never allowed on an answered form, named or not (its answers would be read anew)."""
+        before = {'questions': [{'id': 'q_r', 'type': 'rating', 'range': 5}, {'id': 'q_c', 'type': 'csat'},
+                                {'id': 'q_s', 'type': 'rating', 'range': 5, 'scale': 'star'},
+                                {'id': 'q_p', 'type': 'single_select'}, {'id': 'q_gone', 'type': 'nps'}]}
+        after = {'questions': [{'id': 'q_r', 'type': 'rating', 'range': 10}, {'id': 'q_c', 'type': 'nps'},
+                               {'id': 'q_s', 'type': 'rating', 'range': 5, 'scale': 'number'},
+                               {'id': 'q_p', 'type': 'multi_select'}, {'id': 'q_new', 'type': 'ces'}]}
+        assert fv2.reshaped_questions(before, after) == ['q_r', 'q_c', 'q_p']
+        assert fv2.reshaped_questions(before, copy.deepcopy(before)) == []
+        assert fv2.answer_shape({'type': 'rating'}) == ('rating', (1, 5))
 
     def test_a_reused_question_id_is_refused_with_its_code(self):
         with pytest.raises(ValidationError) as refused:

@@ -49,7 +49,7 @@ const EDGE_ALPHAS: readonly number[] = [0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0
 
 /** A colour the editor writes: `#rgb` or `#rrggbb`. */
 const EDITOR_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
-/** A colour a stored form may hold: also an old form's `#rrggbbaa` (judged composited). */
+/** A colour a stored form may hold: also an old form's `#rrggbbaa` (judged opaque, as the widget draws it). */
 const STORED_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
 
 /** Is `value` a colour the hex field accepts (`#rgb`, `#rrggbb`)? */
@@ -57,13 +57,17 @@ export const isEditorHex = (value: string): boolean => EDITOR_HEX.test(value.tri
 
 type Rgb = readonly [number, number, number]
 
-/** The 0–1 channels and the alpha of a hex colour, or null when it is not one. */
-function rgba(colour: string): { readonly rgb: Rgb; readonly alpha: number } | null {
+/**
+ * The 0–1 channels of a hex colour as the widget draws it, or null when it is not one: an old form's `#rrggbbaa` as
+ * its six-digit colour, its alpha dropped (feedback-widget.js `hexColour`; form_theme.py `_rgb`), so the editor judges
+ * what respondents see.
+ */
+function rgbOf(colour: string): Rgb | null {
   const value = colour.trim()
   if (!STORED_HEX.test(value)) return null
   const digits = value.length === 4 ? value.slice(1).replace(/./g, '$&$&') : value.slice(1)
   const at = (index: number) => Number.parseInt(digits.slice(index, index + 2), 16) / 255
-  return { rgb: [at(0), at(2), at(4)], alpha: digits.length === 8 ? at(6) : 1 }
+  return [at(0), at(2), at(4)]
 }
 
 /** `top` at `alpha` over the opaque `bottom` (sRGB, as a browser mixes). */
@@ -78,18 +82,12 @@ function ratioOf(a: Rgb, b: Rgb): number {
   return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05)
 }
 
-/** A background as painted: an old translucent one over white (the API's own page). */
-function painted(background: string): Rgb | null {
-  const bg = rgba(background)
-  return bg === null ? null : over(bg.rgb, bg.alpha, [1, 1, 1])
-}
-
 /** The WCAG 2 contrast of `foreground` on `background` (1–21), or null when either is not a hex colour. */
 export function contrastRatio(foreground: string, background: string): number | null {
-  const fg = rgba(foreground)
-  const bg = painted(background)
+  const fg = rgbOf(foreground)
+  const bg = rgbOf(background)
   if (fg === null || bg === null) return null
-  return ratioOf(over(fg.rgb, fg.alpha, bg), bg)
+  return ratioOf(fg, bg)
 }
 
 /** The label colour on `fill` (the widget's buttons): white or #19161d, whichever contrasts more (white on a tie). */
@@ -101,10 +99,10 @@ export function readableOn(fill: string): string {
 
 /** The option edge the widget draws: the text colour at 55 % over the background, raised in 5 % steps until 3:1. */
 export function optionEdge(text: string, background: string): { readonly alpha: number; readonly ratio: number } | null {
-  const fg = rgba(text)
-  const bg = painted(background)
+  const fg = rgbOf(text)
+  const bg = rgbOf(background)
   if (fg === null || bg === null) return null
-  const steps = EDGE_ALPHAS.map((alpha) => ({ alpha, ratio: ratioOf(over(fg.rgb, alpha, bg), bg) }))
+  const steps = EDGE_ALPHAS.map((alpha) => ({ alpha, ratio: ratioOf(over(fg, alpha, bg), bg) }))
   return steps.find((step) => step.ratio >= CONTROL_MINIMUM) ?? steps[steps.length - 1] ?? null
 }
 
@@ -250,9 +248,9 @@ function nearest(start: readonly [number, number, number], direction: -1 | 1, mi
  * reaches `minimum`; either is absent when no value that way does. A colour that already passes needs none.
  */
 export function suggestColours(colour: string, minimum: number, ratioFor: (candidate: string) => number | null): { readonly darker?: Suggestion; readonly lighter?: Suggestion } {
-  const parsed = rgba(colour)
+  const parsed = rgbOf(colour)
   if (parsed === null) return {}
-  const start = toOklch(parsed.rgb)
+  const start = toOklch(parsed)
   const darker = nearest(start, -1, minimum, ratioFor)
   const lighter = nearest(start, 1, minimum, ratioFor)
   return { ...(darker === null ? {} : { darker }), ...(lighter === null ? {} : { lighter }) }

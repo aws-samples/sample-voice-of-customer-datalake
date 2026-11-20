@@ -1,8 +1,11 @@
 /**
  * @fileoverview The builder's draft (formDraftContext.ts) and its saves: Save, Publish, Update live form and Turn off
  * (UX §3.6), the stale-save conflict (D7: a 409 `revision_conflict` offers Compare, Reload and Save mine), and the
- * server's refusals. A save of an answered form names what it removes (`removes`, model/removals.ts), as the server
- * requires (D9); its 409 `answers_locked` is a refusal, never the stale-save banner.
+ * server's refusals. Every save is made over the revision and the save count the draft read (`expected_revision`,
+ * `expected_write_count`), so a save that came in between, an Enable or a Turn off included, is that conflict and is
+ * never undone. A save of an answered form names what it removes (`removes`, model/removals.ts), as the server
+ * requires (D9); its 409 `answers_locked` is a refusal, never the stale-save banner, and so is a retired question id
+ * taken again (400 `question_id_reused`, worded with the id).
  *
  * A new form (a template, an AI draft) is created on its first Save, Off, and `onCreated` gives the page its id
  * (the address replaces `new`). Saving clears the AI's provenance (UX §12.3: "the AI draft is now your form").
@@ -49,11 +52,19 @@ const ANSWERS_LOCKED = 'answers_locked'
  * (lambda/shared/forms_v2.py `validate_publishable`); the failed status keeps it as its reason, and the header words it.
  */
 export const THEME_UNREADABLE = 'theme_unreadable'
+/**
+ * The 400 code of a save that gives a question the id of one removed earlier (lambda/shared/forms_v2.py
+ * `validate_definition`: ids are never reused); the failed status keeps it with the id, and the header words it.
+ */
+export const QUESTION_ID_REUSED = 'question_id_reused'
 
-/** The words a failed save shows: the server's own reason, else a generic one (the page words it). */
-function failureReason(error: unknown): string {
-  if (error instanceof FormsApiError && error.code === THEME_UNREADABLE) return THEME_UNREADABLE
-  return error instanceof Error && error.message !== '' ? error.message : SAVE_FAILED
+/** What a failed save shows: the server's own reason, else a generic one (the page words it). */
+function failureOf(error: unknown): Extract<SaveStatus, { kind: 'failed' }> {
+  if (error instanceof FormsApiError && error.code === THEME_UNREADABLE) return { kind: 'failed', reason: THEME_UNREADABLE }
+  if (error instanceof FormsApiError && error.code === QUESTION_ID_REUSED) {
+    return { kind: 'failed', reason: QUESTION_ID_REUSED, ...(error.questionId === null ? {} : { questionId: error.questionId }) }
+  }
+  return { kind: 'failed', reason: error instanceof Error && error.message !== '' ? error.message : SAVE_FAILED }
 }
 
 type Persisted = { readonly loaded: LoadedForm; readonly created: boolean }
@@ -87,12 +98,23 @@ async function persist(form: FormV2, stored: FormV2 | null, meta: StoredFormMeta
   if (meta === null) {
     const created = await feedbackFormsV2Api.createForm(form)
     if (enabled !== true) return { loaded: created, created: true }
-    const live = await feedbackFormsV2Api.saveForm(created.meta.form_id, { ...created.form, enabled: true }, created.meta.revision)
+    const live = await feedbackFormsV2Api.saveForm(created.meta.form_id, { ...created.form, enabled: true }, created.meta.revision, null,
+      created.meta.write_count)
     return { loaded: live, created: true }
   }
   const next = enabled === null ? form : { ...form, enabled }
-  const saved = await feedbackFormsV2Api.saveForm(meta.form_id, next, meta.revision, removesFor(stored, meta, next))
+  const saved = await feedbackFormsV2Api.saveForm(meta.form_id, next, meta.revision, removesFor(stored, meta, next), meta.write_count)
   return { loaded: afterPut(saved, meta), created: false }
+}
+
+/**
+ * The question ids no new question, copy or follow-up may take: the stored form's retired ones, and those of the
+ * questions this draft removed from it (they retire when it saves). Taking one again is the server's 400
+ * `question_id_reused`, and answers stored under it would read as the new question's.
+ */
+function retiredOf(meta: StoredFormMeta | null, baseline: FormV2 | null, form: FormV2): ReadonlySet<string> {
+  const kept = new Set(form.questions.map((question) => question.id))
+  return new Set([...(meta?.retired_ids ?? []), ...(baseline?.questions ?? []).map((question) => question.id).filter((id) => !kept.has(id))])
 }
 
 /** A 409 that is a stale save (D7's banner), not the lock refusing an unnamed removal (`answers_locked`). */
@@ -131,7 +153,11 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
   const unconfirmed = ai?.unconfirmed
   // (a live form kept on its stored theme is only warned about unreadable text, as the server warns)
   const liveTheme = liveThemeOf(baseline, meta !== null)
-  const problems = useMemo(() => validateForm(form, { unconfirmedAddresses: unconfirmed, liveTheme }), [form, unconfirmed, liveTheme])
+  const retiredIds = useMemo(() => retiredOf(meta, baseline, form), [meta, baseline, form])
+  const storedRetired = meta?.retired_ids
+  const answered = meta?.has_responses === true ? baseline : null
+  const problems = useMemo(() => validateForm(form, { unconfirmedAddresses: unconfirmed, liveTheme, retiredIds: storedRetired, answered }),
+    [form, unconfirmed, liveTheme, storedRetired, answered])
   // A Live form's save is Update live form, so whatever blocks Publish blocks it too (an unreadable theme included).
   const live = form.enabled && meta !== null
   const publishErrors = useMemo(() => publishBlockingProblems(problems), [problems])
@@ -165,7 +191,7 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
       setMeta((current) => (current === null ? current : { ...current, has_responses: true }))
     }
     if (error instanceof FormsApiError) setServerErrors(error.errors)
-    setStatus({ kind: 'failed', reason: failureReason(error) })
+    setStatus(failureOf(error))
   }, [])
 
   const wasAiDraft = ai?.kind === 'draft'
@@ -190,7 +216,7 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
     if (meta === null) return false
     setStatus({ kind: 'saving' })
     try {
-      const next = afterPut(await feedbackFormsV2Api.setEnabled(meta.form_id, false, meta.revision), meta)
+      const next = afterPut(await feedbackFormsV2Api.setEnabled(meta.form_id, false, meta.revision, meta.write_count), meta)
       settle(next, { ...form, enabled: false })
       setStatus({ kind: 'saved', message: 'turnedOff' })
       return true
@@ -217,7 +243,7 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
       const latest = await readLatest()
       // Named against theirs, the version the server now holds (D7's Compare listed what mine removes from it).
       const saved = await feedbackFormsV2Api.saveForm(latest.meta.form_id, form, latest.meta.revision,
-        removesFor(latest.form, latest.meta, form))
+        removesFor(latest.form, latest.meta, form), latest.meta.write_count)
       const next = afterPut(saved, latest.meta)
       settle(next, null)
       setStatus({ kind: 'saved', message: 'saved' })
@@ -236,7 +262,7 @@ export function useFormDraft({ loaded, handoff, onCreated }: FormDraftOptions): 
   const [templateId] = useState(handoff === null ? null : handoff.templateId)
   return {
     form, baseline, meta, isNew: meta === null, dirty, problems, errors, publishErrors, serverErrors,
-    locked: meta?.has_responses === true,
+    locked: meta?.has_responses === true, retiredIds,
     update, ai, setAi, templateId,
     fromTemplate, setFromTemplate, freshCodes, setFreshCodes, status, conflict,
     save: () => run(null),

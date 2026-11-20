@@ -85,11 +85,12 @@ export function removeQuestion(form: FormV2, id: string): FormV2 {
 }
 
 /** A copy right after the original, with the id `<id>_2`, its rules and its options (same codes): UX §3.3. */
-export function duplicateQuestion(form: FormV2, id: string): { form: FormV2; copyId: string | null } {
+/** A copy of question `id` after it, under a new id: none of the form's, nor a `retired` one (a removed question's). */
+export function duplicateQuestion(form: FormV2, id: string, retired: ReadonlySet<string> = new Set()): { form: FormV2; copyId: string | null } {
   const index = form.questions.findIndex((q) => q.id === id)
   const original = form.questions[index]
   if (original === undefined) return { form, copyId: null }
-  const copyId = duplicateId(original.id, questionIds(form))
+  const copyId = duplicateId(original.id, new Set([...questionIds(form), ...retired]))
   return { form: insertQuestion(form, { ...original, id: copyId }, index + 1), copyId }
 }
 

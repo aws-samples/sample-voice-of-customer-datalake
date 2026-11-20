@@ -31,6 +31,9 @@ const QUESTION_ID = /^q_[a-z0-9_]{1,40}$/;
 const ENDING_ID = /^end_[a-z0-9_]{1,40}$/;
 const OPTION_CODE = /^[a-z0-9_]{1,40}$/;
 const HIDDEN_ID = /^[a-z][a-z0-9_]{0,39}$/;
+/** The names the widget never fills as a hidden field (lambda/shared/forms_v2.py RESERVED_HIDDEN_IDS): the route
+ * refuses them, so a draft that holds one is refused here, before its card is shown. */
+export const RESERVED_HIDDEN_IDS: readonly string[] = ['__proto__', 'constructor', 'prototype'];
 
 const locale = z.enum(FORM_LOCALES);
 const i18n = (max: number) => z.partialRecord(locale, z.string().max(max));
@@ -114,8 +117,10 @@ const draftForm = z.strictObject({
     description: i18n(FORM_DRAFT_LIMITS.maxLongTextChars).optional(), button_label: i18n(80).optional(),
   }).optional(),
   questions: z.array(question).min(1).max(FORM_DRAFT_LIMITS.maxQuestions),
-  hidden_fields: z.array(z.strictObject({ id: z.string().regex(HIDDEN_ID), label: z.string().max(64).optional() }))
-    .max(FORM_DRAFT_LIMITS.maxHiddenFields).optional(),
+  hidden_fields: z.array(z.strictObject({
+    id: z.string().regex(HIDDEN_ID).refine((id) => !RESERVED_HIDDEN_IDS.includes(id), { message: 'is a reserved name; choose another' }),
+    label: z.string().max(64).optional(),
+  })).max(FORM_DRAFT_LIMITS.maxHiddenFields).optional(),
   endings: z.array(ending).min(1).max(FORM_DRAFT_LIMITS.maxEndings),
 }).superRefine(checkIds);
 

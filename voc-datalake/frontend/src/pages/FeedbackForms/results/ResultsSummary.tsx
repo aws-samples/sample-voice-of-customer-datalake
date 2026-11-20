@@ -2,7 +2,8 @@
  * @fileoverview Results › Summary (UX §10.1–10.3): the figures (Responses; Completion, with the beacon, and "largest
  * drop at Q2", which moves to the funnel; Last response), one card per question in form order, the endings with their
  * counts, the questions removed since (folded), and the drop-off: the funnel when the beacon's counts exist, else
- * Reach.
+ * Reach. Under a language, ending or hidden-value filter (`funnelFiltered`) neither the funnel nor Completion is
+ * shown, whatever the server sent: its counters are every visit's, and Reach says why.
  *
  * @module pages/FeedbackForms/results/ResultsSummary
  */
@@ -94,22 +95,27 @@ function RemovedQuestions({ form, results }: Readonly<{ form: FormV2; results: F
   )
 }
 
-export default function ResultsSummary({ form, results, onShowAll }: Readonly<{
+export default function ResultsSummary({ form, results, funnelFiltered = false, onShowAll }: Readonly<{
   form: FormV2
   results: FormResults
+  /** The view filters by a language, an ending or a hidden value (resultFilters.ts `hidesFunnel`): no funnel then. */
+  funnelFiltered?: boolean
   /** Open Responses (an open question's "Show all N in Responses"). */
   onShowAll: () => void
 }>) {
+  const shown: FormResults = funnelFiltered ? { ...results, funnel: null } : results
   return (
     <div className="space-y-4">
-      <Figures form={form} results={results} />
+      <Figures form={form} results={shown} />
       {form.questions.map((question, index) => (
-        <QuestionResultCard key={question.id} form={form} question={question} number={index + 1} aggregate={results.questions[question.id]}
-          removed={results.removed_options} funnel={results.funnel} onShowAll={onShowAll} />
+        <QuestionResultCard key={question.id} form={form} question={question} number={index + 1} aggregate={shown.questions[question.id]}
+          removed={shown.removed_options} funnel={shown.funnel} onShowAll={onShowAll} />
       ))}
-      <Endings form={form} results={results} />
-      <RemovedQuestions form={form} results={results} />
-      {results.funnel === null ? <ReachCard form={form} results={results} /> : <FunnelCard form={form} funnel={results.funnel} results={results} />}
+      <Endings form={form} results={shown} />
+      <RemovedQuestions form={form} results={shown} />
+      {shown.funnel === null
+        ? <ReachCard form={form} results={shown} filtered={funnelFiltered} />
+        : <FunnelCard form={form} funnel={shown.funnel} results={shown} />}
     </div>
   )
 }

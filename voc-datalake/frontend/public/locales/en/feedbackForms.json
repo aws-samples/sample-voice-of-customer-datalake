@@ -84,6 +84,8 @@
     "welcomeTitleEmpty": "The welcome screen needs a title.",
     "consentLabelEmpty": "Write the checkbox text.",
     "duplicateQuestionId": "Another question has the id {{id}}.",
+    "retiredQuestionId": "The id {{id}} belonged to a question removed earlier, and ids are never reused. Choose another.",
+    "answeredReshaped": "Question {{number}} has responses, so its type and points can't change. Undo the change, or add a new question for it.",
     "invalidQuestionId": "A question id starts with q_ and uses lower-case letters, digits and _.",
     "duplicateEndingId": "Another ending has the id {{id}}.",
     "invalidEndingId": "An ending id starts with end_ and uses lower-case letters, digits and _.",
@@ -227,6 +229,7 @@
       "fixToPublishSaveWorks_one": "Fix {{count, number}} problem to publish. Saving still works.",
       "fixToPublishSaveWorks_other": "Fix {{count, number}} problems to publish. Saving still works.",
       "themeRefused": "Couldn't save: a live form needs text respondents can read, at least 3:1 on its background. Change the colours in Style.",
+      "questionIdReused": "Couldn't save: the id {{id}} belonged to a question removed earlier, and ids are never reused. Give that question another id under Advanced.",
       "themeHardToRead": "This form's text is hard to read.",
       "themeFix": "Fix its colours",
       "save": "Save",
@@ -1329,6 +1332,7 @@
   "typeChange": {
     "label": "Question {{number}}: type",
     "none": "To change its type, add a new question of that type and delete this one.",
+    "locked": "Answers are stored for this type, so it can't change once the form has responses. To ask it another way, add a new question and delete this one.",
     "confirmTitle": "Change the question's type?",
     "confirmMessage": "This change drops: {{lost}}.",
     "confirm": "Change type",
@@ -1431,6 +1435,7 @@
     },
     "points": "Points",
     "facesRange": "Faces come in 3 to 5 points.",
+    "rangeLocked": "Answers are stored on these points, so they can't change once the form has responses.",
     "lowEnd": "Low end label",
     "highEnd": "High end label",
     "fixed": {
@@ -1747,6 +1752,8 @@
     "resetFailed": "Couldn't reset the test link. Try again in a moment.",
     "noToken": "This form has no test link yet.",
     "makeLink": "Make the test link",
+    "makeLinkFailed": "Couldn't make the test link. Try again in a moment.",
+    "tokenLoading": "Reading the test link…",
     "qrTitle": "Test link QR code",
     "recordTitle": "What happens to test responses",
     "keep": "Keep them, marked Test",
@@ -1763,6 +1770,7 @@
     "deleteTitle": "Delete all test responses?",
     "deleteMessage": "Every test response of this form is deleted. Real responses are not touched. This can't be undone.",
     "deleteConfirm": "Delete test responses",
+    "deleteFailed": "Couldn't delete the test responses. Try again in a moment.",
     "noneYet": "No test responses yet. Open the test link, or scan its QR code on a phone, and send one.",
     "checkOnlyEmpty": "Check only keeps nothing, so there's nothing to show here. Switch to Keep to see test responses.",
     "emptyValue": "empty",
@@ -1830,6 +1838,8 @@
     "openInFeedback": "Open in Feedback",
     "reach": "Answered {{answered}} · Skipped {{skipped}} · Not shown {{hidden}} (logic)",
     "changed": "Changed {{date}}: answers before then used other options",
+    "earlierVersion_one": "{{formatted}} answer to an earlier version of this question (another type or points) isn't counted here",
+    "earlierVersion_other": "{{formatted}} answers to an earlier version of this question (another type or points) aren't counted here",
     "endings": "Endings",
     "defaultEnding": "default",
     "removedQuestions": "Removed questions ({{count, number}})",
@@ -1914,7 +1924,8 @@
     "reachCard": {
       "title": "Reach",
       "answeredBy": "answered by {{answered}} of {{total}} completed responses",
-      "note": "How many people stop part-way needs view tracking, not yet collected."
+      "note": "How many people stop part-way needs view tracking, not yet collected.",
+      "filtered": "The drop-off counts every visit, so it isn't shown while you filter by language, ending or a hidden value."
     },
     "responses": {
       "title": "No responses",

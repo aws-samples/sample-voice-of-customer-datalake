@@ -105,6 +105,16 @@ describe('validation (UX §3.6, §5.5)', () => {
     ])
   })
 
+  it("refuses a removed question's id, and an answered question given another type, as the server does", () => {
+    const form = formOf([text('q_a'), text('q_old')])
+    expect(validateForm(form, { retiredIds: ['q_old'] }).filter((p) => p.code === 'retiredQuestionId').map((p) => p.at.id)).toStrictEqual(['q_old'])
+    const answered = formOf([text('q_a')])
+    const reshaped = formOf([{ id: 'q_a', type: 'csat', headline: { en: 'q_a' }, required: true }])
+    expect(validateForm(reshaped, { answered }).filter((p) => p.code === 'answeredReshaped').map((p) => [p.severity, p.params.number]))
+      .toStrictEqual([['error', 1]])
+    expect(codesOf(reshaped)).not.toContain('answeredReshaped')
+  })
+
   it('refuses min over max, and max over the choices', () => {
     const multi = choice({ type: 'multi_select', min: 3, max: 2 })
     const tooMany = choice({ type: 'multi_select', max: 5 })

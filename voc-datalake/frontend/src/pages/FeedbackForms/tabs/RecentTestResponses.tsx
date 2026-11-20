@@ -4,7 +4,8 @@
  * ending and hidden values (an empty value
  * reads "—" with a warning mark, so an integrator sees at once what the app did not pass). Open shows the response
  * in the Results sheet; Delete all… removes every test response (D2), offered only to an admin or the form's creator
- * (the owner's decision of 2026-11-18: test responses are kept until one of them deletes them).
+ * (the owner's decision of 2026-11-18: test responses are kept until one of them deletes them). A delete that fails
+ * says so in its dialog (`role="alert"`), which stays open for another try.
  *
  * @module pages/FeedbackForms/tabs/RecentTestResponses
  */
@@ -98,21 +99,39 @@ function useRecentTests(formId: string) {
   })
   // (newest first, whatever order the server sent)
   const rows = [...(query.data?.responses ?? [])].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at))
-  const deleteAll = async (): Promise<void> => {
+  /** Delete them all; resolves false when the delete failed (the dialog stays open and says so). */
+  const deleteAll = async (): Promise<boolean> => {
     setDeleting(true)
     try {
       await feedbackFormsV2Api.deleteTestResponses(formId)
+    } catch {
+      setDeleting(false)
+      return false
+    }
+    try {
       await query.refetch()
     } finally {
       setDeleting(false)
     }
+    return true
   }
   return { query, rows, deleting, deleteAll }
 }
 
-function DeleteAll({ disabled, deleting, onDelete }: Readonly<{ disabled: boolean; deleting: boolean; onDelete: () => Promise<void> }>) {
+function DeleteAll({ disabled, deleting, onDelete }: Readonly<{ disabled: boolean; deleting: boolean; onDelete: () => Promise<boolean> }>) {
   const { t } = useTranslation('feedbackForms')
   const [confirming, setConfirming] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const confirm = async () => {
+    setFailed(false)
+    const deleted = await onDelete()
+    if (deleted) setConfirming(false)
+    else setFailed(true)
+  }
+  const close = () => {
+    setConfirming(false)
+    setFailed(false)
+  }
   return (
     <>
       <button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => setConfirming(true)}>
@@ -120,14 +139,16 @@ function DeleteAll({ disabled, deleting, onDelete }: Readonly<{ disabled: boolea
       </button>
       <ConfirmModal isOpen={confirming} title={t('test.deleteTitle')} message={t('test.deleteMessage')}
         confirmLabel={t('test.deleteConfirm')} variant="danger" isLoading={deleting}
-        onConfirm={() => { void onDelete().finally(() => setConfirming(false)) }} onCancel={() => setConfirming(false)} />
+        onConfirm={() => { void confirm() }} onCancel={close}>
+        {failed && <p role="alert" className="mt-3 text-[13px] text-danger">{t('test.deleteFailed')}</p>}
+      </ConfirmModal>
     </>
   )
 }
 
 /** Delete all for an admin or the form's creator; for anyone else, who can (once there is something to delete). */
 function DeleteControl({ allowed, count, deleting, onDelete }: Readonly<{
-  allowed: boolean; count: number; deleting: boolean; onDelete: () => Promise<void>
+  allowed: boolean; count: number; deleting: boolean; onDelete: () => Promise<boolean>
 }>) {
   const { t } = useTranslation('feedbackForms')
   if (allowed) return <DeleteAll disabled={count === 0} deleting={deleting} onDelete={onDelete} />

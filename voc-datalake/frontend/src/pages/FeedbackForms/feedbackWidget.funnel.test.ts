@@ -3,8 +3,9 @@
  * own route, `…/events` (`eventsEndpoint`, its own throttle: never the submit route, whose limit is the responses').
  * The open is one `opened` beacon (once per page load per form, once the form is shown, never from the preview; the
  * config read carries no counter and writes nothing), and a respondent who started and leaves without submitting
- * sends ONE `left` beacon, naming the furthest question reached. Both go through navigator.sendBeacon (a keepalive
- * fetch when it refuses); never an answer, never a `left` after the response went, nothing from the preview.
+ * sends a `left` beacon naming the furthest question reached: one per question reached, again only once they came
+ * back and went further (never one per tab switch). Both go through navigator.sendBeacon (a keepalive fetch when it
+ * refuses); never an answer, never a `left` after the response went, nothing from the preview.
  */
 import { waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -132,6 +133,19 @@ describe('leaving without submitting', () => {
     ]])
     expect(JSON.stringify(leftBeacons())).not.toContain('secret answer')
     expect(submissions()).toStrictEqual([])
+  })
+
+  it('sends another `left` when the respondent came back and reached further, never one per tab switch', async () => {
+    const container = await renderWidget(TWO_STEPS)
+    typeText(container, 'x')
+    hidePage()
+    hidePage()
+    clickNext(container)
+    leavePage()
+    hidePage()
+
+    expect(leftBeacons().map((sent) => eventField(sent, 'question_id'))).toStrictEqual(['q_text', 'q_more'])
+    expect(new Set(leftBeacons().map(sessionOf)).size).toBe(1)
   })
 
   it('sends it when the page goes hidden, which is what a phone fires', async () => {

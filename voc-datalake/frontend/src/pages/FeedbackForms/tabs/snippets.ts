@@ -99,9 +99,11 @@ export function iframeSnippet(input: SnippetInput): string | null {
 }
 
 /**
- * The `VoCFeedbackForm.init` call, with the language, the hidden fields' placeholders and the test token. Each
- * placeholder is a string, `'{USER_ID}'`, as in the link: pasted as it is, the form still renders (a bare `USER_ID`
- * would stop the whole call with a ReferenceError), and the developer replaces it with the value.
+ * The `VoCFeedbackForm.init` call, with the hidden fields' placeholders and the test token. Each placeholder is a
+ * string, `'{USER_ID}'`, as in the link: pasted as it is, the form still renders (a bare `USER_ID` would stop the whole
+ * call with a ReferenceError), and the developer replaces it with the value. The language is a comment: without it the
+ * widget shows the visitor's browser language when the form has it (else its primary), so pinning one is the
+ * developer's choice, never the snippet's default.
  */
 function initLines(input: SnippetInput): string[] {
   const hidden = input.hidden.map((field) => `${field.id}: ${jsString(placeholderOf(field.id))}`).join(', ')
@@ -110,7 +112,7 @@ function initLines(input: SnippetInput): string[] {
     `  container: '#${CONTAINER_ID}',`,
     `  apiEndpoint: ${jsString(stripTrailingSlashes(input.apiEndpoint))},`,
     `  formId: ${jsString(input.formId)},`,
-    `  language: ${jsString(input.language)},`,
+    `  // language: ${jsString(input.language)}, // optional: one language for every visitor (else their browser's)`,
     ...(input.hidden.length === 0 ? [] : [`  hidden: { ${hidden} },`]),
     ...(input.testToken === null ? [] : [`  test: ${jsString(input.testToken)},`]),
     '});',

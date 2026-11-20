@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithDraft, sampleForm } from '../test/draftHarness'
 import type { DraftHarnessOptions } from '../test/draftHarness'
@@ -34,6 +34,15 @@ describe('QuestionList', () => {
     expect(probe.current?.form.questions.at(-1)?.type).toBe('single_select')
     expect(go).toHaveBeenCalledWith('questions', ['q_single_select'])
     expect(probe.current?.freshCodes).toStrictEqual(new Set(['q_single_select:option', 'q_single_select:option_2']))
+  })
+
+  it("never gives a new question a removed question's id, nor one this draft removed", async () => {
+    const user = userEvent.setup()
+    const { probe } = renderList(sampleForm({ questions: [text('q_feedback', 'Hi'), text('q_open_text', 'Gone soon')] }), { meta: { retired_ids: ['q_open_text_2'] } })
+    act(() => { probe.current?.update((form) => ({ ...form, questions: form.questions.slice(0, 1) })) })
+    await user.click(screen.getByRole('button', { name: 'Add question' }))
+    await user.click(screen.getByRole('menuitem', { name: /^Text/ }))
+    expect(ids(probe.current?.form)).toStrictEqual(['q_feedback', 'q_open_text_3'])
   })
 
   it('opens the type menu outside the scrolling list (fixed, in a portal), and Escape goes back to the trigger', async () => {

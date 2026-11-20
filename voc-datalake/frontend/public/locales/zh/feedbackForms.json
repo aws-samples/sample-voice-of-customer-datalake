@@ -84,6 +84,8 @@
     "welcomeTitleEmpty": "欢迎页需要标题。",
     "consentLabelEmpty": "请填写复选框文本。",
     "duplicateQuestionId": "另一个问题的 ID 也是 {{id}}。",
+    "retiredQuestionId": "ID {{id}} 属于之前删除的问题，ID 永不重复使用。请换一个。",
+    "answeredReshaped": "问题 {{number}} 已有回复，类型和分值不能更改。请撤销更改，或为此添加一个新问题。",
     "invalidQuestionId": "问题 ID 以 q_ 开头，只能使用小写字母、数字和 _。",
     "duplicateEndingId": "另一个结束页的 ID 也是 {{id}}。",
     "invalidEndingId": "结束页 ID 以 end_ 开头，只能使用小写字母、数字和 _。",
@@ -227,6 +229,7 @@
       "fixToPublishSaveWorks_one": "修复 {{count, number}} 个错误后才能发布。仍可保存。",
       "fixToPublishSaveWorks_other": "修复 {{count, number}} 个错误后才能发布。仍可保存。",
       "themeRefused": "无法保存：已上线的表单需要受访者能读清的文字，与背景的对比度至少为 3:1。请在“样式”中更改颜色。",
+      "questionIdReused": "无法保存：ID {{id}} 属于之前删除的问题，ID 永不重复使用。请在“高级”中为该问题换一个 ID。",
       "themeHardToRead": "此表单的文字难以阅读。",
       "themeFix": "修正颜色",
       "save": "保存",
@@ -1329,6 +1332,7 @@
   "typeChange": {
     "label": "问题 {{number}}：类型",
     "none": "要更改类型，请添加一个该类型的新问题，然后删除此问题。",
+    "locked": "答案按此类型保存，表单有回复后就不能更改类型。要换一种问法，请添加一个新问题并删除这个问题。",
     "confirmTitle": "更改问题类型？",
     "confirmMessage": "此更改将丢弃：{{lost}}。",
     "confirm": "更改类型",
@@ -1431,6 +1435,7 @@
     },
     "points": "分值",
     "facesRange": "表情量表为 3 到 5 分。",
+    "rangeLocked": "答案按这些分值保存，表单有回复后就不能更改。",
     "lowEnd": "低端标签",
     "highEnd": "高端标签",
     "fixed": {
@@ -1747,6 +1752,8 @@
     "resetFailed": "无法重置测试链接。请稍后重试。",
     "noToken": "此表单还没有测试链接。",
     "makeLink": "创建测试链接",
+    "makeLinkFailed": "无法创建测试链接。请稍后再试。",
+    "tokenLoading": "正在读取测试链接…",
     "qrTitle": "测试链接二维码",
     "recordTitle": "测试回复如何处理",
     "keep": "保留，并标记为“测试”",
@@ -1763,6 +1770,7 @@
     "deleteTitle": "删除所有测试回复？",
     "deleteMessage": "此表单的所有测试回复都将被删除。真实回复不受影响。此操作无法撤销。",
     "deleteConfirm": "删除测试回复",
+    "deleteFailed": "无法删除测试回复。请稍后再试。",
     "noneYet": "还没有测试回复。打开测试链接，或用手机扫描其二维码，然后提交一条。",
     "checkOnlyEmpty": "“仅检查”不会保留任何内容，因此这里没有可显示的内容。切换到“保留”即可查看测试回复。",
     "emptyValue": "空",
@@ -1830,6 +1838,8 @@
     "openInFeedback": "在“反馈”中打开",
     "reach": "已作答 {{answered}} · 已跳过 {{skipped}} · 未显示 {{hidden}}（逻辑）",
     "changed": "{{date}} 已更改：在此之前的回答使用的是其他选项",
+    "earlierVersion_one": "对此问题早先版本（其他类型或分值）的 {{formatted}} 个回答不计入此处",
+    "earlierVersion_other": "对此问题早先版本（其他类型或分值）的 {{formatted}} 个回答不计入此处",
     "endings": "结束页",
     "defaultEnding": "默认",
     "removedQuestions": "已删除的问题（{{count, number}}）",
@@ -1914,7 +1924,8 @@
     "reachCard": {
       "title": "到达情况",
       "answeredBy": "{{total}} 条已完成回复中有 {{answered}} 条作答",
-      "note": "统计中途退出的人数需要浏览跟踪，目前尚未收集。"
+      "note": "统计中途退出的人数需要浏览跟踪，目前尚未收集。",
+      "filtered": "流失统计的是所有访问，因此按语言、结束页或隐藏值筛选时不显示。"
     },
     "responses": {
       "title": "没有回复",

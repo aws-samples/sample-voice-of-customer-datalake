@@ -221,10 +221,44 @@ class TestSavesAndRevisions:
         form = _create(lambda_context)
         url = f"/feedback-forms/{form['form_id']}"
         reason = {**V2_FORM['questions'][0], 'logic': []}
-        assert _call(lambda_context, 'PUT', url, body={'questions': [reason, V2_FORM['questions'][2]]})[0] == 200
+        assert form['retired_ids'] == []
+        status, saved = _call(lambda_context, 'PUT', url, body={'questions': [reason, V2_FORM['questions'][2]]})
+        assert status == 200
+        # The retired ids travel with the form (the save's answer and the builder's read), so no new question takes one.
+        assert saved['form']['retired_ids'] == ['q_which', 'q_contact']
+        assert _call(lambda_context, 'GET', url)[1]['form']['retired_ids'] == ['q_which', 'q_contact']
         status, answer = _call(lambda_context, 'PUT', url, body={'questions': [reason, V2_FORM['questions'][1]]})
-        assert status == 400
+        assert (status, answer['code'], answer['question_id']) == (400, 'question_id_reused', 'q_which')
         assert 'never reused' in answer['error']
+
+    def test_every_save_counts_and_a_stale_editor_cannot_turn_a_form_back_on(self, lambda_context):
+        """The revision moves with the definition only; the save count with every save. An editor that loaded the
+        form before it was turned Off sends the count it read and gets the 409, never a live form again."""
+        form = _create(lambda_context)
+        url = f"/feedback-forms/{form['form_id']}"
+        assert (form['revision'], form['write_count']) == (1, 0)
+        status, off = _call(lambda_context, 'PUT', url, body={'enabled': False, 'expected_write_count': 0})
+        assert (status, off['form']['revision'], off['form']['write_count']) == (200, 1, 1)
+        status, answer = _call(lambda_context, 'PUT', url, body={'enabled': True, 'name': 'Mine', 'expected_revision': 1,
+                                                                 'expected_write_count': 0})
+        assert (status, answer['code'], answer['revision'], answer['write_count']) == (409, 'revision_conflict', 1, 1)
+        assert _call(lambda_context, 'GET', url)[1]['form']['enabled'] is False
+        status, saved = _call(lambda_context, 'PUT', url, body={'name': 'Mine', 'expected_write_count': 1})
+        assert (status, saved['form']['write_count']) == (200, 2)
+        assert _call(lambda_context, 'PUT', url, body={'name': 'x', 'expected_write_count': 'one'})[0] == 400
+
+    def test_a_save_racing_another_is_a_409_and_a_row_saved_before_the_count_still_saves(self, world, lambda_context):
+        form = _create(lambda_context)
+        key = {'pk': 'FEEDBACK_FORM', 'sk': f"FORM#{form['form_id']}"}
+        stale = world['aggregates'].get_item(Key=key)['Item']
+        assert _call(lambda_context, 'PUT', f"/feedback-forms/{form['form_id']}", body={'name': 'First'})[0] == 200
+        with patch.object(h, '_read_form', side_effect=[stale, world['aggregates'].get_item(Key=key)['Item']]):
+            status, answer = _call(lambda_context, 'PUT', f"/feedback-forms/{form['form_id']}", body={'name': 'Late'})
+        assert (status, answer['code']) == (409, 'revision_conflict')
+        assert world['aggregates'].get_item(Key=key)['Item']['name'] == 'First'
+        world['aggregates'].update_item(Key=key, UpdateExpression='REMOVE write_count')
+        status, saved = _call(lambda_context, 'PUT', f"/feedback-forms/{form['form_id']}", body={'name': 'Old row'})
+        assert (status, saved['form']['write_count']) == (200, 1)
 
     def test_a_v1_form_is_written_back_as_v2_on_its_next_save_losing_nothing(self, world, lambda_context):
         status, answer = _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'enabled': False})
@@ -823,6 +857,40 @@ class TestTheLockOfAnAnsweredForm:
         status, answer = self._put(lambda_context, fid, questions=[as_text, *V2_FORM['questions'][1:]])
         assert (status, answer['options']) == (409, {'q_reason': ['missing', 'slow']})
 
+    @pytest.mark.parametrize('change', [{'type': 'nps', 'range': None}, {'range': 10}],
+                             ids=['type', 'range'])
+    def test_an_answered_question_keeps_its_type_and_range_named_or_not(self, world, lambda_context, change):
+        """Its answers would be read on the new scale (a 5 of 5 stars as an NPS 5): refused like an unnamed removal,
+        whatever ``removes`` names, and nothing is written."""
+        fid = self._answered(lambda_context)
+        rating = {key: value for key, value in {**V2_FORM['questions'][2], **change}.items() if value is not None}
+        questions = [V2_FORM['questions'][0], V2_FORM['questions'][1], rating, V2_FORM['questions'][3]]
+        for removes in (None, {'questions': ['q_rate']}):
+            status, answer = self._put(lambda_context, fid, questions=questions, removes=removes)
+            assert (status, answer['code'], answer['changed']) == (409, 'answers_locked', ['q_rate'])
+            assert 'types, ranges' in answer['error']
+        assert _rows(world, f'FORMREV#{fid}#') == []
+
+    def test_a_v1_form_answered_only_before_7_55_is_locked_and_marked(self, world, lambda_context):
+        """No submit marked it (has_responses unset): a save that changes its definition reads its responses, refuses
+        a headless removal (the assistant turning its rating off) and marks the form, so the next save reads the flag."""
+        world['feedback'].put_item(Item={'pk': 'SOURCE#Acme', 'sk': 'FEEDBACK#old', 'feedback_id': 'old',
+                                         'source_platform': 'feedback_form', 'source_channel': 'form_deadbeef',
+                                         'source_created_at': '2025-06-01T10:00:00', 'rating': 4, 'original_text': 'ok'})
+        status, answer = _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'rating_enabled': False})
+        assert (status, answer['code'], answer['questions']) == (409, 'answers_locked', ['q_rating'])
+        stored = world['aggregates'].get_item(Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#deadbeef'})['Item']
+        assert (stored['has_responses'], 'revision' in stored) == (True, False)
+        status, answer = _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'rating_max': 10})
+        assert (status, answer['changed']) == (409, ['q_rating'])
+        assert _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'name': 'Kept'})[0] == 200
+
+    def test_an_unanswered_v1_form_still_changes_freely(self, world, lambda_context):
+        status, answer = _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'rating_enabled': False})
+        assert (status, [q['id'] for q in answer['form']['questions']]) == (200, ['q_text', 'q_contact'])
+        assert 'has_responses' not in world['aggregates'].get_item(
+            Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#deadbeef'})['Item']
+
     def test_a_form_without_a_response_changes_freely_and_any_other_save_needs_no_names(self, lambda_context):
         fid = _create(lambda_context)['form_id']
         assert self._put(lambda_context, fid, questions=self._renamed())[0] == 200
@@ -879,7 +947,8 @@ class TestResultsAndResponses:
     def test_results_count_real_responses_and_test_ones_only_when_asked(self, seeded, lambda_context):
         status, results = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/results')
         assert status == 200, results
-        assert (results['responses'], results['test_responses'], results['include_test']) == (3, 0, False)
+        # (the test responses left out are still counted, so the page can say how many it hides)
+        assert (results['responses'], results['test_responses'], results['include_test']) == (3, 1, False)
         reason = results['questions'][0]
         assert (reason['options'], reason['other']) == ({'missing': 1, 'slow': 1}, 1)
         which = results['questions'][1]
@@ -895,7 +964,37 @@ class TestResultsAndResponses:
                            query={'hidden.app_version': '5.1'})
         assert results['responses'] == 1
         _, results = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/results', query={'to': '2026-11-01'})
-        assert results['responses'] == 1
+        assert (results['responses'], results['test_responses']) == (1, 0)
+
+    @pytest.mark.parametrize('query', [{'language': 'pl'}, {'ending': 'end_thanks'}, {'hidden.app_version': '5.0'}])
+    def test_a_filter_the_funnels_counters_cannot_follow_answers_no_funnel(self, world, seeded, lambda_context, query):
+        """The daily counters know no language, ending or hidden value: filtered completions against every visit's
+        opens would be a false drop-off, so there is none (the page shows Reach). Dates alone keep it."""
+        world['aggregates'].put_item(Item={'pk': 'FEEDBACK_FORM', 'sk': f'FORMFUNNEL#{seeded}#2026-11-01',
+                                           'form_id': seeded, 'day': '2026-11-01', 'is_test': False, 'opened': 9})
+        with patch.object(h, '_funnel_rows', wraps=h._funnel_rows) as read:
+            _, filtered = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/results', query=query)
+        read.assert_not_called()
+        assert filtered['funnel'] is None
+        _, dated = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/results', query={'from': '2026-11-01'})
+        assert dated['funnel'] == {'opened': 9, 'left': {}, 'completed': 3}
+
+    def test_each_response_is_scored_against_the_revision_it_answered(self, world, lambda_context):
+        """A 5-star rating made an NPS (before any real response): a revision 1 rating of 5 is no NPS 5."""
+        fid = _create(lambda_context)['form_id']
+        rating = V2_FORM['questions'][2]
+        nps = {key: rating[key] for key in ('id', 'headline', 'required')} | {'type': 'nps'}
+        questions = [V2_FORM['questions'][0], V2_FORM['questions'][1], nps, V2_FORM['questions'][3]]
+        status, saved = _call(lambda_context, 'PUT', f'/feedback-forms/{fid}', body={'questions': questions})
+        assert (status, saved['form']['revision']) == (200, 2)
+        for n, (score, revision) in enumerate(((5, 1), (9, 2), (10, 2))):
+            world['feedback'].put_item(Item=_item(fid, f'f{n}', f'2026-11-0{n + 1}T10:00:00', {'q_rate': score},
+                                                  ['q_reason', 'q_rate'], form_revision=revision))
+        _, results = _call(lambda_context, 'GET', f'/feedback-forms/{fid}/results', query={'from': '2026-11-01'})
+        q_rate = next(q for q in results['questions'] if q['id'] == 'q_rate')
+        assert (q_rate['type'], q_rate['answered'], q_rate['earlier_version'], q_rate['histogram']['5']) == \
+            ('nps', 2, 1, 0)
+        assert q_rate['nps']['score'] == 100.0
 
     @staticmethod
     def _restrict_form_responses(world: dict, ws: str | None = None) -> None:

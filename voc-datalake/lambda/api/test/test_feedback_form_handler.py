@@ -1494,6 +1494,7 @@ class TestTheFollowUpQuestionAndTheFormLanguage:
         item = feedback_form_handler.build_form_item({'question': 'Jak?', 'text_question': '', 'language': 'pl'})
         assert _headlines(item)['q_text'] == {'pl': fv2.TELL_US_MORE['pl']}
 
+    @patch('feedback_form_handler.feedback_table', _fake_feedback_table({}))
     @patch('feedback_form_handler.aggregates_table')
     def test_a_v1_update_of_a_v1_form_writes_it_back_as_v2(
         self, mock_table, api_gateway_event, lambda_context, feedback_form_handler,

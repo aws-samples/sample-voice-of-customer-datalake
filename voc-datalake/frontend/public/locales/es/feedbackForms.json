@@ -84,6 +84,8 @@
     "welcomeTitleEmpty": "La pantalla de bienvenida necesita un título.",
     "consentLabelEmpty": "Escribe el texto de la casilla.",
     "duplicateQuestionId": "Otra pregunta tiene el id {{id}}.",
+    "retiredQuestionId": "El identificador {{id}} pertenecía a una pregunta eliminada antes, y los identificadores nunca se reutilizan. Elige otro.",
+    "answeredReshaped": "La pregunta {{number}} tiene respuestas, así que su tipo y sus puntos no pueden cambiar. Deshaz el cambio o añade una pregunta nueva para ello.",
     "invalidQuestionId": "El id de una pregunta empieza por q_ y usa minúsculas, dígitos y _.",
     "duplicateEndingId": "Otra pantalla final tiene el id {{id}}.",
     "invalidEndingId": "El id de una pantalla final empieza por end_ y usa minúsculas, dígitos y _.",
@@ -227,6 +229,7 @@
       "fixToPublishSaveWorks_one": "Corrige {{count, number}} problema para publicar. Guardar sigue funcionando.",
       "fixToPublishSaveWorks_other": "Corrige {{count, number}} problemas para publicar. Guardar sigue funcionando.",
       "themeRefused": "No se pudo guardar: un formulario activo necesita un texto que los encuestados puedan leer, de al menos 3:1 sobre su fondo. Cambia los colores en Estilo.",
+      "questionIdReused": "No se pudo guardar: el identificador {{id}} pertenecía a una pregunta eliminada antes, y los identificadores nunca se reutilizan. Dale otro identificador a esa pregunta en Avanzado.",
       "themeHardToRead": "El texto de este formulario es difícil de leer.",
       "themeFix": "Corregir los colores",
       "save": "Guardar",
@@ -1329,6 +1332,7 @@
   "typeChange": {
     "label": "Pregunta {{number}}: tipo",
     "none": "Para cambiar su tipo, añade una pregunta nueva de ese tipo y elimina esta.",
+    "locked": "Las respuestas se guardan para este tipo, así que no puede cambiar cuando el formulario ya tiene respuestas. Para preguntarlo de otra forma, añade una pregunta nueva y elimina esta.",
     "confirmTitle": "¿Cambiar el tipo de la pregunta?",
     "confirmMessage": "Este cambio elimina: {{lost}}.",
     "confirm": "Cambiar tipo",
@@ -1431,6 +1435,7 @@
     },
     "points": "Puntos",
     "facesRange": "Las caras van de 3 a 5 puntos.",
+    "rangeLocked": "Las respuestas se guardan en estos puntos, así que no pueden cambiar cuando el formulario ya tiene respuestas.",
     "lowEnd": "Etiqueta inferior",
     "highEnd": "Etiqueta superior",
     "fixed": {
@@ -1747,6 +1752,8 @@
     "resetFailed": "No se pudo restablecer el enlace de prueba. Inténtalo de nuevo en un momento.",
     "noToken": "Este formulario aún no tiene enlace de prueba.",
     "makeLink": "Crear el enlace de prueba",
+    "makeLinkFailed": "No se pudo crear el enlace de prueba. Inténtalo de nuevo en un momento.",
+    "tokenLoading": "Leyendo el enlace de prueba…",
     "qrTitle": "Código QR del enlace de prueba",
     "recordTitle": "Qué pasa con las respuestas de prueba",
     "keep": "Conservarlas, marcadas como Prueba",
@@ -1763,6 +1770,7 @@
     "deleteTitle": "¿Eliminar todas las respuestas de prueba?",
     "deleteMessage": "Se eliminan todas las respuestas de prueba de este formulario. Las respuestas reales no se tocan. No se puede deshacer.",
     "deleteConfirm": "Eliminar respuestas de prueba",
+    "deleteFailed": "No se pudieron eliminar las respuestas de prueba. Inténtalo de nuevo en un momento.",
     "noneYet": "Aún no hay respuestas de prueba. Abre el enlace de prueba, o escanea su código QR con un móvil, y envía una.",
     "checkOnlyEmpty": "«Comprobarlas» no conserva nada, así que aquí no hay nada que mostrar. Cambia a «Conservarlas» para ver las respuestas de prueba.",
     "emptyValue": "vacío",
@@ -1830,6 +1838,8 @@
     "openInFeedback": "Abrir el elemento de feedback",
     "reach": "Respondieron {{answered}} · Omitieron {{skipped}} · No se mostró a {{hidden}} (lógica)",
     "changed": "Cambiada el {{date}}: las respuestas anteriores usaban otras opciones",
+    "earlierVersion_one": "{{formatted}} respuesta a una versión anterior de esta pregunta (otro tipo o puntos) no se cuenta aquí",
+    "earlierVersion_other": "{{formatted}} respuestas a una versión anterior de esta pregunta (otro tipo o puntos) no se cuentan aquí",
     "endings": "Pantallas finales",
     "defaultEnding": "predeterminada",
     "removedQuestions": "Preguntas eliminadas ({{count, number}})",
@@ -1914,7 +1924,8 @@
     "reachCard": {
       "title": "Alcance",
       "answeredBy": "respondida en {{answered}} de {{total}} respuestas completadas",
-      "note": "Saber cuántas personas abandonan a mitad requiere seguimiento de visualizaciones, que aún no se recoge."
+      "note": "Saber cuántas personas abandonan a mitad requiere seguimiento de visualizaciones, que aún no se recoge.",
+      "filtered": "El abandono cuenta todas las visitas, así que no se muestra mientras filtras por idioma, final o un valor oculto."
     },
     "responses": {
       "title": "Sin respuestas",

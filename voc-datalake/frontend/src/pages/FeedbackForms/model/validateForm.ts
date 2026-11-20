@@ -24,11 +24,12 @@ import { ruleProblems } from './ruleProblems'
 import type { ProblemSeverity, RuleProblemCode } from './ruleProblems'
 import { formPaths } from './paths'
 import { missingTexts } from './translatable'
+import { reshapedIds } from './removals'
 
 type FormProblemCode = RuleProblemCode
   | 'noQuestions' | 'tooManyQuestions' | 'noEndings' | 'tooManyEndings' | 'tooManyHidden'
   | 'headlineEmpty' | 'optionEmpty' | 'endingTitleEmpty' | 'welcomeTitleEmpty' | 'consentLabelEmpty'
-  | 'duplicateQuestionId' | 'invalidQuestionId' | 'duplicateEndingId' | 'invalidEndingId'
+  | 'duplicateQuestionId' | 'invalidQuestionId' | 'retiredQuestionId' | 'answeredReshaped' | 'duplicateEndingId' | 'invalidEndingId'
   | 'duplicateHiddenId' | 'invalidHiddenId' | 'reservedHiddenId' | 'duplicateCode' | 'reservedCode' | 'invalidCode'
   | 'noOptions' | 'tooManyOptions' | 'minOverMax' | 'maxOverChoices' | 'minOverChoices'
   | 'buttonUrl' | 'buttonLabelEmpty' | 'ctaUrl' | 'contactNoField' | 'contactTwice' | 'maxCharsRange' | 'facesRange'
@@ -61,6 +62,12 @@ export interface ValidationContext {
   /** The theme the stored form has while it is live (theme/contrast.ts `liveThemeOf`): kept as it is, unreadable text
    * is a warning (`themeUnreadableLive`) and never blocks Update live form; changed, it is the error again. */
   readonly liveTheme?: FormTheme
+  /** The stored form's retired question ids (`retired_ids`): a question that takes one is an error, as the server's
+   * 400 `question_id_reused` (an AI draft's or Improve's, or one typed in Advanced). */
+  readonly retiredIds?: readonly string[]
+  /** The stored form when it has a real response: a question it has whose type or range changed is an error, as the
+   * server's 409 `answers_locked` (`changed`; an AI's Improve may propose one). */
+  readonly answered?: FormV2 | null
 }
 
 const CHIP_LABEL_MAX = 30
@@ -138,13 +145,15 @@ function ownProblems(form: FormV2, q: Question): FormProblem[] {
   }
 }
 
-function questionProblems(form: FormV2): FormProblem[] {
+function questionProblems(form: FormV2, retired: readonly string[]): FormProblem[] {
   const ids = new Set<string>()
+  const removed = new Set(retired)
   const found: FormProblem[] = []
   form.questions.forEach((q, index) => {
     const at = (field: string): ProblemLocation => ({ kind: 'question', id: q.id, field })
     if (!isValidQuestionId(q.id)) found.push(formProblem('error', 'invalidQuestionId', at('id'), { id: q.id }))
     else if (ids.has(q.id)) found.push(formProblem('error', 'duplicateQuestionId', at('id'), { id: q.id }))
+    else if (removed.has(q.id)) found.push(formProblem('error', 'retiredQuestionId', at('id'), { id: q.id }))
     ids.add(q.id)
     if (!hasText(q.headline, form.language)) found.push(formProblem('error', 'headlineEmpty', at('headline'), { number: index + 1 }))
     found.push(...ownProblems(form, q))
@@ -251,10 +260,18 @@ function themeProblems(form: FormV2, liveTheme: FormTheme | undefined): FormProb
 }
 
 /** Every problem of the form: errors first, then warnings, then notes, each in form order. */
+/** A question of an answered form given another type or range (its answers would be read anew): an error at it. */
+function reshapedProblems(form: FormV2, answered: FormV2 | null): FormProblem[] {
+  if (answered === null) return []
+  return reshapedIds(answered, form).map((id) => formProblem('error', 'answeredReshaped', { kind: 'question', id, field: 'type' },
+    { number: form.questions.findIndex((q) => q.id === id) + 1 }))
+}
+
 export function validateForm(form: FormV2, context: ValidationContext = {}): FormProblem[] {
   const all = [
-    ...countProblems(form), ...questionProblems(form), ...endingProblems(form), ...hiddenProblems(form),
+    ...countProblems(form), ...questionProblems(form, context.retiredIds ?? []), ...endingProblems(form), ...hiddenProblems(form),
     ...(context.unconfirmedAddresses ?? []).map((at) => formProblem('error', 'aiAddress', at)),
+    ...reshapedProblems(form, context.answered ?? null),
     ...themeProblems(form, context.liveTheme),
     ...reachProblems(form), ...translationProblems(form), ...categoryProblems(form),
   ]

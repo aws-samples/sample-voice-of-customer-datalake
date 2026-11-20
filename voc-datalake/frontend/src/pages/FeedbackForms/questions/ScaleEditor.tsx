@@ -1,7 +1,9 @@
 /**
  * @fileoverview Rating, NPS, CSAT and CES (UX §4.2): a rating's scale (stars, numbers, faces) and points (faces come
  * in 3 to 5), the fixed scales' groups as text, the optional end labels, and NPS's "Ask detractors and promoters
- * different questions" while it has no rules (two long-text follow-ups after it, with Undo).
+ * different questions" while it has no rules (two long-text follow-ups after it, with Undo). Once the form has a real
+ * response a rating it had keeps its points (D9: its answers are read on them), so no other range, nor Faces on more
+ * than 5 points, is offered; the reason says so.
  *
  * @module pages/FeedbackForms/questions/ScaleEditor
  */
@@ -10,7 +12,7 @@ import { GitBranch } from 'lucide-react'
 import type { RatingQuestion, RatingRange, RatingScale, ScoreQuestion } from '../model/formsV2'
 import { RATING_RANGES } from '../model/formsV2'
 import { textIn, withText } from '../model/i18nText'
-import { useDraft } from '../builder/formDraftContext'
+import { answeredVersion, useDraft } from '../builder/formDraftContext'
 import Segmented from '../ui/Segmented'
 import { useAnnounce } from './statusLineContext'
 import { withNpsFollowUps } from './npsHelper'
@@ -20,16 +22,29 @@ type Scaled = RatingQuestion | ScoreQuestion
 
 const FACES_MAX = 5
 
+/** Why a range can't be chosen: an answered rating's points are its stored ones (`lockedRange`); Faces take 3 to 5. */
+function rangeReason(t: (key: string) => string, range: RatingRange, faces: boolean, lockedRange: number | null): string | undefined {
+  if (lockedRange !== null && range !== lockedRange) return t('scale.rangeLocked')
+  return faces && range > FACES_MAX ? t('scale.facesRange') : undefined
+}
+
 function RatingFields({ question, onChange }: Readonly<{ question: RatingQuestion; onChange: (q: Scaled) => void }>) {
   const { t } = useTranslation('feedbackForms')
+  const draft = useDraft()
+  const stored = answeredVersion(draft, question.id)
+  const lockedRange = stored?.type === 'rating' ? stored.range : null
   const faces = question.scale === 'smiley'
   const setScale = (scale: RatingScale) => onChange({ ...question, scale, range: scale === 'smiley' && question.range > FACES_MAX ? FACES_MAX : question.range })
+  // (Faces on more than 5 points would change an answered rating's points)
+  const facesLocked = lockedRange !== null && lockedRange > FACES_MAX
   return (
     <div className="space-y-3">
       <div className="space-y-1">
         <p className="text-sm font-medium text-text">{t('scale.scale')}</p>
         <Segmented label={t('scale.scale')} value={question.scale} onChange={setScale}
-          choices={(['star', 'number', 'smiley'] as const).map((value) => ({ value, label: t(`scale.scales.${value}`) }))} />
+          choices={(['star', 'number', 'smiley'] as const).map((value) => ({
+            value, label: t(`scale.scales.${value}`), disabledReason: value === 'smiley' && facesLocked ? t('scale.rangeLocked') : undefined,
+          }))} />
       </div>
       <div className="space-y-1">
         <p className="text-sm font-medium text-text">{t('scale.points')}</p>
@@ -39,9 +54,10 @@ function RatingFields({ question, onChange }: Readonly<{ question: RatingQuestio
             if (range !== undefined) onChange({ ...question, range })
           }}
           choices={RATING_RANGES.map((range: RatingRange) => ({
-            value: String(range), label: String(range), disabledReason: faces && range > FACES_MAX ? t('scale.facesRange') : undefined,
+            value: String(range), label: String(range), disabledReason: rangeReason(t, range, faces, lockedRange),
           }))} />
-        {faces && <p className="text-[12px] text-muted">{t('scale.facesRange')}</p>}
+        {lockedRange !== null && <p className="text-[12px] text-muted">{t('scale.rangeLocked')}</p>}
+        {faces && lockedRange === null && <p className="text-[12px] text-muted">{t('scale.facesRange')}</p>}
       </div>
     </div>
   )
@@ -55,7 +71,7 @@ function FixedScale({ question }: Readonly<{ question: ScoreQuestion }>) {
   const hasRules = (question.logic ?? []).length > 0
   const help = () => {
     const before = draft.form
-    draft.update((form) => withNpsFollowUps(form, question.id))
+    draft.update((form) => withNpsFollowUps(form, question.id, draft.retiredIds))
     announce({ message: t('scale.npsHelper.done'), undo: () => draft.update(() => before) })
   }
   return (

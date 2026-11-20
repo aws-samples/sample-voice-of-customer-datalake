@@ -2,7 +2,8 @@
  * @fileoverview NPS's "Ask detractors and promoters different questions" (UX §4.2): two long-text questions after
  * the NPS ("What's the main reason for your score?", "What do you value most?", in the form's language), with
  * "is at most 6 → the first" and "is at least 9 → the second". Passives go on where the form went before (the NPS's
- * Otherwise), and detractors skip the promoters' question.
+ * Otherwise), and detractors skip the promoters' question. Their ids are new: none of the form's, nor a removed
+ * question's (`retired`, which the server never lets a question take again).
  *
  * @module pages/FeedbackForms/questions/npsHelper
  */
@@ -15,14 +16,15 @@ import { insertQuestion, questionIds, updateQuestion } from '../model/mutations'
 import { fallthroughTarget } from '../model/paths'
 import { withLogic } from '../model/rules'
 
-export function withNpsFollowUps(form: FormV2, npsId: string): FormV2 {
+export function withNpsFollowUps(form: FormV2, npsId: string, retired: ReadonlySet<string> = new Set()): FormV2 {
   const index = form.questions.findIndex((q) => q.id === npsId)
   if (index === -1) return form
   const lng = form.language
   const copy = (key: string) => i18n.t(`feedbackForms:scale.npsHelper.${key}`, { lng })
   const before = fallthroughTarget(form, index)
-  const detractorId = newQuestionId('detractor_reason', questionIds(form))
-  const promoterId = newQuestionId('promoter_value', new Set([...questionIds(form), detractorId]))
+  const taken = new Set([...questionIds(form), ...retired])
+  const detractorId = newQuestionId('detractor_reason', taken)
+  const promoterId = newQuestionId('promoter_value', new Set([...taken, detractorId]))
   const detractor = { ...newQuestion('open_text', detractorId), headline: textOf(lng, copy('detractor')) }
   const promoter = { ...newQuestion('open_text', promoterId), headline: textOf(lng, copy('promoter')) }
   const routed = before === null ? detractor : withLogic(detractor, [], before)

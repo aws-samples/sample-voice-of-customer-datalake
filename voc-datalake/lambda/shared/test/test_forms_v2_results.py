@@ -55,7 +55,7 @@ def test_the_totals_endings_hidden_and_removed_questions():
     assert results['endings'] == {'end_a': 3, 'end_b': 1}
     assert results['hidden'] == {'plan': 1}
     assert results['removed_questions'] == [{'id': 'q_gone', 'answered': 1}]
-    assert 'funnel' not in results
+    assert results['funnel'] is None
 
 
 def test_nps_is_promoters_minus_detractors_with_its_histogram():
@@ -137,7 +137,74 @@ def test_a_version_1_submission_counts_towards_its_migrated_questions():
     row = legacy_row(migrated, 4.0, ' Good ', 't', response_id='f9')
     assert row is not None
     assert (row.answers, row.path, row.response_id) == ({'q_rating': 4, 'q_text': 'Good'}, ['q_rating', 'q_text'], 'f9')
-    assert legacy_row(FORM, 4, 'x', 't') is None
+    assert legacy_row(migrated, None, '  ', 't') is None
+
+
+def test_a_version_1_submission_stays_counted_once_its_questions_are_removed_or_changed():
+    """Always q_rating and q_text, whatever the form holds now: a removed one counts under removed_questions, never
+    vanishing from Results, Responses or the CSV; one now of another type leaves the value out of it."""
+    row = legacy_row(FORM, 4, ' Slow ', 't', response_id='f9')
+    assert row is not None
+    assert (row.answers, row.path) == ({'q_rating': 4, 'q_text': 'Slow'}, ['q_rating', 'q_text'])
+    assert tally_results(FORM, [row])['removed_questions'] == [{'id': 'q_rating', 'answered': 1},
+                                                                 {'id': 'q_text', 'answered': 1}]
+    as_text = fv2.validate_definition({'language': 'en', 'questions': [
+        {'id': 'q_rating', 'type': 'open_text', 'headline': {'en': 'Rate'}, 'required': False}],
+        'endings': [{'id': 'end_a', 'title': {'en': 'A'}}]})
+    legacy = legacy_row(as_text, 4, '', 't')
+    assert legacy is not None
+    counted = _question(tally_results(as_text, [legacy]), 'q_rating')
+    assert (counted['shown'], counted['answered'], counted['skipped']) == (1, 0, 1)
+
+
+RATED = fv2.validate_definition({'language': 'en', 'questions': [
+    {'id': 'q_score', 'type': 'rating', 'headline': {'en': 'Rate'}, 'required': False, 'range': 5}],
+    'endings': [{'id': 'end_a', 'title': {'en': 'A'}}]})
+
+
+def _converted(**question: object) -> dict:
+    """RATED with its question changed (a field set to None is dropped: an NPS has no scale or range)."""
+    changed = {key: value for key, value in {**RATED['questions'][0], **question}.items() if value is not None}
+    return fv2.validate_definition({**RATED, 'questions': [changed]})
+
+
+def test_a_row_is_scored_against_its_own_revisions_question():
+    """Converted from a 5-star rating (revision 1) to NPS (revision 2): the old 5 is no NPS 5. It counts as an answer
+    to an earlier version, never towards the NPS, its histogram or its reach."""
+    nps = _converted(type='nps', range=None, scale=None)
+    rows = [_row({'q_score': 5}, ['q_score'], '2026-11-01', revision=1),
+            _row({'q_score': 9}, ['q_score'], '2026-11-02', revision=2),
+            _row({'q_score': 10}, ['q_score'], '2026-11-03', revision=2)]
+    score = _question(tally_results(nps, rows, revisions={1: RATED}), 'q_score')
+    assert (score['answered'], score['histogram']['5'], score['earlier_version'], score['not_shown']) == (2, 0, 1, 0)
+    assert score['nps'] == {'score': 100.0, 'promoters': 2, 'passives': 0, 'detractors': 0}
+    # Without its snapshot the row is read on the current question, as before 7.58.00.
+    assert _question(tally_results(nps, rows), 'q_score')['histogram']['5'] == 1
+
+
+def test_a_changed_range_keeps_the_old_answers_out_of_the_new_scale_never_skipped():
+    """A 1-10 rating shrunk to 1-5: an old 8 is neither a 1-5 answer nor a skip."""
+    ten = _converted(range=10)
+    rows = [_row({'q_score': 8}, ['q_score'], '2026-11-01', revision=1),
+            _row({'q_score': 4}, ['q_score'], '2026-11-02', revision=2)]
+    score = _question(tally_results(RATED, rows, revisions={1: ten}), 'q_score')
+    assert (score['shown'], score['answered'], score['skipped'], score['earlier_version']) == (1, 1, 0, 1)
+    assert score['average'] == 4.0
+    # The same type and range in both revisions: counted as one question across them.
+    same = _question(tally_results(RATED, rows, revisions={1: _converted(scale='number')}), 'q_score')
+    assert (same['answered'], 'earlier_version' in same) == (1, False)
+
+
+def test_a_version_1_row_answered_revision_1():
+    """No revision named (a version 1 widget's submission): revision 1, its migrated form."""
+    nps = _converted(type='nps', range=None, scale=None)
+    row = _row({'q_score': 5}, ['q_score'], 't')
+    assert _question(tally_results(nps, [row], revisions={1: RATED}), 'q_score')['earlier_version'] == 1
+
+
+def test_test_responses_are_counted_whether_or_not_the_view_includes_them():
+    assert tally_results(FORM, ROWS[:3], test_responses=4)['test_responses'] == 4
+    assert tally_results(FORM, ROWS)['test_responses'] == 1
 
 
 def test_the_cards_headline_is_the_first_measuring_question():

@@ -1,7 +1,9 @@
 /**
  * @fileoverview The question editor's header (UX §3.4, §4.7): "1 · Multiple choice ▾" (the type select offers only
  * the conversions that keep the content, and asks first when one drops something), Duplicate, and ⋯ (Move up,
- * Move down, Delete…).
+ * Move down, Delete…). Once the form has a real response a question it had keeps its type (D9: its answers are read
+ * on it, and the server refuses another): the type is shown with why, and only a way back to the stored type is
+ * offered.
  *
  * @module pages/FeedbackForms/questions/EditorHeader
  */
@@ -15,24 +17,32 @@ import { LIMITS } from '../model/formsV2'
 import { convertQuestion, convertibleTypes } from '../model/defaults'
 import type { Converted } from '../model/defaults'
 import { updateQuestion } from '../model/mutations'
-import { useDraft } from '../builder/formDraftContext'
+import { answeredVersion, useDraft } from '../builder/formDraftContext'
 import ActionsMenu from '../ui/ActionsMenu'
 import TypeChip from '../ui/TypeChip'
 import { typeNameKey } from '../ui/typeIcons'
 import { useRequestedFocus } from './focusRequest'
 import { useListActions } from './useListActions'
 
-function TypeSelect({ question, index, onConvert }: Readonly<{ question: Question; index: number; onConvert: (type: QuestionType) => void }>) {
+/** The conversions offered: none of an answered question but back to its stored type (`stored`), else every one. */
+function offeredTypes(question: Question, stored: Question | null): QuestionType[] {
+  const types = convertibleTypes(question)
+  return stored === null ? types : types.filter((type) => type === stored.type)
+}
+
+function TypeSelect({ question, stored, index, onConvert }: Readonly<{
+  question: Question; stored: Question | null; index: number; onConvert: (type: QuestionType) => void
+}>) {
   const { t } = useTranslation('feedbackForms')
   const id = useId()
   const select = useRequestedFocus<HTMLSelectElement>(`type:${question.id}`)
-  const types = convertibleTypes(question)
+  const types = offeredTypes(question, stored)
   if (types.length === 0) {
     return (
       <span className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-[13px] tabular-nums text-muted">{index + 1}</span>
         <TypeChip question={question} />
-        <span className="text-[12px] text-muted">{t('typeChange.none')}</span>
+        <span className="text-[12px] text-muted">{stored === null ? t('typeChange.none') : t('typeChange.locked')}</span>
       </span>
     )
   }
@@ -69,7 +79,7 @@ export default function EditorHeader({ question, index }: Readonly<{ question: Q
   const duplicate = t('question.duplicate', { number: index + 1 })
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <TypeSelect question={question} index={index} onConvert={convert} />
+      <TypeSelect question={question} stored={answeredVersion(draft, question.id)} index={index} onConvert={convert} />
       <div className="flex items-center gap-1">
         <Tooltip kind="label" content={duplicate}>
           <button type="button" className="icon-btn" aria-label={duplicate} aria-disabled={total >= LIMITS.questions ? true : undefined}

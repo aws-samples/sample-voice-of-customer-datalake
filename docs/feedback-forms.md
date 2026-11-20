@@ -100,8 +100,15 @@ The form API answers the form as `item_to_form` projects it: the fields above pl
 (never the token), `form_type`, `brand_name`, `created_at`, `updated_at` and `updated_by`, and:
 
 - `has_responses`: a real response was accepted. The submit route marks the form on its first one (from 7.55.00:
-  one write per form, never one per submission; a test response never marks it). From then on its question ids and
-  option codes are locked, in the builder and on the server ([below](#the-lock-of-an-answered-form));
+  one write per form, never one per submission; a test response never marks it). From then on its question ids,
+  their types and ranges, and its option codes are locked, in the builder and on the server
+  ([below](#the-lock-of-an-answered-form));
+- `retired_ids` (7.58.00): the ids of the questions the form had and removed. No question may take one again (a
+  save that does is a `400` `question_id_reused` with its `question_id`), so the builder never gives one to a new
+  question, a copy or the NPS helper's follow-ups, and words that refusal with the id;
+- `write_count` (7.58.00): how many saves the form row has taken (0 for a row written before). Every `PUT` counts one,
+  whatever it changes; a `PUT` with `expected_write_count` is a `409` `revision_conflict` once another save came in
+  between ([Revisions](#revisions));
 - `migrated_from: 1` while the form is still stored as version 1 ([below](#migration-from-version-1)).
 
 `GET /feedback-forms/{id}` answers `{form}`, one form as the list shows it plus `response_count`: its stored
@@ -111,22 +118,32 @@ that count is not 0 (a form answered only before 7.55.00). A count that cannot b
 
 ### The lock of an answered form
 
-A form's answers are stored under its question ids and option codes, so once it `has_responses` neither may change
-in place. The builder locks the id and code fields, and removes a question or an option only after saying that its
-answers stay in Results. The server enforces the same rule (TENETS.md, tenet 4), so a headless client cannot do more
-than the builder:
+A form's answers are stored under its question ids and option codes, and read on its questions' types and ranges,
+so once it `has_responses` none of them may change in place. The builder locks the id and code fields, the type
+select ("Answers are stored for this type…", offering only a way back to the stored type) and a rating's points (and
+Faces when the stored rating has more than 5), and removes a question or an option only after saying that its answers
+stay in Results. The server enforces the same rule (TENETS.md, tenet 4), so a headless client cannot do more than the
+builder:
 
 - A `PUT` whose definition drops a question id the stored form has, or drops an option code from a question it keeps
   (a rename is a drop plus an add, and so is a question that stops being a choice), must name each one in
   `removes`. Otherwise it answers `409` `answers_locked` with what it would drop (`questions`, `options:
   {question_id: [codes]}`) and writes nothing.
+- A `PUT` that keeps a question with another type or range (a CSAT or a 5-star rating made an NPS, a rating's points
+  changed) is that `409` `answers_locked` too, with `changed: [question ids]`, whatever `removes` names: its old
+  answers would be read on the new scale. To ask it another way, remove the question and add a new one.
 - A named removal is saved as the builder saves it. The question id is retired for good (a later save that brings it
   back answers `400` `question_id_reused`), and its answers stay in Results under "Removed questions", a removed
   option's under `removed_options`.
 - A form without a real response changes freely, and a save that leaves the definition alone (the name, Enable, the
   theme) needs no `removes`. The builder sends `removes` itself, computed from the form it loaded.
-- The server's lock reads the stored `has_responses`, which a form answered only before 7.55.00 gets on its next real
-  response. The builder locks such a form at once, because it reads `has_responses` from the response count.
+- `removes` and the `409` stay although the builder already locks all of this, because they are what holds the line
+  for a writer that has no builder: the assistant's `update_feedback_form` (turning a version 1 form's rating off),
+  a script on the API.
+- The server's lock reads the stored `has_responses`. A form answered only before 7.55.00 has none, so a save that
+  changes its definition reads first whether the form has a real response stored (every one, not only those the
+  saver may see, and failing closed: a read that fails refuses the save) and marks the form when it has. The
+  builder locks such a form at once, because it reads `has_responses` from the response count.
 
 ### Questions
 
@@ -137,7 +154,7 @@ attach to a new question.
 
 | `type` | Its fields | Its answer |
 |---|---|---|
-| `open_text` | `long`, `input_type` (`text`, `email`, `number`, `phone`, `url`), `placeholder?`, `max_chars?` (1–5000) | a string |
+| `open_text` | `long`, `input_type` (`text`, `email`, `number`, `phone`, `url`; always `text` when `long`, the box the widget draws), `placeholder?`, `max_chars?` (1–5000) | a string |
 | `single_select` | `options`, `other`, `shuffle`, `display` | `{code}` or `{other: "…"}` |
 | `multi_select` | the same, plus `none` and `min?` / `max?` | `{codes: [...], other?: "…"}` |
 | `rating` | `scale` (`star`, `number`, `smiley`), `range` (3, 4, 5, 7 or 10), `lower_label?`, `upper_label?` | a whole number from 1 to `range` |
@@ -166,7 +183,7 @@ question or an ending, so no logic can loop, and it must exist.
 
 | Type | Ops (`value`) |
 |---|---|
-| `open_text` | `equals`, `not_equals` (a text, compared ignoring case), `submitted`, `skipped` |
+| `open_text` | `equals`, `not_equals` (a text, compared ignoring case: both sides lower-cased as JavaScript's `toLowerCase` does, so the widget and the server take the same path; `ß` is not `ss`), `submitted`, `skipped` |
 | `single_select` | `equals`, `not_equals` (a code), `includes_any` (codes), `submitted`, `skipped` |
 | `multi_select` | `includes_any`, `includes_all` (codes), `submitted`, `skipped` |
 | `rating`, `nps`, `csat`, `ces` | `equals`, `not_equals`, `lt`, `lte`, `gt`, `gte` (a number in the range), `submitted`, `skipped` |
@@ -205,10 +222,13 @@ later change rewrites no stored response, but the form keeps no earlier copy of 
 
 Before a save replaces a revision, its definition is kept as a snapshot row (`FORMREV#{form_id}#{revision}` in the
 forms partition). A response names the revision it answered
-(`form_revision`), so a respondent who opened the form before an edit is checked against what they saw; a
-revision the form has not reached, or one with no snapshot, answers `409` (`code: form_changed`): the widget
-asks the respondent to reload. A save is conditional on the revision it read, so two saves never overwrite each
-other silently.
+(`form_revision`), so a respondent who opened the form before an edit is checked against what they saw, and Results
+score it against that revision's question; a revision the form has not reached, or one with no snapshot, answers
+`409` (`code: form_changed`): the widget asks the respondent to reload. A save is conditional on the revision and the
+save count (`write_count`) it read, so two saves never overwrite each other silently. A save may also send the ones
+its editor loaded (`expected_revision`, `expected_write_count`; the builder sends both): another one is a `409`
+`revision_conflict` with the stored `revision`, `write_count`, `updated_by` and `updated_at`, so an editor opened
+before the form was turned Off (or renamed, or restyled) cannot turn it back on with a stale copy.
 
 ### Migration from version 1
 
@@ -324,7 +344,7 @@ A token (`test`, `r`) is dropped from the address once read, so neither `page_ur
     container: '#voc-feedback-form',
     apiEndpoint: 'https://your-api.execute-api.region.amazonaws.com/v1',
     formId: '{form_id}',
-    language: 'en',
+    // language: 'en', // optional: one language for every visitor (else their browser's)
     hidden: { user_id: '{USER_ID}' },
     test: '{test token}',
   });
@@ -332,9 +352,10 @@ A token (`test`, `r`) is dropped from the address once read, so neither `page_ur
 ```
 
 The Share tab gives the three parts whole for each form: the element the form renders into, the widget file from
-this app's own address, and the `init` call with the form's language, a placeholder per hidden field (`hidden`,
-only when the form has hidden fields: replace each `'{…}'` with your value; pasted as it is, the form still
-renders) and, in Test mode only, the test token. The
+this app's own address, and the `init` call with a placeholder per hidden field (`hidden`, only when the form has
+hidden fields: replace each `'{…}'` with your value; pasted as it is, the form still renders), in Test mode only the
+test token, and the form's primary language as a comment (since 7.58.00): without `language` the widget shows each
+visitor the language of their browser when the form offers it, else the primary, so pinning one is your choice. The
 **In-app SDK** snippet (Hidden fields › Use them) is the same file loaded once in your app's page, then the same
 `init` call when the person takes the action the form asks about. Values the snippets carry are written as
 JavaScript strings that cannot end their `<script>` (`tabs/snippets.ts`).
@@ -586,7 +607,8 @@ All optional, with defaults, so a theme saved before 7.55.01 reads as it always 
   older forms), `dark` the **dark** one (VoC dark by default). `mode` picks the one shown: `light` (the default),
   `dark`, or `auto`, the respondent's `prefers-color-scheme`, followed live. The widget sets `color-scheme` to match,
   so native selects and scrollbars follow.
-- `border_radius`: `0px` to `24px` in the editor (presets 0, 4, 8 and 16, and a slider).
+- `border_radius`: `0px` to `99px`, as the API stores it and the widget draws it (before 7.58.00 the widget drew
+  only 0 to 39 px); `0px` to `24px` in the editor (presets 0, 4, 8 and 16, and a slider).
 - `font`: system stacks only, never a web font: `system`, `inherit` ("Same as your page", for the script embed;
   the system font on the iframe page and in the preview), `serif`, `rounded`, `mono`.
 - `text_size`: `default` or `large` (18 px body text).
@@ -613,7 +635,10 @@ templates, Blank, Describe your form and the assistant's form drafts start on it
 ### Contrast checks
 
 One set of rules, the same in the editor, on the server (`lambda/shared/form_theme.py`) and in the widget, for every
-palette that can be shown (light for `light`, dark for `dark`, both for `auto`):
+palette that can be shown (light for `light`, dark for `dark`, both for `auto`). An old form's `#rrggbbaa` colour is
+judged as the widget draws it, opaque with its alpha dropped (since 7.58.00; the editor and the server composited it
+before, so they could refuse a colour the widget showed readable, or pass one it did not); one vector,
+`#19161d80` on `#ffffff00` at 17.89:1, is pinned in the three suites:
 
 | Pair | Minimum | Below it |
 |---|---|---|
@@ -832,7 +857,11 @@ A form's **test link** opens it, even while it is disabled, and its responses ne
   `admins`) issues the token, or keeps it, and answers `{test: {link_enabled, record, token, token_issued_at},
   test_link, test_query}` (`test_link` is the iframe page with `?test=<token>`). Body (optional): `rotate: true`
   (a new token: the old link stops working), `link_enabled` (default `true`), `record` (`tag` or `drop`). The
-  token leaves the server only here; the form API shows `token_issued` instead.
+  token leaves the server only here; the form API shows `token_issued` instead. The builder's **Make the test
+  link** and **Reset test link** send the saved form's `link_enabled` and `record` back as they are, so the saved
+  link turns on, off or records otherwise only on Save; Make the test link never rotates (a form that has a token
+  keeps it, so a link in use never stops working) and is not offered while the token is still being read. A make,
+  a reset or a delete of the test responses that fails says so, its dialog left open.
 - `settings.test.link_enabled` turns the link off and on (the same link); `settings.test.record` chooses:
   - `tag`: the response is checked like any other, then kept **apart from the form** (a `{form_id}#…` row of the
     test responses' own partition beside its forms partition, `FEEDBACK_FORM_TEST`, a workspace's
@@ -887,9 +916,13 @@ sees them. A failed read of either scope is a 500, never everything. Both take `
 `language`, `ending` and `hidden.<id>=<value>`.
 
 **Results** (`include_test=false` by default): `{responses, test_responses, last_response_at, questions,
-endings: {id: n}, hidden: {id: n}, removed_questions: [{id, answered}], funnel}`. Each question of the current
-revision has `shown` (the responses whose path showed it), `answered`, `skipped`, `not_shown` (the logic jumped
-past it) and `drop_off_rate` (skipped / shown), and by type:
+endings: {id: n}, hidden: {id: n}, removed_questions: [{id, answered}], funnel}`. `test_responses` counts the test
+responses the view admits (its filters and the caller's access) whether or not they are included (since 7.58.00;
+before, 0 whenever they were left out), so the page can say "3 test responses are hidden"; `responses` adds them only
+with `include_test=true`. Each question of the current revision has `shown` (the responses whose path showed it),
+`answered`, `skipped`, `not_shown` (the logic jumped past it), `drop_off_rate` (skipped / shown) and, when there are
+any, `earlier_version` (answers to a revision where the question had another type or range, counted nowhere else),
+and by type:
 
 | Type | Adds |
 |---|---|
@@ -899,10 +932,17 @@ past it) and `drop_off_rate` (skipped / shown), and by type:
 | `consent` | `accepted` |
 | `contact_info` | `contacts` (never the values) |
 
-A question id is stable across revisions, so a response to an older revision counts towards the same question;
-a value of another shape is left out. A version 1 submission counts as the answers of its migrated `q_rating` and
-`q_text`. The forms list's `?include=stats` adds `headline` to each form's stats: its first `nps`, `csat`, `ces`
-or `rating` question's score (`{question_id, type, value, count, scale_max}`, `null` without one), and, since
+A question id is stable across revisions, so a response to an older revision counts towards the same question,
+scored against the question as its own revision had it (the form's `FORMREV#` snapshots, read once per view; since
+7.58.00): a rating of 5 given while the question was a 5-star rating is never read as an NPS 5 once it became one,
+and an answer to a 1–10 rating since made 1–5 is neither a 1–5 answer nor a skip. Both count under that question's
+`earlier_version`, and the card says how many it leaves out. A response that names no revision (a version 1 widget's)
+answered revision 1; without a snapshot of its revision a response is read on the current question. A value of
+another shape is left out. A version 1 submission always counts as the answers of `q_rating` and `q_text`, the
+questions its form became, even once they are removed (then under "Removed questions") or changed. The forms list's
+`?include=stats` adds `headline` to each form's stats: its first `nps`, `csat`, `ces` or `rating` question's score
+(`{question_id, type, value, count, scale_max}`, `null` without one), read on the current question only (the list
+reads no snapshots), and, since
 7.55.01, `last_response_at`, the latest counted response's `source_created_at` (absent when none carries one),
 and `channels`, per channel a response named (`link`, `iframe`, `script`) its latest one (absent when none did).
 `GET /feedback-forms/{id}/stats` answers the same fields.
@@ -928,8 +968,9 @@ lookup row, exactly as on submit, and its rows are written in that workspace's f
   (else `400 form_off`, like the submit). The config read itself never writes, so a cached or retried read counts
   nothing;
 - **left**: `{event: {kind: 'left', question_id, session, revision?}, test?}`, sent the same way when the page is
-  hidden or left, naming the furthest question shown. A respondent who submits sends their path with the response
-  instead.
+  hidden or left, naming the furthest question shown; sent again only when the respondent came back and reached
+  further (since 7.58.00; before, one per page load, so the server never saw them go further), never once per tab
+  switch. A respondent who submits sends their path with the response instead.
 
 `session` is the widget's random id of the visit (8 to 64 letters, digits, `_` or `-`; the widget sends 24 hex
 digits), no person's data. The response carries it too (`session`, kept as `metadata.form_session`).
@@ -949,7 +990,10 @@ What is kept, and for how long (TENETS.md D2):
   its `left` leaves that `left` counted. A form's delete leaves these rows to expire.
 
 Both live in the form's own forms partition (a workspace's form: `WS#{ws}#FEEDBACK_FORM`). Results answer
-`funnel: {opened, left: {question_id: n}, completed}` (a question whose total is not above 0 is left out).
+`funnel: {opened, left: {question_id: n}, completed}` (a question whose total is not above 0 is left out), its counts
+within the view's dates. Under a language, ending or hidden-value filter they answer `funnel: null` (since 7.58.00):
+the counters know none of them, and filtered completions against every visit's opens would read as a drop. The page
+then shows neither the funnel nor Completion; Reach says why.
 
 The funnel is advisory. Both signals come from a public route, so anyone who can open the form can add opens and
 `left` counts under made-up sessions, within the events route's throttle. That is also its cost bound: an

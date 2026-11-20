@@ -133,13 +133,43 @@ describe('ResultsTab summary', () => {
 
   it('reads without test responses, and says so loudly once they are included', async () => {
     const user = userEvent.setup()
-    getResults.mockResolvedValue({ ...RESULTS, test_count: 14 })
+    // As the API answers: the test responses the view admits are counted either way, and added to the total only
+    // when included (lambda/api/feedback_form_handler.py get_form_results).
+    getResults.mockImplementation((_id, filters) => Promise.resolve({
+      ...RESULTS, test_count: 14,
+      total: typeof filters === 'object' && filters !== null && Reflect.get(filters, 'includeTest') === true ? RESULTS.total + 14 : RESULTS.total,
+    }))
     renderWithDraft(<ResultsTab />, RESULTS_FORM)
     await card(1, 'What made you switch back?')
     expect(getResults).toHaveBeenCalledWith('f_test', DEFAULT_FILTERS)
     await user.click(screen.getByRole('switch', { name: 'Include test responses' }))
     expect(await screen.findByText("Including 14 test responses. These numbers aren't your real results.")).toBeInTheDocument()
     expect(getResults).toHaveBeenLastCalledWith('f_test', { ...DEFAULT_FILTERS, includeTest: true })
+  })
+
+  it.each([['lang=pl', { language: 'pl' }], ['ending=end_thanks', { ending: 'end_thanks' }], ['hf.user_id=u1', { hidden: { user_id: 'u1' } }]])(
+    'shows no funnel nor Completion under %s, whatever the server sent, and Reach says why', async (search, filter) => {
+      getResults.mockResolvedValue({ ...RESULTS, funnel: { opened: 40, started: 30, steps: [{ question_id: 'q_why', reached: 12 }], completed: 10 } })
+      renderWithDraft(<ResultsTab />, RESULTS_FORM, { search: `?${search}` })
+      const reach = await screen.findByRole('region', { name: 'Reach' })
+      expect(reach).toHaveTextContent("The drop-off counts every visit, so it isn't shown while you filter by language, ending or a hidden value.")
+      expect(screen.queryByRole('region', { name: 'Drop-off' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Completion')).not.toBeInTheDocument()
+      expect(getResults).toHaveBeenCalledWith('f_test', { ...DEFAULT_FILTERS, ...filter })
+    })
+
+  it('keeps the funnel under a date range alone', async () => {
+    getResults.mockResolvedValue({ ...RESULTS, funnel: { opened: 40, started: 30, steps: [{ question_id: 'q_why', reached: 12 }], completed: 10 } })
+    renderWithDraft(<ResultsTab />, RESULTS_FORM, { search: '?range=7' })
+    expect(await screen.findByRole('region', { name: 'Drop-off' })).toBeInTheDocument()
+    expect(screen.getByText('Completion')).toBeInTheDocument()
+  })
+
+  it('says how many answers went to an earlier version of a question, which it does not count', async () => {
+    getResults.mockResolvedValue({ ...RESULTS, questions: { ...RESULTS.questions, q_why: { ...RESULTS.questions.q_why, earlier_version: 3 } } })
+    renderWithDraft(<ResultsTab />, RESULTS_FORM)
+    expect(within(await card(1, 'What made you switch back?')).getByText(
+      '3 answers to an earlier version of this question (another type or points) aren\'t counted here')).toBeInTheDocument()
   })
 
   it('says only test responses exist, with the way to include them', async () => {

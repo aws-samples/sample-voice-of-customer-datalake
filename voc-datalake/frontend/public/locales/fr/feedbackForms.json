@@ -84,6 +84,8 @@
     "welcomeTitleEmpty": "L’écran d’accueil doit avoir un titre.",
     "consentLabelEmpty": "Rédigez le texte de la case à cocher.",
     "duplicateQuestionId": "Une autre question a l’identifiant {{id}}.",
+    "retiredQuestionId": "L’identifiant {{id}} appartenait à une question supprimée auparavant, et les identifiants ne sont jamais réutilisés. Choisissez-en un autre.",
+    "answeredReshaped": "La question {{number}} a des réponses : son type et ses points ne peuvent pas changer. Annulez la modification, ou ajoutez une nouvelle question pour cela.",
     "invalidQuestionId": "L’identifiant d’une question commence par q_ et utilise des minuscules, des chiffres et _.",
     "duplicateEndingId": "Un autre écran de fin a l’identifiant {{id}}.",
     "invalidEndingId": "L’identifiant d’un écran de fin commence par end_ et utilise des minuscules, des chiffres et _.",
@@ -227,6 +229,7 @@
       "fixToPublishSaveWorks_one": "Corrigez {{count, number}} problème pour publier. L’enregistrement fonctionne toujours.",
       "fixToPublishSaveWorks_other": "Corrigez {{count, number}} problèmes pour publier. L’enregistrement fonctionne toujours.",
       "themeRefused": "Impossible d’enregistrer : un formulaire en ligne doit avoir un texte lisible par les répondants, d’au moins 3:1 sur son fond. Modifiez les couleurs dans Style.",
+      "questionIdReused": "Enregistrement impossible : l’identifiant {{id}} appartenait à une question supprimée auparavant, et les identifiants ne sont jamais réutilisés. Donnez un autre identifiant à cette question dans Avancé.",
       "themeHardToRead": "Le texte de ce formulaire est difficile à lire.",
       "themeFix": "Corriger les couleurs",
       "save": "Enregistrer",
@@ -1329,6 +1332,7 @@
   "typeChange": {
     "label": "Question {{number}} : type",
     "none": "Pour changer son type, ajoutez une nouvelle question de ce type et supprimez celle-ci.",
+    "locked": "Les réponses sont enregistrées pour ce type : il ne peut plus changer une fois que le formulaire a des réponses. Pour la poser autrement, ajoutez une nouvelle question et supprimez celle-ci.",
     "confirmTitle": "Changer le type de la question ?",
     "confirmMessage": "Ce changement supprime : {{lost}}.",
     "confirm": "Changer le type",
@@ -1431,6 +1435,7 @@
     },
     "points": "Points",
     "facesRange": "Les émoticônes vont de 3 à 5 points.",
+    "rangeLocked": "Les réponses sont enregistrées sur ces points : ils ne peuvent plus changer une fois que le formulaire a des réponses.",
     "lowEnd": "Libellé bas",
     "highEnd": "Libellé haut",
     "fixed": {
@@ -1747,6 +1752,8 @@
     "resetFailed": "Impossible de réinitialiser le lien de test. Réessayez dans un instant.",
     "noToken": "Ce formulaire n’a pas encore de lien de test.",
     "makeLink": "Créer le lien de test",
+    "makeLinkFailed": "Impossible de créer le lien de test. Réessayez dans un instant.",
+    "tokenLoading": "Lecture du lien de test…",
     "qrTitle": "Code QR du lien de test",
     "recordTitle": "Ce que deviennent les réponses de test",
     "keep": "Les conserver, marquées Test",
@@ -1763,6 +1770,7 @@
     "deleteTitle": "Supprimer toutes les réponses de test ?",
     "deleteMessage": "Toutes les réponses de test de ce formulaire sont supprimées. Les vraies réponses ne sont pas touchées. Cette action est irréversible.",
     "deleteConfirm": "Supprimer les réponses de test",
+    "deleteFailed": "Impossible de supprimer les réponses de test. Réessayez dans un instant.",
     "noneYet": "Aucune réponse de test pour l’instant. Ouvrez le lien de test, ou scannez son code QR avec un téléphone, et envoyez-en une.",
     "checkOnlyEmpty": "« Les vérifier » ne conserve rien, il n’y a donc rien à afficher ici. Passez à « Les conserver » pour voir les réponses de test.",
     "emptyValue": "vide",
@@ -1830,6 +1838,8 @@
     "openInFeedback": "Ouvrir l’élément de feedback",
     "reach": "{{answered}} ont répondu · {{skipped}} l’ont passée · non affichée à {{hidden}} (logique)",
     "changed": "Modifiée le {{date}} : les réponses antérieures portaient sur d’autres options",
+    "earlierVersion_one": "{{formatted}} réponse à une version antérieure de cette question (autre type ou points) n’est pas comptée ici",
+    "earlierVersion_other": "{{formatted}} réponses à une version antérieure de cette question (autre type ou points) ne sont pas comptées ici",
     "endings": "Écrans de fin",
     "defaultEnding": "par défaut",
     "removedQuestions": "Questions supprimées ({{count, number}})",
@@ -1914,7 +1924,8 @@
     "reachCard": {
       "title": "Portée",
       "answeredBy": "répondue dans {{answered}} des {{total}} réponses terminées",
-      "note": "Savoir combien de personnes s’arrêtent en cours de route nécessite un suivi des vues, pas encore collecté."
+      "note": "Savoir combien de personnes s’arrêtent en cours de route nécessite un suivi des vues, pas encore collecté.",
+      "filtered": "L’abandon compte toutes les visites : il n’est pas affiché tant que vous filtrez par langue, fin ou valeur masquée."
     },
     "responses": {
       "title": "Aucune réponse",

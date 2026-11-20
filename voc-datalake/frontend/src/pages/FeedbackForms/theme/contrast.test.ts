@@ -20,8 +20,10 @@ describe('contrastRatio', () => {
     expect(contrastRatio(foreground, background)).toBeCloseTo(ratio, 2)
   })
 
-  it('composites a translucent colour first, as the browser paints it', () => {
-    expect(contrastRatio('#19161d80', '#ffffff')).toBeCloseTo(3.42, 2)
+  it('judges an old translucent colour as the widget draws it, its alpha dropped (the shared vector)', () => {
+    // (the same vector in feedbackWidget.theme.test.ts and lambda/shared/test/test_form_theme.py)
+    expect(contrastRatio('#19161d80', '#ffffff00')).toBeCloseTo(17.89, 2)
+    expect(contrastRatio('#ffffff80', '#ffffff')).toBeCloseTo(1, 2)
   })
 
   it('judges nothing that is not hex', () => {

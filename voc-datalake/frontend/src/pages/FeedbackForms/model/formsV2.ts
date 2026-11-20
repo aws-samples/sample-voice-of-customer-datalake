@@ -242,6 +242,12 @@ export interface StoredFormMeta {
   readonly form_id: string
   /** The revision this copy is; a save sends it as `expected_revision` (D7). */
   readonly revision: number
+  /** How many saves the stored form has taken; a save sends it as `expected_write_count`, so any save since (an Enable,
+   * a theme, not only a definition) is the stale-save conflict (D7). */
+  readonly write_count: number
+  /** The ids of the questions the form had and removed: never taken by a new question, a copy or a follow-up (the
+   * server refuses a reused one, `question_id_reused`). */
+  readonly retired_ids: readonly string[]
   readonly created_at: string
   readonly updated_at: string
   /** Who saved it last, when the server says (the conflict banner names them). */

@@ -21,14 +21,26 @@ export const testTokenKey = (formId: string) => ['feedback-forms', formId, 'test
 /** The recent test responses the Test tab polls (Delete all reads them again). */
 export const recentTestResponsesKey = (formId: string) => ['feedback-forms', formId, 'test-responses'] as const
 
+/** The test token as the page knows it: `loading` while it is being read (so "no test link yet" is never shown, nor
+ * offered to be made, for a form whose token is only on its way). */
+export interface TestTokenState {
+  readonly token: string | null
+  readonly loading: boolean
+}
+
 /** The form's test token, or the one a reset made since; null for a new form, one whose saved link was never on while
  * the page was open, or a non-admin. */
 export function useTestToken(): string | null {
+  return useTestTokenState().token
+}
+
+/** {@link useTestToken}, and whether it is still being read. */
+export function useTestTokenState(): TestTokenState {
   const { baseline } = useDraft()
   const { formId } = useBuilderUi()
   const saved = baseline?.settings.test
   const linkOn = saved?.link_enabled === true
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: testTokenKey(formId ?? ''),
     queryFn: async () => {
       if (formId === null || saved === undefined) return ''
@@ -38,5 +50,12 @@ export function useTestToken(): string | null {
     staleTime: Infinity,
     retry: false,
   })
-  return data === undefined || data === '' ? null : data
+  return { token: data === undefined || data === '' ? null : data, loading: isLoading }
+}
+
+/** The stored form's test settings (what the builder loaded), which a test-link call sends back unchanged: the saved
+ * link turns on, off or records otherwise only on Save. */
+export function useStoredTestSettings(): { link_enabled: boolean; record: 'tag' | 'drop' } {
+  const saved = useDraft().baseline?.settings.test
+  return { link_enabled: saved?.link_enabled === true, record: saved?.record ?? 'tag' }
 }

@@ -64,7 +64,8 @@ export default function QuestionEditor({ question, index }: Readonly<{ question:
   const replace = (next: Question) => draft.update((current) => updateQuestion(current, question.id, () => next))
   const checkId = (id: string) => {
     if (!isValidQuestionId(id)) return 'problems.invalidQuestionId'
-    return questionIds(form).has(id) && id !== question.id ? 'problems.duplicateQuestionId' : ''
+    if (questionIds(form).has(id) && id !== question.id) return 'problems.duplicateQuestionId'
+    return draft.retiredIds.has(id) ? 'problems.retiredQuestionId' : ''
   }
   const editLogic = () => {
     setLogicOpen(true)

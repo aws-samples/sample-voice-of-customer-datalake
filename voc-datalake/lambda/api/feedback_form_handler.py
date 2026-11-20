@@ -30,7 +30,7 @@ import os
 import re
 import secrets
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
@@ -648,6 +648,7 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
         'updated_at': now,
         'schema_version': fv2.SCHEMA_VERSION,
         'revision': 1,
+        'write_count': 0,
         **definition,
         'settings': {'test': test},
     }
@@ -790,9 +791,20 @@ def item_to_form(item: dict) -> dict:
         # also counts the stored ones): the builder locks option codes and question ids from the first. A test
         # response never marks it.
         'has_responses': item.get('has_responses') is True,
+        # The question ids the form had and removed, which no question may take again (a save that does is a 400
+        # ``question_id_reused``): the builder never offers one for a new question, a copy or a follow-up.
+        'retired_ids': [qid for qid in fv2.plain(item.get('retired_ids') or []) if isinstance(qid, str)],
+        # How many saves the form row has taken: a save's ``expected_write_count`` (the builder's precondition).
+        'write_count': _write_count(item),
         # Still stored as version 1 (served migrated until its first save writes it back as version 2).
         **({} if fv2.is_v2(item) else {'migrated_from': 1}),
     }
+
+
+def _write_count(item: Mapping[str, Any]) -> int:
+    """The form row's save counter (0 for a row written before 7.58.00, which has none)."""
+    value = fv2.plain(item.get('write_count'))
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def item_to_widget_config(item: dict) -> dict:
@@ -1049,8 +1061,10 @@ def _create_workspace_form(item: dict, scope: WorkspaceScope) -> None:
 #
 # The form row holds its CURRENT revision (``revision``, from 1). A save that changes the definition first writes the
 # definition it replaces as a snapshot row ``FORMREV#{form_id}#{revision:06d}`` in the same partition (idempotent: a
-# revision's definition never changes once it was the form's), then moves the row to the next revision, conditional
-# on the revision it read (a concurrent save is a 409, never a lost write). A response names the revision it
+# revision's definition never changes once it was the form's), then moves the row to the next revision. Every save
+# also counts one more on the row (``write_count``, from 7.58.00) and is conditional on the revision and the count it
+# read (a concurrent save is a 409, never a lost write); a save that sends ``expected_write_count`` (the builder's) is
+# a 409 once any save came in between, a name, a theme or Enable included, not only a definition. A response names the revision it
 # answered (``form_revision``), so a respondent who opened the form before an edit is validated against what they
 # saw. A version 1 form is revision 1: its first save writes that snapshot too, with its version 1 fields as stored
 # (``v1``), so the migration loses nothing. Snapshots (``FORMREV#…``) and the funnel's rows (``FORMFUNNEL#…``,
@@ -1063,14 +1077,15 @@ _FORM_PREFIX = 'FORM#'
 #: The v1 fields a version 2 form still maps from a version 1 patch (the assistant's update tool sends them).
 _MAPPED_V1_FIELDS = frozenset({'title', 'description', 'success_message', 'submit_button_text'})
 _CHANGED_MEANWHILE = 'The form was changed by someone else: reload it, then save again'
-_ANSWERS_LOCKED = ('This form has responses: its question ids and option codes cannot change. Name each question or '
-                   'option you remove in removes (its answers stay in Results), or keep it')
+_ANSWERS_LOCKED = ('This form has responses: its question ids, types, ranges and option codes cannot change. Name each '
+                   'question or option you remove in removes (its answers stay in Results), or keep it; to ask a '
+                   'question another way, remove it and add a new one')
 
 
 def _saved_by(stored: Mapping[str, Any]) -> dict[str, Any]:
-    """A 409's details: the stored revision, and who saved it when (the editor's conflict banner)."""
-    return {'revision': fv2.revision_of(stored), 'updated_by': str(stored.get('updated_by') or ''),
-            'updated_at': str(stored.get('updated_at') or '')}
+    """A 409's details: the stored revision and save count, and who saved it when (the editor's conflict banner)."""
+    return {'revision': fv2.revision_of(stored), 'write_count': _write_count(stored),
+            'updated_by': str(stored.get('updated_by') or ''), 'updated_at': str(stored.get('updated_at') or '')}
 
 
 def _revision_key(form_id: str, revision: int, scope: WorkspaceScope | None) -> dict[str, str]:
@@ -1173,25 +1188,36 @@ def _settings_update(stored: Mapping[str, Any], body: Mapping[str, Any]) -> tupl
 
 
 def _require_update_fields(body: Mapping[str, Any]) -> None:
-    """400 for a PUT that names nothing updatable (before the form is read), or a malformed ``expected_revision``."""
+    """400 for a PUT that names nothing updatable (before the form is read), or a malformed ``expected_revision`` or
+    ``expected_write_count``."""
     if not any(f in body for f in (*UPDATABLE_FIELDS, *fv2.DEFINITION_FIELDS, *fv2.V1_FIELDS, 'settings')):
         raise ValidationError('No fields to update')
-    if body.get('expected_revision') is not None and (isinstance(body['expected_revision'], bool)
-                                                      or not isinstance(body['expected_revision'], int)):
-        raise ValidationError('expected_revision must be a whole number')
+    for name in ('expected_revision', 'expected_write_count'):
+        if body.get(name) is not None and (isinstance(body[name], bool) or not isinstance(body[name], int)):
+            raise ValidationError(f'{name} must be a whole number')
 
 
-def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str) -> _Update:
+def _is_whole(value: object) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
+                 answered: Callable[[], bool] = lambda: False) -> _Update:
     """The write of a PUT on ``stored``: the definition validated when the PUT changes it (a new revision when it
-    does), a version 1 form written back as version 2 (its v1 fields removed), the plain fields as sent.
+    does), a version 1 form written back as version 2 (its v1 fields removed), the plain fields as sent, and the row's
+    save count one up.
 
-    ``expected_revision`` in the body (the ``revision`` the editor loaded) is a precondition: another one is a 409.
-    ``revision`` itself is read-only (the form API returns it) and ignored. On a form with a real response
-    (``has_responses``) a definition change that drops a question id or an option code without naming it in
-    ``removes`` is a 409 ``answers_locked`` (shared/forms_v2.py ``unnamed_removals``)."""
+    ``expected_revision`` and ``expected_write_count`` in the body (the ``revision`` and ``write_count`` the editor
+    loaded) are preconditions: another one is a 409. The revision moves only with the definition; the save count with
+    every save, so a stale editor cannot write back what a later save changed (a form turned Off turned on again).
+    Both are read-only (the form API returns them) and ignored as fields. On a form with a real response
+    (``has_responses``, else ``answered()``: one answered only before 7.55.00) a definition change that drops a
+    question id or an option code without naming it in ``removes``, or gives a question it keeps another type or
+    range, is a 409 ``answers_locked`` (shared/forms_v2.py ``unnamed_removals``, ``reshaped_questions``)."""
     _require_update_fields(body)
     expected, revision = body.get('expected_revision'), fv2.revision_of(stored)
-    if isinstance(expected, int) and not isinstance(expected, bool) and expected != revision:
+    expected_writes, writes = body.get('expected_write_count'), _write_count(stored)
+    if (_is_whole(expected) and expected != revision) or (_is_whole(expected_writes) and expected_writes != writes):
         raise ConflictError(_CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(stored))
     current = _definition(stored)
     proposed = _definition_update(stored, current, body)
@@ -1208,14 +1234,17 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str)
     warnings = fv2.validate_publishable(theme, live=bool(live), was_live=stored.get('enabled') is True,
                                         theme_changed='theme' in body and not fv2.same_theme(theme, stored.get('theme')))
     removes = fv2.validate_removes(body.get('removes'))
-    if changed and stored.get('has_responses') is True:
-        # The lock of an answered form (shared/forms_v2.py): a dropped question id or option code is named, or refused.
+    if changed and (stored.get('has_responses') is True or answered()):
+        # The lock of an answered form (shared/forms_v2.py): a dropped question id or option code is named, or refused;
+        # a question kept with another type or range is refused (its answers would be read on the new scale).
         unnamed = fv2.unnamed_removals(current, definition, removes)
-        if unnamed:
-            raise ConflictError(_ANSWERS_LOCKED, code='answers_locked', details=unnamed)
+        reshaped = fv2.reshaped_questions(current, definition)
+        if unnamed or reshaped:
+            raise ConflictError(_ANSWERS_LOCKED, code='answers_locked',
+                                details={**unnamed, **({'changed': reshaped} if reshaped else {})})
     sets: dict[str, Any] = {name: body[name] for name in UPDATABLE_FIELDS if name in body}
     sets.update({**definition, 'schema_version': fv2.SCHEMA_VERSION, 'revision': revision + int(changed),
-                 'updated_at': now_iso(), 'updated_by': actor})
+                 'write_count': writes + 1, 'updated_at': now_iso(), 'updated_by': actor})
     if changed:
         sets['retired_ids'] = fv2.retired_ids(current, definition, retired)
     whole, nested = _settings_update(stored, body)
@@ -1227,9 +1256,9 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str)
 
 
 def _update_request(stored: Mapping[str, Any], plan: _Update) -> dict[str, Any]:
-    """The UpdateItem arguments of ``plan``: conditional on the revision ``stored`` had (none for a version 1
-    form)."""
-    names: dict[str, str] = {'#revision': 'revision'}
+    """The UpdateItem arguments of ``plan``: conditional on the revision and the save count ``stored`` had (none for a
+    version 1 form, and none for a row saved before 7.58.00), so any save in between is a 409."""
+    names: dict[str, str] = {'#revision': 'revision', '#writes': 'write_count'}
     values: dict[str, Any] = {}
     parts = []
     for index, (name, value) in enumerate(plan.sets.items()):
@@ -1249,6 +1278,11 @@ def _update_request(stored: Mapping[str, Any], plan: _Update) -> dict[str, Any]:
         condition = 'attribute_exists(sk) AND #revision = :expected'
     else:
         condition = 'attribute_exists(sk) AND attribute_not_exists(#revision)'
+    if 'write_count' in stored:
+        values[':writes'] = stored['write_count']
+        condition += ' AND #writes = :writes'
+    else:
+        condition += ' AND attribute_not_exists(#writes)'
     return {'UpdateExpression': expression, 'ExpressionAttributeNames': names, 'ExpressionAttributeValues': values,
             'ConditionExpression': condition, 'ReturnValues': 'ALL_NEW'}
 
@@ -1272,7 +1306,8 @@ def update_form(form_id: str):
     if scope is None:
         _refuse_a_workspaces_id(form_id, 'Failed to update form')
     stored = _read_form(form_id, 'Failed to update form', scope)
-    plan = _plan_update(stored, body, get_caller_subject(app.current_event.raw_event))
+    plan = _plan_update(stored, body, get_caller_subject(app.current_event.raw_event),
+                        answered=lambda: _answered_before(form_id, stored, scope))
     try:
         if plan.snapshot is not None:
             _put_revision(form_id, scope, *plan.snapshot)
@@ -1287,6 +1322,27 @@ def update_form(form_id: str):
     if plan.warnings:
         saved['warnings'] = plan.warnings
     return saved
+
+
+def _answered_before(form_id: str, stored: Mapping[str, Any], scope: WorkspaceScope | None) -> bool:
+    """Whether a form not marked ``has_responses`` has a real response stored anyway: one answered only before
+    7.55.00, whose submits never marked it. Read when a save changes its definition (as ``GET /feedback-forms/{id}``
+    counts them, but every real response, whoever saves: the lock never depends on what the saver may read), and
+    marked once found (``_mark_answered``), so the next save reads the flag. A test response is never a feedback item."""
+    if not feedback_table:
+        raise ConfigurationError('Feedback table not configured')
+    query_kwargs: dict[str, Any] = {'FilterExpression': 'source_channel = :sc',
+                                    'ExpressionAttributeValues': {':sc': f'form_{form_id}'},
+                                    'ProjectionExpression': 'feedback_id, is_test'}
+    try:
+        found = any(not row.get('is_test') for row in
+                    _partition_rows(feedback_table, scope, _form_source_pk(dict(stored), scope), query_kwargs))
+    except Exception as e:
+        logger.exception(f"Error reading the responses of form {form_id}: {type(e).__name__}")
+        raise ServiceError('Failed to update form') from e
+    if found:
+        _mark_answered(form_id, stored, scope)
+    return found
 
 
 FORM_DELETED = 'form_deleted'
@@ -2333,23 +2389,57 @@ def _admits_test_rows(access: category_access.CategoryScope, form: Mapping[str, 
                                                 'category': form.get('category')})
 
 
-def _view_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceScope | None,
-               definition: Mapping[str, Any], include_test: str) -> list[ResultRow]:
-    """The rows a Results or Responses view counts (its JSON and its CSV): real ones unless ``only``, test ones
-    unless ``false``; only what the caller's category access and source access admit, against the workspace's
-    configuration in a workspace (``scope_for_event``: a failed read of either is a 500, never "everything")."""
+def _read_view_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceScope | None,
+                    definition: Mapping[str, Any], *, real: bool, test: bool) -> tuple[list[ResultRow], list[ResultRow]]:
+    """``(real rows, test rows)`` of the form (each read only when asked for): only what the caller's category access
+    and source access admit, against the workspace's configuration in a workspace (``scope_for_event``: a failed read
+    of either is a 500, never "everything")."""
     access = scope_for_event(app.current_event.raw_event, aggregates_table, workspace)
     try:
-        rows = [] if include_test == 'only' else list(_feedback_rows(form, form_id, workspace, definition, access))
-        if include_test != 'false' and _admits_test_rows(access, form):
-            rows += list(_test_rows(form_id, workspace, definition))
+        reals = list(_feedback_rows(form, form_id, workspace, definition, access)) if real else []
+        tests = list(_test_rows(form_id, workspace, definition)) if test and _admits_test_rows(access, form) else []
     except ApiError:
         raise
     except Exception as e:
         metrics.add_metric(name='FeedbackFormResultsReadFailed', unit='Count', value=1)
         logger.exception(f"Error fetching form results: {type(e).__name__}")
         raise ServiceError('Failed to fetch form results') from e
-    return rows
+    return reals, tests
+
+
+def _view_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceScope | None,
+               definition: Mapping[str, Any], include_test: str) -> list[ResultRow]:
+    """The rows a Responses view lists (its JSON and its CSV): real ones unless ``only``, test ones unless ``false``
+    (``_read_view_rows``)."""
+    reals, tests = _read_view_rows(form, form_id, workspace, definition, real=include_test != 'only',
+                                   test=include_test != 'false')
+    return reals + tests
+
+
+def _revisions(form_id: str, scope: WorkspaceScope | None, form: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
+    """The form's earlier revisions' definitions by number (its ``FORMREV#`` snapshots), so Results score each response
+    against the revision it answered; none for a form still at its first revision. One query of the form's own rows,
+    bounded by how often its definition changed."""
+    if fv2.revision_of(form) <= 1:
+        return {}
+    out: dict[int, dict[str, Any]] = {}
+    try:
+        for item in iter_partition(scope, _forms_table(), 'pk', _forms_partition(scope),
+                                   sort_prefix=f'{_REVISION_PREFIX}{form_id}#'):
+            number = fv2.plain(item.get('revision'))
+            if isinstance(number, int) and not isinstance(number, bool):
+                out[number] = {name: fv2.plain(item.get(name)) for name in fv2.DEFINITION_FIELDS}
+    except Exception as e:
+        metrics.add_metric(name='FeedbackFormResultsReadFailed', unit='Count', value=1)
+        logger.exception(f"Error reading the revisions of form {form_id}: {type(e).__name__}")
+        raise ServiceError('Failed to fetch form results') from e
+    return out
+
+
+def _funnel_hidden(filters: Mapping[str, Any]) -> bool:
+    """Whether the view narrows its responses by what the funnel's counters do not know (a language, an ending, a
+    hidden value): then no funnel is answered, rather than filtered completions against every visit's opens."""
+    return bool(filters.get('language') or filters.get('ending') or filters.get('hidden'))
 
 
 def _funnel_rows(form_id: str, scope: WorkspaceScope | None, filters: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -2373,10 +2463,13 @@ def get_form_results(form_id: str):
     and source access applied as on stats (a caller denied the ``feedback_form`` source counts no response, real or
     test).
 
-    ``?include_test=true`` adds the test link's tagged responses (default: real responses only); ``from``, ``to``,
-    ``language``, ``ending`` and ``hidden.<id>=<value>`` filter the responses counted (the funnel by its dates only).
+    ``?include_test=true`` adds the test link's tagged responses (default: real responses only); ``test_responses``
+    counts the test responses the view admits either way, so the page can say how many it left out. ``from``, ``to``,
+    ``language``, ``ending`` and ``hidden.<id>=<value>`` filter the responses counted; the funnel follows the dates
+    only, so a language, ending or hidden-value filter answers ``funnel: null`` (its counters know none of them).
     Counts per option code, rating histograms, NPS / CSAT / CES, the open-text count with the latest answers, the
-    reach of each question, the endings, and the widget's open and step counts (shared/forms_v2_results.py).
+    reach of each question, the endings, and the widget's open and step counts (shared/forms_v2_results.py), each
+    response scored against the revision it answered (the form's snapshots).
     """
     workspace = _request_scope(write=True)
     params = app.current_event.query_string_parameters or {}
@@ -2384,11 +2477,15 @@ def get_form_results(form_id: str):
     filters = _view_filters(params)
     form = _load_form_for_query(form_id, 'Failed to fetch form results', workspace)
     definition = _definition(form)
-    every = _view_rows(form, form_id, workspace, definition, include_test)
-    rows = filter_rows(every, **filters)
-    funnel = funnel_counts(_funnel_rows(form_id, workspace, filters), include_test=include_test == 'true')
+    reals, tests = _read_view_rows(form, form_id, workspace, definition, real=True, test=True)
+    tests = filter_rows(tests, **filters)
+    rows = filter_rows(reals, **filters) + (tests if include_test == 'true' else [])
+    funnel = None if _funnel_hidden(filters) else funnel_counts(_funnel_rows(form_id, workspace, filters),
+                                                                include_test=include_test == 'true')
     return {'success': True, 'form_id': form_id, 'revision': fv2.revision_of(form),
-            'include_test': include_test == 'true', **tally_results(definition, rows, funnel)}
+            'include_test': include_test == 'true',
+            **tally_results(definition, rows, funnel, revisions=_revisions(form_id, workspace, form),
+                            test_responses=len(tests))}
 
 
 MAX_RESPONSES_PAGE = 100

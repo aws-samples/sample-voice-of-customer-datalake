@@ -48,7 +48,7 @@ describe('an unreadable theme', () => {
     await harness.user.click(publish)
     expect(api.saveForm).not.toHaveBeenCalled()
     await harness.user.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ enabled: false }), 3, null) })
+    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ enabled: false }), 3, null, 5) })
   })
 
   it('only warns on a live form kept on its own unreadable theme: Update live form goes through', async () => {
@@ -60,7 +60,7 @@ describe('an unreadable theme', () => {
     expect(harness.probe.current?.problems.map((problem) => [problem.severity, problem.code]))
       .toContainEqual(['warning', 'themeUnreadableLive'])
     await harness.user.click(update)
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 3, null) })
+    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 3, null, 5) })
   })
 
   it.each([
@@ -94,7 +94,7 @@ describe('an incomplete language (F17)', () => {
     expect(dialog).toHaveTextContent('Polski respondents will see 2 texts in English.')
     expect(api.saveForm).not.toHaveBeenCalled()
     await harness.user.click(within(dialog).getByRole('button', { name: 'Publish anyway' }))
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ enabled: true }), 3, null) })
+    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ enabled: true }), 3, null, 5) })
   })
 
   it('goes to the language to translate it instead', async () => {
@@ -112,6 +112,6 @@ describe('an incomplete language (F17)', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveTextContent('Update the live form with missing translations?')
     await harness.user.click(within(dialog).getByRole('button', { name: 'Update anyway' }))
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed', enabled: true }), 3, null) })
+    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed', enabled: true }), 3, null, 5) })
   })
 })

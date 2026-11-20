@@ -150,6 +150,18 @@ describe('the contrast safeguards', () => {
     expect([nextButton(short).style.background, nextButton(alpha).style.background, nextButton(alpha).style.borderRadius])
       .toStrictEqual(['rgb(170, 187, 204)', 'rgb(59, 130, 246)', '12px'])
   })
+
+  it('draws the shared vector as the editor and the server judge it: #19161d80 on #ffffff00 as #19161d on #ffffff, kept', async () => {
+    // (the same vector in theme/contrast.test.ts and lambda/shared/test/test_form_theme.py: 17.89:1, its alpha dropped)
+    const container = await renderWidget(themed({ text_color: '#19161d80', background_color: '#ffffff00' }))
+
+    expect(rootColours(container).slice(0, 2)).toStrictEqual(['rgb(255, 255, 255)', 'rgb(25, 22, 29)'])
+  })
+
+  it.each([['0px', '0px'], ['39px', '39px'], ['40px', '40px'], ['99px', '99px'], ['100px', '8px'], ['1.5px', '8px']])(
+    'draws a %s corner as %s, the 0 to 99 px the API and the editor take', async (radius, drawn) => {
+      expect(nextButton(await renderWidget(themed({ border_radius: radius }))).style.borderRadius).toBe(drawn)
+    })
 })
 
 describe('font and size', () => {

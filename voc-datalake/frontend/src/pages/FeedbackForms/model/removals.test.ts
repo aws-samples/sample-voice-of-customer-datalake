@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChoiceQuestion, FormV2, OpenTextQuestion, Question } from './formsV2'
 import { blankForm } from '../test/blankForm'
-import { removalsOf } from './removals'
+import { answerShape, removalsOf, reshapedIds } from './removals'
 
 const reason: ChoiceQuestion = {
   id: 'q_reason', type: 'single_select', headline: { en: 'Why?' }, required: true,
@@ -37,5 +37,16 @@ describe('removalsOf (what a save of an answered form must name, D9)', () => {
       questions: ['q_comment'], options: { q_reason: ['price', 'bugs'] },
     })
     expect(removalsOf(form([reason, comment]), form([comment]))).toStrictEqual({ questions: ['q_reason'] })
+  })
+})
+
+describe('reshapedIds (a question kept with another type or points: never allowed once answered)', () => {
+  const rating: Question = { id: 'q_rate', type: 'rating', headline: { en: 'Rate' }, required: false, scale: 'star', range: 5 }
+  it('names a type or a range changed, never a scale (stars to numbers) or a new question', () => {
+    const nps: Question = { id: 'q_rate', type: 'nps', headline: { en: 'Rate' }, required: false }
+    expect(reshapedIds(form([rating, comment]), form([nps, comment]))).toStrictEqual(['q_rate'])
+    expect(reshapedIds(form([rating]), form([{ ...rating, range: 10 }]))).toStrictEqual(['q_rate'])
+    expect(reshapedIds(form([rating]), form([{ ...rating, scale: 'number' }, { ...comment, id: 'q_new' }]))).toStrictEqual([])
+    expect(answerShape(rating)).toBe('rating:5')
   })
 })

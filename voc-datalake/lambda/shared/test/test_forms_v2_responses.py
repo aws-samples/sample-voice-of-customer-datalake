@@ -107,6 +107,14 @@ class TestTheLogicPath:
     def test_open_text_equals_ignores_case(self):
         assert fr.rule_matches({'type': 'open_text'}, {'op': 'equals', 'value': 'Price'}, 'price') is True
 
+    @pytest.mark.parametrize(('value', 'answer', 'matches'), [
+        ('École', 'ÉCOLE', True), ('Straße', 'STRASSE', False), ('İstanbul', 'i̇stanbul', True),
+    ])
+    def test_open_text_equals_folds_case_as_the_widget_does(self, value, answer, matches):
+        """str.lower, as JavaScript's toLowerCase in the widget (feedbackWidget.flow.test.ts pins the same pairs):
+        casefold would also take ß for ss, sending the server down another path than the respondent's."""
+        assert fr.rule_matches({'type': 'open_text'}, {'op': 'equals', 'value': value}, answer) is matches
+
 
 class TestEveryAnswerIsChecked:
     @pytest.mark.parametrize(('answers', 'code', 'qid'), [
@@ -157,6 +165,13 @@ class TestEveryAnswerIsChecked:
         if bad is not None:
             with pytest.raises(ValidationError):
                 fr.validate_response(definition, {'answers': {'q_t': bad}})
+
+    def test_a_long_text_stored_with_another_input_type_takes_any_text(self):
+        """A form saved before 7.58.00 may hold one: the widget draws it as a text box, so any text is its answer."""
+        definition = {'language': 'en', 'questions': [{'id': 'q_t', 'type': 'open_text', 'headline': {'en': 'T'},
+                                                        'required': True, 'long': True, 'input_type': 'email'}],
+                      'endings': [{'id': 'end_a', 'title': {'en': 'A'}}]}
+        assert fr.validate_response(definition, {'answers': {'q_t': 'not an email'}}).answers == {'q_t': 'not an email'}
 
     def test_a_statement_takes_no_answer(self):
         definition = fv2.validate_definition({'language': 'en', 'questions': [

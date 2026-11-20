@@ -21,8 +21,8 @@ import DraftProvider from './DraftProvider'
 import { testTokenKey } from '../tabs/testToken'
 
 export const STORED_META: StoredFormMeta = {
-  form_id: 'f_test', revision: 3, created_at: '2026-11-01T10:00:00Z', updated_at: '2026-11-10T10:00:00Z', updated_by: 'ana',
-  has_responses: false, response_count: 0, can_delete_test_responses: true, migrated_from_v1: false,
+  form_id: 'f_test', revision: 3, write_count: 5, retired_ids: [], created_at: '2026-11-01T10:00:00Z', updated_at: '2026-11-10T10:00:00Z',
+  updated_by: 'ana', has_responses: false, response_count: 0, can_delete_test_responses: true, migrated_from_v1: false,
   language_unconfirmed: false,
 }
 
@@ -51,6 +51,8 @@ export interface DraftHarnessOptions {
   readonly rest?: readonly string[]
   /** The test token `POST …/test-link` answered for the stored form (default `tk_test`; null: none read yet). */
   readonly testToken?: string | null
+  /** The page address's query (`?lang=pl`: the Results filters the address holds). */
+  readonly search?: string
 }
 
 export interface DraftHarness {
@@ -77,7 +79,7 @@ export function renderWithDraft(node: ReactNode, form: FormV2 = sampleForm(), op
   if (!isNew && token !== null) queryClient.setQueryData(testTokenKey(STORED_META.form_id), token)
   const rendered = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[`/${options.search ?? ''}`]}>
         <DraftProvider loaded={loaded} handoff={handoff} ui={ui} onCreated={onCreated} onDraft={(draft) => { probe.current = draft }}>
           {node}
         </DraftProvider>

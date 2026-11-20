@@ -3,7 +3,7 @@
  * `hf.<id>=<value>` per hidden field, so a view can be shared; "Include test responses" is never among them.
  */
 import { describe, expect, it } from 'vitest'
-import { CLEAR_FILTERS, apiFilters, narrows, readFilters, writeFilters } from './resultFilters'
+import { CLEAR_FILTERS, apiFilters, hidesFunnel, narrows, readFilters, writeFilters } from './resultFilters'
 
 const NARROW = { range: '7', language: 'pl', ending: 'end_thanks', hidden: { app_version: '2.1', user_id: 'qa-17' } } as const
 
@@ -40,6 +40,15 @@ describe('narrows', () => {
     expect(narrows({ ...CLEAR_FILTERS, range: 'all' })).toBe(true)
     expect(narrows({ ...CLEAR_FILTERS, ending: 'end_thanks' })).toBe(true)
     expect(narrows({ ...CLEAR_FILTERS, hidden: { user_id: 'qa-17' } })).toBe(true)
+  })
+})
+
+describe('hidesFunnel', () => {
+  it('is true under a language, an ending or a hidden value (the counters know none), never for dates alone', () => {
+    expect([
+      hidesFunnel(CLEAR_FILTERS), hidesFunnel({ ...CLEAR_FILTERS, range: '7' }), hidesFunnel({ ...CLEAR_FILTERS, language: 'pl' }),
+      hidesFunnel({ ...CLEAR_FILTERS, ending: 'end_a' }), hidesFunnel({ ...CLEAR_FILTERS, hidden: { plan: 'pro' } }),
+    ]).toStrictEqual([false, false, true, true, true])
   })
 })
 

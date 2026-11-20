@@ -169,6 +169,18 @@ describe('logic', () => {
     expect(heading(container)).toBe('Welcome back')
   })
 
+  // The same pairs as lambda/shared/test/test_forms_v2_responses.py: lower case both sides (toLowerCase, str.lower), so
+  // the widget's path is the one the server checks; ß is never taken for ss.
+  it.each([['École', 'ÉCOLE', 'Welcome back'], ['Straße', 'STRASSE', 'Next'], ['İstanbul', 'i̇stanbul', 'Welcome back']])(
+    'compares %s and %s as the server does', async (value, typed, where) => {
+      const q = openText('q_code', 'Your code?', { logic: [{ when: { op: 'equals', value }, then: { jump_to: 'q_vip' } }] })
+      const container = await renderWidget(form([q, openText('q_next', 'Next'), openText('q_vip', 'Welcome back')]))
+      typeText(container, typed)
+      clickNext(container)
+
+      expect(heading(container)).toBe(where)
+    })
+
   it('treats a statement as answered, so its rule is a plain jump', async () => {
     const statement: Question = {
       id: 'q_info', type: 'statement', headline: en('Note'), required: false,

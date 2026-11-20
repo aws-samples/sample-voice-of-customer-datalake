@@ -115,9 +115,12 @@ class TestContrast:
     def test_the_wcag_ratio(self, foreground, background, ratio):
         assert contrast_ratio(foreground, background) == pytest.approx(ratio, abs=0.01)
 
-    def test_a_translucent_colour_is_composited_first(self):
-        # #19161d at 0x80 (50 %) over white is about #8b8b8e: 3.4:1, where the opaque colour is 17.9:1.
-        assert contrast_ratio('#19161d80', '#ffffff') == pytest.approx(3.42, abs=0.01)
+    def test_an_old_translucent_colour_is_judged_as_the_widget_draws_it(self):
+        """The shared vector (also in frontend theme/contrast.test.ts and feedbackWidget.theme.test.ts): the widget
+        draws #19161d80 on #ffffff00 as #19161d on #ffffff, its alpha dropped, so that is the 17.89:1 judged here
+        (composited, the text would be 3.42:1 and refused while the widget shows it at 17.89)."""
+        assert contrast_ratio('#19161d80', '#ffffff00') == pytest.approx(17.89, abs=0.01)
+        assert contrast_ratio('#ffffff80', '#ffffff') == pytest.approx(1.0, abs=0.01)
 
     def test_anything_that_is_not_hex_is_not_judged(self):
         assert contrast_ratio('red', '#ffffff') is None

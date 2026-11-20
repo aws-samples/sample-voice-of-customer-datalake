@@ -3,18 +3,21 @@
  * every request and response shape in one place so they can be reconciled with the backend's (part A).
  *
  * - `GET /feedback-forms/{id}` → `{form}`: the stored form (v2; a v1 record, served migrated with `migrated_from:
- *   1`, is also migrated here as the server would) with its `revision`, `updated_by`, `has_responses` and
+ *   1`, is also migrated here as the server would) with its `revision`, `write_count` (every save counts one),
+ *   `retired_ids` (the removed questions' ids, never taken again), `updated_by`, `has_responses` and
  *   `response_count` (the real responses `GET …/stats` counts; only this read carries it) and
  *   `can_delete_test_responses` (an admin or the form's creator: owner decision 2026-11-18). When the count is
  *   missing (`stats_error`), or the server has no such route (403/404/405: read from `GET /feedback-forms`' list
  *   instead), `GET …/stats`' `total_submissions` is asked for it: what locks codes and ids (D9).
- * - `POST /feedback-forms` (create, Off) and `PUT /feedback-forms/{id}` (save, with `expected_revision`) →
- *   `{form}`, without `response_count` (the builder keeps the count it read: useFormDraft.ts). A stale save is a
- *   409 `{code: 'revision_conflict', revision, updated_by, updated_at}` (D7); a 400 may carry
- *   `errors: [{message, question_id?}]`. On a form with a real response, a save names in `removes` (`{questions?,
- *   options?: {question_id: codes}}`, model/removals.ts) every question id and option code it drops; one it does not
- *   name is a 409 `{code: 'answers_locked', questions, options}` (D9, on the server too). No form answer carries the
- *   test token: `settings.test` says only whether one was issued (`token_issued`).
+ * - `POST /feedback-forms` (create, Off) and `PUT /feedback-forms/{id}` (save, with `expected_revision` and
+ *   `expected_write_count`) → `{form}`, without `response_count` (the builder keeps the count it read:
+ *   useFormDraft.ts). A stale save (another save came in between, whatever it changed) is a 409 `{code:
+ *   'revision_conflict', revision, write_count, updated_by, updated_at}` (D7); a 400 may carry `errors: [{message,
+ *   question_id?}]`, and a retired id taken again is a 400 `{code: 'question_id_reused', question_id}`. On a form with
+ *   a real response, a save names in `removes` (`{questions?, options?: {question_id: codes}}`, model/removals.ts)
+ *   every question id and option code it drops, and keeps every question's type and range; otherwise it is a 409
+ *   `{code: 'answers_locked', questions, options, changed}` (D9, on the server too). No form answer carries the test
+ *   token: `settings.test` says only whether one was issued (`token_issued`).
  * - `POST /feedback-forms/{id}/test-link` `{rotate?, link_enabled?, record?}` → `{test: {token, link_enabled,
  *   record}}`: the only answer that carries the test token (D2). `DELETE /feedback-forms/{id}/responses?test=true`
  *   → `{deleted}`.
@@ -58,6 +61,8 @@ export class FormsApiError extends ApiError {
   readonly retryAfterSeconds: number | null
   /** A 409's stored revision and who saved it, when the server said. */
   readonly current: { readonly revision: number | null; readonly updatedBy: string; readonly updatedAt: string } | null
+  /** The question a refusal names (`question_id`: a retired id taken again, an answer refused), when it names one. */
+  readonly questionId: string | null
 
   constructor(status: number, message: string | undefined, code: string | undefined, extra: FormsErrorExtra) {
     super(status, message, code)
@@ -65,6 +70,7 @@ export class FormsApiError extends ApiError {
     this.errors = extra.errors
     this.retryAfterSeconds = extra.retryAfterSeconds
     this.current = extra.current
+    this.questionId = extra.questionId ?? null
   }
 }
 
@@ -77,6 +83,7 @@ interface FormsErrorExtra {
   readonly errors: readonly FormsFieldError[]
   readonly retryAfterSeconds: number | null
   readonly current: FormsApiError['current']
+  readonly questionId?: string | null
 }
 
 const MAX_ERRORS = 50
@@ -95,6 +102,7 @@ const errorBody = z.object({
   })),
   retry_after: z.coerce.number().nonnegative().optional().catch(undefined),
   revision: z.number().int().optional().catch(undefined),
+  question_id: z.string().max(64).optional().catch(undefined),
   ...UPDATED_STAMP,
 })
 
@@ -121,7 +129,7 @@ async function formsErrorFor(response: Response): Promise<FormsApiError> {
   const current = response.status === 409
     ? { revision: body.revision ?? null, updatedBy: body.updated_by ?? '', updatedAt: body.updated_at ?? '' } : null
   return new FormsApiError(response.status, (body.message ?? body.error)?.slice(0, 300), body.code,
-    { errors: body.errors, retryAfterSeconds: retryAfterOf(response, body), current })
+    { errors: body.errors, retryAfterSeconds: retryAfterOf(response, body), current, questionId: body.question_id ?? null })
 }
 
 /**
@@ -140,6 +148,8 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
 const metaSchema = z.object({
   form_id: z.string().min(1),
   revision: z.number().int().nonnegative().catch(0),
+  write_count: z.number().int().nonnegative().catch(0),
+  retired_ids: z.array(z.string()).max(1000).catch([]),
   created_at: z.string().catch(''),
   updated_at: z.string().catch(''),
   updated_by: z.string().catch(''),
@@ -173,6 +183,8 @@ export function parseStoredForm(raw: unknown): LoadedForm | null {
   const stored: StoredFormMeta = {
     form_id: meta.data.form_id,
     revision: meta.data.revision,
+    write_count: meta.data.write_count,
+    retired_ids: meta.data.retired_ids,
     created_at: meta.data.created_at,
     updated_at: meta.data.updated_at,
     updated_by: meta.data.updated_by,
@@ -327,18 +339,23 @@ export const feedbackFormsV2Api = {
       .then((created) => ({ ...created, meta: { ...created.meta, can_delete_test_responses: true } })),
 
   /**
-   * Save the form over `expectedRevision`, naming what it `removes` from an answered form (model/removals.ts); a 409
-   * (FormsApiError) when another save won (D7, `revision_conflict`) or a removal went unnamed (`answers_locked`).
+   * Save the form over `expectedRevision` (and `expectedWriteCount`, the save count it was read at: any save since is
+   * a 409), naming what it `removes` from an answered form (model/removals.ts); a 409 (FormsApiError) when another
+   * save won (D7, `revision_conflict`) or a removal went unnamed or a type changed (`answers_locked`).
    */
-  saveForm: (formId: string, form: FormV2, expectedRevision: number, removes: FormRemovals | null = null): Promise<LoadedForm> =>
+  saveForm: (formId: string, form: FormV2, expectedRevision: number, removes: FormRemovals | null = null,
+    expectedWriteCount: number | null = null): Promise<LoadedForm> =>
     fetchApi<unknown>(formPath(formId), put({
       ...toWireForm(form), expected_revision: expectedRevision, ...(removes === null ? {} : { removes }),
+      ...(expectedWriteCount === null ? {} : { expected_write_count: expectedWriteCount }),
     })).then(loadedFrom),
 
-  /** Turn the form on or off (the list's switch, Turn off): only `enabled` changes. */
-  setEnabled: (formId: string, enabled: boolean, expectedRevision?: number): Promise<LoadedForm> =>
-    fetchApi<unknown>(formPath(formId), put(expectedRevision === undefined ? { enabled } : { enabled, expected_revision: expectedRevision }))
-      .then(loadedFrom),
+  /** Turn the form on or off (the list's switch, Turn off): only `enabled` changes, over what the caller read. */
+  setEnabled: (formId: string, enabled: boolean, expectedRevision?: number, expectedWriteCount?: number): Promise<LoadedForm> =>
+    fetchApi<unknown>(formPath(formId), put({
+      enabled, ...(expectedRevision === undefined ? {} : { expected_revision: expectedRevision }),
+      ...(expectedWriteCount === undefined ? {} : { expected_write_count: expectedWriteCount }),
+    })).then(loadedFrom),
 
   /**
    * The test link (D2): `POST …/test-link` issues it (or rotates it, `rotate`), sets `link_enabled` / `record` when
@@ -347,9 +364,12 @@ export const feedbackFormsV2Api = {
   issueTestLink: (formId: string, body: { rotate?: boolean; link_enabled?: boolean; record?: 'tag' | 'drop' } = {}): Promise<TestLinkState> =>
     fetchApi<unknown>(`${formPath(formId)}/test-link`, post(body)).then((raw) => testLink.parse(raw).test),
 
-  /** A new test token: the old test link stops working (D2). */
-  rotateTestToken: (formId: string): Promise<string> =>
-    fetchApi<unknown>(`${formPath(formId)}/test-link`, post({ rotate: true })).then((raw) => testLink.parse(raw).test.token),
+  /**
+   * A new test token: the old test link stops working (D2). `keep`: the stored form's test settings, sent back as they
+   * are, so the reset never turns the saved link on or changes how it records (only Save does).
+   */
+  rotateTestToken: (formId: string, keep: { link_enabled: boolean; record: 'tag' | 'drop' }): Promise<string> =>
+    fetchApi<unknown>(`${formPath(formId)}/test-link`, post({ rotate: true, ...keep })).then((raw) => testLink.parse(raw).test.token),
 
   /** Delete every test response of the form (D2); resolves to how many went. */
   deleteTestResponses: (formId: string): Promise<number> =>

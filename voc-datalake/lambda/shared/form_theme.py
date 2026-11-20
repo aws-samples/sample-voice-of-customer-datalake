@@ -151,48 +151,36 @@ def shown_palettes(theme: object) -> list[tuple[Palette, dict[str, str]]]:
 
 # ── WCAG 2 contrast ──────────────────────────────────────────────────────────────────────────────────────────────
 
-Rgba = tuple[float, float, float, float]
+Rgb = tuple[float, float, float]
 
 
-def _rgba(colour: str) -> Rgba:
-    """The channels (0 to 1) and alpha of a checked hex colour (`#rgb`, `#rrggbb`, `#rrggbbaa`)."""
+def _rgb(colour: str) -> Rgb:
+    """The channels (0 to 1) of a checked hex colour (`#rgb`, `#rrggbb`, `#rrggbbaa`) as the widget draws it: an old
+    form's `#rrggbbaa` as its six-digit colour, its alpha dropped (feedback-widget.js ``hexColour``), so what is judged
+    here is what respondents see."""
     digits = colour[1:]
     if len(digits) == 3:
         digits = ''.join(ch * 2 for ch in digits)
-    channels = [int(digits[i:i + 2], 16) / 255 for i in range(0, len(digits), 2)]
-    alpha = channels[3] if len(channels) == 4 else 1.0
-    return channels[0], channels[1], channels[2], alpha
+    return int(digits[0:2], 16) / 255, int(digits[2:4], 16) / 255, int(digits[4:6], 16) / 255
 
 
-def _over(top: Rgba, bottom: tuple[float, float, float]) -> tuple[float, float, float]:
-    """``top`` painted at its alpha over the opaque ``bottom`` (sRGB, as a browser mixes)."""
-    alpha = top[3]
-    return (top[0] * alpha + bottom[0] * (1 - alpha), top[1] * alpha + bottom[1] * (1 - alpha),
-            top[2] * alpha + bottom[2] * (1 - alpha))
-
-
-def _luminance(rgb: tuple[float, float, float]) -> float:
+def _luminance(rgb: Rgb) -> float:
     linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
 
-def _ratio(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
+def _ratio(a: Rgb, b: Rgb) -> float:
     hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
     return (hi + 0.05) / (lo + 0.05)
 
 
-def _opaque_background(background: str) -> tuple[float, float, float]:
-    """A background as painted: an old `#rrggbbaa` one over white (the API's own page)."""
-    return _over(_rgba(background), (1.0, 1.0, 1.0))
-
-
 def contrast_ratio(foreground: str, background: str) -> float | None:
-    """The WCAG 2 contrast of ``foreground`` painted on ``background`` (1 to 21), or None when either is not a hex
-    colour. A translucent colour is composited first, as a browser paints it."""
+    """The WCAG 2 contrast of ``foreground`` on ``background`` (1 to 21), or None when either is not a hex colour.
+    An old `#rrggbbaa` colour is judged opaque, its alpha dropped, as the widget draws it (one rule with the editor's
+    ``theme/contrast.ts`` and the widget, pinned by one shared vector in the three suites)."""
     if not (_is_colour(foreground, HEX_COLOR) and _is_colour(background, HEX_COLOR)):
         return None
-    under = _opaque_background(background)
-    return _ratio(_over(_rgba(foreground), under), under)
+    return _ratio(_rgb(foreground), _rgb(background))
 
 
 def text_contrast_problem(palette: Mapping[str, str]) -> float | None:

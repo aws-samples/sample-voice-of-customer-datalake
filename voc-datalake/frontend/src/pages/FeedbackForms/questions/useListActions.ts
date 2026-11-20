@@ -1,7 +1,8 @@
 /**
  * @fileoverview What the question list does to the draft (UX §3.3, §7): add a question of a type (selected, its
  * Question field focused), move one (announced), duplicate it, delete it (asking first only when rules jump to it or
- * it may have answers; otherwise at once with Undo), and the same for endings.
+ * it may have answers; otherwise at once with Undo), and the same for endings. A new question's id and a copy's are
+ * never a removed question's (`draft.retiredIds`): the server refuses one taken again.
  *
  * @module pages/FeedbackForms/questions/useListActions
  */
@@ -59,7 +60,7 @@ export function useListActions() {
 
   const addQuestion = (type: QuestionType, at: number = form.questions.length) => {
     if (form.questions.length >= LIMITS.questions) return
-    const id = newQuestionId(type, questionIds(form))
+    const id = newQuestionId(type, new Set([...questionIds(form), ...draft.retiredIds]))
     const question = newQuestion(type, id)
     draft.update((current) => insertQuestion(current, question, at))
     if (isChoice(question)) draft.setFreshCodes((keys) => new Set([...keys, ...question.options.map((o) => `${id}:${o.code}`)]))
@@ -74,7 +75,7 @@ export function useListActions() {
   }
 
   const duplicate = (id: string) => {
-    const { form: next, copyId } = duplicateQuestion(form, id)
+    const { form: next, copyId } = duplicateQuestion(form, id, draft.retiredIds)
     if (copyId === null) return
     draft.update(() => next)
     go('questions', [copyId])

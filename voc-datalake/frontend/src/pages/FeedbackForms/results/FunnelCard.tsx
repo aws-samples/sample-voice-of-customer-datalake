@@ -2,8 +2,8 @@
  * @fileoverview Where people stop (UX §10.3). With the widget's open/step beacon (D6): Opened → Started → each
  * question → Completed, the drop at each step every path passes and "largest drop" on the worst one (a warning, with
  * an icon and words); a question only some paths show says so instead of a drop (funnelSteps.ts). Without the beacon,
- * the card is titled Reach and lists how many completed responses answered each question, and says why there is no
- * funnel: there is never a fake one.
+ * or under a language, ending or hidden-value filter its counters cannot follow, the card is titled Reach and lists
+ * how many completed responses answered each question, and says why there is no funnel: there is never a fake one.
  *
  * @module pages/FeedbackForms/results/FunnelCard
  */
@@ -56,7 +56,11 @@ export function FunnelCard({ form, funnel, results }: Readonly<{ form: FormV2; f
   )
 }
 
-export function ReachCard({ form, results }: Readonly<{ form: FormV2; results: FormResults }>) {
+export function ReachCard({ form, results, filtered = false }: Readonly<{
+  form: FormV2; results: FormResults
+  /** No funnel because the view filters by what its counters don't know (else: no view tracking yet). */
+  filtered?: boolean
+}>) {
   const { t, i18n } = useTranslation('feedbackForms')
   return (
     <section className="card space-y-3" aria-labelledby="results-reach">
@@ -75,7 +79,7 @@ export function ReachCard({ form, results }: Readonly<{ form: FormV2; results: F
           )
         })}
       </ol>
-      <p className="text-[12px] text-muted">{t('results.reachCard.note')}</p>
+      <p className="text-[12px] text-muted">{filtered ? t('results.reachCard.filtered') : t('results.reachCard.note')}</p>
     </section>
   )
 }
