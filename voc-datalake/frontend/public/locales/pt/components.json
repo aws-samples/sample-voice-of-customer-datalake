@@ -968,5 +968,17 @@
   },
   "savedStatus": {
     "saved": "Salvo"
+  },
+  "microFeedback": {
+    "question": "Isto foi útil?",
+    "up": "Sim, foi útil",
+    "down": "Não, não foi útil",
+    "notNow": "Agora não",
+    "missing": "O que está faltando? (opcional)",
+    "count": "{{length, number}} / {{max, number}}",
+    "send": "Enviar",
+    "thanks": "Obrigado. A equipe lê todas as respostas.",
+    "failed": "Não foi possível enviar.",
+    "retry": "Tentar novamente"
   }
 }

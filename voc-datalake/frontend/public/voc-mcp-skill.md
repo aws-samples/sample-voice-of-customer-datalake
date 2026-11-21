@@ -116,6 +116,8 @@ Clients that support MCP prompts can start from these (`prompts/get`):
 - `triage_urgent` (`days`): high-urgency feedback grouped and ranked, nothing changed.
 - `prfaq_from_feedback` (`topic`, `project_id`): a PR/FAQ draft citing feedback ids. With a read-only
   token it stays in the chat; with a read-write token it may be saved after the user confirms.
+- `playbook` (`role`: `product`, `scrum_master`, `qa` or `engineering`): a walk through that role's
+  first week in VoC, step by step, with where in the app each step is done.
 
 Resources (`resources/read`, JSON): `voc://categories` (the category taxonomy) and
 `voc://company-context` (vision and objectives).

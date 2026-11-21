@@ -1,0 +1,122 @@
+{
+  "title": "Ihre erste Woche",
+  "pick": "Wählen Sie Ihre Rolle für ein kurzes Playbook zur ersten Woche: die wichtigsten Schritte, jeweils mit einem Link dorthin, wo Sie sie erledigen.",
+  "yourRole": "Playbook für {{role}}",
+  "changeRole": "Rolle ändern",
+  "progress": "{{done, number}} von {{total, number}} erledigt",
+  "progressLabel": "Playbook-Fortschritt",
+  "markDone": "Als erledigt markieren",
+  "doneByEvidence": "Erledigt",
+  "askAssistant": "Den Assistenten bitten, mich hindurchzuführen",
+  "askPrompt": "Führe mich durch das VoC-Playbook zur ersten Woche für die Rolle {{role}}, einen Schritt nach dem anderen. Sag mir bei jedem Schritt, warum er wichtig ist, zeig mir, wie er mit unserem eigenen Feedback aussieht, und wo in der App ich ihn abschließe. Frag nach, bevor du etwas änderst. Die Schritte:\n{{stepList}}",
+  "roles": {
+    "product": {
+      "name": "Produktmanagement",
+      "desc": "Machen Sie aus dem, was Kunden sagen, Personas, PR/FAQs und PRDs."
+    },
+    "scrum_master": {
+      "name": "Scrum Master",
+      "desc": "Bringen Sie Kundenbelege in Planung, Reviews und Retrospektiven ein."
+    },
+    "qa": {
+      "name": "QA",
+      "desc": "Testen Sie Formulare, finden Sie das Feedback hinter Fehlern und beobachten Sie Releases."
+    },
+    "engineering": {
+      "name": "Entwicklung",
+      "desc": "Verbinden Sie ein Repository und machen Sie aus Problemen geprüfte Änderungen."
+    }
+  },
+  "steps": {
+    "read_dashboard": {
+      "title": "Das Dashboard dieser Woche lesen",
+      "why": "Volumen, Stimmung und die wichtigsten Kategorien zeigen, wo Sie zuerst hinschauen sollten.",
+      "cta": "Dashboard öffnen"
+    },
+    "ask_assistant": {
+      "title": "Dem Assistenten eine Frage zu Ihren Kunden stellen",
+      "why": "Er liest das Feedback für Sie und zitiert jede Bewertung, auf die er sich stützt.",
+      "cta": "Assistenten öffnen"
+    },
+    "start_project": {
+      "title": "Forschungsprojekt starten",
+      "why": "Ein Projekt hält das Feedback, die Personas und die Dokumente eines Themas zusammen.",
+      "cta": "Projekte öffnen"
+    },
+    "generate_personas": {
+      "title": "Personas aus echtem Feedback erstellen",
+      "why": "Personas, die auf Bewertungen beruhen, richten Entscheidungen an echten Kunden aus.",
+      "cta": "Projekte öffnen"
+    },
+    "write_document": {
+      "title": "Ein PR/FAQ oder ein PRD entwerfen",
+      "why": "Wer es anhand der Belege aufschreibt, begründet die Arbeit.",
+      "cta": "Projekte öffnen"
+    },
+    "set_objectives": {
+      "title": "Ihre Ziele und KPIs festlegen",
+      "why": "Der Assistent und das Briefing gewichten Feedback danach, woran Sie gemessen werden.",
+      "cta": "Ziele festlegen"
+    },
+    "subscribe_brief": {
+      "title": "Morgenbriefing abonnieren",
+      "why": "Was sich über Nacht geändert hat, erreicht Sie, ohne dass Sie die App öffnen.",
+      "cta": "Morgenbriefing öffnen"
+    },
+    "review_problems": {
+      "title": "Die Probleme prüfen, die Kunden am häufigsten melden",
+      "why": "Die Rangliste der Probleme zeigt Ihnen, was Sie zuerst planen, beheben oder testen sollten.",
+      "cta": "Problemanalyse öffnen"
+    },
+    "share_project": {
+      "title": "Das Projekt mit Ihrem Team teilen",
+      "why": "Alle planen auf Basis derselben Belege.",
+      "cta": "Projekte öffnen"
+    },
+    "create_form": {
+      "title": "Ein Feedback-Formular erstellen",
+      "why": "Ein Formular stellt die Fragen, auf die Ihr Team Antworten braucht, in neun Sprachen.",
+      "cta": "Feedback-Formulare öffnen"
+    },
+    "read_form_results": {
+      "title": "Ergebnisse und Bericht eines Formulars lesen",
+      "why": "Der Bericht liefert Ihnen die Themen und Zitate für die Retrospektive.",
+      "cta": "Feedback-Formulare öffnen"
+    },
+    "test_form": {
+      "title": "Ein Formular mit seinem Testlink testen",
+      "why": "Eine Testeinsendung prüft die Fragen und die Logik, ohne in ein Ergebnis einzufließen.",
+      "cta": "Feedback-Formulare öffnen"
+    },
+    "search_feedback": {
+      "title": "Das Feedback hinter einem Problem finden",
+      "why": "Die eigenen Worte der Kunden zeigen, wie ein Fehler oder eine Lücke empfunden wird.",
+      "cta": "Feedback durchsuchen"
+    },
+    "watch_release": {
+      "title": "Das Feedback nach einem Release beobachten",
+      "why": "Ändern sich Volumen oder Stimmung nach einem Release, deutet das auf eine Regression hin.",
+      "cta": "Dashboard öffnen"
+    },
+    "connect_repository": {
+      "title": "Ein Repository verbinden",
+      "why": "Dann können die Engineering-Agenten aus einem Problem einen Pull Request machen.",
+      "cta": "Verbindungen öffnen"
+    },
+    "run_engineering_agent": {
+      "title": "Einen Engineering-Lauf aus einem Problem starten",
+      "why": "Ein Agent baut die Korrektur, und eine Person prüft sie, bevor etwas gepusht wird.",
+      "cta": "Läufe öffnen"
+    },
+    "build_prototype": {
+      "title": "Einen Prototyp aus einem PRD bauen",
+      "why": "Ein klickbarer Prototyp wird mit Kunden getestet, bevor er wirklich gebaut wird.",
+      "cta": "Projekte öffnen"
+    },
+    "connect_mcp": {
+      "title": "VoC aus Ihrer IDE nutzen",
+      "why": "Ihr Coding-Assistent liest dasselbe Feedback über einen einzigen MCP-Endpunkt.",
+      "cta": "MCP & Skills öffnen"
+    }
+  }
+}

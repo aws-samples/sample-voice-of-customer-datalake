@@ -12,7 +12,7 @@
  * (`blocks: 'publish'`; Save still works, so nothing is lost while the colours are fixed); text from 3 to 4.5:1, a
  * primary under 3:1 and a button label under 4.5:1 are warnings.
  *
- * This is the frontend's copy of the contract's rules; `formTemplates.test.ts` checks the thirteen templates against
+ * This is the frontend's copy of the contract's rules; `formTemplates.test.ts` checks the fourteen templates against
  * it. The server's validator stays the authority (its 400 is mapped onto the same list).
  *
  * @module pages/FeedbackForms/model/validateForm

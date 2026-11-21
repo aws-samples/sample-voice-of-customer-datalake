@@ -65,6 +65,9 @@ WORKSPACE_KINDS: dict[str, frozenset[str]] = {
     # request that names no workspace (shared/request_workspace.py: the deployment as before), until every
     # deployment runs inside one.
     'resolved_problems': frozenset({'lambda/api/settings_handler.py'}),
+    # In-app micro-feedback's form and actions (7.66.00): a workspace's own from the start, the deployment's row for a
+    # request that names no workspace.
+    'app_feedback': frozenset({'lambda/shared/app_feedback.py'}),
     'email_intake': frozenset({'lambda/shared/email_intake_settings.py'}),
     'fallback_owner': frozenset({'lambda/agents/nodes/select_or_create_project.py', 'lambda/shared/user_flags.py'}),
     # Its rows' keys, the deployment's and a workspace's, are built in one place (shared/radar_keys.py).

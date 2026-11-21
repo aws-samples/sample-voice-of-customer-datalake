@@ -80,7 +80,7 @@ class TestLegacyClient:
         client.connect()
         prompts = [p['name'] for p in _result(client.request('prompts/list'))['prompts']]
         resources = [r['uri'] for r in _result(client.request('resources/list'))['resources']]
-        assert prompts == ['weekly_summary', 'triage_urgent', 'prfaq_from_feedback']
+        assert prompts == ['weekly_summary', 'triage_urgent', 'prfaq_from_feedback', 'playbook']
         assert resources == ['voc://categories', 'voc://company-context']
 
     def test_the_prfaq_prompt_depends_on_the_token_scope(self, world):
@@ -164,5 +164,5 @@ class TestModernClient:
 
     def test_lists_are_served(self, world):
         minted = world.mint('alice', scope='read')
-        assert len(_result(_modern(world, minted, 'prompts/list', {}))['prompts']) == 3
+        assert len(_result(_modern(world, minted, 'prompts/list', {}))['prompts']) == 4
         assert len(_result(_modern(world, minted, 'resources/list', {}))['resources']) == 2

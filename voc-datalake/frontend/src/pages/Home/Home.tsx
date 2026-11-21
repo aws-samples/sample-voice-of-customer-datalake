@@ -11,6 +11,10 @@
  * the reader's own (`/settings/my-briefing/*`, docs/briefing.md): nothing is
  * built until they subscribe or press Refresh.
  *
+ * The setup checklist holds the role playbook too (7.66.00, docs/playbooks.md):
+ * the person picks Product, Scrum master, QA or Engineering and gets that
+ * role's first week, ticked from real state or by hand (`playbooks` namespace).
+ *
  * The two sections are collapsible and start expanded. The checklist and
  * "How it works" each have a Skip, stored per user on the server
  * (`/settings/my-onboarding` `state: skipped` / `guide: skipped`): a skipped
@@ -26,7 +30,7 @@
  * redirect after sign-in (`utils/landing`) — goes straight to the dashboard;
  * the sidebar's Home link still shows this page.
  *
- * Namespaces: `briefing` (the brief) and `dashboard` (`home.*`, the checklist).
+ * Namespaces: `briefing` (the brief), `dashboard` (`home.*`, the checklist) and `playbooks`.
  *
  * @module pages/Home
  */
@@ -51,6 +55,7 @@ import { useBriefPreferences } from './brief/useBriefPreferences'
 import HowItWorks from './HowItWorks'
 import OnboardingBuddy from './onboarding/OnboardingBuddy'
 import { useOnboardingPreference } from './onboarding/useOnboardingPreference'
+import RolePlaybook from './playbooks/RolePlaybook'
 import { useSkippableOpen } from './useSkippableOpen'
 import type { OnboardingPreferenceResult } from './onboarding/useOnboardingPreference'
 import type { Agent } from '../../api/agentsApi'
@@ -113,6 +118,8 @@ function Checklist({ onboarding }: Readonly<{ onboarding: OnboardingPreferenceRe
     <CollapsibleSection title={t('home.buddy.title')} open={section.open} onOpenChange={section.onOpenChange}>
       <OnboardingBuddy signals={preference.signals} isSaving={isSaving} saveFailed={saveFailed}
         onChoose={(state) => { section.followServer(); setState(state) }} />
+      <RolePlaybook preference={preference} isSaving={isSaving} onChooseRole={onboarding.setPlaybook}
+        onTicks={onboarding.setPlaybookDone} />
     </CollapsibleSection>
   )
 }

@@ -13,8 +13,9 @@
  */
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CheckCircle2, Circle, Loader2, PartyPopper } from 'lucide-react'
+import { ArrowRight, PartyPopper } from 'lucide-react'
 import clsx from 'clsx'
+import ChecklistProgress, { StatusIcon } from '../ChecklistProgress'
 import { progressOf } from './onboardingSteps'
 import { useOnboardingSteps } from './useOnboardingSteps'
 import type { OnboardingPreference, OnboardingState } from '../../../api/onboardingApi'
@@ -40,12 +41,6 @@ const STEP_TEXT: Record<OnboardingStep['id'], { title: string; desc: string; cta
   feedback: { title: 'home.buddy.feedbackTitle', desc: 'home.buddy.feedbackDesc', cta: 'home.buddy.feedbackCta' },
   assistant: { title: 'home.buddy.assistantTitle', desc: 'home.buddy.assistantDesc', cta: 'home.buddy.assistantCta' },
   project: { title: 'home.buddy.projectTitle', desc: 'home.buddy.projectDesc', cta: 'home.buddy.projectCta' },
-}
-
-function StatusIcon({ status }: Readonly<{ status: StepStatus }>) {
-  if (status === 'done') return <CheckCircle2 size={20} className="text-ok" aria-hidden="true" />
-  if (status === 'pending') return <Loader2 size={20} className="animate-spin text-muted" aria-hidden="true" />
-  return <Circle size={20} className="text-muted" aria-hidden="true" />
 }
 
 function StepLink({ step }: Readonly<{ step: OnboardingStep }>) {
@@ -85,23 +80,9 @@ function StepItem({ step }: Readonly<{ step: OnboardingStep }>) {
 
 function ProgressBar({ progress }: Readonly<{ progress: Progress }>) {
   const { t } = useTranslation('dashboard')
-  const text = t('home.buddy.progress', { done: progress.done, total: progress.total })
-  const percent = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100)
   return (
-    <div>
-      <p className="mb-1 text-xs font-medium text-text" aria-hidden="true">{text}</p>
-      <div
-        role="progressbar"
-        aria-label={t('home.buddy.progressLabel')}
-        aria-valuemin={0}
-        aria-valuemax={progress.total}
-        aria-valuenow={progress.done}
-        aria-valuetext={text}
-        className="h-2 w-full overflow-hidden rounded-full bg-bg-accent"
-      >
-        <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${percent}%` }} />
-      </div>
-    </div>
+    <ChecklistProgress done={progress.done} total={progress.total} label={t('home.buddy.progressLabel')}
+      text={t('home.buddy.progress', { done: progress.done, total: progress.total })} />
   )
 }
 

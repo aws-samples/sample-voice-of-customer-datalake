@@ -1148,6 +1148,35 @@
           "description": "Votre avis nous aide à améliorer la prochaine session."
         }
       }
+    },
+    "app_micro_feedback": {
+      "name": "Micro-feedback dans l’app",
+      "purpose": "Les retours sur cette app VoC, recueillis par ses pouces intégrés. Étiquetés voc_app et exclus des tableaux de bord.",
+      "q": {
+        "q_verdict": {
+          "headline": "Était-ce utile ?",
+          "options": {
+            "up": "Oui",
+            "down": "Non"
+          }
+        },
+        "q_missing": {
+          "headline": "Que manque-t-il ?",
+          "placeholder": "Ce qui l’aurait rendu utile"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci",
+          "description": "L’équipe lit chaque réponse."
+        }
+      },
+      "hidden": {
+        "action": "Action effectuée",
+        "page": "Page de l’app",
+        "app_version": "Version de l’app",
+        "workspace_role": "Rôle dans l’espace de travail"
+      }
     }
   },
   "picker": {
@@ -1164,7 +1193,8 @@
       "product": "Produit",
       "onboarding": "Prise en main",
       "blank": "Vierge",
-      "events": "Événements"
+      "events": "Événements",
+      "app": "Cette app"
     },
     "runs": {
       "link": "Lien",

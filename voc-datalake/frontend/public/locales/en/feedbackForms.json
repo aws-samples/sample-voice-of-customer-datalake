@@ -1148,6 +1148,35 @@
           "description": "Your feedback helps us make the next session better."
         }
       }
+    },
+    "app_micro_feedback": {
+      "name": "In-app micro-feedback",
+      "purpose": "Feedback about this VoC app from its in-app thumbs. Tagged voc_app and left out of the dashboards.",
+      "q": {
+        "q_verdict": {
+          "headline": "Was this useful?",
+          "options": {
+            "up": "Yes",
+            "down": "No"
+          }
+        },
+        "q_missing": {
+          "headline": "What's missing?",
+          "placeholder": "What would have made it useful"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Thank you",
+          "description": "The team reads every answer."
+        }
+      },
+      "hidden": {
+        "action": "Action",
+        "page": "Page",
+        "app_version": "App version",
+        "workspace_role": "Workspace role"
+      }
     }
   },
   "picker": {
@@ -1164,7 +1193,8 @@
       "product": "Product",
       "onboarding": "Onboarding",
       "blank": "Blank",
-      "events": "Events"
+      "events": "Events",
+      "app": "This app"
     },
     "runs": {
       "link": "Link",

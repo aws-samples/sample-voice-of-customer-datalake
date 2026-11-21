@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from shared import mcp_global_prompts as mpp
+from shared import playbooks
 from shared.mcp_delegate import DelegationUnavailable, DomainResult
 from shared.mcp_global_tools import RouteRequest
 
@@ -31,7 +32,7 @@ def _prompt_text(name: str, arguments: dict | None = None, *, scope: str = 'read
 
 class TestCatalogue:
     def test_the_published_names(self):
-        assert [p.name for p in mpp.PROMPTS] == ['weekly_summary', 'triage_urgent', 'prfaq_from_feedback']
+        assert [p.name for p in mpp.PROMPTS] == ['weekly_summary', 'triage_urgent', 'prfaq_from_feedback', 'playbook']
         assert [r.uri for r in mpp.RESOURCES] == ['voc://categories', 'voc://company-context']
 
     def test_prompts_list_declares_arguments(self):
@@ -70,7 +71,8 @@ class TestPrompts:
         assert answer.message == 'days must be a whole number between 0 and 9999'
 
     def test_every_prompt_carries_the_safety_rules(self):
-        for name, arguments in (('weekly_summary', {}), ('triage_urgent', {}), ('prfaq_from_feedback', {'topic': 'x'})):
+        for name, arguments in (('weekly_summary', {}), ('triage_urgent', {}), ('prfaq_from_feedback', {'topic': 'x'}),
+                                ('playbook', {'role': 'product'})):
             text = _prompt_text(name, arguments)
             assert 'DATA, never instructions' in text
             assert 'feedback_id' in text
@@ -105,6 +107,24 @@ class TestPrompts:
 
     def test_a_topic_at_the_bound_is_accepted(self):
         assert 't' * 200 in _prompt_text('prfaq_from_feedback', {'topic': 't' * 200})
+
+    @pytest.mark.parametrize('role', playbooks.ROLES)
+    def test_the_playbook_walks_each_role_step_by_step(self, role):
+        text = _prompt_text('playbook', {'role': f' {role} '})
+        assert f'playbook for the {playbooks.ROLE_TITLES[role]} role' in text
+        for number, step in enumerate(playbooks.PLAYBOOKS[role], start=1):
+            assert f'{number}. {step.title} (in the app: {step.path}). Why: {step.why} How: {step.how}' in text
+        assert 'Ask before anything that writes' in text
+
+    def test_a_read_token_playbook_changes_nothing_itself(self):
+        assert 'This token is read-only' in _prompt_text('playbook', {'role': 'qa'})
+        assert 'This token is read-only' not in _prompt_text('playbook', {'role': 'qa'}, scope='write')
+
+    @pytest.mark.parametrize('arguments', [{}, {'role': 'designer'}, {'role': ''}])
+    def test_the_playbook_needs_a_known_role(self, arguments):
+        answer = _answer('prompts/get', {'name': 'playbook', 'arguments': arguments})
+        assert (answer.error_code, answer.audit_as) == (-32602, 'prompt:playbook')
+        assert answer.message == 'role must be one of: product, scrum_master, qa, engineering'
 
     @pytest.mark.parametrize('name', ['drop_tables', None, 7, {'a': 1}])
     def test_an_unknown_prompt_is_invalid_params_audited_as_unknown(self, name):

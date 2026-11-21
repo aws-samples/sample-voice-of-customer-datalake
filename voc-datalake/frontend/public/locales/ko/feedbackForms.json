@@ -1148,6 +1148,35 @@
           "description": "보내 주신 피드백은 다음 세션을 더 좋게 만드는 데 도움이 됩니다."
         }
       }
+    },
+    "app_micro_feedback": {
+      "name": "앱 내 마이크로 피드백",
+      "purpose": "이 VoC 앱 안의 엄지 버튼으로 받는, 앱 자체에 대한 피드백입니다. voc_app 태그가 붙고 대시보드에서는 제외됩니다.",
+      "q": {
+        "q_verdict": {
+          "headline": "도움이 되었나요?",
+          "options": {
+            "up": "네",
+            "down": "아니요"
+          }
+        },
+        "q_missing": {
+          "headline": "무엇이 부족한가요?",
+          "placeholder": "무엇이 있었다면 도움이 되었을지 알려 주세요"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "감사합니다",
+          "description": "팀이 모든 답변을 읽습니다."
+        }
+      },
+      "hidden": {
+        "action": "작업",
+        "page": "페이지",
+        "app_version": "앱 버전",
+        "workspace_role": "워크스페이스 역할"
+      }
     }
   },
   "picker": {
@@ -1164,7 +1193,8 @@
       "product": "제품",
       "onboarding": "온보딩",
       "blank": "빈 양식",
-      "events": "이벤트"
+      "events": "이벤트",
+      "app": "이 앱"
     },
     "runs": {
       "link": "링크",

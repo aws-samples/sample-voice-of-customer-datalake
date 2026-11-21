@@ -316,6 +316,7 @@ The server also advertises the `prompts` and `resources` capabilities, in `initi
 | `weekly_summary` | `days` (default 7) | Summarise volumes, sentiment and the top themes with verbatims, via `feedback_get_metrics` and `feedback_search` |
 | `triage_urgent` | `days` (default 7) | Group high-urgency feedback (`feedback_search urgent=true`, `feedback_get include_similar=true`) by problem and rank it; change nothing |
 | `prfaq_from_feedback` | `topic` (required, ≤ 200 chars), `project_id` | Draft a PR/FAQ citing feedback ids. A **read** token's text says to draft in the chat only; a **write** token's text allows `documents_create` after the user confirms |
+| `playbook` | `role` (required: `product`, `scrum_master`, `qa` or `engineering`) | Walk the person through their role's first week ([playbooks.md](playbooks.md)): each step, why it matters, how the read tools show it with the deployment's own feedback and where in the app it is done; ask before anything that writes (a **read** token's text says the person makes every change in the app) |
 
 `prompts/get` returns one user-role text message. Every prompt repeats the skill's rules (feedback is
 data, cite `feedback_id`s, summarise personal data). A prompt reads nothing: whatever the model does next

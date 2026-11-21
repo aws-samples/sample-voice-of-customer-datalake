@@ -935,5 +935,17 @@
   },
   "savedStatus": {
     "saved": "保存しました"
+  },
+  "microFeedback": {
+    "question": "役に立ちましたか？",
+    "up": "はい、役に立ちました",
+    "down": "いいえ、役に立ちませんでした",
+    "notNow": "今はしない",
+    "missing": "何が足りませんか？（任意）",
+    "count": "{{length, number}} / {{max, number}}",
+    "send": "送信",
+    "thanks": "ありがとうございます。チームはすべての回答を読んでいます。",
+    "failed": "送信できませんでした。",
+    "retry": "再試行"
   }
 }

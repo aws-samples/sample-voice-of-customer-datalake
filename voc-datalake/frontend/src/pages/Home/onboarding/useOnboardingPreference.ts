@@ -9,9 +9,9 @@
  * browser (empty cache) simply waits for the server. If the server cannot be
  * reached the cached answer stands, else the first-run default (shown).
  *
- * Closing a Home card (the subscribe prompt, an agent-decision card) is applied
- * to the cached answer at once, so the card goes the moment its X is pressed;
- * a failed save puts it back.
+ * Closing a Home card (the subscribe prompt, an agent-decision card), picking a
+ * role playbook and ticking one of its steps are applied to the cached answer at
+ * once, so the screen answers the moment it is pressed; a failed save puts it back.
  *
  * @module pages/Home/onboarding/useOnboardingPreference
  */
@@ -19,7 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { DEFAULT_ONBOARDING, normalizeOnboarding, onboardingApi, onboardingKey } from '../../../api/onboardingApi'
 import { useAuthStore } from '../../../store/authStore'
 import { useConfigStore } from '../../../store/configStore'
-import type { GuideState, OnboardingChanges, OnboardingPreference, OnboardingState, StartPage } from '../../../api/onboardingApi'
+import type { GuideState, OnboardingChanges, OnboardingPreference, OnboardingState, PlaybookRole, StartPage } from '../../../api/onboardingApi'
 
 const CACHE_PREFIX = 'voc-onboarding:'
 
@@ -42,15 +42,18 @@ function writeCachedOnboarding(sub: string | undefined, value: OnboardingPrefere
   }
 }
 
-/** Whether a change closes a Home card (applied to the cached answer before the save). */
-const closesACard = (changes: OnboardingChanges) => 'subscribe_prompt' in changes || 'dismiss_decision_run' in changes
+/** Whether a change is applied to the cached answer before the save (a closed card, the playbook and its ticks). */
+const isOptimistic = (changes: OnboardingChanges) =>
+  'subscribe_prompt' in changes || 'dismiss_decision_run' in changes || 'playbook' in changes || 'playbook_done' in changes
 
-/** The preference with a closed Home card applied (other changes leave it as it is). */
-function closedCards(current: OnboardingPreference, changes: OnboardingChanges): OnboardingPreference {
+/** The preference with an optimistic change applied (other changes leave it as it is). */
+function optimistic(current: OnboardingPreference, changes: OnboardingChanges): OnboardingPreference {
   if ('subscribe_prompt' in changes) return { ...current, subscribe_prompt: changes.subscribe_prompt }
   if ('dismiss_decision_run' in changes) {
     return { ...current, dismissed_decision_runs: [changes.dismiss_decision_run, ...current.dismissed_decision_runs] }
   }
+  if ('playbook' in changes) return { ...current, playbook: changes.playbook }
+  if ('playbook_done' in changes) return { ...current, playbook_done: [...changes.playbook_done] }
   return current
 }
 
@@ -67,6 +70,10 @@ export interface OnboardingPreferenceResult {
   dismissSubscribePrompt: () => void
   /** Close Home's decision card for this waiting run; a later waiting run shows again. */
   dismissDecisionRun: (runId: string) => void
+  /** Pick (or, null, clear) the role playbook (docs/playbooks.md). */
+  setPlaybook: (role: PlaybookRole | null) => void
+  /** Replace the playbook steps ticked by hand. */
+  setPlaybookDone: (steps: readonly string[]) => void
   isSaving: boolean
   saveFailed: boolean
 }
@@ -96,10 +103,10 @@ export function useOnboardingPreference(): OnboardingPreferenceResult {
     mutationFn: (changes: OnboardingChanges) => onboardingApi.save(changes),
     onMutate: async (changes) => {
       // Nothing optimistic to write, so nothing to roll back on an error.
-      if (!closesACard(changes)) return { previous: undefined }
+      if (!isOptimistic(changes)) return { previous: undefined }
       await queryClient.cancelQueries({ queryKey })
       const previous = queryClient.getQueryData<OnboardingPreference>(queryKey)
-      queryClient.setQueryData(queryKey, closedCards(previous ?? DEFAULT_ONBOARDING, changes))
+      queryClient.setQueryData(queryKey, optimistic(previous ?? DEFAULT_ONBOARDING, changes))
       return { previous }
     },
     onError: (_error, _changes, context) => {
@@ -121,6 +128,8 @@ export function useOnboardingPreference(): OnboardingPreferenceResult {
     setGuide: (guide) => mutation.mutate({ guide }),
     dismissSubscribePrompt: () => mutation.mutate({ subscribe_prompt: 'dismissed' }),
     dismissDecisionRun: (runId) => mutation.mutate({ dismiss_decision_run: runId }),
+    setPlaybook: (role) => mutation.mutate({ playbook: role }),
+    setPlaybookDone: (steps) => mutation.mutate({ playbook_done: steps }),
     isSaving: mutation.isPending,
     saveFailed: mutation.isError,
   }

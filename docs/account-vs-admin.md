@@ -31,7 +31,7 @@ The tabs are main's six, in main's order, then the two voc-multiplayer added (Sy
 
 | Tab (`/admin/<tab>`) | Sections (`/admin/<tab>/<section>`) and cards (`#<card>`) |
 |---|---|
-| General (`general`) | Brand (`#brand`: names, handles, hashtags, URLs; says where the form brand is set); Default theme (`#theme`: the colour theme everyone starts with). Local dev builds only: the API endpoint, under Advanced (`#api`) |
+| General (`general`) | Brand (`#brand`: names, handles, hashtags, URLs; says where the form brand is set); Default theme (`#theme`: the colour theme everyone starts with); In-app feedback (`#app-feedback`, 7.66.00: the thumbs after key actions, the form they answer and the actions, off by default; [micro-feedback.md](micro-feedback.md)). Local dev builds only: the API endpoint, under Advanced (`#api`) |
 | Sources (`sources`) | Source settings (`plugins`: the source cards, paused or failing first, credentials, schedules, circuit breakers, one opened at `/admin/sources/plugins/<source>`; inside a workspace, for a platform admin, the scope switch **This workspace \| Deployment**, `?scope=deployment`: the deployment's own sources, [multi-workspace.md](multi-workspace.md#the-deployments-data-sources-75000)); Integrations (`integrations`: the Figma and GitHub tokens); Email inbox (`inbox`); Radar (`radar`) |
 | Taxonomy (`taxonomy`) | Categories (`categories`: AI generation, reprocess); Dimensions (`dimensions`) |
 | Privacy & access (`access`) | Source policies (`policies`: profiles, PII, retention, restriction; the erasure panels `#erasure`); Users (`users`: one table of everyone who can sign in and **Invite person**, `/admin/access/users/invite`; a person's editor, a side sheet at `/admin/access/users/<username>`); Boards (`boards`: the [feedback boards](feature-requests.md), a board's editor at `/admin/access/boards/<boardId>`; Company domains `#domains`; Participant email `#participants`) |
@@ -141,6 +141,8 @@ everyone who uses the same browser.
 | Personal memories | Memory → Personal | a working tool, not a setting |
 | My conversations | the assistant sidebar | content, not a setting |
 | Brand (name, handles, hashtags, URLs) | Administration → General | |
+| In-app feedback (the thumbs after key actions) | Administration → General → In-app feedback | `GET /settings/app-feedback` (every member) / `PUT` (the workspace's admins; outside a workspace the deployment's); off by default ([micro-feedback.md](micro-feedback.md)) |
+| Role playbook (Product, Scrum master, QA, Engineering) | Home → Your setup checklist → Your first week | the person's own, like the checklist's state; grants nothing ([playbooks.md](playbooks.md)) |
 | Default theme (the colour theme everyone sees until they pick their own) | Administration → General → Default theme | `GET /settings/appearance` (everyone) / `PUT` (platform admins, checked live: one colour scheme for the whole deployment, [Multi-workspace](multi-workspace.md#per-workspace-configuration)); everyone else, a plain admin included, sees it read-only |
 | Data sources, credentials, schedules, circuit breakers | Administration → Sources → Source settings | the deployment's own: its Deployment scope (platform admins) |
 | Design-system tokens (Figma and GitHub), Email inbox, Radar | Administration → Sources → Integrations, Email inbox, Radar | |

@@ -32,8 +32,11 @@ BAD_START = 'start_page must be one of: home, dashboard'
 BAD_GUIDE = 'guide must be one of: open, skipped'
 BAD_PROMPT = 'subscribe_prompt must be one of: shown, dismissed'
 BAD_RUN = 'dismiss_decision_run must be an agent run id'
-NO_FIELD = 'Give at least one of: state, start_page, guide, subscribe_prompt, dismiss_decision_run'
+NO_FIELD = ('Give at least one of: state, start_page, guide, subscribe_prompt, dismiss_decision_run, playbook, '
+            'playbook_done')
 NOTHING_DISMISSED = {'subscribe_prompt': 'shown', 'dismissed_decision_runs': []}
+#: No role playbook chosen and nothing ticked (7.66.00).
+NO_PLAYBOOK = {'playbook': None, 'playbook_done': []}
 RUN_A = 'ar_019a0000000011112222'
 RUN_B = 'ar_019a0000000133334444'
 
@@ -193,7 +196,7 @@ class TestPreferenceView:
     def test_stored_state_and_updated_at(self, state, visible):
         view = onboarding.preference_view({'state': state, 'updated_at': 'then'}, NOW)
         assert view == {'state': state, 'hidden_until': None, 'updated_at': 'then', 'visible': visible,
-                        'start_page': 'home', 'guide': 'open', **NOTHING_DISMISSED}
+                        'start_page': 'home', 'guide': 'open', **NOTHING_DISMISSED, **NO_PLAYBOOK}
 
     @pytest.mark.parametrize(('stored', 'prompt'), [
         ('dismissed', 'dismissed'), ('shown', 'shown'), ('hidden', 'shown'), (None, 'shown'), (True, 'shown'),
@@ -268,7 +271,7 @@ class TestReadAndWrite:
                              'start_page': 'dashboard'})
         assert onboarding.get_onboarding(table, 'u1', NOW) == {
             'state': 'hidden', 'hidden_until': TOMORROW_ISO, 'updated_at': 'then', 'visible': False,
-            'start_page': 'dashboard', 'guide': 'open', **NOTHING_DISMISSED, 'signals': NO_SIGNALS,
+            'start_page': 'dashboard', 'guide': 'open', **NOTHING_DISMISSED, **NO_PLAYBOOK, 'signals': NO_SIGNALS,
         }
         assert table.get_item.call_args_list[0].kwargs == {'Key': {'pk': 'USERCTX#u1', 'sk': 'onboarding'}}
 
@@ -287,7 +290,8 @@ class TestReadAndWrite:
                                                   **onboarding.preference_update({'state': 'hidden'}, NOW))
         assert view == {
             'state': 'hidden', 'hidden_until': TOMORROW_ISO, 'updated_at': NOW_ISO,
-            'visible': False, 'start_page': 'dashboard', 'guide': 'skipped', **NOTHING_DISMISSED, 'signals': NO_SIGNALS,
+            'visible': False, 'start_page': 'dashboard', 'guide': 'skipped', **NOTHING_DISMISSED, **NO_PLAYBOOK,
+            'signals': NO_SIGNALS,
         }
         table.get_item.assert_called_once_with(Key=WATERMARK_KEY)
         table.put_item.assert_not_called()

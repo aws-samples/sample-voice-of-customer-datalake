@@ -235,6 +235,8 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | Document | Description |
 |----------|-------------|
 | [Morning brief](docs/briefing.md) | The per-user brief on Home: cards, triggers, cost, email, privacy |
+| [Role playbooks](docs/playbooks.md) | A first week on Home for a Product manager, Scrum master, QA or Engineering: steps ticked from real activity, the assistant's walk-through, the `playbook` MCP prompt |
+| [In-app micro-feedback](docs/micro-feedback.md) | Thumbs and "What's missing?" after key actions (off by default): the form it answers, what it sends, why the dashboards leave it out |
 | [Categories](docs/categories.md) | Categories, products, owners, per-user category access and multi-value filters |
 | [Problem Analysis](docs/problem-analysis.md) | How `/problems` groups the whole window: grouping, partial and truncated answers |
 | [Dimensions](docs/dimensions.md) | Dimensions, tags and channels: model, value sources, filters, API |

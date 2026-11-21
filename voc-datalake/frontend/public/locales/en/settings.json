@@ -446,7 +446,8 @@
     "hardCap": "Hard cap",
     "models": "Roles' models",
     "connections": "GitHub connections",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "appFeedback": "In-app feedback"
   },
   "title": "Administration",
   "users": {
@@ -1140,7 +1141,47 @@
       "models": "model, Kiro, native harness, Opus, Sonnet, Haiku, role, Registry",
       "connections": "GitHub, GitHub App, repository, connection, install, issues, fine-grained token, personal access token, fork",
       "spend": "cost, spend, budget, hard cap, billing",
-      "preferences": "language, theme, my preferences, dark mode"
+      "preferences": "language, theme, my preferences, dark mode",
+      "appFeedback": "in-app feedback, micro-feedback, thumbs, useful, what is missing, voc_app"
+    }
+  },
+  "appFeedback": {
+    "title": "In-app feedback",
+    "hint": "Right after a key action, ask people in two seconds whether it was useful and what's missing. The answers go to a feedback form of this workspace, tagged voc_app, and the dashboards leave them out. Off until you turn it on.",
+    "readOnly": "Only administrators change in-app feedback (inside a workspace, its own administrators).",
+    "loading": "Loading the in-app feedback settings…",
+    "loadFailed": "Couldn't load the in-app feedback settings.",
+    "form": "Form that receives the answers",
+    "noFormOption": "No form chosen",
+    "createForm": "Create one from the In-app micro-feedback template",
+    "noForm": "Choose a form made from the In-app micro-feedback template.",
+    "formDeleted": "The chosen form was deleted: choose another one.",
+    "active": "The thumbs show after the actions below, and the answers go to “{{name}}”.",
+    "inactive": "The thumbs are hidden: “{{name}}” is chosen, but in-app feedback is off or the form can't take answers yet.",
+    "enabled": "Ask after key actions",
+    "actionsLegend": "Ask after",
+    "actions": {
+      "personas": "Personas generated",
+      "research": "Research finished",
+      "prfaq": "A PR/FAQ written",
+      "prd": "A PRD written",
+      "prototype": "A prototype built",
+      "form_draft": "A form's AI draft",
+      "import": "An import finished",
+      "engineering_run": "An engineering run ended"
+    },
+    "problems": {
+      "not_tagged": "The form isn't tagged voc_app, so its answers would count in the dashboards.",
+      "no_verdict": "The form has no “Was this useful?” choice (q_verdict, with up and down).",
+      "no_missing": "The form has no “What's missing?” text question (q_missing).",
+      "hidden_fields": "The form lacks a hidden field the app sends: action, page, app_version or workspace_role.",
+      "form_off": "The form is Off: turn it on in Feedback Forms to start collecting."
+    },
+    "errors": {
+      "unfit": "This form can't receive in-app feedback: choose one made from the In-app micro-feedback template.",
+      "required": "Choose the form first, then turn it on.",
+      "notFound": "That form isn't in this workspace any more.",
+      "saveFailed": "Couldn't save the in-app feedback settings."
     }
   }
 }

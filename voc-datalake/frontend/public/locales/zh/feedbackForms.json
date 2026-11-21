@@ -1148,6 +1148,35 @@
           "description": "您的反馈将帮助我们把下一场活动办得更好。"
         }
       }
+    },
+    "app_micro_feedback": {
+      "name": "应用内微反馈",
+      "purpose": "通过本 VoC 应用内的点赞/点踩按钮收集的、关于本应用的反馈。带有 voc_app 标签，不计入仪表板。",
+      "q": {
+        "q_verdict": {
+          "headline": "这有帮助吗？",
+          "options": {
+            "up": "是",
+            "down": "否"
+          }
+        },
+        "q_missing": {
+          "headline": "还缺少什么？",
+          "placeholder": "怎样才会对您有帮助"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢",
+          "description": "团队会阅读每一条回答。"
+        }
+      },
+      "hidden": {
+        "action": "操作",
+        "page": "页面",
+        "app_version": "应用版本",
+        "workspace_role": "工作区角色"
+      }
     }
   },
   "picker": {
@@ -1164,7 +1193,8 @@
       "product": "产品",
       "onboarding": "新用户引导",
       "blank": "空白",
-      "events": "活动"
+      "events": "活动",
+      "app": "本应用"
     },
     "runs": {
       "link": "链接",

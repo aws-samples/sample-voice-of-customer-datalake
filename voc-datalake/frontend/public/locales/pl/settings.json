@@ -480,7 +480,8 @@
     "hardCap": "Twardy limit",
     "models": "Modele ról",
     "connections": "Połączenia GitHub",
-    "advanced": "Zaawansowane"
+    "advanced": "Zaawansowane",
+    "appFeedback": "Opinie w aplikacji"
   },
   "title": "Administracja",
   "users": {
@@ -1210,7 +1211,47 @@
       "models": "model, Kiro, natywne środowisko, Opus, Sonnet, Haiku, rola, Rejestr",
       "connections": "GitHub, aplikacja GitHub, repozytorium, połączenie, instalacja, zgłoszenia, token fine-grained, osobisty token dostępu, fork",
       "spend": "koszty, wydatki, budżet, limit, rozliczenia",
-      "preferences": "język, motyw, moje preferencje, tryb ciemny"
+      "preferences": "język, motyw, moje preferencje, tryb ciemny",
+      "appFeedback": "opinie w aplikacji, mikroopinie, mikro-feedback, kciuki, przydatne, czego brakuje, voc_app"
+    }
+  },
+  "appFeedback": {
+    "title": "Opinie w aplikacji",
+    "hint": "Zaraz po kluczowej akcji zapytaj w dwie sekundy, czy była przydatna i czego brakuje. Odpowiedzi trafiają do formularza opinii tego obszaru roboczego, z tagiem voc_app, a pulpity je pomijają. Wyłączone, dopóki ich nie włączysz.",
+    "readOnly": "Ustawienia opinii w aplikacji zmieniają tylko administratorzy (w obszarze roboczym: jego własni administratorzy).",
+    "loading": "Wczytywanie ustawień opinii w aplikacji…",
+    "loadFailed": "Nie udało się wczytać ustawień opinii w aplikacji.",
+    "form": "Formularz, który odbiera odpowiedzi",
+    "noFormOption": "Nie wybrano formularza",
+    "createForm": "Utwórz formularz z szablonu „Mikroopinie w aplikacji”",
+    "noForm": "Wybierz formularz utworzony z szablonu „Mikroopinie w aplikacji”.",
+    "formDeleted": "Wybrany formularz został usunięty: wybierz inny.",
+    "active": "Kciuki pojawiają się po poniższych akcjach, a odpowiedzi trafiają do „{{name}}”.",
+    "inactive": "Kciuki są ukryte: wybrano „{{name}}”, ale opinie w aplikacji są wyłączone lub formularz nie może jeszcze przyjmować odpowiedzi.",
+    "enabled": "Pytaj po kluczowych akcjach",
+    "actionsLegend": "Pytaj po tych akcjach",
+    "actions": {
+      "personas": "Wygenerowano persony",
+      "research": "Zakończono badanie",
+      "prfaq": "Napisano PR/FAQ",
+      "prd": "Napisano PRD",
+      "prototype": "Zbudowano prototyp",
+      "form_draft": "Powstał szkic formularza od AI",
+      "import": "Zakończono import",
+      "engineering_run": "Zakończono przebieg inżynieryjny"
+    },
+    "problems": {
+      "not_tagged": "Formularz nie ma tagu voc_app, więc jego odpowiedzi liczyłyby się w pulpitach.",
+      "no_verdict": "Formularz nie ma wyboru „Czy to było przydatne?” (q_verdict, z up i down).",
+      "no_missing": "Formularz nie ma pytania tekstowego „Czego brakuje?” (q_missing).",
+      "hidden_fields": "W formularzu brakuje ukrytego pola, które wysyła aplikacja: action, page, app_version lub workspace_role.",
+      "form_off": "Formularz ma stan Wyłączony: włącz go w Formularzach opinii, aby zacząć zbierać odpowiedzi."
+    },
+    "errors": {
+      "unfit": "Ten formularz nie może odbierać opinii w aplikacji: wybierz formularz utworzony z szablonu „Mikroopinie w aplikacji”.",
+      "required": "Najpierw wybierz formularz, a potem włącz opinie w aplikacji.",
+      "notFound": "Tego formularza nie ma już w tym obszarze roboczym.",
+      "saveFailed": "Nie udało się zapisać ustawień opinii w aplikacji."
     }
   }
 }

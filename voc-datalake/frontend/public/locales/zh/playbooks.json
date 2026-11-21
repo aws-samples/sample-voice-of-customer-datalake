@@ -1,0 +1,122 @@
+{
+  "title": "你的第一周",
+  "pick": "选择你的角色，获取一份简短的第一周行动指南：最重要的几个步骤，每一步都链接到完成它的地方。",
+  "yourRole": "行动指南：{{role}}",
+  "changeRole": "更换角色",
+  "progress": "已完成 {{done, number}}/{{total, number}}",
+  "progressLabel": "指南进度",
+  "markDone": "标记为已完成",
+  "doneByEvidence": "已完成",
+  "askAssistant": "让助手带我逐步完成",
+  "askPrompt": "请一步一步带我完成 {{role}} 角色的 VoC 第一周行动指南。每一步都告诉我它为什么重要，用我们自己的反馈展示它是什么样子，以及我在应用的哪里完成它。更改任何内容之前先问我。步骤：\n{{stepList}}",
+  "roles": {
+    "product": {
+      "name": "产品经理",
+      "desc": "把客户的声音转化为用户画像、PR/FAQ 和 PRD。"
+    },
+    "scrum_master": {
+      "name": "Scrum Master",
+      "desc": "把客户证据带到计划会、评审会和回顾会中。"
+    },
+    "qa": {
+      "name": "QA",
+      "desc": "测试表单，找到 bug 背后的反馈，并关注每次发布。"
+    },
+    "engineering": {
+      "name": "工程",
+      "desc": "连接代码仓库，把问题变成经过审阅的更改。"
+    }
+  },
+  "steps": {
+    "read_dashboard": {
+      "title": "查看本周的仪表板",
+      "why": "反馈量、情感和主要分类会告诉你先看哪里。",
+      "cta": "打开仪表板"
+    },
+    "ask_assistant": {
+      "title": "向助手提一个关于客户的问题",
+      "why": "它替你阅读反馈，并引用它所依据的每一条评价。",
+      "cta": "打开助手"
+    },
+    "start_project": {
+      "title": "开始研究项目",
+      "why": "项目把一个主题的反馈、用户画像和文档放在一起。",
+      "cta": "打开项目"
+    },
+    "generate_personas": {
+      "title": "根据真实反馈生成用户画像",
+      "why": "基于评价的用户画像让决策始终围绕真实客户。",
+      "cta": "打开项目"
+    },
+    "write_document": {
+      "title": "起草 PR/FAQ 或 PRD",
+      "why": "依据证据把它写下来，就能为这项工作提供理由。",
+      "cta": "打开项目"
+    },
+    "set_objectives": {
+      "title": "设置你的目标和 KPI",
+      "why": "助手和简报会对照你的考核指标来衡量反馈。",
+      "cta": "设置目标"
+    },
+    "subscribe_brief": {
+      "title": "订阅晨间简报",
+      "why": "无需打开应用，就能收到夜间发生的变化。",
+      "cta": "打开晨间简报"
+    },
+    "review_problems": {
+      "title": "查看客户反映最多的问题",
+      "why": "问题排名告诉你应该先计划、修复或测试什么。",
+      "cta": "打开问题分析"
+    },
+    "share_project": {
+      "title": "与团队共享项目",
+      "why": "每个人都基于同样的证据做计划。",
+      "cta": "打开项目"
+    },
+    "create_form": {
+      "title": "创建反馈表单",
+      "why": "表单用九种语言提出团队需要得到答案的问题。",
+      "cta": "打开反馈表单"
+    },
+    "read_form_results": {
+      "title": "查看表单的结果和报告",
+      "why": "报告为你提供可以带到回顾会上的主题和引述。",
+      "cta": "打开反馈表单"
+    },
+    "test_form": {
+      "title": "用测试链接测试表单",
+      "why": "测试回复可以检查问题和逻辑，且不会计入任何结果。",
+      "cta": "打开反馈表单"
+    },
+    "search_feedback": {
+      "title": "找到问题背后的反馈",
+      "why": "客户自己的话会说明他们如何感受某个 bug 或缺口。",
+      "cta": "搜索反馈"
+    },
+    "watch_release": {
+      "title": "关注发布后的反馈",
+      "why": "发布后反馈量或情感发生变化，往往意味着出现了回归。",
+      "cta": "打开仪表板"
+    },
+    "connect_repository": {
+      "title": "连接代码仓库",
+      "why": "之后，工程智能体就能把问题变成拉取请求。",
+      "cta": "打开连接"
+    },
+    "run_engineering_agent": {
+      "title": "从问题开始一次工程运行",
+      "why": "智能体构建修复，在推送任何内容之前由人审阅。",
+      "cta": "打开运行记录"
+    },
+    "build_prototype": {
+      "title": "根据 PRD 构建原型",
+      "why": "可点击的原型会先与客户一起测试，然后才正式构建。",
+      "cta": "打开项目"
+    },
+    "connect_mcp": {
+      "title": "在 IDE 中使用 VoC",
+      "why": "你的编程助手通过同一个 MCP 端点读取同样的反馈。",
+      "cta": "打开 MCP 与技能"
+    }
+  }
+}

@@ -4,8 +4,11 @@
  *
  * The server is the source of truth: it stores the state per Cognito `sub` and
  * computes `visible` on its own clock (a "Hide for now" snooze ends there). The
- * GET also carries two deployment-wide first-run `signals` the aggregates table
- * answers cheaply, so Home needs no metrics call to tick "feedback arrived".
+ * GET also carries the first-run `signals` the aggregates table answers cheaply
+ * (the request's workspace's), so Home needs no metrics call to tick "feedback
+ * arrived", and, with a role playbook chosen (7.66.00, docs/playbooks.md), the
+ * server signals of its steps (`brief_subscribed`, `objectives_set`,
+ * `form_test_response`).
  *
  * Every response is normalized through a lenient Zod schema: a drifted or
  * missing field reads as the first-run default (buddy shown, nothing done).
@@ -28,6 +31,10 @@ export type StartPage = typeof START_PAGES[number]
 const GUIDES = ['open', 'skipped'] as const
 export type GuideState = typeof GUIDES[number]
 
+/** The role playbooks (`ROLES` in shared/playbooks.py, schemas/playbooks.json). */
+export const PLAYBOOK_ROLES = ['product', 'scrum_master', 'qa', 'engineering'] as const
+export type PlaybookRole = typeof PLAYBOOK_ROLES[number]
+
 /** Whether Home shows "Subscribe to the morning brief" (`SUBSCRIBE_PROMPTS` in shared/onboarding.py). */
 const SUBSCRIBE_PROMPTS = ['shown', 'dismissed'] as const
 type SubscribePrompt = typeof SUBSCRIBE_PROMPTS[number]
@@ -35,6 +42,7 @@ type SubscribePrompt = typeof SUBSCRIBE_PROMPTS[number]
 /**
  * A PUT names only what it changes; the server leaves the other fields as stored.
  * `dismiss_decision_run` closes Home's decision card for that waiting run (it decides nothing).
+ * `playbook` picks (or, null, clears) the role playbook; `playbook_done` replaces the steps ticked by hand.
  */
 export type OnboardingChanges =
   | { state: OnboardingState }
@@ -42,10 +50,18 @@ export type OnboardingChanges =
   | { guide: GuideState }
   | { subscribe_prompt: SubscribePrompt }
   | { dismiss_decision_run: string }
+  | { playbook: PlaybookRole | null }
+  | { playbook_done: readonly string[] }
+
+/** A playbook signal the server sends only for the chosen playbook's steps: absent = not asked (undefined). */
+const optionalSignal = z.boolean().optional().catch(undefined)
 
 const SignalsSchema = z.object({
   feedback_present: z.boolean().catch(false),
   feedback_form_configured: z.boolean().catch(false),
+  brief_subscribed: optionalSignal,
+  objectives_set: optionalSignal,
+  form_test_response: optionalSignal,
 }).catch({ feedback_present: false, feedback_form_configured: false })
 
 const OnboardingSchema = z.object({
@@ -58,6 +74,9 @@ const OnboardingSchema = z.object({
   subscribe_prompt: z.enum(SUBSCRIBE_PROMPTS).catch('shown'),
   /** Run ids whose Home decision card the reader closed (newest first, at most 50). */
   dismissed_decision_runs: z.array(z.string()).catch([]),
+  /** The role playbook the person picked (null: none yet) and the steps they ticked by hand. */
+  playbook: z.enum(PLAYBOOK_ROLES).nullable().catch(null),
+  playbook_done: z.array(z.string()).catch([]),
   signals: SignalsSchema,
 })
 export type OnboardingPreference = z.output<typeof OnboardingSchema>

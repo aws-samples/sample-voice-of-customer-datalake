@@ -29,7 +29,7 @@ const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 // locale, so every run tried to load a namespace that does not exist.
 const NAMESPACES = ['agents', 'assistant', 'assistantTools', 'briefing', 'categories', 'common', 'components', 'dashboard', 'documents',
   'dataExplorer', 'decisions', 'emailInbox', 'featureRequests', 'feedbackDetail', 'feedbackForms', 'library', 'login', 'memory',
-  'participants', 'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'radar', 'scrapers', 'settings']
+  'participants', 'playbooks', 'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'radar', 'scrapers', 'settings']
 const ALL_LANGUAGES = ['es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh', 'pl']
 const LANG_NAMES = {
   es: 'Spanish', fr: 'French', de: 'German',

@@ -1,6 +1,6 @@
 /**
- * @fileoverview The thirteen templates (UX §2.4; 7.63.00's Events), grouped by goal, and the form each one makes in a
- * language.
+ * @fileoverview The fourteen templates (UX §2.4; 7.63.00's Events, 7.66.00's In-app micro-feedback), grouped by goal,
+ * and the form each one makes in a language.
  *
  * Each template is a real v2 flow (`templates/*Templates.ts`: ids, types, codes, display, shuffle, min and max,
  * logic, endings, hidden fields) whose copy is in the catalogue under `templates.<id>.…` in the nine locales. A form
@@ -20,11 +20,12 @@ import { LOYALTY_TEMPLATES } from './templates/loyaltyTemplates'
 import { DROPOFF_TEMPLATES } from './templates/dropoffTemplates'
 import { BLANK_TEMPLATES, ONBOARDING_TEMPLATES, PRODUCT_TEMPLATES } from './templates/productTemplates'
 import { EVENT_TEMPLATES } from './templates/eventTemplates'
+import { APP_TEMPLATES } from './templates/appTemplates'
 
-/** Every template in the picker's order: Loyalty, Drop-offs, Product, Onboarding, Events, Blank. */
+/** Every template in the picker's order: Loyalty, Drop-offs, Product, Onboarding, Events, This app, Blank. */
 export const FORM_TEMPLATES: readonly TemplateFlow[] = [
   ...LOYALTY_TEMPLATES, ...DROPOFF_TEMPLATES, ...PRODUCT_TEMPLATES, ...ONBOARDING_TEMPLATES, ...EVENT_TEMPLATES,
-  ...BLANK_TEMPLATES,
+  ...APP_TEMPLATES, ...BLANK_TEMPLATES,
 ]
 
 /** The template a form made from `flow` names (none for Blank: a blank form shares nothing to compare). */
@@ -97,6 +98,7 @@ export function templateForm(flow: TemplateFlow, language: FormLanguage, lookup:
     }),
     endings: flow.endings.map((id) => endingCopy(flow, id, language, lookup)),
     ...unsetFormFields(),
+    ...(flow.tags === undefined ? {} : { tags: [...flow.tags] }),
     ...templateRef(flow),
   }
 }

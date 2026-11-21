@@ -21,6 +21,7 @@ import { handleFormRoutes } from './mock-forms.js';
 import { SEED_FORMS as FORMS_V2_SEEDS, seedStats as formsV2SeedStats } from './mock-forms-seeds.js';
 import { brandFormTheme, listedForm, listedStats } from './mock-forms-v2.js';
 import { handleOnboardingRoutes } from './mock-onboarding.js';
+import { handleAppFeedbackRoutes } from './mock-app-feedback.js';
 import { handleAppearanceRoutes } from './mock-appearance.js';
 import { handleBriefingRoutes } from './mock-briefing.js';
 import { handleAlertRoutes } from './mock-alerts.js';
@@ -1539,6 +1540,7 @@ function handleDomainModules(req, res, url) {
     || handleFocusGroupRoutes(req, res, url, send, shared)
     || handleProjectActionRoutes(req, res, url, send, shared)
     || handleOnboardingRoutes(req, res, url, send, shared)
+    || handleAppFeedbackRoutes(req, res, url, send, shared)
     || handleAppearanceRoutes(req, res, url, send, shared)
     || handleBriefingRoutes(req, res, url, send, shared)
     || handleAlertRoutes(req, res, url, send, shared)

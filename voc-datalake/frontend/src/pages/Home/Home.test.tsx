@@ -376,7 +376,9 @@ describe('onboarding buddy', () => {
       const buddy = await findBuddy()
       expect(await within(buddy).findByRole('heading', { name: "You're ready" })).toBeInTheDocument()
       expect(within(buddy).getByRole('progressbar').getAttribute('aria-valuetext')).toBe('5 of 5 done')
-      const buttons = within(buddy).getAllByRole('button').map((b) => b.textContent.trim())
+      // (the role playbook below the checklist has its own buttons: RolePlaybook.test.tsx)
+      const buttons = within(buddy).getAllByRole('button').filter((b) => b.closest('[data-testid="role-playbook"]') === null)
+        .map((b) => b.textContent.trim())
       expect(buttons).toStrictEqual(['Your setup checklist', 'Hide for now', "Don't show again"])
     })
 

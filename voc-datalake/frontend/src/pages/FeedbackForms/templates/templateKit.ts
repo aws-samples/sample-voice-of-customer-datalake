@@ -1,5 +1,5 @@
 /**
- * @fileoverview The pieces the thirteen templates are written with (UX §2.4): each template is a real v2 flow whose
+ * @fileoverview The pieces the fourteen templates are written with (UX §2.4): each template is a real v2 flow whose
  * questions carry no copy. Their texts live in `public/locales/<lng>/feedbackForms.json` under
  * `templates.<template>.…` (UX §2.3), and formTemplates.ts `templateForm` resolves them in the "Create in"
  * language when a form is made from the template. Option codes are English slugs in every locale.
@@ -12,7 +12,7 @@ import type {
 } from '../model/formsV2'
 import type { LucideIcon } from 'lucide-react'
 
-export const TEMPLATE_GROUPS = ['loyalty', 'dropoffs', 'product', 'onboarding', 'events', 'blank'] as const
+export const TEMPLATE_GROUPS = ['loyalty', 'dropoffs', 'product', 'onboarding', 'events', 'app', 'blank'] as const
 export type TemplateGroup = (typeof TEMPLATE_GROUPS)[number]
 
 interface TemplateHiddenField {
@@ -34,6 +34,8 @@ export interface TemplateFlow {
   readonly hidden: readonly TemplateHiddenField[]
   readonly questions: readonly Question[]
   readonly endings: readonly string[]
+  /** The tags a form made from it carries (7.66.00: the In-app micro-feedback template's `voc_app`). */
+  readonly tags?: readonly string[]
 }
 
 const options = (codes: readonly string[]) => codes.map((code) => ({ code, label: {} }))

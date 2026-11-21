@@ -11,19 +11,13 @@ import clsx from 'clsx'
 import { Info } from 'lucide-react'
 import DialogClose from '../../components/DialogClose/DialogClose'
 import { useAuthStore } from '../../store/authStore'
+import { readStoredStrings } from '../../lib/storedStrings'
 
 /** localStorage: the users (Cognito `sub`, else the username) who dismissed the banner in this browser. */
 const DISMISSED_KEY = 'voc-feedback-forms-intro-dismissed'
 
-function readDismissed(): readonly string[] {
-  try {
-    const raw: unknown = JSON.parse(window.localStorage.getItem(DISMISSED_KEY) ?? '[]')
-    return Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : []
-  } catch {
-    // (an unreadable record shows the banner again: it is only a UI preference)
-    return []
-  }
-}
+/** (an unreadable record shows the banner again: it is only a UI preference) */
+const readDismissed = (): readonly string[] => readStoredStrings(DISMISSED_KEY)
 
 /** Whether the signed-in user dismissed the banner here, and the way to dismiss it. */
 function useIntroDismissed(): readonly [boolean, () => void] {

@@ -17,6 +17,69 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.66.00] - 2026-11-21
+
+**Adoption**: role playbooks on Home for Product, Scrum master, QA and Engineering ([playbooks.md](docs/playbooks.md)),
+and in-app micro-feedback after key actions, a thumb up or down and "What's missing?", sent to a normal feedback form
+an administrator chooses, tagged `voc_app` and left out of the dashboards, off by default
+([micro-feedback.md](docs/micro-feedback.md)). No new route resource: the existing settings proxy and the forms'
+public submit route carry it.
+
+### Added
+
+- **Role playbooks** in Home's setup checklist ("Your first week"): the person picks Product manager, Scrum master, QA
+  or Engineering and gets five to eight first-week steps, each with why it matters and a link to its screen. Steps
+  tick themselves from real activity (the morning brief on, objectives set, a form created, a form's test response, the
+  assistant used, a project owned, personas or a document in one of the person's projects, a shared project, a
+  repository connected, an MCP token) or by hand, and can be unticked. "Ask the assistant to walk me through it" opens
+  a new conversation with the playbook prefilled. A role grants nothing and changes no workspace role; there are no
+  badges and nothing is assigned by an admin.
+- `GET|PUT /settings/my-onboarding` take and answer `playbook` (`product | scrum_master | qa | engineering | null`)
+  and `playbook_done` (the steps ticked by hand), and the GET adds the chosen playbook's server signals
+  (`brief_subscribed`, `objectives_set`, `form_test_response`), read only for that playbook. The catalogue is one file,
+  `voc-datalake/schemas/playbooks.json`, read by the web app and pinned to the server's.
+- **The `playbook` prompt** on the global MCP server (`role`): the role's steps for any MCP client, with how the read
+  tools show each with the deployment's feedback and where in the app it is done; it asks before anything that writes
+  ([mcp.md](docs/mcp.md#prompts-and-resources)).
+- **In-app micro-feedback**: after personas are generated, research, a PR/FAQ or a PRD is written, a prototype is
+  built, a form's AI draft is shown, a CSV import finishes and an engineering run ends, a small inline "Was this
+  useful?" with thumbs, then an optional "What's missing?" (at most 500 characters). Asked at most once per action
+  instance; keyboard and screen-reader friendly. It sends the response to the chosen form's public submit route with
+  no credentials, so the forms' validation, throttles and access rules apply, with ids only: the action, the page, the
+  app's version and the person's workspace role.
+- **Administration → General → In-app feedback** (`/admin/general#app-feedback`), with `GET|PUT
+  /settings/app-feedback`: which form of the workspace receives the answers, whether the thumbs show, and after which
+  actions. Any member reads it; the workspace's admins change it (outside a workspace, the deployment's `admins`),
+  never a delegated caller. The form must be the workspace's own and made from the template (400
+  `app_feedback_form_unfit` with its `problems`); a form that is Off may be chosen and the thumbs wait for it. Stored
+  as `WS#{ws}#SETTINGS#app_feedback` (`SETTINGS#app_feedback` without a workspace), with who saved it, when and why,
+  and swept by a workspace's hard delete with its other settings rows.
+- **The In-app micro-feedback template**, in a new **This app** goal of the picker: `q_verdict`, a single choice `up` /
+  `down` (never a rating, so it moves no average), `q_missing`, an open text, the hidden fields `action`, `page`,
+  `app_version` and `workspace_role`, and the tag `voc_app`. A template's tags are now stored on the form made from it.
+
+### Changed
+
+- **The dashboards leave the VoC app's own feedback out**: an item tagged `voc_app` counts in no aggregate (no
+  counter, no score in the sentiment average; tagging an item later takes its counters out, untagging it counts it),
+  and the metric routes' item path (filtered dashboards, categories, sentiment, sources, personas, dimensions, data
+  quality, entities, problems, GitHub, release watch) leaves it out unless the request filters on `tag=voc_app`. The
+  Feedback list, search and the form's own Results still show it. `rebuild_aggregates.py` follows the same rule.
+- The onboarding buddy's first-run signals (`feedback_present`, `feedback_form_configured`) are the request's
+  workspace's: `GET|PUT /settings/my-onboarding` now resolve `X-Workspace-Id` (the one 404 for a non-member), and a
+  request without the header reads the deployment's, as before.
+
+### Upgrade notes
+
+- No new AWS resource, stack, route resource (the API stack stays at 425), Lambda, permission, flag or fixed cost:
+  the settings routes ride `/settings/{proxy+}`, and the micro-feedback rides the forms' existing public submit route.
+- In-app micro-feedback is off until an administrator creates a form from the In-app micro-feedback template, turns it
+  on, and chooses it under Administration → General → In-app feedback. Its responses cost the normal enrichment per
+  response.
+- Items tagged `voc_app` before this release stay in the aggregates they were counted in until those rows age out
+  (90 days) or `scripts/retention/rebuild_aggregates.py` recomputes them; a form any team tagged `voc_app` for its own
+  use stops counting in the dashboards, so check that the tag is free first.
+
 ## [7.65.00] - 2026-11-21
 
 **Bring your own model**: a deployment can add up to four Bedrock models, inference profiles or Custom Model Import

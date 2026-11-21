@@ -44,7 +44,8 @@ const SECTION_TERMS: Readonly<Record<AdminSectionId, string>> = {
 }
 
 const CARD_TERMS: Readonly<Record<AdminCardId, string>> = {
-  brand: 'search.terms.brand', theme: 'search.terms.theme', api: 'search.terms.api', erasure: 'search.terms.erasure',
+  brand: 'search.terms.brand', theme: 'search.terms.theme', 'app-feedback': 'search.terms.appFeedback', api: 'search.terms.api',
+  erasure: 'search.terms.erasure',
   domains: 'search.terms.domains', participants: 'search.terms.participants', 'hard-cap': 'search.terms.hardCap',
   models: 'search.terms.models', connections: 'search.terms.connections',
 }

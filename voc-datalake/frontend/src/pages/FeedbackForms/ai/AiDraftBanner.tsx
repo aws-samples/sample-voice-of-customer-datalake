@@ -14,6 +14,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ChevronDown, ChevronRight, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import ConfirmModal from '../../../components/ConfirmModal/ConfirmModal'
+import MicroFeedback from '../../../components/MicroFeedback/MicroFeedback'
 import type { DraftNote } from '../../../api/feedbackFormsV2Api'
 import { useDraft } from '../builder/formDraftContext'
 import { useBuilderUi } from '../builder/builderUi'
@@ -72,6 +73,8 @@ export default function AiDraftBanner() {
   const draft = useDraft()
   const ui = useBuilderUi()
   const [discarding, setDiscarding] = useState(false)
+  // In-app micro-feedback (7.66.00): one AI draft or change shown is one instance (no job id reaches the builder).
+  const [feedbackInstance] = useState(() => crypto.randomUUID())
   const { ai } = draft
   if (ai === null) return null
   const before = ai.before
@@ -99,6 +102,7 @@ export default function AiDraftBanner() {
       <Notes notes={ai.notes} />
       <Warnings warnings={ai.warnings} />
       <AiAddressList />
+      <MicroFeedback action="form_draft" instance={feedbackInstance} />
       <ConfirmModal isOpen={discarding} title={t('ai.banner.discardConfirm.title')} message={t('ai.banner.discardConfirm.message')}
         confirmLabel={t('ai.banner.discardConfirm.confirm')} variant="danger"
         onConfirm={() => { setDiscarding(false); ui.leave(pickerPath(), { describe: ai.description }) }} onCancel={() => setDiscarding(false)} />

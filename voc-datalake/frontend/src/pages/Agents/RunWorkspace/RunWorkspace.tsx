@@ -30,6 +30,7 @@ import { useLocation, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import LoadFailed from '../../../components/LoadFailed/LoadFailed'
+import MicroFeedback from '../../../components/MicroFeedback/MicroFeedback'
 import { useIsAdmin } from '../../../store/authStore'
 import { useReplaceAddress } from '../../../utils/pathPlace'
 import { BackToAgents } from '../BackToAgents'
@@ -48,6 +49,7 @@ import { RunEndBanner } from './RunEndBanner'
 import { StartWarnings } from './StartWarnings'
 import { startWarningsOf } from '../startRunRules'
 import { orchestratorOf } from './agentStatus'
+import { ENDED_RUN_STATUSES } from '../../../api/engineeringRunsApi'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
 import type { SessionActions } from './SessionThread'
 
@@ -103,8 +105,15 @@ function Workspace({ runId, agentInPath, overview, live, readAt, refresh }: Read
         </div>
       </div>
       <EngineeringRunReactions runId={runId} status={overview.run.status} reactions={overview.reactions} isAdmin={isAdmin} />
+      <EndedRunFeedback runId={runId} status={overview.run.status} />
     </>
   )
+}
+
+/** In-app micro-feedback (7.66.00) once the run ended (done, failed or stopped), once per run. */
+function EndedRunFeedback({ runId, status }: Readonly<{ runId: string; status: string }>) {
+  if (!ENDED_RUN_STATUSES.includes(status)) return null
+  return <MicroFeedback action="engineering_run" instance={runId} className="mt-4" />
 }
 
 /** A run that is not there (404), or a read that failed (with a retry). */

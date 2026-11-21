@@ -935,5 +935,17 @@
   },
   "savedStatus": {
     "saved": "已保存"
+  },
+  "microFeedback": {
+    "question": "这有帮助吗？",
+    "up": "是，这有帮助",
+    "down": "否，这没有帮助",
+    "notNow": "以后再说",
+    "missing": "还缺少什么？（可选）",
+    "count": "{{length, number}} / {{max, number}}",
+    "send": "发送",
+    "thanks": "谢谢。团队会阅读每一条回答。",
+    "failed": "无法发送。",
+    "retry": "重试"
   }
 }

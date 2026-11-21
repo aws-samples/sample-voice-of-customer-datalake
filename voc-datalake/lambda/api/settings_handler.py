@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from aws_lambda_powertools.event_handler import Response, content_types
 
 from shared import (
+    app_feedback_routes,
     appearance_routes,
     assist_jobs,
     briefing_prefs,
@@ -242,6 +243,8 @@ app.include_router(forms_v2_draft_routes.app)
 # A form report's AI summary (7.63.00), POST /settings/form-reports and GET /settings/form-reports/{job_id}
 # (shared/forms_report_routes.py): beside the drafts, on their table binding, workspace resolution and hourly counter.
 app.include_router(forms_report_routes.app)
+# In-app micro-feedback's settings (7.66.00), GET and PUT /settings/app-feedback (shared/app_feedback_routes.py).
+app.include_router(app_feedback_routes.app)
 
 
 def _configured_table():
@@ -1282,24 +1285,36 @@ def put_my_context_route():
     return company_context.get_my_context(table, sub)
 
 
+# The buddy's row is the caller's own (``USERCTX#{sub}``, every workspace); its signals are the request's workspace's
+# (7.66.00: the role playbooks are workspace-aware), the deployment's for a request that names none, as before.
+FAILED_ONBOARDING_READ: Final = 'Failed to read the onboarding checklist'
+FAILED_ONBOARDING_SAVE: Final = 'Failed to save the onboarding checklist'
+
+
 @app.get("/settings/my-onboarding")
 @tracer.capture_method
 def get_my_onboarding_route():
-    """The caller's onboarding-buddy preference + first-run signals (self only)."""
-    sub = get_caller_subject(app.current_event.raw_event)
-    return onboarding.get_onboarding(_configured_table(), sub)
+    """The caller's onboarding-buddy preference + first-run and playbook signals (self only; signals in the request's
+    workspace)."""
+    event = app.current_event.raw_event
+    context = request_workspace(event, FAILED_ONBOARDING_READ)
+    sub = get_caller_subject(event)
+    return onboarding.get_onboarding(_configured_table(), sub, scope=optional_scope(context))
 
 
 @app.put("/settings/my-onboarding")
 @tracer.capture_method
 def put_my_onboarding_route():
-    """Set the caller's own buddy state, start page, guide and/or Home dismissals.
+    """Set the caller's own buddy state, start page, guide, Home dismissals and/or role playbook.
 
-    ``{state?, start_page?, guide?, subscribe_prompt?, dismiss_decision_run?}`` (shared/onboarding.py).
+    ``{state?, start_page?, guide?, subscribe_prompt?, dismiss_decision_run?, playbook?, playbook_done?}``
+    (shared/onboarding.py).
     """
-    sub = get_caller_subject(app.current_event.raw_event)
+    event = app.current_event.raw_event
+    context = request_workspace(event, FAILED_ONBOARDING_SAVE)
+    sub = get_caller_subject(event)
     changes = onboarding.validate_preference(json_object_body(app))
-    return onboarding.put_onboarding(_configured_table(), sub, changes)
+    return onboarding.put_onboarding(_configured_table(), sub, changes, scope=optional_scope(context))
 
 
 # ── Morning brief (docs/briefing.md): the caller's own preferences, brief and card states ──

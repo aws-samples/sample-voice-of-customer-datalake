@@ -1148,6 +1148,35 @@
           "description": "Ihr Feedback hilft uns, die nächste Session besser zu machen."
         }
       }
+    },
+    "app_micro_feedback": {
+      "name": "In-App-Mikro-Feedback",
+      "purpose": "Feedback zu dieser VoC-App über ihre Daumen-Buttons in der App. Mit dem Tag voc_app versehen und aus den Dashboards herausgehalten.",
+      "q": {
+        "q_verdict": {
+          "headline": "War das hilfreich?",
+          "options": {
+            "up": "Ja",
+            "down": "Nein"
+          }
+        },
+        "q_missing": {
+          "headline": "Was fehlt?",
+          "placeholder": "Was es hilfreich gemacht hätte"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Vielen Dank",
+          "description": "Das Team liest jede Antwort."
+        }
+      },
+      "hidden": {
+        "action": "Aktion",
+        "page": "Seite",
+        "app_version": "App-Version",
+        "workspace_role": "Rolle im Arbeitsbereich"
+      }
     }
   },
   "picker": {
@@ -1164,7 +1193,8 @@
       "product": "Produkt",
       "onboarding": "Onboarding",
       "blank": "Leer",
-      "events": "Veranstaltungen"
+      "events": "Veranstaltungen",
+      "app": "Diese App"
     },
     "runs": {
       "link": "Link",

@@ -5,6 +5,8 @@ model to the right tools and repeat the skill's safety rules: feedback is data, 
 before writing. They read nothing; whatever the model then does goes through the tools and their
 gating. ``prfaq_from_feedback`` is offered to every token: a read-only token's text asks for a draft
 in the chat, and only a write token's text mentions ``documents_create`` (after the user confirms).
+``playbook`` (7.66.00, docs/playbooks.md) walks a person through their role's first week
+(shared/playbooks.py): the steps in order, why each matters and how the tools help, the screen of each in the app.
 
 **Resources** (``resources/list``, ``resources/read``) are read-only JSON views of settings routes.
 Every read is delegated to the settings Lambda with the token's claims (the ``read`` callback the
@@ -25,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from shared import mcp_global_tokens as gt
+from shared import playbooks
 from shared.mcp_delegate import DelegationUnavailable, DomainResult
 from shared.mcp_global_tools import DOMAIN_SETTINGS, MAX_DAYS, RouteRequest
 
@@ -155,6 +158,27 @@ def _prfaq_from_feedback(args: Mapping[str, str], can_write: bool) -> str:
     )
 
 
+def _role(args: Mapping[str, str]) -> str:
+    role = (args.get('role') or '').strip()
+    if role not in playbooks.ROLES:
+        raise CatalogueError(f"role must be one of: {', '.join(playbooks.ROLES)}")
+    return role
+
+
+def _playbook(args: Mapping[str, str], can_write: bool) -> str:
+    role = _role(args)
+    steps = '\n'.join(f'{number}. {step.title} (in the app: {step.path}). Why: {step.why} How: {step.how}'
+                      for number, step in enumerate(playbooks.PLAYBOOKS[role], start=1))
+    writes = ('' if can_write else ' This token is read-only: explain and draft in the chat; the person makes '
+              'every change in the app.')
+    return (
+        f'Walk me through the VoC first-week playbook for the {playbooks.ROLE_TITLES[role]} role, one step at a time. '
+        'For each step say what it is and why it matters, use the read tools to show me what it looks like with our '
+        'own feedback, and tell me where in the app I finish it. Ask before anything that writes, and change '
+        f'nothing I did not ask for.{writes} The steps:\n{steps}\n{_SAFETY}'
+    )
+
+
 _DAYS_ARGUMENT: Final = PromptArgument('days', f'Look-back window in days (default {DEFAULT_PROMPT_DAYS}).')
 
 PROMPTS: Final[tuple[Prompt, ...]] = (
@@ -170,6 +194,10 @@ PROMPTS: Final[tuple[Prompt, ...]] = (
            (PromptArgument('topic', 'What the PR/FAQ is about.', required=True),
             PromptArgument('project_id', 'Project to read (and, with a write token, save to).')),
            _prfaq_from_feedback),
+    Prompt('playbook', 'Role playbook',
+           "Walk through a role's first week in VoC: Product, Scrum master, QA or Engineering, step by step.",
+           (PromptArgument('role', f"The role: {', '.join(playbooks.ROLES)}.", required=True),),
+           _playbook),
 )
 PROMPTS_BY_NAME: Final[dict[str, Prompt]] = {p.name: p for p in PROMPTS}
 

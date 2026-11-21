@@ -1,0 +1,122 @@
+{
+  "title": "Twój pierwszy tydzień",
+  "pick": "Wybierz swoją rolę, aby zobaczyć krótki przewodnik na pierwszy tydzień: najważniejsze kroki, każdy z linkiem do miejsca, w którym go wykonasz.",
+  "yourRole": "Przewodnik: {{role}}",
+  "changeRole": "Zmień rolę",
+  "progress": "Gotowe: {{done, number}} z {{total, number}}",
+  "progressLabel": "Postęp przewodnika",
+  "markDone": "Oznacz jako gotowe",
+  "doneByEvidence": "Gotowe",
+  "askAssistant": "Poproś asystenta, żeby mnie przez to przeprowadził",
+  "askPrompt": "Przeprowadź mnie przez przewodnik VoC na pierwszy tydzień dla roli {{role}}, krok po kroku. Przy każdym kroku powiedz mi, dlaczego jest ważny, pokaż, jak wygląda na naszych własnych opiniach, i gdzie w aplikacji go kończę. Zapytaj, zanim cokolwiek zmienisz. Kroki:\n{{stepList}}",
+  "roles": {
+    "product": {
+      "name": "Zarządzanie produktem",
+      "desc": "Zamieniaj to, co mówią klienci, w persony, PR/FAQ i PRD."
+    },
+    "scrum_master": {
+      "name": "Scrum Master",
+      "desc": "Wnoś dowody od klientów do planowania, przeglądów i retrospektyw."
+    },
+    "qa": {
+      "name": "QA",
+      "desc": "Testuj formularze, znajduj opinie stojące za błędami i obserwuj wydania."
+    },
+    "engineering": {
+      "name": "Inżynieria",
+      "desc": "Połącz repozytorium i zamieniaj problemy w przejrzane zmiany."
+    }
+  },
+  "steps": {
+    "read_dashboard": {
+      "title": "Przejrzyj pulpit z tego tygodnia",
+      "why": "Wolumen, sentyment i najważniejsze kategorie pokazują, gdzie zajrzeć najpierw.",
+      "cta": "Otwórz pulpit"
+    },
+    "ask_assistant": {
+      "title": "Zadaj asystentowi pytanie o swoich klientów",
+      "why": "Czyta opinie za ciebie i cytuje każdą recenzję, na której się opiera.",
+      "cta": "Otwórz asystenta"
+    },
+    "start_project": {
+      "title": "Rozpocznij projekt badawczy",
+      "why": "Projekt trzyma razem opinie, persony i dokumenty jednego tematu.",
+      "cta": "Otwórz Projekty"
+    },
+    "generate_personas": {
+      "title": "Wygeneruj persony z prawdziwych opinii",
+      "why": "Persony oparte na recenzjach utrzymują decyzje przy prawdziwych klientach.",
+      "cta": "Otwórz Projekty"
+    },
+    "write_document": {
+      "title": "Napisz szkic PR/FAQ lub PRD",
+      "why": "Spisanie tego na podstawie dowodów uzasadnia pracę.",
+      "cta": "Otwórz Projekty"
+    },
+    "set_objectives": {
+      "title": "Ustaw swoje cele i KPI",
+      "why": "Asystent i podsumowanie ważą opinie względem tego, po czym oceniana jest twoja praca.",
+      "cta": "Ustaw cele"
+    },
+    "subscribe_brief": {
+      "title": "Subskrybuj poranne podsumowanie",
+      "why": "To, co zmieniło się w nocy, dociera do ciebie bez otwierania aplikacji.",
+      "cta": "Otwórz poranne podsumowanie"
+    },
+    "review_problems": {
+      "title": "Przejrzyj problemy, które klienci zgłaszają najczęściej",
+      "why": "Ranking problemów mówi, co najpierw zaplanować, naprawić lub przetestować.",
+      "cta": "Otwórz Analizę problemów"
+    },
+    "share_project": {
+      "title": "Udostępnij projekt zespołowi",
+      "why": "Wszyscy planują na podstawie tych samych dowodów.",
+      "cta": "Otwórz Projekty"
+    },
+    "create_form": {
+      "title": "Utwórz formularz opinii",
+      "why": "Formularz zadaje pytania, na które twój zespół potrzebuje odpowiedzi, w dziewięciu językach.",
+      "cta": "Otwórz Formularze opinii"
+    },
+    "read_form_results": {
+      "title": "Przeczytaj wyniki i raport formularza",
+      "why": "Raport daje ci tematy i cytaty, które warto przynieść na retrospektywę.",
+      "cta": "Otwórz Formularze opinii"
+    },
+    "test_form": {
+      "title": "Przetestuj formularz jego linkiem testowym",
+      "why": "Odpowiedź testowa sprawdza pytania i logikę, nie wliczając się do żadnego wyniku.",
+      "cta": "Otwórz Formularze opinii"
+    },
+    "search_feedback": {
+      "title": "Znajdź opinie stojące za zgłoszeniem",
+      "why": "Własne słowa klientów pokazują, jak odczuwają błąd lub brak.",
+      "cta": "Szukaj opinii"
+    },
+    "watch_release": {
+      "title": "Obserwuj opinie po wydaniu",
+      "why": "Zmiana wolumenu lub sentymentu po wydaniu wskazuje na regresję.",
+      "cta": "Otwórz pulpit"
+    },
+    "connect_repository": {
+      "title": "Połącz repozytorium",
+      "why": "Wtedy agenci inżynieryjni mogą zamienić problem w pull request.",
+      "cta": "Otwórz Połączenia"
+    },
+    "run_engineering_agent": {
+      "title": "Uruchom przebieg inżynieryjny z problemu",
+      "why": "Agent przygotowuje poprawkę, a człowiek ją przegląda, zanim cokolwiek zostanie wypchnięte.",
+      "cta": "Otwórz Przebiegi"
+    },
+    "build_prototype": {
+      "title": "Zbuduj prototyp na podstawie PRD",
+      "why": "Klikalny prototyp testuje się z klientami, zanim zostanie zbudowany naprawdę.",
+      "cta": "Otwórz Projekty"
+    },
+    "connect_mcp": {
+      "title": "Korzystaj z VoC w swoim IDE",
+      "why": "Twój asystent programowania czyta te same opinie przez jeden endpoint MCP.",
+      "cta": "Otwórz MCP i skille"
+    }
+  }
+}

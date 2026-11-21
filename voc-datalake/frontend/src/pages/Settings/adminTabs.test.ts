@@ -50,7 +50,7 @@ describe('the sections', () => {
   it('knows which tabs switch sections and where each card is', () => {
     expect([hasSections('general'), hasSections('ai'), hasSections('agents'), hasSections('access')]).toStrictEqual([false, false, false, true])
     expect([cardsOf('general', null), cardsOf('access', 'boards'), cardsOf('agents', null)]).toStrictEqual([
-      ['brand', 'theme', 'api'], ['domains', 'participants'], ['hard-cap', 'models', 'connections'],
+      ['brand', 'theme', 'app-feedback', 'api'], ['domains', 'participants'], ['hard-cap', 'models', 'connections'],
     ])
     expect([sectionOfCard('access', 'erasure'), sectionOfCard('access', 'participants'), sectionOfCard('general', 'theme')])
       .toStrictEqual(['policies', 'boards', null])

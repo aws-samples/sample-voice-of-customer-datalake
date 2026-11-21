@@ -42,7 +42,9 @@ Refresh means no model call and no build.
 dismissed | skipped, start_page: home | dashboard, guide: open | skipped, subscribe_prompt: shown |
 dismissed, dismiss_decision_run: <agent run id>}`, each optional, at least one; a PUT changes only
 the fields it names. The GET adds `hidden_until`, `updated_at`, `visible` (computed on the server
-clock), `dismissed_decision_runs` (the 50 newest closed run ids) and the first-run `signals`.
+clock), `dismissed_decision_runs` (the 50 newest closed run ids) and the first-run `signals`. Since
+7.66.00 it also takes and answers the person's role playbook (`playbook`, `playbook_done`) with its
+signals, and its signals are the request's workspace's ([playbooks.md](playbooks.md)).
 
 ## Which language
 

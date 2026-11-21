@@ -1,0 +1,122 @@
+{
+  "title": "Tu primera semana",
+  "pick": "Elige tu rol para ver una breve guía de la primera semana: los pasos más importantes, cada uno con un enlace al lugar donde se hace.",
+  "yourRole": "Guía: {{role}}",
+  "changeRole": "Cambiar de rol",
+  "progress": "{{done, number}} de {{total, number}} completados",
+  "progressLabel": "Progreso de la guía",
+  "markDone": "Marcar como hecho",
+  "doneByEvidence": "Hecho",
+  "askAssistant": "Pedir al asistente que me guíe",
+  "askPrompt": "Guíame por la guía de la primera semana de VoC para el rol {{role}}, paso a paso. En cada paso, dime por qué importa, muéstrame cómo se ve con nuestros propios comentarios y en qué parte de la app lo completo. Pregunta antes de cambiar nada. Los pasos:\n{{stepList}}",
+  "roles": {
+    "product": {
+      "name": "Responsable de producto",
+      "desc": "Convierte lo que dicen los clientes en personas, PR/FAQ y PRD."
+    },
+    "scrum_master": {
+      "name": "Scrum Master",
+      "desc": "Lleva la evidencia de los clientes a la planificación, las revisiones y las retrospectivas."
+    },
+    "qa": {
+      "name": "QA",
+      "desc": "Prueba formularios, encuentra los comentarios detrás de los errores y sigue los lanzamientos."
+    },
+    "engineering": {
+      "name": "Ingeniería",
+      "desc": "Conecta un repositorio y convierte los problemas en cambios revisados."
+    }
+  },
+  "steps": {
+    "read_dashboard": {
+      "title": "Lee el panel de esta semana",
+      "why": "El volumen, el sentimiento y las categorías principales muestran dónde mirar primero.",
+      "cta": "Abrir el panel"
+    },
+    "ask_assistant": {
+      "title": "Hazle al asistente una pregunta sobre tus clientes",
+      "why": "Lee los comentarios por ti y cita cada reseña en la que se basa.",
+      "cta": "Abrir el asistente"
+    },
+    "start_project": {
+      "title": "Inicia un proyecto de investigación",
+      "why": "Un proyecto reúne los comentarios, las personas y los documentos de un tema.",
+      "cta": "Abrir Proyectos"
+    },
+    "generate_personas": {
+      "title": "Genera personas a partir de comentarios reales",
+      "why": "Las personas basadas en reseñas mantienen las decisiones centradas en clientes reales.",
+      "cta": "Abrir Proyectos"
+    },
+    "write_document": {
+      "title": "Redacta un PR/FAQ o un PRD",
+      "why": "Ponerlo por escrito a partir de la evidencia justifica el trabajo.",
+      "cta": "Abrir Proyectos"
+    },
+    "set_objectives": {
+      "title": "Define tus objetivos y KPI",
+      "why": "El asistente y el resumen ponderan los comentarios según aquello por lo que te miden.",
+      "cta": "Definir objetivos"
+    },
+    "subscribe_brief": {
+      "title": "Suscríbete al resumen matinal",
+      "why": "Lo que cambió durante la noche te llega sin abrir la app.",
+      "cta": "Abrir el resumen matinal"
+    },
+    "review_problems": {
+      "title": "Revisa los problemas que más reportan los clientes",
+      "why": "La clasificación de los problemas te dice qué planificar, corregir o probar primero.",
+      "cta": "Abrir Análisis de problemas"
+    },
+    "share_project": {
+      "title": "Comparte el proyecto con tu equipo",
+      "why": "Todos planifican a partir de la misma evidencia.",
+      "cta": "Abrir Proyectos"
+    },
+    "create_form": {
+      "title": "Crea un formulario de feedback",
+      "why": "Un formulario hace las preguntas que tu equipo necesita responder, en nueve idiomas.",
+      "cta": "Abrir Formularios de feedback"
+    },
+    "read_form_results": {
+      "title": "Lee los resultados y el informe de un formulario",
+      "why": "El informe te da los temas y las citas que llevar a la retrospectiva.",
+      "cta": "Abrir Formularios de feedback"
+    },
+    "test_form": {
+      "title": "Prueba un formulario con su enlace de prueba",
+      "why": "Una respuesta de prueba comprueba las preguntas y la lógica sin contar en ningún resultado.",
+      "cta": "Abrir Formularios de feedback"
+    },
+    "search_feedback": {
+      "title": "Encuentra los comentarios detrás de una incidencia",
+      "why": "Las propias palabras de los clientes muestran cómo se vive un error o una carencia.",
+      "cta": "Buscar comentarios"
+    },
+    "watch_release": {
+      "title": "Sigue los comentarios tras un lanzamiento",
+      "why": "Un cambio de volumen o de sentimiento tras un lanzamiento apunta a una regresión.",
+      "cta": "Abrir el panel"
+    },
+    "connect_repository": {
+      "title": "Conecta un repositorio",
+      "why": "Así, los agentes de ingeniería pueden convertir un problema en un pull request.",
+      "cta": "Abrir Conexiones"
+    },
+    "run_engineering_agent": {
+      "title": "Inicia una ejecución de ingeniería desde un problema",
+      "why": "Un agente desarrolla la corrección y una persona la revisa antes de enviar nada.",
+      "cta": "Abrir Ejecuciones"
+    },
+    "build_prototype": {
+      "title": "Crea un prototipo a partir de un PRD",
+      "why": "Un prototipo navegable se prueba con clientes antes de desarrollarlo de verdad.",
+      "cta": "Abrir Proyectos"
+    },
+    "connect_mcp": {
+      "title": "Usa VoC desde tu IDE",
+      "why": "Tu asistente de programación lee los mismos comentarios a través de un único endpoint MCP.",
+      "cta": "Abrir MCP y skills"
+    }
+  }
+}

@@ -499,7 +499,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /settings/my-briefing',
         'GET /settings/my-briefing/brief',
         'GET /settings/my-context',
-        'GET /settings/my-onboarding',
         'POST /settings/categories/generate',
         'POST /settings/design-system/logo',
         'POST /settings/design-system/references',
@@ -518,7 +517,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /settings/my-briefing',
         'PUT /settings/my-briefing/cards',
         'PUT /settings/my-context',
-        'PUT /settings/my-onboarding',
     }),
     # The deployment's accounts stay the users API's, a person's category access and flags become per workspace.
     'users_handler.py': frozenset({

@@ -285,6 +285,10 @@ def settings_world(lambda_context: Any) -> Generator[World]:
         # A form of the deployment (A's id) and of each workspace, for a report's AI summary (7.63.00).
         for row in _report_forms():
             aggregates.put_item(Item=row)
+        # In-app micro-feedback (7.66.00): a form fit to receive it and the settings naming it, of the deployment (A's
+        # id) and of each workspace.
+        for row in _app_feedback_rows():
+            aggregates.put_item(Item=row)
 
         yield World(call=_caller(settings_handler, lambda_context),
                     doubles={'cognito': cognito, 'lambda': invoke, 'assist': assist})
@@ -325,6 +329,31 @@ def _report_forms() -> list[dict[str, Any]]:
     return [row('FEEDBACK_FORM', REPORT_FORM_A, 'before_workspaces'),
             row(f'WS#{WS_A}#FEEDBACK_FORM', REPORT_FORM_A, A_MARK),
             row(f'WS#{WS_B}#FEEDBACK_FORM', REPORT_FORM_B, B_MARK)]
+
+
+#: A micro-feedback form of each workspace, and one in none (7.66.00).
+APP_FORM_A = 'ff_000000000000000000000000000000a2'
+APP_FORM_B = 'ff_000000000000000000000000000000b2'
+_APP_FORM_IDS = {'A': {'form_id': APP_FORM_A}, 'B': {'form_id': APP_FORM_B},
+                 UNKNOWN: {'form_id': 'ff_000000000000000000000000000000fe'}}
+
+
+def _app_feedback_rows() -> list[dict[str, Any]]:
+    """A form made from the In-app micro-feedback template and the settings choosing it, of the deployment (A's id)
+    and of each workspace, its name carrying the scope's mark."""
+    def form(pk: str, form_id: str, mark: str) -> dict[str, Any]:
+        return {'pk': pk, 'sk': f'FORM#{form_id}', 'form_id': form_id, 'name': f'{mark} app feedback',
+                'schema_version': 2, 'enabled': True, 'language': 'en', 'languages': ['en'], 'tags': ['voc_app'],
+                'questions': [{'id': 'q_verdict', 'type': 'single_select', 'options': [{'code': 'up'}, {'code': 'down'}]},
+                              {'id': 'q_missing', 'type': 'open_text'}],
+                'hidden_fields': [{'id': name} for name in ('action', 'page', 'app_version', 'workspace_role')]}
+
+    def settings(pk: str, form_id: str) -> dict[str, Any]:
+        return {'pk': pk, 'sk': 'config', 'form_id': form_id, 'enabled': True, 'actions': ['personas']}
+
+    return [form('FEEDBACK_FORM', APP_FORM_A, 'before_workspaces'), settings('SETTINGS#app_feedback', APP_FORM_A),
+            form(f'WS#{WS_A}#FEEDBACK_FORM', APP_FORM_A, A_MARK), settings(f'WS#{WS_A}#SETTINGS#app_feedback', APP_FORM_A),
+            form(f'WS#{WS_B}#FEEDBACK_FORM', APP_FORM_B, B_MARK), settings(f'WS#{WS_B}#SETTINGS#app_feedback', APP_FORM_B)]
 
 
 #: A category reprocess job id of each workspace, and one in none (shared/reprocess_jobs.py ``rp_`` + 12 hex).
@@ -622,6 +651,8 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     # Included by the settings handler (a feedback form's AI draft, 7.55.00; a form report's AI summary, 7.63.00).
     'forms_v2_draft_routes.py': settings_world,
     'forms_report_routes.py': settings_world,
+    # Included by the settings handler (in-app micro-feedback's settings, 7.66.00).
+    'app_feedback_routes.py': settings_world,
     # Included by the projects handler (the Documents Library, 7.62.00).
     'library_routes.py': library_world,
 }
@@ -814,6 +845,23 @@ CASES: dict[tuple[str, str], RouteCase] = {
     # (its poll answers the caller's own assist job of the request's scope, as the drafts' poll does)
     ('forms_report_routes.py', 'GET /settings/form-reports/<job_id>'): RouteCase(
         ids=_DRAFT_JOB_IDS, without_a_workspace=_AS_BEFORE),
+    # In-app micro-feedback's settings (7.66.00): each workspace's own row and one of its own forms; any member reads,
+    # its admins choose; without the header the deployment's, for the deployment's admins.
+    ('app_feedback_routes.py', 'GET /settings/app-feedback'): RouteCase(
+        no_ids="the header is its only id: check 1 (B chose its own form; A reads only its own)",
+        without_a_workspace=_AS_BEFORE),
+    ('app_feedback_routes.py', 'PUT /settings/app-feedback'): RouteCase(
+        ids=_APP_FORM_IDS, body={'form_id': '{form_id}', 'enabled': True}, without_a_workspace=_AS_BEFORE,
+        deployment_admins_without_a_workspace=True),
+    # The onboarding buddy and its role playbook (7.66.00): the caller's own row, every workspace; the signals are the
+    # request's workspace's (the deployment's without the header).
+    ('settings_handler.py', 'GET /settings/my-onboarding'): RouteCase(
+        no_ids="the header is its only id: check 1 (the caller's own row; the signals are A's)",
+        without_a_workspace=_AS_BEFORE),
+    ('settings_handler.py', 'PUT /settings/my-onboarding'): RouteCase(
+        no_ids="the choice is a word of the app, the row the caller's own, the workspace is the header: check 1",
+        body={'playbook': 'qa'}, literals={'qa': 'a playbook role, the same in every workspace'},
+        without_a_workspace=_AS_BEFORE),
     ('settings_handler.py', 'GET /settings/sources'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own source profiles)',
         without_a_workspace=_AS_BEFORE),

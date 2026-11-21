@@ -446,7 +446,8 @@
     "hardCap": "强制上限",
     "models": "角色的模型",
     "connections": "GitHub 连接",
-    "advanced": "高级"
+    "advanced": "高级",
+    "appFeedback": "应用内反馈"
   },
   "title": "设置",
   "users": {
@@ -1140,7 +1141,47 @@
       "models": "模型, Kiro, 原生运行环境, Opus, Sonnet, Haiku, 角色, 注册表",
       "connections": "GitHub, GitHub 应用, 仓库, 连接, 安装, Issue, 细粒度令牌, 个人访问令牌, 复刻",
       "spend": "成本, 费用, 预算, 上限, 计费",
-      "preferences": "语言, 主题, 我的偏好, 深色模式"
+      "preferences": "语言, 主题, 我的偏好, 深色模式",
+      "appFeedback": "应用内反馈, 微反馈, 点赞, 点踩, 有用, 缺少什么, voc_app"
+    }
+  },
+  "appFeedback": {
+    "title": "应用内反馈",
+    "hint": "在关键操作之后，立即用两秒钟询问用户这是否有帮助、还缺少什么。回答会进入此工作区的一个反馈表单，带有 voc_app 标签，并且不计入仪表板。在你开启之前保持关闭。",
+    "readOnly": "只有管理员可以更改应用内反馈（在工作区内，由该工作区自己的管理员更改）。",
+    "loading": "正在加载应用内反馈设置…",
+    "loadFailed": "无法加载应用内反馈设置。",
+    "form": "接收回答的表单",
+    "noFormOption": "未选择表单",
+    "createForm": "使用“应用内微反馈”模板创建一个",
+    "noForm": "请选择一个基于“应用内微反馈”模板创建的表单。",
+    "formDeleted": "所选表单已被删除：请另选一个。",
+    "active": "点赞/点踩按钮会在下列操作之后显示，回答将发送到“{{name}}”。",
+    "inactive": "点赞/点踩按钮已隐藏：已选择“{{name}}”，但应用内反馈已关闭，或该表单尚不能接收回答。",
+    "enabled": "在关键操作后询问",
+    "actionsLegend": "在以下操作后询问",
+    "actions": {
+      "personas": "生成用户画像",
+      "research": "研究完成",
+      "prfaq": "撰写 PR/FAQ",
+      "prd": "撰写 PRD",
+      "prototype": "构建原型",
+      "form_draft": "AI 起草表单",
+      "import": "导入完成",
+      "engineering_run": "工程运行结束"
+    },
+    "problems": {
+      "not_tagged": "该表单没有 voc_app 标签，因此其回答会计入仪表板。",
+      "no_verdict": "该表单没有“这有帮助吗？”选择题（q_verdict，包含 up 和 down）。",
+      "no_missing": "该表单没有“还缺少什么？”文本题（q_missing）。",
+      "hidden_fields": "该表单缺少应用发送的某个隐藏字段：action、page、app_version 或 workspace_role。",
+      "form_off": "该表单处于“已关闭”状态：请在“反馈表单”中开启它以开始收集。"
+    },
+    "errors": {
+      "unfit": "此表单无法接收应用内反馈：请选择一个基于“应用内微反馈”模板创建的表单。",
+      "required": "请先选择表单，然后再开启。",
+      "notFound": "该表单已不在此工作区中。",
+      "saveFailed": "无法保存应用内反馈设置。"
     }
   }
 }

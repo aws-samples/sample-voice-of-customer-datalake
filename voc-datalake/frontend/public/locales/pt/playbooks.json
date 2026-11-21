@@ -1,0 +1,122 @@
+{
+  "title": "Sua primeira semana",
+  "pick": "Escolha seu papel para ver um guia curto da primeira semana: as etapas que mais importam, cada uma com um link para onde você a realiza.",
+  "yourRole": "Guia: {{role}}",
+  "changeRole": "Trocar de papel",
+  "progress": "{{done, number}} de {{total, number}} concluídas",
+  "progressLabel": "Progresso do guia",
+  "markDone": "Marcar como concluída",
+  "doneByEvidence": "Concluída",
+  "askAssistant": "Pedir ao assistente que me guie",
+  "askPrompt": "Me acompanhe no guia da primeira semana do VoC para o papel {{role}}, uma etapa por vez. Em cada etapa, diga por que ela importa, mostre como ela fica com o nosso próprio feedback e onde no app eu a concluo. Pergunte antes de mudar qualquer coisa. As etapas:\n{{stepList}}",
+  "roles": {
+    "product": {
+      "name": "Gerente de produto",
+      "desc": "Transforme o que os clientes dizem em personas, PR/FAQs e PRDs."
+    },
+    "scrum_master": {
+      "name": "Scrum Master",
+      "desc": "Leve as evidências dos clientes ao planejamento, às revisões e às retrospectivas."
+    },
+    "qa": {
+      "name": "QA",
+      "desc": "Teste formulários, encontre o feedback por trás dos bugs e acompanhe os lançamentos."
+    },
+    "engineering": {
+      "name": "Engenharia",
+      "desc": "Conecte um repositório e transforme problemas em mudanças revisadas."
+    }
+  },
+  "steps": {
+    "read_dashboard": {
+      "title": "Leia o painel desta semana",
+      "why": "O volume, o sentimento e as principais categorias mostram onde olhar primeiro.",
+      "cta": "Abrir o painel"
+    },
+    "ask_assistant": {
+      "title": "Faça ao assistente uma pergunta sobre seus clientes",
+      "why": "Ele lê o feedback por você e cita cada avaliação em que se baseia.",
+      "cta": "Abrir o assistente"
+    },
+    "start_project": {
+      "title": "Inicie um projeto de pesquisa",
+      "why": "Um projeto reúne o feedback, as personas e os documentos de um tema.",
+      "cta": "Abrir Projetos"
+    },
+    "generate_personas": {
+      "title": "Gere personas a partir de feedback real",
+      "why": "Personas baseadas em avaliações mantêm as decisões focadas em clientes reais.",
+      "cta": "Abrir Projetos"
+    },
+    "write_document": {
+      "title": "Escreva um rascunho de PR/FAQ ou de PRD",
+      "why": "Colocar por escrito a partir das evidências justifica o trabalho.",
+      "cta": "Abrir Projetos"
+    },
+    "set_objectives": {
+      "title": "Defina seus objetivos e KPIs",
+      "why": "O assistente e o resumo pesam o feedback em relação ao que mede o seu desempenho.",
+      "cta": "Definir objetivos"
+    },
+    "subscribe_brief": {
+      "title": "Assine o resumo matinal",
+      "why": "O que mudou durante a noite chega até você sem abrir o app.",
+      "cta": "Abrir o resumo matinal"
+    },
+    "review_problems": {
+      "title": "Revise os problemas que os clientes mais relatam",
+      "why": "A classificação dos problemas mostra o que planejar, corrigir ou testar primeiro.",
+      "cta": "Abrir Análise de problemas"
+    },
+    "share_project": {
+      "title": "Compartilhe o projeto com sua equipe",
+      "why": "Todos planejam a partir das mesmas evidências.",
+      "cta": "Abrir Projetos"
+    },
+    "create_form": {
+      "title": "Crie um formulário de feedback",
+      "why": "Um formulário faz as perguntas que sua equipe precisa ver respondidas, em nove idiomas.",
+      "cta": "Abrir Formulários de feedback"
+    },
+    "read_form_results": {
+      "title": "Leia os resultados e o relatório de um formulário",
+      "why": "O relatório traz os temas e as citações para levar à retrospectiva.",
+      "cta": "Abrir Formulários de feedback"
+    },
+    "test_form": {
+      "title": "Teste um formulário com o link de teste",
+      "why": "Uma resposta de teste verifica as perguntas e a lógica sem contar em nenhum resultado.",
+      "cta": "Abrir Formulários de feedback"
+    },
+    "search_feedback": {
+      "title": "Encontre o feedback por trás de um problema",
+      "why": "As próprias palavras dos clientes mostram como um bug ou uma lacuna é sentido.",
+      "cta": "Pesquisar feedback"
+    },
+    "watch_release": {
+      "title": "Acompanhe o feedback após um lançamento",
+      "why": "Uma mudança de volume ou de sentimento após um lançamento aponta para uma regressão.",
+      "cta": "Abrir o painel"
+    },
+    "connect_repository": {
+      "title": "Conecte um repositório",
+      "why": "Assim, os agentes de engenharia podem transformar um problema em um pull request.",
+      "cta": "Abrir Conexões"
+    },
+    "run_engineering_agent": {
+      "title": "Inicie uma execução de engenharia a partir de um problema",
+      "why": "Um agente constrói a correção, e uma pessoa a revisa antes de qualquer push.",
+      "cta": "Abrir Execuções"
+    },
+    "build_prototype": {
+      "title": "Construa um protótipo a partir de um PRD",
+      "why": "Um protótipo clicável é testado com clientes antes de ser construído de verdade.",
+      "cta": "Abrir Projetos"
+    },
+    "connect_mcp": {
+      "title": "Use o VoC no seu IDE",
+      "why": "Seu assistente de programação lê o mesmo feedback por um único endpoint MCP.",
+      "cta": "Abrir MCP e skills"
+    }
+  }
+}

@@ -1137,8 +1137,9 @@ def _done_in_pages(_ctx: Context, _batch: Batch) -> int:
 #: The kinds of settings a workspace keeps in voc-aggregates, ``WS#{ws}#SETTINGS#{kind}`` (shared/workspace_settings.py;
 #: written since the config cut-over, 7.08.00, and the brand, resolved-problems and company-context slices). The
 #: registry's lockstep (test/families.py, test/test_registry.py) holds it to every kind the code builds that key for.
-WORKSPACE_SETTINGS_KINDS: Final = ('brand', 'categories', 'company_context', 'dimensions', 'resolved_problems',
-                                   'sources')
+#: In-app micro-feedback's settings since 7.66.00 (shared/app_feedback.py).
+WORKSPACE_SETTINGS_KINDS: Final = ('app_feedback', 'brand', 'categories', 'company_context', 'dimensions',
+                                   'resolved_problems', 'sources')
 
 
 def _settings(ctx: Context) -> Iterator[str]:

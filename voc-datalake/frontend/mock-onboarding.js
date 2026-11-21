@@ -1,22 +1,33 @@
 // Onboarding-buddy mock: GET|PUT /settings/my-onboarding in the
 // lambda/shared/onboarding.py wire shape ({state, hidden_until, updated_at,
-// visible, start_page, guide, subscribe_prompt, dismissed_decision_runs, signals};
-// {success: false, error} on 400). A PUT changes
+// visible, start_page, guide, subscribe_prompt, dismissed_decision_runs, playbook,
+// playbook_done, signals}; {success: false, error} on 400). A PUT changes
 // only the fields it names. Stateful for the life of the mock process (one mock
 // caller). `signals` are derived from the shared
 // fixtures, like the real route reads the aggregates table: feedback present
-// iff any mock feedback exists, a form configured iff any mock form exists.
+// iff any mock feedback exists, a form configured iff any mock form exists; the
+// chosen playbook's server signals (7.66.00, schemas/playbooks.json) read false
+// but the QA step's test response, true once a form exists. Start with
+// MOCK_PLAYBOOK=qa (or product, scrum_master, engineering) to open with a role chosen.
 // Start with MOCK_ONBOARDING_STATE=dismissed (or hidden/skipped) to open the
 // normal home first, MOCK_START_PAGE=dashboard to open on the dashboard, and
 // MOCK_ONBOARDING_GUIDE=skipped to open "How it works" collapsed.
 // Wired into mock-server.js by handleDomainModules.
 
+import { readFileSync } from 'node:fs';
+
 const ROUTE = '/settings/my-onboarding';
+// The role playbooks' catalogue, the file the SPA and lambda/shared/playbooks.py read.
+const PLAYBOOKS = JSON.parse(readFileSync(new URL('../schemas/playbooks.json', import.meta.url), 'utf8'));
+const ROLES = PLAYBOOKS.roles;
+const STEP_IDS = new Set(Object.values(PLAYBOOKS.steps).flat().map((step) => step.id));
+const SERVER_SIGNALS = ['brief_subscribed', 'objectives_set', 'feedback_form_configured', 'form_test_response'];
+const MAX_DONE = 40;
 const STATES = ['active', 'hidden', 'dismissed', 'skipped'];
 const START_PAGES = ['home', 'dashboard'];
 const GUIDES = ['open', 'skipped'];
 const SUBSCRIBE_PROMPTS = ['shown', 'dismissed'];
-const FIELDS = ['state', 'start_page', 'guide', 'subscribe_prompt', 'dismiss_decision_run'];
+const FIELDS = ['state', 'start_page', 'guide', 'subscribe_prompt', 'dismiss_decision_run', 'playbook', 'playbook_done'];
 const RUN_ID = /^ar_[0-9a-f]{12,20}$/; // _RUN_ID_RE in shared/onboarding.py
 const MAX_DISMISSED_RUNS = 50;
 const HIDE_FOR_MS = 86_400_000; // HIDE_FOR in shared/onboarding.py (one day)
@@ -30,7 +41,17 @@ const preference = {
   guide: GUIDES.includes(process.env.MOCK_ONBOARDING_GUIDE) ? process.env.MOCK_ONBOARDING_GUIDE : 'open',
   subscribe_prompt: 'shown',
   dismissed_decision_runs: [],
+  playbook: ROLES.includes(process.env.MOCK_PLAYBOOK) ? process.env.MOCK_PLAYBOOK : null,
+  playbook_done: [],
 };
+
+/** The chosen playbook's server signals, as shared/playbooks.py `server_signals_of` lists them. */
+function playbookSignals(shared) {
+  const steps = preference.playbook === null ? [] : PLAYBOOKS.steps[preference.playbook];
+  const wanted = SERVER_SIGNALS.filter((name) => name !== 'feedback_form_configured'
+    && steps.some((step) => step.evidence === name));
+  return Object.fromEntries(wanted.map((name) => [name, name === 'form_test_response' && shared.mockFeedbackForms.length > 0]));
+}
 
 function view(shared) {
   const snoozed = preference.state === 'hidden' && Date.parse(preference.hidden_until) > Date.now();
@@ -40,6 +61,7 @@ function view(shared) {
     signals: {
       feedback_present: shared.mockFeedback.length > 0,
       feedback_form_configured: shared.mockFeedbackForms.length > 0,
+      ...playbookSignals(shared),
     },
   };
 }
@@ -61,6 +83,14 @@ function refusal(body) {
   if ('dismiss_decision_run' in body && !(typeof body.dismiss_decision_run === 'string' && RUN_ID.test(body.dismiss_decision_run))) {
     return 'dismiss_decision_run must be an agent run id';
   }
+  if ('playbook' in body && body.playbook !== null && !ROLES.includes(body.playbook)) {
+    return `playbook must be one of: ${ROLES.join(', ')}, or null`;
+  }
+  if ('playbook_done' in body) {
+    const done = body.playbook_done;
+    if (!Array.isArray(done) || done.length > MAX_DONE) return `playbook_done must be a list of at most ${MAX_DONE} step ids`;
+    if (done.some((step) => !STEP_IDS.has(step))) return 'playbook_done names a step no playbook has';
+  }
   return null;
 }
 
@@ -80,6 +110,8 @@ function save(body) {
     const runs = new Set([...preference.dismissed_decision_runs, body.dismiss_decision_run]);
     preference.dismissed_decision_runs = [...runs].sort((a, b) => b.localeCompare(a)).slice(0, MAX_DISMISSED_RUNS);
   }
+  if ('playbook' in body) preference.playbook = body.playbook;
+  if ('playbook_done' in body) preference.playbook_done = [...new Set(body.playbook_done)].sort((a, b) => a.localeCompare(b));
   return null;
 }
 

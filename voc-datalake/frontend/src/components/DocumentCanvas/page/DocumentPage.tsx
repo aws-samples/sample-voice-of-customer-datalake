@@ -51,6 +51,7 @@ import { useProjectDocumentAdapter } from '../../../pages/ProjectDetail/document
 import CanvasEditor from '../../Document/edit/editor/CanvasEditor'
 import DocumentMeta from './DocumentMeta'
 import DocumentProvenance from './DocumentProvenance'
+import DocumentMicroFeedback from '../../MicroFeedback/DocumentMicroFeedback'
 import EvidenceCards from './EvidenceCards'
 import InlineTitle from './InlineTitle'
 import OlderVersion from './OlderVersion'
@@ -176,6 +177,7 @@ function PageText({ project, document, documents, state, markdown, view, autoFoc
         {/* The versions are Document → History. */}
         <div className="mt-6 space-y-2">
           <DocumentProvenance document={document} documents={documents} onSelectDoc={onSelectDoc} />
+          <DocumentMicroFeedback document={document} />
         </div>
       </div>
     </div>

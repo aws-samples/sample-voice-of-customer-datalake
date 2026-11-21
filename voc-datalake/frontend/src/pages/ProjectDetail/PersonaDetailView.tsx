@@ -34,6 +34,7 @@ import { usePromotePersona } from './usePromotePersona'
 import { useIsAdmin } from '../../store/authStore'
 import type { PersonaScope } from './personaScope'
 import { PersonaProtectStatus, PersonaProtectToggle } from './PersonaProtectToggle'
+import MicroFeedback from '../../components/MicroFeedback/MicroFeedback'
 import { Tooltip } from '../../components/Tooltip/Tooltip'
 import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import type { PersonaProtection } from './usePersonaProtection'
@@ -150,6 +151,7 @@ export default function PersonaDetailView({
         </div>
         <AvatarRegenerationStatus isPending={avatar.isPending} failed={avatar.failed} />
         {canPromote ? <PromoteStatus promote={promote} /> : null}
+        <GeneratedPersonaFeedback persona={persona} scope={scope} />
       </div>
 
       <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -173,6 +175,12 @@ export default function PersonaDetailView({
       </div>
     </div>
   )
+}
+
+/** In-app micro-feedback (7.66.00) on a persona the project generated: never one imported or copied, nor in the library. */
+function GeneratedPersonaFeedback({ persona, scope }: Readonly<{ persona: ProjectPersona; scope: PersonaScope }>) {
+  if (scope.kind !== 'project' || persona.imported_from !== undefined || persona.copied_from !== undefined) return null
+  return <MicroFeedback action="personas" instance={persona.persona_id} className="mt-3" />
 }
 
 /** A new avatar is an AI image generation, so it is asked first — never one click. */

@@ -10,8 +10,8 @@ describe('normalizeOnboarding', () => {
     const raw = {
       state: 'hidden', hidden_until: '2026-10-07T12:00:00+00:00', updated_at: '2026-10-06T12:00:00+00:00', visible: false,
       start_page: 'dashboard', guide: 'skipped', subscribe_prompt: 'dismissed',
-      dismissed_decision_runs: ['ar_019a0000000133334444'],
-      signals: { feedback_present: true, feedback_form_configured: false },
+      dismissed_decision_runs: ['ar_019a0000000133334444'], playbook: 'qa', playbook_done: ['test_form'],
+      signals: { feedback_present: true, feedback_form_configured: false, form_test_response: true },
     }
     expect(normalizeOnboarding(raw)).toStrictEqual(raw)
   })
@@ -20,8 +20,16 @@ describe('normalizeOnboarding', () => {
     // The optional fields are absent, not present-and-undefined.
     expect(DEFAULT_ONBOARDING).toStrictEqual({
       state: 'active', visible: true, start_page: 'home', guide: 'open', subscribe_prompt: 'shown',
-      dismissed_decision_runs: [], signals: { feedback_present: false, feedback_form_configured: false },
+      dismissed_decision_runs: [], playbook: null, playbook_done: [],
+      signals: { feedback_present: false, feedback_form_configured: false },
     })
+  })
+
+  it('reads an unknown playbook as none, drifted ticks as none, and a drifted playbook signal as not sent (7.66.00)', () => {
+    const drifted = normalizeOnboarding({ playbook: 'designer', playbook_done: 'test_form',
+      signals: { feedback_present: true, feedback_form_configured: true, brief_subscribed: 'yes' } })
+    expect([drifted.playbook, drifted.playbook_done, drifted.signals.feedback_present, drifted.signals.brief_subscribed])
+      .toStrictEqual([null, [], true, undefined])
   })
 
   it('reads an unknown subscribe prompt as shown and a drifted run list as empty (an older server sends neither)', () => {

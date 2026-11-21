@@ -35,9 +35,9 @@ function templateKeys(language: FormLanguage): string[] {
   return walk(catalogue(language)['templates'], 'templates').sort((a, b) => a.localeCompare(b))
 }
 
-describe('the thirteen templates', () => {
-  it('are thirteen, each in one of the six goals, Blank last', () => {
-    expect(FORM_TEMPLATES).toHaveLength(13)
+describe('the fourteen templates', () => {
+  it('are fourteen, each in one of the seven goals, Blank last', () => {
+    expect(FORM_TEMPLATES).toHaveLength(14)
     expect(new Set(FORM_TEMPLATES.map((flow) => flow.group))).toStrictEqual(new Set(TEMPLATE_GROUPS))
     expect(FORM_TEMPLATES.at(-1)?.id).toBe('blank')
   })
@@ -137,3 +137,28 @@ describe('the Events template (7.63.00)', () => {
   })
 })
 
+
+describe('the In-app micro-feedback template (7.66.00)', () => {
+  const flow = templateById('app_micro_feedback')
+  const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
+
+  it('asks a choice, never a rating, then what is missing', () => {
+    const [verdict, missing] = form?.questions ?? []
+    expect(verdict?.type === 'single_select' ? [verdict.id, verdict.options.map((option) => option.code)] : [])
+      .toStrictEqual(['q_verdict', ['up', 'down']])
+    expect(missing?.type === 'open_text' ? [missing.id, missing.required, missing.max_chars] : []).toStrictEqual(['q_missing', false, 500])
+    expect(form?.questions.some((question) => ['rating', 'nps', 'csat', 'ces'].includes(question.type))).toBe(false)
+  })
+
+  it('runs in the app, with ids only in its hidden fields, tagged voc_app', () => {
+    expect(flow?.runs).toStrictEqual(['in_app'])
+    expect(form?.tags).toStrictEqual(['voc_app'])
+    expect(form?.hidden_fields.map((field) => field.id)).toStrictEqual(['action', 'page', 'app_version', 'workspace_role'])
+    expect(form?.template).toStrictEqual({ id: 'app_micro_feedback', version: 1 })
+  })
+
+  it('is the only template that tags its forms', () => {
+    expect(FORM_TEMPLATES.filter((template) => templateForm(template, 'en', lookupIn('en')).tags.length > 0)
+      .map((template) => template.id)).toStrictEqual(['app_micro_feedback'])
+  })
+})

@@ -17,7 +17,8 @@ USER = {'sub': 'user-sub', 'cognito:username': 'bob', 'cognito:groups': 'users'}
 PATH = '/settings/my-onboarding'
 NOW = datetime(2026, 10, 6, 12, 0, tzinfo=UTC)
 BAD_STATE = 'state must be one of: active, hidden, dismissed, skipped'
-NO_FIELD = 'Give at least one of: state, start_page, guide, subscribe_prompt, dismiss_decision_run'
+NO_FIELD = ('Give at least one of: state, start_page, guide, subscribe_prompt, dismiss_decision_run, playbook, '
+            'playbook_done')
 # Agent run ids (time-first, so RUN_B is the newer one).
 RUN_A = 'ar_019a0000000011112222'
 RUN_B = 'ar_019a0000000133334444'
@@ -43,7 +44,8 @@ class TestRoutes:
         assert response['statusCode'] == 200
         assert body == {
             'state': 'active', 'hidden_until': None, 'updated_at': None, 'visible': True, 'start_page': 'home',
-            'guide': 'open', 'subscribe_prompt': 'shown', 'dismissed_decision_runs': [], 'signals': {'feedback_present': False, 'feedback_form_configured': False},
+            'guide': 'open', 'subscribe_prompt': 'shown', 'dismissed_decision_runs': [], 'playbook': None,
+            'playbook_done': [], 'signals': {'feedback_present': False, 'feedback_form_configured': False},
         }
 
     def test_scoped_to_the_caller(self, api_gateway_event, lambda_context, table):
@@ -174,3 +176,82 @@ class TestPreferenceView:
             table = create_pk_sk_table('t')
             table.put_item(Item={'pk': 'METRIC#meta', 'sk': 'earliest_date', 'date': 'yesterday'})
             assert onboarding.signals(table)['feedback_present'] is False
+
+
+@pytest.mark.usefixtures('table')
+class TestPlaybook:
+    """The role playbook (7.66.00, docs/playbooks.md): the person's choice and ticks on their own row, the chosen
+    playbook's server signals read in the request's scope."""
+
+    def test_choosing_a_role_ticking_steps_and_clearing_it(self, api_gateway_event, lambda_context, table):
+        _, chose = _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'qa', 'playbook_done': ['test_form']})
+        assert (chose['playbook'], chose['playbook_done']) == ('qa', ['test_form'])
+        assert chose['signals'] == {'feedback_present': False, 'feedback_form_configured': False,
+                                    'form_test_response': False}
+        # Another role keeps the ticks of the steps it shares; clearing the role keeps them too.
+        _, moved = _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'engineering'})
+        assert (moved['playbook'], moved['playbook_done']) == ('engineering', ['test_form'])
+        _, cleared = _call(api_gateway_event, lambda_context, 'PUT', {'playbook': None})
+        assert (cleared['playbook'], cleared['playbook_done']) == (None, ['test_form'])
+        stored = table.get_item(Key={'pk': 'USERCTX#user-sub', 'sk': 'onboarding'})['Item']
+        assert 'playbook' not in stored
+        _, unticked = _call(api_gateway_event, lambda_context, 'PUT', {'playbook_done': []})
+        assert unticked['playbook_done'] == []
+
+    def test_the_playbook_leaves_the_buddy_alone(self, api_gateway_event, lambda_context):
+        _call(api_gateway_event, lambda_context, 'PUT', {'state': 'skipped', 'start_page': 'dashboard'})
+        _, body = _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'product'})
+        assert (body['state'], body['start_page'], body['playbook']) == ('skipped', 'dashboard', 'product')
+
+    def test_the_playbook_is_the_callers_own(self, api_gateway_event, lambda_context):
+        _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'qa', 'playbook_done': ['test_form']})
+        _, theirs = _call(api_gateway_event, lambda_context, 'GET', claims=ADMIN)
+        assert (theirs['playbook'], theirs['playbook_done']) == (None, [])
+
+    @pytest.mark.parametrize(('body', 'message'), [
+        ({'playbook': 'designer'}, 'playbook must be one of: product, scrum_master, qa, engineering, or null'),
+        ({'playbook_done': ['fly']}, 'playbook_done names a step no playbook has'),
+        ({'playbook_done': 'test_form'}, 'playbook_done must be a list of at most 40 step ids'),
+    ])
+    def test_a_bad_playbook_is_400_and_stores_nothing(self, api_gateway_event, lambda_context, table, body, message):
+        response, payload = _call(api_gateway_event, lambda_context, 'PUT', body)
+        assert (response['statusCode'], payload['error']) == (400, message)
+        assert 'Item' not in table.get_item(Key={'pk': 'USERCTX#user-sub', 'sk': 'onboarding'})
+
+    def test_the_product_signals_are_the_persons_own(self, api_gateway_event, lambda_context, table):
+        _, before = _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'product'})
+        assert (before['signals']['brief_subscribed'], before['signals']['objectives_set']) == (False, False)
+        table.put_item(Item={'pk': 'USERCTX#user-sub', 'sk': 'briefing', 'enabled': True})
+        table.put_item(Item={'pk': 'USERCTX#user-sub', 'sk': 'config', 'objectives': [{'id': 'o1', 'title': 'Ship'}]})
+        _, mine = _call(api_gateway_event, lambda_context, 'GET')
+        assert (mine['signals']['brief_subscribed'], mine['signals']['objectives_set']) == (True, True)
+        _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'product'}, claims=ADMIN)
+        _, theirs = _call(api_gateway_event, lambda_context, 'GET', claims=ADMIN)
+        assert (theirs['signals']['brief_subscribed'], theirs['signals']['objectives_set']) == (False, False)
+
+    def test_a_test_response_of_the_scope_ticks_the_qa_step(self, api_gateway_event, lambda_context, table):
+        table.put_item(Item={'pk': 'FEEDBACK_FORM_TEST', 'sk': 'f1#2026-11-20T00:00:00+00:00#r1', 'is_test': True})
+        _, body = _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'qa'})
+        assert body['signals']['form_test_response'] is True
+
+    def test_no_playbook_reads_only_the_first_run_signals(self, api_gateway_event, lambda_context):
+        _, body = _call(api_gateway_event, lambda_context, 'GET')
+        assert set(body['signals']) == {'feedback_present', 'feedback_form_configured'}
+
+
+class TestScopedSignals:
+    """Inside a workspace the signals are the workspace's own partitions, never the deployment's."""
+
+    def test_a_workspaces_signals_read_its_own_rows(self, table):
+        from shared.ws_repo import WorkspaceScope
+        scope = WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')
+        table.put_item(Item={'pk': 'METRIC#meta', 'sk': 'earliest_date', 'date': '2025-01-15'})
+        table.put_item(Item={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#f1'})
+        table.put_item(Item={'pk': 'FEEDBACK_FORM_TEST', 'sk': 'f1#t#r1'})
+        assert onboarding.signals(table, scope, sub='user-sub', playbook='qa') == {
+            'feedback_present': False, 'feedback_form_configured': False, 'form_test_response': False}
+        table.put_item(Item={'pk': f'{scope.prefix}METRIC#meta', 'sk': 'earliest_date', 'date': '2025-02-01'})
+        table.put_item(Item={'pk': f'{scope.prefix}FEEDBACK_FORM', 'sk': 'FORM#f2'})
+        table.put_item(Item={'pk': f'{scope.prefix}FEEDBACK_FORM_TEST', 'sk': 'f2#t#r2'})
+        assert onboarding.signals(table, scope, sub='user-sub', playbook='qa') == {
+            'feedback_present': True, 'feedback_form_configured': True, 'form_test_response': True}

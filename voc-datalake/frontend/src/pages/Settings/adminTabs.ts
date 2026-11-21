@@ -31,7 +31,8 @@ const ADMIN_SECTION_IDS = [
 export type AdminSectionId = typeof ADMIN_SECTION_IDS[number]
 
 /** The cards a link may name inside a tab or a section (the address's hash). */
-const ADMIN_CARD_IDS = ['brand', 'theme', 'api', 'erasure', 'domains', 'participants', 'hard-cap', 'models', 'connections'] as const
+const ADMIN_CARD_IDS = ['brand', 'theme', 'app-feedback', 'api', 'erasure', 'domains', 'participants', 'hard-cap', 'models',
+  'connections'] as const
 export type AdminCardId = typeof ADMIN_CARD_IDS[number]
 
 /** Who is looking: what decides which tabs and sections they see. */
@@ -70,7 +71,7 @@ const onePage = (id: AdminTabId, audience: Audience, cards: readonly AdminCardId
 const switched = (id: AdminTabId, sections: readonly SectionDef[]): TabDef => ({ id, audience: 'open', sections, cards: [] })
 
 const TABS: readonly TabDef[] = [
-  onePage('general', 'open', ['brand', 'theme', 'api']),
+  onePage('general', 'open', ['brand', 'theme', 'app-feedback', 'api']),
   switched('sources', [section('plugins'), section('integrations', 'admins'), section('inbox', 'admins'), section('radar', 'admins')]),
   switched('taxonomy', [section('categories'), section('dimensions', 'admins')]),
   switched('access', [section('policies', 'admins', ['erasure']), section('users', 'admins'), section('boards', 'admins', ['domains', 'participants'])]),

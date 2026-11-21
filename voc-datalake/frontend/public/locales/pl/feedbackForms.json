@@ -1176,6 +1176,35 @@
           "description": "Twoja opinia pomoże nam ulepszyć kolejną sesję."
         }
       }
+    },
+    "app_micro_feedback": {
+      "name": "Mikroopinie w aplikacji",
+      "purpose": "Opinie o tej aplikacji VoC zbierane przez jej kciuki w aplikacji. Oznaczone tagiem voc_app i pomijane w pulpitach.",
+      "q": {
+        "q_verdict": {
+          "headline": "Czy to było przydatne?",
+          "options": {
+            "up": "Tak",
+            "down": "Nie"
+          }
+        },
+        "q_missing": {
+          "headline": "Czego brakuje?",
+          "placeholder": "Co sprawiłoby, że byłoby przydatne"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Dziękujemy",
+          "description": "Zespół czyta każdą odpowiedź."
+        }
+      },
+      "hidden": {
+        "action": "Akcja",
+        "page": "Strona",
+        "app_version": "Wersja aplikacji",
+        "workspace_role": "Rola w obszarze roboczym"
+      }
     }
   },
   "picker": {
@@ -1192,7 +1221,8 @@
       "product": "Produkt",
       "onboarding": "Wdrożenie",
       "blank": "Pusty",
-      "events": "Wydarzenia"
+      "events": "Wydarzenia",
+      "app": "Ta aplikacja"
     },
     "runs": {
       "link": "Link",

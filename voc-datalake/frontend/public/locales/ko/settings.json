@@ -446,7 +446,8 @@
     "hardCap": "강제 상한",
     "models": "역할의 모델",
     "connections": "GitHub 연결",
-    "advanced": "고급"
+    "advanced": "고급",
+    "appFeedback": "앱 내 피드백"
   },
   "title": "설정",
   "users": {
@@ -1140,7 +1141,47 @@
       "models": "모델, Kiro, 네이티브 하네스, Opus, Sonnet, Haiku, 역할, 레지스트리",
       "connections": "GitHub, GitHub 앱, 저장소, 연결, 설치, 이슈, 세분화된 토큰, 개인 액세스 토큰, 포크",
       "spend": "비용, 지출, 예산, 상한, 청구",
-      "preferences": "언어, 테마, 내 환경설정, 다크 모드"
+      "preferences": "언어, 테마, 내 환경설정, 다크 모드",
+      "appFeedback": "앱 내 피드백, 마이크로 피드백, 엄지, 좋아요, 도움이 됨, 부족한 점, voc_app"
+    }
+  },
+  "appFeedback": {
+    "title": "앱 내 피드백",
+    "hint": "주요 작업 직후, 도움이 되었는지와 무엇이 부족한지 2초 만에 물어보세요. 답변은 이 워크스페이스의 피드백 양식으로 voc_app 태그와 함께 전달되며, 대시보드에서는 제외됩니다. 켜기 전까지는 꺼져 있습니다.",
+    "readOnly": "앱 내 피드백은 관리자만 변경할 수 있습니다(워크스페이스 안에서는 해당 워크스페이스의 관리자).",
+    "loading": "앱 내 피드백 설정을 불러오는 중…",
+    "loadFailed": "앱 내 피드백 설정을 불러오지 못했습니다.",
+    "form": "답변을 받을 양식",
+    "noFormOption": "선택한 양식 없음",
+    "createForm": "“앱 내 마이크로 피드백” 템플릿으로 만들기",
+    "noForm": "“앱 내 마이크로 피드백” 템플릿으로 만든 양식을 선택하세요.",
+    "formDeleted": "선택한 양식이 삭제되었습니다. 다른 양식을 선택하세요.",
+    "active": "아래 작업 후에 엄지 버튼이 표시되고, 답변은 “{{name}}”(으)로 전달됩니다.",
+    "inactive": "엄지 버튼이 숨겨져 있습니다. “{{name}}”이(가) 선택되어 있지만 앱 내 피드백이 꺼져 있거나 양식이 아직 답변을 받을 수 없습니다.",
+    "enabled": "주요 작업 후에 묻기",
+    "actionsLegend": "묻는 시점",
+    "actions": {
+      "personas": "페르소나 생성 후",
+      "research": "리서치 완료 후",
+      "prfaq": "PR/FAQ 작성 후",
+      "prd": "PRD 작성 후",
+      "prototype": "프로토타입 제작 후",
+      "form_draft": "양식 AI 초안 작성 후",
+      "import": "가져오기 완료 후",
+      "engineering_run": "엔지니어링 실행 종료 후"
+    },
+    "problems": {
+      "not_tagged": "양식에 voc_app 태그가 없어 답변이 대시보드에 집계됩니다.",
+      "no_verdict": "양식에 “도움이 되었나요?” 선택 질문(q_verdict, up과 down 포함)이 없습니다.",
+      "no_missing": "양식에 “무엇이 부족한가요?” 텍스트 질문(q_missing)이 없습니다.",
+      "hidden_fields": "앱이 보내는 숨겨진 필드(action, page, app_version 또는 workspace_role)가 양식에 없습니다.",
+      "form_off": "양식이 꺼짐 상태입니다. 수집을 시작하려면 피드백 양식에서 켜세요."
+    },
+    "errors": {
+      "unfit": "이 양식은 앱 내 피드백을 받을 수 없습니다. “앱 내 마이크로 피드백” 템플릿으로 만든 양식을 선택하세요.",
+      "required": "먼저 양식을 선택한 다음 켜세요.",
+      "notFound": "그 양식은 더 이상 이 워크스페이스에 없습니다.",
+      "saveFailed": "앱 내 피드백 설정을 저장하지 못했습니다."
     }
   }
 }

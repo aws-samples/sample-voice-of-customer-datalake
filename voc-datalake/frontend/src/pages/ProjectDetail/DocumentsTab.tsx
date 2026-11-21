@@ -40,6 +40,7 @@ import { stillPresent, hasDroppedSource, inheritedExtraSources } from './documen
 import { PrototypeView } from './DocumentPrototypeView'
 import { DocumentCoachingNotice } from '../../components/AiCoach/HumanDrivenNotice'
 import DocumentProvenance from '../../components/DocumentCanvas/page/DocumentProvenance'
+import MicroFeedback from '../../components/MicroFeedback/MicroFeedback'
 import DeleteDocumentButton from '../../components/DocumentCanvas/actions/DeleteDocumentButton'
 import BuildFromPrd from './BuildFromPrd'
 import PrototypeBackButton from './PrototypeBack'
@@ -333,6 +334,8 @@ function PrototypePane({
             onSelectDoc={onSelectDoc}
           />
         </PrototypeWithDraft>
+        {/* In-app micro-feedback on the prototype built (7.66.00), once per version. */}
+        <MicroFeedback action="prototype" instance={document.document_id} className="mt-3" />
         {/* Prototypes keep their own revision lineage (the revision footer), no content versions. */}
         <DocumentProvenance document={document} documents={documents} onSelectDoc={onSelectDoc} />
         <FeedbackCorpus feedbackIds={document.input_feedback_ids}

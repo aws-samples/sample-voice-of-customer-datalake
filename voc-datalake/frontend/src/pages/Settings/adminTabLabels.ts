@@ -44,7 +44,8 @@ const SECTION_LABEL_KEYS: Readonly<Record<AdminSectionId, string>> = {
 }
 
 const CARD_LABEL_KEYS: Readonly<Record<AdminCardId, string>> = {
-  brand: 'sections.brand', theme: 'sections.theme', api: 'sections.api', erasure: 'sections.erasure',
+  brand: 'sections.brand', theme: 'sections.theme', 'app-feedback': 'sections.appFeedback', api: 'sections.api',
+  erasure: 'sections.erasure',
   domains: 'sections.domains', participants: 'sections.participants', 'hard-cap': 'sections.hardCap',
   models: 'sections.models', connections: 'sections.connections',
 }

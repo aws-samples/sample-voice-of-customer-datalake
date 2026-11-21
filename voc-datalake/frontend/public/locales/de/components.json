@@ -935,5 +935,17 @@
   },
   "savedStatus": {
     "saved": "Gespeichert"
+  },
+  "microFeedback": {
+    "question": "War das hilfreich?",
+    "up": "Ja, das war hilfreich",
+    "down": "Nein, das war nicht hilfreich",
+    "notNow": "Nicht jetzt",
+    "missing": "Was fehlt? (optional)",
+    "count": "{{length, number}} / {{max, number}}",
+    "send": "Senden",
+    "thanks": "Danke. Das Team liest jede Antwort.",
+    "failed": "Konnte nicht gesendet werden.",
+    "retry": "Erneut versuchen"
   }
 }

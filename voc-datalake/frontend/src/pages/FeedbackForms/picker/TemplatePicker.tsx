@@ -1,5 +1,5 @@
 /**
- * @fileoverview The template picker, `/feedback-forms/new` (UX §2): "Describe your form" first, then the thirteen
+ * @fileoverview The template picker, `/feedback-forms/new` (UX §2): "Describe your form" first, then the fourteen
  * templates by goal, and the preview of the one picked (`?template=<id>`; on a narrow screen that address shows the
  * preview alone, and Back returns to the list). "Create in" is the form's primary language: the preview speaks it,
  * and the form is made in it.

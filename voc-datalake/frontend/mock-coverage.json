@@ -2711,6 +2711,75 @@
         "body": {
           "dismiss_decision_run": "ar_019a0000000011112222"
         }
+      },
+      {
+        "path": "/settings/my-onboarding",
+        "body": {
+          "playbook": "qa"
+        }
+      },
+      {
+        "path": "/settings/my-onboarding",
+        "body": {
+          "playbook_done": [
+            "test_form"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/appFeedbackApi.ts",
+    "method": "GET",
+    "call": "PATH",
+    "probes": [
+      {
+        "path": "/settings/app-feedback"
+      }
+    ]
+  },
+  {
+    "file": "api/appFeedbackApi.ts",
+    "method": "PUT",
+    "call": "PATH",
+    "probes": [
+      {
+        "path": "/settings/app-feedback",
+        "body": {
+          "form_id": "fv2_app_feedback",
+          "enabled": true
+        }
+      },
+      {
+        "path": "/settings/app-feedback",
+        "body": {
+          "actions": [
+            "prd"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/appFeedbackApi.ts",
+    "method": "POST",
+    "call": "`${getBaseUrl()}/feedback-forms/${encodeURIComponent(formId)}/submit`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_app_feedback/submit",
+        "body": {
+          "answers": {
+            "q_verdict": {
+              "code": "up"
+            }
+          },
+          "hidden": {
+            "action": "prd",
+            "page": "projects",
+            "app_version": "7.66.0",
+            "workspace_role": "none"
+          }
+        }
       }
     ]
   },

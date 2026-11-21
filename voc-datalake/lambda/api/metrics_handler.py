@@ -42,6 +42,7 @@ from shared.api import (
     validate_int,
     validate_limit,
 )
+from shared.app_feedback_tag import asks_for_app_feedback, is_app_feedback
 from shared.aws import get_dynamodb_resource
 from shared.category_access import CategoryScope
 from shared.category_gate import scope_for_event
@@ -512,7 +513,15 @@ def _scoped_window_items(
     items, is_partial = _scan_window_items(
         days, date_basis, scope=scope, extra=extra or NO_ITEM_FILTERS, slim=slim, read=read)
     items = extra.filter(items) if extra is not None else items
-    return category_access.filter_items(scope, items), is_partial
+    return category_access.filter_items(scope, _counted_items(items, extra)), is_partial
+
+
+def _counted_items(items: list[dict[str, Any]], extra: ItemFilters | None) -> list[dict[str, Any]]:
+    """``items`` a metric counts: without the VoC app's own micro-feedback (shared/app_feedback_tag.py, 7.66.00), as
+    the aggregates the unfiltered routes read leave it out, unless the request filters on its tag (``tag=voc_app``)."""
+    if extra is not None and asks_for_app_feedback(extra.tag):
+        return items
+    return [item for item in items if not is_app_feedback(item)]
 
 
 def _read_with_filters(read: SlimRead | None, extra: ItemFilters) -> SlimRead | None:

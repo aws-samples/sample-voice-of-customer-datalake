@@ -1001,5 +1001,17 @@
   },
   "savedStatus": {
     "saved": "Zapisano"
+  },
+  "microFeedback": {
+    "question": "Czy to było przydatne?",
+    "up": "Tak, to było przydatne",
+    "down": "Nie, to nie było przydatne",
+    "notNow": "Nie teraz",
+    "missing": "Czego brakuje? (opcjonalnie)",
+    "count": "{{length, number}} / {{max, number}}",
+    "send": "Wyślij",
+    "thanks": "Dziękujemy. Zespół czyta każdą odpowiedź.",
+    "failed": "Nie udało się wysłać.",
+    "retry": "Spróbuj ponownie"
   }
 }

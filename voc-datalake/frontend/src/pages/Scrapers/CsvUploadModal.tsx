@@ -26,6 +26,7 @@ import { useTranslation } from 'react-i18next'
 import { datasetNameProblem } from '../../api/csvDatasetSchema'
 import { useInvalidateFeedbackData } from '../../api/invalidateFeedbackData'
 import { MANUAL_IMPORT_SOURCE } from '../../api/sourceProfilesApi'
+import MicroFeedback from '../../components/MicroFeedback/MicroFeedback'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import SourceProfileSelect from '../../components/DimensionFields/SourceProfileSelect'
 import { useDimensionsConfig, useSourceProfiles } from '../../hooks/useDimensions'
@@ -358,6 +359,8 @@ function SuccessView({
   readonly onClose: () => void
 }) {
   const { t } = useTranslation('scrapers')
+  // In-app micro-feedback (7.66.00): one finished upload is one instance (the upload answers no run id).
+  const [feedbackInstance] = useState(() => crypto.randomUUID())
   return (
     <div className="text-center py-4">
       <CheckCircle className="mx-auto h-10 w-10 text-ok mb-3" />
@@ -385,6 +388,7 @@ function SuccessView({
           </ul>
         </div>
       ) : null}
+      <MicroFeedback action="import" instance={feedbackInstance} className="mb-3 text-left" />
       <button onClick={onClose} className="btn btn-primary">
         {t('csvUpload.done', { defaultValue: 'Done' })}
       </button>

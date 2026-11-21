@@ -935,5 +935,17 @@
   },
   "savedStatus": {
     "saved": "저장됨"
+  },
+  "microFeedback": {
+    "question": "도움이 되었나요?",
+    "up": "네, 도움이 되었습니다",
+    "down": "아니요, 도움이 되지 않았습니다",
+    "notNow": "나중에",
+    "missing": "무엇이 부족한가요? (선택)",
+    "count": "{{length, number}} / {{max, number}}",
+    "send": "보내기",
+    "thanks": "감사합니다. 팀이 모든 답변을 읽습니다.",
+    "failed": "보내지 못했습니다.",
+    "retry": "다시 시도"
   }
 }

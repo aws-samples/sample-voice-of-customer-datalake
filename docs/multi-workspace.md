@@ -516,6 +516,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 | `brand`, `company_context`, `design_system` | workspace | the brand the AI writes for, the team's vision and objectives, its design tokens and references (decision 6; `brand` moved, a request with no workspace keeps the deployment's row, as before) |
 | `categories`, `dimensions`, `sources` | workspace | the team's taxonomy and source profiles (decision 6; moved in 7.08.00: read and written per workspace through `lambda/shared/workspace_config.py`, a request or message with no workspace keeps the deployment's row; a workspace's profile sets no retention window) |
 | `resolved_problems` | workspace | the problems a team marked resolved (moved; a request with no workspace keeps the deployment's row, as before) |
+| `app_feedback` | workspace | the form a team's in-app micro-feedback goes to, and after which actions it shows (7.66.00, [micro-feedback.md](micro-feedback.md); a request with no workspace keeps the deployment's row) |
 | `email_intake` | workspace | the team's inbox caps (its address is `{slug}@`, [Public and non-user entry points](#public-and-non-user-entry-points)) |
 | `fallback_owner` | workspace | the member an agent's new project falls back to |
 | `radar` (voc-radar: config, brands, version) | workspace | decision 13; read per workspace through `lambda/shared/radar_keys.py`, edited as the deployment's until the cut-over |
@@ -1492,7 +1493,7 @@ controller's own request, with its stated basis and a tombstone per deleted item
      `{ws}#{memory id}`, then its `MEMEVT#` events and the memory); the exports (every export marked `erased`, its open
      uploads aborted, its job rows deleted); every version, delete marker and open upload under `ws/{ws}/`; the
      workspace's Radar settings in voc-radar (`WS#{ws}#SETTINGS#radar`: config and brands); the workspace's settings
-     rows (`WS#{ws}#SETTINGS#{brand, categories, company_context, dimensions, resolved_problems, sources}`, after the
+     rows (`WS#{ws}#SETTINGS#{app_feedback, brand, categories, company_context, dimensions, resolved_problems, sources}`, after the
      counters sweep has listed the closed families from them into the inventory: a later round re-derives only the
      defaults and walks the inventory, which still lists round 1's partitions); each member's own objectives row,
      `WS#{ws}#USERCTX#{sub}`, a former member's too, from the list of who saved some (`WS#{ws}#USERCTX_SUBS`, put by

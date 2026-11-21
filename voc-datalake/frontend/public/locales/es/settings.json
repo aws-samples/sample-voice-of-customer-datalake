@@ -463,7 +463,8 @@
     "hardCap": "Límite estricto",
     "models": "Modelos de los roles",
     "connections": "Conexiones de GitHub",
-    "advanced": "Avanzado"
+    "advanced": "Avanzado",
+    "appFeedback": "Feedback en la app"
   },
   "title": "Configuración",
   "users": {
@@ -1175,7 +1176,47 @@
       "models": "modelo, Kiro, entorno nativo, Opus, Sonnet, Haiku, rol, Registro",
       "connections": "GitHub, GitHub App, repositorio, conexión, instalar, issues, token detallado, token de acceso personal, fork",
       "spend": "coste, gasto, presupuesto, límite, facturación",
-      "preferences": "idioma, tema, mis preferencias, modo oscuro"
+      "preferences": "idioma, tema, mis preferencias, modo oscuro",
+      "appFeedback": "feedback en la app, comentarios en la app, microfeedback, pulgares, útil, qué falta, voc_app"
+    }
+  },
+  "appFeedback": {
+    "title": "Feedback en la app",
+    "hint": "Justo después de una acción clave, pregunta a las personas en dos segundos si les resultó útil y qué falta. Las respuestas van a un formulario de feedback de este espacio de trabajo, con la etiqueta voc_app, y los paneles las excluyen. Desactivado hasta que lo actives.",
+    "readOnly": "Solo los administradores cambian el feedback en la app (dentro de un espacio de trabajo, sus propios administradores).",
+    "loading": "Cargando la configuración del feedback en la app…",
+    "loadFailed": "No se pudo cargar la configuración del feedback en la app.",
+    "form": "Formulario que recibe las respuestas",
+    "noFormOption": "Ningún formulario elegido",
+    "createForm": "Crear uno a partir de la plantilla «Microfeedback en la app»",
+    "noForm": "Elige un formulario creado a partir de la plantilla «Microfeedback en la app».",
+    "formDeleted": "El formulario elegido se eliminó: elige otro.",
+    "active": "Los botones de pulgar aparecen tras las acciones de abajo y las respuestas van a «{{name}}».",
+    "inactive": "Los botones de pulgar están ocultos: «{{name}}» está elegido, pero el feedback en la app está desactivado o el formulario aún no puede recibir respuestas.",
+    "enabled": "Preguntar tras las acciones clave",
+    "actionsLegend": "Preguntar tras",
+    "actions": {
+      "personas": "Personas generadas",
+      "research": "Investigación terminada",
+      "prfaq": "Un PR/FAQ redactado",
+      "prd": "Un PRD redactado",
+      "prototype": "Un prototipo creado",
+      "form_draft": "El borrador con IA de un formulario",
+      "import": "Una importación terminada",
+      "engineering_run": "Una ejecución de ingeniería finalizada"
+    },
+    "problems": {
+      "not_tagged": "El formulario no tiene la etiqueta voc_app, así que sus respuestas contarían en los paneles.",
+      "no_verdict": "El formulario no tiene la opción «¿Ha sido útil?» (q_verdict, con up y down).",
+      "no_missing": "El formulario no tiene la pregunta de texto «¿Qué falta?» (q_missing).",
+      "hidden_fields": "Al formulario le falta un campo oculto que envía la app: action, page, app_version o workspace_role.",
+      "form_off": "El formulario está Desactivado: actívalo en Formularios de feedback para empezar a recopilar respuestas."
+    },
+    "errors": {
+      "unfit": "Este formulario no puede recibir feedback en la app: elige uno creado a partir de la plantilla «Microfeedback en la app».",
+      "required": "Primero elige el formulario y luego actívalo.",
+      "notFound": "Ese formulario ya no está en este espacio de trabajo.",
+      "saveFailed": "No se pudo guardar la configuración del feedback en la app."
     }
   }
 }

@@ -1,0 +1,40 @@
+{
+  "description": "The role playbooks (7.66.00, docs/playbooks.md): each role's first-week steps, in order, with the screen each links to and the evidence that ticks it. The SPA reads this file (frontend/src/pages/Home/playbooks/playbookCatalogue.ts); lambda/shared/playbooks.py holds the same ids, paths and evidence and is pinned to it (lambda/shared/test/test_playbooks.py). Evidence: a server signal of GET /settings/my-onboarding (brief_subscribed, objectives_set, feedback_form_configured, form_test_response), what Home already reads in the browser (assistant_used, project_owned, personas_generated, document_written, project_shared, repository_connected, mcp_connected), or null (the person ticks it).",
+  "roles": ["product", "scrum_master", "qa", "engineering"],
+  "steps": {
+    "product": [
+      {"id": "read_dashboard", "path": "/dashboard", "evidence": null},
+      {"id": "ask_assistant", "path": "/chat", "evidence": "assistant_used"},
+      {"id": "start_project", "path": "/projects", "evidence": "project_owned"},
+      {"id": "generate_personas", "path": "/projects", "evidence": "personas_generated"},
+      {"id": "write_document", "path": "/projects", "evidence": "document_written"},
+      {"id": "set_objectives", "path": "/account/objectives", "evidence": "objectives_set"},
+      {"id": "subscribe_brief", "path": "/account/briefing", "evidence": "brief_subscribed"}
+    ],
+    "scrum_master": [
+      {"id": "subscribe_brief", "path": "/account/briefing", "evidence": "brief_subscribed"},
+      {"id": "review_problems", "path": "/problems", "evidence": null},
+      {"id": "start_project", "path": "/projects", "evidence": "project_owned"},
+      {"id": "share_project", "path": "/projects", "evidence": "project_shared"},
+      {"id": "create_form", "path": "/feedback-forms", "evidence": "feedback_form_configured"},
+      {"id": "read_form_results", "path": "/feedback-forms", "evidence": null},
+      {"id": "ask_assistant", "path": "/chat", "evidence": "assistant_used"}
+    ],
+    "qa": [
+      {"id": "create_form", "path": "/feedback-forms", "evidence": "feedback_form_configured"},
+      {"id": "test_form", "path": "/feedback-forms", "evidence": "form_test_response"},
+      {"id": "search_feedback", "path": "/categories", "evidence": null},
+      {"id": "review_problems", "path": "/problems", "evidence": null},
+      {"id": "watch_release", "path": "/dashboard", "evidence": null},
+      {"id": "ask_assistant", "path": "/chat", "evidence": "assistant_used"}
+    ],
+    "engineering": [
+      {"id": "connect_repository", "path": "/agents/connections", "evidence": "repository_connected"},
+      {"id": "search_feedback", "path": "/categories", "evidence": null},
+      {"id": "run_engineering_agent", "path": "/agents/runs", "evidence": null},
+      {"id": "build_prototype", "path": "/projects", "evidence": null},
+      {"id": "connect_mcp", "path": "/connect", "evidence": "mcp_connected"},
+      {"id": "ask_assistant", "path": "/chat", "evidence": "assistant_used"}
+    ]
+  }
+}

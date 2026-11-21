@@ -463,7 +463,8 @@
     "hardCap": "Plafond strict",
     "models": "Modèles des rôles",
     "connections": "Connexions GitHub",
-    "advanced": "Avancé"
+    "advanced": "Avancé",
+    "appFeedback": "Retours dans l’app"
   },
   "title": "Paramètres",
   "users": {
@@ -1175,7 +1176,47 @@
       "models": "modèle, Kiro, environnement natif, Opus, Sonnet, Haiku, rôle, Registre",
       "connections": "GitHub, application GitHub, dépôt, connexion, installer, issues, jeton à granularité fine, jeton d’accès personnel, fork",
       "spend": "coût, dépenses, budget, plafond, facturation",
-      "preferences": "langue, thème, mes préférences, mode sombre"
+      "preferences": "langue, thème, mes préférences, mode sombre",
+      "appFeedback": "retours dans l’app, feedback dans l’app, micro-feedback, pouces, utile, ce qui manque, voc_app"
+    }
+  },
+  "appFeedback": {
+    "title": "Retours dans l’app",
+    "hint": "Juste après une action clé, demandez aux personnes, en deux secondes, si c’était utile et ce qui manque. Les réponses vont dans un formulaire de feedback de cet espace de travail, étiquetées voc_app, et les tableaux de bord les excluent. Désactivé tant que vous ne l’activez pas.",
+    "readOnly": "Seuls les administrateurs modifient les retours dans l’app (dans un espace de travail, ses propres administrateurs).",
+    "loading": "Chargement des réglages des retours dans l’app…",
+    "loadFailed": "Impossible de charger les réglages des retours dans l’app.",
+    "form": "Formulaire qui reçoit les réponses",
+    "noFormOption": "Aucun formulaire choisi",
+    "createForm": "En créer un à partir du modèle « Micro-feedback dans l’app »",
+    "noForm": "Choisissez un formulaire créé à partir du modèle « Micro-feedback dans l’app ».",
+    "formDeleted": "Le formulaire choisi a été supprimé : choisissez-en un autre.",
+    "active": "Les pouces s’affichent après les actions ci-dessous, et les réponses vont à « {{name}} ».",
+    "inactive": "Les pouces sont masqués : « {{name}} » est choisi, mais les retours dans l’app sont désactivés ou le formulaire ne peut pas encore recevoir de réponses.",
+    "enabled": "Demander après les actions clés",
+    "actionsLegend": "Demander après",
+    "actions": {
+      "personas": "Personas générés",
+      "research": "Recherche terminée",
+      "prfaq": "Un PR/FAQ rédigé",
+      "prd": "Un PRD rédigé",
+      "prototype": "Un prototype construit",
+      "form_draft": "Le brouillon IA d’un formulaire",
+      "import": "Une importation terminée",
+      "engineering_run": "Une exécution d’ingénierie terminée"
+    },
+    "problems": {
+      "not_tagged": "Le formulaire n’a pas l’étiquette voc_app : ses réponses compteraient donc dans les tableaux de bord.",
+      "no_verdict": "Le formulaire n’a pas de choix « Était-ce utile ? » (q_verdict, avec up et down).",
+      "no_missing": "Le formulaire n’a pas de question texte « Que manque-t-il ? » (q_missing).",
+      "hidden_fields": "Il manque au formulaire un champ masqué que l’app envoie : action, page, app_version ou workspace_role.",
+      "form_off": "Le formulaire est Désactivé : activez-le dans Formulaires de feedback pour commencer la collecte."
+    },
+    "errors": {
+      "unfit": "Ce formulaire ne peut pas recevoir de retours dans l’app : choisissez-en un créé à partir du modèle « Micro-feedback dans l’app ».",
+      "required": "Choisissez d’abord le formulaire, puis activez la fonction.",
+      "notFound": "Ce formulaire n’est plus dans cet espace de travail.",
+      "saveFailed": "Impossible d’enregistrer les réglages des retours dans l’app."
     }
   }
 }

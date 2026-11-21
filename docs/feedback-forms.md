@@ -63,8 +63,10 @@ them elsewhere. The floating assistant button steps beside a form's preview inst
 phone the builder hides it and its ⋯ menu has **Ask the assistant**, and the save bar sits at the bottom of the
 tab only when there is something to save. A form that could not load has a link back to Feedback Forms.
 
-**Templates and `template` (7.63.00).** The picker groups the thirteen templates by goal: Loyalty, Drop-offs,
-Product, Onboarding, **Events** and Blank. **Event or workshop feedback** (`workshop`, Events) is the questions asked
+**Templates and `template` (7.63.00).** The picker groups the fourteen templates by goal: Loyalty, Drop-offs,
+Product, Onboarding, **Events**, **This app** and Blank. **In-app micro-feedback** (`app_micro_feedback`, This app,
+7.66.00) is the form the app's own thumbs answer after its key actions, tagged `voc_app` and left out of the
+dashboards ([micro-feedback.md](micro-feedback.md)). **Event or workshop feedback** (`workshop`, Events) is the questions asked
 after every session, with stable ids so the forms made from it compare (see [Compare](#compare)): the role (Product,
 Engineering, QA, Scrum master, Design, Ops, Leadership, Other), familiarity with the topic, a 1–5 rating of its
 value, a matrix of its parts (rows to edit for each agenda; Needs improvement, Satisfactory, Very effective and

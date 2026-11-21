@@ -247,6 +247,7 @@ from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import 
 from boto3.dynamodb.types import DYNAMODB_CONTEXT
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared.app_feedback_tag import is_app_feedback
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.batch import batch_lambda_handler
 from shared.data_version import BatchBump, bump_data_version
@@ -1107,7 +1108,10 @@ def _image_date(item: dict) -> str:
 
 
 def _image_score(item: dict) -> Decimal:
-    """The sentiment score an image contributes to the running average."""
+    """The sentiment score an image contributes to the running average (none for the VoC app's own micro-feedback,
+    which counts in no aggregate: `counter_dimensions`)."""
+    if is_app_feedback(item):
+        return Decimal('0')
     return item.get('sentiment_score', Decimal('0'))
 
 
@@ -1195,7 +1199,15 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     LEGACY_PERSONA_FIELD and `_reverse_a_pre_deploy_persona_row`, which is the whole
     of the compatibility, needs nothing configured, and is deletable once the
     pre-deploy rows have aged out.
+
+    THE VoC APP'S OWN MICRO-FEEDBACK COUNTS NOWHERE (7.66.00, shared/app_feedback_tag.py): an item tagged
+    ``voc_app`` is feedback about this tool, never about the customer's product (TENETS.md tenet 1), so it
+    contributes no counter here and no score to the average (`_image_score`). Both directions read this one
+    function, so an edit that adds the tag takes the item's counters back out (the MODIFY's decrements are every
+    counter the old image held) and one that removes it counts the item from then on.
     """
+    if is_app_feedback(item):
+        return []
     source_platform = item.get('source_platform', 'unknown')
     category = item.get('category', 'other')
     sentiment_label = item.get('sentiment_label', 'neutral')

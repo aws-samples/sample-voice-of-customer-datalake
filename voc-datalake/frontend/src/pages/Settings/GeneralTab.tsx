@@ -1,7 +1,8 @@
 /**
  * @fileoverview Administration → General (`/admin/general`, main's first tab, 7.59.00 again; 7.54.00's Brand &
- * appearance): the brand (`#brand`), where the form brand is set, the deployment's default theme (`#theme`) and, in
- * development builds only, the API endpoint under Advanced (`#api`).
+ * appearance): the brand (`#brand`), where the form brand is set, the deployment's default theme (`#theme`), in-app
+ * feedback (`#app-feedback`, 7.66.00: the thumbs after key actions, off by default) and, in development builds only, the
+ * API endpoint under Advanced (`#api`).
  *
  * Each card saves itself (7.54.00, T6: main's page-level Save saved the brand only, and its "Saved" vanished after 3 s).
  * The brand is the workspace's inside a workspace (its admins change it; useBrandEditRight.ts), kept in this browser's
@@ -20,6 +21,7 @@ import { brandSettingsKey, useBrandSettings } from '../../hooks/useBrandSettings
 import { useConfigStore } from '../../store/configStore'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import { BRAND_REFUSALS } from '../../workspace/workspaceRefusals'
+import AppFeedbackCard from './AppFeedbackCard'
 import BrandEditorCard from './BrandEditorCard'
 import DefaultThemeCard from './DefaultThemeCard'
 import { CardAnchor } from './CardAnchor'
@@ -77,11 +79,14 @@ function AdvancedApi({ apiEndpoint, onApiEndpointChange }: Readonly<Pick<General
 }
 
 export default function GeneralTab({ apiEndpoint, onApiEndpointChange, isAdmin, isPlatformAdmin }: GeneralTabProps) {
+  // In-app feedback is the workspace's, like the brand: its admins change it (the server's rule, require_settings_admin).
+  const canEditAppFeedback = useBrandEditRight(isAdmin)
   return (
     <>
       <CardAnchor card="brand"><AdminBrandCard isAdmin={isAdmin} /></CardAnchor>
       {/* The deployment's start theme: a platform admin's (every admin may see it). */}
       <CardAnchor card="theme"><DefaultThemeCard apiEndpoint={apiEndpoint} canEdit={isPlatformAdmin} /></CardAnchor>
+      <CardAnchor card="app-feedback"><AppFeedbackCard apiEndpoint={apiEndpoint} canEdit={canEditAppFeedback} /></CardAnchor>
       {import.meta.env.DEV
         ? <CardAnchor card="api"><AdvancedApi apiEndpoint={apiEndpoint} onApiEndpointChange={onApiEndpointChange} /></CardAnchor>
         : null}

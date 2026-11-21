@@ -7,7 +7,7 @@ Storage: the caller's own personal-context partition in the aggregates table,
 Lambda or API Gateway resource is needed (``/settings/{proxy+}`` carries it).
 
 States (``PUT /settings/my-onboarding {state?, start_page?, guide?, subscribe_prompt?,
-dismiss_decision_run?}``, at least one):
+dismiss_decision_run?, playbook?, playbook_done?}``, at least one):
 
 - ``active``    — the buddy shows on Home (also the default when no row exists).
 - ``hidden``    — "Hide for now": hidden until ``hidden_until`` (server clock,
@@ -34,6 +34,12 @@ lists the ``MAX_DISMISSED_RUNS`` newest such run ids (run ids sort by start time
 as ``dismissed_decision_runs``; a LATER run that stops for a person shows its card
 again. Closing a card decides nothing: the run still waits on the agent's Runs tab.
 
+Role playbook (7.66.00, docs/playbooks.md, shared/playbooks.py): ``playbook`` is the
+role the person picked (``product``, ``scrum_master``, ``qa``, ``engineering``; ``null``
+clears it) and ``playbook_done`` the steps they ticked by hand (the list replaces the
+stored one: known step ids of any role, so a tick survives a change of role). A role is
+content only: it grants nothing and changes no workspace role.
+
 The fields are independent: a PUT changes only the fields it names (one
 ``UpdateItem``; a dismissed run first reads the stored list to merge and trim it),
 so choosing a start page never resets the buddy or the guide, nor the reverse.
@@ -41,25 +47,35 @@ so choosing a start page never resets the buddy or the guide, nor the reverse.
 ``visible`` is computed here, on the server clock, so a skewed client clock
 cannot make a snooze end early or never.
 
-Signals (read-only, two single-item reads):
+Signals (read-only, single-item reads or one-row queries), in the request's scope
+(``scope``: the workspace ``X-Workspace-Id`` names, the deployment without it):
 
-- ``feedback_present`` — the earliest-data watermark (``METRIC#meta`` /
-  ``earliest_date``) exists: at least one feedback item was ever processed.
-- ``feedback_form_configured`` — at least one row in the ``FEEDBACK_FORM``
-  partition.
+- ``feedback_present`` — the scope's earliest-data watermark (``METRIC#meta`` /
+  ``earliest_date``, a workspace's ``WS#{ws}#METRIC#meta``) exists: at least one
+  feedback item was ever processed there.
+- ``feedback_form_configured`` — at least one row in the scope's forms partition
+  (``FEEDBACK_FORM``, ``WS#{ws}#FEEDBACK_FORM``).
+- the chosen playbook's own (``playbooks.server_signals_of``), only for that playbook:
+  ``brief_subscribed`` (the person's morning brief is on), ``objectives_set`` (their
+  objectives row holds one; the deployment's ``USERCTX#{sub}`` / ``config``, where
+  ``PUT /settings/my-context`` writes it), ``form_test_response`` (a test response of
+  a form of the scope exists: test links are anonymous, so not necessarily theirs).
 
 Data-layer only; the routes live in ``settings_handler.py``.
 """
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 
-from boto3.dynamodb.conditions import Key
-
+from shared import playbooks
 from shared.agents_store import is_run_id
-from shared.company_context import user_context_pk
-from shared.earliest_date import EARLIEST_DATE_KEY, earliest_date_from_item
+from shared.briefing_prefs import preferences_key, stored_preferences
+from shared.company_context import get_my_context, user_context_pk
+from shared.earliest_date import earliest_date_from_item, earliest_date_key
 from shared.exceptions import ValidationError
+from shared.form_test_responses import test_responses_partition
+from shared.ingest_tables import table_view
 from shared.request_body import require_known_change
+from shared.scoped_query import query_partition
 
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
@@ -78,7 +94,9 @@ HIDE_FOR: Final = timedelta(days=1)
 FEEDBACK_FORM_PK: Final = 'FEEDBACK_FORM'
 _CHOICES: Final = {'state': STATES, 'start_page': START_PAGES, 'guide': GUIDES, 'subscribe_prompt': SUBSCRIBE_PROMPTS}
 _DISMISS_RUN: Final = 'dismiss_decision_run'
-_FIELDS: Final = (*_CHOICES, _DISMISS_RUN)
+_PLAYBOOK: Final = 'playbook'
+_PLAYBOOK_DONE: Final = 'playbook_done'
+_FIELDS: Final = (*_CHOICES, _DISMISS_RUN, _PLAYBOOK, _PLAYBOOK_DONE)
 
 
 def forms_partition(scope: 'WorkspaceScope | None') -> str:
@@ -95,15 +113,19 @@ def _choice(body: dict, name: str, allowed: tuple[str, ...]) -> str:
     return value
 
 
-def validate_preference(body: dict) -> dict[str, str]:
+def validate_preference(body: dict) -> dict[str, Any]:
     """The fields to change; 400 on an unknown field, a bad value, or no field at all."""
     require_known_change(body, _FIELDS)
-    changes = {name: _choice(body, name, allowed) for name, allowed in _CHOICES.items() if name in body}
+    changes: dict[str, Any] = {name: _choice(body, name, allowed) for name, allowed in _CHOICES.items() if name in body}
     if _DISMISS_RUN in body:
         run_id = body[_DISMISS_RUN]
         if not is_run_id(run_id):
             raise ValidationError(f'{_DISMISS_RUN} must be an agent run id')
         changes[_DISMISS_RUN] = run_id
+    if _PLAYBOOK in body:
+        changes[_PLAYBOOK] = playbooks.validate_role(body[_PLAYBOOK])
+    if _PLAYBOOK_DONE in body:
+        changes[_PLAYBOOK_DONE] = playbooks.validate_done(body[_PLAYBOOK_DONE])
     return changes
 
 
@@ -132,13 +154,14 @@ def _parse_iso(value: object) -> datetime | None:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
-def preference_update(changes: dict[str, str], now: datetime,
+def preference_update(changes: dict[str, Any], now: datetime,
                       dismissed_runs: list[str] | None = None) -> dict[str, Any]:
     """The ``UpdateItem`` arguments (minus ``Key``) that apply ``changes``.
 
     ``hidden_until`` is set only for a snooze and removed by any other state; a
     change of ``start_page`` or ``guide`` alone leaves the buddy's fields as they are.
-    ``dismissed_runs`` (from ``merged_dismissed_runs``) replaces the stored list.
+    ``dismissed_runs`` (from ``merged_dismissed_runs``) replaces the stored list. A ``playbook`` of None removes
+    the stored choice; ``playbook_done`` replaces the stored ticks.
     """
     sets = ['updated_at = :now']
     removes: list[str] = []
@@ -155,10 +178,16 @@ def preference_update(changes: dict[str, str], now: datetime,
             values[':until'] = (now + HIDE_FOR).isoformat()
         else:
             removes.append('hidden_until')
-    for name in ('start_page', 'guide', 'subscribe_prompt'):
+    for name in ('start_page', 'guide', 'subscribe_prompt', _PLAYBOOK_DONE):
         if name in changes:
             sets.append(f'{name} = :{name}')
             values[f':{name}'] = changes[name]
+    if _PLAYBOOK in changes:
+        if changes[_PLAYBOOK] is None:
+            removes.append(_PLAYBOOK)
+        else:
+            sets.append(f'{_PLAYBOOK} = :{_PLAYBOOK}')
+            values[f':{_PLAYBOOK}'] = changes[_PLAYBOOK]
     if dismissed_runs is not None:
         sets.append('dismissed_decision_runs = :dismissed_runs')
         values[':dismissed_runs'] = dismissed_runs
@@ -171,9 +200,22 @@ def preference_update(changes: dict[str, str], now: datetime,
     return update
 
 
+def _stored_playbook(row: dict) -> str | None:
+    raw = row.get(_PLAYBOOK)
+    return raw if isinstance(raw, str) and raw in playbooks.ROLES else None
+
+
+def _stored_done(row: dict) -> list[str]:
+    """The stored ticks that still name a step (a step a later release retired is dropped)."""
+    raw = row.get(_PLAYBOOK_DONE)
+    if not isinstance(raw, list):
+        return []
+    return sorted({step for step in raw if isinstance(step, str) and step in playbooks.STEP_IDS})
+
+
 def preference_view(item: dict | None, now: datetime) -> dict:
     """``{state, hidden_until, updated_at, visible, start_page, guide, subscribe_prompt,
-    dismissed_decision_runs}`` from a stored row (or none)."""
+    dismissed_decision_runs, playbook, playbook_done}`` from a stored row (or none)."""
     row = item if isinstance(item, dict) else {}
     raw_state = row.get('state')
     state = raw_state if isinstance(raw_state, str) and raw_state in STATES else DEFAULT_STATE
@@ -199,27 +241,54 @@ def preference_view(item: dict | None, now: datetime) -> dict:
         'subscribe_prompt': (raw_prompt if isinstance(raw_prompt, str) and raw_prompt in SUBSCRIBE_PROMPTS
                              else DEFAULT_SUBSCRIBE_PROMPT),
         'dismissed_decision_runs': sorted(_stored_runs(row), reverse=True)[:MAX_DISMISSED_RUNS],
+        'playbook': _stored_playbook(row),
+        'playbook_done': _stored_done(row),
     }
 
 
-def signals(table: Any) -> dict:
-    """The deployment-wide first-run facts the aggregates table holds."""
-    watermark = table.get_item(Key=dict(EARLIEST_DATE_KEY)).get('Item')
-    forms = table.query(KeyConditionExpression=Key('pk').eq(FEEDBACK_FORM_PK), Limit=1, ProjectionExpression='pk')
-    return {
+def _has_a_row(table: Any, scope: 'WorkspaceScope | None', partition: str) -> bool:
+    """Whether ``partition`` (of ``scope``) holds at least one row: a one-row, keys-only Query."""
+    page = query_partition(scope, table, 'pk', partition, Limit=1, ProjectionExpression='pk')
+    return bool(page.get('Items'))
+
+
+def _playbook_signal(name: str, table: Any, sub: str, scope: 'WorkspaceScope | None') -> bool:
+    """One playbook signal (``playbooks.SERVER_SIGNALS`` less the first-run two, which ``signals`` always reads)."""
+    if name == 'brief_subscribed':
+        return stored_preferences(table.get_item(Key=preferences_key(sub)).get('Item'))['enabled']
+    if name == 'objectives_set':
+        return bool(get_my_context(table, sub)['objectives'])
+    return _has_a_row(table, scope, test_responses_partition(scope))
+
+
+def signals(table: Any, scope: 'WorkspaceScope | None' = None, *, sub: str = '',
+            playbook: str | None = None) -> dict:
+    """The first-run facts the aggregates table holds for ``scope`` (the deployment's when None), plus the server
+    signals of ``playbook``'s steps (none without one)."""
+    watermark = table_view(scope, table).get_item(earliest_date_key(scope)).get('Item')
+    facts = {
         'feedback_present': earliest_date_from_item(watermark) is not None,
-        'feedback_form_configured': bool(forms.get('Items')),
+        'feedback_form_configured': _has_a_row(table, scope, forms_partition(scope)),
     }
+    for name in playbooks.server_signals_of(playbook):
+        if name not in facts:
+            facts[name] = _playbook_signal(name, table, sub, scope)
+    return facts
 
 
-def get_onboarding(table: Any, sub: str, now: datetime | None = None) -> dict:
-    """The caller's preference view plus ``signals``."""
+def _answer(view: dict, table: Any, sub: str, scope: 'WorkspaceScope | None') -> dict:
+    return {**view, 'signals': signals(table, scope, sub=sub, playbook=view['playbook'])}
+
+
+def get_onboarding(table: Any, sub: str, now: datetime | None = None, scope: 'WorkspaceScope | None' = None) -> dict:
+    """The caller's preference view plus ``signals`` (in ``scope``)."""
     moment = now or datetime.now(UTC)
     item = table.get_item(Key={'pk': user_context_pk(sub), 'sk': ONBOARDING_SK}).get('Item')
-    return {**preference_view(item, moment), 'signals': signals(table)}
+    return _answer(preference_view(item, moment), table, sub, scope)
 
 
-def put_onboarding(table: Any, sub: str, changes: dict[str, str], now: datetime | None = None) -> dict:
+def put_onboarding(table: Any, sub: str, changes: dict[str, Any], now: datetime | None = None,
+                   scope: 'WorkspaceScope | None' = None) -> dict:
     """Apply ``changes`` (from ``validate_preference``) to the caller's row and return the fresh view."""
     moment = now or datetime.now(UTC)
     key = {'pk': user_context_pk(sub), 'sk': ONBOARDING_SK}
@@ -231,4 +300,4 @@ def put_onboarding(table: Any, sub: str, changes: dict[str, str], now: datetime 
         dismissed = merged_dismissed_runs(table.get_item(Key=key).get('Item'), run_id)
     stored = table.update_item(Key=key, **preference_update(changes, moment, dismissed)).get('Attributes')
     # The view comes from the row as written (ALL_NEW): no read-back of the same key.
-    return {**preference_view(stored, moment), 'signals': signals(table)}
+    return _answer(preference_view(stored, moment), table, sub, scope)

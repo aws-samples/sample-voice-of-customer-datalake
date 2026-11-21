@@ -446,7 +446,8 @@
     "hardCap": "Harte Obergrenze",
     "models": "Modelle der Rollen",
     "connections": "GitHub-Verbindungen",
-    "advanced": "Erweitert"
+    "advanced": "Erweitert",
+    "appFeedback": "In-App-Feedback"
   },
   "title": "Einstellungen",
   "users": {
@@ -1140,7 +1141,47 @@
       "models": "Modell, Kiro, native Laufzeitumgebung, Opus, Sonnet, Haiku, Rolle, Registry",
       "connections": "GitHub, GitHub-App, Repository, Verbindung, installieren, Issues, Fine-grained Token, persönliches Zugriffstoken, Fork",
       "spend": "Kosten, Ausgaben, Budget, Obergrenze, Abrechnung",
-      "preferences": "Sprache, Farbschema, meine Einstellungen, Dunkelmodus"
+      "preferences": "Sprache, Farbschema, meine Einstellungen, Dunkelmodus",
+      "appFeedback": "In-App-Feedback, Mikro-Feedback, Daumen, hilfreich, nützlich, was fehlt, voc_app"
+    }
+  },
+  "appFeedback": {
+    "title": "In-App-Feedback",
+    "hint": "Fragen Sie Personen direkt nach einer wichtigen Aktion in zwei Sekunden, ob sie hilfreich war und was fehlt. Die Antworten gehen an ein Feedback-Formular dieses Arbeitsbereichs, mit dem Tag voc_app, und die Dashboards berücksichtigen sie nicht. Aus, bis Sie es einschalten.",
+    "readOnly": "Nur Administratoren ändern das In-App-Feedback (in einem Arbeitsbereich dessen eigene Administratoren).",
+    "loading": "Einstellungen für In-App-Feedback werden geladen…",
+    "loadFailed": "Die Einstellungen für In-App-Feedback konnten nicht geladen werden.",
+    "form": "Formular, das die Antworten erhält",
+    "noFormOption": "Kein Formular gewählt",
+    "createForm": "Eines aus der Vorlage „In-App-Mikro-Feedback“ erstellen",
+    "noForm": "Wählen Sie ein Formular, das aus der Vorlage „In-App-Mikro-Feedback“ erstellt wurde.",
+    "formDeleted": "Das gewählte Formular wurde gelöscht: Wählen Sie ein anderes.",
+    "active": "Die Daumen-Buttons erscheinen nach den unten ausgewählten Aktionen, und die Antworten gehen an „{{name}}“.",
+    "inactive": "Die Daumen-Buttons sind ausgeblendet: „{{name}}“ ist gewählt, aber das In-App-Feedback ist aus oder das Formular kann noch keine Antworten annehmen.",
+    "enabled": "Nach wichtigen Aktionen fragen",
+    "actionsLegend": "Fragen nach",
+    "actions": {
+      "personas": "Personas erstellt",
+      "research": "Recherche abgeschlossen",
+      "prfaq": "Ein PR/FAQ geschrieben",
+      "prd": "Ein PRD geschrieben",
+      "prototype": "Ein Prototyp gebaut",
+      "form_draft": "KI-Entwurf eines Formulars",
+      "import": "Ein Import abgeschlossen",
+      "engineering_run": "Ein Engineering-Lauf beendet"
+    },
+    "problems": {
+      "not_tagged": "Das Formular hat nicht den Tag voc_app, daher würden seine Antworten in den Dashboards zählen.",
+      "no_verdict": "Das Formular hat keine Auswahl „War das hilfreich?“ (q_verdict, mit up und down).",
+      "no_missing": "Das Formular hat keine Textfrage „Was fehlt?“ (q_missing).",
+      "hidden_fields": "Dem Formular fehlt ein verstecktes Feld, das die App sendet: action, page, app_version oder workspace_role.",
+      "form_off": "Das Formular steht auf „Aus“: Schalten Sie es unter Feedback-Formulare ein, um mit dem Sammeln zu beginnen."
+    },
+    "errors": {
+      "unfit": "Dieses Formular kann kein In-App-Feedback empfangen: Wählen Sie eines, das aus der Vorlage „In-App-Mikro-Feedback“ erstellt wurde.",
+      "required": "Wählen Sie zuerst das Formular und schalten Sie es dann ein.",
+      "notFound": "Dieses Formular ist nicht mehr in diesem Arbeitsbereich.",
+      "saveFailed": "Die Einstellungen für In-App-Feedback konnten nicht gespeichert werden."
     }
   }
 }

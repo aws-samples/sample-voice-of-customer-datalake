@@ -1148,6 +1148,35 @@
           "description": "いただいたフィードバックは、次回のセッションをより良くするために役立てます。"
         }
       }
+    },
+    "app_micro_feedback": {
+      "name": "アプリ内マイクロフィードバック",
+      "purpose": "この VoC アプリについて、アプリ内の評価ボタンから届くフィードバックです。voc_app タグが付き、ダッシュボードからは除外されます。",
+      "q": {
+        "q_verdict": {
+          "headline": "役に立ちましたか？",
+          "options": {
+            "up": "はい",
+            "down": "いいえ"
+          }
+        },
+        "q_missing": {
+          "headline": "何が足りませんか？",
+          "placeholder": "どうなっていれば役に立ったか"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "ありがとうございました",
+          "description": "チームはすべての回答を読んでいます。"
+        }
+      },
+      "hidden": {
+        "action": "操作",
+        "page": "ページ",
+        "app_version": "アプリのバージョン",
+        "workspace_role": "ワークスペースのロール"
+      }
     }
   },
   "picker": {
@@ -1164,7 +1193,8 @@
       "product": "製品",
       "onboarding": "オンボーディング",
       "blank": "空白",
-      "events": "イベント"
+      "events": "イベント",
+      "app": "このアプリ"
     },
     "runs": {
       "link": "リンク",
