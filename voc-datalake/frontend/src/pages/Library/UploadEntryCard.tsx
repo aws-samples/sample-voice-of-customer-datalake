@@ -11,9 +11,9 @@ import type { TFunction } from 'i18next'
 import { AlertCircle, CheckCircle2, X } from 'lucide-react'
 import { formatFileSize } from '../../utils/file'
 import { formatPercent } from '../../utils/numberFormat'
-import { ACCEPTED_EXTENSIONS, MAX_TAGS, MAX_TAG_CHARS, slugify } from './libraryFormats'
+import { ACCEPTED_EXTENSIONS, MAX_TAGS, MAX_TAG_CHARS, librarySlug } from './libraryFormats'
 import type { FileCheck } from './libraryFormats'
-import { failureText } from './libraryErrors'
+import { libraryFailureText } from './libraryErrors'
 import { fieldProblem } from './useLibraryUpload'
 import type { DraftFields, FieldProblem, UploadEntry } from './useLibraryUpload'
 
@@ -63,7 +63,7 @@ function PhaseLine({ entry }: Readonly<{ entry: UploadEntry }>) {
       return (
         <p role="alert" className="flex items-start gap-1 text-[12px] text-danger">
           <AlertCircle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
-          {failureText(t, entry.failure ?? 'other')}
+          {libraryFailureText(t, entry.failure ?? 'other')}
         </p>
       )
   }
@@ -90,7 +90,7 @@ function Fields({ entry, disabled, onChange }: Readonly<{
           <div className="space-y-1">
             <label htmlFor={`${id}-slug`} className="block text-[12px] font-medium text-muted">{t('fields.slug')}</label>
             <input id={`${id}-slug`} className="input font-mono" value={fields.slug} maxLength={64} disabled={disabled}
-              placeholder={slugify(fields.title)} aria-describedby={`${id}-slug-hint`}
+              placeholder={librarySlug(fields.title)} aria-describedby={`${id}-slug-hint`}
               onChange={(event) => set({ slug: event.target.value.toLowerCase() })} />
             <p id={`${id}-slug-hint`} className="text-[12px] text-muted">{t('fields.slugHint')}</p>
           </div>

@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom'
 import { Hash, Info } from 'lucide-react'
 
 /** Where a CSV or JSON file of feedback is imported (the Data sources page's upload actions). */
-export const FEEDBACK_IMPORT_PATH = '/scrapers'
+const FEEDBACK_IMPORT_PATH = '/scrapers'
 
 export default function LibraryIntro() {
   const { t } = useTranslation('library')

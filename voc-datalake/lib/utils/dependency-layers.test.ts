@@ -80,9 +80,9 @@ describe('the signing layer (cryptography)', () => {
   it('the split libraries are installed by their own layer and no longer by the shared ones', () => {
     // pypdf (7.62.00): the Documents Library's PDF reader, the projects API's own like the signing crypto.
     expect(requirements(SIGNING_LAYER_DIR)).toStrictEqual(['cryptography>=50.0.2', 'pypdf==7.1.1']);
-    expect(requirements('lambda/layers/processing-deps').join(' ')).not.toContain('pypdf');
     expect(requirements(EMAIL_INTAKE_LAYER_DIR)).toStrictEqual(['lxml>=6.1.3']);
-    expect(requirements('lambda/layers/processing-deps').join(' ')).not.toContain('cryptography');
+    // (neither the signing crypto nor pypdf in the processing layer)
+    expect(requirements('lambda/layers/processing-deps').join(' ')).not.toMatch(/cryptography|pypdf/);
     expect(requirements('lambda/layers/ingestion-deps').join(' ')).not.toContain('lxml');
   });
 

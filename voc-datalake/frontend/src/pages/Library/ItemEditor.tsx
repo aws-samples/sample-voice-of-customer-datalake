@@ -6,17 +6,17 @@
  *
  * @module pages/Library/ItemEditor
  */
-import { useId, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2, RefreshCw } from 'lucide-react'
+import { LabeledField } from '../../components/LabeledField/LabeledField'
 import Notice from '../../components/Notice/Notice'
 import { libraryApi, libraryKeys } from '../../api/libraryApi'
 import type { LibraryEditBody } from '../../api/libraryApi'
 import type { LibraryItem } from '../../api/librarySchema'
-import { failureText, libraryFailure } from './libraryErrors'
-import { isSlug, parseTags, tagsProblem } from './libraryFormats'
+import { libraryFailureText, libraryFailure } from './libraryErrors'
+import { isSlug, parseLibraryTags, tagsProblem } from './libraryFormats'
 import type { ProjectOption } from './libraryFilters'
 
 interface EditFields {
@@ -37,7 +37,7 @@ const sameTags = (a: readonly string[], b: readonly string[]) => a.length === b.
 
 /** Only what changed, with the version it was opened at. */
 function changesOf(item: LibraryItem, fields: EditFields): LibraryEditBody {
-  const tags = parseTags(fields.tags)
+  const tags = parseLibraryTags(fields.tags)
   return {
     expected_version: item.version,
     ...(fields.title.trim() === item.title ? {} : { title: fields.title.trim() }),
@@ -50,18 +50,7 @@ function changesOf(item: LibraryItem, fields: EditFields): LibraryEditBody {
 }
 
 function invalid(fields: EditFields): boolean {
-  return fields.title.trim() === '' || !isSlug(fields.slug.trim()) || tagsProblem(parseTags(fields.tags)) !== null
-}
-
-function Field({ label, hint, children }: Readonly<{ label: string; hint?: string; children: (id: string, hintId: string) => ReactNode }>) {
-  const id = useId()
-  return (
-    <div className="space-y-1">
-      <label htmlFor={id} className="block text-[12px] font-medium text-muted">{label}</label>
-      {children(id, `${id}-hint`)}
-      {hint === undefined ? null : <p id={`${id}-hint`} className="text-[12px] text-muted">{hint}</p>}
-    </div>
-  )
+  return fields.title.trim() === '' || !isSlug(fields.slug.trim()) || tagsProblem(parseLibraryTags(fields.tags)) !== null
 }
 
 export default function ItemEditor({ item, projects, onDone, onReload }: Readonly<{
@@ -97,43 +86,43 @@ export default function ItemEditor({ item, projects, onDone, onReload }: Readonl
   const disabled = save.isPending
   return (
     <form className="space-y-3" aria-label={t('edit.label')} onSubmit={(event) => { event.preventDefault(); submit() }}>
-      <Field label={t('fields.title')}>
+      <LabeledField label={t('fields.title')}>
         {(id) => <input id={id} className="input" value={fields.title} maxLength={200} required disabled={disabled}
           onChange={(event) => set({ title: event.target.value })} />}
-      </Field>
-      <Field label={t('fields.slug')} hint={failure === 'slugTaken' ? failureText(t, failure) : t('fields.slugHint')}>
-        {(id, hintId) => <input id={id} className="input font-mono" value={fields.slug} maxLength={64} required disabled={disabled}
-          aria-describedby={hintId} aria-invalid={failure === 'slugTaken' || !isSlug(fields.slug.trim())}
+      </LabeledField>
+      <LabeledField label={t('fields.slug')} hint={failure === 'slugTaken' ? libraryFailureText(t, failure) : t('fields.slugHint')}>
+        {(id) => <input id={id} className="input font-mono" value={fields.slug} maxLength={64} required disabled={disabled}
+          aria-describedby={`${id}-hint`} aria-invalid={failure === 'slugTaken' || !isSlug(fields.slug.trim())}
           onChange={(event) => set({ slug: event.target.value.toLowerCase() })} />}
-      </Field>
-      <Field label={t('fields.source')}>
+      </LabeledField>
+      <LabeledField label={t('fields.source')}>
         {(id) => <input id={id} className="input" value={fields.source} maxLength={200} disabled={disabled}
           onChange={(event) => set({ source: event.target.value })} />}
-      </Field>
-      <Field label={t('fields.docDate')}>
+      </LabeledField>
+      <LabeledField label={t('fields.docDate')}>
         {(id) => <input id={id} type="date" className="input" value={fields.docDate} disabled={disabled}
           onChange={(event) => set({ docDate: event.target.value })} />}
-      </Field>
-      <Field label={t('fields.tags')} hint={t('fields.tagsHint')}>
-        {(id, hintId) => <input id={id} className="input" value={fields.tags} disabled={disabled} aria-describedby={hintId}
+      </LabeledField>
+      <LabeledField label={t('fields.tags')} hint={t('fields.tagsHint')}>
+        {(id) => <input id={id} className="input" value={fields.tags} disabled={disabled} aria-describedby={`${id}-hint`}
           onChange={(event) => set({ tags: event.target.value })} />}
-      </Field>
+      </LabeledField>
       {projects === null ? null : (
-        <Field label={t('fields.project')}>
+        <LabeledField label={t('fields.project')}>
           {(id) => (
             <select id={id} className="select" value={fields.projectId} disabled={disabled} onChange={(event) => set({ projectId: event.target.value })}>
               <option value="">{t('fields.noProject')}</option>
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           )}
-        </Field>
+        </LabeledField>
       )}
       {failure === 'stale' ? (
-        <Notice variant="banner" tone="warn" role="alert" icon={RefreshCw} text={failureText(t, failure)}
+        <Notice variant="banner" tone="warn" role="alert" icon={RefreshCw} text={libraryFailureText(t, failure)}
           action={{ label: t('edit.reload'), icon: RefreshCw, onClick: () => void reload() }} />
       ) : null}
       {failure !== null && failure !== 'stale' && failure !== 'slugTaken'
-        ? <p role="alert" className="text-sm text-danger">{failureText(t, failure)}</p>
+        ? <p role="alert" className="text-sm text-danger">{libraryFailureText(t, failure)}</p>
         : null}
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" className="btn btn-secondary" onClick={onDone} disabled={disabled}>{t('edit.cancel')}</button>

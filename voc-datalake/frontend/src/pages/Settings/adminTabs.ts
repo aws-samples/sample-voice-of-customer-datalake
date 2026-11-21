@@ -127,7 +127,7 @@ export function visibleSections(tab: AdminTabId, viewer: AdminViewer): AdminSect
 }
 
 /** Whether this viewer may see `tab`: one without sections by its audience, one with by a section left to see. */
-export function isVisibleTab(tab: AdminTabId, viewer: AdminViewer): boolean {
+function isVisibleTab(tab: AdminTabId, viewer: AdminViewer): boolean {
   const def = tabDef(tab)
   return def.sections.length === 0 ? admits(def.audience, viewer) : visibleSections(tab, viewer).length > 0
 }

@@ -19,13 +19,13 @@ import { NewTabLink } from '../../components/NewTabLink/NewTabLink'
 import SideSheet from '../../components/SideSheet/SideSheet'
 import { libraryApi, libraryKeys } from '../../api/libraryApi'
 import type { LibraryDetail, LibraryItem } from '../../api/librarySchema'
-import { failureText, libraryFailure } from './libraryErrors'
+import { libraryFailureText, libraryFailure } from './libraryErrors'
 import ItemDetails from './ItemDetails'
 import ItemEditor from './ItemEditor'
 import ItemText from './ItemText'
 import StatusBadge from './StatusBadge'
 import type { ProjectOption } from './libraryFilters'
-import { IN_FLIGHT_REFETCH_MS, isInFlight } from './useLibraryList'
+import { IN_FLIGHT_REFETCH_MS, isItemInFlight } from './useLibraryList'
 
 function StatusLine({ item }: Readonly<{ item: LibraryItem }>) {
   const { t } = useTranslation('library')
@@ -111,7 +111,7 @@ function DrawerBody({ detail, page, onPage, canWrite, projects, onDeleted, onRel
   return (
     <>
       <StatusLine item={item} />
-      {writes.retry.isError ? <p role="alert" className="text-sm text-danger">{failureText(t, libraryFailure(writes.retry.error))}</p> : null}
+      {writes.retry.isError ? <p role="alert" className="text-sm text-danger">{libraryFailureText(t, libraryFailure(writes.retry.error))}</p> : null}
       <Actions detail={detail} canWrite={canWrite} onEdit={() => setEditing(true)} onRetry={() => writes.retry.mutate()}
         retrying={writes.retry.isPending} onDelete={() => { writes.remove.reset(); setConfirming(true) }} />
       {editing
@@ -123,7 +123,7 @@ function DrawerBody({ detail, page, onPage, canWrite, projects, onDeleted, onRel
         confirmLabel={t('delete.confirm')} variant="danger" isLoading={writes.remove.isPending}
         onConfirm={() => writes.remove.mutate()} onCancel={() => setConfirming(false)}>
         {writes.remove.isError
-          ? <p role="alert" className="mt-3 text-sm text-danger">{failureText(t, libraryFailure(writes.remove.error, 'delete'))}</p>
+          ? <p role="alert" className="mt-3 text-sm text-danger">{libraryFailureText(t, libraryFailure(writes.remove.error, 'delete'))}</p>
           : null}
       </ConfirmModal>
     </>
@@ -143,7 +143,7 @@ export default function PreviewDrawer({ itemId, page, onPage, onClose, canWrite,
     queryKey: libraryKeys.item(itemId ?? ''),
     queryFn: () => libraryApi.get(itemId ?? ''),
     enabled: itemId !== null,
-    refetchInterval: (query) => (query.state.data !== undefined && isInFlight(query.state.data.item) ? IN_FLIGHT_REFETCH_MS : false),
+    refetchInterval: (query) => (query.state.data !== undefined && isItemInFlight(query.state.data.item) ? IN_FLIGHT_REFETCH_MS : false),
   })
   const item = detail.data?.item
   const notFound = detail.isError && libraryFailure(detail.error) === 'notFound'

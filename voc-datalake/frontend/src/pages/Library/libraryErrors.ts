@@ -53,6 +53,6 @@ export function libraryFailure(error: unknown, action: 'write' | 'delete' = 'wri
   return byStatus === 'forbidden' && action === 'delete' ? 'deleteForbidden' : byStatus
 }
 
-export function failureText(t: TFunction, failure: LibraryFailure): string {
+export function libraryFailureText(t: TFunction, failure: LibraryFailure): string {
   return t(MESSAGES[failure].messageKey)
 }

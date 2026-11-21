@@ -18,20 +18,16 @@ import type { ApiInvoker } from '../internal-api.js';
 import { LIBRARY_CONTEXT_RESOURCE } from '../internal-api.js';
 import { AssistantToolError } from '../errors.js';
 import { parseToolInput, toolSpec } from '../spec.js';
-import { serverTool } from './common.js';
+import { lenient, parseEach, serverTool } from './common.js';
 
 /** Items one search names, as one message mentions at most. */
-export const MAX_SEARCH_ITEMS = 3;
+const MAX_SEARCH_ITEMS = 3;
 const MAX_QUERY_CHARS = 500;
 const SLUG_CHARS = /^[a-z0-9-]{1,64}$/;
 
 /** A library slug (lambda/shared/library_keys.py SLUG_PATTERN): its characters, no hyphen at either end. */
 function isSlug(value: string): boolean {
   return SLUG_CHARS.test(value) && !value.startsWith('-') && !value.endsWith('-');
-}
-
-function lenient<T>(schema: z.ZodType<T>) {
-  return schema.nullish().catch(null).transform((value): T | undefined => value ?? undefined);
 }
 
 const itemSchema = z.object({
@@ -88,13 +84,6 @@ export interface LibraryContextRequest {
   slugs?: readonly string[];
   query: string;
   nativeSlots: number;
-}
-
-function parseEach<T>(schema: z.ZodType<T>, rows: unknown[]): T[] {
-  return rows.flatMap((row) => {
-    const parsed = schema.safeParse(row);
-    return parsed.success ? [parsed.data] : [];
-  });
 }
 
 function pendingIds(rows: unknown[]): string[] {

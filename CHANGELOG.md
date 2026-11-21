@@ -62,6 +62,13 @@ carry it.
 
 - **Deleting a form** also deletes its stored report summaries; they are in a workspace's export and its hard delete
   with the forms partition.
+- The 7.59.00–7.63.00 stack's integration findings: one forms partition rule (`shared/onboarding.py`
+  `forms_partition`) for the forms API and the forms' AI routes; one `lenient` field and `parseEach` for the stream's
+  chat context and library tools (`tools/server/common.ts`); the Library's editor fields are the shared `LabeledField`;
+  the Library's query root has its cache family (`library`, live); the Library's and the fine-grained token's helpers
+  named apart from their namesakes (`libraryFailureText`, `isItemInFlight`, `librarySlug`, `parseLibraryTags`,
+  `fineGrainedTokenIssue`); module-private symbols no longer exported; and the specs follow the save's one
+  precondition (7.58.01) and the token fields (7.60.00).
 
 ### Upgrade notes
 

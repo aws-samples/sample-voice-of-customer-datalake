@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { FAKE_TOKEN } from '@test/tokenConnectionFixtures'
 import {
-  MAX_TOKEN_DAYS, NEW_TOKEN_PAGE, TOKEN_REFUSAL_CODES, TOKEN_WARNING_DAYS, knownRefusal, newTokenUrl, repositoryOf, tokenIssue,
+  MAX_TOKEN_DAYS, NEW_TOKEN_PAGE, TOKEN_REFUSAL_CODES, TOKEN_WARNING_DAYS, knownRefusal, newTokenUrl, repositoryOf, fineGrainedTokenIssue,
   tokenState,
 } from './tokenConnectionRules'
 
@@ -16,11 +16,11 @@ describe('a pasted token', () => {
     [`ghu_${'a'.repeat(36)}`, 'classic'], [`ghs_${'a'.repeat(36)}`, 'classic'], [`ghr_${'a'.repeat(36)}`, 'classic'],
     ['github_pat_short', 'shape'], [`glpat-${'a'.repeat(20)}`, 'shape'], [`github_pat_${'a'.repeat(20)}!`, 'shape'],
   ])('%j is refused as %s', (token, issue) => {
-    expect(tokenIssue(token)).toBe(issue)
+    expect(fineGrainedTokenIssue(token)).toBe(issue)
   })
 
   it('passes as a fine-grained token, surrounding spaces trimmed', () => {
-    expect([tokenIssue(FAKE_TOKEN), tokenIssue(` ${FAKE_TOKEN}\n`)]).toStrictEqual([undefined, undefined])
+    expect([fineGrainedTokenIssue(FAKE_TOKEN), fineGrainedTokenIssue(` ${FAKE_TOKEN}\n`)]).toStrictEqual([undefined, undefined])
   })
 })
 

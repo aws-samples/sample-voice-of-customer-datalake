@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import i18n from 'i18next'
 import { LibraryUploadError } from '../../api/libraryApi'
 import { ApiError } from '../../lib/errors'
-import { failureText, libraryFailure } from './libraryErrors'
+import { libraryFailureText, libraryFailure } from './libraryErrors'
 
 describe('libraryFailure', () => {
   it.each([
@@ -33,10 +33,10 @@ describe('libraryFailure', () => {
   })
 })
 
-describe('failureText', () => {
+describe('libraryFailureText', () => {
   it('says each failure in the page\'s words', () => {
     const t = i18n.getFixedT('en', 'library')
-    expect([failureText(t, 'slugTaken'), failureText(t, 'deleteForbidden')]).toStrictEqual([
+    expect([libraryFailureText(t, 'slugTaken'), libraryFailureText(t, 'deleteForbidden')]).toStrictEqual([
       'Another library item already has this short name. Choose another.',
       'Only an admin or the person who uploaded it can delete this item.',
     ])

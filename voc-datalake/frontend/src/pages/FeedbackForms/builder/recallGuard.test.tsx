@@ -55,7 +55,7 @@ describe('the publish guard in the builder', () => {
     expect(await headerButton('Publish')).toHaveAttribute('aria-disabled', 'true')
     expect(harness.probe.current?.publishErrors.map((problem) => problem.code)).toStrictEqual(['recallNotHere'])
     await harness.user.click(await headerButton('Save'))
-    await waitFor(() => { expect(formsApi.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 3, null, 5) })
+    await waitFor(() => { expect(formsApi.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 5, null) })
   })
 
   it('words the server\'s 409 unresolved_placeholder as a refusal, never as someone else\'s save', async () => {
@@ -85,7 +85,7 @@ describe('an answered matrix', () => {
     })
     await harness.user.click(await headerButton('Save'))
     await waitFor(() => {
-      expect(formsApi.saveForm).toHaveBeenCalledWith('f_test', expect.anything(), 3, { rows: { q_phases: ['intro'] }, columns: { q_phases: ['great'] } }, 5)
+      expect(formsApi.saveForm).toHaveBeenCalledWith('f_test', expect.anything(), 5, { rows: { q_phases: ['intro'] }, columns: { q_phases: ['great'] } })
     })
   })
 })

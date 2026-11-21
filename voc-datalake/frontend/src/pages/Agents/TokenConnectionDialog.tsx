@@ -24,7 +24,7 @@ import { OneLineNoteField } from './ConnectionFields'
 import { ConnectionFormModal } from './ConnectionModals'
 import { keepSaved } from './savedConnection'
 import { OnlyThisRepository, RepositoryPick, TokenField, TokenSteps } from './TokenConnectionParts'
-import { knownRefusal, repositoryOf, tokenIssue } from './tokenConnectionRules'
+import { knownRefusal, repositoryOf, fineGrainedTokenIssue } from './tokenConnectionRules'
 import type { EngineeringConnection, SavedConnection } from '../../api/engineeringConnectionsApi'
 import type { TokenIssue, TokenRefusalCode } from './tokenConnectionRules'
 
@@ -120,7 +120,7 @@ export function TokenConnectionDialog({ existing, onClose, onSaved }: Readonly<{
   const save = useTokenSave(existing, { repository: repository ?? '', token, reason }, onSaved, () => { setToken('') })
   const refusal = save.isError ? knownRefusal(apiErrorCode(save.error)) : null
   const submit = () => {
-    const found = { repository: repository === null, token: tokenIssue(token), tick: !ticked }
+    const found = { repository: repository === null, token: fineGrainedTokenIssue(token), tick: !ticked }
     setIssues(found)
     if (!found.repository && found.token === undefined && !found.tick) save.mutate()
   }

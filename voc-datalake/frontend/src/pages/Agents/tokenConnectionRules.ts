@@ -31,7 +31,7 @@ const GITHUB_ADDRESS = /^https:\/\/github\.com\/([^/?#]+\/[^/?#]+?)(?:\.git)?\/?
 export type TokenIssue = 'tokenEmpty' | 'classic' | 'shape'
 
 /** The token's issue (trimmed), or undefined when it has the shape of a fine-grained token. */
-export function tokenIssue(token: string): TokenIssue | undefined {
+export function fineGrainedTokenIssue(token: string): TokenIssue | undefined {
   const text = token.trim()
   if (text === '') return 'tokenEmpty'
   if (OTHER_TOKEN.test(text)) return 'classic'

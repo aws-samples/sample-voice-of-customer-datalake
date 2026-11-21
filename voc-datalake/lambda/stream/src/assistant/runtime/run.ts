@@ -86,7 +86,7 @@ export function dedupeFeedback(sources: readonly FeedbackSource[]): FeedbackSour
   });
 }
 
-export function dedupeLibrary(sources: readonly LibrarySourceRef[]): LibrarySourceRef[] {
+function dedupeLibrary(sources: readonly LibrarySourceRef[]): LibrarySourceRef[] {
   const seen = new Set<string>();
   return sources.filter((source) => {
     const key = `${source.item_id}#${String(source.page)}`;

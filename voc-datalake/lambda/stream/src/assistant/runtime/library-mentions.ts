@@ -24,7 +24,7 @@ import {
 import { neutralise, oneLine } from './page-context.js';
 
 /** Converse's documents per message (API_runtime_Message), the person's own attachments included. */
-export const MAX_MESSAGE_DOCUMENTS = 5;
+const MAX_MESSAGE_DOCUMENTS = 5;
 const MAX_DOCUMENT_BYTES = 4_500_000;
 const MAX_IMAGE_BYTES = 3_750_000;
 const FETCH_TIMEOUT_MS = 15_000;
@@ -37,7 +37,7 @@ const IMAGE_FORMATS: ReadonlyMap<string, ImageFormat> = new Map([
 ]);
 
 /** A library file that could not be fetched (the item is then searched instead). */
-export class LibraryFileError extends Error {
+class LibraryFileError extends Error {
   override readonly name = 'LibraryFileError';
 }
 

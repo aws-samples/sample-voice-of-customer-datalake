@@ -145,6 +145,8 @@ const EXEMPT: Readonly<Record<string, string>> = {
   CommentComposer: 'inline Post in the margin beside one thread or selection, one of many in the comment rail',
   ReferenceDesignPreview: 'per-reference Use as design system, one of many in the references list (it only loads a draft)',
   DocumentActionsBar: 'the canvas\'s Save and Discard register themselves as an action bar (useRegisterActionBar) and pin to the bottom on a phone while dirty',
+  Library: 'Upload heads the Documents Library page (7.62.00; it opens the upload sheet), not a form\'s save row',
+  ItemEditor: 'a library item\'s Save, rendered only inside the Library\'s preview drawer (PreviewDrawer.tsx, a SideSheet over the launcher)',
 }
 
 // (a SideSheet is a ModalShell too: its footer sits over the launcher)

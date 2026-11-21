@@ -69,7 +69,8 @@ describe('loadLibraryContext', () => {
   it('marks and chips a passage with or without its page', () => {
     expect(citationMarker('q3', 4)).toBe('[#q3 p.4]');
     expect(citationMarker('q3', undefined)).toBe('[#q3]');
-    const items = [{ item_id: ITEM, slug: 'q3', title: 'Q3', status: 'ready' }];
+    const items = [{ item_id: ITEM, slug: 'q3', title: 'Q3', status: 'ready', source: undefined, doc_date: undefined,
+      format: undefined, pages: undefined, bytes: undefined }];
     expect(librarySources(items, [{ item_id: ITEM, chunk: 1, page: undefined, text: 't' },
       { item_id: ITEM, chunk: 2, page: undefined, text: 'u' }, { item_id: 'other', chunk: 1, page: 1, text: 'v' }]))
       .toStrictEqual([{ item_id: ITEM, slug: 'q3', title: 'Q3' }]);

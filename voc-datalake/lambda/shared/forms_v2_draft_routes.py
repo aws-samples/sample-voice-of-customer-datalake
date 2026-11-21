@@ -38,7 +38,7 @@ from shared.aws import is_conditional_check_failure
 from shared.exceptions import AuthorizationError, ServiceError, TooManyRequestsError
 from shared.ingest_tables import table_view
 from shared.logging import logger, tracer
-from shared.onboarding import FEEDBACK_FORM_PK
+from shared.onboarding import forms_partition
 from shared.request_body import json_object_body
 from shared.request_workspace import request_workspace
 from shared.tables import configured_table
@@ -47,7 +47,6 @@ from shared.ws_repo import optional_scope
 
 if TYPE_CHECKING:
     from shared.workspace import WorkspaceContext
-    from shared.ws_repo import WorkspaceScope
 
 __all__ = ['aggregates', 'app', 'bind_aggregates_table', 'charge_hourly', 'forms_partition', 'own_job', 'require_editor']
 
@@ -78,11 +77,6 @@ def aggregates() -> Any:
     """voc-aggregates as the including handler binds it (the forms' AI routes share it: shared/forms_report_routes.py
     too)."""
     return configured_table(_bound[0]() if _bound else None, 'Aggregates')
-
-
-def forms_partition(scope: WorkspaceScope | None) -> str:
-    """The forms partition of ``scope``'s workspace (``WS#{ws}#FEEDBACK_FORM``), the deployment's without one."""
-    return scope.key(FEEDBACK_FORM_PK) if scope is not None else FEEDBACK_FORM_PK
 
 
 def require_editor(context: WorkspaceContext | None) -> None:

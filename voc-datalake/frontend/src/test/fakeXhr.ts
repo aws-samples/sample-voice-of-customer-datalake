@@ -12,7 +12,7 @@
  */
 import { afterEach, beforeEach, vi } from 'vitest'
 
-export class FakeRequest {
+class FakeRequest {
   method = ''
   url = ''
   readonly headers: Record<string, string> = {}

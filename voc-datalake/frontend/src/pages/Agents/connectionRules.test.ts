@@ -21,7 +21,8 @@ const form = (fields: Partial<ConnectionForm>): ConnectionForm => ({
 })
 const stored: EngineeringConnection = {
   connection_id: 'web-app', host: 'github', repository: 'example-org/web-app', default_branch: 'main',
-  credential: { kind: 'app', set: true, app_id: '123', installation_id: '456', expires_at: null },
+  credential: { kind: 'app', set: true, app_id: '123', installation_id: '456', expires_at: null,
+    expires_in_days: null, login: null, saved_by_you: false, owner: null },
   created_at: null, created_by: null, updated_at: null, updated_by: null, version: 1, ci_attestation: null,
   repository_private: null, kind: 'repository', public: null, fork: null,
 }
@@ -32,7 +33,8 @@ const gitlabForm = (fields: Partial<ConnectionForm>): ConnectionForm => ({
 })
 const storedGitlab: EngineeringConnection = {
   ...stored, connection_id: 'docs', host: 'gitlab', repository: 'example-group/web/docs',
-  credential: { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: '2027-01-31' },
+  credential: { kind: 'project_token', set: true, app_id: null, installation_id: null, expires_at: '2027-01-31',
+    expires_in_days: null, login: null, saved_by_you: false, owner: null },
 }
 
 describe('a GitLab connection\'s rules', () => {

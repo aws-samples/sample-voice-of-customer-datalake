@@ -38,6 +38,16 @@ function renderSheet(onClose = vi.fn()) {
   return { user, choose, onClose }
 }
 
+/** The sheet open over `routes`, the PDF chosen and Upload pressed, until its PUT has started. */
+async function uploadStarted(routes: Record<string, RouteHandler>) {
+  route(routes)
+  const sheet = renderSheet()
+  await sheet.choose(pdf())
+  await sheet.user.click(screen.getByRole('button', { name: 'Upload (1)' }))
+  await waitFor(() => expect(xhr.sent).toHaveLength(1))
+  return sheet
+}
+
 beforeEach(() => {
   resetFetchApi()
 })
@@ -129,11 +139,7 @@ describe('uploading', () => {
   })
 
   it('shows the file\'s progress, then that it was uploaded', async () => {
-    route({ 'POST /projects/library': created, [`POST /projects/library/${Q3_ID}/uploaded`]: () => ({ item: libraryItem({ status: 'extracting' }) }) })
-    const { user, choose } = renderSheet()
-    await choose(pdf())
-    await user.click(screen.getByRole('button', { name: 'Upload (1)' }))
-    await waitFor(() => expect(xhr.sent).toHaveLength(1))
+    await uploadStarted({ 'POST /projects/library': created, [`POST /projects/library/${Q3_ID}/uploaded`]: () => ({ item: libraryItem({ status: 'extracting' }) }) })
     xhr.last().progress(5, 10)
     expect(await screen.findByRole('progressbar', { name: 'Upload of Q3 Market Report.pdf' })).toHaveAttribute('aria-valuenow', '50')
     xhr.last().respond(200)
@@ -168,11 +174,7 @@ describe('uploading', () => {
   })
 
   it('takes the pending item back when the PUT fails, so trying again makes one item', async () => {
-    route({ 'POST /projects/library': created, [`DELETE /projects/library/${Q3_ID}`]: () => ({ success: true, deleted: Q3_ID }) })
-    const { user, choose } = renderSheet()
-    await choose(pdf())
-    await user.click(screen.getByRole('button', { name: 'Upload (1)' }))
-    await waitFor(() => expect(xhr.sent).toHaveLength(1))
+    await uploadStarted({ 'POST /projects/library': created, [`DELETE /projects/library/${Q3_ID}`]: () => ({ success: true, deleted: Q3_ID }) })
     xhr.last().fail()
     expect(await screen.findByRole('alert')).toHaveTextContent('The upload stopped: check your connection and try again.')
     expect(fetchApi).toHaveBeenCalledWith(`/projects/library/${Q3_ID}`, { method: 'DELETE' })
@@ -181,14 +183,10 @@ describe('uploading', () => {
 
   it('says a file that did not arrive, and keeps going when the pending item cannot be taken back', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    route({
+    await uploadStarted({
       'POST /projects/library': created,
       [`POST /projects/library/${Q3_ID}/uploaded`]: () => { throw new ApiError(409, 'not yet', 'not_uploaded') },
     })
-    const { user, choose } = renderSheet()
-    await choose(pdf())
-    await user.click(screen.getByRole('button', { name: 'Upload (1)' }))
-    await waitFor(() => expect(xhr.sent).toHaveLength(1))
     xhr.last().respond(200)
     expect(await screen.findByRole('alert')).toHaveTextContent('The file did not arrive. Try again.')
     await waitFor(() => expect(consoleError).toHaveBeenCalledWith('Failed to remove a pending library item', expect.any(Error)))

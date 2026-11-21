@@ -41,47 +41,55 @@ export interface AdminAttention {
   readonly countOf: (tab: AdminTabId) => number
 }
 
-/** The attention items, from the shared reads. `isAdmin` gates the admin-only reads (users, model capacity), and
- *  `agentsShown` the connections' (the Engineering agents tab's). */
+type EnabledPlugin = ReturnType<typeof getEnabledPlugins>[number]
+
+/** What "Needs attention" counts, from the shared reads (the sections' own query keys). */
+interface AttentionFacts {
+  readonly paused: readonly EnabledPlugin[]
+  readonly waysUnset: number
+  readonly modelsBlocked: number
+  readonly tokens: number
+}
+
+/** The sources a circuit breaker paused, in the plugins' order (none until the status is read). */
+function pausedSources(status: Awaited<ReturnType<typeof api.getSourcesStatus>> | undefined): EnabledPlugin[] {
+  return status === undefined ? [] : getEnabledPlugins().filter((plugin) => status.sources[plugin.id]?.circuit.tripped === true)
+}
+
+/** The reads. `isAdmin` gates the admin-only ones (users, model capacity), and `agentsShown` the connections' (the
+ *  Engineering agents tab's). */
+function useAttentionFacts(viewer: Pick<AdminViewer, 'isAdmin' | 'agentsShown'>, ready: boolean): AttentionFacts {
+  const admin = ready && viewer.isAdmin
+  const agents = admin && viewer.agentsShown
+  const users = useQuery({ queryKey: usersKey(), queryFn: () => api.getUsers(), enabled: admin })
+  const sources = useQuery({ queryKey: sourcesStatusKey(), queryFn: () => api.getSourcesStatus(), enabled: ready })
+  const capacity = useModelCapacity(admin)
+  const connections = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list, enabled: agents })
+  return {
+    paused: pausedSources(sources.data),
+    waysUnset: (users.data?.users ?? []).filter((user) => user.enabled && !readStoredAiMode(user).saved).length,
+    modelsBlocked: (capacity.data?.models ?? []).filter((row) => isBlockedAccess(row.access?.status ?? 'unknown')).length,
+    tokens: agents ? tokensToReplace(connections.data?.connections ?? []).length : 0,
+  }
+}
+
+/** The attention items, in the strip's order, and each tab's count. */
 export function useAdminAttention(viewer: Pick<AdminViewer, 'isAdmin' | 'agentsShown'>, apiEndpoint: string): AdminAttention {
   const { t } = useTranslation('settings')
   const copy = usePluginCopy()
-  const ready = apiEndpoint !== ''
-  const { isAdmin } = viewer
-  const users = useQuery({ queryKey: usersKey(), queryFn: () => api.getUsers(), enabled: ready && isAdmin })
-  const sources = useQuery({ queryKey: sourcesStatusKey(), queryFn: () => api.getSourcesStatus(), enabled: ready })
-  const capacity = useModelCapacity(ready && isAdmin)
-  const connections = useQuery({ queryKey: engineeringConnectionsKeys.list(), queryFn: engineeringConnectionsApi.list,
-    enabled: ready && isAdmin && viewer.agentsShown })
-  const paused = sources.data === undefined
-    ? []
-    : getEnabledPlugins().filter((plugin) => sources.data.sources[plugin.id]?.circuit.tripped === true)
-  const waysUnset = (users.data?.users ?? []).filter((user) => user.enabled && !readStoredAiMode(user).saved).length
-  const modelsBlocked = (capacity.data?.models ?? []).filter((row) => isBlockedAccess(row.access?.status ?? 'unknown')).length
-  const tokens = viewer.agentsShown ? tokensToReplace(connections.data?.connections ?? []).length : 0
-  const counts: Partial<Record<AdminTabId, number>> = {}
-  const items: AttentionItem[] = []
-  if (paused.length > 0) {
-    counts.sources = paused.length
-    const list = paused.map((plugin) => copy(plugin).name).join(', ')
-    items.push({ key: 'sources', text: t('attention.sourcesPaused', { count: paused.length, list }),
-      action: t('attention.reviewSources'), target: { tab: 'sources', section: 'plugins' } })
-  }
-  if (waysUnset > 0) {
-    counts.access = waysUnset
-    items.push({ key: 'ways', text: t('attention.waysUnset', { count: waysUnset }), action: t('attention.openUsers'),
-      target: { tab: 'access', section: 'users' } })
-  }
-  if (modelsBlocked > 0) {
-    counts.ai = modelsBlocked
-    items.push({ key: 'models', text: t('attention.modelsBlocked', { count: modelsBlocked }), action: t('attention.openModels'),
-      target: { tab: 'ai' } })
-  }
-  if (tokens > 0) {
-    counts.agents = tokens
-    items.push({ key: 'tokens', text: t('attention.tokensToReplace', { count: tokens }), action: t('attention.openConnections'),
-      target: { tab: 'agents', card: 'connections' } })
-  }
-  return { items, countOf: (tab) => counts[tab] ?? 0 }
+  const { paused, waysUnset, modelsBlocked, tokens } = useAttentionFacts(viewer, apiEndpoint !== '')
+  const list = paused.map((plugin) => copy(plugin).name).join(', ')
+  const candidates: readonly (AttentionItem & { readonly tab: AdminTabId; readonly count: number })[] = [
+    { tab: 'sources', count: paused.length, key: 'sources', text: t('attention.sourcesPaused', { count: paused.length, list }),
+      action: t('attention.reviewSources'), target: { tab: 'sources', section: 'plugins' } },
+    { tab: 'access', count: waysUnset, key: 'ways', text: t('attention.waysUnset', { count: waysUnset }),
+      action: t('attention.openUsers'), target: { tab: 'access', section: 'users' } },
+    { tab: 'ai', count: modelsBlocked, key: 'models', text: t('attention.modelsBlocked', { count: modelsBlocked }),
+      action: t('attention.openModels'), target: { tab: 'ai' } },
+    { tab: 'agents', count: tokens, key: 'tokens', text: t('attention.tokensToReplace', { count: tokens }),
+      action: t('attention.openConnections'), target: { tab: 'agents', card: 'connections' } },
+  ]
+  const shown = candidates.filter((candidate) => candidate.count > 0)
+  const counts = new Map(shown.map((candidate) => [candidate.tab, candidate.count]))
+  return { items: shown.map(({ tab: _tab, count: _count, ...item }) => item), countOf: (tab) => counts.get(tab) ?? 0 }
 }
-

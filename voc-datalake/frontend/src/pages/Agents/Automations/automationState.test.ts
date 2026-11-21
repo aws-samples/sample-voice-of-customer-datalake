@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { normalizeAgent } from '../../../api/agentsApi'
+import { parseConnection } from '../../../api/engineeringConnectionsApi'
 import { automationState, groupAutomations } from './automationState'
 import type { Agent } from '../../../api/agentsApi'
 import type { EngineeringConnection } from '../../../api/engineeringConnectionsApi'
@@ -19,12 +20,13 @@ function agentOf(extra: Record<string, unknown> = {}): Agent {
 
 const ENGINEERING = { engineering: { connection: 'storefront', language: 'python', feedback_type: 'bug' } }
 const NOT_SET_UP = { engineering: { connection: null, language: null, feedback_type: 'bug' } }
-const CONNECTION: EngineeringConnection = {
-  connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main',
-  credential: { kind: 'app', set: true, app_id: null, installation_id: null, expires_at: null },
-  created_at: null, created_by: null, updated_at: null, updated_by: null, version: 1, ci_attestation: null, repository_private: null,
-  kind: 'repository', public: null, fork: null,
-}
+/** A connection as the server answers it (the parser's defaults for every field the rules do not read). */
+const PARSED = parseConnection({
+  connection_id: 'storefront', host: 'github', repository: 'example-org/storefront', default_branch: 'main', version: 1,
+  credential: { kind: 'app', set: true },
+})
+if (PARSED === null) throw new Error('fixture connection does not parse')
+const CONNECTION: EngineeringConnection = PARSED
 const FACTS = { state: 'ready', connections: [CONNECTION], budget: 50 } as const
 const NO_CONNECTION = { state: 'ready', connections: [], budget: 50 } as const
 const LOADING = { state: 'loading', connections: [], budget: null } as const

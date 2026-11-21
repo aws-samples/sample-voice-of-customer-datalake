@@ -14,7 +14,7 @@ import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { libraryApi, libraryKeys, putLibraryFile } from '../../api/libraryApi'
 import type { LibraryCreateBody } from '../../api/libraryApi'
-import { checkFile, isSlug, parseTags, tagsProblem, titleFromFilename } from './libraryFormats'
+import { checkFile, isSlug, parseLibraryTags, tagsProblem, titleFromFilename } from './libraryFormats'
 import type { FileCheck } from './libraryFormats'
 import { libraryFailure } from './libraryErrors'
 import type { LibraryFailure } from './libraryErrors'
@@ -27,7 +27,7 @@ export interface DraftFields {
   readonly tags: string
 }
 
-export type UploadPhase = 'ready' | 'creating' | 'uploading' | 'finishing' | 'done' | 'failed'
+type UploadPhase = 'ready' | 'creating' | 'uploading' | 'finishing' | 'done' | 'failed'
 
 export interface UploadEntry {
   readonly key: string
@@ -46,7 +46,7 @@ export type FieldProblem = 'titleRequired' | 'badSlug' | 'tooManyTags' | 'tagToo
 export function fieldProblem(fields: DraftFields): FieldProblem | null {
   if (fields.title.trim() === '') return 'titleRequired'
   if (fields.slug.trim() !== '' && !isSlug(fields.slug.trim())) return 'badSlug'
-  const tags = tagsProblem(parseTags(fields.tags))
+  const tags = tagsProblem(parseLibraryTags(fields.tags))
   if (tags === 'tooMany') return 'tooManyTags'
   return tags === 'tooLong' ? 'tagTooLong' : null
 }
@@ -61,7 +61,7 @@ function createBody(entry: UploadEntry, contentType: string): LibraryCreateBody 
     ...(slug.trim() === '' ? {} : { slug: slug.trim() }),
     ...(source.trim() === '' ? {} : { source: source.trim() }),
     ...(docDate === '' ? {} : { doc_date: docDate }),
-    ...(tags.trim() === '' ? {} : { tags: parseTags(tags) }),
+    ...(tags.trim() === '' ? {} : { tags: parseLibraryTags(tags) }),
   }
 }
 
@@ -89,7 +89,7 @@ async function send(entry: UploadEntry, contentType: string, report: Report): Pr
 
 const NEXT_KEY = { value: 0 }
 
-export function newEntry(file: File): UploadEntry {
+function newEntry(file: File): UploadEntry {
   NEXT_KEY.value += 1
   return {
     key: `upload-${String(NEXT_KEY.value)}`, file, check: checkFile(file),

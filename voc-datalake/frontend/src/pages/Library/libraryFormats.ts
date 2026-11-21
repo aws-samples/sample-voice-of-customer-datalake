@@ -81,7 +81,7 @@ export function contentTypeOf(file: Pick<File, 'name' | 'type'>): string | null 
   return Object.hasOwn(LIBRARY_FORMATS, declared) ? declared : null
 }
 
-export const isImageType = (contentType: string): boolean => contentType.startsWith('image/')
+const isImageType = (contentType: string): boolean => contentType.startsWith('image/')
 
 /** Why a file cannot be uploaded, or what it is. */
 export type FileCheck =
@@ -105,7 +105,7 @@ export function titleFromFilename(name: string): string {
 }
 
 /** `Q3 Market Report` → `q3-market-report` (= library_store.py `slugify`): the short name the server makes. */
-export function slugify(text: string): string {
+export function librarySlug(text: string): string {
   // NFKD, then only ASCII is kept (Python's `encode('ascii', 'ignore')`): `é` reads as `e`, `日本` as nothing.
   const plain = text.normalize('NFKD').replaceAll(/[^ -~]/g, '').toLowerCase()
   // Runs of anything else are one hyphen, so each end holds at most one.
@@ -123,7 +123,7 @@ export const MAX_TAGS = 10
 export const MAX_TAG_CHARS = 40
 
 /** Tags typed as `market, q3 report` → `['market', 'q3 report']`: trimmed, spaces collapsed, lower case, no repeats. */
-export function parseTags(text: string): string[] {
+export function parseLibraryTags(text: string): string[] {
   const tags = text.split(',').map((tag) => tag.replaceAll(/\s+/g, ' ').trim().toLowerCase()).filter((tag) => tag !== '')
   return [...new Set(tags)]
 }

@@ -104,7 +104,7 @@ describe('the fine-grained tokens to replace (7.60.00)', () => {
     list.mockResolvedValue([])
     listConnections.mockResolvedValue({ limit: 50, connections: [tokenConnection('c-fine', 'partner-org/docs', 60)] })
     renderTab()
-    await waitFor(() => { expect(listConnections).toHaveBeenCalled() })
+    await waitFor(() => { expect(listConnections).toHaveBeenCalledWith() })
     expect(screen.queryByTestId('tokens-to-replace')).not.toBeInTheDocument()
   })
 })

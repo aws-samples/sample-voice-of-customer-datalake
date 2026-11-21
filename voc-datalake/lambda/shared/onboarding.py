@@ -51,7 +51,7 @@ Signals (read-only, two single-item reads):
 Data-layer only; the routes live in ``settings_handler.py``.
 """
 from datetime import UTC, datetime, timedelta
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from boto3.dynamodb.conditions import Key
 
@@ -60,6 +60,9 @@ from shared.company_context import user_context_pk
 from shared.earliest_date import EARLIEST_DATE_KEY, earliest_date_from_item
 from shared.exceptions import ValidationError
 from shared.request_body import require_known_change
+
+if TYPE_CHECKING:
+    from shared.ws_repo import WorkspaceScope
 
 ONBOARDING_SK: Final = 'onboarding'
 STATES: Final = ('active', 'hidden', 'dismissed', 'skipped')
@@ -76,6 +79,13 @@ FEEDBACK_FORM_PK: Final = 'FEEDBACK_FORM'
 _CHOICES: Final = {'state': STATES, 'start_page': START_PAGES, 'guide': GUIDES, 'subscribe_prompt': SUBSCRIBE_PROMPTS}
 _DISMISS_RUN: Final = 'dismiss_decision_run'
 _FIELDS: Final = (*_CHOICES, _DISMISS_RUN)
+
+
+def forms_partition(scope: 'WorkspaceScope | None') -> str:
+    """The feedback form configs' partition: ``FEEDBACK_FORM_PK``, or ``scope``'s workspace's ``WS#{ws}#FEEDBACK_FORM``
+    (None: the deployment's). The one rule of the forms API (lambda/api/feedback_form_handler.py) and the forms' AI
+    routes (shared/forms_v2_draft_routes.py, shared/forms_report_routes.py)."""
+    return scope.key(FEEDBACK_FORM_PK) if scope is not None else FEEDBACK_FORM_PK
 
 
 def _choice(body: dict, name: str, allowed: tuple[str, ...]) -> str:

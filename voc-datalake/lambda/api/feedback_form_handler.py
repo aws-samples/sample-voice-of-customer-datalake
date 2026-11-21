@@ -85,7 +85,7 @@ from shared.forms_v2_segments import (
     segment_results,
 )
 from shared.ingest_tables import table_view
-from shared.onboarding import FEEDBACK_FORM_PK
+from shared.onboarding import forms_partition as _forms_partition
 from shared.project_gate import caller_from_event
 from shared.request_workspace import require_settings_admin
 from shared.scoped_query import SortRange, iter_partition, query_partition
@@ -155,12 +155,6 @@ def _forms_table() -> 'Table':
     if aggregates_table is None:
         raise ConfigurationError('AGGREGATES_TABLE not configured')
     return aggregates_table
-
-
-def _forms_partition(scope: WorkspaceScope | None) -> str:
-    """The partition of the form configs: ``FEEDBACK_FORM`` (shared/onboarding.py ``FEEDBACK_FORM_PK``, its one
-    home), or a workspace's ``WS#{ws}#FEEDBACK_FORM``."""
-    return scope.key(FEEDBACK_FORM_PK) if scope is not None else FEEDBACK_FORM_PK
 
 
 def _form_key(form_id: str, scope: WorkspaceScope | None = None) -> dict[str, str]:
