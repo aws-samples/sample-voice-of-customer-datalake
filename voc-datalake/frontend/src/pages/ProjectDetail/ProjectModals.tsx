@@ -16,6 +16,8 @@ interface PersonaEditModalWrapperProps {
   readonly onChange: (p: ProjectPersona | null) => void
   readonly onSave: () => Promise<unknown>
   readonly onClose: () => void
+  /** The persona's voice is editable (a project persona with `features.voice`, 7.69.00). */
+  readonly showVoice?: boolean
 }
 
 export function PersonaEditModalWrapper({
@@ -24,6 +26,7 @@ export function PersonaEditModalWrapper({
   onChange,
   onSave,
   onClose,
+  showVoice,
 }: PersonaEditModalWrapperProps) {
   if (!editingPersona) return null
 
@@ -34,6 +37,7 @@ export function PersonaEditModalWrapper({
       onSave={onSave}
       onClose={onClose}
       isSaving={isSaving}
+      showVoice={showVoice}
     />
   )
 }

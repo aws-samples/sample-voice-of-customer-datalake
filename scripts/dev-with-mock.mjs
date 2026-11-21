@@ -10,6 +10,8 @@
  * - Extra arguments go to Vite: `npm run dev -- --port 5191`.
  * - Vite gets VITE_ENABLE_WORKSPACE_DELETE=true (Workspace settings offers "Delete workspace", which the mock
  *   serves) unless the environment sets it: `VITE_ENABLE_WORKSPACE_DELETE=false npm run dev` hides it.
+ * - Vite gets VITE_ENABLE_VOICE=true too (a persona offers Talk, and the mock plays a fake voice session over its own
+ *   WebSocket, frontend/mock-voice.js) unless the environment sets it: `VITE_ENABLE_VOICE=false npm run dev` hides it.
  *
  * Stdlib only, so it adds no dependency.
  */
@@ -41,7 +43,11 @@ function stopAll(code) {
 }
 
 /** The mock serves features a deployment turns on by flag; the dev server offers them unless the environment says otherwise. */
-const DEV_ENV = { ...process.env, VITE_ENABLE_WORKSPACE_DELETE: process.env.VITE_ENABLE_WORKSPACE_DELETE ?? 'true' }
+const DEV_ENV = {
+  ...process.env,
+  VITE_ENABLE_WORKSPACE_DELETE: process.env.VITE_ENABLE_WORKSPACE_DELETE ?? 'true',
+  VITE_ENABLE_VOICE: process.env.VITE_ENABLE_VOICE ?? 'true',
+}
 
 function start(label, args) {
   const child = spawn(NPM, args, { cwd: FRONTEND_DIR, stdio: 'inherit', env: DEV_ENV })

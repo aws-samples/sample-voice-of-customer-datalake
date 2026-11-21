@@ -1180,5 +1180,19 @@
       "notFound": "该表单已不在此工作区中。",
       "saveFailed": "无法保存应用内反馈设置。"
     }
+  },
+  "voiceUsage": {
+    "title": "语音画像",
+    "intro": "整个部署中与画像对话所用的语音时长（月份 {{month}}）。音频绝不会被存储。",
+    "loading": "正在加载语音用量…",
+    "failed": "无法加载语音用量。",
+    "minutes": "已用分钟数",
+    "ofTotal": "{{used}} / {{total}}",
+    "sessions": "本月会话数",
+    "cost": "估计费用",
+    "live": "当前进行中",
+    "sessionMinutes": "最长会话（分钟）",
+    "dailySessions": "每人每天会话数",
+    "model": "模型"
   }
 }

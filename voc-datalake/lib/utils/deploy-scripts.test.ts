@@ -192,7 +192,8 @@ describe('frontend/scripts/update-env.sh', () => {
     ]
       // Local-only escape hatches have no CloudFormation output to read from.
       .filter((name) => name === undefined
-        || !['VITE_ENABLE_WEB_SEARCH', 'VITE_ENABLE_ENGINEERING', 'VITE_ENABLE_WORKSPACE_DELETE'].includes(name));
+        || !['VITE_ENABLE_WEB_SEARCH', 'VITE_ENABLE_ENGINEERING', 'VITE_ENABLE_WORKSPACE_DELETE',
+          'VITE_ENABLE_VOICE'].includes(name));
     expect(required.length, 'expected runtimeConfig.ts to read VITE_ vars').toBeGreaterThan(0);
 
     const written = new Set(

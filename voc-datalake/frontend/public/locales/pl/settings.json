@@ -1250,5 +1250,19 @@
       "notFound": "Tego formularza nie ma już w tym obszarze roboczym.",
       "saveFailed": "Nie udało się zapisać ustawień opinii w aplikacji."
     }
+  },
+  "voiceUsage": {
+    "title": "Persony głosowe",
+    "intro": "Minuty głosowe wykorzystane na rozmowy z personami w całym wdrożeniu (miesiąc {{month}}). Dźwięk nigdy nie jest przechowywany.",
+    "loading": "Wczytywanie wykorzystania głosu…",
+    "failed": "Nie udało się wczytać wykorzystania głosu.",
+    "minutes": "Wykorzystane minuty",
+    "ofTotal": "{{used}} z {{total}}",
+    "sessions": "Sesje w tym miesiącu",
+    "cost": "Szacowany koszt",
+    "live": "Teraz na żywo",
+    "sessionMinutes": "Najdłuższa sesja (min)",
+    "dailySessions": "Sesje na osobę dziennie",
+    "model": "Model głosowy"
   }
 }

@@ -45,6 +45,7 @@ import { createEngagementLambdas } from './api-engagement-lambdas';
 import { engineeringAgentsEnabled } from './engineering-broker';
 import { wireGitHubAppWebhook } from './engineering-app-tokens';
 import { workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
+import { addVoiceAvailableOutput, voiceFeature } from './api-voice-sessions';
 import { createVerificationFixtureProvider } from './api-fixture-provider';
 import { createApiGateway, restApiBaseUrl } from './api-gateway';
 import { createJobLambdas } from './api-job-lambdas';
@@ -134,6 +135,8 @@ export interface VocApiStackProps extends VocStackProps {
   /** memory-extract queue — the memory API enqueues page imports onto it. */
   memoryExtractQueueUrl: string;
   memoryExtractQueueArn: string;
+  /** The voice personas' relay runtime (VocProcessingStack, only with -c voicePersonas=true; voice-relay.ts). */
+  voiceRuntimeArn?: string;
   // Web search (AgentCore Gateway) — absent when the feature isn't deployed
   // (non-us-east-1 regions or enableWebSearch=false).
   webSearchGatewayUrl?: string;
@@ -435,6 +438,8 @@ export class VocApiStack extends VocStack {
         engineering: engineeringAgentsEnabled(this),
         // A workspace's hard delete (-c workspaceHardDelete=true): Workspace settings offers "Delete workspace" only then.
         workspaceDelete: workspaceHardDeleteEnabled(this),
+        // Talk to the personas by voice (-c voicePersonas=true, 7.69.00): a persona offers Talk only then.
+        ...voiceFeature(this),
       },
       // The board pool (/board and /review): its ids and how it emails sign-in codes.
       ...boardRuntimeConfig(props, emailSenderOf(this.node) !== undefined),
@@ -505,6 +510,8 @@ export class VocApiStack extends VocStack {
         description: 'A workspace can be hard deleted (drives the frontend features.workspaceDelete flag)',
       });
     }
+    // Only with -c voicePersonas=true (deploy.sh reads a missing output as false).
+    addVoiceAvailableOutput(this);
   }
 
   // ============================================

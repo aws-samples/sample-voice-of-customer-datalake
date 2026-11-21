@@ -43,7 +43,8 @@ HANDLER_SOURCE = Path(__file__).resolve().parent.parent / 'projects_handler.py'
 # Routers projects_handler includes that serve /projects/{id}/... routes: the gate covers them too.
 _SHARED_DIR = Path(__file__).resolve().parents[2] / 'shared'
 ROUTER_SOURCES = (_SHARED_DIR / 'document_review_routes.py', _SHARED_DIR / 'persona_copy_routes.py',
-                  _SHARED_DIR / 'persona_grounding_routes.py', _SHARED_DIR / 'project_validation_routes.py')
+                  _SHARED_DIR / 'persona_grounding_routes.py', _SHARED_DIR / 'project_validation_routes.py',
+                  _SHARED_DIR / 'voice_session_routes.py')
 _ROUTE_PATTERN = re.compile(r'@app\.(get|post|put|patch|delete)\(\s*"([^"]+)"')
 
 

@@ -34,6 +34,8 @@ WRITERS: Final = frozenset({
     'lambda/shared/persona_grounding.py',
     # 7.68.00: the Validate step's META block and its plan, run and report documents.
     'lambda/shared/project_validation.py', 'lambda/shared/project_validation_routes.py',
+    # 7.69.00: a voice session's pointer under its project (and its own VOICE# row), and its persona_interview document.
+    'lambda/shared/voice_sessions.py', 'lambda/shared/voice_transcripts.py',
 })
 #: Modules that name a project's keys and write, but none of its own rows: each has its own export allowlist or none.
 NOT_PROJECT_ROW_WRITERS: Final = {
@@ -47,6 +49,7 @@ NOT_PROJECT_ROW_WRITERS: Final = {
     'lambda/jobs/workspace_delete/handler.py': "the hard delete's job row and audit rows",
     'lambda/jobs/workspace_export/projects.py': 'the export itself: reads only (its cursor keys look like writes)',
     'lambda/shared/assist_jobs.py': 'assist job rows in voc-jobs (left out of project_jobs)',
+    'lambda/shared/voice_session_routes.py': "a voice session's transcript job, an assist job row (keys only)",
     'lambda/shared/ws_repo.py': "the workspace layer: a project id's claim and a link's routing row",
     'lambda/jobs/retention/lineage.py': ("an erasure's marks: rewrites a row's id lists and its erased_evidence, both "
                                          'classified, adds none (its cursor keys look like writes)'),

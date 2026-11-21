@@ -32,6 +32,8 @@ import NoEvidenceNote from './NoEvidenceNote'
 import { PromotePersonaButton, PromoteStatus } from './PromotePersonaButton'
 import { usePromotePersona } from './usePromotePersona'
 import { useIsAdmin } from '../../store/authStore'
+import { isVoiceAvailable } from '../../runtimeConfig'
+import VoiceTalkButton from './voice/VoiceTalkButton'
 import type { PersonaScope } from './personaScope'
 import { PersonaProtectStatus, PersonaProtectToggle } from './PersonaProtectToggle'
 import MicroFeedback from '../../components/MicroFeedback/MicroFeedback'
@@ -117,6 +119,7 @@ export default function PersonaDetailView({
           <PersonaHeaderIdentity persona={persona} shown={shown} protection={protection} scope={scope} canEdit={canEdit} />
           <div className="flex items-center gap-1 self-end sm:self-start">
             <PersonaExportMenu persona={persona} />
+            <PersonaVoiceTalk scope={scope} persona={persona} canEdit={canEdit} />
             {canEdit ? (
               <>
                 {canPromote ? <PromotePersonaButton promote={promote} /> : null}
@@ -175,6 +178,12 @@ export default function PersonaDetailView({
       </div>
     </div>
   )
+}
+
+/** Talk by voice (7.69.00): a project's persona, for an editor, on a deployment with `features.voice`; never in the library. */
+function PersonaVoiceTalk({ scope, persona, canEdit }: Readonly<{ scope: PersonaScope; persona: ProjectPersona; canEdit: boolean }>) {
+  if (!canEdit || scope.kind !== 'project' || !isVoiceAvailable()) return null
+  return <VoiceTalkButton projectId={scope.projectId} personaId={persona.persona_id} name={persona.name} />
 }
 
 /** In-app micro-feedback (7.66.00) on a persona the project generated: never one imported or copied, nor in the library. */

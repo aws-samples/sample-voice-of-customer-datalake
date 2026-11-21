@@ -25,6 +25,7 @@ const SECTION_OF_TYPE: Readonly<Record<string, DocumentSection>> = {
   product_report: 'documents',
   decision: 'documents',
   focus_group: 'documents',
+  persona_interview: 'documents',
 };
 
 const SECTIONS: ReadonlySet<string> = new Set(SECTION_ORDER);

@@ -9,6 +9,7 @@ import { VocCoreStack } from '../lib/stacks/core-stack';
 import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
+import { addVoiceRelay } from '../lib/stacks/voice-relay';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
 import {
   AnthropicUseCaseSchema, AnthropicUseCaseConfig, BedrockModelAgreements, ModelAgreementRetrySchema,
@@ -274,6 +275,12 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
 processingStack.addStackDependency(coreStack);
 processingStack.addStackDependency(ingestionStack);
 tagStack(processingStack, 'Processing');
+// The voice personas' relay (-c voicePersonas=true, lib/stacks/voice-relay.ts): an AgentCore Runtime in
+// VocProcessingStack, whose ARN VocApiStack's projects API presigns its URLs for. Nothing without the flag.
+const voiceRuntimeArn = addVoiceRelay(processingStack, {
+  deploymentPrefix, projectsTable: coreStack.projectsTable, aggregatesTable: coreStack.aggregatesTable,
+  rawDataBucket: coreStack.rawDataBucket, kmsKey: coreStack.kmsKey,
+});
 
 // ============================================
 // Stack 4: VocApiStack
@@ -323,6 +330,7 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   agentRunStateMachine: processingStack.agentRunStateMachine,
   memoryExtractQueueUrl: processingStack.memoryExtractQueue.queueUrl,
   memoryExtractQueueArn: processingStack.memoryExtractQueue.queueArn,
+  voiceRuntimeArn,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,
   webSearchGatewayArn: webSearchStack?.gatewayArn,
   webSearchToolName: webSearchStack?.toolName,

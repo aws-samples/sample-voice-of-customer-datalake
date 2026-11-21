@@ -157,6 +157,7 @@ from shared.s3_versions import delete_every_version, delete_every_version_of_key
 from shared.scoped_keys import scoped_object_key
 from shared.tables import get_aggregates_table, get_feedback_table, get_jobs_table, get_projects_table
 from shared.timestamps import now_iso
+from shared.voice_sessions import session_keys_of_pointers, validated_voice_id
 from shared.ws_repo import OUTSIDE_ENTRY_INDEX, WorkspaceScope
 
 # The instructions "Copy to Kiro" on a document pastes ahead of that document.
@@ -1471,8 +1472,10 @@ def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -
     # erasure lists a deleted project's product documents folder as not checked, since objects may outlive it.
     _sweep_project_objects(project_id, persona_ids)
 
+    # A voice session's own row (VOICE#<session>, 7.69.00) goes with the project's pointer to it; its scratch files
+    # expire by themselves within 2 days (shared/voice_sessions.py).
     with projects_table.batch_writer() as batch:
-        for key in keys:
+        for key in [*keys, *session_keys_of_pointers(keys)]:
             batch.delete_item(Key=key)
 
     with projects_table.batch_writer() as batch:
@@ -3567,8 +3570,11 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
         'name', 'tagline', 'confidence',
         'identity', 'goals_motivations', 'pain_points', 'behaviors',
         'context_environment', 'quotes', 'scenario', 'research_notes',
-        'avatar_url', 'avatar_prompt',
+        'avatar_url', 'avatar_prompt', 'voice_id',
     ]
+    # The voice it speaks with in a voice session (7.69.00): one of the model's voices, or null for its default.
+    if 'voice_id' in body:
+        body['voice_id'] = validated_voice_id(body['voice_id'])
 
     for field in updatable_fields:
         if field in body:

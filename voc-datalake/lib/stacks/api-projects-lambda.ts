@@ -15,6 +15,7 @@ import { embeddingModelArn } from '../utils/model-allowlist';
 import { grantWorkspaceObjects } from '../utils/workspace-object-deletes';
 import { grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
 import { WORKSPACE_LIBRARY_PREFIX } from './core-buckets';
+import { grantVoiceSessions } from './api-voice-sessions';
 import {
   ASSIST_WORKER_ENV, PROJECTS_ASSIST_FUNCTION_BASE_NAME, assistWorkerName, createAssistWorker, grantAssistWorkerInvoke,
 } from './api-assist-workers';
@@ -75,8 +76,11 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   // statement (lib/utils/workspace-object-deletes.ts).
   // The Documents Library's objects (7.62.00): the deployment's library/ and one workspace id's ws/{id}/library/ (the
   // presigned PUT and GET, the extracted text, every version of a deleted item; lambda/shared/library_objects.py).
+  // With -c voicePersonas=true (7.69.00, api-voice-sessions.ts): a voice session's scratch files, and the relay's
+  // presign and stop grants; nothing without it.
+  const voice = grantVoiceSessions(ctx, projectsRole);
   grantWorkspaceObjects(rawDataBucket, projectsRole, ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*',
-    'library/*', `${WORKSPACE_LIBRARY_PREFIX}*`]);
+    'library/*', `${WORKSPACE_LIBRARY_PREFIX}*`, ...voice.objectGlobs]);
   // Signs the avatar and prototype URLs returned by GET /projects/{id}.
   // Explicit statement rather than secret.grantRead(): that adds a KMS
   // key-policy entry naming this role, and the key lives in CoreStack, so it
@@ -145,6 +149,7 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
       LOG_LEVEL: 'INFO',
       [ASSIST_WORKER_ENV]: projectsWorkerName,
       ...libraryWorkspaceEnv,
+      ...voice.environment,
       // The release this function runs (7.48.00): the review registries' backfill reads it (with the operator's own
       // credentials) and writes its marker only once every writer of links, threads and projects runs 7.48.0 or later.
       APP_VERSION: appVersion(),

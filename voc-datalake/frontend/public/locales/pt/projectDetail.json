@@ -236,7 +236,8 @@
       "cancel": "Cancelar",
       "outlineNote": "O {{type}} abre aqui com a sua estrutura, para você escrever nele."
     },
-    "syntheticRunNotice": "Uma execução de validação sintética: personas experimentaram as telas do protótipo. Seus veredictos são hipóteses a testar com testadores reais, nunca feedback de clientes, e nunca contam para um critério ser atingido."
+    "syntheticRunNotice": "Uma execução de validação sintética: personas experimentaram as telas do protótipo. Seus veredictos são hipóteses a testar com testadores reais, nunca feedback de clientes, e nunca contam para um critério ser atingido.",
+    "interviewSyntheticNotice": "Uma entrevista por voz com uma persona sintética: as respostas são hipóteses a testar, nunca feedback de clientes nem evidência. Só as avaliações que ela cita são reais, e o áudio nunca foi armazenado."
   },
   "imageErrors": {
     "tooLarge": "{{name}} continua muito grande depois do redimensionamento. Tente uma captura menor ou recorte-a.",
@@ -416,7 +417,14 @@
     "workarounds": "Soluções Alternativas (uma por linha)",
     "workaroundsPlaceholder": "Como eles lidam atualmente...",
     "locationPlaceholder": "Urbano, BR",
-    "occupationPlaceholder": "Gerente de produto"
+    "occupationPlaceholder": "Gerente de produto",
+    "voice": "Voz ao falar com esta persona",
+    "voiceDefault": "Padrão (escolhida para esta persona)",
+    "voiceHelp": "Nunca escolhida pelo nome ou pela origem da persona. Tiffany e Matthew falam todos os idiomas suportados; as outras vozes, só o próprio.",
+    "voiceOption": "{{name}} ({{gender}}, {{speaks}})",
+    "voiceFeminine": "feminina",
+    "voiceMasculine": "masculina",
+    "voiceEveryLanguage": "todos os idiomas"
   },
   "personas": {
     "evidence": {
@@ -962,6 +970,78 @@
       "writing": "Escrevendo o relatório…",
       "open": "Abrir o relatório",
       "decide": "Criar decisão"
+    }
+  },
+  "voice": {
+    "talk": "Falar",
+    "talkTo": "Falar com {{name}} por voz",
+    "consent": {
+      "title": "Falar com {{name}}",
+      "transcript": "A transcrição da conversa é guardada como documento deste projeto. O áudio nunca é armazenado.",
+      "synthetic": "{{name}} fala com uma voz sintética: uma persona de IA criada a partir de avaliações reais de clientes, não um cliente. O que ela diz é uma hipótese a testar, nunca feedback.",
+      "budget": "Minutos de voz restantes neste mês: {{minutes}}. Uma sessão dura no máximo {{session}} min e custa cerca de {{cost}} por minuto.",
+      "sessionsToday": "Sessões que você ainda pode iniciar hoje: {{left}}",
+      "language": "A voz ainda não fala o idioma da sua interface. Fale em {{supported}} e a persona acompanha você.",
+      "headphones": "Use fones de ouvido para que a persona não ouça a si mesma.",
+      "agree": "Entendi e concordo que a transcrição seja guardada",
+      "start": "Começar a falar",
+      "starting": "Iniciando…",
+      "cancel": "Cancelar",
+      "loading": "Verificando os minutos de voz restantes…",
+      "loadFailed": "Não foi possível verificar se a voz está disponível. Tente novamente.",
+      "off": "A voz não está ativada nesta implantação.",
+      "noMinutes": "Os minutos de voz deste mês acabaram.",
+      "noSessions": "Você usou todas as sessões de voz de hoje.",
+      "errors": {
+        "microphone": "Não foi possível usar o microfone. Permita-o para este site no seu navegador e tente novamente.",
+        "rateLimited": "Várias sessões foram iniciadas no último minuto. Aguarde um momento e tente novamente.",
+        "dailyLimit": "Você usou todas as sessões de voz de hoje.",
+        "busy": "A voz está ocupada: há conversas demais em andamento. Tente novamente em alguns minutos.",
+        "budgetExhausted": "Os minutos de voz deste mês acabaram.",
+        "voiceOff": "A voz não está ativada nesta implantação.",
+        "generic": "Não foi possível iniciar a sessão. Tente novamente."
+      }
+    },
+    "session": {
+      "title": "Conversando com {{name}}",
+      "synthetic": "Voz sintética",
+      "syntheticNote": "Uma persona de IA que fala a partir de avaliações reais, não um cliente. Nada do que ela diz vira feedback, e o áudio nunca é armazenado.",
+      "connecting": "Conectando…",
+      "live": "Ao vivo: fale quando quiser e interrompa a persona a qualquer momento.",
+      "ending": "Encerrando a sessão…",
+      "you": "Você",
+      "interrupted": "interrompida",
+      "captions": "Legendas ao vivo",
+      "noCaptions": "As legendas dos dois lados aparecem aqui.",
+      "micLevel": "Nível do microfone",
+      "time": "Tempo:",
+      "cost": "Custo até agora:",
+      "minutesLeft": "Minutos restantes neste mês:",
+      "end": "Encerrar",
+      "close": "Fechar",
+      "notice": {
+        "timeAlmostUp": "Resta um minuto nesta sessão.",
+        "budgetAlmostUp": "Os minutos de voz deste mês estão quase no fim.",
+        "wrappingUp": "O tempo acabou: a persona está se despedindo."
+      },
+      "ended": {
+        "byPerson": "Você encerrou a sessão.",
+        "sessionLimit": "A sessão atingiu o limite de tempo.",
+        "budget": "Os minutos de voz deste mês acabaram.",
+        "busy": "A voz está ocupada agora. Tente novamente em alguns minutos.",
+        "error": "A sessão parou por causa de um erro.",
+        "disconnected": "A conexão foi perdida.",
+        "refused": "O link da sessão expirou ou já foi usado. Inicie uma nova sessão."
+      },
+      "filing": "Arquivando a transcrição…",
+      "filed": "A transcrição foi salva como documento deste projeto.",
+      "filedFailed": "Não foi possível arquivar a transcrição.",
+      "endFailed": "Não foi possível registrar o fim da sessão, por isso a transcrição não foi arquivada.",
+      "openTranscript": "Abrir transcrição",
+      "saveToLibrary": "Salvar na Biblioteca",
+      "savingToLibrary": "Salvando na Biblioteca…",
+      "savedToLibrary": "Salvo na Biblioteca.",
+      "libraryFailed": "Não foi possível salvar na Biblioteca."
     }
   }
 }

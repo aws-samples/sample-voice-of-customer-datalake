@@ -171,42 +171,27 @@ describe('isWebSearchAvailable', () => {
     expect(isWebSearchAvailable()).toBe(true)
   })
 
-  it('reads features.engineering only as true, and VITE_ENABLE_ENGINEERING on the mock-only path', async () => {
+  it.each([
+    ['engineering', 'isEngineeringAvailable', 'VITE_ENABLE_ENGINEERING'],
+    ['workspaceDelete', 'isWorkspaceDeleteAvailable', 'VITE_ENABLE_WORKSPACE_DELETE'],
+    ['voice', 'isVoiceAvailable', 'VITE_ENABLE_VOICE'],
+  ] as const)('reads features.%s only as true (%s), and %s on the mock-only path', async (flag, reader, envName) => {
     const answers = []
-    for (const features of [{ engineering: true }, { engineering: false }, undefined]) {
+    for (const features of [{ [flag]: true }, { [flag]: false }, undefined]) {
       vi.resetModules()
       stubConfigJson(features === undefined ? baseConfig : { ...baseConfig, features })
-      const { loadRuntimeConfig, isEngineeringAvailable } = await import('./runtimeConfig')
-      answers.push(isEngineeringAvailable())   // (before the config loads)
-      await loadRuntimeConfig()
-      answers.push(isEngineeringAvailable())
+      const module = await import('./runtimeConfig')
+      answers.push(module[reader]())   // (before the config loads)
+      await module.loadRuntimeConfig()
+      answers.push(module[reader]())
     }
     expect(answers).toStrictEqual([false, true, false, false, false, false])
     vi.resetModules()
-    vi.stubEnv('VITE_ENABLE_ENGINEERING', 'true')
+    vi.stubEnv(envName, 'true')
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
-    const { loadRuntimeConfig, isEngineeringAvailable } = await import('./runtimeConfig')
-    await loadRuntimeConfig()
-    expect(isEngineeringAvailable()).toBe(true)
-  })
-
-  it('reads features.workspaceDelete only as true, and VITE_ENABLE_WORKSPACE_DELETE on the mock-only path', async () => {
-    const answers = []
-    for (const features of [{ workspaceDelete: true }, { workspaceDelete: false }, undefined]) {
-      vi.resetModules()
-      stubConfigJson(features === undefined ? baseConfig : { ...baseConfig, features })
-      const { loadRuntimeConfig, isWorkspaceDeleteAvailable } = await import('./runtimeConfig')
-      answers.push(isWorkspaceDeleteAvailable())   // (before the config loads)
-      await loadRuntimeConfig()
-      answers.push(isWorkspaceDeleteAvailable())
-    }
-    expect(answers).toStrictEqual([false, true, false, false, false, false])
-    vi.resetModules()
-    vi.stubEnv('VITE_ENABLE_WORKSPACE_DELETE', 'true')
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
-    const { loadRuntimeConfig, isWorkspaceDeleteAvailable } = await import('./runtimeConfig')
-    await loadRuntimeConfig()
-    expect(isWorkspaceDeleteAvailable()).toBe(true)
+    const module = await import('./runtimeConfig')
+    await module.loadRuntimeConfig()
+    expect(module[reader]()).toBe(true)
   })
 })
 

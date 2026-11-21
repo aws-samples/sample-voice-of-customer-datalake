@@ -15,7 +15,7 @@ calls ``remember_request`` with the model id and the tier as sent. The line has 
 Converse reads the response's ``usage``; InvokeModel the ``x-amzn-bedrock-*-token-count`` headers. A response that
 cannot be read logs ``bedrock_usage_unreadable`` with the operation and the reason; logging never raises into the
 caller. Not metered here: ConverseStream (no Python code streams; the streaming assistant is the TypeScript stream
-Lambda) and the image clients of shared/avatar.py and shared/image_model_status.py (an image is priced per image, a
+Lambda); a voice session's stream is logged by ``log_stream_usage`` from the relay's meter and the image clients of shared/avatar.py and shared/image_model_status.py (an image is priced per image, a
 follow-up).
 
 ATTRIBUTION. The call's workspace is this context's ``attribute`` value, set only where a workspace resolves:
@@ -183,6 +183,19 @@ def _emit(base: Mapping[str, Any], answered_tier: object, tokens: Mapping[str, i
     if isinstance(answered_tier, str) and answered_tier:
         line['service_tier'] = answered_tier
     logger.info(USAGE_LINE, extra={field: line[field] for field in USAGE_FIELDS})
+
+
+def log_stream_usage(model_id: str, operation: str, *, input_tokens: int, output_tokens: int) -> None:
+    """The usage line of a call metered by its caller from the stream's own usage events, not by the botocore hook: a
+    voice session's Nova Sonic stream, which the relay holds (shared/voice_transcripts.py logs it when the session's
+    transcript is saved). Counted to this context's attribution, as every line. Never raises."""
+    try:
+        _emit({'workspace_id': current_attribution(), 'model_id': model_id, 'operation': operation,
+               'service_tier': DEFAULT_TIER}, None, {
+            'input_tokens': _count(input_tokens), 'output_tokens': _count(output_tokens),
+            'cache_read_tokens': 0, 'cache_write_tokens': 0})
+    except Exception as error:  # noqa: BLE001 - counting a call must never fail its caller
+        _unreadable(operation, error)
 
 
 def _unreadable(operation: str, error: BaseException) -> None:

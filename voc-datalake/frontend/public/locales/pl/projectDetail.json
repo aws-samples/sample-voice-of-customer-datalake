@@ -250,7 +250,8 @@
       "cancel": "Anuluj",
       "outlineNote": "{{type}} otworzy się tutaj ze swoim konspektem, abyś mógł w nim pisać."
     },
-    "syntheticRunNotice": "Syntetyczny przebieg walidacji: persony wypróbowały ekrany prototypu. Ich werdykty to hipotezy do sprawdzenia z prawdziwymi testerami, nigdy opinie klientów, i nigdy nie liczą się do spełnienia kryterium."
+    "syntheticRunNotice": "Syntetyczny przebieg walidacji: persony wypróbowały ekrany prototypu. Ich werdykty to hipotezy do sprawdzenia z prawdziwymi testerami, nigdy opinie klientów, i nigdy nie liczą się do spełnienia kryterium.",
+    "interviewSyntheticNotice": "Wywiad głosowy z syntetyczną personą: jej odpowiedzi to hipotezy do sprawdzenia, nigdy opinie klientów ani dowody. Prawdziwe są tylko cytowane opinie, a dźwięk nigdy nie był przechowywany."
   },
   "imageErrors": {
     "tooLarge": "{{name}} jest nadal zbyt duży po zmianie rozmiaru. Spróbuj mniejszego zrzutu ekranu lub przytnij go.",
@@ -436,7 +437,14 @@
     "workarounds": "Obejścia (jedno na wiersz)",
     "workaroundsPlaceholder": "Jak radzą sobie obecnie...",
     "locationPlaceholder": "Miasto, USA",
-    "occupationPlaceholder": "Menedżer produktu"
+    "occupationPlaceholder": "Menedżer produktu",
+    "voice": "Głos podczas rozmowy z tą personą",
+    "voiceDefault": "Domyślny (wybrany dla tej persony)",
+    "voiceHelp": "Nigdy nie jest wybierany na podstawie imienia ani pochodzenia persony. Tiffany i Matthew mówią we wszystkich obsługiwanych językach, pozostałe głosy tylko we własnym.",
+    "voiceOption": "{{name}} ({{gender}}, {{speaks}})",
+    "voiceFeminine": "żeński",
+    "voiceMasculine": "męski",
+    "voiceEveryLanguage": "wszystkie języki"
   },
   "personas": {
     "evidence": {
@@ -1012,6 +1020,78 @@
       "writing": "Pisanie raportu…",
       "open": "Otwórz raport",
       "decide": "Utwórz decyzję"
+    }
+  },
+  "voice": {
+    "talk": "Rozmawiaj",
+    "talkTo": "Porozmawiaj głosowo z {{name}}",
+    "consent": {
+      "title": "Rozmowa z {{name}}",
+      "transcript": "Transkrypcja rozmowy zostaje zapisana jako dokument tego projektu. Nagranie dźwięku nigdy nie jest przechowywane.",
+      "synthetic": "{{name}} mówi syntetycznym głosem: to persona AI zbudowana z prawdziwych opinii klientów, a nie klient. To, co mówi, jest hipotezą do sprawdzenia, nigdy opinią klienta.",
+      "budget": "Pozostałe minuty głosowe w tym miesiącu: {{minutes}}. Jedna sesja trwa najwyżej {{session}} min i kosztuje około {{cost}} za minutę.",
+      "sessionsToday": "Sesje, które możesz jeszcze dziś rozpocząć: {{left}}",
+      "language": "Głos nie obsługuje jeszcze języka Twojego interfejsu. Mów w języku: {{supported}}, a persona będzie odpowiadać w tym samym.",
+      "headphones": "Użyj słuchawek, aby persona nie słyszała samej siebie.",
+      "agree": "Rozumiem i zgadzam się na zapisanie transkrypcji",
+      "start": "Zacznij rozmowę",
+      "starting": "Uruchamianie…",
+      "cancel": "Anuluj",
+      "loading": "Sprawdzanie pozostałych minut głosowych…",
+      "loadFailed": "Nie udało się sprawdzić, czy głos jest dostępny. Spróbuj ponownie.",
+      "off": "Głos nie jest włączony w tym wdrożeniu.",
+      "noMinutes": "Minuty głosowe na ten miesiąc zostały wykorzystane.",
+      "noSessions": "Wykorzystano wszystkie dzisiejsze sesje głosowe.",
+      "errors": {
+        "microphone": "Nie udało się użyć mikrofonu. Zezwól na niego dla tej witryny w przeglądarce i spróbuj ponownie.",
+        "rateLimited": "W ostatniej minucie rozpoczęto kilka sesji. Poczekaj chwilę i spróbuj ponownie.",
+        "dailyLimit": "Wykorzystano wszystkie dzisiejsze sesje głosowe.",
+        "busy": "Głos jest zajęty: trwa zbyt wiele rozmów. Spróbuj ponownie za kilka minut.",
+        "budgetExhausted": "Minuty głosowe na ten miesiąc zostały wykorzystane.",
+        "voiceOff": "Głos nie jest włączony w tym wdrożeniu.",
+        "generic": "Nie udało się rozpocząć sesji. Spróbuj ponownie."
+      }
+    },
+    "session": {
+      "title": "Rozmowa z {{name}}",
+      "synthetic": "Głos syntetyczny",
+      "syntheticNote": "Persona AI, która mówi na podstawie prawdziwych opinii, a nie klient. Nic, co mówi, nie staje się opinią klienta, a dźwięk nigdy nie jest przechowywany.",
+      "connecting": "Łączenie…",
+      "live": "Na żywo: mów, kiedy chcesz, i przerywaj personie w dowolnym momencie.",
+      "ending": "Kończenie sesji…",
+      "you": "Ty",
+      "interrupted": "przerwano",
+      "captions": "Napisy na żywo",
+      "noCaptions": "Tutaj pojawiają się napisy obu stron.",
+      "micLevel": "Poziom mikrofonu",
+      "time": "Czas:",
+      "cost": "Dotychczasowy koszt:",
+      "minutesLeft": "Pozostałe minuty w tym miesiącu:",
+      "end": "Zakończ",
+      "close": "Zamknij",
+      "notice": {
+        "timeAlmostUp": "W tej sesji została jedna minuta.",
+        "budgetAlmostUp": "Minuty głosowe na ten miesiąc prawie się wyczerpały.",
+        "wrappingUp": "Czas minął: persona się żegna."
+      },
+      "ended": {
+        "byPerson": "Zakończono sesję.",
+        "sessionLimit": "Sesja osiągnęła limit czasu.",
+        "budget": "Minuty głosowe na ten miesiąc zostały wykorzystane.",
+        "busy": "Głos jest teraz zajęty. Spróbuj ponownie za kilka minut.",
+        "error": "Sesja została przerwana z powodu błędu.",
+        "disconnected": "Połączenie zostało utracone.",
+        "refused": "Link do sesji wygasł lub został już użyty. Rozpocznij nową sesję."
+      },
+      "filing": "Zapisywanie transkrypcji…",
+      "filed": "Transkrypcja została zapisana jako dokument tego projektu.",
+      "filedFailed": "Nie udało się zapisać transkrypcji.",
+      "endFailed": "Nie udało się zarejestrować końca sesji, więc transkrypcja nie została zapisana.",
+      "openTranscript": "Otwórz transkrypcję",
+      "saveToLibrary": "Zapisz w Bibliotece",
+      "savingToLibrary": "Zapisywanie w Bibliotece…",
+      "savedToLibrary": "Zapisano w Bibliotece.",
+      "libraryFailed": "Nie udało się zapisać w Bibliotece."
     }
   }
 }

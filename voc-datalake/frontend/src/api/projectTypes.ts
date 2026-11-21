@@ -7,6 +7,7 @@
 //    `KnownProjectDocumentType` stays beside it;
 //  * `ProjectDocument`, `PrioritizationScore`, `PrioritizationBallotEdit` —
 //    imported from there by pages/Prioritization/prioritizationUtils.ts.
+import type { VoiceId } from '@stream/voice/protocol'
 import type { ErasedEvidence } from './erasedEvidence'
 import type { ProjectMethodology } from './methodologySchema'
 import type { PersonaEvidenceMarker } from './personaEvidenceMarker'
@@ -157,6 +158,8 @@ export interface ProjectPersona {
   imported_from?: string
   /** Set on an imported or copied persona: how many reviews stand behind it (0 = none). */
   evidence?: PersonaEvidenceMarker
+  /** The voice it speaks with when talked to (7.69.00, `-c voicePersonas=true`); absent or null = the default pick. */
+  voice_id?: VoiceId | null
 }
 
 /** Where a copied persona came from (`copied_from` on the persona row). */

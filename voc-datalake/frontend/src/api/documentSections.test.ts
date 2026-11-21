@@ -10,10 +10,9 @@ import type { KnownProjectDocumentType } from './types'
 
 /** Every `KnownProjectDocumentType` (a type added there without a row here fails to compile). */
 const KNOWN: Readonly<Record<KnownProjectDocumentType, string>> = {
-  // The Validate step's three (7.68.00) first: the table's own order is the module's, not this check's.
+  custom: 'documents', decision: 'documents', focus_group: 'documents', persona_interview: 'documents', prd: 'prd',
+  prfaq: 'prfaq', product_report: 'documents', prototype: 'prototypes', research: 'documents',
   validation_plan: 'documents', validation_report: 'documents', validation_run: 'documents',
-  prd: 'prd', prfaq: 'prfaq', prototype: 'prototypes', research: 'documents', custom: 'documents',
-  product_report: 'documents', decision: 'documents', focus_group: 'documents',
 }
 
 describe('DOCUMENT_SECTIONS', () => {

@@ -311,7 +311,8 @@ const PERSONA_SECTIONS = [
   'identity', 'goals_motivations', 'pain_points', 'behaviors',
   'context_environment', 'quotes', 'scenario', 'research_notes',
 ];
-const PERSONA_UPDATABLE = ['name', 'tagline', 'confidence', ...PERSONA_SECTIONS, 'avatar_url', 'avatar_prompt'];
+// `voice_id` (7.69.00): the voice a persona speaks with when talked to; null = the default.
+const PERSONA_UPDATABLE = ['name', 'tagline', 'confidence', ...PERSONA_SECTIONS, 'avatar_url', 'avatar_prompt', 'voice_id'];
 
 const PERSONA_TEMPLATES = [
   {

@@ -122,6 +122,17 @@ class TestRowsAndTombstone:
 
         assert [item['sk'] for item in world.jobs.scan()['Items']] == ['JOB#j2']
 
+    def test_a_voice_session_s_row_goes_with_its_pointer_and_another_project_s_stays(self, world):
+        world.seed_project('proj-1')
+        for project, session in (('proj-1', 's-1'), ('proj-2', 's-2')):
+            world.projects.put_item(Item={'pk': f'PROJECT#{project}', 'sk': f'VOICE#{session}'})
+            world.projects.put_item(Item={'pk': f'VOICE#{session}', 'sk': 'SESSION', 'project_id': project})
+
+        _delete('proj-1')
+
+        assert sorted(item['pk'] for item in world.projects.scan()['Items'] if item['pk'].startswith('VOICE#')) == [
+            'VOICE#s-2']
+
     def test_the_tombstone_is_finalized_after_the_sweeps(self, world):
         world.seed_project('proj-1', ('persona_1',))
         world.put('prototypes/proj-1/doc.html')

@@ -101,9 +101,11 @@ function CheckList({ legend, items, chosen, max, onToggle }: Readonly<{
 /** A choice and the characters of text it holds (its share of every persona's reading: `readingChars`). */
 interface ReadingChoice { id: string; label: string; chars: number }
 
-/** The project documents a group can read: everything but prototypes and saved focus groups. */
+/** The project documents a group can read: everything but prototypes and the synthetic ones (saved focus groups, voice
+ *  interviews: a persona never reads another's synthetic words as a source). */
 function readableDocuments(documents: readonly ProjectDocument[]): ReadingChoice[] {
-  return documents.filter((document) => document.document_type !== 'prototype' && document.document_type !== 'focus_group')
+  return documents.filter((document) => document.document_type !== 'prototype' && document.synthetic !== true
+    && document.document_type !== 'focus_group')
     .map((document) => ({
       id: document.document_id, label: document.title || document.document_type,
       chars: typeof document.content === 'string' ? document.content.length : 0,

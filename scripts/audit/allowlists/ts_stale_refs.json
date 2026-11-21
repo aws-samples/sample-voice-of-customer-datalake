@@ -26,6 +26,9 @@
     { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/*::agentState", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
     { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/runTimelineModel.ts::groupByPhase", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
     { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/runTimelineModel.ts::phaseStatus", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
-    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/unifiedDiff.ts::modeWords", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" }
+    { "key": "voc-datalake/frontend/src/pages/Agents/RunWorkspace/unifiedDiff.ts::modeWords", "reason": "a function or type of the KiroCrew website (another repository) the adapted code follows (7.51.00, THIRD-PARTY-LICENSES.md)" },
+    { "key": "voc-datalake/lambda/stream/src/voice/main.ts::relay.js", "reason": "the voice relay's esbuild bundle, a generated artefact the CDK asset writes (lib/stacks/voice-relay.ts, 7.69.00)" },
+    { "key": "voc-datalake/lambda/stream/src/voice/*::evidence.json", "reason": "a voice session's runtime object, scratch/voice/<session>/evidence.json in the raw bucket, which the projects API writes (lambda/shared/voice_sessions.py, 7.69.00)" },
+    { "key": "voc-datalake/frontend/src/pages/ProjectDetail/voice/useSaveInterviewToLibrary.ts::interview-with-ada.md", "reason": "sample data: the Library file name a transcript titled Interview with Ada gets (7.69.00)" }
   ]
 }

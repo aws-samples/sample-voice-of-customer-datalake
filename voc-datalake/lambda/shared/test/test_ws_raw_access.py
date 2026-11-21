@@ -166,11 +166,13 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: partition and a reviewer's daily counter (since 7.37.00): only shared/project_keys.py spells them; ``DOCSHARE#`` is
 #: a review link's row (a workspace's link's routing row): only shared/review_share_audience.py (the trigger bundle's
 #: stdlib copy) spells it. ``LIBRARY`` (and ``LIBRARY_CHUNKS#``) and ``library/`` are the Documents Library's partitions
-#: and objects (since 7.62.00): only shared/library_keys.py spells them.
+#: and objects (since 7.62.00): only shared/library_keys.py spells them. ``VOICE#`` (a voice session's own partition),
+#: ``VOICEUSE#`` (the month's minutes and the live set), ``VOICEDAY#`` and ``VOICERATE#`` (a person's day and minute)
+#: are the voice sessions' (since 7.69.00): only shared/voice_sessions.py spells them, and they move with projects.
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
                                 'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#',
                                 'STATUS#', 'LIST#', 'PERSON#', 'EMAIL#', 'LISTS', 'PEOPLE', 'DCOMMENTS#', 'DCRATE#',
-                                'DOCSHARE#', 'LIBRARY', 'library/')
+                                'DOCSHARE#', 'LIBRARY', 'library/', 'VOICE#', 'VOICEUSE#', 'VOICEDAY#', 'VOICERATE#')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: The layer's review link route writer (``route_share_id``, since 7.37.00) and the one module that may call it: the
@@ -454,6 +456,14 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/project_validation_routes.py': (3, {'get_aggregates_table': 1, 'get_feedback_table': 1,
                                                        'get_projects_table': 1}),
     'lambda/shared/library_worker.py': (3, {'get_projects_table': 1}),
+    # The voice sessions (7.69.00, docs/voice-personas.md): their keys' one spelling (a session's own partition, the
+    # month's usage, the live set, a person's day and minute: the deployment's until projects move), a session's
+    # evidence put in scratch/, and the routes' handles (the project's persona and pointer rows, the deployment's
+    # feedback for the evidence pack, the caller's category access row and the counters).
+    'lambda/shared/voice_sessions.py': (3, {'VOICE#': 1, 'VOICEDAY#': 1, 'VOICERATE#': 1, 'VOICEUSE#': 2,
+                                            'put_object': 1}),
+    'lambda/shared/voice_session_routes.py': (3, {'get_aggregates_table': 2, 'get_feedback_table': 1,
+                                                  'get_projects_table': 1}),
     'lambda/shared/library_index.py': (3, {'batch': 2}),
     'lambda/shared/library_objects.py': (3, {'generate_presigned_url': 2, 'put_object': 1}),
     # The autonomous engineering agents (voc-autonomous, merged in 7.35.00; built only with -c engineeringAgents=true,

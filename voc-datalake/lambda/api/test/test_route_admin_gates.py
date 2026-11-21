@@ -454,6 +454,12 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'PUT /projects/<project_id>/validation/criteria', 'POST /projects/<project_id>/validation/plan',
           'POST /projects/<project_id>/validation/synthetic', 'PUT /projects/<project_id>/validation/form',
           'POST /projects/<project_id>/validation/report'),
+    _open('a voice session with a project persona (7.69.00, owner decision: -c voicePersonas=true, off by default; '
+          'shared/voice_session_routes.py): edit on the project, a person acting for themselves (never an MCP '
+          "credential or an agent), consent, the month's minutes, 3 starts a minute and 5 sessions a day per person; "
+          'End by its starter or an admin; the month\'s usage is require_admin_caller',
+          'voice_session_routes.py', 'POST /projects/<project_id>/personas/<persona_id>/voice-sessions',
+          'POST /projects/<project_id>/personas/<persona_id>/voice-sessions/<session_id>/end'),
     _open('copy personas into a project: edit on the target project, and the source is the library or a '
           'project the caller owns or is a member of (since 5.60.00)',
           'persona_copy_routes.py', 'POST /projects/<project_id>/personas/copy'),

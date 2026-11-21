@@ -1,6 +1,6 @@
 /**
- * SigV4-signed JSON POSTs with the Lambda role's credentials (the web-search gateway, the AppSync
- * Events publisher). A node:crypto SHA-256 adapter keeps this free of an extra hashing dependency.
+ * SigV4-signed requests with the role's credentials (the web-search gateway and the AppSync Events publisher's JSON
+ * POSTs, the voice relay's S3 GET and PUT). A node:crypto SHA-256 adapter keeps this free of an extra hashing dependency.
  */
 import { createHash, createHmac } from 'node:crypto';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
@@ -53,18 +53,40 @@ export interface SignedPost {
   timeoutMs: number;
 }
 
-/** POST `body` to `url`, signed for `service` in `region`. */
-export async function signedPost({ url, body, service, region, headers = {}, timeoutMs }: SignedPost): Promise<Response> {
+export interface SignedRequest {
+  method: 'GET' | 'POST' | 'PUT';
+  url: string;
+  body?: string;
+  service: string;
+  region: string;
+  /** Extra headers, signed too. */
+  headers?: Record<string, string>;
+  timeoutMs: number;
+  /** S3 signs the path as sent (`false`); every other service escapes it once more (the SDK's default, `true`). */
+  uriEscapePath?: boolean;
+}
+
+/** A `method` request to `url`, signed for `service` in `region` (the voice relay's S3 reads and writes: 7.69.00). */
+export async function signedRequest({
+  method, url, body, service, region, headers = {}, timeoutMs, uriEscapePath = true,
+}: SignedRequest): Promise<Response> {
   const parsed = new URL(url);
-  const signer = new SignatureV4({ service, region, credentials: defaultProvider(), sha256: NodeSha256 });
+  const signer = new SignatureV4({ service, region, credentials: defaultProvider(), sha256: NodeSha256, uriEscapePath });
   const request = new HttpRequest({
-    method: 'POST',
+    method,
     protocol: parsed.protocol,
     hostname: parsed.hostname,
     path: parsed.pathname,
-    headers: { host: parsed.hostname, 'content-type': 'application/json', ...headers },
+    headers: { host: parsed.hostname, ...headers },
     body,
   });
   const signed = await signer.sign(request);
-  return fetch(url, { method: 'POST', headers: signed.headers, body, signal: AbortSignal.timeout(timeoutMs) });
+  return fetch(url, { method, headers: signed.headers, body, signal: AbortSignal.timeout(timeoutMs) });
+}
+
+/** POST `body` to `url`, signed for `service` in `region`. */
+export function signedPost({ url, body, service, region, headers = {}, timeoutMs }: SignedPost): Promise<Response> {
+  return signedRequest({
+    method: 'POST', url, body, service, region, headers: { 'content-type': 'application/json', ...headers }, timeoutMs,
+  });
 }

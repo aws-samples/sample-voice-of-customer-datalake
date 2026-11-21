@@ -1180,5 +1180,19 @@
       "notFound": "Dieses Formular ist nicht mehr in diesem Arbeitsbereich.",
       "saveFailed": "Die Einstellungen für In-App-Feedback konnten nicht gespeichert werden."
     }
+  },
+  "voiceUsage": {
+    "title": "Sprach-Personas",
+    "intro": "Sprachminuten für Gespräche mit Personas in der gesamten Bereitstellung (Monat {{month}}). Die Audioaufnahme wird nie gespeichert.",
+    "loading": "Sprachnutzung wird geladen…",
+    "failed": "Die Sprachnutzung konnte nicht geladen werden.",
+    "minutes": "Genutzte Minuten",
+    "ofTotal": "{{used}} von {{total}}",
+    "sessions": "Sitzungen in diesem Monat",
+    "cost": "Geschätzte Kosten",
+    "live": "Gerade live",
+    "sessionMinutes": "Längste Sitzung (Min.)",
+    "dailySessions": "Sitzungen pro Person und Tag",
+    "model": "Modell"
   }
 }

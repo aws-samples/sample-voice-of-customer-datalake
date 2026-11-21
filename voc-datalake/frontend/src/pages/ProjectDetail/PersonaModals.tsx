@@ -13,9 +13,11 @@ interface PersonaModalsProps {
   readonly mutations: Pick<ReturnType<typeof usePersonaMutations>, 'updatePersonaMut' | 'importPersonaMut' | 'saveEditingPersona'>
   /** After an import job started (the modal has closed); e.g. keep the jobs poll alive. */
   readonly onImportStarted?: () => void
+  /** The edit dialog offers the persona's voice (a project's personas with `features.voice`, 7.69.00). */
+  readonly showVoice?: boolean
 }
 
-export default function PersonaModals({ selection, importModal, mutations, onImportStarted }: PersonaModalsProps) {
+export default function PersonaModals({ selection, importModal, mutations, onImportStarted, showVoice }: PersonaModalsProps) {
   const runImport = () => {
     mutations.importPersonaMut.mutate(
       { input_type: importModal.importType, content: importModal.importContent, media_type: importModal.importMediaType },
@@ -30,6 +32,7 @@ export default function PersonaModals({ selection, importModal, mutations, onImp
         onChange={selection.setEditingPersona}
         onSave={mutations.saveEditingPersona}
         onClose={() => selection.setEditingPersona(null)}
+        showVoice={showVoice}
       />
       <ImportPersonaModalWrapper
         showModal={importModal.showImportModal}

@@ -24,7 +24,7 @@ import type { ThreadState } from '../thread/types'
 
 const MAX_TITLE_TOPIC_CHARS = 80
 
-function CitationChip({ feedbackId, index, citation }: Readonly<{
+export function CitationChip({ feedbackId, index, citation }: Readonly<{
   feedbackId: string; index: number; citation: PersonaCitation | undefined
 }>) {
   const { t } = useTranslation('assistant')

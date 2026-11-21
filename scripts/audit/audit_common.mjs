@@ -120,6 +120,8 @@ export function realPrograms(root = REPO_ROOT) {
       entries: [
         { file: 'src/handler.ts', module: true, exports: true },
         { file: 'src/plan-step/handler.ts', module: true, exports: true },
+        // The voice personas' relay (7.69.00): AgentCore Runtime runs its esbuild bundle (lib/stacks/voice-relay.ts).
+        { file: 'src/voice/main.ts', module: true, exports: true },
         // Printed by scripts/write-plan-contract.mjs into lambda/shared/plan_contract.json.
         { file: 'src/assistant/plan/contract-json.ts', module: true, exports: true },
       ],

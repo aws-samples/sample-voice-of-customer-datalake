@@ -118,6 +118,13 @@ in the EU names its `regions`. Custom Model Import answered in `eu-central-1` an
 `eu-west-2`, `eu-west-3` and `eu-north-1` that day: an imported model needs an app Region that offers it, so check the
 current list on the AWS page [Supported Regions and models for Custom Model Import](https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html).
 
+## Voice personas
+
+Talking to the personas by voice (`-c voicePersonas=true`, [voice-personas.md](voice-personas.md)) uses Amazon Nova 2
+or 2.5 Sonic, which run in-Region only and, in the EU, only in eu-north-1, where VoC cannot run (no Amazon
+Comprehend). So the synth refuses the flag in eu-central-1, eu-west-1 and every other EU Region: an EU deployment has
+no voice in v1, and no voice call ever leaves its Region.
+
 ## Choosing a region
 
 - Use a region that has the `eu.` Bedrock profiles, Comprehend, Translate and Titan

@@ -1215,5 +1215,19 @@
       "notFound": "Ce formulaire n’est plus dans cet espace de travail.",
       "saveFailed": "Impossible d’enregistrer les réglages des retours dans l’app."
     }
+  },
+  "voiceUsage": {
+    "title": "Personas vocaux",
+    "intro": "Minutes vocales passées à parler aux personas sur tout ce déploiement (mois {{month}}). L’audio n’est jamais enregistré.",
+    "loading": "Chargement de l’usage vocal…",
+    "failed": "L’usage vocal n’a pas pu être chargé.",
+    "minutes": "Minutes utilisées",
+    "ofTotal": "{{used}} sur {{total}}",
+    "sessions": "Sessions ce mois-ci",
+    "cost": "Coût estimé",
+    "live": "En direct maintenant",
+    "sessionMinutes": "Session la plus longue (min)",
+    "dailySessions": "Sessions par personne et par jour",
+    "model": "Modèle"
   }
 }

@@ -49,6 +49,13 @@ describe('normalizeProjectDetail', () => {
     expect(at(result.personas, 1).evidence_feedback_ids).toBeUndefined()
   })
 
+  it('keeps a persona\'s voice (7.69.00): a voice id or null, an id the model does not have dropped', () => {
+    const result = normalizeProjectDetail(envelope([
+      { persona_id: 'chosen', voice_id: 'lennart' }, { persona_id: 'reset', voice_id: null }, { persona_id: 'odd', voice_id: 'robot' },
+    ]))
+    expect(result.personas.map((persona) => persona.voice_id)).toStrictEqual(['lennart', null, undefined])
+  })
+
   it('infers a prototype from a legacy PROTOTYPE sort key', () => {
     const result = normalizeProjectDetail(envelope([], [{
       document_id: 'prototype-legacy',

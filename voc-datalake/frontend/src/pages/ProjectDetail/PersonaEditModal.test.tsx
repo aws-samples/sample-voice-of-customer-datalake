@@ -31,6 +31,13 @@ function change(label: string, value: string): void {
 }
 
 describe('PersonaEditModal', () => {
+  it('offers the voice only when asked (a project persona with features.voice, 7.69.00)', () => {
+    const { rerender } = render(<PersonaEditModal persona={persona} onChange={vi.fn()} onSave={() => Promise.resolve()} onClose={vi.fn()} isSaving={false} />)
+    expect(screen.queryByLabelText('Voice when you talk to this persona')).not.toBeInTheDocument()
+    rerender(<PersonaEditModal persona={persona} onChange={vi.fn()} onSave={() => Promise.resolve()} onClose={vi.fn()} isSaving={false} showVoice />)
+    expect(screen.getByLabelText('Voice when you talk to this persona')).toHaveValue('')
+  })
+
   it('changes a top-level field only', () => {
     const onChange = renderEditor()
     change('Name', 'Business traveller')

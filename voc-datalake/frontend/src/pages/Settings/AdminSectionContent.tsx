@@ -14,6 +14,7 @@ import { WorkspaceMembers } from '../Members/Members'
 import { WorkspaceSettingsCards } from '../WorkspaceSettings/WorkspaceSettings'
 import LogsSection from './LogsSection'
 import AiModelSection from './AiModelSection'
+import VoiceUsageCard from './VoiceUsageCard'
 import VersionSection from './VersionSection'
 import BoardsSection from './boards/BoardsSection'
 import PlatformWorkspacesSection from './PlatformWorkspacesSection'
@@ -96,7 +97,13 @@ export default function AdminSectionContent({ place, viewer, apiEndpoint, onApiE
   switch (place.tab) {
     case 'general': return <GeneralTab apiEndpoint={apiEndpoint} onApiEndpointChange={onApiEndpointChange} isAdmin={viewer.isAdmin}
       isPlatformAdmin={viewer.isPlatformAdmin} />
-    case 'ai': return <AiModelSection apiEndpoint={apiEndpoint} isAdmin={viewer.isAdmin} />
+    case 'ai': return (
+      <>
+        <AiModelSection apiEndpoint={apiEndpoint} isAdmin={viewer.isAdmin} />
+        {/* The month's voice minutes (7.69.00): with features.voice only. */}
+        <VoiceUsageCard isAdmin={viewer.isAdmin} />
+      </>
+    )
     case 'agents': return viewer.isAdmin ? <EngineeringAgentsTab /> : null
     default: return place.section === null
       ? null

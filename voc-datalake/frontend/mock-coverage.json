@@ -2509,6 +2509,60 @@
     ]
   },
   {
+    "file": "api/voiceSessionsApi.ts",
+    "method": "GET",
+    "call": "sessionsPath(projectId, personaId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1/voice-sessions"
+      }
+    ]
+  },
+  {
+    "file": "api/voiceSessionsApi.ts",
+    "method": "POST",
+    "call": "sessionsPath(projectId, personaId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1/voice-sessions",
+        "body": {
+          "consent": true,
+          "language": "en"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/voiceSessionsApi.ts",
+    "method": "GET",
+    "call": "sessionPath(projectId, personaId, sessionId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1/voice-sessions/voice_1"
+      }
+    ]
+  },
+  {
+    "file": "api/voiceSessionsApi.ts",
+    "method": "POST",
+    "call": "`${sessionPath(projectId, personaId, sessionId)}/end`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1/voice-sessions/voice_1/end"
+      }
+    ]
+  },
+  {
+    "file": "api/voiceSessionsApi.ts",
+    "method": "GET",
+    "call": "'/projects/voice/usage'",
+    "probes": [
+      {
+        "path": "/projects/voice/usage"
+      }
+    ]
+  },
+  {
     "file": "api/webReviewMethodsApi.ts",
     "method": "GET",
     "call": "'/integrations/web_reviews/methods'",

@@ -460,17 +460,18 @@ def validate_member_role(value: object) -> str:
 # First path segments under /projects that are NOT project ids. These routes are
 # workspace-wide and keep their own checks (prioritization uses require_admin
 # and per-reviewer subjects; the Documents Library, shared/library_routes.py, its
-# scope's roles).
-NON_PROJECT_SEGMENTS: Final = frozenset({'prioritization', 'library'})
-#: The Documents Library's segment (shared/library_routes.py): never a project's id, so a project route it reaches
-#: (``/projects/library/jobs``) answers the one 404 (a legacy project called ``prioritization`` keeps its routes).
-LIBRARY_SEGMENT: Final = 'library'
+# scope's roles; the voice sessions' month, shared/voice_session_routes.py, admins).
+NON_PROJECT_SEGMENTS: Final = frozenset({'prioritization', 'library', 'voice'})
+#: The segments never a project's id: the Documents Library's (shared/library_routes.py) and the voice sessions'
+#: month (shared/voice_session_routes.py, 7.69.00). A project route one of them reaches (``/projects/library/jobs``,
+#: ``/projects/voice/documents``) answers the one 404 (a legacy project called ``prioritization`` keeps its routes).
+RESERVED_SEGMENTS: Final = frozenset({'library', 'voice'})
 
 
-def is_library_path(path: str) -> bool:
-    """Whether ``path`` is under ``/projects/library``."""
+def is_reserved_path(path: str) -> bool:
+    """Whether ``path`` is under ``/projects/library`` or ``/projects/voice``."""
     segments = [part for part in path.split('/') if part]
-    return len(segments) >= 2 and segments[0] == 'projects' and segments[1] == LIBRARY_SEGMENT
+    return len(segments) >= 2 and segments[0] == 'projects' and segments[1] in RESERVED_SEGMENTS
 
 
 # (method, sub-path after /projects/{id}, level). `*` matches one segment.

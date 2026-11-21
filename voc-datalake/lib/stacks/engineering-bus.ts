@@ -440,7 +440,7 @@ function queueEncryption(key: kms.IKey): Pick<sqs.QueueProps, 'encryption' | 'en
 }
 
 /** kms:Decrypt and kms:GenerateDataKey on the stack's key, only through `services` (the table's, the queues'). */
-function grantKeyThrough(role: iam.Role, key: kms.IKey, services: readonly string[],
+export function grantKeyThrough(role: iam.Role, key: kms.IKey, services: readonly string[],
   actions: readonly string[] = ['kms:Decrypt', 'kms:GenerateDataKey']): void {
   const { region } = cdk.Stack.of(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({

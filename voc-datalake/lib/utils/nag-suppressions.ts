@@ -123,13 +123,14 @@ export function s3ObjectSuppressions(objectArns: readonly string[]): NagAck[] {
  * raw/github_issues/ (the GitHub webhook), raw/feedback_form/ (the feedback-form API), raw/feature_requests/ (the
  * engagement API's board copies) and raw/email_intake/ (the opt-in email inbox), those three write-once puts only
  * (lambda/shared/raw_copy.py); scratch/document_jobs/ and scratch/research_jobs/ (the document and research
- * workflows' scratch space).
+ * workflows' scratch space); scratch/voice/ (a voice session's evidence and transcript parts, with
+ * -c voicePersonas=true: the projects API, 7.69.00).
  */
 export type RawDataPrefix =
   | 'avatars/*' | 'company-context/*' | 'company-context/design/logo_preview_*' | 'company-context/design/icons_*'
   | 'library/*' | 'memory-imports/*' | 'projects/*/product_docs/*' | 'projects/*/product_docs/extracted/*' | 'prototypes/*'
   | 'raw/github_issues/*' | 'raw/feedback_form/*' | 'raw/feature_requests/*' | 'raw/email_intake/*'
-  | 'scratch/document_jobs/*' | 'scratch/research_jobs/*';
+  | 'scratch/document_jobs/*' | 'scratch/research_jobs/*' | 'scratch/voice/*';
 
 /** Object access scoped to the named prefixes of `rawDataBucket`; a grant on any other prefix is still reported. */
 export function rawDataPrefixSuppressions(rawDataBucket: s3.IBucket, prefixes: readonly RawDataPrefix[]): NagAck[] {

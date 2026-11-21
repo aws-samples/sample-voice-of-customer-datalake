@@ -15,8 +15,8 @@
  * @module components/DocumentTypeBadge/documentTypes
  */
 import {
-  ClipboardCheck, ClipboardList, File, FileBarChart, FilePen, FileText, FlaskConical, Hammer, MessagesSquare, Newspaper,
-  Scale, Search,
+  AudioLines, ClipboardCheck, ClipboardList, File, FileBarChart, FilePen, FileText, FlaskConical, Hammer,
+  MessagesSquare, Newspaper, Scale, Search,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { KnownProjectDocumentType } from '../../api/types'
@@ -33,6 +33,7 @@ const DOCUMENT_TYPE_ICONS: Readonly<Record<KnownProjectDocumentType, LucideIcon>
   validation_plan: ClipboardList,
   validation_run: FlaskConical,
   validation_report: ClipboardCheck,
+  persona_interview: AudioLines,
 }
 
 /** `Object.hasOwn`, so an inherited name such as `constructor` never answers. */

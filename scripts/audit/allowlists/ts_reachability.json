@@ -1,6 +1,10 @@
 {
   "entries": [
     {
+      "key": "stream:src/voice/protocol.ts#*",
+      "reason": "The voice personas' wire contract (7.69.00), shared with the SPA: frontend/src imports it through @stream, which the stream program does not see, so the names only the SPA reads (the voices, the languages, the microphone's frame) and the documented close codes stay exported here."
+    },
+    {
       "key": "stream:src/assistant/contract.ts#*",
       "reason": "The AG-UI wire contract, shared with the SPA: frontend/src imports it through @stream, which the stream program does not see, so the names only the SPA reads and the documented protocol constants stay exported here."
     },

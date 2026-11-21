@@ -130,6 +130,8 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
  * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
  * - Only with -c engineeringAgents=true: the engineering agents' broker, bus and runtime (processing-engineering.ts)
+ * - Only with -c voicePersonas=true: the voice personas' relay, an AgentCore Runtime (voice-relay.ts `addVoiceRelay`,
+ *   which bin/voc-datalake.ts calls on this stack)
  */
 export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;

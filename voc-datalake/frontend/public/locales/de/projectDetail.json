@@ -226,7 +226,8 @@
       "cancel": "Abbrechen",
       "outlineNote": "Das {{type}} öffnet sich hier mit seiner Gliederung, damit Sie hineinschreiben können."
     },
-    "syntheticRunNotice": "Ein synthetischer Validierungslauf: Personas haben die Bildschirme des Prototyps ausprobiert. Ihre Urteile sind Hypothesen, die mit echten Testern zu prüfen sind, nie Kundenfeedback, und zählen nie dafür, dass ein Kriterium erfüllt ist."
+    "syntheticRunNotice": "Ein synthetischer Validierungslauf: Personas haben die Bildschirme des Prototyps ausprobiert. Ihre Urteile sind Hypothesen, die mit echten Testern zu prüfen sind, nie Kundenfeedback, und zählen nie dafür, dass ein Kriterium erfüllt ist.",
+    "interviewSyntheticNotice": "Ein Sprachinterview mit einer synthetischen Persona: Ihre Antworten sind Hypothesen zum Prüfen, nie Kundenfeedback oder Belege. Nur die zitierten Bewertungen sind echt, und die Audioaufnahme wurde nie gespeichert."
   },
   "imageErrors": {
     "tooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",
@@ -400,7 +401,14 @@
     "workarounds": "Workarounds (eins pro Zeile)",
     "workaroundsPlaceholder": "Wie sie derzeit damit umgehen...",
     "locationPlaceholder": "Städtisch, DE",
-    "occupationPlaceholder": "Produktmanagerin"
+    "occupationPlaceholder": "Produktmanagerin",
+    "voice": "Stimme, wenn Sie mit dieser Persona sprechen",
+    "voiceDefault": "Standard (für diese Persona gewählt)",
+    "voiceHelp": "Nie nach Name oder Hintergrund der Persona gewählt. Tiffany und Matthew sprechen jede unterstützte Sprache, die anderen Stimmen ihre eigene.",
+    "voiceOption": "{{name}} ({{gender}}, {{speaks}})",
+    "voiceFeminine": "weiblich",
+    "voiceMasculine": "männlich",
+    "voiceEveryLanguage": "alle Sprachen"
   },
   "personas": {
     "evidence": {
@@ -928,6 +936,78 @@
       "writing": "Der Bericht wird geschrieben…",
       "open": "Bericht öffnen",
       "decide": "Entscheidung anlegen"
+    }
+  },
+  "voice": {
+    "talk": "Sprechen",
+    "talkTo": "Mit {{name}} per Sprache sprechen",
+    "consent": {
+      "title": "Mit {{name}} sprechen",
+      "transcript": "Das Transkript des Gesprächs wird als Dokument dieses Projekts gespeichert. Die Audioaufnahme wird nie gespeichert.",
+      "synthetic": "{{name}} spricht mit einer synthetischen Stimme: eine KI-Persona aus echten Kundenbewertungen, kein Kunde. Was sie sagt, ist eine Hypothese zum Prüfen, nie Feedback.",
+      "budget": "Verbleibende Sprachminuten in diesem Monat: {{minutes}}. Eine Sitzung dauert höchstens {{session}} Min. und kostet etwa {{cost}} pro Minute.",
+      "sessionsToday": "Sitzungen, die Sie heute noch starten können: {{left}}",
+      "language": "Die Sprachfunktion spricht Ihre Oberflächensprache noch nicht. Sprechen Sie {{supported}}, und die Persona folgt Ihnen.",
+      "headphones": "Verwenden Sie Kopfhörer, damit die Persona sich nicht selbst hört.",
+      "agree": "Ich habe verstanden und bin einverstanden, dass das Transkript gespeichert wird",
+      "start": "Gespräch starten",
+      "starting": "Wird gestartet…",
+      "cancel": "Abbrechen",
+      "loading": "Verbleibende Sprachminuten werden geprüft…",
+      "loadFailed": "Es konnte nicht geprüft werden, ob die Sprachfunktion verfügbar ist. Bitte erneut versuchen.",
+      "off": "Die Sprachfunktion ist in dieser Bereitstellung nicht aktiviert.",
+      "noMinutes": "Die Sprachminuten dieses Monats sind aufgebraucht.",
+      "noSessions": "Sie haben alle heutigen Sprachsitzungen genutzt.",
+      "errors": {
+        "microphone": "Das Mikrofon konnte nicht verwendet werden. Erlauben Sie es für diese Website in Ihrem Browser und versuchen Sie es erneut.",
+        "rateLimited": "In der letzten Minute wurden mehrere Sitzungen gestartet. Warten Sie kurz und versuchen Sie es dann erneut.",
+        "dailyLimit": "Sie haben alle heutigen Sprachsitzungen genutzt.",
+        "busy": "Die Sprachfunktion ist ausgelastet: Zu viele Gespräche laufen gerade. Versuchen Sie es in einigen Minuten erneut.",
+        "budgetExhausted": "Die Sprachminuten dieses Monats sind aufgebraucht.",
+        "voiceOff": "Die Sprachfunktion ist in dieser Bereitstellung nicht aktiviert.",
+        "generic": "Die Sitzung konnte nicht gestartet werden. Bitte erneut versuchen."
+      }
+    },
+    "session": {
+      "title": "Gespräch mit {{name}}",
+      "synthetic": "Synthetische Stimme",
+      "syntheticNote": "Eine KI-Persona, die aus echten Bewertungen spricht, kein Kunde. Nichts, was sie sagt, wird zu Feedback, und die Audioaufnahme wird nie gespeichert.",
+      "connecting": "Verbindung wird hergestellt…",
+      "live": "Live: Sprechen Sie, wann Sie möchten, und unterbrechen Sie die Persona jederzeit.",
+      "ending": "Sitzung wird beendet…",
+      "you": "Sie",
+      "interrupted": "unterbrochen",
+      "captions": "Live-Untertitel",
+      "noCaptions": "Hier erscheinen die Untertitel beider Seiten.",
+      "micLevel": "Mikrofonpegel",
+      "time": "Zeit:",
+      "cost": "Bisherige Kosten:",
+      "minutesLeft": "Verbleibende Minuten in diesem Monat:",
+      "end": "Beenden",
+      "close": "Schließen",
+      "notice": {
+        "timeAlmostUp": "Noch eine Minute in dieser Sitzung.",
+        "budgetAlmostUp": "Die Sprachminuten dieses Monats sind fast aufgebraucht.",
+        "wrappingUp": "Die Zeit ist um: Die Persona verabschiedet sich."
+      },
+      "ended": {
+        "byPerson": "Sie haben die Sitzung beendet.",
+        "sessionLimit": "Die Sitzung hat ihr Zeitlimit erreicht.",
+        "budget": "Die Sprachminuten dieses Monats sind aufgebraucht.",
+        "busy": "Die Sprachfunktion ist gerade ausgelastet. Versuchen Sie es in einigen Minuten erneut.",
+        "error": "Die Sitzung wurde wegen eines Fehlers beendet.",
+        "disconnected": "Die Verbindung wurde unterbrochen.",
+        "refused": "Der Sitzungslink war abgelaufen oder wurde bereits verwendet. Starten Sie eine neue Sitzung."
+      },
+      "filing": "Transkript wird abgelegt…",
+      "filed": "Das Transkript ist als Dokument dieses Projekts gespeichert.",
+      "filedFailed": "Das Transkript konnte nicht abgelegt werden.",
+      "endFailed": "Das Ende der Sitzung konnte nicht erfasst werden, daher wurde das Transkript nicht abgelegt.",
+      "openTranscript": "Transkript öffnen",
+      "saveToLibrary": "In der Bibliothek speichern",
+      "savingToLibrary": "Wird in der Bibliothek gespeichert…",
+      "savedToLibrary": "In der Bibliothek gespeichert.",
+      "libraryFailed": "Es konnte nicht in der Bibliothek gespeichert werden."
     }
   }
 }

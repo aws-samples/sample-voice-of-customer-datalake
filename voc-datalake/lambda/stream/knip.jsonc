@@ -1,12 +1,14 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // The Lambda handlers, each bundled by esbuild (`entry:`): the assistant (lib/stacks/api-assistant-lambdas.ts)
-  // and the plan-step runner voc-plan-step (VocProcessingStack). scripts/write-plan-contract.mjs is run by
+  // and the plan-step runner voc-plan-step (VocProcessingStack); and the voice relay (7.69.00), an AgentCore Runtime's
+  // direct code bundled from src/voice/main.ts (lib/stacks/voice-relay.ts). scripts/write-plan-contract.mjs is run by
   // hand (regenerates lambda/shared/plan_contract.json); contract-json.ts, which it prints, is the plan
   // contract's generator: never bundled, but production contract code (its spec pins the committed file).
   "entry": [
     "src/handler.ts!",
     "src/plan-step/handler.ts!",
+    "src/voice/main.ts!",
     "src/assistant/plan/contract-json.ts!",
     "scripts/write-plan-contract.mjs"
   ],
@@ -26,6 +28,9 @@
     // this package's knip does not scan, so the names only the SPA reads (STALE_RUN_SECONDS,
     // mentionsSchema) and the documented constants of the protocol (the page → pack table, the tool
     // outcome statuses, the plan interrupt reason and id prefix, maxFilterChars) stay exported here.
-    "src/assistant/contract.ts": ["exports"]
+    "src/assistant/contract.ts": ["exports"],
+    // The voice personas' wire contract (7.69.00), shared with the SPA the same way: the catalogue (VOICES,
+    // DEFAULT_VOICE_PAIR, the languages) and the message schemas only the SPA reads stay exported here.
+    "src/voice/protocol.ts": ["exports", "types"]
   }
 }

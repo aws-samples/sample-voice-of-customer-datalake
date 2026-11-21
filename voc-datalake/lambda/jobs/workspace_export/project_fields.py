@@ -29,6 +29,14 @@ exported.
   ``#base``, ``#owner``, ``#expires`` in shared/document_versions.py), which the static view reads as names; no row
   stores them (the counter's ``last_version`` and ``base_title`` are exported, its lease is not);
 * ``deleting``, ``deletion_started_at``: a project delete's fence (a live project never holds it);
+* a voice session's own row, its project's pointer to it, its scratch evidence and its counters (7.69.00,
+  shared/voice_sessions.py): ``session_id``, ``starter_sub``, ``connect_by``, ``consent_at``, ``language``,
+  ``model_id``, ``voice_gender``, ``session_seconds``, ``monthly_seconds``, ``minutes_left``, ``usage_key``,
+  ``evidence_key``, ``persona``, ``seconds``, ``streams``, ``transcript_parts``, ``end_reason``, ``ended_at``,
+  ``finalize_job_id``, ``finalized_at``, ``transcript_document_id``, ``live``, ``sessions``: a session's state and
+  meter, not the project's content (its transcript is a ``persona_interview`` document, exported as one). The scratch
+  evidence object's own ``evidence`` (an S3 field, never a project row's attribute) shares its name with the
+  ``evidence`` count of a hand-written validation plan's methodology block (7.68.00), so it is ``EXPORTED`` there;
 * the verification fixtures' plumbing (``verification_*``, ``fixture_id``, ``baseline_row``, ``capability``,
   ``operation``, ``row_ids``, ``schema``, ``scorable_prd``, ``slot``, ``tested_sha``: lambda/api/
   verification_fixture_provider.py, the deployment's own test fixtures, never in a workspace).
@@ -47,6 +55,10 @@ EXCLUDED: Final = frozenset({
     'migration_expires_at', 'deleting', 'deletion_started_at', 'verification_fixture_id', 'verification_job_id',
     'verification_slot', 'verification_tested_sha', 'fixture_id', 'baseline_row', 'capability', 'operation', 'row_ids',
     'schema', 'scorable_prd', 'slot', 'tested_sha', 'last', 'base', 'owner', 'expires',
+    # A voice session's row, pointer, scratch evidence and counters (7.69.00, shared/voice_sessions.py).
+    'session_id', 'starter_sub', 'connect_by', 'consent_at', 'language', 'model_id', 'voice_gender', 'session_seconds',
+    'monthly_seconds', 'minutes_left', 'usage_key', 'evidence_key', 'persona', 'seconds', 'streams', 'transcript_parts',
+    'end_reason', 'ended_at', 'finalize_job_id', 'finalized_at', 'transcript_document_id', 'live', 'sessions',
 })
 
 EXPORTED: Final = frozenset({
@@ -91,6 +103,8 @@ EXPORTED: Final = frozenset({
     'responses', 'missing_count', 'prd_document_id', 'prototype_document_id', 'plan_document_id', 'run_document_id',
     'report_document_id', 'synthetic_run_id', 'form_id', 'form_language', 'form_open', 'form_revision',
     'card_in_prototype', 'results',
+    # A persona's voice and the voice session a persona_interview came from (7.69.00, shared/voice_transcripts.py).
+    'voice_id', 'voice_session',
 })
 
 #: A project ``META``'s ``members`` entry (api/projects.py: who was added, with which role, by whom and when); an

@@ -42,7 +42,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
-import { agentCoreTrust } from '../utils/agentcore-trust';
+import { agentCoreTrust, grantRuntimeLogs } from '../utils/agentcore-trust';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { agentCoreName } from '../utils/naming';
 
@@ -352,18 +352,11 @@ export class EngineeringAgentCore extends Construct {
     }));
     // The registry's token call names no repository.
     role.addToPolicy(new iam.PolicyStatement({ sid: 'RegistryToken', actions: ['ecr:GetAuthorizationToken'], resources: ['*'] }));
-    const logs = stack.formatArn({
-      service: 'logs', resource: 'log-group', resourceName: '/aws/bedrock-agentcore/runtimes/*',
-      arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-    });
-    role.addToPolicy(new iam.PolicyStatement({
-      sid: 'RuntimeLogs', actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-      resources: [logs, `${logs}:log-stream:*`],
-    }));
+    const logs = grantRuntimeLogs(role, '*');
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
       reason: 'ecr:GetAuthorizationToken names no resource; the logs are the AgentCore runtimes\' own log groups, which the service names per runtime',
-      findings: ['Resource::*', resourceFinding(logs), resourceFinding(`${logs}:log-stream:*`)],
+      findings: ['Resource::*', ...logs.map(resourceFinding)],
     }]);
     return role;
   }

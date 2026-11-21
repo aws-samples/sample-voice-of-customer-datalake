@@ -17,6 +17,95 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.69.00] - 2026-11-21
+
+**Talk to the personas by voice** (idea 15, behind `-c voicePersonas=true`, off by default): press Talk on a project
+persona and interview it out loud in your language through Amazon Nova 2.5 Sonic. It answers in its own synthetic
+voice, grounded in its profile and the real reviews of its evidence pack, which it cites; you can interrupt it. The
+transcript, a summary and key quotes are saved as a synthetic `persona_interview` document. Audio is never stored.
+A browser reaches the relay, an AgentCore Runtime of direct Node code, through a 60-second URL the projects API
+presigns; no API Gateway resource, no fixed cost ([voice-personas.md](docs/voice-personas.md)).
+
+### Added
+
+- **Talk** on a project persona's header (never on company personas), for someone who can edit the project, with
+  `features.voice`. **The consent dialog** says the transcript is kept and the audio never is, that the voice is
+  synthetic, and how many of the month's minutes are left with the cost a minute; nothing starts until the person
+  agrees, and a refused microphone spends no session.
+- **The voice session**: a microphone level, live captions for both sides, the timer, the cost so far and the minutes
+  left, the reviews the persona cites as chips, the "Synthetic voice" label always in view, barge-in (the persona stops
+  when you speak; queued audio is dropped), the relay's notices (a minute left, the budget nearly used, the persona
+  saying goodbye) and End, which waits for the transcript and offers "Open transcript" and "Save to Library".
+- **The persona's voice**: by default `tiffany` or `matthew` (the two that speak every supported language), picked from
+  a hash of the persona's id, never from its name or picture; editable on the persona's form among Nova Sonic's 16
+  voices (`voice_id` on `PUT /projects/{id}/personas/{persona_id}`, `null` for the default). The prompt states the
+  voice's grammatical gender.
+- **Languages**: the persona follows the language you speak; of the app's languages, en, de, es, fr and pt. In ja,
+  ko, pl and zh the app says the voice does not speak your language.
+- **Routes** on the projects API's `/projects/{proxy+}` (`shared/voice_session_routes.py`, one include in
+  `projects_handler.py`): `GET` and `POST /projects/{id}/personas/{persona_id}/voice-sessions` (the offer, view; the
+  start, edit, 201 with the presigned `connect_url`), `GET …/voice-sessions/{session_id}` (view),
+  `POST …/voice-sessions/{session_id}/end` (202, its starter or an admin) and `GET /projects/voice/usage` (admins:
+  the month's minutes, sessions, cost and live streams, on Administration → AI).
+- **The start's checks** (`shared/voice_sessions.py`), in order: the flag (404 `voice_off`), consent (400
+  `consent_required`), a project persona, a person acting for themselves (403 `person_only` for an MCP credential or
+  an agent), a minute left this month (409 `budget_exhausted`), 3 starts a minute (429 `rate_limited`) and 5 sessions
+  a day (429 `daily_limit`) per person, a free stream (429 `busy`, `voiceMaxConcurrent`).
+- **The relay** (`voc-datalake/lambda/stream/src/voice/`, a `voc_persona_voice` AgentCore Runtime in
+  VocProcessingStack, direct code `NODE_22` bundled by esbuild, PUBLIC network mode, idle 2 minutes, at most 20):
+  a small RFC 6455 server on port 8080 (`/ws`, `/ping`), single-use activation of the session row, Nova Sonic's
+  bidirectional stream (16 kHz in, 24 kHz out, one async `cite` tool held to the evidence pack, the focus groups'
+  evidence block and citation rule), a stream rollover after 7 minutes replaying the conversation (at most 200 KB),
+  a meter from the model's usage events every minute and at the end, the month's budget and the session's limit as a
+  spoken and visual stop, write-once transcript parts, and logs of ids and counts only.
+- **The transcript** (`shared/voice_transcripts.py`, the assist job `assist_voice_finalize` on the projects assist
+  twin): a `persona_interview` document, `synthetic: true`, labelled, the person's turns through
+  `shared/pii_redaction.py`, the persona's turns with the reviews it cited (`[fb:<id>]`, only ids of its pack; they are
+  its `input_feedback_ids`), a summary and key quotes from one model call (a quote kept only when it was said word for
+  word); the session's `bedrock_usage` line (`shared/usage_meter.py` `log_stream_usage`), so the cost rollup counts
+  Nova Sonic; then the session's scratch files are deleted, every version.
+- **The mock**: the routes and a fake voice session over a hand-rolled WebSocket on the mock server (captions, a tone,
+  a citation, usage ticks), `frontend/mock-voice.js`.
+
+### Changed
+
+- With `-c voicePersonas=true`, VocCoreStack's SPA headers allow `microphone=(self)` (the public widget keeps
+  `microphone=()`) and add `wss://bedrock-agentcore.<region>.amazonaws.com` to `connect-src`; without it both are
+  unchanged. config.json carries `features.voice` (VocApiStack's `VoiceAvailable` output with the flag only).
+- `/projects/voice/...` is never a project id (`shared/project_access.py` `NON_PROJECT_SEGMENTS`), and a project route
+  reached through it answers the one 404, as `/projects/library/...` does (`is_reserved_path`).
+- A project delete also removes its voice sessions' own rows (`VOICE#<session>`), found through its pointers.
+- A focus group's document picker leaves voice interviews out, as it leaves saved focus groups out: a persona never
+  reads another persona's synthetic words as a source.
+
+### Security
+
+- A new entry point, reviewed in [voice-personas.md → Security review](docs/voice-personas.md#security-review): the
+  runtime takes SigV4 only; the browser's URL lives 60 seconds and signs one session id and one project scope; the
+  relay accepts it once (close 1008 for a second connection or a failed activation) and refuses evidence of another
+  session or project, and frames over 32 KB (1009).
+- The relay's role is pinned exactly (`lib/stacks/voice-relay.test.ts`): `bedrock:InvokeModel` on the one Nova Sonic
+  model ARN, `dynamodb:UpdateItem` held by `dynamodb:LeadingKeys` to `VOICE#*` on voc-projects and `VOICEUSE#*` on
+  voc-aggregates and by `dynamodb:Attributes` to the meter, `s3:GetObject` of a session's evidence and `s3:PutObject`
+  of its transcript parts under `scratch/voice/`, the key through DynamoDB and S3, its own logs; and nothing on the
+  feedback table, SSM, Secrets Manager, Lambda, ECR, another project's rows or `bedrock-agentcore:*`. The projects
+  role gains `InvokeAgentRuntimeWithWebSocketStream` and `StopRuntimeSession` on that runtime and its default endpoint,
+  and `scratch/voice/*`, statements only.
+
+### Upgrade notes
+
+- Off by default: no template changes without the flag (no resource, no output, the same headers).
+- With `-c voicePersonas=true`: a deployment in us-east-1, us-west-2, eu-north-1 or ap-northeast-1 (the synth refuses
+  any other Region: an EU deployment gets no voice in v1). `-c voiceModelId=amazon.nova-2-sonic-v1:0` pins Nova 2
+  Sonic; `-c voiceMonthlyMinutes` (300), `-c voiceSessionMinutes` (15) and `-c voiceMaxConcurrent` (8) set the limits.
+  Deploy every stack (VocProcessingStack holds the runtime, VocApiStack imports its ARN, VocCoreStack the headers).
+- Cost: about 1 to 3 cents a conversation minute for Nova 2.5 Sonic (300 minutes a month at most about $9) and at most
+  about $0.001 a minute of AgentCore Runtime; nothing standing (no ECR, VPC, NAT or endpoint).
+- If the account has Bedrock model invocation logging on, check whether it captures the stream's events (they carry
+  base64 audio) before turning voice on ([voice-personas.md → Data and retention](docs/voice-personas.md#data-and-retention)).
+- Not yet run against AWS: check the items of [voice-personas.md → What to check on a live
+  deployment](docs/voice-personas.md#what-to-check-on-a-live-deployment) on a test account first.
+
 ## [7.68.00] - 2026-11-21
 
 **A real Validate phase**: the methodology's last step (TENETS.md tenet 2's "review", labelled **Validate**) checks the

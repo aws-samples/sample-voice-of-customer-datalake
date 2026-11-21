@@ -443,6 +443,15 @@ MCP `projects_generate` takes `step: validation_plan` and `validation_report` ([
 one model call for the criteria, the plan and the report's summary, one per persona for a synthetic run; no fixed cost and
 no new AWS resource (the routes ride `/projects/{proxy+}`).
 
+## Talking to a persona by voice
+
+With `-c voicePersonas=true` (7.69.00, off by default) a project persona's header offers **Talk**: an interview out
+loud through Amazon Nova Sonic, grounded in the same evidence pack as a focus group (read as the person, at the
+session's start), with live captions, barge-in and the reviews the persona cites. The transcript, a summary and key
+quotes are saved as a synthetic `persona_interview` document, the person's turns redacted; audio is never stored. A
+persona's voice (`voice_id`, one of the model's 16, or the default pick) is editable on its form. Everything else,
+the limits, cost, data and the security review: [voice-personas.md](voice-personas.md).
+
 ## Managed Document Versions
 
 PRDs, PR/FAQs, and prototypes are version-managed. Documents with the same type and base title form a persistent series named `Title (v1)`, `Title (v2)`, and so on.

@@ -1180,5 +1180,19 @@
       "notFound": "That form isn't in this workspace any more.",
       "saveFailed": "Couldn't save the in-app feedback settings."
     }
+  },
+  "voiceUsage": {
+    "title": "Voice personas",
+    "intro": "Voice minutes spent talking to personas across this deployment (month {{month}}). The audio is never stored.",
+    "loading": "Loading voice usage…",
+    "failed": "Voice usage could not be loaded.",
+    "minutes": "Minutes used",
+    "ofTotal": "{{used}} of {{total}}",
+    "sessions": "Sessions this month",
+    "cost": "Estimated cost",
+    "live": "Live now",
+    "sessionMinutes": "Longest session (min)",
+    "dailySessions": "Sessions per person per day",
+    "model": "Model"
   }
 }

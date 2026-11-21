@@ -222,6 +222,8 @@ const EXPECTED_PUBLIC_ENTRIES = [
   'locales',
   // Pre-paint theme script — see PUBLISHED_SCRIPTS.
   'theme-init.js',
+  // The voice personas' microphone worklet (7.69.00) — see PUBLISHED_SCRIPTS.
+  'voice-capture-worklet.js',
   // The external-assistant skill for the global MCP endpoint (docs/mcp.md,
   // docs/mcp.md). Public BY DESIGN: it is handed to third-party assistants as a
   // stable link (`/voc-mcp-skill.md`), and the Connect page fetches it to fill in
@@ -240,8 +242,14 @@ const EXPECTED_PUBLIC_ENTRIES = [
  * The two reasons the ban exists are answered for it: it IS linted (`eslint .`
  * covers `public/`), and its storage key and attributes are pinned to
  * src/theme/themeStore.ts by src/theme/themeInit.test.ts.
+ *
+ * `voice-capture-worklet.js` (7.69.00, docs/voice-personas.md) is the AudioWorklet that turns the microphone into the
+ * 16 kHz frames a voice session sends: a worklet runs in the audio thread's own global scope and is loaded by URL
+ * (`audioWorklet.addModule`, pages/ProjectDetail/voice/voiceAudio.ts), and the CSP admits no blob: module, so it
+ * cannot be part of a bundle chunk. It holds no secret and no deployment detail; it is linted like theme-init.js, and
+ * its frames are pinned by pages/ProjectDetail/voice/captureWorklet.test.ts.
  */
-const PUBLISHED_SCRIPTS = ['theme-init.js']
+const PUBLISHED_SCRIPTS = ['theme-init.js', 'voice-capture-worklet.js']
 
 describe('frontend public/ inventory', () => {
   it('contains exactly the assets we intend to publish to the CDN', () => {

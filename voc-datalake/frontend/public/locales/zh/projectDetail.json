@@ -226,7 +226,8 @@
       "cancel": "取消",
       "outlineNote": "{{type}} 将带着大纲在这里打开，供你直接撰写。"
     },
-    "syntheticRunNotice": "一次合成验证运行：画像试用了原型的界面。它们的结论是需要用真实测试者检验的假设，绝非客户反馈，也绝不计入标准是否达成。"
+    "syntheticRunNotice": "一次合成验证运行：画像试用了原型的界面。它们的结论是需要用真实测试者检验的假设，绝非客户反馈，也绝不计入标准是否达成。",
+    "interviewSyntheticNotice": "这是与合成画像的语音访谈：其回答是有待验证的假设，绝不是客户反馈或证据。只有其引用的评论是真实的，音频从未被存储。"
   },
   "imageErrors": {
     "tooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
@@ -400,7 +401,14 @@
     "workarounds": "变通方案（每行一个）",
     "workaroundsPlaceholder": "他们目前的应对方式...",
     "locationPlaceholder": "城市，中国",
-    "occupationPlaceholder": "产品经理"
+    "occupationPlaceholder": "产品经理",
+    "voice": "与此画像对话时使用的声音",
+    "voiceDefault": "默认（为此画像选择）",
+    "voiceHelp": "绝不根据画像的姓名或背景选择。Tiffany 和 Matthew 会说所有支持的语言；其他声音只说各自的语言。",
+    "voiceOption": "{{name}}（{{gender}}，{{speaks}}）",
+    "voiceFeminine": "女声",
+    "voiceMasculine": "男声",
+    "voiceEveryLanguage": "所有语言"
   },
   "personas": {
     "evidence": {
@@ -928,6 +936,78 @@
       "writing": "正在编写报告…",
       "open": "打开报告",
       "decide": "创建决策"
+    }
+  },
+  "voice": {
+    "talk": "语音对话",
+    "talkTo": "与 {{name}} 语音对话",
+    "consent": {
+      "title": "与 {{name}} 对话",
+      "transcript": "对话的文字记录会作为本项目的文档保留。音频绝不会被存储。",
+      "synthetic": "{{name}} 使用合成语音：这是根据真实客户评论构建的 AI 画像，而不是客户本人。它说的内容是有待验证的假设，绝不会成为反馈。",
+      "budget": "本月剩余语音时长：{{minutes}} 分钟。每次会话最长 {{session}} 分钟，每分钟约 {{cost}}。",
+      "sessionsToday": "你今天还可以开始的会话数：{{left}}",
+      "language": "语音功能暂不支持你的界面语言。请使用{{supported}}说话，画像会用同一种语言回答。",
+      "headphones": "请使用耳机，以免画像听到自己的声音。",
+      "agree": "我已了解，并同意保留文字记录",
+      "start": "开始对话",
+      "starting": "正在开始…",
+      "cancel": "取消",
+      "loading": "正在检查剩余语音时长…",
+      "loadFailed": "无法检查语音功能是否可用，请重试。",
+      "off": "此部署未开启语音功能。",
+      "noMinutes": "本月的语音时长已用完。",
+      "noSessions": "你今天的语音会话已全部用完。",
+      "errors": {
+        "microphone": "无法使用麦克风。请在浏览器中允许此网站使用麦克风，然后重试。",
+        "rateLimited": "过去一分钟内已开始多次会话。请稍候再试。",
+        "dailyLimit": "你今天的语音会话已全部用完。",
+        "busy": "语音功能繁忙：进行中的对话太多。请几分钟后再试。",
+        "budgetExhausted": "本月的语音时长已用完。",
+        "voiceOff": "此部署未开启语音功能。",
+        "generic": "无法开始会话，请重试。"
+      }
+    },
+    "session": {
+      "title": "正在与 {{name}} 对话",
+      "synthetic": "合成语音",
+      "syntheticNote": "这是根据真实评论发言的 AI 画像，而不是客户本人。它说的任何内容都不会成为反馈，音频也绝不会被存储。",
+      "connecting": "正在连接…",
+      "live": "进行中：随时都可以说话，也可以随时打断画像。",
+      "ending": "正在结束会话…",
+      "you": "你",
+      "interrupted": "已打断",
+      "captions": "实时字幕",
+      "noCaptions": "双方的字幕会显示在这里。",
+      "micLevel": "麦克风音量",
+      "time": "时间：",
+      "cost": "目前费用：",
+      "minutesLeft": "本月剩余分钟数：",
+      "end": "结束",
+      "close": "关闭",
+      "notice": {
+        "timeAlmostUp": "本次会话还剩一分钟。",
+        "budgetAlmostUp": "本月的语音时长即将用完。",
+        "wrappingUp": "时间到了：画像正在道别。"
+      },
+      "ended": {
+        "byPerson": "你结束了会话。",
+        "sessionLimit": "会话已达到时长上限。",
+        "budget": "本月的语音时长已用完。",
+        "busy": "语音功能目前繁忙。请几分钟后再试。",
+        "error": "会话因出错而停止。",
+        "disconnected": "连接已断开。",
+        "refused": "会话链接已过期或已被使用。请开始新的会话。"
+      },
+      "filing": "正在归档文字记录…",
+      "filed": "文字记录已保存为本项目的文档。",
+      "filedFailed": "无法归档文字记录。",
+      "endFailed": "无法记录会话结束，因此文字记录未归档。",
+      "openTranscript": "打开文字记录",
+      "saveToLibrary": "保存到资料库",
+      "savingToLibrary": "正在保存到资料库…",
+      "savedToLibrary": "已保存到资料库。",
+      "libraryFailed": "无法保存到资料库。"
     }
   }
 }

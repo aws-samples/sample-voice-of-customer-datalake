@@ -77,6 +77,8 @@ const RuntimeConfigSchema = z.object({
     engineering: z.boolean().optional(),
     /** A workspace's admins may delete it (-c workspaceHardDelete=true); otherwise Workspace settings offers no delete. */
     workspaceDelete: z.boolean().optional(),
+    /** Talk to the personas by voice (-c voicePersonas=true, 7.69.00); otherwise no Talk on a persona. */
+    voice: z.boolean().optional(),
   }).optional(),
   /**
    * The feature-request board's own Cognito user pool (docs/feature-requests.md), present only when
@@ -160,6 +162,15 @@ export function isEngineeringAvailable(): boolean {
  */
 export function isWorkspaceDeleteAvailable(): boolean {
   return configState.config?.features?.workspaceDelete === true
+}
+
+/**
+ * Whether this deployment lets people talk to a project's personas by voice (`features.voice`, the deployment's
+ * `-c voicePersonas=true`), so a persona offers Talk. The projects API refuses a session without the flag either way.
+ * Safe to call before config load (returns false).
+ */
+export function isVoiceAvailable(): boolean {
+  return configState.config?.features?.voice === true
 }
 
 /**
@@ -250,6 +261,8 @@ function getEnvConfig(): RuntimeConfig {
     engineering: getEnvString('VITE_ENABLE_ENGINEERING') === 'true',
     // VITE_ENABLE_WORKSPACE_DELETE=true offers "Delete workspace" against the dev mock (`npm run dev` sets it).
     workspaceDelete: getEnvString('VITE_ENABLE_WORKSPACE_DELETE') === 'true',
+    // VITE_ENABLE_VOICE=true offers Talk on a persona against the dev mock's fake voice session (mock-voice.js).
+    voice: getEnvString('VITE_ENABLE_VOICE') === 'true',
   }
   const envConfig = {
     apiEndpoint: getEnvString('VITE_API_ENDPOINT'),

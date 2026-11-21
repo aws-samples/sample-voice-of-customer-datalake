@@ -82,6 +82,8 @@ PASSKEY_AVAILABLE=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="Pass
 ENGINEERING_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EngineeringAvailable") | .OutputValue // "false"')
 # "true" only on a deployment with -c workspaceHardDelete=true (VocApiStack's WorkspaceDeleteAvailable).
 WORKSPACE_DELETE_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WorkspaceDeleteAvailable") | .OutputValue // "false"')
+# "true" only on a deployment with -c voicePersonas=true (VocApiStack's VoiceAvailable).
+VOICE_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="VoiceAvailable") | .OutputValue // "false"')
 BOARD_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolId") | .OutputValue // empty')
 BOARD_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolClientId") | .OutputValue // empty')
 BOARD_SIGN_IN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardSignInMode") | .OutputValue // "email_otp"')
@@ -151,6 +153,7 @@ jq -n \
   --argjson passkey "$([ "$PASSKEY_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson engineering "$([ "$ENGINEERING_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson workspaceDelete "$([ "$WORKSPACE_DELETE_AVAILABLE" = "true" ] && echo true || echo false)" \
+  --argjson voice "$([ "$VOICE_AVAILABLE" = "true" ] && echo true || echo false)" \
   --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
   --arg boardClientId "$BOARD_CLIENT_ID" \
   --arg boardSignIn "$BOARD_SIGN_IN" \
@@ -170,7 +173,8 @@ jq -n \
       email: $email,
       passkey: $passkey,
       engineering: $engineering,
-      workspaceDelete: $workspaceDelete
+      workspaceDelete: $workspaceDelete,
+      voice: $voice
     }
   } + (if $boardUserPoolId != "" and $boardClientId != "" then {
     board: {

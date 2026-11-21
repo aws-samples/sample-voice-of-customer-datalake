@@ -44,6 +44,7 @@ import type { Tab } from './types'
 import type { ProjectDocument } from '../../api/types'
 import type { Project } from '../../api/projectTypes'
 import type { ComponentProps } from 'react'
+import { isVoiceAvailable } from '../../runtimeConfig'
 
 /** The project's header (with its jobs badge) and, for a viewer, the read-only banner. */
 function ProjectHeading({ project, canEdit, jobs, onShare, onDismissJob, onBack }: Readonly<{
@@ -323,7 +324,7 @@ export default function ProjectDetail() {
         onJobStarted={handleJobStarted}
       />
 
-      <PersonaModals selection={selection} importModal={importModal} mutations={personaMutations} />
+      <PersonaModals selection={selection} importModal={importModal} mutations={personaMutations} showVoice={isVoiceAvailable()} />
 
       <CopyPersonasModalWrapper
         showModal={showCopyPersonas}

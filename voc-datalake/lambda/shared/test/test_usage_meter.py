@@ -254,6 +254,25 @@ def test_a_usage_line_that_fails_to_log_is_reported_unreadable_never_raised(log)
     assert log.warning.call_args.kwargs['extra'] == {'operation': 'Converse', 'reason': 'TypeError'}
 
 
+# ── A stream metered by its caller (a voice session, 7.69.00) ────────────────
+
+def test_a_voice_session_s_stream_logs_one_line_of_its_totals(log):
+    attribute(None)
+    usage_meter.log_stream_usage('amazon.nova-2-5-sonic', 'InvokeModelWithBidirectionalStream',
+                                 input_tokens=7900, output_tokens=920)
+    assert _line(log) == {
+        'workspace_id': 'DEPLOYMENT', 'model_id': 'amazon.nova-2-5-sonic',
+        'operation': 'InvokeModelWithBidirectionalStream', 'service_tier': 'default',
+        'input_tokens': 7900, 'output_tokens': 920, 'cache_read_tokens': 0, 'cache_write_tokens': 0}
+
+
+def test_a_stream_s_unreadable_count_is_reported_never_raised(log):
+    usage_meter.log_stream_usage('amazon.nova-2-5-sonic', 'InvokeModelWithBidirectionalStream',
+                                 input_tokens=-1, output_tokens=0)
+    log.info.assert_not_called()
+    assert log.warning.call_args.kwargs['extra']['operation'] == 'InvokeModelWithBidirectionalStream'
+
+
 # ── Attribution ──────────────────────────────────────────────────────────────
 
 def test_nothing_attributed_is_unattributed():

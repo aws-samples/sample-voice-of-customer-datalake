@@ -47,6 +47,7 @@ import { handleFeedbackCatalogueRoutes } from './mock-feedback-catalogue.js';
 import { handlePersonaRoutes } from './mock-personas.js';
 import { focusGroupEvents, handleFocusGroupRoutes } from './mock-focus-groups.js';
 import { handleValidationRoutes } from './mock-validation.js';
+import { handleVoiceRoutes, handleVoiceUpgrade } from './mock-voice.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
@@ -1537,6 +1538,8 @@ function handleDomainModules(req, res, url) {
     || handleFormRoutes(req, res, url, send, shared)
     || handleDocumentReviewRoutes(req, res, url, send, shared)
     || handleCompanyPersonaRoutes(req, res, url, send, shared)
+    // (7.69.00: voice sessions and `/projects/voice/usage`, before the persona routes and any project-id route)
+    || handleVoiceRoutes(req, res, url, send, shared)
     || handlePersonaRoutes(req, res, url, send, shared)
     || handleFocusGroupRoutes(req, res, url, send, shared)
     || handleValidationRoutes(req, res, url, send, shared)
@@ -4680,6 +4683,11 @@ const server = http.createServer((req, res) => {
   } else {
     sendJson(res, 404, { error: 'Not found' });
   }
+});
+
+// The fake voice session's WebSocket (mock-voice.js, 7.69.00); any other upgrade is refused.
+server.on('upgrade', (req, socket) => {
+  if (!handleVoiceUpgrade(req, socket)) socket.destroy();
 });
 
 const PORT = Number(process.env.PORT) || 3001;

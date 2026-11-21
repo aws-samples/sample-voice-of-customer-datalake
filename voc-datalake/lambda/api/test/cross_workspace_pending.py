@@ -402,6 +402,15 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /projects/<project_id>/validation/criteria',
         'PUT /projects/<project_id>/validation/form',
     }),
+    # The voice sessions (7.69.00): a project persona's sessions move with projects; the month's usage is the
+    # deployment's (a workspace's own budget comes with them).
+    'voice_session_routes.py': frozenset({
+        'GET /projects/<project_id>/personas/<persona_id>/voice-sessions',
+        'GET /projects/<project_id>/personas/<persona_id>/voice-sessions/<session_id>',
+        'GET /projects/voice/usage',
+        'POST /projects/<project_id>/personas/<persona_id>/voice-sessions',
+        'POST /projects/<project_id>/personas/<persona_id>/voice-sessions/<session_id>/end',
+    }),
     'projects_handler.py': frozenset({
         'DELETE /projects/<project_id>',
         'DELETE /projects/<project_id>/documents/<document_id>',

@@ -499,7 +499,8 @@ export type DocTypeFieldPinWouldSeeDrift = MustBeTrue<BothWays<GenerateDocumentB
 export type DocTypeFieldPinWouldSeeNarrowing = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType | 'not-a-doc-type'>>
 
 /**
- * Every document type the SPA knows; `focus_group` (7.64.00) is a saved persona focus group: synthetic, a reference.
+ * Every document type the SPA knows; `focus_group` (7.64.00) is a saved persona focus group and `persona_interview`
+ * (7.69.00) a voice interview's transcript: both synthetic, a reference, never evidence.
  * The Validate step's (7.68.00): its plan, a synthetic run (personas, never evidence) and its report.
  */
 export type KnownProjectDocumentType =
@@ -514,6 +515,7 @@ export type KnownProjectDocumentType =
   | 'validation_plan'
   | 'validation_run'
   | 'validation_report'
+  | 'persona_interview'
 
 export interface ProjectDocument {
   document_id: string

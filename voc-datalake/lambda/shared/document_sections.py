@@ -34,6 +34,8 @@ SECTION_BY_TYPE: Final[dict[str, str]] = {
     'validation_plan': FALLBACK_SECTION,
     'validation_run': FALLBACK_SECTION,
     'validation_report': FALLBACK_SECTION,
+    # A voice interview's transcript (7.69.00, shared/voice_transcripts.py): synthetic, never evidence.
+    'persona_interview': FALLBACK_SECTION,
 }
 
 

@@ -130,5 +130,7 @@ export function apiStackDependencyProps(
     }),
     memoryExtractQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/memory-extract`,
     memoryExtractQueueArn: `arn:aws:sqs:${env.region}:${env.account}:memory-extract`,
+    // VocProcessingStack's voice relay (-c voicePersonas=true, 7.69.00); read only with the flag.
+    voiceRuntimeArn: `arn:aws:bedrock-agentcore:${env.region}:${env.account}:runtime/voc_persona_voice-Fixture000`,
   };
 }

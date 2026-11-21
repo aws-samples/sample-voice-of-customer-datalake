@@ -1215,5 +1215,19 @@
       "notFound": "Ese formulario ya no está en este espacio de trabajo.",
       "saveFailed": "No se pudo guardar la configuración del feedback en la app."
     }
+  },
+  "voiceUsage": {
+    "title": "Personas por voz",
+    "intro": "Minutos de voz dedicados a hablar con personas en toda esta implementación (mes {{month}}). El audio nunca se almacena.",
+    "loading": "Cargando el uso de voz…",
+    "failed": "No se pudo cargar el uso de voz.",
+    "minutes": "Minutos usados",
+    "ofTotal": "{{used}} de {{total}}",
+    "sessions": "Sesiones este mes",
+    "cost": "Coste estimado",
+    "live": "En directo ahora",
+    "sessionMinutes": "Sesión más larga (min)",
+    "dailySessions": "Sesiones por persona y día",
+    "model": "Modelo"
   }
 }

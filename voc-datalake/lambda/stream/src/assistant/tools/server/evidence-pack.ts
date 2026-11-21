@@ -11,7 +11,7 @@ import type { ApiInvoker } from '../internal-api.js';
 import { EVIDENCE_PACK_RESOURCE } from '../internal-api.js';
 import { parseEach, seg } from './common.js';
 
-const evidenceSchema = z.object({
+export const evidenceSchema = z.object({
   feedback_id: z.string().min(1).max(128),
   text: z.string().catch(''),
   verbatim: z.boolean().catch(true),

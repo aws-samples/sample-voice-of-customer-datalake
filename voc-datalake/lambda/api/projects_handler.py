@@ -113,6 +113,7 @@ from shared import (
     prototype_walkthrough,
     prototype_walkthrough_draft,
     row_lineage_ack,
+    voice_session_routes,
 )
 from shared import prioritization_axes as axes_mod
 from shared.api import (
@@ -247,9 +248,10 @@ def project_access_middleware(app, next_middleware):
     caller = _caller_from_event(event.raw_event)
     access = None  # pragma: no mutate  every reader isinstance-checks, so any non-ProjectAccess is this
     route = project_access.project_route(event.path)
-    if (project_access.is_library_path(event.path)
+    if (project_access.is_reserved_path(event.path)
             and '<project_id>' in str(getattr(app.context.get('_route'), 'path', ''))):
-        # /projects/library/jobs reached a project route with the library's segment as its id: no such project.
+        # /projects/library/jobs (or /projects/voice/…) reached a project route with a reserved segment as its id: no
+        # such project.
         raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
     if route is not None:
         # Powertools' `<project_id>` group captures exactly this path segment, so
@@ -5496,6 +5498,9 @@ ASSIST_WORK = {
         _walkthrough_draft_work, 'Could not draft the walkthrough. Please try again.'),
     # The Validate step's criteria, plan, synthetic run and report (shared/project_validation_routes.py, 7.68.00).
     **project_validation_routes.ASSIST_WORK,
+    # A voice session's transcript as a persona_interview document (shared/voice_session_routes.py, 7.69.00).
+    voice_session_routes.ASSIST_VOICE_FINALIZE: assist_jobs.Work(
+        voice_session_routes.finalize_work, voice_session_routes.FINALIZE_FAILED),
 }
 
 # Document comments and review links (shared/document_review_routes.py, docs/document-review.md). Included
@@ -5517,6 +5522,8 @@ app.include_router(persona_copy_routes.app)
 app.include_router(persona_grounding_routes.app)
 # The Validate step: criteria, plan, synthetic run, the testers' card and the report (7.68.00).
 app.include_router(project_validation_routes.app)
+# Talk to the personas by voice (shared/voice_session_routes.py, 7.69.00, -c voicePersonas=true).
+app.include_router(voice_session_routes.app)
 # The Documents Library (shared/library_routes.py, docs/documents-library.md): its own scope's roles, not a project's.
 app.include_router(library_routes.app)
 

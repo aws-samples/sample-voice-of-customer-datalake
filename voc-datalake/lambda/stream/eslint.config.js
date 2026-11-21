@@ -56,6 +56,7 @@ export const BROWSER_SAFE_FILES = [
   'src/assistant/tools/server/document-sections.ts',
   'src/assistant/tools/server/memory-shape.ts',
   'src/lib/is-record.ts',
+  'src/voice/protocol.ts',
 ]
 // Node globals a browser does not have (vite defines `global` only); the browser-safe block refuses them.
 const NODE_ONLY_GLOBALS = ['process', 'Buffer', '__dirname', '__filename', 'require', 'module', 'exports', 'setImmediate', 'clearImmediate']

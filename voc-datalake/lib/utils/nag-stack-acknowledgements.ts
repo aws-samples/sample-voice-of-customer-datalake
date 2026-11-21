@@ -98,6 +98,8 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       'avatars/*', 'company-context/*', 'company-context/design/logo_preview_*', 'company-context/design/icons_*',
       'library/*', 'memory-imports/*', 'projects/*/product_docs/*', 'projects/*/product_docs/extracted/*',
       'prototypes/*', 'raw/github_issues/*', 'raw/feedback_form/*', 'raw/feature_requests/*', 'scratch/document_jobs/*',
+      // With -c voicePersonas=true (7.69.00): the projects API's voice sessions' scratch files.
+      'scratch/voice/*',
     ]),
   ]);
 }

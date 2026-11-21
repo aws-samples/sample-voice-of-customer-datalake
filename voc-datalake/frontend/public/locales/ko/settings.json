@@ -1180,5 +1180,19 @@
       "notFound": "그 양식은 더 이상 이 워크스페이스에 없습니다.",
       "saveFailed": "앱 내 피드백 설정을 저장하지 못했습니다."
     }
+  },
+  "voiceUsage": {
+    "title": "음성 페르소나",
+    "intro": "이 배포 전체에서 페르소나와 대화하는 데 쓴 음성 시간입니다(대상 월 {{month}}). 오디오는 절대 저장되지 않습니다.",
+    "loading": "음성 사용량을 불러오는 중…",
+    "failed": "음성 사용량을 불러오지 못했습니다.",
+    "minutes": "사용한 시간(분)",
+    "ofTotal": "{{used}} / {{total}}",
+    "sessions": "이번 달 세션",
+    "cost": "예상 비용",
+    "live": "현재 진행 중",
+    "sessionMinutes": "최장 세션(분)",
+    "dailySessions": "1인당 하루 세션",
+    "model": "모델"
   }
 }

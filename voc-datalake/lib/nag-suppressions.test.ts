@@ -316,7 +316,10 @@ describe('cdk-nag acknowledgements', () => {
       // 141 -> 145 (7.62.00): the Documents Library's objects: the projects API's `library/*` and `ws/{one id}/library/*`
       // (its workspace-objects statement) and voc-retention's reads of their extracted text (`library/*\/extracted`,
       // `ws/{one id}/library/*\/extracted`), each its own finding of an existing acknowledgement.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 145, used: 145 });
+      // 145 -> 150 (7.69.00, the all-features shape's -c voicePersonas=true): the projects API's voice sessions'
+      // `scratch/voice/*` (its workspace-objects statement, a finding of the raw prefixes' acknowledgement), and the
+      // relay's role (voice-relay.ts): a session's evidence and transcript parts and its runtime's log groups and streams.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 150, used: 150 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

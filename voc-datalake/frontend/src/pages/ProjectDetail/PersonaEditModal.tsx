@@ -15,6 +15,7 @@ import type { ProjectPersona } from '../../api/projectTypes'
 import DialogClose from '../../components/DialogClose/DialogClose'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import { saveIgnoringFailure, useSnapshotGuard } from '../../components/UnsavedChangesGuard/useSnapshotGuard'
+import PersonaVoiceField from './voice/PersonaVoiceField'
 
 interface PersonaEditModalProps {
   readonly persona: ProjectPersona
@@ -23,6 +24,8 @@ interface PersonaEditModalProps {
   readonly onSave: () => Promise<unknown>
   readonly onClose: () => void
   readonly isSaving: boolean
+  /** A project persona on a deployment with `features.voice` (7.69.00): its voice is chosen here too. */
+  readonly showVoice?: boolean
 }
 
 // Sub-component props
@@ -297,6 +300,7 @@ export default function PersonaEditModal({
   onSave,
   onClose,
   isSaving,
+  showVoice = false,
 }: PersonaEditModalProps) {
   const { t } = useTranslation('projectDetail')
   const titleId = useId()
@@ -317,6 +321,7 @@ export default function PersonaEditModal({
         </div>
         <div className="dialog-body space-y-6">
           <BasicInfoSection persona={persona} onChange={onChange} />
+          {showVoice ? <PersonaVoiceField persona={persona} onChange={onChange} /> : null}
           <IdentitySection persona={persona} onChange={onChange} />
           <GoalsSection persona={persona} onChange={onChange} />
           <PainPointsSection persona={persona} onChange={onChange} />

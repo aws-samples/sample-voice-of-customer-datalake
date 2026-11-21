@@ -2,7 +2,8 @@
  * Test support: synth context with every context-gated feature on.
  *
  * The default synth leaves out the inbound-email intake, participant email + the board pool, the
- * verification fixture provider, the engineering agents' connector broker, a model pin and Bedrock model access
+ * verification fixture provider, the engineering agents' connector broker, the voice personas' relay, a model pin and
+ * Bedrock model access
  * (data protection is on by default since 5.74.00; this shape sets it explicitly). A template gate that
  * reads only the default shape never sees those resources, so suites that judge the WHOLE app (the nag
  * suppression audit, the template gates) synthesize this shape as well. It mirrors the audit synth's
@@ -27,6 +28,9 @@ export const ALL_FEATURES_CONTEXT: Readonly<Record<string, unknown>> = {
   inboundEmailDomain: 'voc.example.com',
   emailFrom: 'noreply@voc.example.com',
   protectData: true,
+  // The voice personas' relay (7.69.00, lib/stacks/voice-relay.ts): an AgentCore Runtime billed per session only.
+  // Not in the audit synth's GATED_CONTEXT, whose eu scope and Region refuse it (lib/utils/voice-personas.ts).
+  voicePersonas: true,
   anthropicUseCase: {
     companyName: 'Example Air', companyWebsite: 'https://example.com', intendedUsers: '0',
     industryOption: 'Technology', useCases: 'Nag suppression audit synth.', otherIndustryOption: '',

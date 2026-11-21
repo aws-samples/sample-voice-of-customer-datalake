@@ -6,6 +6,7 @@
  * fields this bundle does not know yet, while known fields are made safe for
  * the components that consume them.
  */
+import { VOICE_IDS } from '@stream/voice/protocol'
 import { z } from 'zod'
 import { deletedSourcesOrUndefined } from './deletedSources'
 import { DOCUMENT_SECTIONS } from './documentSections'
@@ -148,6 +149,8 @@ const ProjectPersonaSchema = z.looseObject({
   erased_evidence: optionalErasedEvidenceSchema,
   /** Kept by a replace regeneration (#429); only a literal true protects. */
   protected: z.boolean().optional().catch(undefined),
+  /** Its voice when talked to (7.69.00); null = back to the default. An id the model does not have reads as absent. */
+  voice_id: z.enum(VOICE_IDS).nullish().catch(undefined),
 })
 
 /** One persona row, or null when it has no usable id (company library, copy answers). */

@@ -226,7 +226,8 @@
       "cancel": "Cancel",
       "outlineNote": "The {{type}} opens here with its outline, for you to write in."
     },
-    "syntheticRunNotice": "A synthetic validation run: personas tried the prototype's screens. Their verdicts are hypotheses to test with real testers, never customer feedback, and never count towards a criterion being met."
+    "syntheticRunNotice": "A synthetic validation run: personas tried the prototype's screens. Their verdicts are hypotheses to test with real testers, never customer feedback, and never count towards a criterion being met.",
+    "interviewSyntheticNotice": "A voice interview with a synthetic persona: its answers are hypotheses to test, never customer feedback or evidence. Only the reviews it cites are real, and the audio was never stored."
   },
   "imageErrors": {
     "tooLarge": "{{name}} is still too large after resizing. Try a smaller screenshot, or crop it.",
@@ -400,7 +401,14 @@
     "workarounds": "Workarounds (one per line)",
     "workaroundsPlaceholder": "How they currently cope...",
     "locationPlaceholder": "Urban, US",
-    "occupationPlaceholder": "Product Manager"
+    "occupationPlaceholder": "Product Manager",
+    "voice": "Voice when you talk to this persona",
+    "voiceDefault": "Default (chosen for this persona)",
+    "voiceHelp": "Never chosen from the persona's name or background. Tiffany and Matthew speak every supported language; the other voices speak their own.",
+    "voiceOption": "{{name}} ({{gender}}, {{speaks}})",
+    "voiceFeminine": "feminine",
+    "voiceMasculine": "masculine",
+    "voiceEveryLanguage": "every language"
   },
   "personas": {
     "evidence": {
@@ -928,6 +936,78 @@
       "writing": "Writing the report…",
       "open": "Open the report",
       "decide": "Create decision"
+    }
+  },
+  "voice": {
+    "talk": "Talk",
+    "talkTo": "Talk to {{name}} by voice",
+    "consent": {
+      "title": "Talk to {{name}}",
+      "transcript": "The conversation's transcript is kept as a document of this project. The audio is never stored.",
+      "synthetic": "{{name}} speaks with a synthetic voice: an AI persona built from real customer reviews, not a customer. What it says is a hypothesis to test, never feedback.",
+      "budget": "Voice minutes left this month: {{minutes}}. One session lasts at most {{session}} min and costs about {{cost}} a minute.",
+      "sessionsToday": "Sessions you can still start today: {{left}}",
+      "language": "Voice does not speak your interface language yet. Speak {{supported}} and the persona follows you.",
+      "headphones": "Use headphones so the persona does not hear itself.",
+      "agree": "I understand, and I agree that the transcript is kept",
+      "start": "Start talking",
+      "starting": "Starting…",
+      "cancel": "Cancel",
+      "loading": "Checking the voice minutes left…",
+      "loadFailed": "Could not check whether voice is available. Try again.",
+      "off": "Voice is not turned on in this deployment.",
+      "noMinutes": "This month's voice minutes are used up.",
+      "noSessions": "You have used all of today's voice sessions.",
+      "errors": {
+        "microphone": "The microphone could not be used. Allow it for this site in your browser, then try again.",
+        "rateLimited": "Several sessions were started in the last minute. Wait a moment, then try again.",
+        "dailyLimit": "You have used all of today's voice sessions.",
+        "busy": "Voice is busy: too many conversations are live. Try again in a few minutes.",
+        "budgetExhausted": "This month's voice minutes are used up.",
+        "voiceOff": "Voice is not turned on in this deployment.",
+        "generic": "The session could not start. Try again."
+      }
+    },
+    "session": {
+      "title": "Talking with {{name}}",
+      "synthetic": "Synthetic voice",
+      "syntheticNote": "An AI persona speaking from real reviews, not a customer. Nothing it says becomes feedback, and the audio is never stored.",
+      "connecting": "Connecting…",
+      "live": "Live: speak whenever you like, and interrupt the persona at any time.",
+      "ending": "Ending the session…",
+      "you": "You",
+      "interrupted": "interrupted",
+      "captions": "Live captions",
+      "noCaptions": "The captions of both sides appear here.",
+      "micLevel": "Microphone level",
+      "time": "Time:",
+      "cost": "Cost so far:",
+      "minutesLeft": "Minutes left this month:",
+      "end": "End",
+      "close": "Close",
+      "notice": {
+        "timeAlmostUp": "One minute left in this session.",
+        "budgetAlmostUp": "This month's voice minutes are nearly used up.",
+        "wrappingUp": "Time is up: the persona is saying goodbye."
+      },
+      "ended": {
+        "byPerson": "You ended the session.",
+        "sessionLimit": "The session reached its time limit.",
+        "budget": "This month's voice minutes are used up.",
+        "busy": "Voice is busy right now. Try again in a few minutes.",
+        "error": "The session stopped because of an error.",
+        "disconnected": "The connection was lost.",
+        "refused": "The session link had expired or was already used. Start a new session."
+      },
+      "filing": "Filing the transcript…",
+      "filed": "The transcript is saved as a document of this project.",
+      "filedFailed": "The transcript could not be filed.",
+      "endFailed": "The end of the session could not be recorded, so the transcript was not filed.",
+      "openTranscript": "Open transcript",
+      "saveToLibrary": "Save to Library",
+      "savingToLibrary": "Saving to the Library…",
+      "savedToLibrary": "Saved to the Library.",
+      "libraryFailed": "It could not be saved to the Library."
     }
   }
 }

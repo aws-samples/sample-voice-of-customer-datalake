@@ -177,6 +177,9 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'user-category-access': 'standard',
   'users': 'standard',
   'validation-logs': 'live',
+  'voice-offer': 'live', // (7.69.00) a persona's voice offer: the month's minutes and today's sessions left move with use
+  'voice-session': 'polled', // (7.69.00) a voice session's status, polled until its transcript is filed
+  'voice-usage': 'standard', // (7.69.00) Administration → AI: this month's voice minutes
   'voting-session': 'live',
   'voting-session-open': 'live',
   'web-review-methods': 'live', // what each review site's runs learned (pages/Scrapers, api/webReviewMethodsApi.ts)

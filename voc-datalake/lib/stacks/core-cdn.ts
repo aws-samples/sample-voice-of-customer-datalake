@@ -27,6 +27,7 @@ import {
 } from '../utils/nag-suppressions';
 import { PROTOTYPE_BASE_CSP, PROTOTYPE_DRAFT_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 import { realtimeConnectSrc } from '../utils/realtime';
+import { voiceConnectSrc, voicePersonasEnabled } from '../utils/voice-personas';
 import type { DataProtection } from '../utils/data-protection';
 import type { Construct } from 'constructs';
 import { engineeringAgentsEnabled } from './engineering-broker';
@@ -84,6 +85,11 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
   // CLOUDFRONT DISTRIBUTIONS
   // ============================================
   
+  // The voice personas (-c voicePersonas=true, 7.69.00, docs/voice-personas.md): the SPA connects to the AgentCore
+  // Runtime's WebSocket host, named explicitly (CSP3 lets an https: source match wss:, not every older browser does),
+  // and may ask for the microphone on its own origin. Without the flag both headers stay exactly as they were.
+  const voice = voicePersonasEnabled(stack);
+  const voiceConnect = voice ? ` ${voiceConnectSrc(stack.region)}` : '';
   // The SPA's security headers. The public widget's policy (WidgetHeadersPolicy, below) carries them too.
   const spaSecurityHeaders: cloudfront.ResponseSecurityHeadersBehavior = {
     contentSecurityPolicy: {
@@ -95,7 +101,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
       // the /prototypes/* behavior's own PrototypeHeadersPolicy (script-src 'unsafe-inline')
       // still governs script execution inside that framed document; this only permits the
       // cross-document load itself.
-      contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com ${realtimeConnectSrc(stack.region)}; form-action ${spaFormActions(stack)}; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
+      contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com ${realtimeConnectSrc(stack.region)}${voiceConnect}; form-action ${spaFormActions(stack)}; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
       override: true,
     },
     contentTypeOptions: { override: true },
@@ -113,14 +119,16 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
   };
   // Nothing in the app uses these features (passkeys need only publickey-credentials, left at its
   // same-origin default); denying them limits what an injected script or framed page could ask for.
-  const permissionsPolicy: cloudfront.ResponseCustomHeader = {
+  const permissions = (microphone: string): cloudfront.ResponseCustomHeader => ({
     header: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
+    value: `camera=(), microphone=${microphone}, geolocation=(), payment=(), usb=(), serial=(), bluetooth=()`,
     override: true,
-  };
+  });
+  // The public widget never asks for the microphone, whatever the flag.
+  const permissionsPolicy = permissions('()');
   const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(stack, 'SecurityHeadersPolicy', {
     securityHeadersBehavior: spaSecurityHeaders,
-    customHeadersBehavior: { customHeaders: [permissionsPolicy] },
+    customHeadersBehavior: { customHeaders: [voice ? permissions('(self)') : permissionsPolicy] },
   });
 
   // The SPA bucket's origin: the app's pages (default behavior) and the public widget file (/widget/*) read through
