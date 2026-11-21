@@ -262,6 +262,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     'workspaces_handler.py': frozenset({
         'POST /platform/workspaces', 'POST /platform/workspaces/<ws>/delete/cancel',
         'POST /platform/workspaces/<ws>/delete/resume',
+        # A trial workspace's extension and conversion (7.71.00, docs/multi-workspace.md "Trial workspaces").
+        'POST /platform/workspaces/<ws>/trial/extend', 'POST /platform/workspaces/<ws>/trial/convert',
     }),
 }
 
@@ -274,6 +276,7 @@ PLATFORM_ADMIN_ONLY: dict[str, frozenset[str]] = {
     'workspaces_handler.py': frozenset({
         'POST /platform/workspaces', 'GET /platform/workspaces', 'POST /platform/workspaces/<ws>/delete/cancel',
         'POST /platform/workspaces/<ws>/delete/resume', 'GET /platform/costs',
+        'POST /platform/workspaces/<ws>/trial/extend', 'POST /platform/workspaces/<ws>/trial/convert',
     }),
     # What every workspace of the deployment shares (docs/multi-workspace.md, "Per-workspace configuration"): the
     # start theme (decision 7) and the alarms on the deployment's own Lambdas.
@@ -708,6 +711,8 @@ def test_the_platform_gate_raises_authorization_error():
     ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/cancel'),
     ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/resume'),
     ('workspaces_handler.py', 'GET /platform/costs'),
+    ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/trial/extend'),
+    ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/trial/convert'),
 ])
 def test_removing_the_platform_gate_is_detected(handler, route):
     tree = ast.parse((API_DIR / handler).read_text(encoding='utf-8'))

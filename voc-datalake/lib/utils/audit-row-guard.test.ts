@@ -38,6 +38,8 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   // voc-workspaces (voc-retention's de-identification) gets the forge Deny.
   WorkspacesTable: ['VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
     'VocApiStack/WorkspacesLambdaRole',
+    // A trial's end (7.71.00): its trial_paused and plugin_disabled rows (AUDIT#WS#* only).
+    'VocProcessingStack/TrialExpiryRole',
     // A workspace's hard delete: the platform's completed row (AUDIT#workspace-deletes only).
     'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole'],
 };
@@ -122,11 +124,11 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings, users and feedback-form APIs, the workspace-resolution policy and the workspace delete carry a one-partition deny', () => {
+  it('only the settings, users and feedback-form APIs, the workspace-resolution policy, the trial expiry and the workspace delete carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
     expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual(['VocApiStack/FeedbackFormLambdaRole',
       'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
-      'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
+      'VocProcessingStack/TrialExpiryRole', 'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
   });
 
   it('the feedback forms put only a deployment form\'s AUDIT#delete in voc-aggregates and AUDIT#WS#* in voc-workspaces', () => {

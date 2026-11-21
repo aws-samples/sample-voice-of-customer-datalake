@@ -8,8 +8,8 @@ import { PLATFORM_ACME as ACME } from '../test/workspaceFixtures'
 
 vi.mock('./client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
-import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
-import { platformWorkspacesApi } from './platformWorkspacesApi'
+import { fetchApi, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
+import { platformWorkspacesApi, toTrialDays } from './platformWorkspacesApi'
 
 beforeEach(() => resetFetchApi())
 
@@ -22,7 +22,7 @@ function listOf(body: unknown) {
 describe('platformWorkspacesApi.list', () => {
   it('keeps the readable rows, without the secret status the server still sends', async () => {
     await expect(listOf({ workspaces: [{ ...ACME, secret_status: 'ready' }, { ...ACME, slug: 'acme-two' }], next_cursor: 'n' })).resolves.toStrictEqual({
-      rows: [ACME, { ...ACME, slug: 'acme-two' }],
+      rows: [{ ...ACME, trial: null }, { ...ACME, slug: 'acme-two', trial: null }],
       nextCursor: 'n',
     })
   })
@@ -45,5 +45,32 @@ describe('platformWorkspacesApi.create', () => {
       id: ACME.id, name: 'Acme Outfitters', slug: 'acme',
     })
     expect(fetchApi).toHaveBeenCalledWith('/platform/workspaces', { method: 'POST', body: '{"name":"Acme Outfitters","slug":"acme"}' })
+  })
+})
+
+// 7.71.00: a trial workspace's create, extension and conversion (docs/multi-workspace.md "Trial workspaces").
+describe('platformWorkspacesApi trials', () => {
+  const VIEW = { days: 30, expires_at: '2026-12-21T09:00:00+00:00', paused_at: null, converted_at: null, extended: [] }
+
+  it('creates a trial with its days and pack', async () => {
+    routeFetchApi({ 'POST /platform/workspaces': () => ({ workspace: { ...ACME, trial: VIEW } }) })
+    const pack = { forms: ['workshop'], categories: true, playbooks: false }
+    await expect(platformWorkspacesApi.createTrial('Acme Outfitters', 'acme', 60, pack))
+      .resolves.toStrictEqual({ id: ACME.id, name: ACME.name, slug: ACME.slug })
+    expect(sentFetchApiBody('/platform/workspaces', 'POST')).toStrictEqual({ name: 'Acme Outfitters', slug: 'acme', trial: { days: 60, pack } })
+  })
+
+  it('extends by its days and converts, each answering the trial', async () => {
+    routeFetchApi({
+      [`POST /platform/workspaces/${ACME.id}/trial/extend`]: () => ({ trial: VIEW }),
+      [`POST /platform/workspaces/${ACME.id}/trial/convert`]: () => ({ trial: { ...VIEW, converted_at: '2026-12-01T09:00:00+00:00' } }),
+    })
+    await expect(platformWorkspacesApi.extendTrial(ACME.id, 14)).resolves.toStrictEqual(VIEW)
+    expect(sentFetchApiBody(`/platform/workspaces/${ACME.id}/trial/extend`, 'POST')).toStrictEqual({ days: 14 })
+    await expect(platformWorkspacesApi.convertTrial(ACME.id)).resolves.toMatchObject({ converted_at: '2026-12-01T09:00:00+00:00' })
+  })
+
+  it('reads a length from a select, the default for anything else', () => {
+    expect([toTrialDays('14'), toTrialDays(60), toTrialDays('45'), toTrialDays(null)]).toStrictEqual([14, 60, 30, 30])
   })
 })

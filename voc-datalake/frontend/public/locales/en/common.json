@@ -387,6 +387,69 @@
       "deleteChangedMeanwhile": "The workspace changed while the delete was being requested. Reload the page and try again.",
       "deleteUnavailable": "Deleting a workspace is not available in this deployment.",
       "deleteNotStarted": "The workspace is marked for deletion, but its delete could not start. Ask a platform admin to cancel or resume it."
+    },
+    "trial": {
+      "create": "Create a trial",
+      "createDescription": "A trial workspace for a customer at the end of a workshop: its people, a starter pack, then the import wizard. It runs for 14, 30 or 60 days, then pauses.",
+      "dialogTitle": "Create a trial workspace",
+      "days": "Length",
+      "daysOption": "{{days}} days",
+      "pausesNotice": "When the trial ends it pauses: its plugins and live forms stop, and nothing is deleted. Reads and the export keep working until a platform admin extends or converts it. A trial never deletes itself.",
+      "fixNameSlug": "Check the name and the address.",
+      "submit": "Create the trial",
+      "creating": "Creating the trial…",
+      "invites": {
+        "title": "People",
+        "hint": "Each person is added to the trial with their role. Someone with no account gets one, and Cognito emails them a temporary password.",
+        "email": "Email",
+        "role": "Role",
+        "playbook": "Suggested playbook",
+        "noPlaybook": "None",
+        "add": "Add a person",
+        "remove": "Remove {{email}}",
+        "removeUnnamed": "Remove this person",
+        "emailInvalid": "Enter a valid email address, or remove this row."
+      },
+      "pack": {
+        "title": "Starter pack",
+        "hint": "Made in the trial with your own access, each one recorded by its own route. Forms are created Off.",
+        "form": "Form: {{name}}",
+        "categories": "Sample categories ({{n}})"
+      },
+      "done": {
+        "title": "{{name}} is ready.",
+        "stepsLabel": "What the starter pack did",
+        "member": "Added {{subject}}.",
+        "memberFailed": "Could not add {{subject}}: {{reason}}",
+        "form": "Created the form {{subject}} (Off).",
+        "formFailed": "Could not create the form {{subject}}: {{reason}}",
+        "categories": "Saved {{subject}} sample categories.",
+        "categoriesFailed": "Could not save the sample categories: {{reason}}",
+        "unknownReason": "the server refused it",
+        "openImport": "Open the import wizard in {{name}}"
+      },
+      "badge": {
+        "running": "Trial · ends {{date}}",
+        "paused": "Trial paused since {{date}}",
+        "converted": "Converted from a trial"
+      },
+      "extend": "Extend",
+      "extendBy": "Extend {{name}} by",
+      "convert": "Convert",
+      "convertWho": "Convert {{name}} into a regular workspace",
+      "convertTitle": "Convert {{name}}?",
+      "convertMessage": "It becomes a regular workspace with no end.",
+      "convertPausedMessage": "It becomes a regular workspace with no end, and the plugins and forms its pause turned off are turned back on.",
+      "banner": {
+        "running": "This is a trial workspace until {{date}}. Then it pauses: its plugins and live forms stop, and nothing is deleted. A platform admin can extend or convert it.",
+        "paused": "This trial is paused since {{date}}: {{plugins}} plugins and {{forms}} live forms were turned off. Nothing was deleted: reads and the export still work. Ask a platform admin to extend or convert it."
+      },
+      "pausedPlugins": "This trial is paused: plugins stay off until a platform admin extends or converts it.",
+      "errors": {
+        "converted": "This trial was converted: it is a regular workspace now.",
+        "changed": "The trial changed meanwhile: reload and try again.",
+        "notFound": "That workspace is no trial, or it is being deleted."
+      }
     }
   },
   "timeRange": {

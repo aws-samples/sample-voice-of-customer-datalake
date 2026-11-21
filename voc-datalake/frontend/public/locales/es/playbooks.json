@@ -108,5 +108,6 @@
       "why": "Tu asistente de programación lee los mismos comentarios a través de un único endpoint MCP.",
       "cta": "Abrir MCP y skills"
     }
-  }
+  },
+  "suggested": "Sugerido para usted"
 }

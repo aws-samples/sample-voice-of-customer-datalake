@@ -63,7 +63,7 @@ def test_the_current_workspace_is_the_one_the_header_names(table, lambda_context
     status, body = _get(table, lambda_context, '/me/workspaces/current', ANA, {'x-workspace-id': OTHER_WS})
     assert status == 200
     assert body == {'workspace': {'id': OTHER_WS, 'name': 'Birch Lane', 'slug': 'birch', 'role': 'viewer',
-                                  'platform_admin': False}}
+                                  'platform_admin': False, 'trial': None, 'playbook': None}}
 
 
 def test_the_current_workspace_needs_the_header(table, lambda_context):

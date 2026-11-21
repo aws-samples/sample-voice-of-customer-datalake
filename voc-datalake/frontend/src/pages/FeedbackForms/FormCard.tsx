@@ -17,6 +17,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTrialPaused } from '../../workspace/currentTrial'
 import { Link, useNavigate } from 'react-router-dom'
 import { BarChart3, Copy, Eye, FlaskConical, Pencil, QrCode, Trash2, CopyPlus } from 'lucide-react'
 import type { FeedbackForm } from '../../api/types'
@@ -247,6 +248,7 @@ export default function FormCard({ form: record, onDelete, onToggle, apiEndpoint
   const { stats, statsFetching } = useCardStats(record.form_id)
   const live = useLiveSwitch(record, form, answered(stats, loaded?.meta.has_responses === true), onToggle)
   const name = record.name.trim() === '' ? t('card.unnamed') : record.name
+  const paused = useTrialPaused()
   // The controls are `relative` WITHOUT a z-index: they paint above the stretched link because they come after it
   // (the ⋯ menu opens in a portal, above every card).
   return (
@@ -258,8 +260,9 @@ export default function FormCard({ form: record, onDelete, onToggle, apiEndpoint
         <ResponsesLine stats={stats} busy={statsFetching || statsRefreshing} />
       </div>
       <div className="relative flex flex-wrap items-center gap-2 sm:justify-end lg:flex-nowrap">
+        {/* A paused trial (7.71.00) puts no form live: an Off form's switch is held back, the layout's banner says why. */}
         <Switch label={record.enabled ? t('card.live') : t('card.off')} widthOf={[t('card.live'), t('card.off')]}
-          checked={record.enabled} onChange={live.toggle} disabled={record.imported !== undefined} />
+          checked={record.enabled} onChange={live.toggle} disabled={record.imported !== undefined || (paused && !record.enabled)} />
         <Link to={builderPath(record.form_id, 'results')} className="btn btn-secondary btn-sm">
           <BarChart3 size={14} aria-hidden="true" />{t('card.results')}
         </Link>

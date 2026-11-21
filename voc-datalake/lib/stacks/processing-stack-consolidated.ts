@@ -132,6 +132,8 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Only with -c engineeringAgents=true: the engineering agents' broker, bus and runtime (processing-engineering.ts)
  * - Only with -c voicePersonas=true: the voice personas' relay, an AgentCore Runtime (voice-relay.ts `addVoiceRelay`,
  *   which bin/voc-datalake.ts calls on this stack)
+ * - A trial workspace's end: voc-trial-expiry and the voc-trials schedule group (trial-expiry.ts `addTrialExpiry`, which
+ *   bin/voc-datalake.ts calls on this stack, 7.71.00)
  */
 export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;

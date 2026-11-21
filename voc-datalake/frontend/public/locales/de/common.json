@@ -387,6 +387,69 @@
       "deleteChangedMeanwhile": "Der Arbeitsbereich hat sich geändert, während das Löschen angefordert wurde. Laden Sie die Seite neu und versuchen Sie es erneut.",
       "deleteUnavailable": "Das Löschen eines Arbeitsbereichs ist in dieser Bereitstellung nicht verfügbar.",
       "deleteNotStarted": "Der Arbeitsbereich ist zum Löschen markiert, aber das Löschen konnte nicht starten. Bitten Sie einen Plattform-Admin, es abzubrechen oder fortzusetzen."
+    },
+    "trial": {
+      "create": "Testphase anlegen",
+      "createDescription": "Ein Test-Workspace für einen Kunden am Ende eines Workshops: seine Personen, ein Startpaket, dann der Import-Assistent. Er läuft 14, 30 oder 60 Tage und wird dann pausiert.",
+      "dialogTitle": "Test-Workspace anlegen",
+      "days": "Dauer",
+      "daysOption": "{{days}} Tage",
+      "pausesNotice": "Am Ende der Testphase wird sie pausiert: Plugins und live geschaltete Formulare stoppen, und nichts wird gelöscht. Lesen und der Export funktionieren weiter, bis ein Plattform-Admin sie verlängert oder umwandelt. Eine Testphase löscht sich nie selbst.",
+      "fixNameSlug": "Prüfen Sie den Namen und die Adresse.",
+      "submit": "Testphase anlegen",
+      "creating": "Testphase wird angelegt…",
+      "invites": {
+        "title": "Personen",
+        "hint": "Jede Person wird mit ihrer Rolle hinzugefügt. Wer noch kein Konto hat, bekommt eines, und Cognito schickt ihm per E-Mail ein temporäres Passwort.",
+        "email": "E-Mail",
+        "role": "Rolle",
+        "playbook": "Vorgeschlagenes Playbook",
+        "noPlaybook": "Keines",
+        "add": "Person hinzufügen",
+        "remove": "{{email}} entfernen",
+        "removeUnnamed": "Diese Person entfernen",
+        "emailInvalid": "Geben Sie eine gültige E-Mail-Adresse ein oder entfernen Sie diese Zeile."
+      },
+      "pack": {
+        "title": "Startpaket",
+        "hint": "Wird mit Ihrem eigenen Zugang im Test-Workspace angelegt, jeweils von seiner eigenen Route protokolliert. Formulare werden ausgeschaltet angelegt.",
+        "form": "Formular: {{name}}",
+        "categories": "Beispielkategorien ({{n}})"
+      },
+      "done": {
+        "title": "{{name}} ist bereit.",
+        "stepsLabel": "Was das Startpaket erledigt hat",
+        "member": "{{subject}} hinzugefügt.",
+        "memberFailed": "{{subject}} konnte nicht hinzugefügt werden: {{reason}}",
+        "form": "Formular {{subject}} angelegt (aus).",
+        "formFailed": "Formular {{subject}} konnte nicht angelegt werden: {{reason}}",
+        "categories": "{{subject}} Beispielkategorien gespeichert.",
+        "categoriesFailed": "Die Beispielkategorien konnten nicht gespeichert werden: {{reason}}",
+        "unknownReason": "der Server hat es abgelehnt",
+        "openImport": "Import-Assistenten in {{name}} öffnen"
+      },
+      "badge": {
+        "running": "Testphase · endet {{date}}",
+        "paused": "Testphase pausiert seit {{date}}",
+        "converted": "Aus einer Testphase umgewandelt"
+      },
+      "extend": "Verlängern",
+      "extendBy": "{{name}} verlängern um",
+      "convert": "Umwandeln",
+      "convertWho": "{{name}} in einen regulären Workspace umwandeln",
+      "convertTitle": "{{name}} umwandeln?",
+      "convertMessage": "Er wird zu einem regulären Workspace ohne Ende.",
+      "convertPausedMessage": "Er wird zu einem regulären Workspace ohne Ende, und die Plugins und Formulare, die die Pause ausgeschaltet hat, werden wieder eingeschaltet.",
+      "banner": {
+        "running": "Dies ist ein Test-Workspace bis {{date}}. Danach wird er pausiert: Plugins und live geschaltete Formulare stoppen, und nichts wird gelöscht. Ein Plattform-Admin kann ihn verlängern oder umwandeln.",
+        "paused": "Diese Testphase ist seit {{date}} pausiert: {{plugins}} Plugins und {{forms}} live geschaltete Formulare wurden ausgeschaltet. Nichts wurde gelöscht: Lesen und der Export funktionieren weiter. Bitten Sie einen Plattform-Admin, sie zu verlängern oder umzuwandeln."
+      },
+      "pausedPlugins": "Diese Testphase ist pausiert: Plugins bleiben aus, bis ein Plattform-Admin sie verlängert oder umwandelt.",
+      "errors": {
+        "converted": "Diese Testphase wurde umgewandelt: Sie ist jetzt ein regulärer Workspace.",
+        "changed": "Die Testphase wurde zwischenzeitlich geändert: Laden Sie neu und versuchen Sie es erneut.",
+        "notFound": "Dieser Workspace ist keine Testphase, oder er wird gerade gelöscht."
+      }
     }
   },
   "timeRange": {

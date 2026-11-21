@@ -22,6 +22,7 @@ vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
 
 import { FormsApiError } from '../../../api/feedbackFormsV2Api'
 import { STORED_META, renameDraft, renderWithDraft, sampleForm } from '../test/draftHarness'
+import { setCurrentTrial } from '../../../workspace/currentTrial'
 import SaveButtons from './SaveButtons'
 import { THEME_UNREADABLE } from './useFormDraft'
 
@@ -113,5 +114,24 @@ describe('an incomplete language (F17)', () => {
     expect(dialog).toHaveTextContent('Update the live form with missing translations?')
     await harness.user.click(within(dialog).getByRole('button', { name: 'Update anyway' }))
     await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed', enabled: true }), 5, null) })
+  })
+})
+
+// 7.71.00: a paused trial puts no form live until a platform admin extends or converts it; Save still works.
+describe('a paused trial', () => {
+  const PAUSED = { days: 30, expires_at: '2026-12-21T09:00:00+00:00', paused_at: '2026-12-21T09:00:05+00:00',
+    converted_at: null, paused: { plugins: 0, forms: 1 } }
+
+  it('holds Publish back with the reason, and still saves', async () => {
+    setCurrentTrial({ trial: PAUSED, playbook: null })
+    const harness = renderButtons(sampleForm())
+    await renameDraft(harness)
+    const publish = await screen.findByRole('button', { name: 'Publish' })
+    expect(publish).toHaveAttribute('aria-disabled', 'true')
+    await harness.user.click(publish)
+    expect(api.saveForm).not.toHaveBeenCalled()
+    await harness.user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ enabled: false }), 5, null) })
+    setCurrentTrial({ trial: null, playbook: null })
   })
 })

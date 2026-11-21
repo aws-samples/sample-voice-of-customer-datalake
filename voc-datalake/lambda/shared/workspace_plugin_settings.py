@@ -25,6 +25,13 @@ the next tick no longer reaches the workspace. A run the operator routes start i
 run) runs only a plugin the workspace enabled (``require_plugin_enabled``: 409 ``PLUGIN_NOT_ENABLED`` otherwise), and a
 workspace webhook takes a delivery only for one (plugins/_shared/base_webhook.py, the bad signature's 401 otherwise).
 The deployment-only plugins (``DEPLOYMENT_ONLY_PLUGINS``) are neither listed for a workspace nor enabled in one.
+
+A trial workspace (7.71.00, shared/trials.py): its expiry turns its plugins off through the same change
+(``set_trial_plugin``: the audit row, kind ``plugin_disabled`` with ``reason`` ``trial_paused`` and the job as the actor,
+then the same transaction) and an extension or a conversion turns those back on (``plugin_enabled``, the platform
+admin's, ``reason`` the route's). While the trial is paused, a workspace admin's enable is refused (409
+``trial_paused``, shared/trial_state.py): the transaction's check of ``META`` then also needs ``trial.paused_at`` absent,
+so a pause that lands between the read and the commit still wins.
 """
 from __future__ import annotations
 
@@ -40,11 +47,13 @@ from shared.persona_save import cancellation_codes
 from shared.plugin_identity import S3_IMPORT_SOURCE, is_valid_plugin_identifier
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
+from shared.trial_state import PAUSED_AT, TRIAL, TRIAL_PAUSED, TRIAL_PAUSED_CODE, is_paused, stored_trial
 from shared.workspace import ACTIVE, NOT_FOUND, WorkspaceContext, audit_key, audit_sort_key, ws_key
 from shared.workspace_members import NO_LONGER_ADMIN
 from shared.workspace_plugins import plugin_partition
 
-__all__ = ['offered_plugin', 'parse_plugin_change', 'require_plugin_enabled', 'set_plugin_enabled', 'workspace_plugins']
+__all__ = ['offered_plugin', 'parse_plugin_change', 'require_plugin_enabled', 'set_plugin_enabled', 'set_trial_plugin',
+           'workspace_plugins']
 
 PLUGIN_ENABLED: Final = 'plugin_enabled'
 PLUGIN_DISABLED: Final = 'plugin_disabled'
@@ -117,12 +126,24 @@ def workspace_plugins(table: Any, ws: str, ceiling: Sequence[str]) -> list[dict[
     return plugins
 
 
-def _checks(table_name: str, context: WorkspaceContext, actor: str) -> list[dict[str, Any]]:
-    """The workspace is still active; a member admin is still admin (a platform admin acts by the group)."""
-    checks: list[dict[str, Any]] = [{'ConditionCheck': {
-        'TableName': table_name, 'Key': {'pk': ws_key(context.ws), 'sk': 'META'},
-        'ConditionExpression': '#status = :active', 'ExpressionAttributeNames': {'#status': 'status'},
-        'ExpressionAttributeValues': {':active': ACTIVE}}}]
+def _active_check(table_name: str, ws: str, *, unpaused: bool) -> dict[str, Any]:
+    """The workspace is still active (and, with ``unpaused``, no paused trial: shared/trial_state.py)."""
+    if not unpaused:
+        return {'ConditionCheck': {
+            'TableName': table_name, 'Key': {'pk': ws_key(ws), 'sk': 'META'},
+            'ConditionExpression': '#status = :active', 'ExpressionAttributeNames': {'#status': 'status'},
+            'ExpressionAttributeValues': {':active': ACTIVE}}}
+    return {'ConditionCheck': {
+        'TableName': table_name, 'Key': {'pk': ws_key(ws), 'sk': 'META'},
+        'ConditionExpression': '#status = :active AND attribute_not_exists(#trial.#paused_at)',
+        'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, '#paused_at': PAUSED_AT},
+        'ExpressionAttributeValues': {':active': ACTIVE}}}
+
+
+def _checks(table_name: str, context: WorkspaceContext, actor: str, *, enabling: bool) -> list[dict[str, Any]]:
+    """The workspace is still active (an enable: and no paused trial); a member admin is still admin (a platform admin
+    acts by the group)."""
+    checks: list[dict[str, Any]] = [_active_check(table_name, context.ws, unpaused=enabling)]
     if not context.platform_admin:
         checks.append({'ConditionCheck': {
             'TableName': table_name, 'Key': {'pk': ws_key(context.ws), 'sk': f'MEMBER#{actor}'},
@@ -131,39 +152,72 @@ def _checks(table_name: str, context: WorkspaceContext, actor: str) -> list[dict
     return checks
 
 
+def _commit(table: Any, ws: str, plugin_id: str, enabled: bool, audit: dict[str, Any],
+            checks: list[dict[str, Any]]) -> str:
+    """The audit row first (``audit``: the actor and what else it records), then ONE transaction of the row's put or
+    delete and ``checks``; the change's time. A cancelled transaction's error propagates (the callers read its codes)."""
+    at = now_iso()
+    actor = audit['actor']
+    put_new_audit_row(table, {'pk': audit_key(ws), 'sk': audit_sort_key(at),
+                              'kind': PLUGIN_ENABLED if enabled else PLUGIN_DISABLED, 'plugin': plugin_id,
+                              'at': at, **audit})
+    key = plugin_key(plugin_id, ws)
+    change = ({'Put': {'TableName': table.name, 'Item': {**key, 'enabled_by': actor, 'enabled_at': at},
+                       'ConditionExpression': 'attribute_not_exists(pk)'}}
+              if enabled else
+              {'Delete': {'TableName': table.name, 'Key': key, 'ConditionExpression': 'attribute_exists(pk)'}})
+    # A token per request: botocore's retry of a transaction whose answer was lost succeeds (idempotent 10 min).
+    table.meta.client.transact_write_items(TransactItems=[change, *checks], ClientRequestToken=secrets.token_hex(16))
+    return at
+
+
 def set_plugin_enabled(table: Any, context: WorkspaceContext, plugin_id: str, enabled: bool,
                        actor: str) -> dict[str, Any]:
     """Enable or disable ``plugin_id`` (already checked against the ceiling) for the workspace; the plugin's entry.
 
     The audit row first, then one transaction (the row's put or delete and the checks). 409 when the row changed
-    meanwhile; 403 when the acting member admin stopped being admin; the one workspace 404 when it stopped being
-    active."""
+    meanwhile, or (an enable) while the workspace is a paused trial; 403 when the acting member admin stopped being
+    admin; the one workspace 404 when it stopped being active."""
     ws = context.ws
     stored = _stored(table, plugin_id, ws)
     if (stored is not None) == enabled:
         # Nothing to change: the entry as GET shows it.
         return {'id': plugin_id, 'enabled': enabled,
                 **{key: stored[key] for key in ('enabled_at', 'enabled_by') if stored and isinstance(stored.get(key), str)}}
-    at = now_iso()
-    put_new_audit_row(table, {'pk': audit_key(ws), 'sk': audit_sort_key(at),
-                              'kind': PLUGIN_ENABLED if enabled else PLUGIN_DISABLED, 'plugin': plugin_id,
-                              'actor': actor, 'at': at, 'platform_admin': context.platform_admin})
-    key = plugin_key(plugin_id, ws)
-    change = ({'Put': {'TableName': table.name, 'Item': {**key, 'enabled_by': actor, 'enabled_at': at},
-                       'ConditionExpression': 'attribute_not_exists(pk)'}}
-              if enabled else
-              {'Delete': {'TableName': table.name, 'Key': key, 'ConditionExpression': 'attribute_exists(pk)'}})
-    items = [change, *_checks(table.name, context, actor)]
+    if enabled and is_paused(stored_trial(table, ws)):
+        # Refused before its audit row: nothing is about to change.
+        raise ConflictError(TRIAL_PAUSED, code=TRIAL_PAUSED_CODE)
     try:
-        # A token per request: botocore's retry of a transaction whose answer was lost succeeds (idempotent 10 min).
-        table.meta.client.transact_write_items(TransactItems=items, ClientRequestToken=secrets.token_hex(16))
+        at = _commit(table, ws, plugin_id, enabled, {'actor': actor, 'platform_admin': context.platform_admin},
+                     _checks(table.name, context, actor, enabling=enabled))
     except ClientError as exc:
         codes = cancellation_codes(exc)
         if codes[2:3] == ['ConditionalCheckFailed']:
             raise AuthorizationError(NO_LONGER_ADMIN) from exc
         if codes[1:2] == ['ConditionalCheckFailed']:
+            if enabled and is_paused(stored_trial(table, ws)):
+                raise ConflictError(TRIAL_PAUSED, code=TRIAL_PAUSED_CODE) from exc
             raise NotFoundError(NOT_FOUND) from exc
         if codes[:1] == ['ConditionalCheckFailed'] or 'TransactionConflict' in codes:
             raise ConflictError(CHANGED_MEANWHILE) from exc
         raise
     return {'id': plugin_id, 'enabled': enabled, **({'enabled_at': at, 'enabled_by': actor} if enabled else {})}
+
+
+def set_trial_plugin(table: Any, ws: str, plugin_id: str, enabled: bool, actor: dict[str, Any], reason: str) -> bool:
+    """A trial's pause (``enabled`` False) or its resume (True) of ``plugin_id`` (shared/trial_pause.py): the same change
+    as a workspace admin's, recorded with ``actor`` (``{'actor': sub, …}``: the expiry job, or the platform admin who
+    extended or converted) and ``reason``, and checked only for the workspace being active (no member's role: nobody
+    acts as a member). True when it changed the row, False when it already held or the workspace is not active."""
+    if (_stored(table, plugin_id, ws) is not None) == enabled:
+        return False
+    try:
+        _commit(table, ws, plugin_id, enabled, {**actor, 'reason': reason},
+                [_active_check(table.name, ws, unpaused=False)])
+    except ClientError as exc:
+        if 'ConditionalCheckFailed' in cancellation_codes(exc):
+            # Changed meanwhile (the row: already what was asked) or no longer active: nothing for the trial to do. A
+            # conflict with another transaction propagates: the caller runs again (an expiry is retried).
+            return False
+        raise
+    return True

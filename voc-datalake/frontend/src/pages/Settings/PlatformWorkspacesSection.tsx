@@ -8,12 +8,16 @@
  * - Enter one: a full page load to `/workspace/{slug}/`. A platform admin who is not a member enters as admin, which the
  *   server checks live and audits; the console records the workspace for the gate first (`platformEntry.ts`),
  *   because the caller's own list does not name it.
+ * - Create a trial (7.71.00, trial/CreateTrialDialog.tsx): a workspace with an end, its people and a starter pack, then
+ *   its import wizard. A trial's row says its state and offers Extend and Convert (trial/TrialActions.tsx); at its end
+ *   it only pauses, it never deletes itself.
  *
  * @module pages/Settings/PlatformWorkspacesSection
  */
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Building2, Info, LogIn } from 'lucide-react'
+import { Building2, Hourglass, Info, LogIn } from 'lucide-react'
 import CursorPagesList from '../../components/CursorPagesList/CursorPagesList'
 import Notice from '../../components/Notice/Notice'
 import { useExpiringValue } from '../../hooks/useExpiringValue'
@@ -30,12 +34,18 @@ import { workspaceUrl } from '../../workspace/workspacePath'
 import { PLATFORM_REFUSALS } from '../../workspace/workspaceRefusals'
 import CreateWorkspaceForm from './CreateWorkspaceForm'
 import { SECTION_TITLE } from './sectionTitle'
+import CreateTrialDialog from './trial/CreateTrialDialog'
+import TrialActions, { TrialBadge } from './trial/TrialActions'
 
-/** Enter `workspace` with a full page load, the gate told which workspace the address names. */
-function enterWorkspace(workspace: PlatformEntry): void {
+/** Enter `workspace` (at `path`, its Home by default) with a full page load, the gate told which workspace the address
+ *  names. */
+function enterWorkspace(workspace: PlatformEntry, path = '/'): void {
   rememberPlatformEntry(workspace)
-  window.location.assign(workspaceUrl(workspace.slug, '/'))
+  window.location.assign(workspaceUrl(workspace.slug, path))
 }
+
+/** Where a new trial opens: its import wizard (7.67.00), for its feedback and the workshop's survey. */
+const IMPORT_WIZARD_PATH = '/scrapers/import'
 
 /**
  * Enter. Its slug is always one that can be a base path: the API client's schema (`isWorkspaceSlug`,
@@ -58,15 +68,17 @@ function WorkspaceRow({ workspace }: Readonly<{ workspace: PlatformWorkspace }>)
     ? t(`workspaces.platform.status.${workspace.status}`)
     : workspace.status
   return (
-    <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
+    <li className="flex flex-col gap-2 py-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-text-strong break-words">{workspace.name}</p>
         <p className="text-xs text-muted font-mono break-all">{workspaceUrl(workspace.slug, '/')}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {status === '' ? null : <span className="badge badge-muted">{status}</span>}
+        {workspace.trial === null ? null : <TrialBadge trial={workspace.trial} />}
         <EnterButton workspace={workspace} label={t('workspaces.platform.enter')} className="btn btn-secondary btn-sm gap-1.5" />
       </div>
+      <TrialActions workspace={workspace} />
     </li>
   )
 }
@@ -80,6 +92,7 @@ export default function PlatformWorkspacesSection() {
   const queryClient = useQueryClient()
   const { query, rows: workspaces } = useCursorPages<PlatformWorkspace>(platformWorkspacesKey(), platformWorkspacesApi.list)
   const [created, showCreated] = useExpiringValue<{ name: string; slug: string; id: string }>(15000)
+  const [creatingTrial, setCreatingTrial] = useState(false)
   const create = useMutation({
     mutationFn: ({ name, slug }: { name: string; slug: string }) => platformWorkspacesApi.create(name, slug),
     // The new workspace is in the console's list and in the caller's own (they are its admin). The caller's own
@@ -109,6 +122,20 @@ export default function PlatformWorkspacesSection() {
         onCreate={(name, slug) => create.mutateAsync({ name, slug })}
         onCreated={showCreated}
       />
+      <div className="flex flex-col gap-2 rounded-lg border border-border p-4 sm:flex-row sm:items-center">
+        <p className="flex-1 text-sm text-muted">{t('workspaces.trial.createDescription')}</p>
+        <button type="button" className="btn btn-secondary gap-2 self-start sm:self-auto" onClick={() => setCreatingTrial(true)}>
+          <Hourglass size={16} aria-hidden="true" />{t('workspaces.trial.create')}
+        </button>
+      </div>
+      {creatingTrial ? (
+        <CreateTrialDialog
+          onClose={() => {
+            setCreatingTrial(false)
+            void queryClient.invalidateQueries({ queryKey: platformWorkspacesKey() })
+          }}
+          onOpenImport={(workspace) => enterWorkspace(workspace, IMPORT_WIZARD_PATH)} />
+      ) : null}
       <RefusalAlert error={create.error} refusals={PLATFORM_REFUSALS} />
       {created === null ? null : (
         <div role="status" className="flex flex-col gap-2 rounded-lg bg-ok-subtle p-3 text-sm text-ok sm:flex-row sm:items-center">

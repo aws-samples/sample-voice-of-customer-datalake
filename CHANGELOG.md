@@ -17,6 +17,63 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.71.00] - 2026-11-21
+
+**A trial workspace, created at the end of the workshop** ([multi-workspace.md](docs/multi-workspace.md#trial-workspaces)).
+A platform admin creates a trial workspace for a customer in one step: its people, a starter pack (the workshop
+feedback and in-app feedback forms, sample categories, a suggested playbook per person), then its import wizard. It
+runs for 14, 30 or 60 days (30 by default) and then **pauses**: its plugins and live forms stop, and nothing is
+deleted. A trial never deletes itself; it stays paused until a platform admin extends or converts it, its admins
+export it, or the data controller asks for its hard delete. No new API Gateway resource, no new workspace status and
+no fixed cost.
+
+### Added
+
+- **Create a trial** (Administration → Workspaces, platform admins only): a name, an address, a length (14, 30 or 60
+  days), the people to add (email, role and a suggested role playbook) and the starter pack. `POST
+  /platform/workspaces` takes an optional `trial: {days, pack}`; the trial's one-time schedule is made first, then the
+  workspace, with the `trial` map on its `META` and listing rows and a `trial_created` audit row. The pack is then
+  applied as ordinary creates through the existing routes, with the admin's own credentials, in the new workspace, each
+  audited by its own route: the member add (someone with no account gets one, and Cognito emails them a temporary
+  password), the forms from the `workshop` and `app_micro_feedback` templates (Off) and the sample categories
+  (`voc-datalake/schemas/trial-pack.json`). A refused step is reported and the others still run. Then the trial's import
+  wizard opens inside it. `voc-datalake/scripts/trial-pack.mjs` does the same headless, with a platform admin's ID
+  token (`--dry-run` prints the requests).
+- **The trial's end.** One EventBridge Scheduler schedule per trial and end (`voc-trial-<ws>-<end>` in the new
+  `voc-trials` group, deleting itself once it has run) invokes the new `voc-trial-expiry` job in VocProcessingStack.
+  It pauses a due trial: `paused_at` first, then the workspace's plugins through the existing audited disable
+  (`plugin_disabled`, reason `trial_paused`) and its live forms turned off, all recorded on the trial (`paused`) and in
+  a `trial_paused` audit row. A trial extended meanwhile, converted or being deleted is left alone.
+- **Extend and convert** on a trial's row in the console (`POST /platform/workspaces/{ws}/trial/extend` `{days}` and
+  `…/convert`, platform admins only, live-checked, audited first as `trial_extended` and `trial_converted`). A paused
+  trial's plugins and forms are turned back on. An extension counts from the trial's end, or from now once it ended.
+- **The trial banner** above every page of a trial workspace, for every member: when it ends and that it then only
+  pauses, or since when it is paused and what the pause turned off. `GET /me/workspaces/current` answers `trial`.
+- **A suggested playbook.** The member add takes an optional `playbook` (a role playbook, [playbooks.md](docs/playbooks.md));
+  Home offers it first, marked *Suggested for you*. `GET /me/workspaces/current` answers it as `playbook`.
+
+### Changed
+
+- **A paused trial holds back what would turn it on again.** A plugin's enable answers 409 `trial_paused` (its
+  transaction also checks that the trial is not paused, so a pause that lands meanwhile wins), and so does a form put
+  live (`POST` or `PUT /feedback-forms…` with `enabled: true`). Workspace settings, a form's Live switch and the
+  builder's Publish say why. Reads, edits, imports and the export keep working.
+- `GET /platform/workspaces` answers each workspace's `trial` (or null).
+
+### Upgrade notes
+
+- **Nothing is deleted** by a trial's end, an extension or a conversion. The job's one delete is the existing plugin
+  disable's own `PLUGIN#{plugin}` / `WS#{ws}` row, which holds no data (a present row means enabled). Its role holds no
+  other delete action of any kind (no S3, no other DeleteItem, no BatchWriteItem, no scheduler delete), pinned by
+  `lib/stacks/trial-expiry.test.ts`. A whole-workspace delete stays the data controller's request, behind
+  `-c workspaceHardDelete=true`.
+- **New resources, VocProcessingStack only:** the `voc-trial-expiry` function with its role and log group, the
+  `voc-trials` schedule group and the scheduler's role (`lambda:InvokeFunction` on the job alone). VocApiStack gains
+  statements on the workspaces API's role only (UpdateItem of `trial` on `META` and the listing row,
+  `scheduler:CreateSchedule` on the group's `voc-trial-*` names, `iam:PassRole` of the scheduler's role to EventBridge
+  Scheduler, and UpdateItem of a form's `enabled` and stamps for a resume): no new resource, it stays at 425.
+- **No fixed cost:** a schedule group and schedules are free until a schedule runs, once per trial end.
+
 ## [7.70.00] - 2026-11-21
 
 **The leadership view**: Insights → Leadership shows on one page how the teams use the method, by month or quarter:

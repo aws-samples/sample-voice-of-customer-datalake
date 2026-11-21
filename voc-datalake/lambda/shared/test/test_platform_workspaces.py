@@ -208,11 +208,11 @@ def test_the_list_is_every_workspace_by_name(table):
     workspaces, cursor = list_workspaces(table, limit=25, cursor=None)
     assert workspaces == [
         {'id': ids['Acme'], 'name': 'Acme', 'slug': 'slug-1', 'status': 'active', 'created_at': AT,
-         'secret_status': CREDENTIALS_READY},
+         'secret_status': CREDENTIALS_READY, 'trial': None},
         {'id': ids['birch'], 'name': 'birch', 'slug': 'slug-2', 'status': 'active', 'created_at': AT,
-         'secret_status': CREDENTIALS_READY},
+         'secret_status': CREDENTIALS_READY, 'trial': None},
         {'id': ids['zephyr'], 'name': 'zephyr', 'slug': 'slug-0', 'status': 'active', 'created_at': AT,
-         'secret_status': CREDENTIALS_READY},
+         'secret_status': CREDENTIALS_READY, 'trial': None},
     ]
     assert cursor is None
 

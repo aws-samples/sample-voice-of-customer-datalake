@@ -380,6 +380,69 @@
       "deleteChangedMeanwhile": "Obszar roboczy zmienił się podczas wysyłania żądania usunięcia. Odśwież stronę i spróbuj ponownie.",
       "deleteUnavailable": "Usuwanie obszaru roboczego nie jest dostępne w tym wdrożeniu.",
       "deleteNotStarted": "Obszar roboczy jest oznaczony do usunięcia, ale usuwanie nie mogło się rozpocząć. Poproś administratora platformy o anulowanie lub wznowienie."
+    },
+    "trial": {
+      "create": "Utwórz wersję próbną",
+      "createDescription": "Próbna przestrzeń robocza dla klienta na koniec warsztatów: jego osoby, pakiet startowy, a potem kreator importu. Działa 14, 30 lub 60 dni, a potem zostaje wstrzymana.",
+      "dialogTitle": "Utwórz próbną przestrzeń roboczą",
+      "days": "Czas trwania",
+      "daysOption": "{{days}} dni",
+      "pausesNotice": "Po zakończeniu wersja próbna zostaje wstrzymana: jej wtyczki i aktywne formularze przestają działać, a nic nie jest usuwane. Odczyt i eksport działają, dopóki administrator platformy jej nie przedłuży lub nie przekształci. Wersja próbna nigdy nie usuwa się sama.",
+      "fixNameSlug": "Sprawdź nazwę i adres.",
+      "submit": "Utwórz wersję próbną",
+      "creating": "Tworzenie wersji próbnej…",
+      "invites": {
+        "title": "Osoby",
+        "hint": "Każda osoba zostaje dodana do wersji próbnej ze swoją rolą. Kto nie ma konta, dostaje je, a Cognito wysyła mu e-mailem hasło tymczasowe.",
+        "email": "E-mail",
+        "role": "Rola",
+        "playbook": "Sugerowany playbook",
+        "noPlaybook": "Brak",
+        "add": "Dodaj osobę",
+        "remove": "Usuń {{email}}",
+        "removeUnnamed": "Usuń tę osobę",
+        "emailInvalid": "Wpisz prawidłowy adres e-mail albo usuń ten wiersz."
+      },
+      "pack": {
+        "title": "Pakiet startowy",
+        "hint": "Tworzony w wersji próbnej z Twoim własnym dostępem, każdy element rejestrowany przez własną trasę. Formularze są tworzone jako wyłączone.",
+        "form": "Formularz: {{name}}",
+        "categories": "Przykładowe kategorie ({{n}})"
+      },
+      "done": {
+        "title": "{{name}} jest gotowa.",
+        "stepsLabel": "Co zrobił pakiet startowy",
+        "member": "Dodano {{subject}}.",
+        "memberFailed": "Nie udało się dodać {{subject}}: {{reason}}",
+        "form": "Utworzono formularz {{subject}} (wyłączony).",
+        "formFailed": "Nie udało się utworzyć formularza {{subject}}: {{reason}}",
+        "categories": "Zapisano przykładowe kategorie: {{subject}}.",
+        "categoriesFailed": "Nie udało się zapisać przykładowych kategorii: {{reason}}",
+        "unknownReason": "serwer odmówił",
+        "openImport": "Otwórz kreator importu w {{name}}"
+      },
+      "badge": {
+        "running": "Wersja próbna · do {{date}}",
+        "paused": "Wersja próbna wstrzymana od {{date}}",
+        "converted": "Przekształcona z wersji próbnej"
+      },
+      "extend": "Przedłuż",
+      "extendBy": "Przedłuż {{name}} o",
+      "convert": "Przekształć",
+      "convertWho": "Przekształć {{name}} w zwykłą przestrzeń roboczą",
+      "convertTitle": "Przekształcić {{name}}?",
+      "convertMessage": "Stanie się zwykłą przestrzenią roboczą bez końca.",
+      "convertPausedMessage": "Stanie się zwykłą przestrzenią roboczą bez końca, a wtyczki i formularze wyłączone przez wstrzymanie zostaną ponownie włączone.",
+      "banner": {
+        "running": "To jest próbna przestrzeń robocza do {{date}}. Potem zostanie wstrzymana: jej wtyczki i aktywne formularze przestaną działać, a nic nie zostanie usunięte. Administrator platformy może ją przedłużyć lub przekształcić.",
+        "paused": "Ta wersja próbna jest wstrzymana od {{date}}: wyłączono wtyczki ({{plugins}}) i aktywne formularze ({{forms}}). Nic nie zostało usunięte: odczyt i eksport nadal działają. Poproś administratora platformy o jej przedłużenie lub przekształcenie."
+      },
+      "pausedPlugins": "Ta wersja próbna jest wstrzymana: wtyczki pozostają wyłączone, dopóki administrator platformy jej nie przedłuży lub nie przekształci.",
+      "errors": {
+        "converted": "Ta wersja próbna została przekształcona: to teraz zwykła przestrzeń robocza.",
+        "changed": "Wersja próbna zmieniła się w międzyczasie: odśwież i spróbuj ponownie.",
+        "notFound": "Ta przestrzeń robocza nie jest wersją próbną albo jest właśnie usuwana."
+      }
     }
   },
   "timeRange": {

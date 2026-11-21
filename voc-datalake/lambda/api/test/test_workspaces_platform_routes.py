@@ -65,7 +65,7 @@ def test_a_platform_admin_creates_a_workspace_and_is_its_admin(world, lambda_con
     assert status == 201
     ws = body['workspace']['id']
     assert body == {'workspace': {'id': ws, 'name': 'Acme Outfitters', 'slug': 'acme', 'role': 'admin',
-                                  'secret_status': 'ready'}}
+                                  'secret_status': 'ready', 'trial': None}}
     assert [row['role'] for row in _rows(world, 'USER#sub-pat')] == ['admin']
     assert world.table.get_item(Key={'pk': f'WS#{ws}', 'sk': 'META'})['Item']['secret_status'] == 'ready'
     # The creator's own picker lists it at once.
@@ -166,7 +166,7 @@ def test_the_list_pages_every_workspace_by_name(world, lambda_context):
         _call(world, lambda_context, 'POST', '/platform/workspaces', body={'name': name, 'slug': slug})
     status, first = _call(world, lambda_context, 'GET', '/platform/workspaces', query={'limit': '2'})
     assert (status, [w['name'] for w in first['workspaces']]) == (200, ['Acme', 'birch'])
-    assert set(first['workspaces'][0]) == {'id', 'name', 'slug', 'status', 'created_at', 'secret_status'}
+    assert set(first['workspaces'][0]) == {'id', 'name', 'slug', 'status', 'created_at', 'secret_status', 'trial'}
     _, second = _call(world, lambda_context, 'GET', '/platform/workspaces',
                       query={'limit': '2', 'cursor': first['next_cursor']})
     assert ([w['name'] for w in second['workspaces']], second['next_cursor']) == (['zephyr'], None)

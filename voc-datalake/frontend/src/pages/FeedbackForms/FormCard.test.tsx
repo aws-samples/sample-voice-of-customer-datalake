@@ -19,6 +19,7 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
+import { setCurrentTrial } from '../../workspace/currentTrial'
 import FormCard from './FormCard'
 import { normalizeFeedbackForms } from './formSchema'
 import { readHandoff } from './builder/newFormHandoff'
@@ -245,6 +246,17 @@ describe('FormCard', () => {
   it('marks the form a prototype build created as prototype pins', () => {
     renderCard(record({ form_type: 'prototype_pin' }))
     expect(screen.getByText('Prototype pins')).toBeInTheDocument()
+  })
+
+  // 7.71.00: a paused trial puts no form live; a live form can still be turned off.
+  it('holds an Off form\'s switch back in a paused trial, and leaves a live one\'s', () => {
+    setCurrentTrial({ trial: { days: 30, expires_at: null, paused_at: '2026-12-21T09:00:05+00:00', converted_at: null,
+      paused: { plugins: 0, forms: 1 } }, playbook: null })
+    renderCard(record({ enabled: false }))
+    expect(screen.getByRole('switch', { name: 'Off' })).toBeDisabled()
+    renderCard(record({ form_id: 'form_2' }))
+    expect(screen.getByRole('switch', { name: 'Live' })).toBeEnabled()
+    setCurrentTrial({ trial: null, playbook: null })
   })
 
   it('reads a v1 record as its migrated questions (issue #171: a sparse one too)', () => {

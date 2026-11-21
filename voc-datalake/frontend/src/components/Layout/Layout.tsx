@@ -60,6 +60,7 @@ import { isMenuItemEnabled } from '../../config/menuConfig'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import ProfileMenu from '../ProfileMenu/ProfileMenu'
 import PasskeyPrompt from '../PasskeyPrompt/PasskeyPrompt'
+import TrialBanner from '../../workspace/TrialBanner'
 import WorkspaceMenu from '../../workspace/WorkspaceMenu'
 import { Sidebar, type NavItem } from './SidebarComponents'
 import { useFocusViewActive } from '../DocumentCanvas/page/focusView'
@@ -327,7 +328,8 @@ export default function Layout() {
             (e.g. `.sr-only` spans). Without it they resolve against the initial containing block and
             their offset grows the document, so the window shows a second scrollbar (/radar, 5.12.00). */}
         <div className={pageScrollerClass(focusView, location.pathname, launcherYielded)} data-testid="page-scroller">
-          {focusView ? null : <PasskeyPrompt />}
+          {/* The passkey prompt; a trial workspace's end, or its pause, for every member (7.71.00). */}
+          {focusView ? null : <><PasskeyPrompt /><TrialBanner /></>}
           <Outlet />
         </div>
       </main>

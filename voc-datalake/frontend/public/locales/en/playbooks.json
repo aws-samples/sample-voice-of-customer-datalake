@@ -32,5 +32,6 @@
     "run_engineering_agent": { "title": "Start an engineering run from a problem", "why": "An agent builds the fix, and a person reviews it before anything is pushed.", "cta": "Open Runs" },
     "build_prototype": { "title": "Build a prototype from a PRD", "why": "A clickable prototype is tested with customers before it is built for real.", "cta": "Open Projects" },
     "connect_mcp": { "title": "Use VoC from your IDE", "why": "Your coding assistant reads the same feedback through one MCP endpoint.", "cta": "Open Connect" }
-  }
+  },
+  "suggested": "Suggested for you"
 }

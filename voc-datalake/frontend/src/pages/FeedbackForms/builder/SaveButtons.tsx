@@ -21,6 +21,8 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
+import { useTrialPaused } from '../../../workspace/currentTrial'
 import { Languages, Loader2, Radio, Save } from 'lucide-react'
 import ConfirmModal from '../../../components/ConfirmModal/ConfirmModal'
 import { Tooltip } from '../../../components/Tooltip/Tooltip'
@@ -55,12 +57,23 @@ function useBuilderSaveKey(onSave: (() => void) | null): void {
 
 const nameOf = (language: string): string => (isFormLanguage(language) ? languageNames[language] : language)
 
+/** Why Save and the primary button (Publish or Update live form) are held back, if they are. */
+function blockedReasons(t: TFunction<'feedbackForms'>, draft: ReturnType<typeof useDraft>, live: boolean, paused: boolean) {
+  const saveReason = draft.errors.length > 0 ? t('builder.save.fixToSave', { count: draft.errors.length }) : undefined
+  const publishReason = draft.publishErrors.length > 0 ? t('builder.save.fixToPublish', { count: draft.publishErrors.length }) : undefined
+  // A paused trial (7.71.00) puts no form live until a platform admin extends or converts it; Save still works.
+  const pausedReason = paused && !live ? t('builder.save.trialPaused') : undefined
+  // Live: the save IS Update live form, so its errors are already every error.
+  return { saveReason, primaryReason: live ? saveReason : pausedReason ?? publishReason ?? saveReason }
+}
+
 /** What the buttons do: Save, Publish and Update live form, each with the questions it asks first. */
 function useSaveActions() {
   const { t } = useTranslation('feedbackForms')
   const draft = useDraft()
   const [pending, setPending] = useState<Pending>(null)
   const live = draft.form.enabled && !draft.isNew
+  const paused = useTrialPaused()
   const ready = draft.errors.length === 0 && draft.status.kind !== 'saving'
   const missing = incompleteLanguages(draft.problems)
   const update = (askedLanguages = false) => {
@@ -80,8 +93,7 @@ function useSaveActions() {
     if (pending?.kind === 'languages') (pending.next === 'publish' ? publish : update)(true)
     else saveIgnoringFailure(pending?.kind === 'aiPublish' ? draft.publish : draft.save)
   }
-  const saveReason = draft.errors.length > 0 ? t('builder.save.fixToSave', { count: draft.errors.length }) : undefined
-  const publishReason = draft.publishErrors.length > 0 ? t('builder.save.fixToPublish', { count: draft.publishErrors.length }) : undefined
+  const { saveReason, primaryReason } = blockedReasons(t, draft, live, paused)
   return {
     showSave: !live && draft.dirty,
     showPrimary: !live || draft.dirty,
@@ -90,8 +102,7 @@ function useSaveActions() {
     publish: () => publish(),
     busy: draft.status.kind === 'saving',
     saveReason,
-    // Live: the save IS Update live form, so its errors are already every error.
-    primaryReason: live ? saveReason : publishReason ?? saveReason,
+    primaryReason,
     pending, missing, primary: draft.form.language,
     save, confirm,
     cancel: () => setPending(null),

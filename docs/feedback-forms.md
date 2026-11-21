@@ -74,7 +74,11 @@ Exceptional, scored 1–4), 1–5 ratings of the tooling, the content and the pr
 [Ask why](#ask-why-when-the-score-is-low) follow-up, NPS followed by "What's the main reason for your score of
 {{q_nps}}?", whether they will apply it, what stands in the way (multiple choice with Other and Nothing), the main
 takeaway and what to improve. Its hidden fields `customer`, `event`, `event_date` and `presenter` come in the link,
-and the welcome recalls the event ("Thanks for joining {{event|the workshop}}"); its copy is in the nine languages. A
+and the welcome recalls the event ("Thanks for joining {{event|the workshop}}"); its copy is in the nine languages.
+At the end of a workshop a platform admin can hand the customer a **trial workspace** with this form and the in-app
+feedback form already made (Off), its people and sample categories (7.71.00, [Trial
+workspaces](multi-workspace.md#trial-workspaces)); a trial only pauses at its end (its live forms turned off, nothing
+deleted) and never deletes itself, and while it is paused no form there is put live. A
 form made from any template but Blank stores which one, `template: {id, version}` (an optional field of the form,
 set by its create, `POST /feedback-forms`, and never changed by a save; a create's malformed one is a `400`; every
 form saved before 7.63.00, a blank one and an AI draft have none), and the API answers it with the form.

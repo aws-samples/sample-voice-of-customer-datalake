@@ -87,6 +87,11 @@ describe('the voc-workspaces-api Lambda', () => {
       { actions: ['dynamodb:UpdateItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WORKSPACES', `WS#ws_${'?'.repeat(26)}`] },
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['deleting_at', 'pk', 'sk', 'status', 'workspace_id'] } } },
+      // A trial (7.71.00, lambda/shared/trials.py): `trial` alone on META and the listing row, nothing returned.
+      { actions: ['dynamodb:UpdateItem'], condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WORKSPACES', 'WS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'trial'] },
+        StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] } } },
     ].sort((a, b) => byCodeUnit(a.actions.join() + JSON.stringify(a.condition), b.actions.join() + JSON.stringify(b.condition))));
   });
 
@@ -96,10 +101,10 @@ describe('the voc-workspaces-api Lambda', () => {
     const others = withPrefix('dynamodb:').filter((s) => !/ExportsOutputFnGetAttWorkspaces/.test(s.resource));
     expect(others.length > 0 && others.every((s) => /ExportsOutputFnGetAttAggregates/.test(s.resource))).toBe(true);
     const resources = onWorkspaces().map((s) => s.resource);
-    // Six of its own, three of the delete routes'.
-    expect(resources).toHaveLength(9);
+    // Seven of its own (the trial's since 7.71.00), three of the delete routes'.
+    expect(resources).toHaveLength(10);
     expect(resources.join('\n').match(/ExportsOutputFnGetAtt[A-Za-z]+/g)?.sort(byCodeUnit))
-      .toStrictEqual(Array<string>(10).fill('ExportsOutputFnGetAttWorkspaces'));
+      .toStrictEqual(Array<string>(11).fill('ExportsOutputFnGetAttWorkspaces'));
   });
 
   it('may Query the cost rows only on voc-aggregates (GET /platform/costs), and is told the table', () => {
@@ -128,10 +133,38 @@ describe('the voc-workspaces-api Lambda', () => {
     expect(JSON.stringify(statements())).not.toMatch(/voc\/ws/);
   });
 
-  it('holds only DynamoDB, Cognito, KMS, its log and trace writes, and the export routes\' S3 read and invoke', () => {
+  it('holds only DynamoDB, Cognito, KMS, its log and trace writes, the export routes\' S3 read and invoke, and a trial\'s schedule', () => {
     const services = new Set(statements().flatMap((s) => s.actions).map((action) => action.split(':')[0]));
-    expect([...services].filter((service) => !['dynamodb', 'cognito-idp', 'kms', 'logs', 'xray', 's3', 'lambda']
-      .includes(service ?? ''))).toStrictEqual([]);
+    expect([...services].filter((service) => !['dynamodb', 'cognito-idp', 'kms', 'logs', 'xray', 's3', 'lambda',
+      'scheduler', 'iam'].includes(service ?? ''))).toStrictEqual([]);
+  });
+
+  // A trial workspace (7.71.00, lib/stacks/trial-expiry.ts): one schedule per trial end, created only.
+  it('creates a trial\'s schedules in the trials group only, and passes the scheduler\'s role to Scheduler only', () => {
+    expect(withPrefix('scheduler:').map(({ actions, condition }) => ({ actions, condition }))).toStrictEqual([
+      { actions: ['scheduler:CreateSchedule'], condition: undefined }]);
+    expect(withPrefix('scheduler:')[0]?.resource).toMatch(/schedule\/voc-trials-.*\/voc-trial-\*/);
+    const pass = withPrefix('iam:');
+    expect(pass.map(({ actions, condition }) => ({ actions, condition }))).toStrictEqual([{
+      actions: ['iam:PassRole'], condition: { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } } }]);
+    expect(pass[0]?.resource).toMatch(/role\/voc-trial-scheduler-/);
+  });
+
+  it('is told the trials group, the scheduler\'s role and the job by the names VocProcessingStack gives them', () => {
+    const env = environment();
+    expect([env.TRIAL_SCHEDULE_GROUP, env.TRIAL_SCHEDULER_ROLE_ARN, env.TRIAL_EXPIRY_FUNCTION_ARN].map((value) => JSON.stringify(value)))
+      .toStrictEqual([expect.stringMatching(/voc-trials-/), expect.stringMatching(/role\/voc-trial-scheduler-/),
+        expect.stringMatching(/function:voc-trial-expiry-/)]);
+  });
+
+  it('turns a paused trial\'s forms back on through `enabled` and its stamps alone, in a workspace\'s forms partition', () => {
+    const forms = withPrefix('dynamodb:').filter((s) => JSON.stringify(s.condition ?? {}).includes('#FEEDBACK_FORM'));
+    expect(forms.map(({ actions, condition }) => ({ actions, condition }))).toStrictEqual([{
+      actions: ['dynamodb:UpdateItem'], condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`WS#ws_${'?'.repeat(26)}#FEEDBACK_FORM`] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['enabled', 'pk', 'sk', 'updated_at', 'updated_by', 'write_count'] },
+        StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] } } }]);
+    expect(forms[0]?.resource).toMatch(/ExportsOutputFnGetAttAggregates/);
   });
 });
 

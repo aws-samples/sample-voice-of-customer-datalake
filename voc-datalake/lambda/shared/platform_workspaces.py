@@ -15,6 +15,11 @@ Creating a workspace is ONE DynamoDB transaction (all or nothing), every put con
                                         (7.40.00: every plugin starts on in a new workspace; Workspace settings
                                         turns one off; shared/workspace_plugin_settings.py)
 
+A trial (7.71.00, ``trial`` in the body: shared/trials.py, docs/multi-workspace.md "Trial workspaces") puts the same
+``trial`` map on ``META`` and the listing row, and one more audit row in the same transaction, kind ``trial_created``
+(actor, at, days, expires_at, the pack asked for). Its schedule is made first, by the route: a create that then fails
+leaves a schedule that runs once for no workspace and does nothing.
+
 No row carries ``ttl``: only ``INVITE#`` rows expire (lib/customer-data-deletes.test.ts pins it).
 
 The listing partition ``WORKSPACES`` is sorted by the name (case-folded) and then the id, so the list is one paged
@@ -46,6 +51,7 @@ from shared.ids import is_key_collision
 from shared.logging import logger
 from shared.request_body import reject_unknown_fields, validated_text
 from shared.timestamps import now_iso
+from shared.trial_state import TRIAL, TRIAL_CREATED, NewTrial, parse_trial, trial_summary
 from shared.workspace import ACTIVE, audit_key, audit_sort_key, is_workspace_id, text_fields, ws_key
 from shared.workspace_ids import RESERVED_WORKSPACE_SLUGS, WORKSPACE_SLUG
 from shared.workspace_plugin_settings import plugin_key
@@ -64,8 +70,9 @@ _CROCKFORD: Final = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 _TIME_BITS: Final = 48
 _RANDOM_BITS: Final = 80
 _FRESH: Final = 'attribute_not_exists(pk)'
-#: A transaction holds at most 100 items: the creation's six rows, and one per plugin of the deployment.
-MAX_PLUGINS_AT_CREATE: Final = 94
+#: A transaction holds at most 100 items: the creation's six rows, a trial's audit row, and one per plugin of the
+#: deployment.
+MAX_PLUGINS_AT_CREATE: Final = 93
 
 
 @dataclass(frozen=True)
@@ -74,6 +81,8 @@ class NewWorkspace:
 
     name: str
     slug: str
+    #: A trial (7.71.00): its length and starter pack, or None for a workspace with no end.
+    trial: NewTrial | None = None
 
 
 def validated_workspace_name(value: object) -> str:
@@ -86,15 +95,15 @@ def validated_workspace_name(value: object) -> str:
 
 
 def parse_new_workspace(body: Mapping[str, Any]) -> NewWorkspace:
-    """``{name, slug}`` validated, or a 400 that says what to fix."""
-    reject_unknown_fields(body, ('name', 'slug'))
+    """``{name, slug, trial?}`` validated, or a 400 that says what to fix."""
+    reject_unknown_fields(body, ('name', 'slug', 'trial'))
     name = validated_workspace_name(body.get('name'))
     slug = body.get('slug')
     if not isinstance(slug, str) or not WORKSPACE_SLUG.fullmatch(slug):
         raise ValidationError('slug must be 3 to 40 characters of a-z, 0-9 and "-", not starting or ending with "-"')
     if slug in RESERVED_WORKSPACE_SLUGS:
         raise ValidationError(f'slug "{slug}" is reserved: choose another')
-    return NewWorkspace(name=name, slug=slug)
+    return NewWorkspace(name=name, slug=slug, trial=parse_trial(body.get('trial')))
 
 
 def new_workspace_id(now_ms: int | None = None) -> str:
@@ -115,40 +124,49 @@ def _put(table_name: str, item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _creation_items(table_name: str, new: NewWorkspace, ws: str, creator: str, at: str,
-                    plugins: Sequence[str] = ()) -> list[dict[str, Any]]:
-    """The transaction's puts (see the module docstring); the slug guard is first, so a 409 reads index 0."""
+                    plugins: Sequence[str] = (), trial: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    """The transaction's puts (see the module docstring); the slug guard is first, so a 409 reads index 0. ``trial``:
+    the map of a trial (shared/trial_state.py ``new_trial``), on META and the listing row, and its audit row."""
     base = {'name': new.name, 'slug': new.slug}
+    on_trial = {TRIAL: dict(trial)} if trial is not None else {}
     enabled = [{**plugin_key(plugin, ws), 'enabled_by': creator, 'enabled_at': at} for plugin in plugins]
+    trial_audit = [] if trial is None else [{
+        'pk': audit_key(ws), 'sk': audit_sort_key(at), 'kind': TRIAL_CREATED, 'actor': creator, 'at': at,
+        'days': trial['days'], 'expires_at': trial['expires_at'], 'pack': trial['pack']}]
     return [_put(table_name, item) for item in (
         {'pk': f'SLUG#{new.slug}', 'sk': 'META', 'workspace_id': ws, 'created_at': at},
         {'pk': ws_key(ws), 'sk': 'META', **base, 'status': ACTIVE, 'created_by': creator, 'created_at': at,
-         'secret_status': CREDENTIALS_READY},
+         'secret_status': CREDENTIALS_READY, **on_trial},
         {'pk': ws_key(ws), 'sk': f'MEMBER#{creator}', 'role': 'admin', 'invited_by': creator, 'joined_at': at},
         {'pk': f'USER#{creator}', 'sk': f'WS#{ws}', **base, 'role': 'admin'},
         {'pk': LISTING_PK, 'sk': listing_sort_key(new.name, ws), 'workspace_id': ws, **base, 'status': ACTIVE,
-         'created_at': at, 'secret_status': CREDENTIALS_READY},
+         'created_at': at, 'secret_status': CREDENTIALS_READY, **on_trial},
         {'pk': audit_key(ws), 'sk': audit_sort_key(at), 'kind': WORKSPACE_CREATED, 'actor': creator, 'at': at,
          'slug': new.slug},
+        *trial_audit,
         *enabled,
     )]
 
 
-def create_workspace(table: Any, new: NewWorkspace, creator: str, plugins: Sequence[str] = ()) -> str:
+def create_workspace(table: Any, new: NewWorkspace, creator: str, plugins: Sequence[str] = (), *,
+                     ws: str | None = None, trial: Mapping[str, Any] | None = None) -> str:
     """Write the new workspace in one transaction, every plugin of ``plugins`` (the deployment's) on, and return its
-    id; 409 when the slug is taken."""
+    id (``ws`` when the caller drew it first: a trial's schedule names it); 409 when the slug is taken. ``trial``: a
+    trial's map (shared/trial_state.py ``new_trial``)."""
     if len(plugins) > MAX_PLUGINS_AT_CREATE:
         raise ValueError(f'at most {MAX_PLUGINS_AT_CREATE} plugins fit in the creation transaction')
-    ws = new_workspace_id()
+    ws = ws or new_workspace_id()
     try:
         # The token makes botocore's retry of a create whose answer was lost succeed (DynamoDB keeps it idempotent
         # for 10 minutes) instead of failing its own slug guard as a false 409.
         table.meta.client.transact_write_items(
-            TransactItems=_creation_items(table.name, new, ws, creator, now_iso(), plugins), ClientRequestToken=ws)
+            TransactItems=_creation_items(table.name, new, ws, creator, now_iso(), plugins, trial),
+            ClientRequestToken=ws)
     except ClientError as exc:
         if is_key_collision(exc, put_index=0):
             raise ConflictError(SLUG_TAKEN) from exc
         raise
-    logger.info('Workspace created', extra={'workspace_id': ws})
+    logger.info('Workspace created', extra={'workspace_id': ws, 'trial': trial is not None})
     return ws
 
 
@@ -170,8 +188,9 @@ def listing_ids_page(table: Any, *, limit: int,
     return ids, len(rows) - len(ids), dict(last) if isinstance(last, Mapping) and last else None
 
 
-def list_workspaces(table: Any, *, limit: int, cursor: str | None) -> tuple[list[dict[str, str]], str | None]:
-    """One page of every workspace ``[{id, name, slug, status, created_at, secret_status}]`` by name, and the next page's cursor.
+def list_workspaces(table: Any, *, limit: int, cursor: str | None) -> tuple[list[dict[str, Any]], str | None]:
+    """One page of every workspace ``[{id, name, slug, status, created_at, secret_status, trial}]`` by name, and the next
+    page's cursor (``trial``: the listing row's copy, shared/trial_state.py ``trial_summary``; None for no trial).
 
     One Query of the listing partition (never a Scan). ``ValueError`` for a cursor that did not come from it. A
     row whose id is not well formed is left out and counted in the log.
@@ -192,7 +211,7 @@ def list_workspaces(table: Any, *, limit: int, cursor: str | None) -> tuple[list
             row, 'workspace_id', 'name', 'slug', 'status', 'created_at', 'secret_status')
         if is_workspace_id(ws):
             workspaces.append({'id': ws, 'name': name, 'slug': slug, 'status': status, 'created_at': created_at,
-                               'secret_status': secret_status})
+                               'secret_status': secret_status, 'trial': trial_summary(row.get(TRIAL))})
     if left_out := len(response.get('Items', [])) - len(workspaces):
         logger.warning('Left out malformed workspace listing rows', extra={'count': left_out})
     last = response.get('LastEvaluatedKey')

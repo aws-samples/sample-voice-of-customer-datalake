@@ -21,6 +21,7 @@ import { NameDialog } from '../../components/NameDialog/NameDialog'
 import { useExpiringValue } from '../../hooks/useExpiringValue'
 import { WORKSPACE_NAME_MAX, platformWorkspacesKey } from '../../api/platformWorkspacesApi'
 import { currentWorkspaceKey, myWorkspacesKey, workspacesApi } from '../../api/workspacesApi'
+import type { ServerWorkspace } from '../../api/workspacesApi'
 import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
 import { useServerWorkspace } from '../../workspace/useMyWorkspaces'
 import { RENAME_REFUSALS, workspaceRefusalMessage } from '../../workspace/workspaceRefusals'
@@ -36,7 +37,9 @@ function useRenameWorkspace(workspaceId: string) {
   return useMutation({
     mutationFn: (name: string) => workspacesApi.rename(name),
     onSuccess: (renamed) => {
-      queryClient.setQueryData(currentWorkspaceKey(workspaceId), renamed)
+      // The rename answers no trial or suggested playbook (7.71.00): the cached ones stay.
+      queryClient.setQueryData<ServerWorkspace>(currentWorkspaceKey(workspaceId), (old) =>
+        old === undefined ? renamed : { ...renamed, trial: old.trial, playbook: old.playbook })
       queryClient.setQueryData<CurrentWorkspace[]>(myWorkspacesKey(), (old) =>
         old?.map((row) => (row.id === renamed.id ? { ...row, name: renamed.name } : row)))
       // The platform console's list (Administration) names it too: read again when it is next shown.

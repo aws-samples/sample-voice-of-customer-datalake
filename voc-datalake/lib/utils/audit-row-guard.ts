@@ -12,7 +12,8 @@
  * admin's entry into a workspace, the workspace's creation and its membership changes, written by the workspaces
  * API, lambda/shared/workspace.py, platform_workspaces.py and workspace_members.py; a deleted user's membership
  * removals, written by the users API, `AUDIT#WS#*` only; a platform admin's entry through the metrics API or the
- * feedback edits, each `AUDIT#WS#*` only; a workspace's hard delete, voc-workspace-delete: its tombstones,
+ * feedback edits, each `AUDIT#WS#*` only; a trial's end, voc-trial-expiry, `AUDIT#WS#*` only (7.71.00); a workspace's
+ * hard delete, voc-workspace-delete: its tombstones,
  * `AUDIT#tombstone#*` only, in voc-aggregates, and `AUDIT#workspace-deletes` only in voc-workspaces, where the
  * workspaces API writes that partition's request and cancel rows). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
@@ -125,6 +126,9 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   { table: 'aggregatesTable', rolePathSuffix: '/WorkspaceDeleteWorker/DeleteRole', partitionKey: 'AUDIT#tombstone#*' },
   { table: 'workspacesTable', rolePathSuffix: '/WorkspaceDeleteWorker/DeleteRole',
     partitionKey: 'AUDIT#workspace-deletes' },
+  // A trial workspace's end (7.71.00, lib/stacks/trial-expiry.ts): its trial_paused row and each plugin's
+  // plugin_disabled row (AUDIT#WS#<ws> only).
+  { table: 'workspacesTable', rolePathSuffix: '/TrialExpiry/Role', partitionKey: 'AUDIT#WS#*' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',

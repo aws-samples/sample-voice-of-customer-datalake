@@ -390,6 +390,69 @@
       "deleteChangedMeanwhile": "L’espace de travail a changé pendant la demande de suppression. Rechargez la page et réessayez.",
       "deleteUnavailable": "La suppression d’un espace de travail n’est pas disponible dans ce déploiement.",
       "deleteNotStarted": "L’espace de travail est marqué pour suppression, mais sa suppression n’a pas pu démarrer. Demandez à un administrateur de la plateforme de l’annuler ou de la reprendre."
+    },
+    "trial": {
+      "create": "Créer un essai",
+      "createDescription": "Un espace de travail d'essai pour un client à la fin d'un atelier : ses personnes, un pack de démarrage, puis l'assistant d'import. Il dure 14, 30 ou 60 jours, puis se met en pause.",
+      "dialogTitle": "Créer un espace de travail d'essai",
+      "days": "Durée",
+      "daysOption": "{{days}} jours",
+      "pausesNotice": "À la fin de l'essai, il se met en pause : ses plugins et ses formulaires en ligne s'arrêtent, et rien n'est supprimé. La lecture et l'export continuent de fonctionner jusqu'à ce qu'un administrateur de la plateforme le prolonge ou le convertisse. Un essai ne se supprime jamais lui-même.",
+      "fixNameSlug": "Vérifiez le nom et l'adresse.",
+      "submit": "Créer l'essai",
+      "creating": "Création de l'essai…",
+      "invites": {
+        "title": "Personnes",
+        "hint": "Chaque personne est ajoutée à l'essai avec son rôle. Une personne sans compte en reçoit un, et Cognito lui envoie par e-mail un mot de passe temporaire.",
+        "email": "E-mail",
+        "role": "Rôle",
+        "playbook": "Playbook suggéré",
+        "noPlaybook": "Aucun",
+        "add": "Ajouter une personne",
+        "remove": "Retirer {{email}}",
+        "removeUnnamed": "Retirer cette personne",
+        "emailInvalid": "Saisissez une adresse e-mail valide ou retirez cette ligne."
+      },
+      "pack": {
+        "title": "Pack de démarrage",
+        "hint": "Créé dans l'essai avec votre propre accès, chaque élément étant enregistré par sa propre route. Les formulaires sont créés désactivés.",
+        "form": "Formulaire : {{name}}",
+        "categories": "Catégories d'exemple ({{n}})"
+      },
+      "done": {
+        "title": "{{name}} est prêt.",
+        "stepsLabel": "Ce qu'a fait le pack de démarrage",
+        "member": "{{subject}} ajouté.",
+        "memberFailed": "Impossible d'ajouter {{subject}} : {{reason}}",
+        "form": "Formulaire {{subject}} créé (désactivé).",
+        "formFailed": "Impossible de créer le formulaire {{subject}} : {{reason}}",
+        "categories": "{{subject}} catégories d'exemple enregistrées.",
+        "categoriesFailed": "Impossible d'enregistrer les catégories d'exemple : {{reason}}",
+        "unknownReason": "le serveur l'a refusé",
+        "openImport": "Ouvrir l'assistant d'import dans {{name}}"
+      },
+      "badge": {
+        "running": "Essai · se termine le {{date}}",
+        "paused": "Essai en pause depuis le {{date}}",
+        "converted": "Converti depuis un essai"
+      },
+      "extend": "Prolonger",
+      "extendBy": "Prolonger {{name}} de",
+      "convert": "Convertir",
+      "convertWho": "Convertir {{name}} en espace de travail standard",
+      "convertTitle": "Convertir {{name}} ?",
+      "convertMessage": "Il devient un espace de travail standard, sans fin.",
+      "convertPausedMessage": "Il devient un espace de travail standard, sans fin, et les plugins et formulaires que la pause a désactivés sont réactivés.",
+      "banner": {
+        "running": "Ceci est un espace de travail d'essai jusqu'au {{date}}. Ensuite, il se met en pause : ses plugins et ses formulaires en ligne s'arrêtent, et rien n'est supprimé. Un administrateur de la plateforme peut le prolonger ou le convertir.",
+        "paused": "Cet essai est en pause depuis le {{date}} : {{plugins}} plugins et {{forms}} formulaires en ligne ont été désactivés. Rien n'a été supprimé : la lecture et l'export fonctionnent toujours. Demandez à un administrateur de la plateforme de le prolonger ou de le convertir."
+      },
+      "pausedPlugins": "Cet essai est en pause : les plugins restent désactivés jusqu'à ce qu'un administrateur de la plateforme le prolonge ou le convertisse.",
+      "errors": {
+        "converted": "Cet essai a été converti : c'est désormais un espace de travail standard.",
+        "changed": "L'essai a changé entre-temps : rechargez et réessayez.",
+        "notFound": "Cet espace de travail n'est pas un essai, ou il est en cours de suppression."
+      }
     }
   },
   "timeRange": {

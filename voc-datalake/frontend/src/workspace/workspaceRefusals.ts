@@ -73,12 +73,24 @@ export function isPluginNotEnabled(error: unknown): boolean {
 }
 
 /** The refusals of `PUT /me/workspaces/current/plugins/{plugin_id}` (workspace_plugin_settings.py, workspace.py). */
+/** A paused trial's refusal of a plugin's enable or a form put live (`TRIAL_PAUSED`, lambda/shared/trial_state.py). */
+export const TRIAL_PAUSED = 'This trial workspace is paused: a platform admin extends or converts it to turn its plugins and forms back on. Nothing was deleted, and reads and the export still work'
+
 export const PLUGIN_REFUSALS: readonly Refusal[] = [
   { status: 409, reason: "The workspace's plugins changed meanwhile: reload them and try again", messageKey: 'common:workspaces.errors.pluginsChangedMeanwhile' },
+  { status: 409, reason: TRIAL_PAUSED, messageKey: 'common:workspaces.trial.pausedPlugins' },
   { status: 403, reason: 'You are no longer an admin of this workspace', messageKey: 'common:workspaces.errors.noLongerAdmin' },
   { status: 403, messageKey: 'common:workspaces.errors.notWorkspaceAdmin' },
   { status: 404, reason: 'Plugin not found', messageKey: 'common:workspaces.errors.pluginGone' },
   { status: 404, messageKey: 'common:workspaces.errors.workspaceGone' },
+]
+
+/** The refusals of `POST /platform/workspaces/{ws}/trial/extend` and `…/convert` (lambda/shared/trials.py, 7.71.00). */
+export const TRIAL_REFUSALS: readonly Refusal[] = [
+  { status: 409, reason: 'This trial was converted: it is a regular workspace now, with no end', messageKey: 'common:workspaces.trial.errors.converted' },
+  { status: 409, reason: 'The trial changed meanwhile: reload it and try again', messageKey: 'common:workspaces.trial.errors.changed' },
+  { status: 404, reason: 'Trial not found', messageKey: 'common:workspaces.trial.errors.notFound' },
+  { status: 403, messageKey: 'common:workspaces.errors.notPlatformAdmin' },
 ]
 
 /** The refusals of the export's start and link (`POST /me/workspaces/current/export[/link]`, workspaces_handler.py). */

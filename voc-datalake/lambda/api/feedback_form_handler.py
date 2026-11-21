@@ -18,6 +18,9 @@ Two paths (docs/multi-workspace.md, "Public and non-user entry points"; docs/fee
   themselves), each row checked for its types and ranges (never the logic path), queued as a response with its own
   date, the original file kept write-once under ``raw/feedback_form/import/{form_id}/`` (a workspace's:
   ``ws/{ws}/raw/…``) and the run in the import history;
+* in a paused trial workspace (7.71.00, shared/trial_state.py) a form is not put live: a create or a save with
+  ``enabled: true`` is a 409 ``trial_paused`` until a platform admin extends or converts the trial (which turns back
+  on the forms the pause turned off); every other save, turning one off included, works;
 * the public widget routes (config, iframe, submit, events) never read the header: they look the form id up
   (``_public_form``). A form with a lookup row is its workspace's (the row's workspace, which must be ``active``):
   its config is served from the workspace's form, and a submission is queued with that ``workspace_id``
@@ -107,6 +110,7 @@ from shared.request_workspace import require_settings_admin
 from shared.scoped_query import SortRange, iter_partition, query_partition
 from shared.source_profiles import PII_ALLOW
 from shared.tables import configured_table, get_workspaces_table
+from shared.trial_state import require_live
 from shared.workspace import EDITING_ROLES, WorkspaceContext, audit_key, audit_sort_key
 from shared.workspace_request import RequestWorkspace
 from shared.workspace_routing import (
@@ -206,6 +210,12 @@ def _request_scope(*, write: bool = False) -> WorkspaceScope | None:
     if write and context.role not in EDITING_ROLES:
         raise AuthorizationError('Managing feedback forms needs the editor or admin role in this workspace')
     return scope_of(context)
+
+
+def _refuse_live_in_paused_trial(body: Mapping[str, Any], scope: WorkspaceScope | None) -> None:
+    """A form put live (``enabled: true``) in a paused trial workspace: 409 ``trial_paused`` (shared/trial_state.py)."""
+    if scope is not None and body.get('enabled') is True:
+        require_live(configured_table(get_workspaces_table(), 'Workspaces'), scope.ws)
 
 
 def _resolved_context() -> WorkspaceContext | None:
@@ -1087,6 +1097,7 @@ def create_form():
     scope = _request_scope(write=True)
     body = json_object_body(app)
     _validate_form_labels(body, scope, app_feedback=_made_for_app_feedback(body))
+    _refuse_live_in_paused_trial(body, scope)
     # Link fields and the definition are validated inside build_form_item, structurally.
     item = build_form_item(body, scope=scope, actor=get_caller_subject(app.current_event.raw_event))
 
@@ -1375,6 +1386,7 @@ def update_form(form_id: str):
     # (the reserved tag is judged on the stored form's template, below)
     _validate_form_labels(body, scope, app_feedback=True)
     _require_update_fields(body)
+    _refuse_live_in_paused_trial(body, scope)
     if scope is None:
         _refuse_a_workspaces_id(form_id, 'Failed to update form')
     stored = _read_form(form_id, 'Failed to update form', scope)

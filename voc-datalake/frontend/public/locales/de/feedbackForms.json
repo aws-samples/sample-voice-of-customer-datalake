@@ -257,7 +257,8 @@
       "failed": "Speichern fehlgeschlagen: {{reason}}.",
       "failedGeneric": "Speichern fehlgeschlagen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
       "retry": "Erneut versuchen",
-      "placeholderRefused": "Speichern nicht möglich: Ein aktives Formular darf keinen Platzhalter {…} so anzeigen, wie er geschrieben ist. Korrigieren Sie die Texte unter Probleme oder speichern Sie es deaktiviert."
+      "placeholderRefused": "Speichern nicht möglich: Ein aktives Formular darf keinen Platzhalter {…} so anzeigen, wie er geschrieben ist. Korrigieren Sie die Texte unter Probleme oder speichern Sie es deaktiviert.",
+      "trialPaused": "Diese Testphase ist pausiert: Ein Formular geht live, sobald ein Plattform-Admin die Testphase verlängert oder umwandelt."
     },
     "published": "Live. Befragte sehen ab jetzt diese Version.",
     "firstSave": "Gespeichert. Dieses Formular ist aus: Sein Link zeigt „Feedback-Formular nicht verfügbar.“, bis Sie es veröffentlichen.",

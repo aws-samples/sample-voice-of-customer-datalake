@@ -1,0 +1,52 @@
+{
+  "$comment": "A trial workspace's starter pack (7.71.00, docs/multi-workspace.md \"Trial workspaces\"): the app templates its forms are made from (frontend/src/pages/FeedbackForms/templates, created Off) and the sample categories it saves, read by the platform console's Create a trial (frontend/src/pages/Settings/trial/trialPack.ts) and by scripts/trial-pack.mjs. Each is an ordinary create through the existing routes, with the admin's own credentials, audited by its own route. Category and subcategory names hold no spaces or '#' (lambda/shared/category_config.py).",
+  "forms": ["workshop", "app_micro_feedback"],
+  "categories": [
+    {
+      "id": "cat_product_experience",
+      "name": "product_experience",
+      "description": "How the product feels to use: ease, speed, reliability and gaps",
+      "subcategories": [
+        { "id": "sub_ease_of_use", "name": "ease_of_use", "description": "Learning and finding your way around" },
+        { "id": "sub_performance", "name": "performance", "description": "Speed, errors and outages" },
+        { "id": "sub_missing_features", "name": "missing_features", "description": "What people ask for that is not there" }
+      ]
+    },
+    {
+      "id": "cat_onboarding",
+      "name": "onboarding",
+      "description": "Getting started: sign-up, setup, first use and documentation",
+      "subcategories": [
+        { "id": "sub_setup", "name": "setup", "description": "Installing, connecting and configuring" },
+        { "id": "sub_documentation", "name": "documentation", "description": "Guides, help and examples" }
+      ]
+    },
+    {
+      "id": "cat_support",
+      "name": "support",
+      "description": "Help from people: response times, answers and follow-up",
+      "subcategories": [
+        { "id": "sub_response_time", "name": "response_time", "description": "How long an answer takes" },
+        { "id": "sub_resolution", "name": "resolution", "description": "Whether the problem was solved" }
+      ]
+    },
+    {
+      "id": "cat_pricing",
+      "name": "pricing",
+      "description": "Price, plans, billing and value for money",
+      "subcategories": [
+        { "id": "sub_value", "name": "value", "description": "Worth what it costs" },
+        { "id": "sub_billing", "name": "billing", "description": "Invoices, payments and plans" }
+      ]
+    },
+    {
+      "id": "cat_events",
+      "name": "events",
+      "description": "Workshops, webinars and other events: content, pace and organisation",
+      "subcategories": [
+        { "id": "sub_content", "name": "content", "description": "What was presented and practised" },
+        { "id": "sub_organisation", "name": "organisation", "description": "Timing, pace, venue and materials" }
+      ]
+    }
+  ]
+}

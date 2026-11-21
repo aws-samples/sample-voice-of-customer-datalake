@@ -7,26 +7,40 @@ Routes:
     GET /me/workspaces          {workspaces: [{id, name, slug, role}]}: the caller's own workspaces, by name
                                 (one Query of the caller's USER#{sub} partition, shared/workspace.py); each
                                 role is the membership row's, while /current answers the effective one
-    GET /me/workspaces/current  {workspace: {id, name, slug, role, platform_admin}}: the workspace the
-                                X-Workspace-Id header names, as the caller may act in it. 400 without the
+    GET /me/workspaces/current  {workspace: {id, name, slug, role, platform_admin, trial, playbook}}: the workspace
+                                the X-Workspace-Id header names, as the caller may act in it. 400 without the
                                 header; 404 for a malformed id, a missing or deleting workspace, or a caller
                                 who is not a member. A platform admin who is not a member admin enters as admin
                                 when the live check confirms them, and the entry is audited (shared/workspace.py
                                 resolve_workspace); an entry whose audit row cannot be written is refused.
+                                `trial` (7.71.00): null, or {days, expires_at, paused_at, converted_at, paused:
+                                {plugins, forms} | null} (shared/trial_state.py trial_summary), for every member;
+                                `playbook`: the role playbook suggested to the caller when they were added, or null.
     PUT /me/workspaces/current  {name} -> {workspace: {id, name, slug, role, platform_admin}}: renames the workspace
                                 X-Workspace-Id names (shared/workspace_rename.py), for its admins only (403 for an
                                 editor or a viewer; the role read from the table): the audit row, then one
                                 transaction of META and the listing row, then every member's "my workspaces" row.
                                 400 for a bad name (the create's rules), 409 when it was renamed or marked deleting
                                 meanwhile; the slug never changes. The same name repeats the members' sync only.
-    POST /platform/workspaces   {name, slug} -> 201 {workspace: {id, name, slug, role: 'admin', secret_status}}:
-                                a new workspace with the caller as its admin, in one transaction
-                                (shared/platform_workspaces.py). 400 for a bad name or slug, 409 for a slug
-                                that is taken; secret_status is always 'ready' (decision 19: nothing else is
-                                made, a plugin's credentials parameters come with its first save).
-    GET /platform/workspaces    {workspaces: [{id, name, slug, status, created_at, secret_status}], next_cursor}: every
-                                workspace by name, ?limit= (1-100, default 25) and ?cursor= (one Query of the
-                                listing partition, never a Scan).
+    POST /platform/workspaces   {name, slug, trial?: {days?, pack?}} -> 201 {workspace: {id, name, slug, role: 'admin',
+                                secret_status, trial}}: a new workspace with the caller as its admin, in one
+                                transaction (shared/platform_workspaces.py). 400 for a bad name, slug or trial, 409
+                                for a slug that is taken; secret_status is always 'ready' (decision 19: nothing else
+                                is made, a plugin's credentials parameters come with its first save). A trial
+                                (7.71.00, shared/trials.py): 14, 30 or 60 days (30), its one schedule made first
+                                (shared/trial_schedule.py), then the same transaction with the trial on META and
+                                the listing row and a trial_created audit row; `trial` answers its view (null
+                                for none).
+    GET /platform/workspaces    {workspaces: [{id, name, slug, status, created_at, secret_status, trial}], next_cursor}:
+                                every workspace by name, ?limit= (1-100, default 25) and ?cursor= (one Query of the
+                                listing partition, never a Scan); `trial` is the listing row's copy (or null).
+    POST /platform/workspaces/{ws}/trial/extend   {days} -> {trial}: 14, 30 or 60 more days from its end (or from now
+                                once it ended), audited first (trial_extended), the new end's schedule made, a
+                                paused trial's plugins and forms turned back on (shared/trial_pause.py). 404 for no
+                                trial, 409 for a converted one or one changed meanwhile.
+    POST /platform/workspaces/{ws}/trial/convert  -> {trial}: a regular workspace from now on, audited first
+                                (trial_converted), a paused trial resumed the same way; a converted one is answered
+                                as it is. Neither route, nor the expiry, deletes anything.
     GET /platform/costs         {estimate: true, label, currency, price_as_of, price_source, from, to, workspaces:
                                 [{id, name, slug, status, days, total}], next_cursor, deployment?,
                                 unattributed?}: the Bedrock cost estimate per workspace (shared/platform_costs.py,
@@ -39,8 +53,9 @@ The members of the workspace X-Workspace-Id names (shared/workspace_members.py),
 without the header, the one 404 for a non-member; a platform admin enters as admin, live-checked and audited):
     GET /me/workspaces/current/members          {members: [{sub, role, email, name, invited_by, joined_at}],
                                                 next_cursor}: any member; ?limit= (1-100, default 25), ?cursor=
-    POST /me/workspaces/current/members         {email, role} -> 201 {member: {sub, role, email, name, invited_by,
-                                                joined_at, account: 'existing'|'created'}}: workspace admins only
+    POST /me/workspaces/current/members         {email, role, playbook?} -> 201 {member: {sub, role, email, name,
+                                                invited_by, joined_at, playbook?, account: 'existing'|'created'}}
+                                                (`playbook`: a role playbook to suggest, 7.71.00): workspace admins only
                                                 (403 for an editor or a viewer; 403 for an email with no account
                                                 unless the caller is in `admins`). 409 for a member already there,
                                                 two accounts sharing the email, or the email spelt as another
@@ -55,7 +70,8 @@ plugins, ENABLED_SOURCES from cdk.context.json, are the ceiling), resolved the s
                                                 every plugin the deployment offers, in its order
     PUT /me/workspaces/current/plugins/{id}     {enabled} -> {plugin: {id, enabled, ...}}: workspace admins only
                                                 (an enable writes PLUGIN#{id} / WS#{ws}, a disable deletes it);
-                                                404 for a plugin the deployment does not offer; audited first.
+                                                404 for a plugin the deployment does not offer; audited first; an
+                                                enable in a paused trial is 409 trial_paused (shared/trial_state.py).
 Each write resolves the caller's role from the table, never the 30 s cache (a demoted admin cannot undo it), commits
 only while the acting admin is still admin (a check in its transaction: 403 when they were demoted meanwhile), writes
 its AUDIT#WS#{ws} row first, and drops the changed member's cached membership in this container (other containers
@@ -112,6 +128,7 @@ A DynamoDB or Cognito fault answers a fixed 500, never the AWS error text, which
 
 import json
 import os
+from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from typing import Any, Final
 
@@ -119,7 +136,13 @@ from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.api import api_handler, create_api_resolver, get_caller_subject, is_admin, require_admin
-from shared.aws import get_cognito_idp_client, get_dynamodb_resource, get_s3_client, invoke_lambda_async
+from shared.aws import (
+    get_cognito_idp_client,
+    get_dynamodb_resource,
+    get_s3_client,
+    get_scheduler_client,
+    invoke_lambda_async,
+)
 from shared.enabled_sources import enabled_plugin_ids
 from shared.exceptions import ConfigurationError, ConflictError, ServiceError, ValidationError
 from shared.export_jobs import (
@@ -136,15 +159,26 @@ from shared.logging import logger
 from shared.platform_admin import require_platform_admin
 from shared.platform_admin_gate import confirm_live_platform_admin, require_live_platform_admin
 from shared.platform_costs import cost_page, parse_cost_limit, parse_range
-from shared.platform_workspaces import CREDENTIALS_READY, create_workspace, list_workspaces, parse_new_workspace
+from shared.platform_workspaces import (
+    CREDENTIALS_READY,
+    create_workspace,
+    list_workspaces,
+    new_workspace_id,
+    parse_new_workspace,
+)
 from shared.request_body import json_object_body
 from shared.tables import cached_table
+from shared.trial_pause import PauseTables, resume
+from shared.trial_schedule import configured_schedule
+from shared.trial_state import new_trial, parse_extension, stored_trial, trial_summary
+from shared.trials import convert_trial, extend_trial, trial_view
 from shared.warm_init import warm_at_init
 from shared.workspace import (
     WORKSPACE_FAULT,
     MembershipCache,
     WorkspaceContext,
     list_my_workspaces,
+    member_subject,
     require_workspace_admin,
     resolve_workspace,
 )
@@ -166,6 +200,7 @@ from shared.workspace_members import (
     parse_new_member,
     parse_role_change,
     remove_member,
+    suggested_playbook,
 )
 from shared.workspace_plugin_settings import (
     offered_plugin,
@@ -208,6 +243,8 @@ FAILED_START_DELETE = 'Failed to start the delete'
 FAILED_CANCEL_DELETE = 'Failed to cancel the delete'
 FAILED_RESUME_DELETE = 'Failed to resume the delete'
 FAILED_PLATFORM_COSTS = 'Failed to read the costs'
+FAILED_EXTEND_TRIAL = 'Failed to extend the trial'
+FAILED_CONVERT_TRIAL = 'Failed to convert the trial'
 
 app = create_api_resolver()
 # The warm container's resolved memberships (30 s, shared/workspace.py).
@@ -256,10 +293,19 @@ def _workspace(event: dict, public_error: str, *, fresh: bool = False) -> Worksp
 
 @app.get('/me/workspaces/current')
 def current_workspace() -> dict:
-    context = _workspace(app.current_event.raw_event, FAILED_CURRENT)
+    event = app.current_event.raw_event
+    context = _workspace(event, FAILED_CURRENT)
+    table = get_workspaces_table()
+    try:
+        # Every member reads the trial (7.71.00): when it ends, whether it is paused; and the playbook suggested to them.
+        trial = trial_summary(stored_trial(table, context.ws))
+        playbook = suggested_playbook(table, context.ws, member_subject(event))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error reading the workspace trial')
+        raise ServiceError(FAILED_CURRENT) from exc
     return {'workspace': {
         'id': context.ws, 'name': context.name, 'slug': context.slug, 'role': context.role,
-        'platform_admin': context.platform_admin,
+        'platform_admin': context.platform_admin, 'trial': trial, 'playbook': playbook,
     }}
 
 
@@ -312,7 +358,7 @@ def add_workspace_member():  # a Response: the resolver validates a return annot
             get_cognito_idp_client(), _user_pool(), new.email, may_create=is_admin(event),
             # A new account is recorded before it exists, so a failed add never leaves one unrecorded (D4).
             before_create=lambda: audit_account_creation(table, context, actor, new.email))
-        member = add_member(table, context, account, new.role, actor)
+        member = add_member(table, context, account, new.role, actor, new.playbook)
     except (ClientError, BotoCoreError, MemberAccountError) as exc:
         # A Cognito fault, a failed audit row (nothing added) or a failed transaction.
         logger.exception('Error adding a workspace member')
@@ -524,17 +570,66 @@ def create_platform_workspace():  # a Response: the resolver validates a return 
     require_platform_admin(event)
     require_live_platform_admin(event, FAILED_CREATE)
     new = parse_new_workspace(json_object_body(app))
+    creator = get_caller_subject(event)
+    ws = new_workspace_id()
+    trial = None if new.trial is None else new_trial(new.trial, creator, datetime.now(UTC))
     try:
+        if trial is not None:
+            # The schedule first (a 500 before anything is written when it is not configured or refused): a create
+            # that then fails leaves a schedule that runs once for no workspace and does nothing.
+            configured_schedule(get_scheduler_client).create(ws, datetime.fromisoformat(trial['expires_at']))
         # Every plugin the deployment offers starts on (7.40.00); Workspace settings turns one off.
-        ws = create_workspace(get_workspaces_table(), new, get_caller_subject(event), enabled_plugin_ids())
+        create_workspace(get_workspaces_table(), new, creator, enabled_plugin_ids(), ws=ws, trial=trial)
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Error creating a workspace')
         raise ServiceError(FAILED_CREATE) from exc
     # Nothing else to make (decision 19: a plugin's parameters are created by its first save in the workspace);
     # `secret_status` stays in the answer for the platform API's callers, always `ready`.
-    workspace = {'id': ws, 'name': new.name, 'slug': new.slug, 'role': 'admin', 'secret_status': CREDENTIALS_READY}
+    workspace = {'id': ws, 'name': new.name, 'slug': new.slug, 'role': 'admin', 'secret_status': CREDENTIALS_READY,
+                 'trial': trial_view(trial)}
     return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
                     body=json.dumps({'workspace': workspace}))
+
+
+def _resume(ws: str, trial: Mapping[str, Any], actor: str, reason: str) -> dict[str, int]:
+    """A paused trial's plugins and forms turned back on (shared/trial_pause.py), as the platform admin."""
+    if not AGGREGATES_TABLE:
+        raise ConfigurationError('Aggregates table not configured')
+    resource = get_dynamodb_resource()
+    tables = PauseTables(workspaces=get_workspaces_table(),
+                         forms=lambda scope: ingest_table(scope, resource, AGGREGATES_TABLE),
+                         ceiling=enabled_plugin_ids())
+    return resume(tables, ws, trial, actor, reason)
+
+
+@app.post('/platform/workspaces/<ws>/trial/extend')
+def extend_workspace_trial(ws: str) -> dict:
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    require_live_platform_admin(event, FAILED_EXTEND_TRIAL)
+    days = parse_extension(json_object_body(app))
+    try:
+        trial = extend_trial(get_workspaces_table(), ws, days, get_caller_subject(event),
+                             schedule=configured_schedule(get_scheduler_client), resume=_resume, now=datetime.now(UTC))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error extending a trial')
+        raise ServiceError(FAILED_EXTEND_TRIAL) from exc
+    return {'trial': trial}
+
+
+@app.post('/platform/workspaces/<ws>/trial/convert')
+def convert_workspace_trial(ws: str) -> dict:
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    require_live_platform_admin(event, FAILED_CONVERT_TRIAL)
+    try:
+        trial = convert_trial(get_workspaces_table(), ws, get_caller_subject(event), resume=_resume)
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error converting a trial')
+        raise ServiceError(FAILED_CONVERT_TRIAL) from exc
+    return {'trial': trial}
 
 
 def _utc_today() -> date:

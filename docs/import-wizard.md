@@ -5,6 +5,10 @@ a team already has (app store reviews, support tickets, or another survey tool's
 holds, and imports it once a person has confirmed. The first insights follow as the rows are analysed. Importing is
 admin-only, like every import (#242): in a workspace, its admins.
 
+After a workshop, **Create a trial** (7.71.00, [Trial workspaces](multi-workspace.md#trial-workspaces)) opens this
+wizard inside the new trial workspace, so the customer's own feedback and the workshop's survey (as an imported form)
+go straight into it. A paused trial still takes imports: only its plugins and live forms stop.
+
 ## The four steps
 
 1. **Upload.** A CSV, TSV or JSON file up to 10 MB (a survey export up to 2 MB: it rides the first import call whole),

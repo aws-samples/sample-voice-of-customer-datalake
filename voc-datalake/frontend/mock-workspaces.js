@@ -1,14 +1,16 @@
 // Workspaces mock, in the wire shapes of lambda/api/workspaces_handler.py (docs/multi-workspace.md):
 //   GET  /me/workspaces                          → {workspaces: [{id, name, slug, role}]}, by name
-//   GET  /me/workspaces/current                  → {workspace: {id, name, slug, role, platform_admin}} for X-Workspace-Id
+//   GET  /me/workspaces/current                  → {workspace: {id, name, slug, role, platform_admin, trial, playbook}}
+//        for X-Workspace-Id (`trial` and `playbook`, 7.71.00: mock-trials.js)
 //   PUT  /me/workspaces/current                  {name} → the same answer, renamed (the workspace's admins; the slug
 //        stays): 400 for a name of 0 or over 80 characters once trimmed, or with a control character (workspace_rename.py)
 //   GET  /me/workspaces/current/members          → {members: [{sub, role, email, name, invited_by, joined_at}], next_cursor}
-//   POST /me/workspaces/current/members          {email, role} → 201 {member: {…, account: 'existing'|'created'}}
+//   POST /me/workspaces/current/members          {email, role, playbook?} → 201 {member: {…, account: 'existing'|'created'}}
 //   PUT  /me/workspaces/current/members/{sub}    {role} → {member: {sub, role}}
 //   DELETE /me/workspaces/current/members/{sub}  → {removed: sub} (the caller's own sub: leave)
-//   GET  /platform/workspaces                    → {workspaces: [{id, name, slug, status, created_at}], next_cursor}
-//   POST /platform/workspaces                    {name, slug} → 201 {workspace: {id, name, slug, role: 'admin'}}
+//   GET  /platform/workspaces                    → {workspaces: [{id, name, slug, status, created_at, trial}], next_cursor}
+//   POST /platform/workspaces                    {name, slug, trial?} → 201 {workspace: {id, name, slug, role: 'admin', trial}}
+//   POST /platform/workspaces/{ws}/trial/extend|convert   (mock-trials.js)
 //   (the server's answers also carry `secret_status`, always 'ready' since decision 19, which the app does not read)
 // The workspace routes answer 400 without X-Workspace-Id and one 404 for any workspace the caller cannot enter
 // (never "exists"); the writes refuse as workspace_members.py does (403 for a non-admin, 409 for the last admin, a
@@ -24,10 +26,13 @@
 // and an editor of "Juniper Trail Co." (juniper, whose admin is editor-demo). Unlike the
 // server, which also lifts a platform admin who is a member below admin to admin, the mock lifts only a
 // non-member (entering from the platform console), so the caller's own role shows in juniper.
+// `{"enabled":true,"trial":"running"|"paused"}` (7.71.00) makes Acme Outfitters a trial in that state (mock-trials.js).
 // `{"enabled":true,"member":"acme"}`: the same two workspaces, but the caller is a member of acme only and these
 // routes treat them as no platform admin (no entry, and 403 on /platform), so juniper answers the one 404
 // (e2e/tests/cross-workspace.spec.ts).
 // Wired into mock-server.js by handleDomainModules; the dev-only /__mock/workspaces route is not an app route.
+
+import { handleTrialRoutes, newTrial, switchTrial, trialSummary, trialView } from './mock-trials.js';
 
 const CONTROL_ROUTE = '/__mock/workspaces';
 const MEMBERS_ROUTE = '/me/workspaces/current/members';
@@ -35,6 +40,8 @@ const MEMBER_ROUTE = /^\/me\/workspaces\/current\/members\/([^/]+)$/;
 const PLATFORM_ROUTE = '/platform/workspaces';
 
 const ROLES = ['admin', 'editor', 'viewer'];
+/** The role playbooks a member add may suggest (shared/playbooks.py ROLES). */
+const PLAYBOOKS = ['product', 'scrum_master', 'qa', 'engineering'];
 const PLATFORM_ADMIN_GROUP = 'platform-admins';
 /** Default page size of the list routes (parse_limit); ?limit= takes 1 to 100. */
 const DEFAULT_LIMIT = 25;
@@ -159,10 +166,15 @@ function addMember(workspace, body, send, shared) {
   const email = typeof body?.email === 'string' ? body.email.trim() : '';
   if (!isEmailShape(email)) return send(400, { success: false, error: 'email is not a valid address' });
   if (!ROLES.includes(body?.role)) return send(400, { success: false, error: 'role must be "admin", "editor" or "viewer"' });
+  const playbook = body?.playbook ?? null;
+  if (playbook !== null && !PLAYBOOKS.includes(playbook)) {
+    return send(400, { success: false, error: `playbook must be one of: ${PLAYBOOKS.join(', ')}, or null` });
+  }
   const account = accountFor(email, shared);
   if (account.refusal) return send(account.refusal[0], { success: false, error: account.refusal[1] });
   if (roleOf(workspace, account.sub) !== null) return send(409, { success: false, error: ALREADY_MEMBER });
-  const member = { sub: account.sub, role: body.role, email: account.email, name: account.name, invited_by: shared.mockCaller.sub, joined_at: new Date().toISOString() };
+  const member = { sub: account.sub, role: body.role, email: account.email, name: account.name, invited_by: shared.mockCaller.sub,
+    joined_at: new Date().toISOString(), ...(playbook === null ? {} : { playbook }) };
   workspace.members.push(member);
   return send(201, { member: { ...member, account: account.account } });
 }
@@ -219,13 +231,15 @@ function createWorkspace(body, send, shared) {
   if (!state.enabled) {
     return send(400, { success: false, error: 'The dev mock creates workspaces only after PUT /__mock/workspaces {"enabled": true}' });
   }
+  const trial = newTrial(body?.trial, shared.mockCaller.sub);
+  if (trial.refusal) return send(400, { success: false, error: trial.refusal });
   if (state.workspaces.some((workspace) => workspace.slug === slug)) return send(409, { success: false, error: SLUG_TAKEN });
   state.created += 1;
   const id = `ws_01JCNEW${String(state.created).padStart(19, '0')}`;
   const createdAt = new Date().toISOString();
   const creator = { sub: shared.mockCaller.sub, role: 'admin', email: '', name: '', invited_by: '', joined_at: createdAt };
-  state.workspaces.push({ id, name, slug, status: 'active', created_at: createdAt, members: [creator] });
-  return send(201, { workspace: { id, name, slug, role: 'admin' } });
+  state.workspaces.push({ id, name, slug, status: 'active', created_at: createdAt, members: [creator], trial: trial.value });
+  return send(201, { workspace: { id, name, slug, role: 'admin', trial: trialView(trial.value) } });
 }
 
 /** `GET` and `POST /platform/workspaces`, platform admins only; true when the request was taken. */
@@ -235,7 +249,7 @@ function handlePlatform(req, res, url, send, shared) {
     if (!isPlatformAdmin(shared)) return send(403, { success: false, error: NOT_PLATFORM_ADMIN });
     if (req.method === 'POST') return createWorkspace(body, send, shared);
     const rows = [...state.workspaces].sort(byName)
-      .map(({ id, name, slug, status, created_at }) => ({ id, name, slug, status, created_at }));
+      .map(({ id, name, slug, status, created_at, trial }) => ({ id, name, slug, status, created_at, trial: trialSummary(trial) }));
     const found = page(rows, url);
     if (found === null) return send(400, { success: false, error: 'limit or cursor is not valid' });
     return send(200, { workspaces: found.rows, next_cursor: found.next });
@@ -246,8 +260,10 @@ function handlePlatform(req, res, url, send, shared) {
 function currentWorkspace(req, send, shared) {
   const entry = resolve(req, shared);
   if (entry.refusal) return send(entry.refusal[0], { success: false, error: entry.refusal[1] });
-  const { id, name, slug } = entry.workspace;
-  return send(200, { workspace: { id, name, slug, role: entry.role, platform_admin: entry.platformAdmin } });
+  const { id, name, slug, trial, members } = entry.workspace;
+  const playbook = members.find((member) => member.sub === shared.mockCaller.sub)?.playbook ?? null;
+  return send(200, { workspace: { id, name, slug, role: entry.role, platform_admin: entry.platformAdmin,
+    trial: trialSummary(trial), playbook } });
 }
 
 /** The 400 of a rename's body (platform_workspaces.py `validated_workspace_name`), or null; `name` is trimmed. */
@@ -302,8 +318,9 @@ function control(req, res, send, shared) {
       send(400, { success: false, error: 'member must be the slug of a mock workspace (acme, juniper)' });
       return;
     }
+    const trial = switchTrial(body?.trial, shared.mockCaller.sub);
     state.enabled = body.enabled;
-    state.workspaces = workspaces;
+    state.workspaces = workspaces.map((workspace) => (workspace.slug === 'acme' ? { ...workspace, trial } : workspace));
     state.created = 0;
     // `member` also makes the caller no platform admin to these routes; off again restores the default.
     state.platformAdmin = !(body.enabled && member !== undefined);
@@ -318,6 +335,9 @@ export function handleWorkspaceRoutes(req, res, url, send, shared) {
     return true;
   }
   if (handleMembers(req, res, url, send, shared) || handlePlatform(req, res, url, send, shared)) return true;
+  if (handleTrialRoutes(req, res, url, send, shared, {
+    workspaces: () => state.workspaces, isPlatformAdmin: () => isPlatformAdmin(shared), sub: shared.mockCaller.sub,
+  })) return true;
   if (url.pathname === '/me/workspaces/current' && req.method === 'PUT') {
     renameWorkspace(req, res, send, shared);
     return true;

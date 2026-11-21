@@ -17,6 +17,7 @@ import { TestRouter } from '@test/TestRouter'
 import { DEFAULT_ONBOARDING } from '../../../api/onboardingApi'
 import type { OnboardingPreference, PlaybookRole } from '../../../api/onboardingApi'
 import { useAuthStore } from '../../../store/authStore'
+import { setCurrentTrial } from '../../../workspace/currentTrial'
 import RolePlaybook from './RolePlaybook'
 
 const onChooseRole = vi.fn<(role: PlaybookRole | null) => void>()
@@ -56,6 +57,18 @@ describe('RolePlaybook', () => {
     expect(onChooseRole).toHaveBeenCalledWith('scrum_master')
     // Nothing is read for a person who has not chosen.
     expect(fetchApi).not.toHaveBeenCalled()
+  })
+
+  // 7.71.00: the playbook the admin who added the person suggested comes first, marked.
+  it('offers the suggested role first, marked as suggested', async () => {
+    setCurrentTrial({ trial: null, playbook: 'qa' })
+    render()
+    const roles = screen.getAllByRole('button').map((button) => button.querySelector('span')?.firstChild?.textContent)
+    expect(roles).toStrictEqual(['QA', 'Product manager', 'Scrum master', 'Engineering'])
+    expect(within(screen.getAllByRole('button')[0] ?? document.body).getByText('Suggested for you')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^QA/ }))
+    expect(onChooseRole).toHaveBeenCalledWith('qa')
+    setCurrentTrial({ trial: null, playbook: null })
   })
 
   const QA_SIGNALS = { feedback_present: true, feedback_form_configured: true, form_test_response: false }

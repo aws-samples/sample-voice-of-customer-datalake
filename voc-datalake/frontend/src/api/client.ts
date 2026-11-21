@@ -8,7 +8,7 @@ import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 import { ApiError, AuthError } from '../lib/errors'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange } from './baseUrl'
-import type { RequestScope } from './baseUrl'
+import type { HeaderScope, RequestScope } from './baseUrl'
 import { buildSearchParams, del, patch, post, put, runScope } from './requestKit'
 import { logsEndpoints, userAdminEndpoints } from './adminEndpoints'
 import { dataExplorerEndpoints, s3ImportEndpoints } from './dataEndpoints'
@@ -61,7 +61,7 @@ export interface DateRangeParams {
  * {@link getAuthHeaders}: the origin check is the point of this function, so a
  * call site that forgets the URL must not compile.
  */
-function buildHeaders(targetUrl: string, existingHeaders: HeadersInit | undefined, scope: RequestScope): Record<string, string> {
+function buildHeaders(targetUrl: string, existingHeaders: HeadersInit | undefined, scope: HeaderScope): Record<string, string> {
   const extra = existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : undefined
   return getAuthHeaders(targetUrl, extra, scope)
 }
@@ -153,7 +153,7 @@ export async function apiErrorFor(response: Response): Promise<ApiError> {
 async function handleUnauthorized<T>(
   fullUrl: string,
   options: RequestInit | undefined,
-  scope: RequestScope,
+  scope: HeaderScope,
 ): Promise<T> {
   await authService.refreshSession()
   // Rebuild headers through buildHeaders so the origin check fires on the
@@ -170,9 +170,10 @@ async function handleUnauthorized<T>(
 
 /**
  * One API request. `scope` `'deployment'` sends no `X-Workspace-Id`, even inside a workspace (baseUrl.ts
- * `RequestScope`), on the first try and on the 401 retry alike.
+ * `RequestScope`), and `{workspaceId}` names that workspace instead of the current one (`WorkspaceTarget`), on the
+ * first try and on the 401 retry alike.
  */
-export async function fetchApi<T>(endpoint: string, options?: RequestInit, scope: RequestScope = 'workspace'): Promise<T> {
+export async function fetchApi<T>(endpoint: string, options?: RequestInit, scope: HeaderScope = 'workspace'): Promise<T> {
   const baseUrl = getBaseUrl()
   const fullUrl = `${baseUrl}${endpoint}`
   const headers = buildHeaders(fullUrl, options?.headers, scope)

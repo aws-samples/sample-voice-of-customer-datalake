@@ -390,6 +390,69 @@
       "deleteChangedMeanwhile": "El espacio de trabajo cambió mientras se solicitaba la eliminación. Recarga la página e inténtalo de nuevo.",
       "deleteUnavailable": "Eliminar un espacio de trabajo no está disponible en esta implementación.",
       "deleteNotStarted": "El espacio de trabajo está marcado para eliminarse, pero la eliminación no pudo empezar. Pide a un administrador de la plataforma que la cancele o la reanude."
+    },
+    "trial": {
+      "create": "Crear una prueba",
+      "createDescription": "Un espacio de trabajo de prueba para un cliente al final de un taller: sus personas, un paquete inicial y después el asistente de importación. Dura 14, 30 o 60 días y luego se pausa.",
+      "dialogTitle": "Crear un espacio de trabajo de prueba",
+      "days": "Duración",
+      "daysOption": "{{days}} días",
+      "pausesNotice": "Cuando la prueba termina, se pausa: sus plugins y formularios activos se detienen y no se borra nada. La lectura y la exportación siguen funcionando hasta que un administrador de la plataforma la amplíe o la convierta. Una prueba nunca se borra sola.",
+      "fixNameSlug": "Revise el nombre y la dirección.",
+      "submit": "Crear la prueba",
+      "creating": "Creando la prueba…",
+      "invites": {
+        "title": "Personas",
+        "hint": "Cada persona se añade a la prueba con su rol. Quien no tenga cuenta recibe una, y Cognito le envía por correo una contraseña temporal.",
+        "email": "Correo electrónico",
+        "role": "Rol",
+        "playbook": "Playbook sugerido",
+        "noPlaybook": "Ninguno",
+        "add": "Añadir una persona",
+        "remove": "Quitar a {{email}}",
+        "removeUnnamed": "Quitar a esta persona",
+        "emailInvalid": "Introduzca un correo electrónico válido o quite esta fila."
+      },
+      "pack": {
+        "title": "Paquete inicial",
+        "hint": "Se crea en la prueba con su propio acceso, y cada elemento queda registrado por su propia ruta. Los formularios se crean desactivados.",
+        "form": "Formulario: {{name}}",
+        "categories": "Categorías de ejemplo ({{n}})"
+      },
+      "done": {
+        "title": "{{name}} está listo.",
+        "stepsLabel": "Lo que hizo el paquete inicial",
+        "member": "{{subject}} añadido.",
+        "memberFailed": "No se pudo añadir a {{subject}}: {{reason}}",
+        "form": "Formulario {{subject}} creado (desactivado).",
+        "formFailed": "No se pudo crear el formulario {{subject}}: {{reason}}",
+        "categories": "{{subject}} categorías de ejemplo guardadas.",
+        "categoriesFailed": "No se pudieron guardar las categorías de ejemplo: {{reason}}",
+        "unknownReason": "el servidor lo rechazó",
+        "openImport": "Abrir el asistente de importación en {{name}}"
+      },
+      "badge": {
+        "running": "Prueba · termina el {{date}}",
+        "paused": "Prueba en pausa desde el {{date}}",
+        "converted": "Convertido desde una prueba"
+      },
+      "extend": "Ampliar",
+      "extendBy": "Ampliar {{name}} en",
+      "convert": "Convertir",
+      "convertWho": "Convertir {{name}} en un espacio de trabajo normal",
+      "convertTitle": "¿Convertir {{name}}?",
+      "convertMessage": "Pasa a ser un espacio de trabajo normal, sin fin.",
+      "convertPausedMessage": "Pasa a ser un espacio de trabajo normal, sin fin, y se vuelven a activar los plugins y formularios que desactivó la pausa.",
+      "banner": {
+        "running": "Este es un espacio de trabajo de prueba hasta el {{date}}. Después se pausa: sus plugins y formularios activos se detienen y no se borra nada. Un administrador de la plataforma puede ampliarlo o convertirlo.",
+        "paused": "Esta prueba está en pausa desde el {{date}}: se desactivaron {{plugins}} plugins y {{forms}} formularios activos. No se borró nada: la lectura y la exportación siguen funcionando. Pida a un administrador de la plataforma que la amplíe o la convierta."
+      },
+      "pausedPlugins": "Esta prueba está en pausa: los plugins siguen desactivados hasta que un administrador de la plataforma la amplíe o la convierta.",
+      "errors": {
+        "converted": "Esta prueba se convirtió: ahora es un espacio de trabajo normal.",
+        "changed": "La prueba cambió mientras tanto: recargue e inténtelo de nuevo.",
+        "notFound": "Ese espacio de trabajo no es una prueba, o se está borrando."
+      }
     }
   },
   "timeRange": {

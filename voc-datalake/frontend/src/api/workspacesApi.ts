@@ -15,6 +15,8 @@ import { fetchApi } from './client'
 import { put } from './requestKit'
 import { isWorkspaceSlug } from '../workspace/workspacePath'
 import type { CurrentWorkspace } from '../workspace/currentWorkspace'
+import { PLAYBOOK_ROLES } from './onboardingApi'
+import type { PlaybookRole } from './onboardingApi'
 
 /** A member's role in a workspace (`ROLES`, lambda/shared/workspace.py), in the order the role menus offer them. */
 export const WORKSPACE_ROLES = ['admin', 'editor', 'viewer'] as const
@@ -31,8 +33,34 @@ export const WorkspaceIdentitySchema = z.object({
 
 const WorkspaceSchema = WorkspaceIdentitySchema.extend({ role: RoleSchema })
 
+/**
+ * What every member reads of a trial workspace (7.71.00; `trial_summary` in lambda/shared/trial_state.py), from
+ * `GET /me/workspaces/current` and, as the listing row's copy, `GET /platform/workspaces`: when it ends, whether and
+ * since when it is paused (and how many plugins and live forms the pause turned off), whether it was converted.
+ * Read leniently: a field this build cannot read is null.
+ */
+export const TrialSummarySchema = z.object({
+  days: z.number().int().positive().catch(30),
+  expires_at: z.string().nullable().catch(null),
+  paused_at: z.string().nullable().catch(null),
+  converted_at: z.string().nullable().catch(null),
+  paused: z.object({ plugins: z.number().int().nonnegative(), forms: z.number().int().nonnegative() }).nullable().catch(null),
+})
+export type TrialSummary = z.infer<typeof TrialSummarySchema>
+
+/** `GET /me/workspaces/current`: the workspace as the server resolves it, its trial (or none) and the role playbook
+ *  suggested to the caller when they were added (or none). */
+const ServerWorkspaceSchema = WorkspaceSchema.extend({
+  trial: TrialSummarySchema.nullable().catch(null),
+  playbook: z.enum(PLAYBOOK_ROLES).nullable().catch(null),
+})
+export interface ServerWorkspace extends CurrentWorkspace {
+  readonly trial: TrialSummary | null
+  readonly playbook: PlaybookRole | null
+}
+
 const ListSchema = z.object({ workspaces: z.array(z.unknown()) })
-const CurrentSchema = z.object({ workspace: WorkspaceSchema })
+const CurrentSchema = z.object({ workspace: ServerWorkspaceSchema })
 
 /** The rows of a `GET /me/workspaces` answer this build can read, in the server's order (by name). */
 export function readMyWorkspaces(raw: unknown): CurrentWorkspace[] {
@@ -53,11 +81,11 @@ export const currentWorkspaceKey = (id: string) => ['my-workspaces', 'current', 
 export const workspacesApi = {
   list: async (): Promise<CurrentWorkspace[]> => readMyWorkspaces(await fetchApi<unknown>('/me/workspaces')),
   /** Sent with the current workspace's `X-Workspace-Id` (api/baseUrl.ts); rejects with the API's 404 for a non-member. */
-  current: async (): Promise<CurrentWorkspace> => CurrentSchema.parse(await fetchApi<unknown>('/me/workspaces/current')).workspace,
+  current: async (): Promise<ServerWorkspace> => CurrentSchema.parse(await fetchApi<unknown>('/me/workspaces/current')).workspace,
   /**
    * Rename the current workspace (its admins; the slug, so its address, stays): the workspace as `current` answers
    * it. Its refusals are workspaceRefusals.ts `RENAME_REFUSALS`.
    */
-  rename: async (name: string): Promise<CurrentWorkspace> =>
+  rename: async (name: string): Promise<ServerWorkspace> =>
     CurrentSchema.parse(await fetchApi<unknown>('/me/workspaces/current', put({ name }))).workspace,
 }

@@ -72,7 +72,7 @@ describe('mock workspaces', () => {
 
     it('answers the workspace X-Workspace-Id names, 400 without it and one 404 for another id', async () => {
       const { juniper } = await mine()
-      assert.deepEqual(await current(juniper.id), [200, { workspace: { ...juniper, platform_admin: false } }])
+      assert.deepEqual(await current(juniper.id), [200, { workspace: { ...juniper, platform_admin: false, trial: null, playbook: null } }])
       assert.equal((await current())[0], 400)
       assert.deepEqual(await current('ws_01JCZZZZ0000000000000000Z9'), [404, { success: false, error: 'Workspace not found' }])
     })
@@ -192,7 +192,7 @@ describe('mock workspaces', () => {
 
     it('renames the workspace for its admins, trimmed, the slug kept, and lists it by its new name', async () => {
       const { acme, juniper } = await mine()
-      const renamed = { ...acme, name: 'Acme Trail Gear', platform_admin: false }
+      const renamed = { ...acme, name: 'Acme Trail Gear', platform_admin: false, trial: null, playbook: null }
       assert.deepEqual(await inWorkspace(acme.id, 'PUT', '/me/workspaces/current', { name: '  Acme Trail Gear  ' }), [200, { workspace: renamed }])
       assert.deepEqual((await mine()).acme, { ...acme, name: 'Acme Trail Gear' })
       for (const [name, error] of [['', 'name is required'], ['a'.repeat(81), 'name must be at most 80 characters'],
@@ -304,5 +304,51 @@ describe('mock platform-admin grant and revoke', () => {
     assert.deepEqual((await call('PUT', '/users/second-admin/platform-admin', { platform_admin: false }))[1].message, 'Platform admin revoked')
     assert.deepEqual(await call('PUT', '/users/admin-demo/platform-admin', { platform_admin: false }),
       [409, { success: false, error: 'This is the last enabled platform admin: make another administrator a platform admin first.' }])
+  })
+})
+
+// A trial workspace (7.71.00, mock-trials.js): created with its end, extended or converted by a platform admin; a paused
+// one refuses a plugin's enable until then. Nothing is ever deleted.
+describe('mock trial workspaces', () => {
+  after(async () => { await call('PUT', '/__mock/workspaces', { enabled: false }) })
+
+  it('creates a trial that ends after its days, lists it, extends it and converts it', async () => {
+    assert.equal((await call('PUT', '/__mock/workspaces', { enabled: true }))[0], 200)
+    const [status, { workspace }] = await call('POST', '/platform/workspaces',
+      { name: 'Example Trial', slug: 'example-trial', trial: { days: 14, pack: { forms: ['workshop'], categories: true, playbooks: false } } })
+    assert.equal(status, 201)
+    assert.equal(workspace.trial.days, 14)
+    const [, list] = await call('GET', '/platform/workspaces')
+    assert.equal(list.workspaces.find((row) => row.id === workspace.id).trial.expires_at, workspace.trial.expires_at)
+    const [, extended] = await call('POST', `/platform/workspaces/${workspace.id}/trial/extend`, { days: 30 })
+    assert.equal(Date.parse(extended.trial.expires_at) - Date.parse(workspace.trial.expires_at), 30 * 86_400_000)
+    assert.equal((await call('POST', `/platform/workspaces/${workspace.id}/trial/extend`, { days: 7 }))[0], 400)
+    const [, converted] = await call('POST', `/platform/workspaces/${workspace.id}/trial/convert`, {})
+    assert.equal(converted.trial.converted_by, CALLER)
+    assert.equal((await call('POST', `/platform/workspaces/${workspace.id}/trial/extend`, { days: 30 }))[0], 409)
+    assert.equal((await call('POST', '/platform/workspaces', { name: 'Bad', slug: 'bad-trial', trial: { days: 90 } }))[0], 400)
+  })
+
+  it('a paused trial says so to its members and refuses a plugin enable until a platform admin extends it', async () => {
+    assert.equal((await call('PUT', '/__mock/workspaces', { enabled: true, trial: 'paused' }))[0], 200)
+    const { acme } = await mine()
+    const [, { workspace }] = await current(acme.id)
+    assert.deepEqual(workspace.trial.paused, { plugins: 2, forms: 1 })
+    const [status, refused] = await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: true })
+    assert.deepEqual([status, refused.code], [409, 'trial_paused'])
+    const [, extended] = await call('POST', `/platform/workspaces/${acme.id}/trial/extend`, { days: 14 })
+    assert.equal(extended.trial.paused, null)
+    assert.equal((await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: true }))[0], 200)
+    assert.equal((await call('POST', '/platform/workspaces/ws_01JCNOTATRIAL00000000000000/trial/convert', {}))[0], 404)
+  })
+
+  it('suggests a playbook to a member added with one', async () => {
+    assert.equal((await call('PUT', '/__mock/workspaces', { enabled: true, trial: 'running' }))[0], 200)
+    const { acme } = await mine()
+    const [added, body] = await inWorkspace(acme.id, 'POST', '/me/workspaces/current/members',
+      { email: 'new.member@example.com', role: 'viewer', playbook: 'qa' })
+    assert.deepEqual([added, body.member.playbook], [201, 'qa'])
+    assert.equal((await inWorkspace(acme.id, 'POST', '/me/workspaces/current/members',
+      { email: 'other@example.com', role: 'viewer', playbook: 'ceo' }))[0], 400)
   })
 })

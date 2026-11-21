@@ -257,7 +257,8 @@
       "failed": "Não foi possível salvar: {{reason}}.",
       "failedGeneric": "Não foi possível salvar. Verifique sua conexão e tente novamente.",
       "retry": "Tentar novamente",
-      "placeholderRefused": "Não foi possível guardar: um formulário ativo não pode mostrar um marcador {…} tal como está escrito. Corrija os textos indicados em Problemas ou guarde-o desativado."
+      "placeholderRefused": "Não foi possível guardar: um formulário ativo não pode mostrar um marcador {…} tal como está escrito. Corrija os textos indicados em Problemas ou guarde-o desativado.",
+      "trialPaused": "Este teste está em pausa: um formulário fica ativo quando um administrador da plataforma prolongar ou converter o teste."
     },
     "published": "Ativo. Os respondentes veem esta versão a partir de agora.",
     "firstSave": "Salvo. Este formulário está Desligado: o link mostra “Formulário de feedback indisponível.” até você publicá-lo.",

@@ -29,6 +29,8 @@ const WORKSPACE_DELETE: Deleter = {
   scope: [`WS#${ONE_WORKSPACE}#*`],
   why: 'a workspace\'s hard delete (decision 17): every partition of one workspace, after its tombstones',
 };
+/** A trial workspace's end (7.71.00): its pause, never a delete of data. */
+const TRIAL_EXPIRY_ROLE = 'VocProcessingStack/TrialExpiryRole';
 const PROJECTS_API = 'VocApiStack/ProjectsLambdaRole';
 const PERSONA_GENERATOR = 'VocApiStack/PersonaGeneratorRole';
 const ENGAGEMENT_API = 'VocApiStack/EngagementLambdaRole';
@@ -171,6 +173,9 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
       scope: ['FORM#*', 'PLUGIN#*', 'USER#*', 'WORKSPACES', `WS#${ONE_WORKSPACE}`],
       why: 'a workspace\'s hard delete (decision 17): its control-plane rows, never its audit trail',
     },
+    // A trial workspace's end (7.71.00, lib/stacks/trial-expiry.ts): it deletes nothing but this; a plugin's disable IS
+    // the delete of its enable row (present = enabled), the key the existing route deletes. Configuration, not data.
+    [TRIAL_EXPIRY_ROLE]: { scope: ['PLUGIN#*'], why: 'a paused trial\'s plugins: the existing disable of their PLUGIN# rows' },
   },
 };
 
@@ -206,6 +211,9 @@ const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   // The feedback forms (7.06.00): a workspace form's lookup row (put on create, deleted with the form); its entry and
   // form_deleted audit rows go through the workspace-resolution policy above.
   'VocApiStack/FeedbackFormLambdaRole': ['FORM#*'],
+  // A trial's end (7.71.00): its trial_paused and plugin_disabled audit rows, the `trial` map of META and the listing
+  // row (attribute-limited), and a paused plugin's PLUGIN# row (its existing disable).
+  [TRIAL_EXPIRY_ROLE]: ['AUDIT#WS#*', 'PLUGIN#*', 'WORKSPACES', 'WS#*'],
 };
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */

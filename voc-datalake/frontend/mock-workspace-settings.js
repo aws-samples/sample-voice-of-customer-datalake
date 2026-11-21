@@ -4,7 +4,8 @@
 //   GET  /me/workspaces/current/plugins            → {plugins: [{id, enabled, enabled_at?, enabled_by?}]}, any member
 //   PUT  /me/workspaces/current/plugins/{id}       {enabled} → {plugin: {id, enabled, …}}: 404 for a plugin the
 //        deployment does not offer, 400 for a bad body, then 403 for a non-admin; an enable or a disable changes
-//        the workspace's own list (asking for what holds changes nothing)
+//        the workspace's own list (asking for what holds changes nothing); an enable in a paused trial is 409
+//        trial_paused (7.71.00)
 //   GET  /settings/brand  with X-Workspace-Id     → the workspace's brand (empty until saved), any member
 //   PUT  /settings/brand  with X-Workspace-Id     → the workspace's admins only (403 'Workspace admin access required')
 // (lambda/api/workspaces_handler.py and shared/workspace_plugin_settings.py; settings_handler.py and
@@ -14,6 +15,7 @@
 // afresh. Wired into mock-server.js by handleDomainModules.
 
 import { resolve } from './mock-workspaces.js';
+import { isPaused, TRIAL_PAUSED } from './mock-trials.js';
 import { brandFormTheme } from './mock-forms-v2.js';
 
 const PLUGINS_ROUTE = '/me/workspaces/current/plugins';
@@ -65,6 +67,10 @@ function changePlugin(req, res, send, shared, pluginId) {
     if (entry.refusal) return refuse(send, entry.refusal);
     if (entry.role !== 'admin') return refuse(send, [403, NOT_WORKSPACE_ADMIN]);
     const enabled = enabledOf(entry.workspace);
+    // A paused trial's enable (7.71.00, mock-trials.js): refused, as on the server; a disable still works.
+    if (change.enabled && enabled[pluginId] === undefined && isPaused(entry.workspace.trial)) {
+      return send(409, { success: false, error: TRIAL_PAUSED, code: 'trial_paused' });
+    }
     // Asking for what holds changes and records nothing, as on the server.
     if (change.enabled && enabled[pluginId] === undefined) {
       enabled[pluginId] = { enabled_at: new Date().toISOString(), enabled_by: shared.mockCaller.sub };

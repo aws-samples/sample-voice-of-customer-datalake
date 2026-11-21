@@ -25,15 +25,27 @@
  *     (a new member's account, the temporary password emailed): adding a member (lambda/shared/workspace_members.py);
  *   - no Secrets Manager and no SSM: since decision 19 a workspace's credentials are SSM parameters its first save
  *     makes (lib/utils/workspace-secrets.ts), so creating a workspace makes nothing but its rows, and costs nothing a
- *     month.
+ *     month;
+ *   - a trial workspace (7.71.00, lambda/shared/trials.py; {@link grantTrialSchedules}): UpdateItem of `trial` alone
+ *     on META and the listing row (`WS#*`, `WORKSPACES`); `scheduler:CreateSchedule` on the trials group's
+ *     `voc-trial-*` names only (no update, no delete: each schedule deletes itself once it has run) and `iam:PassRole`
+ *     of the scheduler's role only, to EventBridge Scheduler only (lib/stacks/trial-expiry.ts); and, for an extension
+ *     or a conversion of a paused trial, UpdateItem of a workspace form's `enabled`, `write_count`, `updated_at` and
+ *     `updated_by` in voc-aggregates (`WS#<one id>#FEEDBACK_FORM`). Statements on this role only: no VocApiStack
+ *     resource (api-engagement-budget.test.ts).
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { grantKeyScopedWrites } from '../utils/table-write-grants';
 import type { ApiStackContext } from './api-context';
 import { COST_PARTITIONS } from './cost-rollup-worker';
+import {
+  TRIAL_ATTRIBUTES, TRIAL_EXPIRY_FUNCTION_BASE_NAME, TRIAL_FORM_ATTRIBUTES, TRIAL_FORM_PARTITIONS,
+  TRIAL_SCHEDULE_GROUP_BASE_NAME, TRIAL_SCHEDULE_PREFIX, TRIAL_SCHEDULER_ROLE_BASE_NAME,
+} from './trial-expiry';
 
 const WORKSPACES_API_FUNCTION_BASE_NAME = 'voc-workspaces-api';
 const WORKSPACES_HANDLER_FILE = 'workspaces_handler.py';
@@ -51,6 +63,47 @@ const DELETE_PARTITIONS = ['PLUGIN#*', 'WORKSPACES', ...MEMBERSHIP_PARTITIONS];
 /** The deployment's enabled plugins (lib/stacks/api-data-lambdas.ts `enabledSourcesEnv`): a workspace's ceiling. */
 export interface WorkspacesInputs {
   readonly enabledSourcesEnv: string;
+}
+
+/** A trial's writes and its schedules (see the module's doc); the Lambda's environment for them. The names are the ones
+ *  lib/stacks/trial-expiry.ts gives the group, the scheduler's role and the job in VocProcessingStack. */
+function grantTrialSchedules(ctx: ApiStackContext, role: iam.Role): Record<string, string> {
+  const { workspacesTable, aggregatesTable } = ctx.props;
+  const stack = ctx.stack;
+  grantKeyScopedWrites(workspacesTable, role, ['UpdateItem'], ['WORKSPACES', 'WS#*'], TRIAL_ATTRIBUTES,
+    { noReturnValues: true });
+  grantKeyScopedWrites(aggregatesTable, role, ['UpdateItem'], TRIAL_FORM_PARTITIONS, TRIAL_FORM_ATTRIBUTES,
+    { noReturnValues: true });
+  const group = ctx.uniqueName(TRIAL_SCHEDULE_GROUP_BASE_NAME);
+  const schedules = stack.formatArn({
+    service: 'scheduler', resource: 'schedule', resourceName: `${group}/${TRIAL_SCHEDULE_PREFIX}*`,
+    arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+  });
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'TrialSchedules', actions: ['scheduler:CreateSchedule'], resources: [schedules],
+  }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'One one-time schedule per trial workspace and end (its id known only at run time), in this deployment\'s '
+      + 'one trials group and named voc-trial-<ws>-<end>: create only, never an update or a delete (each deletes '
+      + 'itself once it has run)',
+    findings: [resourceFinding(schedules)],
+  }]);
+  const schedulerRoleArn = stack.formatArn({
+    service: 'iam', region: '', resource: 'role', resourceName: ctx.uniqueName(TRIAL_SCHEDULER_ROLE_BASE_NAME),
+  });
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'TrialSchedulerRole', actions: ['iam:PassRole'], resources: [schedulerRoleArn],
+    conditions: { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } },
+  }));
+  return {
+    TRIAL_SCHEDULE_GROUP: group,
+    TRIAL_SCHEDULER_ROLE_ARN: schedulerRoleArn,
+    TRIAL_EXPIRY_FUNCTION_ARN: stack.formatArn({
+      service: 'lambda', resource: 'function', resourceName: ctx.uniqueName(TRIAL_EXPIRY_FUNCTION_BASE_NAME),
+      arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+    }),
+  };
 }
 
 export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesInputs): lambda.Function {
@@ -91,6 +144,7 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
   // create it (AdminCreateUser, which emails the temporary password).
   userPool.grant(role, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser', 'cognito-idp:ListUsers',
     'cognito-idp:AdminCreateUser');
+  const trialEnvironment = grantTrialSchedules(ctx, role);
 
   const environment: Record<string, string> = {
     WORKSPACES_TABLE: workspacesTable.tableName,
@@ -99,6 +153,7 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
     USER_POOL_ID: userPool.userPoolId,
     // The deployment's plugins (cdk.context.json): the ceiling a workspace picks its plugins from.
     ENABLED_SOURCES: inputs.enabledSourcesEnv,
+    ...trialEnvironment,
     ALLOWED_ORIGIN: ctx.allowedOrigin,
     POWERTOOLS_SERVICE_NAME: WORKSPACES_API_FUNCTION_BASE_NAME,
     LOG_LEVEL: 'INFO',

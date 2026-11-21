@@ -108,5 +108,6 @@
       "why": "Votre assistant de code lit les mêmes retours via un seul point de terminaison MCP.",
       "cta": "Ouvrir MCP et compétences"
     }
-  }
+  },
+  "suggested": "Suggéré pour vous"
 }

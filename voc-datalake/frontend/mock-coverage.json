@@ -4775,6 +4775,30 @@
     ]
   },
   {
+    "file": "api/platformWorkspacesApi.ts",
+    "method": "POST",
+    "call": "`/platform/workspaces/${encodeURIComponent(workspaceId)}/trial/extend`",
+    "probes": [
+      {
+        "path": "/platform/workspaces/ws_01JCACME0000000000000000A1/trial/extend",
+        "body": {
+          "days": 30
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/platformWorkspacesApi.ts",
+    "method": "POST",
+    "call": "`/platform/workspaces/${encodeURIComponent(workspaceId)}/trial/convert`",
+    "probes": [
+      {
+        "path": "/platform/workspaces/ws_01JCACME0000000000000000A1/trial/convert",
+        "body": {}
+      }
+    ]
+  },
+  {
     "file": "api/adminEndpoints.ts",
     "method": "PUT",
     "call": "userPath(username, '/platform-admin')",
@@ -6698,6 +6722,55 @@
     "probes": [
       {
         "path": "/projects/library/lib_20260101000000_00000000"
+      }
+    ]
+  },
+  {
+    "file": "pages/Settings/trial/trialPackApi.ts",
+    "method": "POST",
+    "call": "'/me/workspaces/current/members'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members",
+        "body": {
+          "email": "x@example.com",
+          "role": "viewer",
+          "playbook": "qa"
+        }
+      }
+    ]
+  },
+  {
+    "file": "pages/Settings/trial/trialPackApi.ts",
+    "method": "POST",
+    "call": "'/feedback-forms'",
+    "probes": [
+      {
+        "path": "/feedback-forms",
+        "body": {
+          "name": "Workshop feedback",
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "file": "pages/Settings/trial/trialPackApi.ts",
+    "method": "PUT",
+    "call": "'/settings/categories'",
+    "probes": [
+      {
+        "path": "/settings/categories",
+        "body": {
+          "categories": [
+            {
+              "id": "cat_events",
+              "name": "events",
+              "description": "",
+              "subcategories": []
+            }
+          ]
+        }
       }
     ]
   }

@@ -269,7 +269,8 @@
       "failed": "Nie udało się zapisać: {{reason}}.",
       "failedGeneric": "Nie udało się zapisać. Sprawdź połączenie i spróbuj ponownie.",
       "retry": "Spróbuj ponownie",
-      "placeholderRefused": "Nie udało się zapisać: aktywny formularz nie może pokazywać symbolu {…} dosłownie. Popraw teksty wymienione w Problemach albo zapisz go jako wyłączony."
+      "placeholderRefused": "Nie udało się zapisać: aktywny formularz nie może pokazywać symbolu {…} dosłownie. Popraw teksty wymienione w Problemach albo zapisz go jako wyłączony.",
+      "trialPaused": "Ta wersja próbna jest wstrzymana: formularz zostanie opublikowany, gdy administrator platformy przedłuży lub przekształci wersję próbną."
     },
     "published": "Aktywny. Od teraz respondenci widzą tę wersję.",
     "firstSave": "Zapisano. Ten formularz jest wyłączony: jego link wyświetla „Formularz jest niedostępny.”, dopóki go nie opublikujesz.",

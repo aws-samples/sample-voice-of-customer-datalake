@@ -7,11 +7,15 @@
  * feedback into this workspace, and Run now in the workspace runs it. Disabling stops both. A refusal (a plugin
  * changed meanwhile, an admin demoted meanwhile, a plugin the deployment stopped offering) is said in words.
  *
+ * In a paused trial (7.71.00, workspace/currentTrial.ts) Enable is held back, with the reason: only a platform admin's
+ * extension or conversion turns the plugins back on (the server refuses an enable with 409 `trial_paused`). Disable
+ * still works.
+ *
  * @module pages/WorkspaceSettings/WorkspacePluginsCard
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, Plug } from 'lucide-react'
+import { AlertCircle, CirclePause, Plug } from 'lucide-react'
 import clsx from 'clsx'
 import Notice from '../../components/Notice/Notice'
 import { getPluginManifests } from '../../plugins'
@@ -19,6 +23,7 @@ import { usePluginCopy } from '../../plugins/pluginCopy'
 import { workspacePluginsApi, workspacePluginsKey } from '../../api/workspacePluginsApi'
 import type { WorkspacePlugin } from '../../api/workspacePluginsApi'
 import RefusalAlert from '../../workspace/RefusalAlert'
+import { useTrialPaused } from '../../workspace/currentTrial'
 import { PLUGIN_REFUSALS } from '../../workspace/workspaceRefusals'
 import { SECTION_TITLE } from '../Settings/sectionTitle'
 
@@ -41,6 +46,7 @@ export default function WorkspacePluginsCard({ workspaceId, isAdmin }: Readonly<
     onSettled: () => queryClient.invalidateQueries({ queryKey: workspacePluginsKey(workspaceId) }),
   })
   const nameOf = usePluginName()
+  const paused = useTrialPaused()
 
   return (
     <section className="card space-y-4" aria-labelledby="workspace-plugins-title">
@@ -52,8 +58,9 @@ export default function WorkspacePluginsCard({ workspaceId, isAdmin }: Readonly<
         <p className="text-sm text-muted">{t('workspaces.settings.pluginsDescription')}</p>
       </div>
       {isAdmin ? null : <p className="text-sm text-muted">{t('workspaces.settings.pluginsReadOnly')}</p>}
+      {paused ? <Notice variant="banner" tone="warn" role="note" icon={CirclePause} text={t('workspaces.trial.pausedPlugins')} /> : null}
       <RefusalAlert error={change.error} refusals={PLUGIN_REFUSALS} />
-      <PluginList query={query} nameOf={nameOf} canManage={isAdmin} busy={change.isPending}
+      <PluginList query={query} nameOf={nameOf} canManage={isAdmin} busy={change.isPending} paused={paused}
         onChange={(id, enabled) => change.mutate({ id, enabled })} />
     </section>
   )
@@ -64,10 +71,12 @@ interface PluginListProps {
   readonly nameOf: (id: string) => string
   readonly canManage: boolean
   readonly busy: boolean
+  /** A paused trial: Enable is held back (Disable is not). */
+  readonly paused: boolean
   readonly onChange: (id: string, enabled: boolean) => void
 }
 
-function PluginList({ query, nameOf, canManage, busy, onChange }: PluginListProps) {
+function PluginList({ query, nameOf, canManage, busy, paused, onChange }: PluginListProps) {
   const { t } = useTranslation()
   if (query.isPending) return <p className="text-sm text-muted" role="status">{t('workspaces.settings.pluginsLoading')}</p>
   if (query.isError || query.data === undefined) {
@@ -80,8 +89,8 @@ function PluginList({ query, nameOf, canManage, busy, onChange }: PluginListProp
   return (
     <ul className="divide-y divide-border" aria-label={t('workspaces.settings.pluginsListLabel')}>
       {query.data.map((plugin) => (
-        <PluginRow key={plugin.id} plugin={plugin} name={nameOf(plugin.id)} canManage={canManage} busy={busy}
-          onChange={onChange} />
+        <PluginRow key={plugin.id} plugin={plugin} name={nameOf(plugin.id)} canManage={canManage}
+          busy={busy || (paused && !plugin.enabled)} onChange={onChange} />
       ))}
     </ul>
   )

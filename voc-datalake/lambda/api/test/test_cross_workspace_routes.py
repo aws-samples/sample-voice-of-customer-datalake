@@ -140,6 +140,11 @@ BY_DESIGN: dict[tuple[str, str], str] = {
          ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/delete/resume')],
         "the platform console: a platform admin cancels or resumes a workspace's hard delete by its id, once the "
         "workspace answers its one 404 to everyone else (decision 17, live-checked, audited)"),
+    **dict.fromkeys(
+        [('workspaces_handler.py', 'POST /platform/workspaces/<ws>/trial/extend'),
+         ('workspaces_handler.py', 'POST /platform/workspaces/<ws>/trial/convert')],
+        "the platform console: a platform admin extends or converts a trial workspace by its id, whoever its members "
+        "are (7.71.00, decision 2, live-checked, audited; a workspace that is no trial answers one 404)"),
     ('users_handler.py', 'PUT /users/<username>/platform-admin'): (
         "platform-admin membership: the deployment's platform admins, not a workspace's (decision 2, live-checked)"),
     ('appearance_routes.py', 'GET /settings/appearance'): (

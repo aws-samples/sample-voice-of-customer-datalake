@@ -36,7 +36,16 @@ describe('workspacesApi', () => {
 
   it('reads GET /me/workspaces/current as the workspace, without platform_admin', async () => {
     routeFetchApi({ 'GET /me/workspaces/current': () => ({ workspace: { ...ACME, platform_admin: true } }) })
-    await expect(workspacesApi.current()).resolves.toStrictEqual(ACME)
+    await expect(workspacesApi.current()).resolves.toStrictEqual({ ...ACME, trial: null, playbook: null })
+  })
+
+  // 7.71.00: a trial workspace's state and the playbook suggested to the caller, read leniently.
+  it('reads its trial and the suggested playbook, and reads anything else as none', async () => {
+    const trial = { days: 14, expires_at: '2026-12-05T09:00:00+00:00', paused_at: null, converted_at: null, paused: null }
+    routeFetchApi({ 'GET /me/workspaces/current': () => ({ workspace: { ...ACME, trial, playbook: 'qa' } }) })
+    await expect(workspacesApi.current()).resolves.toStrictEqual({ ...ACME, trial, playbook: 'qa' })
+    routeFetchApi({ 'GET /me/workspaces/current': () => ({ workspace: { ...ACME, trial: 'soon', playbook: 'ceo' } }) })
+    await expect(workspacesApi.current()).resolves.toStrictEqual({ ...ACME, trial: null, playbook: null })
   })
 
   it('rejects with the API\'s 404 for a workspace the caller cannot enter', async () => {

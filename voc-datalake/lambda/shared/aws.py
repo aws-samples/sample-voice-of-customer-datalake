@@ -28,6 +28,7 @@ _lambda_client = None
 _eventbridge_client = None
 _cognito_idp_client = None
 _dynamodb_client = None
+_scheduler_client = None
 
 # One pooled connection per read a request can have in flight on the shared DynamoDB client
 # (shared/concurrency.py). Below that, botocore discards the surplus connections after each fan-out
@@ -263,6 +264,15 @@ def get_eventbridge_client():
     if _eventbridge_client is None:
         _eventbridge_client = boto3.client("events")
     return _eventbridge_client
+
+
+def get_scheduler_client():
+    """Get shared EventBridge Scheduler client with connection reuse (built on first use: a trial's schedule,
+    shared/trial_schedule.py)."""
+    global _scheduler_client
+    if _scheduler_client is None:
+        _scheduler_client = boto3.client("scheduler")
+    return _scheduler_client
 
 
 def get_cognito_idp_client():

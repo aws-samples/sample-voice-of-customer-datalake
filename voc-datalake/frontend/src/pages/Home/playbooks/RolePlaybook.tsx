@@ -15,6 +15,7 @@ import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { openAssistant } from '../../../assistant/store/openAssistant'
+import { useSuggestedPlaybook } from '../../../workspace/currentTrial'
 import ChecklistProgress, { StatusIcon } from '../ChecklistProgress'
 import { ROLE_TEXT, ROLES, STEP_TEXT } from './playbookCatalogue'
 import { derivePlaybook, toggledTicks } from './playbookSteps'
@@ -29,17 +30,28 @@ interface Props {
   readonly isSaving: boolean
 }
 
+/** The roles in the picker's order: the one the admin who added the person suggested first (7.71.00), then the rest. */
+function pickerOrder(suggested: PlaybookRole | null): readonly PlaybookRole[] {
+  return suggested === null ? ROLES : [suggested, ...ROLES.filter((role) => role !== suggested)]
+}
+
 function RolePicker({ onChooseRole, isSaving }: Readonly<Pick<Props, 'onChooseRole' | 'isSaving'>>) {
   const { t } = useTranslation('playbooks')
+  // The role playbook suggested when the person was added to the workspace (a trial's invite list), if any.
+  const suggested = useSuggestedPlaybook()
   return (
     <div className="space-y-2">
       <p id="playbook-pick" className="text-sm text-muted">{t('pick')}</p>
       <ul aria-labelledby="playbook-pick" className="grid gap-2 sm:grid-cols-2">
-        {ROLES.map((role) => (
+        {pickerOrder(suggested).map((role) => (
           <li key={role}>
             <button type="button" disabled={isSaving} onClick={() => onChooseRole(role)}
-              className="h-full w-full rounded-lg border border-border p-3 text-left hover:bg-bg-hover focus-ring">
-              <span className="block text-sm font-semibold text-text-strong">{t(ROLE_TEXT[role].name)}</span>
+              className={clsx('h-full w-full rounded-lg border p-3 text-left hover:bg-bg-hover focus-ring',
+                role === suggested ? 'border-accent' : 'border-border')}>
+              <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-text-strong">
+                {t(ROLE_TEXT[role].name)}
+                {role === suggested ? <span className="badge badge-accent">{t('suggested')}</span> : null}
+              </span>
               <span className="mt-1 block text-xs text-muted">{t(ROLE_TEXT[role].desc)}</span>
             </button>
           </li>

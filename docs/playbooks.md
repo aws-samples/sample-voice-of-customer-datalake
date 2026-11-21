@@ -9,7 +9,10 @@ A playbook is content only:
 
 - **It grants nothing.** A playbook role is not a permission, and it does not change the person's workspace role
   (viewer, editor or admin).
-- **Nobody assigns it.** Each person picks their own role on Home, and can change it or clear it at any time.
+- **Nobody assigns it.** Each person picks their own role on Home, and can change it or clear it at any time. Since
+  7.71.00 the admin who adds someone may suggest one (`playbook` on the member add, stored on their `MEMBER#` row; a
+  trial's invite list does it, [Trial workspaces](multi-workspace.md#trial-workspaces)): Home offers it first, marked
+  *Suggested for you*, and the person still picks.
 - **It has no fixed cost.** It adds no model call, no worker and no table. Home reads a few rows it can already read,
   and only for the steps of the playbook the person chose.
 - **It has no badges and no scores.**

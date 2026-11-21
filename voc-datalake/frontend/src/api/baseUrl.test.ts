@@ -260,6 +260,17 @@ describe('getAuthHeaders — the current workspace', () => {
     })
   })
 
+  // 7.71.00: the platform console applies a new trial's starter pack in that trial, whichever workspace it is in.
+  it('names the workspace a call targets instead of the current one, in place of any it was given, trusted origins only', () => {
+    setCurrentWorkspace(ACME)
+    const target = { workspaceId: 'ws_01JCTRIL0000000000000000T1' }
+    expect(getAuthHeaders(`${TRUSTED_API}/feedback-forms`, { 'x-workspace-id': ACME.id }, target)).toStrictEqual({
+      'Content-Type': 'application/json', Authorization: 'mock-cognito-id-token', 'X-Workspace-Id': target.workspaceId,
+    })
+    expect(getAuthHeaders('https://attacker.example.com/collect', undefined, target)).toStrictEqual({ 'Content-Type': 'application/json' })
+    expect(getAuthHeaders('', undefined, target)['X-Workspace-Id']).toBeUndefined()
+  })
+
   it('names it without Cognito too (a dev build against the mock), never for a missing target', () => {
     vi.mocked(authService.isConfigured).mockReturnValue(false)
     setCurrentWorkspace(ACME)

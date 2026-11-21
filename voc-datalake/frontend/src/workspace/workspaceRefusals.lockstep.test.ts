@@ -1,6 +1,7 @@
 /**
  * Every server reason the refusal tables (workspaceRefusals.ts) match on, against the value the API assigns or
  * raises, read as TEXT from lambda/shared/workspace_members.py, workspace_plugin_settings.py, platform_workspaces.py,
+ * trial_state.py, trials.py,
  * workspace_rename.py, workspace_deletes.py, user_admin_guard.py, lambda/api/users_handler.py and
  * workspaces_handler.py: a module constant (`NAME: Final = '…'`, adjacent string literals joined as Python joins
  * them), an entry of a module's constant dict (`NAME: Final = {'key': '…'}`, one entry a line) or a literal
@@ -12,7 +13,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   BRAND_REFUSALS, DELETE_REFUSALS, DEPLOYMENT_BRAND_REFUSALS, EXPORT_REFUSALS, MEMBER_REFUSALS, PLATFORM_ADMIN_REFUSALS,
-  PLATFORM_REFUSALS, PLUGIN_REFUSALS, PLUGIN_NOT_ENABLED, RENAME_REFUSALS,
+  PLATFORM_REFUSALS, PLUGIN_REFUSALS, PLUGIN_NOT_ENABLED, RENAME_REFUSALS, TRIAL_REFUSALS,
 } from './workspaceRefusals'
 
 const LAMBDA = join(__dirname, '../../../lambda')
@@ -76,6 +77,11 @@ const SERVER_REASONS: readonly (readonly [string, string | null])[] = [
   ['workspaces_handler EXPORT_ERASURE_RUNNING', constant('api/workspaces_handler.py', 'EXPORT_ERASURE_RUNNING')],
   ['workspaces_handler EXPORT_NOT_DOWNLOADABLE', constant('api/workspaces_handler.py', 'EXPORT_NOT_DOWNLOADABLE')],
   ['users_handler grant to a non-administrator', raised('api/users_handler.py', 'ValidationError', 'Only an administrator can be a platform admin')],
+  // A trial workspace (7.71.00).
+  ['trial_state TRIAL_PAUSED', constant('shared/trial_state.py', 'TRIAL_PAUSED')],
+  ['trials TRIAL_NOT_FOUND', constant('shared/trials.py', 'TRIAL_NOT_FOUND')],
+  ['trials TRIAL_ALREADY_CONVERTED', constant('shared/trials.py', 'TRIAL_ALREADY_CONVERTED')],
+  ['trials TRIAL_CHANGED', constant('shared/trials.py', 'TRIAL_CHANGED')],
 ]
 
 // A reason two tables share (NO_LONGER_ADMIN: the members', the plugins' and the rename's writes) counts once.
@@ -83,7 +89,7 @@ const SERVER_REASONS: readonly (readonly [string, string | null])[] = [
 const tableReasons = [...new Set([
   ...[
     ...MEMBER_REFUSALS, ...PLUGIN_REFUSALS, ...BRAND_REFUSALS, ...DEPLOYMENT_BRAND_REFUSALS, ...PLATFORM_REFUSALS,
-    ...PLATFORM_ADMIN_REFUSALS, ...EXPORT_REFUSALS, ...RENAME_REFUSALS, ...DELETE_REFUSALS,
+    ...PLATFORM_ADMIN_REFUSALS, ...EXPORT_REFUSALS, ...RENAME_REFUSALS, ...DELETE_REFUSALS, ...TRIAL_REFUSALS,
   ].flatMap((row) => (row.reason === undefined ? [] : [row.reason])),
   PLUGIN_NOT_ENABLED,
 ])]

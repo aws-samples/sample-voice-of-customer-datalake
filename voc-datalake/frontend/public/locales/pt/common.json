@@ -390,6 +390,69 @@
       "deleteChangedMeanwhile": "O espaço de trabalho mudou enquanto a exclusão era solicitada. Recarregue a página e tente novamente.",
       "deleteUnavailable": "A exclusão de espaços de trabalho não está disponível nesta implantação.",
       "deleteNotStarted": "O espaço de trabalho foi marcado para exclusão, mas a exclusão não pôde começar. Peça a um administrador da plataforma que a cancele ou retome."
+    },
+    "trial": {
+      "create": "Criar um teste",
+      "createDescription": "Um espaço de trabalho de teste para um cliente no fim de um workshop: as suas pessoas, um pacote inicial e depois o assistente de importação. Dura 14, 30 ou 60 dias e depois fica em pausa.",
+      "dialogTitle": "Criar um espaço de trabalho de teste",
+      "days": "Duração",
+      "daysOption": "{{days}} dias",
+      "pausesNotice": "Quando o teste termina, fica em pausa: os plugins e os formulários ativos param, e nada é apagado. A leitura e a exportação continuam a funcionar até um administrador da plataforma o prolongar ou converter. Um teste nunca se apaga sozinho.",
+      "fixNameSlug": "Verifique o nome e o endereço.",
+      "submit": "Criar o teste",
+      "creating": "A criar o teste…",
+      "invites": {
+        "title": "Pessoas",
+        "hint": "Cada pessoa é adicionada ao teste com a sua função. Quem não tiver conta recebe uma, e o Cognito envia-lhe por e-mail uma palavra-passe temporária.",
+        "email": "E-mail",
+        "role": "Função",
+        "playbook": "Playbook sugerido",
+        "noPlaybook": "Nenhum",
+        "add": "Adicionar uma pessoa",
+        "remove": "Remover {{email}}",
+        "removeUnnamed": "Remover esta pessoa",
+        "emailInvalid": "Introduza um endereço de e-mail válido ou remova esta linha."
+      },
+      "pack": {
+        "title": "Pacote inicial",
+        "hint": "Criado no teste com o seu próprio acesso, cada item registado pela sua própria rota. Os formulários são criados desativados.",
+        "form": "Formulário: {{name}}",
+        "categories": "Categorias de exemplo ({{n}})"
+      },
+      "done": {
+        "title": "{{name}} está pronto.",
+        "stepsLabel": "O que o pacote inicial fez",
+        "member": "{{subject}} adicionado.",
+        "memberFailed": "Não foi possível adicionar {{subject}}: {{reason}}",
+        "form": "Formulário {{subject}} criado (desativado).",
+        "formFailed": "Não foi possível criar o formulário {{subject}}: {{reason}}",
+        "categories": "{{subject}} categorias de exemplo guardadas.",
+        "categoriesFailed": "Não foi possível guardar as categorias de exemplo: {{reason}}",
+        "unknownReason": "o servidor recusou",
+        "openImport": "Abrir o assistente de importação em {{name}}"
+      },
+      "badge": {
+        "running": "Teste · termina a {{date}}",
+        "paused": "Teste em pausa desde {{date}}",
+        "converted": "Convertido a partir de um teste"
+      },
+      "extend": "Prolongar",
+      "extendBy": "Prolongar {{name}} por",
+      "convert": "Converter",
+      "convertWho": "Converter {{name}} num espaço de trabalho normal",
+      "convertTitle": "Converter {{name}}?",
+      "convertMessage": "Passa a ser um espaço de trabalho normal, sem fim.",
+      "convertPausedMessage": "Passa a ser um espaço de trabalho normal, sem fim, e os plugins e formulários que a pausa desativou voltam a ser ativados.",
+      "banner": {
+        "running": "Este é um espaço de trabalho de teste até {{date}}. Depois fica em pausa: os plugins e os formulários ativos param, e nada é apagado. Um administrador da plataforma pode prolongá-lo ou convertê-lo.",
+        "paused": "Este teste está em pausa desde {{date}}: {{plugins}} plugins e {{forms}} formulários ativos foram desativados. Nada foi apagado: a leitura e a exportação continuam a funcionar. Peça a um administrador da plataforma para o prolongar ou converter."
+      },
+      "pausedPlugins": "Este teste está em pausa: os plugins ficam desativados até um administrador da plataforma o prolongar ou converter.",
+      "errors": {
+        "converted": "Este teste foi convertido: agora é um espaço de trabalho normal.",
+        "changed": "O teste mudou entretanto: recarregue e tente de novo.",
+        "notFound": "Esse espaço de trabalho não é um teste, ou está a ser apagado."
+      }
     }
   },
   "timeRange": {

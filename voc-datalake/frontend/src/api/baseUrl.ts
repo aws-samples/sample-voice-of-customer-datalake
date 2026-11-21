@@ -92,6 +92,19 @@ export function getDaysFromRange(range: string, customDays?: number | null): num
 export type RequestScope = 'workspace' | 'deployment'
 
 /**
+ * A request for one NAMED workspace, whichever the app is in (7.71.00): the platform console applies a new trial's
+ * starter pack in the trial it just created (pages/Settings/trial/trialPackApi.ts), as its admin, before anyone enters
+ * it. The id goes in `X-Workspace-Id` under the same origin rule; the server resolves the caller's membership there as
+ * for any request, so it grants nothing the caller does not hold.
+ */
+interface WorkspaceTarget {
+  readonly workspaceId: string
+}
+
+/** Which `X-Workspace-Id` a request carries: the current workspace's, none, or a named one. */
+export type HeaderScope = RequestScope | WorkspaceTarget
+
+/**
  * Build auth headers with Cognito ID token.
  * Shared by client.ts (REST) and assistant/agui/client.ts (SSE).
  *
@@ -111,7 +124,7 @@ export type RequestScope = 'workspace' | 'deployment'
 export function getAuthHeaders(
   targetUrl: string,
   extraHeaders?: Record<string, string>,
-  scope: RequestScope = 'workspace',
+  scope: HeaderScope = 'workspace',
 ): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -141,14 +154,16 @@ export function getAuthHeaders(
   // The current workspace (docs/multi-workspace.md, Request flow), under the same origin rule; without
   // Cognito too, so a dev build against the mock names it as well. A deployment-wide call names none, not even
   // one the caller passed in (header names are case-insensitive, so every spelling goes).
-  if (scope === 'deployment') {
-    return Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== WORKSPACE_HEADER_LOWER))
-  }
-  return { ...headers, ...workspaceHeader(targetUrl) }
+  if (scope === 'workspace') return { ...headers, ...workspaceHeader(targetUrl) }
+  const withoutWorkspace = Object.fromEntries(
+    Object.entries(headers).filter(([name]) => name.toLowerCase() !== WORKSPACE_HEADER_LOWER))
+  if (scope === 'deployment' || !hasTarget || !isTrustedOrigin(targetUrl)) return withoutWorkspace
+  return { ...withoutWorkspace, [WORKSPACE_HEADER]: scope.workspaceId }
 }
 
-/** `X-Workspace-Id` (currentWorkspace.ts), lower-cased to compare header names. */
-const WORKSPACE_HEADER_LOWER = 'x-workspace-id'
+/** `X-Workspace-Id` (currentWorkspace.ts), and lower-cased to compare header names. */
+const WORKSPACE_HEADER = 'X-Workspace-Id'
+const WORKSPACE_HEADER_LOWER = WORKSPACE_HEADER.toLowerCase()
 
 
 /**

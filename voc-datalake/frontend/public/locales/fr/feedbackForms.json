@@ -257,7 +257,8 @@
       "failed": "Impossible d’enregistrer : {{reason}}.",
       "failedGeneric": "Impossible d’enregistrer. Vérifiez votre connexion et réessayez.",
       "retry": "Réessayer",
-      "placeholderRefused": "Enregistrement impossible : un formulaire en ligne ne peut pas afficher un espace réservé {…} tel quel. Corrigez les textes listés dans Problèmes, ou enregistrez-le désactivé."
+      "placeholderRefused": "Enregistrement impossible : un formulaire en ligne ne peut pas afficher un espace réservé {…} tel quel. Corrigez les textes listés dans Problèmes, ou enregistrez-le désactivé.",
+      "trialPaused": "Cet essai est en pause : un formulaire est mis en ligne une fois qu'un administrateur de la plateforme prolonge ou convertit l'essai."
     },
     "published": "En ligne. Les répondants voient désormais cette version.",
     "firstSave": "Enregistré. Ce formulaire est désactivé : son lien affiche « Formulaire d'avis indisponible. » jusqu’à ce que vous le publiiez.",

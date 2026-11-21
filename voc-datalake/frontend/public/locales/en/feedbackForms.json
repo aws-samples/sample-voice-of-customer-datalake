@@ -257,7 +257,8 @@
       "failed": "Couldn't save: {{reason}}.",
       "failedGeneric": "Couldn't save. Check your connection and try again.",
       "retry": "Try again",
-      "placeholderRefused": "Couldn't save: a live form can't show a {…} placeholder as written. Fix the texts listed in Problems, or save it Off."
+      "placeholderRefused": "Couldn't save: a live form can't show a {…} placeholder as written. Fix the texts listed in Problems, or save it Off.",
+      "trialPaused": "This trial is paused: a form goes live once a platform admin extends or converts the trial."
     },
     "published": "Live. Respondents see this version from now on.",
     "firstSave": "Saved. This form is Off: its link shows “Feedback form unavailable.” until you publish it.",

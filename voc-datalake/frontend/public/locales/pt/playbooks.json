@@ -108,5 +108,6 @@
       "why": "Seu assistente de programação lê o mesmo feedback por um único endpoint MCP.",
       "cta": "Abrir MCP e skills"
     }
-  }
+  },
+  "suggested": "Sugerido para si"
 }

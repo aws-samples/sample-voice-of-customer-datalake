@@ -387,6 +387,69 @@
       "deleteChangedMeanwhile": "在请求删除期间工作区已更改。请重新加载页面后重试。",
       "deleteUnavailable": "此部署不支持删除工作区。",
       "deleteNotStarted": "工作区已标记为删除，但删除未能开始。请让平台管理员取消或恢复它。"
+    },
+    "trial": {
+      "create": "创建试用",
+      "createDescription": "在研讨会结束时为客户创建的试用工作区：包含其成员、入门包，然后是导入向导。运行 14、30 或 60 天，然后暂停。",
+      "dialogTitle": "创建试用工作区",
+      "days": "时长",
+      "daysOption": "{{days}} 天",
+      "pausesNotice": "试用结束后会暂停：其插件和已上线的表单停止运行，不会删除任何内容。在平台管理员延长或转换之前，读取和导出仍可正常使用。试用绝不会自行删除。",
+      "fixNameSlug": "请检查名称和地址。",
+      "submit": "创建试用",
+      "creating": "正在创建试用…",
+      "invites": {
+        "title": "成员",
+        "hint": "每个人都会以其角色加入试用。没有账户的人会获得一个账户，Cognito 会通过电子邮件向其发送临时密码。",
+        "email": "电子邮件",
+        "role": "角色",
+        "playbook": "推荐的行动手册",
+        "noPlaybook": "无",
+        "add": "添加成员",
+        "remove": "移除 {{email}}",
+        "removeUnnamed": "移除此成员",
+        "emailInvalid": "请输入有效的电子邮件地址，或移除此行。"
+      },
+      "pack": {
+        "title": "入门包",
+        "hint": "使用您自己的权限在试用中创建，每一项都由其自身的路由记录。表单创建时为关闭状态。",
+        "form": "表单：{{name}}",
+        "categories": "示例类别（{{n}}）"
+      },
+      "done": {
+        "title": "{{name}} 已就绪。",
+        "stepsLabel": "入门包完成的内容",
+        "member": "已添加 {{subject}}。",
+        "memberFailed": "无法添加 {{subject}}：{{reason}}",
+        "form": "已创建表单 {{subject}}（关闭）。",
+        "formFailed": "无法创建表单 {{subject}}：{{reason}}",
+        "categories": "已保存 {{subject}} 个示例类别。",
+        "categoriesFailed": "无法保存示例类别：{{reason}}",
+        "unknownReason": "服务器拒绝了请求",
+        "openImport": "在 {{name}} 中打开导入向导"
+      },
+      "badge": {
+        "running": "试用 · {{date}} 结束",
+        "paused": "试用自 {{date}} 起已暂停",
+        "converted": "由试用转换"
+      },
+      "extend": "延长",
+      "extendBy": "将 {{name}} 延长",
+      "convert": "转换",
+      "convertWho": "将 {{name}} 转换为常规工作区",
+      "convertTitle": "转换 {{name}}？",
+      "convertMessage": "它将成为没有结束日期的常规工作区。",
+      "convertPausedMessage": "它将成为没有结束日期的常规工作区，暂停时关闭的插件和表单会重新开启。",
+      "banner": {
+        "running": "这是一个试用工作区，有效期至 {{date}}。之后会暂停：其插件和已上线的表单停止运行，不会删除任何内容。平台管理员可以延长或转换它。",
+        "paused": "此试用自 {{date}} 起已暂停：已关闭 {{plugins}} 个插件和 {{forms}} 个已上线的表单。没有删除任何内容：读取和导出仍可正常使用。请联系平台管理员延长或转换它。"
+      },
+      "pausedPlugins": "此试用已暂停：在平台管理员延长或转换之前，插件保持关闭。",
+      "errors": {
+        "converted": "此试用已转换：现在是常规工作区。",
+        "changed": "试用在此期间已更改：请重新加载后重试。",
+        "notFound": "该工作区不是试用，或正在被删除。"
+      }
     }
   },
   "timeRange": {

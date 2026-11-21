@@ -37,7 +37,9 @@ Rules:
 The rows (``voc-workspaces``):
 
     WS#{ws}       / MEMBER#{sub}     role, invited_by, joined_at, email, name (email and name as Cognito had them
-                                     when the member was added; the creator's row from 6.09.00 has neither)
+                                     when the member was added; the creator's row from 6.09.00 has neither);
+                                     playbook (7.71.00, optional): the role playbook the admin who added them
+                                     suggested (shared/playbooks.py ROLES), offered first on their Home
     USER#{sub}    / WS#{ws}          name, slug, role
     AUDIT#WS#{ws} / {iso}#{random}   kind, actor, target, role_before, role_after, at, platform_admin (+ account;
                                      a user's delete: via, left_without_admin)
@@ -57,6 +59,7 @@ from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared import playbooks
 from shared.audit_rows import put_new_audit_row
 from shared.dynamo_paging import iter_query
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
@@ -114,6 +117,8 @@ class NewMember:
 
     email: str
     role: str
+    #: The role playbook suggested to them (7.71.00; shared/playbooks.py), or None.
+    playbook: str | None = None
 
 
 @dataclass(frozen=True)
@@ -137,14 +142,15 @@ def _role(value: object) -> str:
 
 
 def parse_new_member(body: Mapping[str, Any]) -> NewMember:
-    """``{email, role}`` validated, or a 400 that says what to fix. The email is kept as written (trimmed)."""
-    reject_unknown_fields(body, ('email', 'role'))
+    """``{email, role, playbook?}`` validated, or a 400 that says what to fix. The email is kept as written (trimmed);
+    ``playbook`` is a role playbook to suggest to them (shared/playbooks.py ROLES), content only: it grants nothing."""
+    reject_unknown_fields(body, ('email', 'role', 'playbook'))
     raw = body.get('email')
     normalize_email(raw)  # the app's one address rule: 400 "email is not a valid address"
     email = str(raw).strip()
     if not email.isascii():  # a character whose lower case is ASCII (K, the Kelvin sign) passes the rule above
         raise ValidationError('email is not a valid address')
-    return NewMember(email=email, role=_role(body.get('role')))
+    return NewMember(email=email, role=_role(body.get('role')), playbook=playbooks.validate_role(body.get('playbook')))
 
 
 def parse_role_change(body: Mapping[str, Any]) -> str:
@@ -290,6 +296,15 @@ def _stored_role(table: Any, ws: str, sub: str) -> str | None:
     return role if isinstance(role, str) and role in ROLES else None
 
 
+def suggested_playbook(table: Any, ws: str, sub: str) -> str | None:
+    """The role playbook the admin who added ``sub`` suggested (their ``MEMBER#`` row's ``playbook``, 7.71.00), or None
+    (none suggested, or not a member: a platform admin who entered)."""
+    found = table.get_item(Key=_member_key(ws, sub), ProjectionExpression='#playbook',
+                           ExpressionAttributeNames={'#playbook': 'playbook'}).get('Item') or {}
+    value = found.get('playbook')
+    return value if isinstance(value, str) and value in playbooks.ROLES else None
+
+
 def _another_admin(table: Any, ws: str, sub: str) -> str | None:
     """A member admin of ``ws`` other than ``sub`` (one paged Query of the workspace's members), or None."""
     rows = iter_query(table, {
@@ -359,17 +374,20 @@ def _transact(table: Any, items: list[dict[str, Any]]) -> None:
     table.meta.client.transact_write_items(TransactItems=items, ClientRequestToken=secrets.token_hex(16))
 
 
-def add_member(table: Any, context: WorkspaceContext, account: Account, role: str, actor: str) -> dict[str, Any]:
-    """Make ``account`` a member of the workspace with ``role``: the audit row, then ONE transaction of the
-    ``MEMBER#`` and ``USER#`` puts (each conditional on a new key) and a check that the workspace is ``active``.
-    409 when the account is already a member; the one workspace 404 when the workspace stopped being active."""
+def add_member(table: Any, context: WorkspaceContext, account: Account, role: str, actor: str,
+               playbook: str | None = None) -> dict[str, Any]:
+    """Make ``account`` a member of the workspace with ``role`` (and ``playbook`` suggested): the audit row, then ONE
+    transaction of the ``MEMBER#`` and ``USER#`` puts (each conditional on a new key) and a check that the workspace is
+    ``active``. 409 when the account is already a member; the one workspace 404 when the workspace stopped being
+    active."""
     ws = context.ws
     if _stored_role(table, ws, account.sub) is not None:
         raise ConflictError(ALREADY_MEMBER)
     _audit(table, context, kind=MEMBER_ADDED, actor=actor, target=account.sub, before=None, after=role,
            account=ACCOUNT_CREATED if account.created else ACCOUNT_EXISTING)
     joined_at = now_iso()
-    member = {'role': role, 'invited_by': actor, 'joined_at': joined_at, 'email': account.email, 'name': account.name}
+    member = {'role': role, 'invited_by': actor, 'joined_at': joined_at, 'email': account.email, 'name': account.name,
+              **({'playbook': playbook} if playbook is not None else {})}
     fresh = 'attribute_not_exists(pk)'
     items: list[dict[str, Any]] = [
         {'Put': {'TableName': table.name, 'Item': {**_member_key(ws, account.sub), **member},

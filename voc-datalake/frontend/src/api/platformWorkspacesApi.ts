@@ -3,7 +3,9 @@
  * lambda/api/workspaces_handler.py, lambda/shared/platform_workspaces.py, docs/multi-workspace.md → Control plane).
  *
  * The list holds every workspace of the deployment by name, a page at a time; a row this build cannot read is left
- * out. Creating one makes the caller its admin. The answers still carry `secret_status` (always `ready` since decision
+ * out. Creating one makes the caller its admin. A trial workspace (7.71.00, docs/multi-workspace.md "Trial
+ * workspaces") is created the same way with `trial: {days, pack}`, and extended (14, 30 or 60 more days) or converted
+ * into a regular workspace with `POST /platform/workspaces/{id}/trial/extend` and `…/convert`; it never deletes itself. The answers still carry `secret_status` (always `ready` since decision
  * 19, docs/multi-workspace.md → Credentials: a workspace's credentials need no secret); the console reads nothing of it.
  *
  * @module api/platformWorkspacesApi
@@ -11,7 +13,7 @@
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { post } from './requestKit'
-import { WorkspaceIdentitySchema } from './workspacesApi'
+import { TrialSummarySchema, WorkspaceIdentitySchema } from './workspacesApi'
 import { readCursorPage } from './cursorPage'
 import type { CursorPage } from './cursorPage'
 
@@ -22,6 +24,7 @@ export const WORKSPACE_NAME_MAX = 80
 const PlatformWorkspaceSchema = WorkspaceIdentitySchema.extend({
   status: z.string().catch(''),
   created_at: z.string().catch(''),
+  trial: TrialSummarySchema.nullable().catch(null),
 })
 export type PlatformWorkspace = z.infer<typeof PlatformWorkspaceSchema>
 
@@ -29,6 +32,34 @@ const CreatedSchema = z.object({
   workspace: PlatformWorkspaceSchema.pick({ id: true, name: true, slug: true }),
 })
 export type CreatedWorkspace = z.infer<typeof CreatedSchema>['workspace']
+
+/** A trial's length in days (`TRIAL_DAYS` in lambda/shared/trial_state.py), and its default. */
+export const TRIAL_DAYS = [14, 30, 60] as const
+export type TrialDays = typeof TRIAL_DAYS[number]
+export const DEFAULT_TRIAL_DAYS: TrialDays = 30
+
+/** `value` as a trial length (a select's value), or the default for anything else. */
+export function toTrialDays(value: unknown): TrialDays {
+  return TRIAL_DAYS.find((days) => days === Number(value)) ?? DEFAULT_TRIAL_DAYS
+}
+
+/** What the starter pack asked for, recorded on the trial (the creates themselves go through their own routes). */
+interface TrialPackRequest {
+  readonly forms: readonly string[]
+  readonly categories: boolean
+  readonly playbooks: boolean
+}
+
+/** The platform console's view of a trial (`trial_view`, lambda/shared/trials.py): its end and its history. */
+const TrialViewSchema = z.object({
+  days: z.number().catch(30),
+  expires_at: z.string().nullable().catch(null),
+  paused_at: z.string().nullable().catch(null),
+  converted_at: z.string().nullable().catch(null),
+  extended: z.array(z.unknown()).catch([]),
+})
+type TrialView = z.infer<typeof TrialViewSchema>
+const TrialAnswerSchema = z.object({ trial: TrialViewSchema })
 
 /** Every workspace of the deployment (all pages read so far). */
 export const platformWorkspacesKey = () => ['platform-workspaces'] as const
@@ -46,4 +77,15 @@ export const platformWorkspacesApi = {
   /** 409 when the slug is taken (nothing written). */
   create: async (name: string, slug: string): Promise<CreatedWorkspace> =>
     CreatedSchema.parse(await fetchApi<unknown>('/platform/workspaces', post({ name, slug }))).workspace,
+  /** A trial workspace of `days` days: its one schedule is made first, then the workspace (the caller its admin). */
+  createTrial: async (name: string, slug: string, days: TrialDays, pack: TrialPackRequest): Promise<CreatedWorkspace> =>
+    CreatedSchema.parse(await fetchApi<unknown>('/platform/workspaces', post({ name, slug, trial: { days, pack } }))).workspace,
+  /** `days` more from its end (or from now once it ended); a paused trial's plugins and forms are turned back on. */
+  extendTrial: async (workspaceId: string, days: TrialDays): Promise<TrialView> =>
+    TrialAnswerSchema.parse(await fetchApi<unknown>(`/platform/workspaces/${encodeURIComponent(workspaceId)}/trial/extend`,
+      post({ days }))).trial,
+  /** A regular workspace from now on (no end); a paused trial is resumed first. */
+  convertTrial: async (workspaceId: string): Promise<TrialView> =>
+    TrialAnswerSchema.parse(await fetchApi<unknown>(`/platform/workspaces/${encodeURIComponent(workspaceId)}/trial/convert`,
+      post({}))).trial,
 }

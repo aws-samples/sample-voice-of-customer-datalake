@@ -287,6 +287,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # 7.48.00 (3g-d): the deployment's walks' one read of the backfill's marker (deployment_found), on voc-projects
     # seen as itself (the marker is the deployment's; no workspace has one), shared by the erasure and the lineage pass.
     'lambda/jobs/retention/workspaces.py': (3, {'ingest_table(None)': 1}),
+    # A trial's end (7.71.00): voc-workspaces for the trial, its plugin rows and audit rows (the control plane); its
+    # forms go through ws_table (shared/trial_pause.py).
+    'lambda/jobs/trial_expiry/handler.py': (0, {'Table': 1}),
     # 4d-2: the deployment's category and dimension settings (SETTINGS#categories, SETTINGS#dimensions), read for
     # the closed counter families the delete lists; they move to the workspace with the settings (phase 3).
     # Table: voc-projects (7.28.00), handed only to the layer's own project-id calls, which build their keys
@@ -387,6 +390,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/silver_provenance.py': (2, {'SOURCE#': 2, 'put_object': 1, 'silver/': 1}),
     'lambda/shared/source_profiles.py': (2, {'Table': 1}),
     'lambda/shared/tables.py': (2, {'Table': 2}),
+    # A trial's map (7.71.00): one transaction on voc-workspaces' control plane (META's and the listing row's `trial`).
+    'lambda/shared/trials.py': (0, {'meta.client': 1, 'transact': 1}),
     'lambda/shared/user_flags.py': (3, {'Table': 1, 'batch': 1, 'meta.client': 1, 'transact': 1}),
     'lambda/shared/workspace_members.py': (0, {'meta.client': 1, 'transact': 1}),
     # The hard delete's request and its cancel (4d-2): each one transaction on voc-workspaces' control plane (META and

@@ -10,6 +10,7 @@ import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
 import { addVoiceRelay } from '../lib/stacks/voice-relay';
+import { addTrialExpiry } from '../lib/stacks/trial-expiry';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
 import {
   AnthropicUseCaseSchema, AnthropicUseCaseConfig, BedrockModelAgreements, ModelAgreementRetrySchema,
@@ -280,6 +281,12 @@ tagStack(processingStack, 'Processing');
 const voiceRuntimeArn = addVoiceRelay(processingStack, {
   deploymentPrefix, projectsTable: coreStack.projectsTable, aggregatesTable: coreStack.aggregatesTable,
   rawDataBucket: coreStack.rawDataBucket, kmsKey: coreStack.kmsKey,
+});
+// A trial workspace's end (7.71.00, lib/stacks/trial-expiry.ts): its one-time schedules' group and voc-trial-expiry on
+// VocProcessingStack, which pause a trial and delete nothing; the workspaces API builds the same names for its grants.
+addTrialExpiry(processingStack, {
+  deploymentPrefix, workspacesTable: coreStack.workspacesTable, aggregatesTable: coreStack.aggregatesTable,
+  kmsKey: coreStack.kmsKey, enabledSources,
 });
 
 // ============================================

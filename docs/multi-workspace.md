@@ -155,8 +155,8 @@ gets no stack of its own.
 
 | PK | SK | Holds |
 |---|---|---|
-| `WS#{ws}` | `META` | name, slug, status (`active` or `deleting`), created_by, created_at, secret_status (`ready` from creation since decision 19; it no longer reflects a secret: see Credentials) |
-| `WS#{ws}` | `MEMBER#{sub}` | role (`admin`, `editor` or `viewer`), invited_by, joined_at; since 6.10.00 a member added through the members routes also carries the email and name Cognito had then (removed by an erasure by email since 6.11.00) |
+| `WS#{ws}` | `META` | name, slug, status (`active` or `deleting`), created_by, created_at, secret_status (`ready` from creation since decision 19; it no longer reflects a secret: see Credentials); a trial's `trial` map since 7.71.00 ([Trial workspaces](#trial-workspaces)) |
+| `WS#{ws}` | `MEMBER#{sub}` | role (`admin`, `editor` or `viewer`), invited_by, joined_at; since 6.10.00 a member added through the members routes also carries the email and name Cognito had then (removed by an erasure by email since 6.11.00); since 7.71.00 an optional `playbook`, the role playbook suggested when they were added (offered first on their Home, [playbooks.md](playbooks.md)) |
 | `USER#{sub}` | `WS#{ws}` | the inverse row behind "my workspaces" (name, slug, role), written, changed and deleted in the same transaction as `MEMBER#` |
 | `WS#{ws}` | `INVITE#{id}` | planned, not written: email, role, invited_by, expires_at, and `ttl` (the table's TTL attribute). Since 6.10.00 an add is immediate for a new email too (Invites), so nothing has an invite to accept; the row stays reserved, the only one allowed `ttl`, for a later invite that waits for acceptance |
 | `SLUG#{slug}` | `META` | slug → workspace id (`workspace_id`, created_at); uniqueness by a conditional put |
@@ -1604,6 +1604,68 @@ controller's own request, with its stated basis and a tombstone per deleted item
      people and lists entry is shaped the same: one Query of the index per 100 rows and, per list, person or guard,
      one Query per 100 rows of its partition (a list of 2,000 members: 20) and their batch deletes, keys only.
 5. With `protectData` the tables stay protected; this is item-level deletion, so it still works.
+
+## Trial workspaces
+
+Since 7.71.00, at the end of a workshop a platform admin creates a **trial workspace** for the customer in one step
+(Administration → Workspaces → **Create a trial**, or `voc-datalake/scripts/trial-pack.mjs` headless). It runs for 14,
+30 or 60 days (30 by default) and then **pauses**. It never deletes itself: it stays paused until a platform admin
+extends or converts it, its admins export it, or the data controller asks for its hard delete (the existing request,
+behind `-c workspaceHardDelete=true`: [Export and delete](#export-and-delete)). Only platform admins create, extend and
+convert trials.
+
+**Create a trial** asks for a name, an address (slug) and a length, the people to add (each with a role and,
+optionally, the role playbook to suggest to them), and a starter pack: forms from the workshop feedback and the in-app
+feedback templates (created Off) and sample categories (`voc-datalake/schemas/trial-pack.json`). `POST
+/platform/workspaces` with `trial: {days, pack}` makes the trial's one-time schedule first, then the workspace in its
+usual transaction, with the same `trial` map on `META` and the listing row and a `trial_created` audit row. The starter
+pack is then applied as ordinary creates through the existing routes, with the admin's own credentials, in the new
+workspace (the SPA names it in `X-Workspace-Id`), each audited by its own route: `POST /me/workspaces/current/members`
+per person (someone with no account gets one, and Cognito emails them a temporary password), `POST /feedback-forms`
+per form and `PUT /settings/categories`. A step that fails is reported and the others still run. Then the trial's
+import wizard (`/scrapers/import`, [import-wizard.md](import-wizard.md)) opens inside it, for its feedback and the
+workshop's survey.
+
+**The trial map** (`lambda/shared/trial_state.py`, `lambda/shared/trials.py`): `rev` (one up per write, each write
+conditional on the one it read), `days`, `created_at`, `created_by`, `expires_at`, `pack` (what the starter pack asked
+for), `extended` (`[{at, by, days, expires_at, resumed?}]`, at most 50), and once it happened `paused_at` and `paused`
+(`{plugins, forms}`: what the pause turned off), or `converted_at` and `converted_by`. Every member reads its summary on
+`GET /me/workspaces/current` (`trial`: when it ends, whether and since when it is paused, how many plugins and forms the
+pause turned off, whether it was converted; never who did what), and the app shows it as a banner above every page.
+
+**The end.** One EventBridge Scheduler schedule per trial and end, `voc-trial-<ws>-<end>` in the deployment's
+`voc-trials` group, runs `voc-trial-expiry` (VocProcessingStack) once at `expires_at` and then deletes itself
+(`ActionAfterCompletion` `DELETE`, the pattern of the engineering run reactions). The workspaces API holds
+`scheduler:CreateSchedule` on that group's `voc-trial-*` names only and `iam:PassRole` of the scheduler's role only;
+the scheduler's role may invoke the job and nothing else. The job reads the stored `expires_at` (never the event's):
+a trial extended meanwhile, converted, being deleted or no trial at all is left alone, so an older schedule that runs
+after an extension does nothing. A due trial is paused (`lambda/shared/trial_pause.py`):
+
+1. `paused_at` first: from then on a workspace admin cannot turn a plugin on (`PUT /me/workspaces/current/plugins/{id}`
+   answers 409 `trial_paused`; its transaction's check of `META` needs `paused_at` absent, so a pause that lands
+   meanwhile still wins) nor put a form live (`POST` or `PUT /feedback-forms…` with `enabled: true` answers 409
+   `trial_paused`);
+2. what is on now (the plugins the workspace enabled, its live forms), joined to anything an earlier attempt recorded,
+   stored as `paused`;
+3. a `trial_paused` audit row (actor `trial-expiry`, kind `schedule`, the lists);
+4. each plugin turned off by the existing audited disable (its own `plugin_disabled` row, reason `trial_paused`) and
+   each live form set `enabled: false` (its save counter one up, `updated_by` `trial-expiry`).
+
+**No new workspace status.** A paused trial is `active`, so every reader, writer, the export and the hard delete treat
+it as any workspace: reads, edits, chat, imports and the export keep working; what stops is its scheduled plugins and
+its live forms. **Nothing is deleted** by an expiry, an extension or a conversion: the job's only delete is the plugin
+disable's own `PLUGIN#{plugin}` / `WS#{ws}` row (a present row means enabled; it holds no data), pinned by
+`voc-datalake/lib/stacks/trial-expiry.test.ts` (no other delete action of any kind) and
+`lambda/shared/test/test_trial_pause.py` (every row of the workspace but those stays).
+
+**Extend and convert** (`POST /platform/workspaces/{ws}/trial/extend` `{days}` and `…/convert`, platform admins only,
+live-checked; the console's row of a trial): each writes its audit row first (`trial_extended`, `trial_converted`),
+turns a paused trial's recorded plugins and forms back on (each plugin the deployment still offers, each form still
+there and still off), then writes the map without the pause. An extension counts from the stored end, or from now once
+it ended, and creates the new end's schedule; a conversion ends the trial for good (its pending schedule still runs
+once and does nothing).
+
+**Fixed cost: none** (tenet 7): a schedule group and schedules cost nothing until a schedule runs, once per trial end.
 
 ## Tenet questions, settled (owner, 2026-11-12)
 
