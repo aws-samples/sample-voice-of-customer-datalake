@@ -136,7 +136,7 @@ describe('the token dialog', () => {
 
   it('finds the repository on GitHub, offering only one that takes a token', async () => {
     renderConnections({ 'GET /agents/engineering/public-repositories?q=sdk': () => ({ repositories: [
-      { repository: 'partner-org/sdk', stars: 3, licence: null, archived: false, ways: { app: true, token: true, fork: false } },
+      { repository: 'partner-org/sdk', stars: 3, licence: null, archived: false },
       { repository: 'partner-org/old-sdk', stars: 1, licence: null, archived: true },
     ] }) })
     const dialog = await openTokenDialog()

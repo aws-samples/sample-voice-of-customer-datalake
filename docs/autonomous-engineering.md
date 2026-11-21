@@ -912,8 +912,8 @@ use it and what a run ends with):
 | **Use a fine-grained token** | you can push to a public repository but cannot install the App there | a branch and a pull request on the repository, pushed with your token after your go |
 | **Contribute through a fork** | it is someone else's public repository | a fork, a pull request on the fork, then the one-click compare link to open it on the upstream ([Any public repository](#any-public-repository-75700)) |
 
-`GET /agents/engineering/public-repositories?q=` answers each repository's `ways: {app, token, fork}` (an archived one
-takes none; a fork needs a licence) for the cards' hints.
+`GET /agents/engineering/public-repositories?q=` answers each repository's facts (an archived one takes no token and
+no fork; a fork needs a licence), from which the cards read their hints.
 
 **Making the token on GitHub** (the token dialog lists the steps, and links to
 `https://github.com/settings/personal-access-tokens/new` prefilled with `name`, `description`, `target_name=<owner>`,
@@ -941,7 +941,9 @@ person ticks "This token can reach only ‹repository›".
   fine_grained_token, set, app_id, installation_id, expires_at, expires_in_days, login, saved_by_you, owner}` (every
   token's `expires_in_days` is answered, a GitLab one's too). The page's row reads "Fine-grained token · ‹login› ·
   expires ‹date› (in N days)", with a warning chip at 14 days or fewer and a failure chip once expired, Replace token
-  and Remove; its CI is attested as any connection's that is pushed to.
+  and Remove; its CI is attested as any connection's that is pushed to. Replace token (`PUT …/connections/<id>/token`)
+  picks the App installation it reads through again, among the other connections, as a new connection does (7.66.00):
+  after GitHub is connected again, a replaced token reads through the new installation.
 
 **The check at a save** (`connectors/fine_grained.py`, run by the Agents API as GitLab's `check_token` is; four reads,
 each sent once with a 6 s timeout, no write):

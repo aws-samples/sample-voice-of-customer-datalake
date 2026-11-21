@@ -40,7 +40,7 @@ function StatusLine({ item }: Readonly<{ item: LibraryItem }>) {
   })()
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <StatusBadge status={item.status} />
+      <StatusBadge status={item.status} stale={item.stale === true} />
       {note === null ? null : <p className={item.status === 'failed' ? 'text-sm text-danger' : 'text-sm text-muted'}>{note}</p>}
     </div>
   )

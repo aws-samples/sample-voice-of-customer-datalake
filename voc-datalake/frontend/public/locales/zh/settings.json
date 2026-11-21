@@ -1085,9 +1085,6 @@
     "modelsDescription": "此部署中每个角色运行所用的运行环境和模型。在角色的注册表卡片上更改，从下一次运行起生效。",
     "modelsUnread": "无法读取角色的模型。",
     "connectionsDescription": "工程智能体从哪里获取仓库、费用多少，以及首次运行前的步骤。",
-    "tokensTitle": "需要更换的细粒度令牌",
-    "tokensHint": "请在 智能体编排 › 连接 中逐一更换：使用已到期令牌的运行会在开始时被拒绝。",
-    "tokenUnusable": "未设置，或到期日未知",
     "links": {
       "connections": "智能体编排 › 连接",
       "connectionsHint": "连接 GitHub 并选择智能体要处理的仓库：通过 App、细粒度令牌或复刻",

@@ -36,9 +36,15 @@ from shared.api import decimal_default
 from shared.audit_rows import put_new_audit_row
 from shared.aws import invoke_lambda_async
 from shared.delete_audit import actor_from_event, record_delete
-from shared.exceptions import AuthorizationError, ConflictError, ServiceError, ValidationError
+from shared.exceptions import (
+    AuthorizationError,
+    ConflictError,
+    ServiceError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from shared.ingest_tables import table_view
-from shared.library_extract import PAGE_BREAK
+from shared.library_extract import MODEL_METHOD, PAGE_BREAK
 from shared.library_index import MAX_PASSAGE_CHARS, delete_chunks, retrieve
 from shared.library_keys import SLUG_PATTERN, slug_key
 from shared.library_objects import LibraryObjects
@@ -387,7 +393,8 @@ def _record_delete(scope: WorkspaceScope | None, item: Mapping[str, Any]) -> Non
 def delete_library_item(item_id: str):
     """Delete an item for good, recorded: its extraction's claim first (a run in flight then drops what it writes), its
     passages and every version of its objects next, its row, slug and count last, so a delete that fails part way
-    leaves the item to delete again rather than passages or files no item names."""
+    leaves the item to delete again rather than passages or files no item names (a version the bucket refused to
+    delete is a 503 before the rows go)."""
     context = _context(write=True)
     scope = optional_scope(context)
     caller = _caller()
@@ -398,7 +405,9 @@ def delete_library_item(item_id: str):
     delete_chunks(_table(), scope, item_id)
     refused = LibraryObjects(scope).delete_item(item_id)
     if refused:
+        # (7.66.00: the rows stay, so the item is there to delete again: never files that no item names)
         logger.warning('Some versions of a deleted library item were refused', extra={'refused': refused})
+        raise ServiceUnavailableError('Some of the file could not be deleted yet. Delete the item again.')
     store.delete_item_rows(_table(), scope, item)
     _record_delete(scope, item)
     return {'success': True, 'deleted': item_id}
@@ -452,6 +461,13 @@ def _native_entry(objects: LibraryObjects, item: Mapping[str, Any]) -> dict[str,
                                         content_type=str(item.get('content_type')))}
 
 
+def _sent_as_a_file(item: Mapping[str, Any]) -> bool:
+    """Whether the assistant may get the item's file itself: a native one, but never a scanned PDF (its text came from
+    Amazon Bedrock, ``MODEL_METHOD``: a PDF sent with no citations is read by its empty text layer), whose passages
+    are searched instead (7.66.00)."""
+    return bool(item.get('native')) and not (item.get('format') == 'pdf' and item.get('method') == MODEL_METHOD)
+
+
 @app.post('/projects/library/context')
 @tracer.capture_method
 def library_context():
@@ -459,7 +475,7 @@ def library_context():
     caller's own access: the stream Lambda's and an MCP client's way into the library.
 
     Up to ``native_slots`` ready items that Converse takes as they are (a document of at most 4.5 MB in a native
-    format, an image of at most 3.75 MB) come back as a 5-minute presigned GET (``native``; never the bytes: a
+    format, an image of at most 3.75 MB; never a scanned PDF: ``_sent_as_a_file``) come back as a 5-minute presigned GET (``native``; never the bytes: a
     synchronous Lambda answer is capped at 6 MB); the others are searched for ``query`` (``passages``, the best 8 in at
     most ``budget`` characters). Without ``item_ids`` the items are the ready ones whose title, slug, tags or source
     share the most words with ``query``. ``missing`` counts the ids the scope does not hold (never naming them: another
@@ -483,7 +499,7 @@ def library_context():
     missing = sum(1 for item in found if item is None)
     present = list({str(item['item_id']): item for item in found if item is not None}.values())
     ready = [item for item in present if item.get('status') == 'ready']
-    native = [item for item in ready if item.get('native')][:slots]
+    native = [item for item in ready if _sent_as_a_file(item)][:slots]
     searched = [item for item in ready if item not in native and int(item.get('chunks') or 0) > 0]
     objects = LibraryObjects(scope)
     passages = retrieve(_table(), scope, [str(item['item_id']) for item in searched], query or ' '.join(

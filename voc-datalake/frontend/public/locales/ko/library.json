@@ -29,7 +29,8 @@
     "pending": "파일 대기 중",
     "extracting": "읽는 중",
     "ready": "준비됨",
-    "failed": "실패"
+    "failed": "실패",
+    "stale": "중단됨"
   },
   "row": {
     "dated": "날짜: {{date}}",

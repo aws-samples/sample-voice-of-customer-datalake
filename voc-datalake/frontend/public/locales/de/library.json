@@ -29,7 +29,8 @@
     "pending": "Wartet auf die Datei",
     "extracting": "Wird gelesen",
     "ready": "Bereit",
-    "failed": "Fehlgeschlagen"
+    "failed": "Fehlgeschlagen",
+    "stale": "Angehalten"
   },
   "row": {
     "dated": "Datiert {{date}}",

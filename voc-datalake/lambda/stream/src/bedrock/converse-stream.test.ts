@@ -129,6 +129,28 @@ describe('converseStream', () => {
     });
   });
 
+  it('sends a custom chat model\'s tool round with an error without the Claude-only fields (7.66.00)', async () => {
+    // (a tool round whose call failed, after a turn that reasoned: Llama takes no toolResult `status` and no
+    // `reasoningContent`; Claude and Nova keep both)
+    const round = [
+      { role: 'user' as const, content: [{ text: 'hi' }] },
+      { role: 'assistant' as const, content: [
+        { reasoningContent: { reasoningText: { text: 'Look it up.', signature: 'sig' } } },
+        { toolUse: { toolUseId: 't1', name: 'search_feedback', input: {} } },
+      ] },
+      { role: 'user' as const, content: [{ toolResult: { toolUseId: 't1', content: [{ text: 'Error: refused' }], status: 'error' as const } }] },
+    ];
+    const llama = z.object({ messages: z.array(z.object({ content: z.array(z.record(z.string(), z.unknown())) })) })
+      .parse(await commandInputFor({ messages: round, modelId: 'us.meta.llama3-3-70b-instruct-v1:0' }));
+    mockConverseStreamCommandCtor.mockClear();
+    const claude = await commandInputFor({ messages: round, modelId: 'global.anthropic.claude-sonnet-5-5' });
+    expect([llama.messages.map((message) => message.content), claude]).toStrictEqual([[
+      [{ text: 'hi' }],
+      [{ toolUse: { toolUseId: 't1', name: 'search_feedback', input: {} } }],
+      [{ toolResult: { toolUseId: 't1', content: [{ text: 'Error: refused' }] } }],
+    ], expect.objectContaining({ messages: round })]);
+  });
+
   it('omits toolConfig when tools array is empty', async () => {
     expect(await commandInputFor({
       tools: [],

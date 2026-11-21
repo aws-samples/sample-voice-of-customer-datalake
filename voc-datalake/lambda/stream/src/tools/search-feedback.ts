@@ -202,7 +202,7 @@ function passesFieldFilters(item: FeedbackItem, filters: SearchFilters): boolean
 
 /**
  * The VoC app's own micro-feedback's tag (7.66.00, lambda/shared/app_feedback_tag.py `APP_FEEDBACK_TAG`): its items
- * are no customer feedback, so a search leaves them out unless it asks for this tag (lambda/shared/item_filters.py).
+ * are no customer feedback, so a search leaves them out, whatever it asks (lambda/shared/item_filters.py).
  */
 const APP_FEEDBACK_TAG = 'voc_app';
 
@@ -212,18 +212,10 @@ const foldedTag = (tag: string): string => tag.trim().toLowerCase();
 const hasTag = (item: FeedbackItem, wanted: string): boolean =>
   (item.tags ?? []).some((candidate) => foldedTag(candidate) === wanted);
 
-/**
- * Whether the search asks for the micro-feedback's tag: its own `tag` filter, or the user's on-screen floor (a page
- * filtered on `tag=voc_app`, `floor.lists.tag`), as either one reads the items it names.
- */
-function asksForAppFeedback(filters: ItemFilters, floor: FeedbackFloor): boolean {
-  return [filters.tag ?? '', ...(floor.lists.tag ?? [])].some((tag) => foldedTag(tag) === APP_FEEDBACK_TAG);
-}
-
-/** channel / tag / dims (docs/dimensions.md); unset filters admit every item but the VoC app's own micro-feedback. */
-function passesItemFilters(item: FeedbackItem, filters: ItemFilters, appFeedback: boolean): boolean {
+/** channel / tag / dims (docs/dimensions.md); never the VoC app's own micro-feedback, whatever they ask. */
+function passesItemFilters(item: FeedbackItem, filters: ItemFilters): boolean {
   const tag = filters.tag === undefined ? '' : foldedTag(filters.tag);
-  if (!appFeedback && hasTag(item, APP_FEEDBACK_TAG)) return false;
+  if (hasTag(item, APP_FEEDBACK_TAG)) return false;
   if (filters.channel && item.source_channel !== filters.channel) return false;
   if (tag && !hasTag(item, tag)) return false;
   return Object.entries(filters.dims ?? {}).every(([key, value]) => item.dimensions?.[key] === value);
@@ -251,7 +243,7 @@ function matchesFeedbackItem(
     && admitsFloor(floor, item)
     && passesDateFilter(item, cutoffDate, dateBasis)
     && passesFieldFilters(item, filters)
-    && passesItemFilters(item, filters, asksForAppFeedback(filters, floor))
+    && passesItemFilters(item, filters)
     && passesTextSearch(item, query);
 }
 

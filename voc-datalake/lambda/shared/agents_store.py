@@ -1119,7 +1119,8 @@ def issue_claim_key(repository: str, number: int, stage: str = ISSUE_STAGE_ACT) 
 def issue_claim_item(repository: str, number: int, *, agent_id: str, run_id: str, engineering_run_id: str,
                      feedback_id: str, now: datetime, stage: str = ISSUE_STAGE_ACT) -> dict[str, Any]:
     """The claim a run of issue ``number`` of ``repository`` writes with its run, for its ``stage``: which agent, run
-    and engineering run took it, from which feedback item, when. Create-only, never updated or deleted."""
+    and engineering run took it, from which feedback item, when. Create-only, never updated; deleted only by its own
+    run's start refused before the run began (``release_issue_claim``)."""
     return {**issue_claim_key(repository, number, stage), 'repository': repository, 'number': number,
             'agent_id': agent_id, 'agent_run_id': run_id, 'engineering_run_id': engineering_run_id,
             'feedback_id': feedback_id, 'claimed_at': iso(now), 'stage': stage}
@@ -1164,6 +1165,23 @@ def claim_issue_if_free(table: Any, item: Mapping[str, Any]) -> bool:
         raise _service_error('claim the issue', exc) from exc
     except BotoCoreError as exc:
         raise _service_error('claim the issue', exc) from exc
+    return True
+
+
+def release_issue_claim(table: Any, item: Mapping[str, Any]) -> bool:
+    """Delete an issue's claim when it is still the one ``item``'s run wrote (``agent_run_id``): that run's start was
+    refused before the engineering run began (7.66.00), so the issue may start a run again. True when deleted; an
+    earlier run's claim, or none, is kept (False)."""
+    key = {'pk': item['pk'], 'sk': item['sk']}
+    try:
+        table.delete_item(Key=key, ConditionExpression='agent_run_id = :run',
+                          ExpressionAttributeValues={':run': item['agent_run_id']})
+    except ClientError as exc:
+        if is_conditional_check_failure(exc):
+            return False
+        raise _service_error('release the issue claim', exc) from exc
+    except BotoCoreError as exc:
+        raise _service_error('release the issue claim', exc) from exc
     return True
 
 

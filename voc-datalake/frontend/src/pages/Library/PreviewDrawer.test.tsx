@@ -171,6 +171,14 @@ describe('retry', () => {
     expect(fetchApi).toHaveBeenCalledWith(`${ITEM}/retry`, { method: 'POST' })
   })
 
+  it('shows a stale extraction\'s status as stopped, with no spinner', async () => {
+    route({ [`GET ${ITEM}`]: () => detailOf(libraryItem({ status: 'extracting', stale: true })) })
+    renderDrawer()
+    const sheet = await drawer()
+    expect(await within(sheet).findByText('Stopped')).toBeInTheDocument()
+    expect(sheet.querySelector('.animate-spin')).toBeNull()
+  })
+
   it('offers no retry while an extraction is still in time', async () => {
     route({ [`GET ${ITEM}`]: () => detailOf(libraryItem({ status: 'extracting' })) })
     renderDrawer()

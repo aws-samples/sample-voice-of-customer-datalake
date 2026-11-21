@@ -23,7 +23,7 @@ import type {
 } from '../types.js';
 import { resolveChatModelId } from '../../bedrock/converse-stream.js';
 import { chatModelForAttachments } from '../../bedrock/model-fallback.js';
-import { customContextWindow } from '../../bedrock/custom-models.js';
+import { customContextWindow, shownModelId } from '../../bedrock/custom-models.js';
 import { historyBudgetFor } from '../../history-budget.js';
 import { profiledModelId } from '../../bedrock/model-profile.js';
 import { ValidationError } from '../../lib/errors.js';
@@ -278,7 +278,8 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
     profiledModelId(resolveChatModelId(await deps.resolveModel()), claims['cognito:groups'], 'chat'),
     partsOf(split.user.content).some((part) => part.type !== 'text'));
   // Packs never change below (only project write tools can be dropped), so the context event goes out first.
-  emitter.emit(events.custom(CUSTOM_EVENTS.context, { page, packs: pageToolset.packs, model: modelId, webSearch }));
+  // (an imported custom model is named by its key, never its ARN: bedrock/custom-models.ts shownModelId)
+  emitter.emit(events.custom(CUSTOM_EVENTS.context, { page, packs: pageToolset.packs, model: shownModelId(modelId), webSearch }));
 
   const ctx: AssistantRunContext = {
     claims, isAdmin, page, props, modelId, emit: (e) => emitter.emit(e), projectAccess: new ProjectAccessLedger(),

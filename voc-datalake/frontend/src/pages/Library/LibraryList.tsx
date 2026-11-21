@@ -39,7 +39,7 @@ function Row({ item, onOpen }: Readonly<{ item: LibraryItem; onOpen: (itemId: st
             <span className="block break-words text-sm font-semibold text-text-strong">{item.title}</span>
             <span className="block break-all font-mono text-[12px] text-accent-text">#{item.slug}</span>
           </span>
-          <StatusBadge status={item.status} />
+          <StatusBadge status={item.status} stale={item.stale === true} />
         </span>
         <Meta item={item} />
         {item.tags.length === 0 ? null : (

@@ -1085,9 +1085,6 @@
     "modelsDescription": "Die Laufzeitumgebung jeder Rolle in dieser Bereitstellung und das Modell, das sie nutzt. Geändert wird es auf der Registry-Karte der Rolle; es gilt ab dem nächsten Lauf.",
     "modelsUnread": "Die Modelle der Rollen konnten nicht gelesen werden.",
     "connectionsDescription": "Woher die Engineering-Agenten ihre Repositories bekommen, was sie kosten und die Schritte vor dem ersten Lauf.",
-    "tokensTitle": "Zu ersetzende Fine-grained Tokens",
-    "tokensHint": "Ersetzen Sie jedes unter Agenten-Orchestrierung › Verbindungen: Ein Lauf mit einem abgelaufenen Token wird bei seinem Start abgelehnt.",
-    "tokenUnusable": "Nicht festgelegt, oder sein Ablaufdatum ist nicht bekannt",
     "links": {
       "connections": "Agenten-Orchestrierung › Verbindungen",
       "connectionsHint": "GitHub verbinden und die Repositories wählen, an denen die Agenten arbeiten: über die App, mit einem Fine-grained Token oder über einen Fork",

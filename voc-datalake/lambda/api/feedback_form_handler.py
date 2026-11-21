@@ -28,7 +28,8 @@ import os
 import re
 import secrets
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
@@ -41,6 +42,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import category_access, feedback_category, form_theme, null_origin_cors, prototype_pins
+from shared import forms_recall as recall
 from shared import forms_v2 as fv2
 from shared import forms_v2_csv as fcsv
 from shared import forms_v2_responses as fresp
@@ -2012,7 +2014,10 @@ def get_form_iframe(form_id: str):
     form_id, form, _routed = _public_form(form_id, 'Failed to load form')
     definition = _definition(form)
     language = str(definition.get('language') or fv2.DEFAULT_LOCALE)
-    title = fv2.text_in((definition.get('welcome') or {}).get('title'), language, language) or 'Feedback Form'
+    # (7.66.00: a recall placeholder shows as a respondent with no value sees it, its fallback or nothing, tidied:
+    # the page knows no hidden value, so ``{{event|the workshop}}`` is "the workshop", never the braces)
+    title = recall.shown_without_values(
+        fv2.text_in((definition.get('welcome') or {}).get('title'), language, language) or '') or 'Feedback Form'
 
     host = app.current_event.request_context.get('domainName', '')
     stage = app.current_event.request_context.get('stage', 'v1')
@@ -2375,29 +2380,49 @@ def _result_row(item: Mapping[str, Any], definition: Mapping[str, Any]) -> Resul
 #: ``subcategory`` too, for the report's themes).
 _RESULT_FIELDS = {'#fid': 'feedback_id', '#rating': 'rating', '#cat': 'category', '#src': 'source_platform',
                   '#meta': 'metadata', '#text': 'original_text', '#at': 'source_created_at', '#test': 'is_test',
-                  '#sent': 'sentiment_label', '#sub': 'subcategory'}
+                  '#sent': 'sentiment_label', '#sub': 'subcategory', '#chan': 'source_channel'}
+
+
+#: One form read for its results: its id, its stored row, its current definition.
+ReadForm = tuple[str, Mapping[str, Any], Mapping[str, Any]]
+
+
+def _forms_feedback_rows(forms: Sequence[ReadForm], workspace: WorkspaceScope | None,
+                         access: category_access.CategoryScope) -> dict[str, list[ResultRow]]:
+    """Each form's feedback items that ``access`` admits (the caller's category access AND source access, as on the
+    stats routes and every feedback read: ``admits_item`` reads ``category`` and ``source_platform``) as results
+    rows, by form id. Each brand partition is read ONCE for all its forms' channels (an ``IN``, as
+    ``_stats_for_forms``), then split by form (7.66.00: a Compare of 11 forms of one brand reads it once, not 11
+    times). An item tagged ``is_test`` is never one (none should exist: test responses are never queued)."""
+    if not feedback_table:
+        raise ConfigurationError('Feedback table not configured')
+    definitions = {form_id: definition for form_id, _form, definition in forms}
+    by_partition: dict[str, list[str]] = {}
+    for form_id, form, _definition in forms:
+        by_partition.setdefault(_form_source_pk(dict(form), workspace), []).append(form_id)
+    rows: dict[str, list[ResultRow]] = {form_id: [] for form_id in definitions}
+    for source_pk, form_ids in by_partition.items():
+        for chunk in _chunks(form_ids, _MAX_IN_OPERANDS):
+            values = {f':sc{i}': f'form_{form_id}' for i, form_id in enumerate(chunk)}
+            query_kwargs: dict[str, Any] = {
+                'FilterExpression': f"source_channel IN ({', '.join(values)})",
+                'ExpressionAttributeValues': values,
+                'ProjectionExpression': ', '.join(_RESULT_FIELDS),
+                'ExpressionAttributeNames': dict(_RESULT_FIELDS),
+            }
+            items = _partition_rows(feedback_table, workspace, source_pk, query_kwargs)
+            for item in category_access.filter_items(access, items):
+                form_id = str(item.get('source_channel', '')).removeprefix('form_')
+                row = None if item.get('is_test') or form_id not in rows else _result_row(item, definitions[form_id])
+                if row is not None:
+                    rows[form_id].append(row)
+    return rows
 
 
 def _feedback_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceScope | None,
-                   definition: Mapping[str, Any], access: category_access.CategoryScope) -> Iterator[ResultRow]:
-    """The form's feedback items that ``access`` admits (the caller's category access AND source access, as on the
-    stats routes and every feedback read: ``admits_item`` reads ``category`` and ``source_platform``) as results
-    rows. An item tagged ``is_test`` is never one (none should exist: test responses are never queued)."""
-    if not feedback_table:
-        raise ConfigurationError('Feedback table not configured')
-    query_kwargs: dict[str, Any] = {
-        'FilterExpression': 'source_channel = :sc',
-        'ExpressionAttributeValues': {':sc': f'form_{form_id}'},
-        'ProjectionExpression': ', '.join(_RESULT_FIELDS),
-        'ExpressionAttributeNames': dict(_RESULT_FIELDS),
-    }
-    rows = _partition_rows(feedback_table, workspace, _form_source_pk(dict(form), workspace), query_kwargs)
-    for item in category_access.filter_items(access, rows):
-        if item.get('is_test'):
-            continue
-        row = _result_row(item, definition)
-        if row is not None:
-            yield row
+                   definition: Mapping[str, Any], access: category_access.CategoryScope) -> list[ResultRow]:
+    """One form's results rows (``_forms_feedback_rows``)."""
+    return _forms_feedback_rows([(form_id, form, definition)], workspace, access)[form_id]
 
 
 def _test_rows(form_id: str, scope: WorkspaceScope | None, definition: Mapping[str, Any]) -> Iterator[ResultRow]:
@@ -2457,16 +2482,24 @@ def _read_view_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceS
     and source access admit, against the workspace's configuration in a workspace (``scope_for_event``: a failed read
     of either is a 500, never "everything")."""
     access = scope_for_event(app.current_event.raw_event, aggregates_table, workspace)
-    try:
+    with _results_read():
         reals = list(_feedback_rows(form, form_id, workspace, definition, access)) if real else []
         tests = list(_test_rows(form_id, workspace, definition)) if test and _admits_test_rows(access, form) else []
+    return reals, tests
+
+
+@contextmanager
+def _results_read() -> Generator[None]:
+    """A results read's failures: an API error as it is; anything else counted (``FeedbackFormResultsReadFailed``),
+    logged and a 500."""
+    try:
+        yield
     except ApiError:
         raise
     except Exception as e:
         metrics.add_metric(name='FeedbackFormResultsReadFailed', unit='Count', value=1)
         logger.exception(f"Error fetching form results: {type(e).__name__}")
         raise ServiceError('Failed to fetch form results') from e
-    return reals, tests
 
 
 def _view_rows(form: Mapping[str, Any], form_id: str, workspace: WorkspaceScope | None,
@@ -2629,15 +2662,22 @@ def _compared_ids(form_id: str, raw: object) -> list[str]:
     return out
 
 
-def _form_side(form_id: str, workspace: WorkspaceScope | None, filters: Mapping[str, Any],
-               include_test: bool) -> FormSide:
-    """One form of a comparison, read as Results read it (404 for a form this scope does not hold)."""
-    form = _load_form_for_query(form_id, 'Failed to compare forms', workspace)
-    definition = _definition(form)
-    reals, tests = _read_view_rows(form, form_id, workspace, definition, real=True, test=include_test)
-    rows = filter_rows(reals, **filters) + (filter_rows(tests, **filters) if include_test else [])
-    return FormSide(form_id, str(form.get('name') or ''), fv2.template_of(form), definition, rows,
-                    _revisions(form_id, workspace, form))
+def _form_sides(form_ids: Sequence[str], workspace: WorkspaceScope | None, filters: Mapping[str, Any],
+                include_test: bool) -> list[FormSide]:
+    """The forms of a comparison, read as Results read them (404 for a form this scope does not hold), their brand
+    partitions read once for all of them (``_forms_feedback_rows``)."""
+    forms: list[ReadForm] = []
+    for form_id in form_ids:
+        form = _load_form_for_query(form_id, 'Failed to compare forms', workspace)
+        forms.append((form_id, form, _definition(form)))
+    access = scope_for_event(app.current_event.raw_event, aggregates_table, workspace)
+    with _results_read():
+        reals = _forms_feedback_rows(forms, workspace, access)
+        tests = {form_id: list(_test_rows(form_id, workspace, definition))
+                 if include_test and _admits_test_rows(access, form) else [] for form_id, form, definition in forms}
+    return [FormSide(form_id, str(form.get('name') or ''), fv2.template_of(form), definition,
+                     filter_rows(reals[form_id], **filters) + filter_rows(tests[form_id], **filters),
+                     _revisions(form_id, workspace, form)) for form_id, form, definition in forms]
 
 
 @app.get("/feedback-forms/<form_id>/compare")
@@ -2657,9 +2697,8 @@ def compare_forms(form_id: str):
     if params.get('by') and not others:
         raise ValidationError('by splits the forms compared: name at least one other form in with (a form split on its '
                               'own is its report\'s segments)', code='group_by_invalid')
-    base = _form_side(form_id, workspace, filters, include_test)
+    base, *sides = _form_sides([form_id, *others], workspace, filters, include_test)
     by = parse_group_by(base.definition, params['by'], hidden_only=True) if params.get('by') else None
-    sides = [_form_side(other, workspace, filters, include_test) for other in others]
     return {'success': True, 'form_id': form_id, 'include_test': include_test, **compare(base, sides, by)}
 
 

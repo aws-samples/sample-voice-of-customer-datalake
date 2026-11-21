@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import recallCases from '../../../../../schemas/form-recall-cases.json'
 import type { FormV2, Question } from './formsV2'
 import { blankForm } from '../test/blankForm'
+import { parseFormV2 } from './formsV2Schema'
 import {
   otherTexts, placeholders, recallChoices, recallProblem, recallTexts, recalledHiddenIds, renderRecall, shownAsIds,
   unresolvedPlaceholders,
@@ -22,6 +23,12 @@ function formWith(questions: readonly Question[], extra: Partial<FormV2> = {}): 
 describe('recall (schemas/form-recall-cases.json: one grammar with the server and the widget)', () => {
   it.each(recallCases.parse)('finds the placeholders of "$text"', ({ text: written, placeholders: expected }) => {
     expect(placeholders(written)).toStrictEqual(expected)
+  })
+
+  it.each(recallCases.publish)('blocks Publish only for what respondents can be shown: $name', ({ definition, blocked }) => {
+    // (7.66.00: a switched-off welcome, Other or None row is never shown, so its placeholders block nothing)
+    const form = parseFormV2(definition)
+    expect(form === null ? null : unresolvedPlaceholders(form).map((found) => found.placeholder)).toStrictEqual(blocked)
   })
 
   it('fills the builder\'s preview by plain substitution: a value, else the fallback, else nothing (the widget tidies)', () => {

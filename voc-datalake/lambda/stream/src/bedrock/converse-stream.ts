@@ -109,6 +109,29 @@ function buildTools(tools: Tool[] | undefined, cache: boolean): Tool[] | undefin
   return cache ? [...tools, CACHE_POINT] : tools;
 }
 
+/**
+ * Whether the model takes a tool result's `status` and a replayed `reasoningContent` block: Claude and Nova do; any
+ * other model a deployment adds (`-c customModels`: Llama, an imported model) is sent neither, so a tool round with an
+ * error, or a turn replayed after a Claude one, never fails on a field it does not know (7.66.00). An error's result
+ * text still says so ("Error: …").
+ */
+function takesClaudeTurnFields(modelId: string): boolean {
+  return modelId.includes('anthropic.claude') || modelId.includes('amazon.nova');
+}
+
+function withoutClaudeFields(block: ContentBlock): ContentBlock[] {
+  if (block.reasoningContent !== undefined) return [];
+  if (block.toolResult?.status === undefined) return [block];
+  const { toolUseId, content } = block.toolResult;
+  return [{ toolResult: { toolUseId, content } }];
+}
+
+/** `messages` as the model takes them: unchanged for Claude and Nova, else without those fields (copy-on-write). */
+function messagesFor(modelId: string, messages: Message[]): Message[] {
+  if (takesClaudeTurnFields(modelId)) return messages;
+  return messages.map((message) => ({ ...message, content: (message.content ?? []).flatMap(withoutClaudeFields) }));
+}
+
 /** Copy-on-write: the caller's message array is never mutated. */
 function withMessageCachePoint(messages: Message[], index: number | undefined): Message[] {
   if (index === undefined || index < 0 || index >= messages.length) return messages;
@@ -123,13 +146,13 @@ export async function* converseStream(
   params: ConverseStreamParams,
 ): AsyncGenerator<ConverseStreamOutput> {
   const {
-    messages,
     tools,
     maxTokens = MAX_OUTPUT_TOKENS,
     thinkingBudget = DEFAULT_THINKING_BUDGET,
   } = params;
 
   const resolvedModel = resolveChatModelId(params.modelId);
+  const messages = messagesFor(resolvedModel, params.messages);
   const cache = params.cache === true && supportsPromptCache(resolvedModel);
   const toolList = buildTools(tools, cache);
 

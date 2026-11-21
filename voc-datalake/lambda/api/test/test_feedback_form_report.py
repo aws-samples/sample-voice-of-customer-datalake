@@ -10,6 +10,7 @@ Against moto tables, with the fixtures and helpers of test_feedback_form_v2.py.
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from test_feedback_form_v2 import EDITOR, VIEWER, WS, _call, _create, _rows
@@ -180,6 +181,29 @@ class TestComparingForms:
         ws_form = _create(lambda_context, WORKSHOP, claims=EDITOR, ws=WS)['form_id']
         status, answer = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare', query={'with': ws_form})
         assert (status, answer['error']) == (404, 'Form not found')
+
+    def test_the_brands_partition_is_read_once_for_every_compared_form(self, world, seeded, lambda_context):
+        """Review round 1 of the second gate (7.66.00): Compare reads each brand partition once for all the compared
+        forms' channels (an IN), then splits the rows by form, as the forms list's stats do."""
+        import feedback_form_handler
+        others = [_create(lambda_context, {**WORKSHOP, 'name': f'Workshop {n}'})['form_id'] for n in range(3)]
+        for other in others:
+            for n in range(5):
+                world['feedback'].put_item(Item=_feedback(other, n, customer='Sample Co', value=3))
+        real = feedback_form_handler._partition_rows
+        reads: list[str] = []
+
+        def counted(table, scope, source_pk, query_kwargs):
+            reads.append(source_pk)
+            return real(table, scope, source_pk, query_kwargs)
+
+        with patch.object(feedback_form_handler, '_partition_rows', side_effect=counted):
+            status, out = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare',
+                                query={'with': ','.join(others)})
+        assert status == 200, out
+        assert len(reads) == len(set(reads)) == 1
+        assert {point['form_id']: point['responses'] for point in out['points']} == {
+            seeded: 9, **dict.fromkeys(others, 5)}
 
     def test_by_a_hidden_field_and_the_limits(self, world, seeded, lambda_context):
         other = _create(lambda_context, {**WORKSHOP, 'name': 'Sample Co workshop'})['form_id']

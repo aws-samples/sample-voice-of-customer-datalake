@@ -29,7 +29,8 @@
     "pending": "En attente du fichier",
     "extracting": "Lecture",
     "ready": "Prêt",
-    "failed": "Échec"
+    "failed": "Échec",
+    "stale": "Arrêté"
   },
   "row": {
     "dated": "Daté du {{date}}",

@@ -20,11 +20,11 @@ past the cap in a big import (a 26,000-row CSV day: ``channel=google_play`` had
 ``tag`` match ignoring case, which a FilterExpression cannot do, so they stay in memory.
 
 The VoC app's own micro-feedback (items tagged ``voc_app``, shared/app_feedback_tag.py, 7.66.00) is no customer
-feedback: every reader that goes through these filters leaves it out by default, an instance with nothing set
-included (:meth:`ItemFilters.admits`, :meth:`ItemFilters.filter`), so it never counts in a metric, lists in the
-Feedback list or search, or reaches a persona, research, a document, a brief or an agent as evidence. Only a request
-for its tag (``tag=voc_app``) reads it; the form's own Results read its responses from the form's source
-partition, never through them.
+feedback: every reader that goes through these filters leaves it out, an instance with nothing set included
+(:meth:`ItemFilters.admits`, :meth:`ItemFilters.filter`), whatever the request asks (a ``tag=voc_app`` finds nothing),
+so it never counts in a metric, lists in the Feedback list or search, or reaches a persona, research, a document, a
+brief or an agent as evidence. The ways to see it read around them: the form's own Results, Report and CSV (the
+form's source partition), the Data Explorer, a review opened by its id, and a workspace's export and delete.
 
 The list facets ``source``, ``category``, ``subcategory``, ``sentiment`` and ``usefulness``
 (``shared/item_facets.py``) take one value or a comma-separated any-of list. The sources are
@@ -44,7 +44,7 @@ from typing import Any
 
 from boto3.dynamodb.conditions import Attr, ConditionBase
 
-from shared.app_feedback_tag import asks_for_app_feedback, has_tag, is_app_feedback
+from shared.app_feedback_tag import has_tag, is_app_feedback
 from shared.category_scope_query import combine
 from shared.dimension_config import parse_dims_param
 from shared.item_facets import (
@@ -116,18 +116,12 @@ class ItemFilters:
         return replace(self, sources=())
 
     @property
-    def app_feedback(self) -> bool:
-        """True when the request asks for the VoC app's own micro-feedback (``tag=voc_app``): the one way a read
-        through these filters sees it (7.66.00)."""
-        return asks_for_app_feedback(self.tag)
-
-    @property
     def rates(self) -> bool:
         """True when a star-rating bound is set."""
         return self.rating_min is not None or self.rating_max is not None
 
     def admits(self, item: Mapping[str, Any]) -> bool:
-        if not self.app_feedback and is_app_feedback(item):
+        if is_app_feedback(item):   # (the VoC app's own micro-feedback, never a customer's: the module docstring)
             return False
         if self.channel and item.get('source_channel') != self.channel:
             return False

@@ -28,6 +28,7 @@ const CustomModelSchema = z.object({
   key: z.string().min(1),
   id: z.string().min(1),
   label: z.string().min(1),
+  source: z.string().optional(),
   surfaces: z.array(z.string()).min(1),
   capabilities: z.object({ tools: z.boolean(), documents: z.boolean(), json: z.boolean(), temperature: z.boolean() }),
   maxOutputTokens: z.number().int().positive().optional(),
@@ -36,7 +37,11 @@ const CustomModelSchema = z.object({
 
 /** One registry entry, as the stream uses it. */
 export interface StreamCustomModel {
+  /** Its registry key: what a reader is shown of an imported model (its id is an ARN, 7.66.00). */
+  readonly key: string;
   readonly id: string;
+  /** An imported model (Custom Model Import): its id names the account and the Region. */
+  readonly imported: boolean;
   readonly surfaces: readonly string[];
   readonly tools: boolean;
   readonly documents: boolean;
@@ -68,10 +73,10 @@ function parseRegistry(raw: string): readonly StreamCustomModel[] {
       console.warn(`${CUSTOM_MODELS_ENV} entry ${String(index + 1)} skipped: it cannot be read or repeats an id`);
       continue;
     }
-    // (the key and the label are the registry's, for the SPA and the logs; the stream reads neither)
-    const { id, surfaces, capabilities, maxOutputTokens, contextWindow } = result.data;
+    // (the label is the registry's, for the SPA and the logs; the stream reads the key to name an imported model)
+    const { key, id, source, surfaces, capabilities, maxOutputTokens, contextWindow } = result.data;
     models.push({
-      id, surfaces, tools: capabilities.tools, documents: capabilities.documents,
+      key, id, imported: source === 'imported', surfaces, tools: capabilities.tools, documents: capabilities.documents,
       maxOutputTokens: maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS, contextWindow: contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     });
   }
@@ -96,6 +101,15 @@ export function customModel(modelId: unknown): StreamCustomModel | undefined {
 export function streamCustomModel(value: unknown, surface: string): string | undefined {
   const model = customModel(value);
   return model !== undefined && model.tools && model.surfaces.includes(surface) ? model.id : undefined;
+}
+
+/**
+ * `modelId` as the person is shown it (the `assistant.context` event): an imported model's registry key, never its
+ * ARN (7.66.00, as `GET /settings/model` answers anyone but an administrator); any other id as it is.
+ */
+export function shownModelId(modelId: string): string {
+  const model = customModel(modelId);
+  return model?.imported === true ? model.key : modelId;
 }
 
 /** A custom model's input window in tokens; undefined for any other model (Claude's windows hold the defaults). */

@@ -23,6 +23,7 @@ NOVA = 'amazon.nova-pro-v1:0'
 LLAMA = 'us.meta.llama3-3-70b-instruct-v1:0'
 OPUS55 = 'global.anthropic.claude-opus-5-5'
 LUNA = 'openai.gpt-5.6-luna'
+MINE = 'arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456'
 
 table = pytest.fixture(aggregates_mock, name='table')
 
@@ -54,6 +55,22 @@ class TestTheList:
         assert (selected['documents'], selected['chat']) == (NOVA, None)
         assert NOVA not in {model['id'] for model in payload['available_models']}
 
+    def test_a_non_admin_reads_an_imported_model_by_its_key_and_label_only(self, api_gateway_event, lambda_context,
+                                                                            table):
+        # (review round 1 of the second gate, 7.66.00: an imported model's id is an ARN; its pick reads as its key)
+        table.get_item.side_effect = lambda Key: (
+            {'Item': {'surfaces': {'memory': MINE}}} if Key['pk'] == 'SETTINGS#model' else {})
+        member = {'sub': 'sub-mo', 'cognito:groups': 'users', 'cognito:username': 'mo'}
+        _, payload = call_route(lambda_handler, api_gateway_event, lambda_context, method='GET',
+                                path='/settings/model', claims=member)
+        rows = {row.get('key'): row for row in payload['custom_models']}
+        assert rows['mine'] == {'key': 'mine', 'label': 'Example imported model'}
+        assert rows['nova']['id'] == NOVA   # (a Bedrock model's id names no account)
+        assert {surface['key']: surface['selected'] for surface in payload['surfaces']}['memory'] == 'mine'
+        assert MINE not in repr(payload)
+        _, admin = route_as_admin(api_gateway_event, lambda_context)
+        assert MINE in repr(admin)
+
     def test_lists_none_without_the_registry(self, route, table, monkeypatch):
         monkeypatch.delenv(CUSTOM_MODELS_ENV)
         table.get_item.return_value = {}
@@ -61,7 +78,17 @@ class TestTheList:
         assert payload['custom_models'] == []
 
 
+def route_as_admin(api_gateway_event, lambda_context):
+    return call_route(lambda_handler, api_gateway_event, lambda_context, method='GET', path='/settings/model')
+
+
 class TestThePick:
+    def test_an_imported_model_is_saved_by_its_key_as_its_arn(self, route, table):
+        table.get_item.return_value = {}
+        response, payload = route('PUT', '/settings/model', {'surface': 'memory', 'model_id': 'mine'})
+        assert (response['statusCode'], payload['model_id']) == (200, MINE)
+        assert table.put_item.call_args.kwargs['Item']['surfaces'] == {'memory': MINE}
+
     def test_saves_a_custom_model_for_a_surface_it_declares(self, route, table):
         table.get_item.return_value = {}
         response, payload = route('PUT', '/settings/model', {'surface': 'documents', 'model_id': NOVA})

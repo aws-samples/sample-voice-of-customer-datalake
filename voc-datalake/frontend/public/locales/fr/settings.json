@@ -1119,9 +1119,6 @@
     "modelsDescription": "L’environnement d’exécution de chaque rôle dans ce déploiement et le modèle qu’il utilise. Il se change sur la carte du rôle dans le Registre et s’applique à partir de la prochaine exécution.",
     "modelsUnread": "Impossible de lire les modèles des rôles.",
     "connectionsDescription": "D’où les agents d’ingénierie tirent leurs dépôts, ce qu’ils coûtent et les étapes avant la première exécution.",
-    "tokensTitle": "Jetons à granularité fine à remplacer",
-    "tokensHint": "Remplacez chacun dans Orchestration d'agents › Connexions : une exécution sur un jeton expiré est refusée à son démarrage.",
-    "tokenUnusable": "Non défini, ou son expiration n’est pas connue",
     "links": {
       "connections": "Orchestration d'agents › Connexions",
       "connectionsHint": "Connecter GitHub et choisir les dépôts sur lesquels travaillent les agents : par l’App, avec un jeton à granularité fine ou par un fork",

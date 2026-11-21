@@ -270,10 +270,12 @@ def get_model_settings():
     (``web_search_models``, the OpenAI GPT models; empty, and the surface
     absent, unless a deployed plugin reads with it: shared/model_config.py).
     A ``claude`` surface also offers the deployment's own models that declare it
-    (``custom_models``, ``-c customModels``: shared/custom_models.py, 7.65.00).
+    (``custom_models``, ``-c customModels``: shared/custom_models.py, 7.65.00). To anyone but an administrator an
+    imported model is its ``key`` and ``label`` only, a surface's pick of it its ``key`` (7.66.00: its id is an ARN).
     """
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
+    admin = is_admin(app.current_event.raw_event)
     try:
         response = aggregates_table.get_item(
             Key={'pk': MODEL_SETTINGS_PK, 'sk': MODEL_SETTINGS_SK}
@@ -287,14 +289,15 @@ def get_model_settings():
                 'key': key,
                 'default_id': SURFACE_DEFAULTS[key],
                 # Ignore any stored value that has since left the surface's allowlist.
-                'selected': stored.get(key) if stored.get(key) in surface_allowlist(key) else None,
+                'selected': custom_models.shown_id(stored.get(key), admin=admin)
+                if stored.get(key) in surface_allowlist(key) else None,
                 'allowlist': 'web_search' if key == WEB_SEARCH_SURFACE else 'claude',
             }
             for key in offered_picker_surfaces()
         ]
         result = {
             'available_models': ALLOWED_MODELS,
-            'custom_models': custom_models.picker_rows(),
+            'custom_models': custom_models.picker_rows(admin=admin),
             'web_search_models': WEB_SEARCH_MODELS if web_search_offered() else [],
             'surfaces': surfaces,
             'model_id': legacy_global if legacy_global in ALLOWED_MODEL_IDS else None,
@@ -339,7 +342,9 @@ def save_model_settings():
     body = json_object_body(app)
     if 'model_id' not in body:
         raise ValidationError('model_id is required (an allowlisted id, or null to clear)')
-    model_id = body.get('model_id')
+    # (7.66.00: a custom model may be named by its key, an imported one's as readers are shown it: its ARN here)
+    model_id = custom_models.by_key_or_id(body.get('model_id')) if isinstance(body.get('model_id'), str) else \
+        body.get('model_id')
     surface = body.get('surface')
     surfaces = offered_picker_surfaces()
     if surface is not None and surface not in surfaces:
@@ -382,7 +387,8 @@ def run_model_test():
     """
     require_admin(app.current_event.raw_event)
     body = json_object_body(app)
-    model_id = body.get('model_id')
+    model_id = custom_models.by_key_or_id(body.get('model_id')) if isinstance(body.get('model_id'), str) else \
+        body.get('model_id')
     probe = body.get('probe', 'basic')
     if probe not in model_capacity.PROBES:
         raise ValidationError(f"probe must be one of: {', '.join(model_capacity.PROBES)}")

@@ -8,7 +8,6 @@ import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
-import { adminPath } from './adminPaths'
 import type { AdminAttention } from './useAdminAttention'
 
 /** The strip on General: nothing while nothing needs attention; the region is always there, so its content is read once. */
@@ -27,7 +26,7 @@ export function AttentionStrip({ attention }: Readonly<{ attention: AdminAttenti
             {attention.items.map((item) => (
               <li key={item.key} className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-sm text-text">{item.text}</span>
-                <Link to={adminPath(item.target)} className="btn btn-secondary btn-sm self-start sm:self-auto">{item.action}</Link>
+                <Link to={item.to} className="btn btn-secondary btn-sm self-start sm:self-auto">{item.action}</Link>
               </li>
             ))}
           </ul>

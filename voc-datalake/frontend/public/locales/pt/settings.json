@@ -1119,9 +1119,6 @@
     "modelsDescription": "O ambiente em que cada função é executada nesta implantação e o modelo que ela usa. A alteração é feita no cartão da função no Registro e vale a partir da próxima execução.",
     "modelsUnread": "Não foi possível ler os modelos das funções.",
     "connectionsDescription": "De onde os agentes de engenharia obtêm seus repositórios, quanto custam e os passos antes da primeira execução.",
-    "tokensTitle": "Tokens refinados a substituir",
-    "tokensHint": "Substitua cada um em Orquestração de agentes › Conexões: uma execução com um token expirado é recusada no início.",
-    "tokenUnusable": "Não definido, ou a expiração não é conhecida",
     "links": {
       "connections": "Orquestração de agentes › Conexões",
       "connectionsHint": "Conectar o GitHub e escolher os repositórios em que os agentes trabalham: pelo App, com um token refinado ou por um fork",

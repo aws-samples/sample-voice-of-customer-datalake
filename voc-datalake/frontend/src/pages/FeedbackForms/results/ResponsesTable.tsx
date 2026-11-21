@@ -1,11 +1,13 @@
 /**
  * @fileoverview Results › Responses (UX §10.4): the responses under the filters, newest first, 50 at a time with Load
  * more; each row's time, a summary of its answers, Test on a test response, its language, ending and hidden values,
- * and › to open it in the side sheet (`/results/responses/<id>`, so Back closes it). Below md each response is a card
+ * and › to open it in the side sheet (`/results/responses/<id>`, so Back closes it; an id past the loaded pages, a
+ * Report quote's, reads on until it is found). Below md each response is a card
  * (time · ending · language, then its first answers): the 40rem table pushed a 390 px page to 649 px (WCAG 1.4.10).
  *
  * @module pages/FeedbackForms/results/ResponsesTable
  */
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { ChevronRight, FlaskConical, Inbox } from 'lucide-react'
@@ -88,6 +90,22 @@ function ResponseCard({ form, response, onOpen }: Readonly<{ form: FormV2; respo
   )
 }
 
+/**
+ * Reads the next pages while the response open in the sheet is past the loaded ones (a Report theme's quote opens its
+ * response wherever it is, 7.66.00), until it is found or no page is left.
+ */
+function usePageUntilOpen(rows: readonly FormResponse[] | undefined, openId: string | null, pages: {
+  hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => Promise<unknown>
+}): void {
+  const missing = rows !== undefined && openId !== null && !rows.some((response) => response.response_id === openId)
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages
+  // (the rows read so far are a dependency: a page may land with the other flags as they were)
+  const loaded = rows?.length ?? 0
+  useEffect(() => {
+    if (missing && hasNextPage && !isFetchingNextPage) void fetchNextPage()
+  }, [missing, hasNextPage, isFetchingNextPage, fetchNextPage, loaded])
+}
+
 export default function ResponsesTable({ form, formId, filters, openId, onOpen, onClose }: Readonly<{
   form: FormV2
   formId: string
@@ -104,6 +122,7 @@ export default function ResponsesTable({ form, formId, filters, openId, onOpen, 
     initialPageParam: FIRST_PAGE,
     getNextPageParam: (last) => last.next_cursor,
   })
+  usePageUntilOpen(query.data?.pages.flatMap((page) => page.responses), openId, query)
   if (query.isError && query.data === undefined) return <LoadFailed onRetry={() => { void query.refetch() }} retrying={query.isFetching} />
   if (query.data === undefined) return <p role="status" className="text-sm text-muted">{t('results.loading')}</p>
   const rows = query.data.pages.flatMap((page) => page.responses)

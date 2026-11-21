@@ -26,14 +26,14 @@ const CONTEXT = {
 
 function review(id: string, text: string) {
   return { feedback_id: id, text, verbatim: true, source_platform: 'web', category: 'delivery',
-    sentiment_label: 'negative', date: '2026-11-19', origin: 'cited' };
+    sentiment_label: 'negative', date: '2026-11-19' };
 }
 
 const PACK = {
   personas: [
-    { persona_id: 'pa', evidence: [review('fa1', 'Late again'), review('fa2', 'Slot missed')], fresh_since: '2026-11-18' },
-    { persona_id: 'pb', evidence: [review('fb1', 'Courier rude')], fresh_since: '2026-11-18' },
-    { persona_id: 'pc', evidence: [], fresh_since: '2026-11-18' },
+    { persona_id: 'pa', evidence: [review('fa1', 'Late again'), review('fa2', 'Slot missed')] },
+    { persona_id: 'pb', evidence: [review('fb1', 'Courier rude')] },
+    { persona_id: 'pc', evidence: [] },
   ],
   missing_persona_ids: [],
 };
@@ -249,8 +249,12 @@ describe('a focus group', () => {
     });
     const outcome = await run();
     const ada = systemText(commands[0] as ConverseCommand);
-    expect({ document: ada.includes('Two-hour slots.'), library: ada.includes('[#survey p.2]') })
-      .toStrictEqual({ document: true, library: true });
+    const turn = userText(commands[0] as ConverseCommand);
+    // (7.66.00: the library's passages are data in the persona's turn beside its evidence, never in its system prompt)
+    expect({ document: ada.includes('Two-hour slots.'), inSystem: ada.includes('<library>'),
+      inTurn: turn.includes('<library>') && turn.includes('[#survey p.2]'),
+      afterEvidence: turn.indexOf('<library>') > turn.indexOf('</evidence>') })
+      .toStrictEqual({ document: true, inSystem: false, inTurn: true, afterEvidence: true });
     expect(deps.calls.find(({ call }) => call.path === '/projects/library/context')?.call.body)
       .toMatchObject({ item_ids: [item], native_slots: 0, query: TOPIC });
     expect(outcome.librarySources).toStrictEqual([{ item_id: item, slug: 'survey', title: 'Survey', page: 2 }]);

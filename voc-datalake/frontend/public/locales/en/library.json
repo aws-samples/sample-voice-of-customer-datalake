@@ -29,7 +29,8 @@
     "pending": "Waiting for the file",
     "extracting": "Reading",
     "ready": "Ready",
-    "failed": "Failed"
+    "failed": "Failed",
+    "stale": "Stopped"
   },
   "row": {
     "dated": "Dated {{date}}",

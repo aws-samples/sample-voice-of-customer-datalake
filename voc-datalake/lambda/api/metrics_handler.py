@@ -515,8 +515,8 @@ def _scoped_window_items(
         read = _aggregate_row_read()
     items, is_partial = _scan_window_items(
         days, date_basis, scope=scope, extra=extra or NO_ITEM_FILTERS, slim=slim, read=read)
-    # (the filters leave the VoC app's own micro-feedback out unless the request asks for its tag, as the aggregates
-    # the unfiltered routes read do: shared/item_filters.py)
+    # (the filters leave the VoC app's own micro-feedback out, whatever the request asks, as the aggregates the
+    # unfiltered routes read do: shared/item_filters.py)
     items = (extra or NO_ITEM_FILTERS).filter(items)
     return category_access.filter_items(scope, items), is_partial
 

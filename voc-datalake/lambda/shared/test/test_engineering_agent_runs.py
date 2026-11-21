@@ -280,6 +280,50 @@ def test_a_flow_without_a_budget_or_a_goal_over_its_limit_writes_nothing() -> No
         assert store.list_runs(env.agents, agent['agent_id'], limit=5)[0] == []
 
 
+#: A fine-grained connection whose token expired (7.60.00): a flow that pushes is refused on it.
+EXPIRED = {**ROW, 'connection_kind': 'fine_grained', 'credential_set': True, 'token_expires_at': '2026-11-01'}
+
+
+def _nothing_held(env: Any, agent_id: str) -> list[Any]:
+    """[the agent's runs, its lock, whether issue #7 is claimed]."""
+    agent = store.get_agent(env.agents, agent_id)
+    assert agent is not None
+    return [store.list_runs(env.agents, agent_id, limit=5)[0], agent.get('active_run_id'),
+            store.issue_claimed(env.agents, 'example-org/shop', 7)]
+
+
+def test_an_agents_start_on_an_expired_token_writes_nothing_when_its_flow_pushes() -> None:
+    """Review round 1 of the second gate (7.66.00): a heartbeat trigger or a Run now on an expired fine-grained token
+    is refused before ``start_run``, as POST /agents/engineering/runs is: no run, no lock, no issue claim."""
+    with agents_env() as env:
+        agent, _row = _engineering_agent(env)
+        assert eng_runs.stored_flow(stored_workflow(env.agents, agent['workflow_id'])).pushes is True
+        client = Lambda()
+        with pytest.raises(ConflictError, match='expired'):
+            eng_runs.start_agent_run(env.agents, agent, store.get_workflow(env.agents, agent['workflow_id']), EXPIRED,
+                                     _start(), client=client, function='f', now=NOW)
+        assert client.sent == []
+        assert _nothing_held(env, agent['agent_id']) == [[], None, False]
+
+
+def test_a_start_request_refused_after_the_run_was_written_frees_the_lock_and_the_claim(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The backstop: a refusal of ``start_request`` once the run is written fails it and releases the agent's lock
+    and the issue claim this run wrote (nothing began)."""
+    def refused(_plan: Any) -> dict:
+        raise ConflictError('refused late')
+
+    with agents_env() as env:
+        agent, row = _engineering_agent(env)
+        monkeypatch.setattr(eng_runs, 'start_request', refused)
+        client = Lambda()
+        with pytest.raises(ConflictError, match='refused late'):
+            eng_runs.start_agent_run(env.agents, agent, store.get_workflow(env.agents, agent['workflow_id']), row,
+                                     _start(), client=client, function='f', now=NOW)
+        runs_, lock, claimed = _nothing_held(env, agent['agent_id'])
+        assert [[run['status'] for run in runs_], lock, claimed, client.sent] == [[store.RUN_FAILED], None, False, []]
+
+
 def test_an_unreadable_connection_is_503() -> None:
     class Broken:
         def get_item(self, **_kwargs: Any) -> dict:

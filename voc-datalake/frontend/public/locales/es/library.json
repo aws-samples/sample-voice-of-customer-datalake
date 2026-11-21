@@ -29,7 +29,8 @@
     "pending": "Esperando el archivo",
     "extracting": "Leyendo",
     "ready": "Listo",
-    "failed": "Error"
+    "failed": "Error",
+    "stale": "Detenido"
   },
   "row": {
     "dated": "Fecha: {{date}}",

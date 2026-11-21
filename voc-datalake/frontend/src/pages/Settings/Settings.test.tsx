@@ -226,7 +226,8 @@ describe('needs attention', () => {
       tokenConnection('c-gone', 'partner-org/cli', 0),
     ] })
     mount('/admin/general')
-    expect(await screen.findByRole('link', { name: 'Open GitHub connections' })).toHaveAttribute('href', '/admin/agents#connections')
+    // (7.66.00: where each is replaced, Agents → Connections)
+    expect(await screen.findByRole('link', { name: 'Open GitHub connections' })).toHaveAttribute('href', '/agents/connections')
     expect(screen.getByRole('heading', { name: 'Needs attention' }).closest('[role="status"]'))
       .toHaveTextContent('2 fine-grained tokens expire soon or need replacing')
     expect(screen.getByRole('tab', { name: 'Engineering agents, 2 need attention' })).toBeInTheDocument()

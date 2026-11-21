@@ -62,8 +62,9 @@ For each item the stream Lambda asks the projects API (as you, with your access)
   message's documents stay at 5 or fewer with your own attachments counted first. The file is fetched once over
   HTTPS from a presigned link the projects API signs for 5 minutes (never its bytes through a Lambda answer, which is
   capped at 6 MB), and attached to that message only, named "Library document N" (a file's own name could carry an
-  instruction to the model). The model reads it as it is, tables and charts included;
-- **its best passages** otherwise (a bigger file, a presentation, a fourth document): the 8 passages closest to your
+  instruction to the model). The model reads its text layer as it is, tables included. A scanned PDF has no text
+  layer (its text was read by Amazon Bedrock at the upload), so it is never sent as a file: its passages are;
+- **its best passages** otherwise (a bigger file, a presentation, a scanned PDF, a fourth document): the 8 passages closest to your
   message (at most 12,000 characters together), each with a `[#slug p.N]` marker. A file whose fetch failed is
   searched instead, within what the other items' passages left of those 12,000 characters.
 
@@ -123,7 +124,7 @@ segment (`shared/project_access.py` `NON_PROJECT_SEGMENTS`): no project route an
 | GET | `/projects/library/{id}` | `{item, preview: {text_excerpt, text_parts, original_url}}` |
 | GET | `/projects/library/{id}/text?page=` | One page or part of the extracted text |
 | PUT | `/projects/library/{id}` | Edit `title`, `slug`, `source`, `doc_date`, `tags`, `project_id` with `expected_version` (409 `stale`, 409 `slug_taken`) |
-| DELETE | `/projects/library/{id}` | An admin or the uploader |
+| DELETE | `/projects/library/{id}` | An admin or the uploader; its passages and every version of its files go first, its rows last (a version the bucket refuses to delete is a 503 and the item stays, to delete again) |
 | POST | `/projects/library/context` | `{item_ids?, slugs?, query, native_slots?, budget?}` → `{items, native, passages, missing, pending}`: the stream Lambda's and the MCP server's read, with the caller's access; `native` holds 5-minute presigned GETs, never bytes; `missing` counts the ids the scope does not hold, never naming them |
 
 Refusals: 400 `unsupported_type`, 400 `too_large`, 409 `library_full` (1,000 items a library), 409 `slug_taken`,

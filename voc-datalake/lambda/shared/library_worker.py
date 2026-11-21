@@ -113,12 +113,14 @@ def _fail(table: Any, scope: WorkspaceScope | None, item_id: str, token: str, me
                fields={'error': message[:500], 'updated_at': now_iso()})
 
 
-def _claimed_again(table: Any, scope: WorkspaceScope | None, item_id: str, token: str) -> bool:
-    """Whether another run holds the item now (a retry's claim: another token), rather than the item being gone or
-    deleted (a delete revokes the claim first: shared/library_store.py ``revoke_claim``)."""
+def _still_claimed(table: Any, scope: WorkspaceScope | None, item_id: str) -> bool:
+    """Whether a claim still holds the item after this run's ready write was refused: another run's (a retry's
+    token), or this run's own token on an item already ready (a duplicate delivery of the same event, overlapping this
+    one, finished first: 7.66.00). Either keeps the passages and the text; only an item gone, or one whose claim a
+    delete revoked (no token: shared/library_store.py ``revoke_claim``), drops them."""
     current = get_item(table, scope, item_id, consistent=True)
-    other = current.get('extract_token') if current is not None else None
-    return isinstance(other, str) and bool(other) and other != token
+    held = current.get('extract_token') if current is not None else None
+    return isinstance(held, str) and bool(held)
 
 
 def _drop_output(table: Any, scope: WorkspaceScope | None, objects: LibraryObjects, item_id: str) -> None:
@@ -159,8 +161,8 @@ def _extract_item(table: Any, scope: WorkspaceScope | None, item: Mapping[str, A
     if set_status(table, scope, item_id, 'ready', when=('extracting',), token=token, fields=fields,
                   remove=('error',)):
         return
-    if _claimed_again(table, scope, item_id, token):
-        logger.info('A library extraction was claimed again: its new run keeps the passages and the text')
+    if _still_claimed(table, scope, item_id):
+        logger.info('A library extraction was claimed again or done already: the item keeps the passages and text')
         return
     _drop_output(table, scope, objects, item_id)
 

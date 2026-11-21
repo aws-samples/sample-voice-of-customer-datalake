@@ -1153,9 +1153,6 @@
     "modelsDescription": "Środowisko, w którym każda rola działa w tym wdrożeniu, i model, którego używa. Zmienia się go na karcie roli w Rejestrze; obowiązuje od następnego uruchomienia.",
     "modelsUnread": "Nie udało się odczytać modeli ról.",
     "connectionsDescription": "Skąd agenci inżynieryjni biorą repozytoria, ile kosztują i kroki przed pierwszym uruchomieniem.",
-    "tokensTitle": "Tokeny fine-grained do wymiany",
-    "tokensHint": "Wymień każdy w Orkiestracja agentów › Połączenia: uruchomienie z wygasłym tokenem jest odrzucane przy starcie.",
-    "tokenUnusable": "Nieustawiony albo data wygaśnięcia nie jest znana",
     "links": {
       "connections": "Orkiestracja agentów › Połączenia",
       "connectionsHint": "Połącz GitHub i wybierz repozytoria, nad którymi pracują agenci: przez aplikację, tokenem fine-grained lub przez fork",

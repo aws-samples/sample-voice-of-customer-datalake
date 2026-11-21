@@ -471,6 +471,21 @@ class TestThePublicConfig:
             assert line in page
 
 
+    @pytest.mark.parametrize(('title', 'shown'), [
+        ('{{event|the workshop}}', 'the workshop'),
+        ('Jak było na {{event}}?', 'Jak było na?'),
+        ('Dzięki {{name}}, {{company}}!', 'Dzięki!'),
+        ('{{event}}', 'Feedback Form'),
+    ])
+    def test_the_iframe_page_s_title_shows_a_placeholder_as_a_respondent_with_no_value_sees_it(
+            self, lambda_context, title, shown):
+        # (review round 1 of the second gate, 7.66.00: its fallback or nothing, tidied; never the braces, never a value)
+        form = _create(lambda_context, {**V2_FORM, 'welcome': {'enabled': True, 'title': {'pl': title}},
+                                        'hidden_fields': [{'id': 'event'}, {'id': 'name'}, {'id': 'company'}]})
+        page = _call(lambda_context, 'GET', f"/feedback-forms/{form['form_id']}/iframe", claims={}, raw=True)[1]['body']
+        assert f'<title>{shown}</title>' in page
+
+
 # ── The submit ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.usefixtures('world')

@@ -208,6 +208,24 @@ def custom_ids_for(surface: str) -> frozenset[str]:
     return frozenset(model.id for model in custom_models() if model.serves(surface))
 
 
-def picker_rows() -> list[dict[str, Any]]:
-    """``GET /settings/model``'s ``custom_models``."""
-    return [model.picker_row() for model in custom_models()]
+def picker_rows(*, admin: bool = True) -> list[dict[str, Any]]:
+    """``GET /settings/model``'s ``custom_models``: whole for an administrator; to anyone else an imported model is its
+    ``key`` and ``label`` only (7.66.00: its id is an ARN naming the account, the Region and the imported model)."""
+    return [model.picker_row() if admin or model.source != 'imported' else {'key': model.key, 'label': model.label}
+            for model in custom_models()]
+
+
+def shown_id(model_id: str | None, *, admin: bool) -> str | None:
+    """``model_id`` as a reader is shown it: an imported model's ``key`` to anyone but an administrator (its ARN stays
+    the server's), any other id as it is."""
+    custom = custom_model(model_id) if isinstance(model_id, str) else None
+    return custom.key if custom is not None and custom.source == 'imported' and not admin else model_id
+
+
+def by_key_or_id(value: object) -> str | None:
+    """The id of the custom model ``value`` names by its ``key`` (an imported model's, as a reader is shown it),
+    else ``value`` itself: the server resolves a key to its ARN (7.66.00)."""
+    if not isinstance(value, str):
+        return None
+    found = next((model for model in custom_models() if model.key == value), None)
+    return found.id if found is not None else value

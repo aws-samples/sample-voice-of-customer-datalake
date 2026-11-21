@@ -103,32 +103,20 @@ describe('executeSearchFeedback', () => {
     expect(result.items.map((item) => item.feedback_id)).toStrictEqual(['hit123']);
   });
 
-  it('leaves the VoC app\'s own micro-feedback out unless the search asks for its tag (7.66.00)', async () => {
+  it('leaves the VoC app\'s own micro-feedback out, whatever the search or the on-screen floor asks (7.66.00)', async () => {
     const items = [
       makeFeedbackItem({ feedback_id: 'cust123', tags: ['beta'] }),
       makeFeedbackItem({ feedback_id: 'app123', tags: ['voc_app'] }),
-      makeFeedbackItem({ feedback_id: 'spaced123', tags: [' VOC_APP '] }),
-    ];
-
-    const plain = await runSearch(createMockDocClient([items]), {}, { days: 7 });
-    const asked = await runSearch(createMockDocClient([items]), { tag: 'Voc_App' }, { days: 7 });
-
-    expect([plain.items.map((item) => item.feedback_id), asked.items.map((item) => item.feedback_id ?? '').sort((a, b) => a.localeCompare(b))])
-      .toStrictEqual([['cust123'], ['app123', 'spaced123']]);
-  });
-
-  it('reads the micro-feedback when the user\'s on-screen floor is its tag, as for the search\'s own tag (7.66.00)', async () => {
-    const items = [
-      makeFeedbackItem({ feedback_id: 'cust123', tags: ['beta'] }),
-      makeFeedbackItem({ feedback_id: 'app123', tags: ['voc_app'] }),
+      makeFeedbackItem({ feedback_id: 'spaced123', tags: [' VOC_APP ', 'beta'] }),
     ];
     const floor = { ...NO_FLOOR, lists: { tag: ['VOC_APP'] } };
 
+    const plain = await runSearch(createMockDocClient([items]), {}, { days: 7 });
+    const asked = await runSearch(createMockDocClient([items]), { tag: 'Voc_App' }, { days: 7 });
     const onScreen = await runSearch(createMockDocClient([items]), {}, { days: 7, floor });
-    const otherTag = await runSearch(createMockDocClient([items]), {}, { days: 7, floor: { ...NO_FLOOR, lists: { tag: ['beta'] } } });
 
-    expect([onScreen.items.map((item) => item.feedback_id), otherTag.items.map((item) => item.feedback_id)])
-      .toStrictEqual([['app123'], ['cust123']]);
+    expect([plain, asked, onScreen].map((result) => result.items.map((item) => item.feedback_id)))
+      .toStrictEqual([['cust123'], [], []]);
   });
 
   it('applies sentiment filter from tool input', async () => {

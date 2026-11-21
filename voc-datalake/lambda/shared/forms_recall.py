@@ -18,7 +18,8 @@ one): a recall text's placeholder that names nothing (``recall_unknown``), a que
 (``recall_not_before``) or one whose answer is never recalled (``recall_type``), and any placeholder in a text where
 recall never works.
 ``shown_as_ids`` is how the server shows a text with placeholders to a reader of its results (a CSV header, an item's
-text): ``[id]``, never a respondent's value.
+text): ``[id]``, never a respondent's value. ``shown_without_values`` is how a respondent with no value sees one, the
+widget's rules for a missing value (the cases' ``render`` with no values): the iframe page's ``<title>`` (7.66.00).
 
 Pure: no AWS client, no I/O.
 """
@@ -29,7 +30,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-__all__ = ['PLACEHOLDER', 'shown_as_ids', 'unresolved_placeholders']
+__all__ = ['PLACEHOLDER', 'shown_as_ids', 'shown_without_values', 'unresolved_placeholders']
 
 #: ``{{`` and ``}}`` around a text without braces: one placeholder (``{{{x}}}`` holds ``{{x}}`` and two loose braces).
 PLACEHOLDER: Final = re.compile(r'\{\{([^{}]*)\}\}')
@@ -77,6 +78,67 @@ def shown_as_ids(text: str) -> str:
     return PLACEHOLDER.sub(lambda match: f"[{match.group(1).partition('|')[0].strip()}]", text)
 
 
+#: The widget's rules for a text whose placeholder left nothing (lambda/api/static/feedback-widget.js ``tidyGaps``,
+#: pinned by the cases' ``render``): a noncharacter stands for the gap while the text is tidied.
+_GAP: Final = '\uffff'
+_SPACE: Final = '[ \u00a0]*'
+_SEPARATORS: Final = '[,;:\u3001\uff0c]'   # (the ideographic and the fullwidth comma too)
+_TERMINALS: Final = '[.!?\u2026\u3002\uff01\uff1f]'   # (the ellipsis, the ideographic full stop, the fullwidth ! and ?)
+
+
+def _gap_rule(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern.replace('G', _GAP))
+
+
+#: In this order: a gap at a line's start; before closing punctuation (with the separator before it); before a
+#: separator or a closing bracket; at a line's end or the text's end (with its separator); between words (one space);
+#: anything left.
+_GAP_RULES: Final = (
+    (_gap_rule('\n' + _SPACE + 'G' + _SPACE), '\n'),
+    (_gap_rule(_SEPARATORS + '?' + _SPACE + 'G' + _SPACE + '(?=' + _TERMINALS + ')'), ''),
+    (_gap_rule(_SPACE + 'G' + _SPACE + '(?=' + _SEPARATORS + '|[)\\]])'), ''),
+    (_gap_rule(_SEPARATORS + '?' + _SPACE + 'G' + _SPACE + '(?=\n|\\Z)'), ''),
+    (_gap_rule('[ \u00a0]+G[ \u00a0]*|[ \u00a0]*G[ \u00a0]+'), ' '),
+    (_gap_rule('G'), ''),
+)
+_GAP_RUNS: Final = _gap_rule('G(?:' + _SPACE + _SEPARATORS + '?' + _SPACE + 'G)+')
+_GAP_BRACKETS: Final = _gap_rule('[([]' + _SPACE + 'G' + _SPACE + '[)\\]]')
+_GAP_START: Final = _gap_rule('\\A' + _SPACE + 'G' + _SPACE + '(' + _SEPARATORS + _SPACE + ')?')
+
+
+def _tidied(gapped: str) -> str:
+    """The widget's ``tidyGaps``: no doubled space, no space or separator before closing punctuation, no empty
+    brackets, no separator at either end; a text that lost a leading separator starts with a capital."""
+    text = _GAP_BRACKETS.sub(_GAP, _GAP_RUNS.sub(_GAP, gapped))
+    start = _GAP_START.match(text)
+    if start:
+        text = text[start.end():]
+        if start.group(1) is not None:
+            text = text[:1].upper() + text[1:]
+    for rule, replacement in _GAP_RULES:
+        text = rule.sub(replacement, text)
+    return text
+
+
+def shown_without_values(text: str) -> str:
+    """``text`` as a respondent with no value sees it (the widget's ``recallText`` with neither a hidden value nor an
+    answer): each placeholder its fallback, else nothing, the text tidied around the gaps."""
+    if '{{' not in text:
+        return text
+    gaps = 0
+
+    def filled(match: re.Match[str]) -> str:
+        nonlocal gaps
+        _key, bar, fallback = match.group(1).partition('|')
+        if bar and fallback.strip():
+            return fallback.strip()
+        gaps += 1
+        return _GAP
+
+    text = PLACEHOLDER.sub(filled, text.replace(_GAP, ''))
+    return _tidied(text) if gaps else text
+
+
 def _texts(value: object) -> Iterator[tuple[str, str]]:
     """An I18nText's ``(locale, text)`` pairs (none for anything else)."""
     if isinstance(value, Mapping):
@@ -85,11 +147,18 @@ def _texts(value: object) -> Iterator[tuple[str, str]]:
                 yield str(locale), text
 
 
+def _shown(part: object) -> bool:
+    """Whether a part that can be switched off (the welcome, a choice's Other or None row) is on: one that is off is
+    never shown, so its texts never block a publish (7.66.00)."""
+    return isinstance(part, Mapping) and part.get('enabled') is True
+
+
 def recall_texts(definition: Mapping[str, Any]) -> Iterator[tuple[str, int, Mapping[str, Any]]]:
-    """Each recall text: ``(where, before, i18n)``, ``before`` the number of questions placed before it."""
+    """Each recall text respondents can be shown: ``(where, before, i18n)``, ``before`` the number of questions placed
+    before it (a welcome that is off has none)."""
     questions = [q for q in definition.get('questions') or [] if isinstance(q, Mapping)]
     welcome = definition.get('welcome')
-    if isinstance(welcome, Mapping):
+    if isinstance(welcome, Mapping) and _shown(welcome):
         for key in _WELCOME_RECALL:
             yield f'welcome.{key}', 0, welcome.get(key) or {}
     for index, question in enumerate(questions):
@@ -102,13 +171,13 @@ def recall_texts(definition: Mapping[str, Any]) -> Iterator[tuple[str, int, Mapp
 
 
 def _question_other_texts(at: str, question: Mapping[str, Any]) -> Iterator[tuple[str, object]]:
-    """A question's texts where recall never works: its button, labels and placeholders, the Other and None rows, its
-    options, rows and columns, and its call to action."""
+    """A question's texts where recall never works: its button, labels and placeholders, the Other and None rows (when
+    on), its options, rows and columns, and its call to action."""
     for key in _QUESTION_OTHER:
         yield f'{at}.{key}', question.get(key)
     for toggle in ('other', 'none'):
         row = question.get(toggle)
-        if isinstance(row, Mapping):
+        if isinstance(row, Mapping) and _shown(row):
             yield f'{at}.{toggle}.label', row.get('label')
             yield f'{at}.{toggle}.placeholder', row.get('placeholder')
     for listed in _LISTS:
@@ -124,7 +193,7 @@ def _question_other_texts(at: str, question: Mapping[str, Any]) -> Iterator[tupl
 def _other_texts(definition: Mapping[str, Any]) -> Iterator[tuple[str, object]]:
     """Every other text respondents can be shown (``(where, I18nText or address)``): never a recall text."""
     welcome = definition.get('welcome')
-    if isinstance(welcome, Mapping):
+    if isinstance(welcome, Mapping) and _shown(welcome):
         yield 'welcome.button_label', welcome.get('button_label')
     for index, question in enumerate(definition.get('questions') or []):
         if isinstance(question, Mapping):

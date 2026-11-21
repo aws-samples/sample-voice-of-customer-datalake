@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from unittest.mock import patch
@@ -29,7 +29,6 @@ from engineering.connectors import fine_grained, public_repos
 from engineering.connectors.connections import LOG_PREFIX, PARTITION, ROW_PREFIX
 from engineering.connectors.test.test_fine_grained import FakeGitHub, answer, repository
 from engineering.connectors.transport import Response
-from engineering.connectors.upstream import RepositoryFacts
 from engineering.runtime.runs import RunCaps, RunStore
 from shared import agents_engineering_token_routes as token_routes
 from shared import engineering_agent_runs as eng_runs
@@ -243,6 +242,25 @@ def test_the_token_is_replaced_by_its_owner_even_while_a_run_is_live_by_another_
     assert (status, 'alice' in refused['error']) == (409, True)
 
 
+def test_a_replaced_token_reads_through_the_installation_github_was_connected_again_with(lambda_context: Any,
+                                                                                          env: Env) -> None:
+    """Review round 1 of the second gate (7.66.00): readiness says to connect GitHub again, then replace the token;
+    the replace anchors again among the other connections, so the token reads through the new installation."""
+    env.anchor()
+    connect(lambda_context)
+
+    def row() -> dict:
+        return env.agents.get_item(Key={'pk': PARTITION, 'sk': f'{ROW_PREFIX}lint-kit'})['Item']
+
+    assert row()['installation_id'] == '7890123'
+    env.agents.update_item(Key={'pk': PARTITION, 'sk': f'{ROW_PREFIX}billing'},
+                           UpdateExpression='SET installation_id = :new',
+                           ExpressionAttributeValues={':new': '7890999'})   # (GitHub connected again)
+    status, _ = _call(lambda_context, 'PUT', f'{CONNECTIONS}/lint-kit/token',
+                      body={'token': PAT[:-1] + 'r', 'only_this_repository': True})
+    assert (status, row()['installation_id'], row()['app_id']) == (200, '7890999', '123456')
+
+
 @pytest.mark.parametrize(('path', 'status'), [(f'{CONNECTIONS}/billing/token', 409), (f'{CONNECTIONS}/nobody/token', 404),
                                               (f'{CONNECTIONS}/Not_An_Id/token', 400)])
 def test_a_replace_of_another_kind_or_of_none_is_refused(lambda_context: Any, env: Env, path: str, status: int) -> None:
@@ -325,15 +343,6 @@ def test_a_start_warns_three_days_or_fewer_before_the_expiry(expires: str, warne
     assert warning is None if warned is None else warned in (warning or '')
     assert eng_runs.token_warning({'repository': REPOSITORY}, date(2026, 11, 20), pushes=True) is None
     assert eng_runs.token_warning(token_row('2026-11-21'), date(2026, 11, 20), pushes=False) is None
-
-
-def test_the_public_search_hints_the_ways_each_repository_connects() -> None:
-    facts = RepositoryFacts(repository=REPOSITORY, description='', stars=1, licence_spdx='MIT', licence_name='MIT',
-                            archived=False, private=False, fork=False, parent='', pushed_at='', default_branch='main',
-                            html_url='')
-    assert public_repos.ways_of(facts) == {'app': True, 'token': True, 'fork': True}
-    assert public_repos.ways_of(replace(facts, licence_spdx='')) == {'app': True, 'token': True, 'fork': False}
-    assert public_repos.ways_of(replace(facts, archived=True)) == {'app': False, 'token': False, 'fork': False}
 
 
 def test_a_token_connection_s_installation_anchors_the_next_read() -> None:

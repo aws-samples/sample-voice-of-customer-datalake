@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from shared import app_feedback as af
-from shared.app_feedback_tag import APP_FEEDBACK_TAG, asks_for_app_feedback, is_app_feedback
+from shared.app_feedback_tag import APP_FEEDBACK_TAG, is_app_feedback
 from shared.exceptions import ValidationError
 
 FIT = {'form_id': 'ff_1', 'name': 'App feedback', 'schema_version': Decimal(2), 'enabled': True, 'language': 'en',
@@ -28,11 +28,6 @@ class TestTag:
                                       {'tags': [7, None]}, {'tags': ['voc_apps']}])
     def test_anything_else_is_not(self, item):
         assert is_app_feedback(item) is False
-
-    @pytest.mark.parametrize(('value', 'asks'), [('voc_app', True), (' VOC_APP ', True), ('voc', False),
-                                                 (None, False), (7, False)])
-    def test_only_a_filter_on_the_tag_asks_for_it(self, value, asks):
-        assert asks_for_app_feedback(value) is asks
 
     def test_the_tag(self):
         assert APP_FEEDBACK_TAG == 'voc_app'

@@ -30,6 +30,9 @@ const MAX_SUGGESTIONS = 8;
 const READING_MS = 2500;
 // = lambda/shared/library_store.py STALE_EXTRACTION_SECONDS: an extraction this old reads `stale` and can be retried.
 const STALE_EXTRACTION_MS = 16 * 60 * 1000;
+// = lambda/shared/library_store.py STALE_UPLOAD_SECONDS: a pending item this old (its PUT's link lasts 15 minutes) gets
+// no file: it reads `stale` too, and is no longer polled (7.66.00).
+const STALE_UPLOAD_MS = 16 * 60 * 1000;
 const PAGE_BREAK = '\f';
 const PART_CHARS = 20_000;
 const SORTS = ['newest', 'oldest', 'title', 'doc_date'];
@@ -67,9 +70,10 @@ const PUBLIC_FIELDS = [
   'status', 'error', 'extracted_chars', 'pages', 'chunks', 'native', 'truncated', 'method', 'created_by', 'created_at',
   'updated_by', 'updated_at', 'version',
 ];
-/** library_store.py extraction_is_over: extracting since 16 minutes or more. */
-const isStale = (item) => item.status === 'extracting' && item.extract_started_at !== undefined
-  && Date.now() - Date.parse(item.extract_started_at) >= STALE_EXTRACTION_MS;
+/** library_store.py extraction_is_over (extracting since 16 minutes or more) or upload_is_over (pending as long). */
+const isStale = (item) => (item.status === 'extracting' && item.extract_started_at !== undefined
+  && Date.now() - Date.parse(item.extract_started_at) >= STALE_EXTRACTION_MS)
+  || (item.status === 'pending' && item.created_at !== undefined && Date.now() - Date.parse(item.created_at) >= STALE_UPLOAD_MS);
 function publicView(item) {
   const view = Object.fromEntries(PUBLIC_FIELDS.filter((field) => item[field] !== undefined).map((field) => [field, item[field]]));
   return { ...view, tags: [...item.tags], ...(isStale(item) ? { stale: true } : {}) };

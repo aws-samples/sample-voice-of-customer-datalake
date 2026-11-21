@@ -28,7 +28,8 @@ function Found({ repository, onPick }: Readonly<{ repository: PublicRepository; 
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 py-1.5">
       <span className="min-w-0 font-mono text-[12px] text-text-strong break-all">{repository.repository}</span>
-      {repository.ways.token ? (
+      {/* (a fine-grained token pushes to any public repository the search finds but an archived one) */}
+      {!repository.archived ? (
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => { onPick(repository.repository) }}>
           {t('connections.token.repository.use', { repository: repository.repository })}
         </button>

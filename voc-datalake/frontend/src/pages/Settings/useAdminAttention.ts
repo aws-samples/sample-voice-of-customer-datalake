@@ -22,17 +22,18 @@ import { sourcesStatusKey, usersKey } from '../../api/queryKeys'
 import { readStoredAiMode } from '../../api/aiModeApi'
 import { getEnabledPlugins } from '../../plugins'
 import { usePluginCopy } from '../../plugins/pluginCopy'
+import { agentsPath } from '../Agents/agentsPaths'
 import { tokensToReplace } from '../Agents/connectionStatus'
-import type { AdminTarget } from './adminPaths'
+import { adminPath } from './adminPaths'
 import type { AdminTabId, AdminViewer } from './adminTabs'
 import { isBlockedAccess, useModelCapacity } from './useModelCapacity'
 
-/** One thing that needs attention: what to say, the action's label and where it is. */
+/** One thing that needs attention: what to say, the action's label and the path where it is done. */
 interface AttentionItem {
   readonly key: 'sources' | 'ways' | 'models' | 'tokens'
   readonly text: string
   readonly action: string
-  readonly target: AdminTarget
+  readonly to: string
 }
 
 export interface AdminAttention {
@@ -81,13 +82,14 @@ export function useAdminAttention(viewer: Pick<AdminViewer, 'isAdmin' | 'agentsS
   const list = paused.map((plugin) => copy(plugin).name).join(', ')
   const candidates: readonly (AttentionItem & { readonly tab: AdminTabId; readonly count: number })[] = [
     { tab: 'sources', count: paused.length, key: 'sources', text: t('attention.sourcesPaused', { count: paused.length, list }),
-      action: t('attention.reviewSources'), target: { tab: 'sources', section: 'plugins' } },
+      action: t('attention.reviewSources'), to: adminPath({ tab: 'sources', section: 'plugins' }) },
     { tab: 'access', count: waysUnset, key: 'ways', text: t('attention.waysUnset', { count: waysUnset }),
-      action: t('attention.openUsers'), target: { tab: 'access', section: 'users' } },
+      action: t('attention.openUsers'), to: adminPath({ tab: 'access', section: 'users' }) },
     { tab: 'ai', count: modelsBlocked, key: 'models', text: t('attention.modelsBlocked', { count: modelsBlocked }),
-      action: t('attention.openModels'), target: { tab: 'ai' } },
+      action: t('attention.openModels'), to: adminPath({ tab: 'ai' }) },
     { tab: 'agents', count: tokens, key: 'tokens', text: t('attention.tokensToReplace', { count: tokens }),
-      action: t('attention.openConnections'), target: { tab: 'agents', card: 'connections' } },
+      // (7.66.00: where a token is replaced, Agents → Connections)
+      action: t('attention.openConnections'), to: agentsPath({ view: 'connections' }) },
   ]
   const shown = candidates.filter((candidate) => candidate.count > 0)
   const counts = new Map(shown.map((candidate) => [candidate.tab, candidate.count]))

@@ -289,7 +289,8 @@ shows it through the widget's own preview (since 7.63.00: no second copy of the 
   nothing: the widget then tidies the text around the gap (no doubled space, no space or comma left before `?`, `!`,
   `.`, no empty brackets, no separator at either end; gaps side by side or split only by a separator are one gap), so
   "How was {{event}}?" reads "How was?", "Thanks, {{name}}!" reads "Thanks!" and "Thanks {{name}}, {{company}}!"
-  reads "Thanks!".
+  reads "Thanks!". The iframe page's title (the browser tab) is the welcome title as a respondent with no value sees
+  it (7.66.00: the server knows no link's values), so "{{event|the workshop}}" is "the workshop".
 - **Safe.** Values go in as text, never as markup, and an id is looked up only among the form's own fields (`{{constructor}}`
   is an unknown id: nothing). `__proto__`, `constructor` and `prototype` stay reserved for hidden fields.
 - **Publishing is the one rule** (since 7.63.00: a draft's save is never refused for a placeholder, so it keeps one
@@ -297,7 +298,8 @@ shows it through the widget's own preview (since 7.63.00: no second copy of the 
   form) answers **`409` `unresolved_placeholder`** `{texts: [{where, placeholder}]}` (at most 20) when any text
   respondents can be shown holds a `{{…}}` they would see as written: a recall text's placeholder that names no hidden
   field and no question, a question at or after the text, or a question whose answer is never recalled; or any
-  placeholder where recall never works. Turning a form Off always works. So a live form saved before 7.61.00 with such
+  placeholder where recall never works. A welcome, an Other row or a None row that is off is never shown, so its
+  texts block nothing (7.66.00, the server and the builder alike: `publish` in `schemas/form-recall-cases.json`). Turning a form Off always works. So a live form saved before 7.61.00 with such
   a text keeps serving (the widget shows an unknown placeholder as nothing) but cannot be re-enabled, or saved live,
   until it is fixed. The builder's Problems list shows the same texts and Publish (and Update live form) waits for
   them; Save never does.
@@ -1235,8 +1237,9 @@ never compared with a 10-point one, nor a matrix scored 1–4 with one scored 0�
 'different'}`); `points` are `{form_id, value, responses, first_response_at, last_response_at, scores, merged?,
 withheld?}`, one per form (or per value of `by`, ascending, the smaller ones merged, and the smallest named one withheld
 with a withheld merged one, as [segments](#segments) are), each scored against its own form's revisions and `null`
-under 5 responses. The page lists the workspace's forms with the template's siblings first, and its Split by waits
-for one. Comparisons across workspaces, emailed schedules and significance tests are out of scope.
+under 5 responses. Each brand's feedback partition is read once for every compared form of it (one query with
+their channels, then split by form, 7.66.00). The page lists the workspace's forms with the template's siblings first,
+and its Split by waits for one. Comparisons across workspaces, emailed schedules and significance tests are out of scope.
 
 ### The AI summary
 

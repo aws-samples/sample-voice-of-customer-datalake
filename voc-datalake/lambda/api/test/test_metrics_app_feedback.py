@@ -1,6 +1,6 @@
 """The metric and list routes leave the VoC app's own micro-feedback out (an item tagged ``voc_app``, 7.66.00,
-shared/item_filters.py), as the aggregates the unfiltered routes read do; a filter on the tag itself reads it, in the
-metrics, the Feedback list and search (moto)."""
+shared/item_filters.py), as the aggregates the unfiltered routes read do; not even a filter on the tag itself reads it
+(the form's own Results, Report and CSV, the Data Explorer and a review opened by its id do) (moto)."""
 from __future__ import annotations
 
 from contextlib import ExitStack
@@ -62,21 +62,22 @@ def test_a_filtered_metric_leaves_the_app_feedback_out(get):
     assert tagged['total_feedback'] == 1
 
 
-def test_a_filter_on_its_tag_counts_it(get):
+def test_not_even_a_filter_on_its_tag_counts_it(get):
+    # (review round 1 of the second gate, 7.66.00: no way back in through the metrics: the form's own Results,
+    # Report and CSV, the Data Explorer and a review opened by its id are the ways to see it)
     _, summary = get('/metrics/summary', tag='voc_app')
     _, sources = get('/metrics/sources', tag='VOC_APP')
-    assert summary['total_feedback'] == 2
-    assert sources['sources'] == {'feedback_form': 2}
+    assert summary['total_feedback'] == 0
+    assert sources['sources'] == {}
 
 
-def test_the_feedback_list_and_search_leave_it_out_unless_asked_by_tag(get):
+def test_the_feedback_list_and_search_leave_it_out_whatever_they_ask(get):
     _, listed = get('/feedback', source='feedback_form')
     _, tagged = get('/feedback', tag='voc_app')
     _, searched = get('/feedback/search', q='Problem')
     _, asked = get('/feedback/search', q='Problem', tag='voc_app')
-    assert [listed['items'], sorted(item['feedback_id'] for item in tagged['items'])] == [[], ['f1', 'f2']]
-    assert [sorted(item['feedback_id'] for item in searched['items']),
-            sorted(item['feedback_id'] for item in asked['items'])] == [['w1', 'w2'], ['f1', 'f2']]
+    assert [listed['items'], tagged['items']] == [[], []]
+    assert [sorted(item['feedback_id'] for item in searched['items']), asked['items']] == [['w1', 'w2'], []]
 
 
 def test_the_similar_reviews_leave_it_out(get):

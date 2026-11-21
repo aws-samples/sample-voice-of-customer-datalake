@@ -515,7 +515,8 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
     for an issue, its claim, in one transaction), then voc-engineering-start. A start refused or known not written
     fails the run (the claim stays: an issue starts one run, ever); one written, or that may have been, is ``running``
     until the heartbeat reads its engineering run's end. ``ValidationError`` / ``ConflictError`` before anything is
-    written: a flow off its rule or without a monthly budget, a goal over its limit."""
+    written: a flow off its rule or without a monthly budget, a goal over its limit, a connection not stored, an
+    expired or unset fine-grained token when the flow pushes."""
     from shared import agents_store as store
 
     flow = stored_flow(workflow, revision_reader(table))
@@ -537,6 +538,9 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
         fields['feedback_count'] = start.feedback.count
     if flow.expansion:   # (7.52.00: the calls its flow expanded, as the run's copy of it records them)
         fields['expansion'] = [dict(call) for call in flow.expansion]
+    # The connection's refusals before anything is written, as POST /agents/engineering/runs refuses them (7.66.00):
+    # a connection not stored (400), an expired or unset fine-grained token of a flow that pushes (409).
+    run_connection(connection, None if start.issue is None else start.issue.number, pushes=flow.pushes)
     request = store.RunStart(
         trigger=start.trigger, requested_by=start.requested_by, workflow_revision=flow.revision,
         trigger_detail=start.trigger_detail, counts_against_daily_cap=start.counts_against_daily_cap,
@@ -553,7 +557,16 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
                      issue=None if start.issue is None else start.issue.number, feedback=start.feedback,
                      prd=start.prd, via={'agent_id': agent['agent_id'], 'agent_run_id': run_id, 'trigger': start.trigger},
                      model_choice=start.model_choice)
-    answer = invoke_start(client, function, start_request(plan))
+    try:
+        payload = start_request(plan)
+    except (ConflictError, ValidationError) as refused:
+        # (a backstop: the checks above refuse first) the run fails, its lock is freed and, when this run wrote the
+        # issue's claim, the claim goes too: nothing began, so the issue may start a run again
+        store.finish_run(table, agent['agent_id'], run_id, store.RUN_FAILED, now=now, error=str(refused))
+        if claim is not None:
+            store.release_issue_claim(table, claim)
+        raise
+    answer = invoke_start(client, function, payload)
     if answer.outcome in ('started', 'uncertain'):
         store.mark_engineering_running(table, agent['agent_id'], run_id)
         store.append_event(table, agent['agent_id'], run_id, 'decision',

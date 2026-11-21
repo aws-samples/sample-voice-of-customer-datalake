@@ -56,9 +56,8 @@ class TestTheGeneratorsSharedRead:
     def test_the_document_generators_read_leaves_it_out(self):
         assert _ids(query_feedback_by_date(_table([CUSTOMER, APP]), days=7, limit=10)) == ['c1']
 
-    def test_asked_by_its_tag_it_is_read(self):
-        assert _ids(get_feedback_context(_table([CUSTOMER, APP, APP_SPACED]), {'days': 7, 'tag': 'voc_app'})) == [
-            'app1', 'app2']
+    def test_not_even_its_tag_reads_it(self):
+        assert _ids(get_feedback_context(_table([CUSTOMER, APP, APP_SPACED]), {'days': 7, 'tag': 'voc_app'})) == []
 
     def test_a_window_of_micro_feedback_only_has_nothing_to_generate_from(self):
         assert feedback_context_exists(_table([APP]), {'days': 7}) is False

@@ -13,9 +13,8 @@ import { formatCalendarDay } from '../../utils/dateUtils'
 import { tokenState } from './tokenConnectionRules'
 import type { EngineeringConnection } from '../../api/engineeringConnectionsApi'
 
-/** The chip of a token within its warning (a warn) or past its expiry (a danger); nothing otherwise (also on
- *  Administration → Engineering agents, which lists the tokens to replace). */
-export function TokenExpiryBadge({ daysLeft }: Readonly<{ daysLeft: number | null }>) {
+/** The chip of a token within its warning (a warn) or past its expiry (a danger); nothing otherwise. */
+function TokenExpiryBadge({ daysLeft }: Readonly<{ daysLeft: number | null }>) {
   const { t } = useTranslation('agents')
   const state = tokenState(daysLeft)
   if (state === 'soon') {

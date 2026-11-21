@@ -86,25 +86,27 @@ customer metric and never stand as a customer's evidence:
   no score to the sentiment average; it keeps only its day's sentinel (a field of the daily total's row that no
   reader sums), so a later edit on a day of micro-feedback alone still finds the day. A workspace export's counts
   check adds that field to the day's `count`, since the export holds these items like any review.
-- **Every read through the shared item filters** (`lambda/shared/item_filters.py`, whose default leaves these items
-  out): the metric routes (filtered dashboards, categories, sentiment, sources, personas, dimensions, data quality,
-  entities, problems, GitHub, release watch), the Feedback list and search (the REST routes, MCP `feedback_search`
-  and the assistant's `search_feedback` tool, `lambda/stream/src/tools/search-feedback.ts`), and the urgent list
-  (once a scope chose an in-app feedback form its pages are read in full, because the urgency index holds no tags
-  and its count would include these items).
+- **Every read through the shared item filters** (`lambda/shared/item_filters.py`, which refuse these items whatever
+  a request asks): the metric routes (filtered dashboards, categories, sentiment, sources, personas, dimensions, data
+  quality, entities and its issue sample, problems, GitHub, release watch), the Feedback list and search (the REST
+  routes, the Data Explorer's processed view, MCP `feedback_search` and the assistant's `search_feedback` tool,
+  `lambda/stream/src/tools/search-feedback.ts`), a review's similar reviews (`/feedback/{id}/similar`), and the urgent
+  list (once a scope chose an in-app feedback form its pages are read in full, because the urgency index holds no
+  tags and its count would include these items).
 - **Every evidence read**: persona generation and its pre-check, research, PR/FAQ and PRD generation and the
   document merger (`lambda/shared/feedback.py`), the persona focus groups' evidence packs, freshness counts and
   Refresh evidence (`lambda/shared/persona_grounding.py`), Revise from comments' evidence, the morning brief's
   counts, urgent reviews and quotes, the release watch card, and the agents' new-review triggers.
 
-Only a request that asks for the tag (`tag=voc_app`) reads them; that filter is the way to count or list them. The
-form's own Results, Report, responses and CSV show them (they read the form's own source partition), and so do a
-review opened by its id, the Data Explorer, and a workspace's export and delete, which read every item.
+No request reads them through those filters, not even one filtered on the tag (`tag=voc_app` finds nothing). The
+ways to see them read around them: the form's own Results, Report, responses and CSV (the form's own source
+partition), a review opened by its id (its page `/feedback/<id>`, `GET /feedback/{id}`, MCP `feedback_get`), the Data
+Explorer's raw view (the stored objects), and a workspace's export and delete, which read every item.
 
 **The tag is reserved.** Only a form made from the In-app micro-feedback template carries `voc_app`: any other form,
 a scraper's or connector's saved labels and a source profile refuse it (400), a manual tag edit never gives it to a
 review and never takes it from a form's response (a review of any other source tagged `voc_app` before 7.66.00
-reserved it may lose it, and is counted again), and every producer other than a form (a CSV or pasted import, a plugin, a webhook,
+reserved it may lose it on its own page, `/feedback/<id>`, opened by its id, and is counted again), and every producer other than a form (a CSV or pasted import, a plugin, a webhook,
 an inbox) has it dropped from its messages, never refusing the review. So no customer's review is left out of the
 dashboards by a tag.
 

@@ -19,6 +19,7 @@ from shared.model_config import (
     DEFAULT_SURFACE,
     SERVICE_TIERS,
     apply_model_profile,
+    custom_window_room,
     fallback_chain,
     get_active_model_id,
     invocation_model_id,
@@ -775,6 +776,13 @@ def _converse_on_model(
                 empty_budget_raises += 1
                 kwargs, result, stop_reason = retried
                 continue
+            # (7.66.00) A custom model's window: the prompt, the answer so far and the next turn's maxTokens must fit,
+            # else the answer so far is kept, truncated, rather than sent past the window (a 400 that loses it all).
+            sent_chars = len(system_prompt) + len(prompt) + len(result) + len(_CONTINUE_PROMPT)
+            if not custom_window_room(used_model, sent_chars, int(kwargs['inferenceConfig']['maxTokens'])):
+                logger.warning(f"[BEDROCK] Step '{step_name}' stops continuing: the next turn would not fit "
+                               f"{used_model}'s context window ({len(result)} chars kept, truncated)")
+                break
             continuations += 1
             # INFO, not WARNING: continuing is the designed path for long chain steps (per-call
             # ceilings stay modest so each call is fast; see DEFAULT_MAX_CONTINUATIONS). Still

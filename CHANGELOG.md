@@ -22,8 +22,8 @@ the platform package version.
 **Adoption**: role playbooks on Home for Product, Scrum master, QA and Engineering ([playbooks.md](docs/playbooks.md)),
 and in-app micro-feedback after key actions, a thumb up or down and "What's missing?", sent to a normal feedback form
 an administrator chooses, tagged `voc_app` (a reserved tag) and left out of the dashboards and of every evidence
-read, off by default ([micro-feedback.md](docs/micro-feedback.md)). No new route resource: the existing settings proxy and the forms'
-public submit route carry it.
+read, off by default ([micro-feedback.md](docs/micro-feedback.md)). No new route resource: the existing settings proxy
+and the forms' public submit route carry it.
 
 ### Added
 
@@ -32,13 +32,13 @@ public submit route carry it.
   setup checklist's own steps above it, such as asking the assistant or starting a project). Steps tick themselves
   from real activity (the morning brief on, objectives set, a form created, a form's test response, personas or a
   document in one of the person's projects, a shared project, a repository connected, an MCP token) or by hand, and
-  can be unticked. "Ask the assistant to walk me through it" opens
-  a new conversation with the playbook prefilled. A role grants nothing and changes no workspace role; there are no
+  can be unticked. "Ask the assistant to walk me through it" opens a new conversation with the playbook prefilled. A role grants nothing and changes no workspace role; there are no
   badges and nothing is assigned by an admin.
 - `GET|PUT /settings/my-onboarding` take and answer `playbook` (`product | scrum_master | qa | engineering | null`)
-  and `playbook_done` (the steps ticked by hand), and the GET adds the chosen playbook's server signals
-  (`objectives_set`, `feedback_form_configured`, `form_test_response`), read only for that playbook; whether the
-  brief is on is the browser's (Home already reads the person's brief settings), never a second server read. The catalogue is one file,
+  and `playbook_done` (the steps ticked by hand: a PUT sends the full list, which replaces the stored one, so a
+  partial list unticks the others), and the GET adds the chosen playbook's server signals (`objectives_set`,
+  `feedback_form_configured`, `form_test_response`), read only for that playbook; whether the brief is on is the
+  browser's (Home already reads the person's brief settings), never a second server read. The catalogue is one file,
   `voc-datalake/schemas/playbooks.json`, read by the web app and pinned to the server's.
 - **The `playbook` prompt** on the global MCP server (`role`): the role's steps for any MCP client, with how the read
   tools show each with the deployment's feedback and where in the app it is done; it asks before anything that writes
@@ -66,18 +66,18 @@ public submit route carry it.
   counter, no score in the sentiment average; tagging an item later takes its counters out, untagging it counts it;
   it keeps only its day's sentinel on the daily total's row, a field no reader sums, so a later edit on a day of
   micro-feedback alone still finds the day, and a workspace export's counts check adds it, since the export holds
-  these items). The shared item filters (`shared/item_filters.py`) leave it out by
-  default, so every read through them does: the metric routes (filtered dashboards, categories, sentiment, sources,
-  personas, dimensions, data quality, entities and its issue sample, problems, GitHub, release watch), the Feedback
-  list and search (REST, MCP `feedback_search` and the assistant's search tool, which reads it when the search or the
-  on-screen filters ask for the tag), a review's similar reviews (`/feedback/{id}/similar`: the Similar panel, and
-  `include_similar` of the assistant's and MCP's review lookups) and the urgent list (once a scope chose an in-app
-  feedback form its pages are read in full: the urgency index holds no tags); so does every evidence read (persona generation,
-  research, PR/FAQ and PRD generation and merges, the focus groups' packs, freshness and refresh, Revise from
-  comments, the morning brief's counts, urgent reviews and quotes, the release watch card, the agents' new-review
-  triggers). Only a request for `tag=voc_app` reads it; the form's own Results and Report show it, and a review
-  opened by its id, the Data Explorer and a workspace's export and delete read every item. `rebuild_aggregates.py`
-  follows the same rule.
+  these items). The shared item filters (`shared/item_filters.py`) refuse it whatever a request asks (`tag=voc_app`
+  finds nothing), so every read through them leaves it out: the metric routes (filtered dashboards, categories,
+  sentiment, sources, personas, dimensions, data quality, entities and its issue sample, problems, GitHub, release
+  watch), the Feedback list and search (REST, the Data Explorer's processed view, MCP `feedback_search` and the
+  assistant's search tool, whatever its own filters or the on-screen ones ask), a review's similar reviews
+  (`/feedback/{id}/similar`: the Similar panel, and `include_similar` of the assistant's and MCP's review lookups)
+  and the urgent list (once a scope chose an in-app feedback form its pages are read in full: the urgency index holds
+  no tags); so does every evidence read (persona generation, research, PR/FAQ and PRD generation and merges, the
+  focus groups' packs, freshness and refresh, Revise from comments, the morning brief's counts, urgent reviews and
+  quotes, the release watch card, the agents' new-review triggers). The ways to see it: the form's own Results,
+  Report and CSV, a review opened by its id, the Data Explorer's raw view, and a workspace's export and delete.
+  `rebuild_aggregates.py` follows the same rule.
 - **`voc_app` is reserved**: only a form made from the In-app micro-feedback template carries it. Any other form's
   save, a scraper's or connector's saved labels and a source profile refuse it (400), a manual tag edit
   (`PUT /feedback/{id}/dimensions`) never gives it and never takes it from a form's response (a review of any other
@@ -87,13 +87,7 @@ public submit route carry it.
   workspace's: `GET|PUT /settings/my-onboarding` now resolve `X-Workspace-Id` (the one 404 for a non-member), and a
   request without the header reads the deployment's, as before.
 - A tag filter matches a tag ignoring its surrounding spaces as well as its case (`shared/app_feedback_tag.py`
-  `has_tag`, the `tag` filter's and the micro-feedback's one rule), so an item the dashboards leave out as `voc_app`
-  is the one a `tag=voc_app` request finds.
-- The 7.64.00–7.66.00 stack's integration findings: a persona's stored id lists read by one rule
-  (`shared/persona_evidence.py` `listed_ids`); a playbook step naming evidence nothing computes is refused when the
-  catalogue loads; the Focus groups tab's Start is a registered action row; the stream keeps only the custom-model
-  fields it reads; and the specs follow 7.64.00's focus-group documents, 7.66.00's playbook prompt and micro-feedback,
-  and a role's statements packed into its policy and its overflow in any order.
+  `has_tag`, the `tag` filter's and the micro-feedback's one rule).
 
 ### Upgrade notes
 
@@ -107,17 +101,17 @@ public submit route carry it.
   use stops counting in the dashboards, and its next save is refused until the tag is removed (only the answers it
   receives after that are counted again: the items it wrote keep the tag), so check that the tag is free first.
 - A customer review that a CSV import, a plugin or a person tagged `voc_app` before this release drops out of the
-  dashboards and every evidence read: remove the tag from it (the review's dimensions and tags editor, `PUT
-  /feedback/{id}/dimensions`; find it with `tag=voc_app`), which this release allows on any review that is not a form's response, and it is
-  counted again. Adding the tag stays refused.
+  dashboards and every evidence read: open it by its id (`/feedback/<id>`; the import's file or a workspace export
+  names it) and remove the tag in its dimensions and tags editor (`PUT /feedback/{id}/dimensions`), which this release
+  allows on any review that is not a form's response; it is counted again. Adding the tag stays refused.
 
 ## [7.65.00] - 2026-11-21
 
 **Bring your own model**: a deployment can add up to four Bedrock models, inference profiles or Custom Model Import
 models of its own to the AI surfaces' picker, beside the Claude allowlist, behind `-c customModels` (off by default)
 ([deployment.md](docs/deployment.md#bring-your-own-model--c-custommodels)). Inside AWS only: no external endpoint, and
-the deployment's data residency is checked at synth. No new route resource (the API stack stays at 425), managed
-policy or Lambda.
+the deployment's data residency is checked at synth. No new route resource (the API stack stays at 425) or Lambda; with
+custom models, a Claude-only twin set of the shared model policies for the engineering runtime's roles.
 
 ### Added
 
@@ -128,10 +122,10 @@ policy or Lambda.
   refused; a price in USD per million input and output tokens is required; a `us.` or other geographic profile
   declares its destination Regions (`regions`), which must include the app Region, and an `eu.` profile may (EU
   Regions only, the app Region among them; Claude's EU table when absent); optional `contextWindow` and
-  `maxOutputTokens` (32,000 and 4,096 when absent), a `documents` model's window at least 16,000 tokens (the documents'
-  feedback budget reserves at most half a window, so Claude's budgets are unchanged). At most four models and 1,200 characters of environment (about
-  three `eu.` profiles), so the registry fits every Lambda environment that carries it (the logs API's, the largest,
-  measured at 2,434 of 4,096 on a deployment).
+  `maxOutputTokens` (32,000 and 4,096 when absent), a `documents` model's window at least 16,000 tokens (the
+  documents' feedback budget reserves at most half a window, so Claude's budgets are unchanged). At most four models
+  and 1,200 characters of environment (about three `eu.` profiles), so the registry fits every Lambda environment that
+  carries it (the logs API's, the largest, measured at 2,434 of 4,096 on a deployment).
 - **Data residency at synth**: `-c inferenceScope=eu` needs `"eu": true` on every custom model, and `"eu": true`
   needs an `eu.` profile or an in-Region or imported model in an EU Region; a `global.` or `us.` profile is refused
   under eu, and an imported model in another Region is refused in any scope.
@@ -142,21 +136,25 @@ policy or Lambda.
   fallback stay Claude), and a pick whose model was removed falls back to the surface default, logged.
 - **Capabilities shape every request** (`shared/converse.py`, the stream's `bedrock/custom-models.ts`): no
   `thinking` field and no service tier ever, `temperature` only when the model takes one, `maxTokens` at most its
-  `maxOutputTokens`, the
-  JSON instruction after the system prompt when it returns JSON, and a request with documents or images goes to the
-  surface's built-in default when the model reads none (the assistant's turn with an attachment too), as does a
-  scanned PDF's transcription on any custom model (it reads the pages as images, with `citations`, which only Claude
-  does). The assistant's replayed history is sized to a custom chat model's `contextWindow` (a quarter of it, at most
-  the Claude budget). The synth refuses `chat` and `agent_worker` for a model without `tools`, and the surfaces
-  whose answers are parsed as JSON for a model without `json`; the manual import's Anthropic-format call stays Claude.
+  `maxOutputTokens`, the JSON instruction after the system prompt when it returns JSON, and a request with documents
+  or images goes to the surface's built-in default when the model reads none (the assistant's turn with an attachment
+  too), as does a scanned PDF's transcription on any custom model (it reads the pages as images, with `citations`,
+  which only Claude does). A model other than Claude and Nova is sent no tool result `status` and no replayed
+  `reasoningContent` (an error's result text says so). The assistant's replayed history is sized to a custom chat
+  model's `contextWindow` (a quarter of it, at most the Claude budget), and an answer cut at its output cap is
+  continued only while the prompt, the answer so far and the next turn fit the window, then kept, truncated. The synth
+  refuses `chat` and `agent_worker` for a model without `tools`, and the surfaces whose answers are parsed as JSON for
+  a model without `json`; the manual import's Anthropic-format call stays Claude.
 - **Administration → AI models**: the custom models in a **Your models** group of each surface's select, and, for
   the model a surface resolves to, a **Your model** badge (and EU residency), where it runs ("Runs in eu-central-1 ·
   imported model"), its price, the note that the prompts are tuned for Claude, the cold-start note of an imported
   model, and **Check JSON** / **Check tools** beside Test: `POST /settings/model/test` takes `probe: basic | json |
   tools` (the answer must be the object `{"ok": true}`, or a call of the probe's one tool, streamed through
-  ConverseStream for a model that may serve chat, as the assistant calls it, so the Settings role may stream every
-  model it may invoke; `probe_failed` otherwise), for a Claude or a custom model; the image and web search models take basic only. `GET /settings/model` lists
-  `custom_models`.
+  ConverseStream for a model that may serve chat, as the assistant calls it, so the Settings API's role may stream
+  every model it may invoke; `probe_failed` otherwise), for a Claude or a custom model; the image and web search
+  models take basic only. `GET /settings/model` lists `custom_models`; to anyone but an administrator an imported
+  model is its `key` and `label` only (its id is an ARN naming the account and Region), and a surface's pick of it and
+  the assistant's `assistant.context` `model` its `key`; a save or a Test may name it by its key.
 - **Metering**: the cost rollup and the cost page price a custom model's tokens from its registry price
   (`shared/model_prices.py`, the cache tokens at the input price), so it is never an unpriced line (an imported
   model's is an estimate, `complete: false`: Custom Model Import bills its active copies, not its tokens); the
@@ -177,7 +175,9 @@ policy or Lambda.
 
 ### Upgrade notes
 
-- Without `-c customModels` nothing changes: no template differs but for the release's code and version.
+- Without `-c customModels` the one template change beyond the release's code and version is the Settings API role's
+  stream grant (`bedrock:InvokeModelWithResponseStream` beside `bedrock:InvokeModel`, the shared stream policies): Check
+  tools streams.
 - Enable each model's access in the Bedrock console first: the deploy accepts no agreement for a custom model, and
   Service Quotas are read for Claude models only, so a custom model's Test shows no tokens-per-minute quota.
 - Custom Model Import is offered in some Regions only: check the Amazon Bedrock documentation's list for yours
@@ -205,23 +205,21 @@ reference, never feedback or evidence. No new API Gateway resource (the API stac
   contract, run by `runtime/focus-group.ts` instead of the model's own turn): round 1 is independent; from round 2 the
   moderator asks one follow-up and each persona reads an anonymised digest of the others' last answers (no names, no
   citations) and agrees, disagrees or builds on them; the synthesis lists agreements, disagreements and open
-  questions. Live persona cards with each persona's colour, avatar and round, `[fb:<id>]` citation chips that open the
+  questions. Each persona's turn holds its evidence and the Library items' passages as data blocks (never in its
+  system prompt, which is its profile and the documents). Live persona cards with each persona's colour, avatar and round, `[fb:<id>]` citation chips that open the
   review, a synthesis card labelled **Synthetic** with **Save focus group**, Stop between batches and Regenerate with
   the same configuration (stored with the conversation, `metadata.voc.focusGroup`).
 - **The shared persona grounding** (`lambda/shared/persona_grounding.py`, also for the Validate phase and the voice
-  personas next): per persona its refreshed reviews (newest refresh first) and its cited ones
-  (`evidence_feedback_ids`) taken in turn, at most 12 with at least half cited while any is left (a refresh always
-  reaches the pack, and never pushes out the reviews it was generated from), and up to 8 fresh reviews since it was
-  generated that match
-  its categories within the project's filters, ranked by the topic with the similarity ranker's own tokens
-  (`shared/feedback_similarity.py`: title, problem summary and text). Never the VoC app's own micro-feedback
-  (`voc_app`, 7.66.00). Every
-  review is read as the person asking (their category and source access) and quoted as stored (the source's PII policy
+  personas next): per persona its cited reviews (`evidence_feedback_ids`, at most 12, always kept) and up to 8 fresh
+  reviews since it was generated (a refresh's among them, competing on the topic) that match its categories within the
+  project's filters, ranked by the topic with the similarity ranker's own tokens (`shared/feedback_similarity.py`:
+  title, problem summary and text). Never the VoC app's own micro-feedback (`voc_app`, 7.66.00). Every review is read
+  as the person asking (their category and source access) and quoted as stored (the source's PII policy
   as applied at ingestion; a summary-only source's summary marked as not the customer's words; never an author, title,
   URL or metadata). **The server strips every cited id outside the speaker's pack.**
   `POST /projects/{id}/personas/evidence-pack` (view; a read the stream's invoker may call).
 - **Freshness and Refresh evidence** on a project persona's header: "N new matching reviews since ‹date›", the matches
-  since it was generated that it does not hold yet (`GET /projects/{id}/personas/{pid}/evidence-freshness`, view), and
+  since it was generated that it neither cites, was written from, nor took in an earlier refresh (`GET /projects/{id}/personas/{pid}/evidence-freshness`, view), and
   **Refresh evidence** (`POST /projects/{id}/personas/{pid}/evidence/refresh`, edit), which appends the newest 8 as
   `{at, by, reason, feedback_ids}` to the persona's `evidence_updates` (at most 20 entries) and sets
   `evidence_refreshed_at`; the persona's text is never rewritten. Manual only.
@@ -273,27 +271,32 @@ carry it.
   on 5 points (scaled for other ranges); ordinary questions and rules, editable, with Undo. AI helps at authoring time
   only (Improve with AI); there is no live AI probe on the public routes.
 - **Skip rates on Results**: every card says skipped of those asked, a follow-up says how many of those asked answered
-  it (`follow_up_of` on its question in `GET …/results`), and the cards can be ordered Most skipped first.
+  it (`follow_up_of` on its question in `GET …/results`), and the cards can be ordered Most skipped first (a
+  statement, never answered, last).
 - **Results → Report** (`GET /feedback-forms/{id}/report`): the KPIs, each matrix as a heatmap, the themes of the open
   answers grouped by the processed items' category and subcategory with two or three real quotes each (never a
-  contact detail), the AI summary when there is one, and **Download PDF**, one page through the browser's print
-  dialog (no new dependency).
+  contact detail), each opening its response (read on page after page until it is found), the AI summary when there
+  is one, and **Download PDF**, one page through the browser's print dialog (no new dependency).
 - **Segments**: `group_by=hidden.<id> | q_<id> | q_<id>.<row>` on the report gives per segment the counts, NPS, CSAT,
   CES and averages; a segment of fewer than 5 responses is merged into "Other (fewer than 5)", whose scores stay hidden
   while it is under 5 too, and while that group is hidden but not empty the smallest named segment is hidden with it
-  (`withheld: 'complement'`), so no one can be picked out or worked out from the totals.
+  (`withheld: 'complement'`), in the report, Compare, the page and the PDF alike, so no one can be picked out or
+  worked out from the totals (10 + 1 responses: neither shows scores). Results take no `group_by`: segments are the
+  report's.
 - **Compare** (`GET /feedback-forms/{id}/compare?with=<up to 10 form ids>[&by=hidden.<id>]`): the form beside others of
   the same workspace (the template's siblings first), each split by a hidden field such as `event_date` when asked
-  (`by` without `with` is a `400` `group_by_invalid`); questions are matched by id and type, a matrix by its column
-  scores too, and each point has at least 5 responses.
+  (`by` without `with` is a `400` `group_by_invalid`: one form split on its own is its report's segments); questions
+  are matched by id and type, a matrix by its column scores too, and each point has at least 5 responses. Each
+  brand's feedback partition is read once for all the compared forms.
 - **AI summary of a report** (`POST /settings/form-reports`, polled at `GET /settings/form-reports/{job_id}`):
   optional, one utility model call (about 1–3 cents), 20 per person per hour, gated as Results. The browser sends the
   open answers it already read with the person's access, which the job's row keeps only while the job runs (its
   `config` is removed when the job ends); the model only labels themes and picks quote ids, and the stored report
   (`FORMREPORT#{form_id}#{report_id}` in the form's forms partition) keeps labels, ids and the view's filters, never a
   respondent's text. Its quotes are joined against the reader's own rows under its own filters, it is marked stale once
-  newer responses of that view exist, it is shown and printed only on the view it was made for, and it is withheld
-  from a reader who cannot see a response it read.
+  newer responses of that view exist, it is shown and printed only on the view it was made for (on another, "Made for
+  another view: ‹filters›" and Summarize this view), it counts the answers it read (`responses_counted`, and the
+  newest one's `last_response_at`), and it is withheld from a reader who cannot see a response it read.
 - **`forms_get_results` on `/mcp/global`**: a form's Results as JSON (`GET /feedback-forms/{id}/results`, as the
   token's minter: its category and source access, and in a workspace the editor or admin role), with `from` / `to`,
   `include_test` and up to 5 `hidden` values; never the CSV, the report or a write ([mcp.md](docs/mcp.md#tools)).
@@ -302,46 +305,14 @@ carry it.
 
 - **Deleting a form** also deletes its stored report summaries; they are in a workspace's export and its hard delete
   with the forms partition.
-- The 7.59.00–7.63.00 stack's integration findings: one forms partition rule (`shared/onboarding.py`
-  `forms_partition`) for the forms API and the forms' AI routes; one `lenient` field and `parseEach` for the stream's
-  chat context and library tools (`tools/server/common.ts`); the Library's editor fields are the shared `LabeledField`;
-  the Library's query root has its cache family (`library`, live); the Library's and the fine-grained token's helpers
-  named apart from their namesakes (`libraryFailureText`, `isItemInFlight`, `librarySlug`, `parseLibraryTags`,
-  `fineGrainedTokenIssue`); module-private symbols no longer exported; and the specs follow the save's one
-  precondition (7.58.01) and the token fields (7.60.00).
-
-### Removed
-
-- `group_by` and `segments` on `GET …/results`, and Compare's one-form trend (`by` without `with`, now a `400`
-  `group_by_invalid`), built in this release (no caller): the report keeps its segments.
-- `library_get`, 7.62.00's second Library tool on `/mcp/global`: an item's text page by page stays the web app's
-  (`GET /projects/library/{id}/text`), `library_search` gives an agent cited passages, and its room in the `tools/list`
-  budget goes to `forms_get_results` (TENETS.md tenet 4).
-
-### Fixed
-
-- **The AI summary keeps to the view it was made for**: its quotes were joined and its `stale`
-  judged against the reader's whole view, so a report or PDF filtered to one hidden value showed another's summary and
-  quotes, and a filtered view never cleared `stale`. Both now apply the summary's stored filters; the Report and the
-  PDF show it only on that view, else "Made for another view: ‹filters›" with no summary or quote, and Summarize this
-  view.
-- **Secondary suppression**: when the merged "Other (fewer than 5)" group is withheld but not empty, the smallest
-  named segment is withheld too (`withheld: 'complement'`), in the report's segments, Compare, the page and the PDF
-  (10 + 1 responses: neither shows scores, so the one is never the total less the ten).
-- **Most skipped ranks a statement last**: a statement is never answered, so every showing counted as a skip.
-- **Compare never lines up matrices scored on different scales**: their column scores are part of the match.
-- **`responses_counted` is the answers the summary read**: the request's own count is gone, and the app sends
-  the newest response it read as `last_response_at`.
-- **The summary's job row keeps no respondent's text**: its `config` (the open answers the browser sent) is
-  removed when the job ends, done or failed; a job whose worker never ran keeps it until the row's one-day TTL.
 
 ### Upgrade notes
 
 - No new AWS resource, stack, route resource (the API stack stays at 425) or flag, and one new permission (the next
   note): the report and compare routes ride `/feedback-forms/{form_id}/{proxy+}`, the AI summary `/settings/{proxy+}` and the settings
   worker that already runs the AI drafts.
-- The global MCP server lists one forms tool, `forms_get_results` (read only), in the `tools/list` room left by
-  removing 7.62.00's `library_get`; `forms_get_report` waits for more room (TENETS.md tenet 4). The MCP role may now
+- The global MCP server lists one forms tool, `forms_get_results` (read only); `forms_get_report` waits for more room
+  in its `tools/list` budget (TENETS.md tenet 4). The MCP role may now
   invoke the forms Lambda (`voc-feedback-form-api`), its tenth domain function; no new resource.
 
 ## [7.62.00] - 2026-11-20
@@ -358,19 +329,29 @@ Gateway resource (the projects API's `/projects/{proxy+}`), no fixed cost.
   up to 3.75 MB; others refused with a clear message), each with a title, a short name (`slug`), a source, a date,
   tags and, outside a workspace, an optional project; search, tag and project filters and a sort; a preview with the
   extracted text page by page and a 5-minute download link; edit (with the version read: a stale edit is refused),
-  retry, and delete for an admin or the uploader.
+  retry, and delete for an admin or the uploader. The uploader is named by their `name` claim or username, never an
+  address. An item extracting for 16 minutes or more, or still waiting for its file 16 minutes after it was added
+  (its upload link lasts 15), reads `stale: true`: a Stopped badge, no longer checked, and Read it again for an
+  extraction (the retry's own rule, else `409` `not_failed`); a stale upload is deleted and uploaded again. A delete
+  revokes the extraction's claim, deletes the passages and every stored version of the files (a version the bucket
+  refuses is a `503` before anything else goes), then the item's rows, so one that fails part way leaves the item to
+  delete again; an extraction whose claim is gone drops what it wrote, one claimed again (a retry, or the same event
+  delivered twice) keeps it.
 - **Text extracted once**, on the projects API's assist twin: the standard library for text, Markdown, CSV and HTML
   and for Word, Excel and PowerPoint's XML; `pypdf` for a PDF's text layer; Amazon Bedrock (the Documents model) for a
-  scanned PDF, a legacy `.doc` / `.xls` (up to 4.5 MB) and an image's description. Passages of about 1,800 characters,
-  each embedded with Titan Text Embeddings V2 and ranked by cosine in the Lambda (no vector database).
+  scanned PDF, a legacy `.doc` / `.xls` (up to 4.5 MB) and an image's description (a reading cut at its 16,000-token
+  reply cap is marked truncated; a scanned PDF keeps its pages only when the transcription separates exactly those
+  pages with a form feed). Passages of about 1,800 characters, each embedded with Titan Text Embeddings V2 and ranked
+  by cosine in the Lambda (no vector database).
 - **`#slug` in the assistant, on every page** (`mentions.library`, at most 3 a message; on a project page after the
   project's documents, as a **Library** group): a Converse-native file of at most 4.5 MB (an image 3.75 MB) is
   attached to that message as "Library document N" while the message's documents stay at 5 or fewer with your own
-  attachments counted; otherwise the best 8 passages (12,000 characters at most) go in a `<library>` data block with
-  `[#slug p.N]` markers. The answer shows **Library documents used**: chips that open the Library at the page cited.
+  attachments counted (never a scanned PDF, which has no text layer); otherwise the best 8 passages (12,000
+  characters at most; a file whose fetch failed is searched within what the others left) go in a `<library>` data
+  block with `[#slug p.N]` markers. The answer shows **Library documents used**: chips that open the Library at the page cited.
   A large item says so in the composer ("about N tokens each time it is sent").
-- **`library_search`**, a read tool of the assistant (passages by item id, `#slug` or the question's words), and two
-  MCP read tools on `/mcp/global`, `library_search` and `library_get` ([mcp.md](docs/mcp.md)).
+- **`library_search`**, a read tool of the assistant (passages by item id, `#slug` or the question's words), and the
+  same on `/mcp/global` ([mcp.md](docs/mcp.md)); an item's text page by page stays the web app's.
 - Routes on `/projects/library…`: the list, `suggest`, create (a 15-minute presigned PUT bound to the file's length and
   type and to `If-None-Match: *`), `uploaded`, `retry`, one item, its `text`, edit, delete and `context` (the stream's
   and MCP's read: presigned GETs for native files, never bytes, and passages).
@@ -379,39 +360,16 @@ Gateway resource (the projects API's `/projects/{proxy+}`), no fixed cost.
 
 - **Workspaces**: the library is a workspace's own (`WS#{ws}#LIBRARY`, `ws/{ws}/library/`): its export holds the items
   (`library`), its hard delete sweeps them (`library`), and an erasure by email lists an item whose metadata or text
-  holds the address for review (`files_needing_review`), never changing it. Every route is in the cross-workspace
-  suite.
+  holds the address for review (`files_needing_review`), its `created_by` / `updated_by` name included, never
+  changing it. Every route is in the cross-workspace suite.
 - **The projects API's role**: the raw bucket's `library/*` and `ws/{one id}/library/*` in its workspace-objects
   statement, `bedrock:InvokeModel` on the in-Region Titan V2 model, the stack's workspace-resolution policy (an
   attachment), and CDK's inert stream reads (`GetRecords`, `GetShardIterator` on tables, which only act on a stream)
   dropped from it to keep the inline policy under 70 % of its quota. voc-retention reads the library's extracted text
-  and items; the export and delete jobs their workspace's library partitions.
+  and items (their `created_by` and `updated_by` too); the export and delete jobs their workspace's library partitions.
 - A `/projects/library/…` path that matches a project route (`/projects/library/jobs`) answers the one 404.
-
-### Fixed
-
-- **An item never names its uploader by address** (`shared/library_routes.py`): an invited member
-  has no `name` claim, so the Library stored their email as `created_by` / `updated_by`'s name; it is now the `name`
-  claim or the username, as document review's comments do. An erasure by email also lists an item whose `created_by`
-  / `updated_by` name holds the address (the retention worker's deployment Query may now read those two attributes).
-- **A scanned PDF's citations no longer claim page 1 for all of it**: the model's transcription keeps the PDF's
-  pages only when it separates exactly those pages with a form feed, as the prompt now asks; otherwise the item has no
-  pages (`paged: false`).
-- **A model reading cut at its 16,000-token reply cap is marked truncated** (Bedrock's `stopReason`
-  `max_tokens`).
-- **A stalled extraction can be read again**: an item extracting for 16 minutes or more reads `stale: true`;
-  the list and the preview stop checking it, and the preview offers Read it again (the retry's own rule: 16 minutes or
-  more, else `409` `not_failed`). An item still waiting for its file 16 minutes after it was added (its upload link
-  lasts 15) reads `stale: true` too and is no longer checked: delete it and upload the file again.
-- **A file whose fetch failed is searched within the message's 12,000 characters**: its re-search gets only what
-  the other items' passages left (`budget`), and none when nothing is left.
-- **A delete leaves nothing orphaned**: it revokes the extraction's claim, deletes the passages and every
-  stored version of the files, then the item's rows, so a delete that fails part way leaves the item to delete again.
-  An extraction that finds its claim gone drops what it wrote only when the item is gone or being deleted; when a retry
-  claimed the item again, it stops and deletes nothing.
-- **Project documents send a PDF or Word file to the Library** (the review's cross-release finding): the product
-  documents' refusal (`product_context.py`) and the page's hint said "not supported yet" as if nothing read them, while
-  the Library reads both; they now say to add the file to the Documents Library and mention it with `#`.
+- **Project documents send a PDF or Word file to the Library**: the product documents' refusal (`product_context.py`)
+  and the page's hint say to add the file to the Documents Library and mention it with `#`.
 
 ### Upgrade notes
 
@@ -437,7 +395,8 @@ empty, a publish guard for a placeholder respondents would see as written, and a
 - **The matrix question** (`type: matrix`): 1 to 20 rows rated on 2 to 10 columns, one choice per row, each column
   with an optional whole-number score (-100 to 100) for the rows' averages; `shuffle_rows`, `display` (`auto`: a
   grid from 600 px wide with at most 7 columns, else stacked rows; `grid`; `stacked`), `required` (every row) or
-  `min_rows` on an optional matrix, and logic on `submitted` / `skipped`. Its answer is `{rows: {row: column}}`, its
+  `min_rows` on an optional matrix, and logic on `submitted` / `skipped`. Its answer is `{rows: {row: column}}` (a
+  column that is a list or an object is a `400` `answer_invalid` on the public submit), its
   row and column codes lock like option codes once the form is answered (`removes.rows`, `removes.columns`, and a
   `409` `answers_locked` naming them), and a reserved name (`__proto__`, `constructor`, `prototype`) is never a code
   ([Matrix](docs/feedback-forms.md#matrix)).
@@ -452,14 +411,17 @@ empty, a publish guard for a placeholder respondents would see as written, and a
     draft knows it (its codes made like option codes).
 - **Recall** in the welcome, headlines, subheaders (statements included) and endings: `{{id}}` shows a declared hidden
   field's value or an earlier score or single choice on the respondent's path, `{{id|fallback}}` a fallback when
-  there is none, and a missing value leaves the text tidy ("How was {{event}}?" reads "How was?"). Never an open text,
+  there is none, and a missing value leaves the text tidy ("How was {{event}}?" reads "How was?"; gaps side by side
+  or split only by a separator are one: "Thanks {{name}}, {{company}}!" reads "Thanks!"), as the iframe page's title
+  does with no value at all ("{{event|the workshop}}" is "the workshop"). Never an open text,
   a contact, a multiple choice, a consent or a matrix answer, never in an option label, a button or an address, and
   always as text. One grammar in the server, the builder and the widget, pinned by `schemas/form-recall-cases.json`
   (the tidy rules are the widget's alone, and the builder's preview is the widget's own;
   [Recall](docs/feedback-forms.md#recall)). The builder's "Insert a value" menu lists what a text may recall and
   previews it with the value; the AI draft writes and re-points placeholders.
 - **Link checks** (`link_health` in `GET /feedback-forms/{id}/results`): per hidden field how many of the view's
-  responses carried it, overall and per channel (link, iframe, script), with a warning when it was never filled
+  responses carried it, overall and per channel (link, iframe, script; a response counts towards a field only when
+  the revision it answered declared it), with a warning when it was never filled
   after 5 responses or missing from 80 % of at least 10 ("0 of 26 responses had `customer`: check your link"), shown
   on Results and on the Share tab with the `hf_<id>=` parameter and the channels it is missing from. The Share tab's
   link builder now takes a value for each hidden field (into the link, the iframe snippet and the script embed's
@@ -475,27 +437,14 @@ empty, a publish guard for a placeholder respondents would see as written, and a
 
 - **A live form never shows a placeholder as written**: a `POST` or `PUT` that leaves a form live answers `409`
   `unresolved_placeholder` (`texts: [{where, placeholder}]`) while any text holds a `{{…}}` recall cannot fill there
-  (a placeholder that names no hidden field, a later question or an answer never recalled), the one rule: a draft saves
-  with it. Turning a form Off always works; the builder lists the same problems, and Publish waits for them.
+  (a placeholder that names no hidden field, a later question or an answer never recalled; a welcome, an Other or a
+  None row that is off is never shown, so it blocks nothing), the one rule: a draft saves with it, and the builder's
+  recall problems block only Publish and Update live form. Turning a form Off always works; the builder lists the same
+  problems, and Publish waits for them.
 - **Results and exports show a headline's placeholders as `[id]`**, never a respondent's value: each question's
   `headline` in Results, the CSV's headers, and the text the processor reads.
 - **`format=csv` answers the familiar layout by default**; 7.55.00's file is `layout=detailed`, unchanged (a matrix
   answer there is `Row: Column` pairs).
-
-### Fixed
-
-- **A matrix response is accepted by the processor**: the queue message's ingest schema (`form_answers`) took no
-  nested mapping, so every matrix answer would have been refused before it reached the lake.
-- **A matrix answer whose column is a list or an object is a `400`** (`answer_invalid`) on the public submit, never a
-  `500`.
-- **Link checks count a response towards a hidden field only when the revision it answered declared it** (the
-  form's snapshots): a field added later is never "missing" from the responses sent before it existed.
-- **The widget reads "Thanks {{name}}, {{company}}!" as "Thanks!"** when both are missing: gaps split only by a
-  separator are one gap (four new `render` cases in `schemas/form-recall-cases.json`, pinned in the widget suite).
-- **A draft is never refused for a placeholder**: 7.61.00's `400` `recall_unknown`, `recall_not_before` and
-  `recall_type` on a definition save are gone, and the builder's recall problems block only Publish and Update live
-  form; the `409` `unresolved_placeholder` is the one rule. The builder's recall preview is plain substitution:
-  its copy of the tidy rules and its "Without a value" line are gone, and the widget's preview shows the tidy text.
 
 ### Upgrade notes
 
@@ -522,13 +471,14 @@ Gateway resource.
 - **Add a repository** (Agents → Connections): three cards, each saying when to use it and what a run ends with:
   install the GitHub App (a branch and a pull request on the repository), use a fine-grained token (the same, pushed
   with your token after your go), or contribute through a fork (a pull request on your fork, then the one-click link to
-  open it on the upstream). The other ways (another App, a manual connection, GitLab) stay folded under it. The public
-  repository search answers each result's `ways: {app, token, fork}`.
+  open it on the upstream). The other ways (another App, a manual connection, GitLab) stay folded under it. The token
+  card's search offers any public repository found that is not archived.
 - **Token connections** (`connectors/token_connections.py`, `connectors/fine_grained.py`):
   - `POST /agents/engineering/token-connections` `{repository, token, only_this_repository: true, default_branch?,
     connection_id?, reason?}` connects a public repository as a `fine_grained` connection; `PUT
-    /agents/engineering/connections/<id>/token` replaces (renews) its token. Any administrator saves a token, only as
-    themselves, and becomes its owner.
+    /agents/engineering/connections/<id>/token` replaces (renews) its token, reading through the App installation the
+    other connections hold then (so a token replaced after GitHub was connected again uses the new one). Any
+    administrator saves a token, only as themselves, and becomes its owner.
   - The token is checked against GitHub at each save: a `github_pat_` token (classic, OAuth and GitHub App tokens
     refused by their prefix), the repository public, not archived and pushable with it, an expiry GitHub reports
     within 90 days, its login, and no private repository reached besides; each refusal is a 422 with its `code`
@@ -545,38 +495,25 @@ Gateway resource.
   attestation, the branch rules, the final go for the tree and the token unexpired (`token_expired`). The token makes
   only the run's push and pull request, each request pinned to the repository's Git Data and pull request paths, every
   read with the App's read-only token; comments, labels, the docs and tenets pull request and the upstream pull request
-  are refused on it (`token_scope`). Its pull request says whose token pushed it after whose go; each use is logged and
-  kept on the write's claim, never the token.
+  are refused on it (`token_scope`). A 401 or a 404 from GitHub to one of its writes (the token revoked, expired,
+  regenerated, or no longer reaching the repository) is `409` `token_not_accepted`, "nothing was written: replace the
+  token", so the attempt pushes again once it is replaced. Its pull request says whose token pushed it after whose
+  go; each use is logged and kept on the write's claim, never the token.
 - **The run page's go** on such a run: **Push with ‹login›'s token**, which only the token's owner can press; the go
   route answers 403 `token_owner_go` to anyone else. The run overview now names its `connection`.
 - **Readiness**: a new `write_token` check (the days left, a warning at 14 or fewer, a failure once expired or not
   set); `connection` says the run pushes with ‹login›'s token after your go (and fails a flow that pushes on an expired
-  token); `app_installation` is not needed on the repository; `dial` says every push waits for the token owner's go. A
-  run's start is refused on an expired or unset token (409) and warns when 3 days or fewer remain.
+  token); `app_installation` is not needed on the repository; `dial` says every push waits for the token owner's go.
+  A start of a flow that pushes (`shared/workflow_engineering.py` `flow_pushes`, its calls expanded: its declared
+  `requires.ci_attestation`, else a committer or a PR author among its steps), the Start dialog's, an agent's Run now
+  or a trigger, is refused on an expired or unset token (409) before anything is written; a flow that pushes nothing
+  (a triage) starts on any token. The Start dialog's start answers `warnings` when 3 days or fewer remain, which the
+  run workspace it opens shows until dismissed (nine languages), and the assistant's knowledge-refresh approval
+  passes on.
 - **Administration** (7.59.00's tabs): the fine-grained tokens to replace (expiring within 14 days, expired, not set or
-  of an unknown expiry, the rows' own Replace token rule) are counted in General's **Needs attention** and on the
-  Engineering agents tab's badge, and listed with their chips on Engineering agents → GitHub connections, whose links
-  now name the three ways to add a repository.
-
-### Fixed
-
-- **A token GitHub no longer takes says to replace it** (`connectors/github.py`): a 401 (the token
-  revoked, expired or regenerated) or a 404 (it no longer reaches the repository) to one of a fine-grained token's
-  writes was a 502 whose write "is not known", which locked the attempt. It is now `409` `token_not_accepted`
-  ("nothing was written. Replace the token under Agents → Connections"), a refusal, so the attempt pushes again once
-  the token is replaced.
-- **A flow that pushes nothing starts on an expired token**: the start refused every run on a fine-grained
-  connection whose token had expired or was unset, while readiness passed a flow that pushes nothing (a triage). The
-  start and readiness's `connection` check now read one rule off the stored flow, its calls expanded
-  (`shared/workflow_engineering.py` `flow_pushes`: its declared `requires.ci_attestation`, else a committer or a PR
-  author among its steps; a push in a flow it calls counts), and the 3-day warning is said only beside a run that
-  pushes.
-- **The start's token warning is shown**: `POST /agents/engineering/runs` answered `warnings` (a token that
-  expires within 3 days) that the web app never read. The Start dialog hands it to the run workspace it opens, which
-  shows it at the top until dismissed (nine languages), and the assistant's knowledge-refresh approval passes it on to
-  the person. An agent's Run now and its triggers say no such warning: readiness's `write_token` check warns from 14
-  days in the automation's Set up drawer.
-- `TokenFacts.owner_type`, read at a token's save and never used, is gone.
+  of an unknown expiry, the rows' own Replace token rule) are counted in General's **Needs attention**, which leads to
+  Agents → Connections, where each is replaced, and on the Engineering agents tab's badge; Engineering agents → GitHub
+  connections' links name the three ways to add a repository.
 
 ### Security
 

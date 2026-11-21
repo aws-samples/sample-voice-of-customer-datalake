@@ -104,6 +104,11 @@ class ExtractionError(ValueError):
     """The file cannot be read; the message is the person's (the item's ``error``)."""
 
 
+#: An extraction Amazon Bedrock read (a scanned PDF, an image, a legacy Office file): a PDF read so has no text layer,
+#: so it is never sent to the assistant as a file (library_routes.py ``library_context`` searches its passages).
+MODEL_METHOD: Final = 'model'
+
+
 @dataclass(frozen=True)
 class Extraction:
     """The text (pages joined by ``PAGE_BREAK``), its page count when it has pages, and whether it was cut."""
@@ -111,7 +116,7 @@ class Extraction:
     text: str
     pages: int | None = None
     truncated: bool = False
-    #: How the text was read: ``text`` (the standard library or pypdf) or ``model`` (Amazon Bedrock).
+    #: How the text was read: ``text`` (the standard library or pypdf) or ``MODEL_METHOD`` (Amazon Bedrock).
     method: str = 'text'
 
 
@@ -371,7 +376,7 @@ def _model_read(reading: Reading, *, pages: int | None = None, cut: bool = False
     text = reading.text
     if pages is None or text.count(PAGE_BREAK) != pages - 1:
         text, pages = text.replace(PAGE_BREAK, '\n'), None
-    return _capped(text, pages, 'model', cut=cut or reading.stop_reason == 'max_tokens')
+    return _capped(text, pages, MODEL_METHOD, cut=cut or reading.stop_reason == 'max_tokens')
 
 
 def _read_pdf(data: bytes, describe: Describe) -> Extraction:

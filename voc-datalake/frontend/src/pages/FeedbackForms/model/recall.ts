@@ -89,10 +89,14 @@ export interface FormText {
   readonly before?: number
 }
 
-/** The recall texts: the welcome's, each question's headline and subheader, each ending's title and description. */
+/**
+ * The recall texts respondents can be shown: the welcome's (when it is on), each question's headline and subheader,
+ * each ending's title and description. A welcome that is off is never shown, so its texts never block Publish.
+ */
 export function recallTexts(form: FormV2): FormText[] {
+  const welcome = form.welcome.enabled ? (['title', 'description'] as const) : []
   return [
-    ...(['title', 'description'] as const).map((field) => ({ at: { kind: 'welcome' as const, field }, text: form.welcome[field], before: 0 })),
+    ...welcome.map((field) => ({ at: { kind: 'welcome' as const, field }, text: form.welcome[field], before: 0 })),
     ...form.questions.flatMap((q, index) => (['headline', 'subheader'] as const).map((field) =>
       ({ at: { kind: 'question' as const, id: q.id, field }, text: q[field], before: index }))),
     ...form.endings.flatMap((e) => (['title', 'description'] as const).map((field) =>
@@ -106,9 +110,10 @@ const questionText = (q: Question, field: string, text: ShownText, optionIndex?:
 /** A choice's or a matrix's own lists and labels (none for any other type). */
 function listTexts(q: Question): FormText[] {
   if (isChoice(q)) {
+    // (an Other or None row that is off is never shown: its texts never block Publish, 7.66.00)
     return [...q.options.map((option, index) => questionText(q, 'option', option.label, index)),
-      questionText(q, 'other_label', q.other.label), questionText(q, 'other_placeholder', q.other.placeholder),
-      questionText(q, 'none_label', q.none.label)]
+      ...(q.other.enabled ? [questionText(q, 'other_label', q.other.label), questionText(q, 'other_placeholder', q.other.placeholder)] : []),
+      ...(q.none.enabled ? [questionText(q, 'none_label', q.none.label)] : [])]
   }
   if (isMatrix(q)) {
     return [...q.rows.map((row, index) => questionText(q, 'row', row.label, index)),
@@ -130,7 +135,7 @@ function questionOtherTexts(q: Question): FormText[] {
 /** Every text respondents may be shown where recall never works. */
 export function otherTexts(form: FormV2): FormText[] {
   return [
-    { at: { kind: 'welcome', field: 'button_label' }, text: form.welcome.button_label },
+    ...(form.welcome.enabled ? [{ at: { kind: 'welcome' as const, field: 'button_label' }, text: form.welcome.button_label }] : []),
     ...form.questions.flatMap(questionOtherTexts),
     ...form.endings.flatMap((e) => (e.button === undefined ? [] : [
       { at: { kind: 'ending' as const, id: e.id, field: 'button_label' }, text: e.button.label },

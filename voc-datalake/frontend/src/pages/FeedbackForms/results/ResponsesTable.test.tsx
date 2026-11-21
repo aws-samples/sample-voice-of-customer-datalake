@@ -101,4 +101,16 @@ describe('Results responses', () => {
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(3))
     expect(getResponses).toHaveBeenLastCalledWith('f_test', { days: 30, language: '', ending: '', hidden: {}, includeTest: false }, { limit: 50, cursor: 'c_2' })
   })
+
+  it('opens a response past the loaded pages (a Report quote\'s) by reading on until it is found', async () => {
+    // (review round 1 of the second gate, 7.66.00: the theme's quote names a response on the third page)
+    getResponses
+      .mockResolvedValueOnce({ responses: [response('r_1')], next_cursor: 'c_2' })
+      .mockResolvedValueOnce({ responses: [response('r_2')], next_cursor: 'c_3' })
+      .mockResolvedValueOnce({ responses: [response('r_quoted', { answers: { q_comment: 'Quoted in the report' } })], next_cursor: 'c_4' })
+    renderWithDraft(<ResultsTab />, RESULTS_FORM, { rest: ['responses', 'r_quoted'] })
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByText('Quoted in the report')).toBeInTheDocument()
+    expect(getResponses).toHaveBeenCalledTimes(3)   // (found on the third page: no fourth read)
+  })
 })

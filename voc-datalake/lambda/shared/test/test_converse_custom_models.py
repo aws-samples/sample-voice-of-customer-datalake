@@ -107,3 +107,27 @@ class TestDocumentBlocks:
         converse_blocks(bedrock, [{'text': 'Summarise.'}], surface='enrichment', system_prompt='', max_tokens=100,
                         step_name='t', model_id=LLAMA, max_retries=1)
         assert bedrock.converse.call_args.kwargs['modelId'] == LLAMA
+
+
+class TestTheContinuationsWindow:
+    """Review round 1 of the second gate (7.66.00): an answer cut at maxTokens is continued only while the prompt, the
+    answer so far and the next turn's maxTokens fit the custom model's window; then the text so far is kept."""
+
+    @staticmethod
+    def _cut(text: str) -> dict:
+        return {**_reply(text), 'stopReason': 'max_tokens'}
+
+    def test_a_custom_model_stops_continuing_before_its_window_and_keeps_the_text(self, client):
+        # (MINE: an 8,192-token window, 2,048 output tokens; each cut turn adds about 2,000 tokens of text)
+        client.converse.side_effect = [self._cut('x' * 8_000) for _ in range(6)]
+        result = converse_detailed(prompt='p' * 4_000, max_tokens=2_048, model_id=MINE, surface='memory',
+                                   step_name='t', max_continuations=5)
+        # 1,000 prompt tokens + 2,048: the first turn; then 3,000 + 2,048 and 5,000 + 2,048 fit, 7,000 + 2,048 not
+        assert client.converse.call_count == 3
+        assert result.text == 'x' * 24_000
+
+    def test_a_claude_model_continues_as_before(self, client):
+        client.converse.side_effect = [self._cut('x' * 8_000) for _ in range(3)] + [_reply('end')]
+        result = converse_detailed(prompt='p' * 4_000, max_tokens=2_048, model_id=SONNET46, step_name='t',
+                                   max_continuations=5)
+        assert (client.converse.call_count, result.text) == (4, 'x' * 24_000 + 'end')

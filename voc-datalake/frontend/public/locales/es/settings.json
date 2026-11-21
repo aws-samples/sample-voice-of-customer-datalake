@@ -1119,9 +1119,6 @@
     "modelsDescription": "El entorno en el que se ejecuta cada rol en esta implementación y el modelo que usa. Se cambia en la tarjeta del rol en el Registro y se aplica desde la siguiente ejecución.",
     "modelsUnread": "No se pudieron leer los modelos de los roles.",
     "connectionsDescription": "De dónde obtienen los agentes de ingeniería sus repositorios, cuánto cuestan y los pasos antes de la primera ejecución.",
-    "tokensTitle": "Tokens detallados que reemplazar",
-    "tokensHint": "Reemplaza cada uno en Orquestación de agentes › Conexiones: una ejecución con un token caducado se rechaza al empezar.",
-    "tokenUnusable": "Sin definir, o no se conoce su caducidad",
     "links": {
       "connections": "Orquestación de agentes › Conexiones",
       "connectionsHint": "Conectar GitHub y elegir los repositorios en los que trabajan los agentes: con la App, con un token detallado o mediante un fork",

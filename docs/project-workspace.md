@@ -276,18 +276,16 @@ there is no synthesis. **Regenerate** runs the same group again (its stored conf
 `lambda/shared/persona_grounding.py`, one module for every surface that lets a project's personas speak (the
 focus groups now; the Validate phase and the voice personas next). Per persona:
 
-- **its stored evidence**: the reviews its evidence refreshes added (`evidence_updates`, newest refresh first) and
-  those its `supporting_evidence` cites (`evidence_feedback_ids`, first cited first), taken in turn, a refreshed one
-  first, at most 12, of which at least half are cited while any cited one is left (so a refresh always reaches the
-  pack, and two or three refreshes never push out the reviews it was generated from);
-- **fresh retrieval**: the reviews imported since the persona was generated that match it and that it does not hold
-  yet (neither its evidence nor the reviews it was written from), at most 8, those that share the most words with the
-  topic first, then the newest. "Match" is the persona's categories (the categories of
+- **its cited reviews**: those its `supporting_evidence` cites (`evidence_feedback_ids`, first cited first), at most
+  12, always kept whatever the topic;
+- **fresh retrieval**: the reviews imported since the persona was generated that match it, other than those it cites
+  and those it was written from, at most 8, those that share the most words with the topic first (the similarity
+  ranker's words: title, problem summary, text), then the newest. A review a refresh took is such a match, so it
+  competes here on the topic. "Match" is the persona's categories (the categories of
   the reviews it cites, else of those it was written from, most frequent first, at most 5) within the project's own
   filters (`filters.sources`, `categories` and `sentiments` on its META; the filters are the floor: a persona whose
   categories are all outside them is matched on the filters' categories). The read walks the day partitions back to
-  that day (at most 365 days) within one 8-second budget for the whole pack; `fresh_capped` says when a persona's
-  read was cut short.
+  that day (at most 365 days) within one 8-second budget for the whole pack (a cut read is logged).
 
 Every review is read **as the person asking**: their category scope (its category and source rules,
 `shared/category_access.py`) admits it or it is not in the pack, so a pack never holds an id they could not open; a
@@ -299,9 +297,9 @@ characters, and a text that reads like an instruction to a model is withheld. No
 
 The stream Lambda asks for the pack through its read-only invoker (`POST /projects/{id}/personas/evidence-pack`, a
 read despite the verb, on the projects API's `/projects/{proxy+}`), with the caller's own claims. Each persona's
-system prompt is its profile and the documents (the library's passages in a `<library>` block), as a mention round's
-is; its user turn carries its reviews in an `<evidence>` DATA block and, from round 2, the others' digest in a
-`<transcript>` DATA block (data, never instructions, every text neutralised), then the question, with the rule to
+system prompt is its profile and the documents, as a mention round's is; its user turn carries its reviews in an
+`<evidence>` DATA block, the Library items' passages in a `<library>` DATA block beside them (uploaded documents' words
+stay out of the system prompt, 7.66.00) and, from round 2, the others' digest in a `<transcript>` DATA block (data, never instructions, every text neutralised), then the question, with the rule to
 cite each review it draws on as `[fb:<id>]`, never an id that is not listed, and to say a point no review supports as
 its opinion. **The server strips every cited id outside the speaker's pack** (the synthesis': outside every pack),
 repeated until none is left, before an answer is shown, stored or quoted; the cited reviews are the run's feedback
@@ -327,7 +325,7 @@ under its text.
 
 A project persona's header shows "N new matching reviews since ‹date›"
 (`GET /projects/{id}/personas/{pid}/evidence-freshness`, view): the matching reviews since it was generated (by day)
-that it does not hold yet (its evidence, refreshes included, and the reviews it was written from), of those the person
+that it neither cites, was written from, nor took in an earlier refresh, of those the person
 may see ("At least N" when the 8-second count was cut short). **Refresh evidence** (edit) appends the newest of them
 (at most 8) to the persona's `evidence_updates` (`POST /projects/{id}/personas/{pid}/evidence/refresh`): one entry
 `{at, by: {sub, kind}, reason: manual_refresh, feedback_ids}`, at most 20 entries kept (the oldest dropped), and sets

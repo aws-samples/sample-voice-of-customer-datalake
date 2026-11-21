@@ -97,27 +97,31 @@ def _ids(pack: dict, index: int = 0) -> list[str]:
     return [item['feedback_id'] for item in pack['personas'][index]['evidence']]
 
 
-def _origins(pack: dict) -> dict[str, str]:
-    return {item['feedback_id']: item['origin'] for item in pack['personas'][0]['evidence']}
+#: The persona's cited reviews (``_persona``'s ``evidence_feedback_ids``): the pack's first, always kept.
+CITED = ['cited1', 'cited2']
+
+
+def _fresh(pack: dict, index: int = 0) -> list[str]:
+    """The pack's reviews after the cited ones: its fresh retrieval."""
+    return [one for one in _ids(pack, index) if one not in CITED]
 
 
 class TestThePack:
     def test_the_cited_reviews_come_first_then_the_fresh_ones_since_it_was_generated(self, tables):
         pack = _pack(tables)
         ids = _ids(pack)
-        assert ids[:2] == ['cited1', 'cited2']
-        assert {item: origin for item, origin in _origins(pack).items() if origin == 'fresh'}.keys() == {
+        assert ids[:2] == CITED
+        assert set(_fresh(pack)) == {
             'fresh_late', 'fresh_courier', 'fresh_app', 'fresh_redacted', 'fresh_summary', 'fresh_positive',
             'fresh_injection'}
         # Matched on the persona's category (delivery), so a billing review since then is not in it.
         assert 'fresh_billing' not in ids
-        assert pack['personas'][0]['fresh_since'] == _day(3)
         assert pack['missing_persona_ids'] == []
 
     def test_the_fresh_reviews_that_share_the_question_s_words_come_first(self, tables):
         pack = _pack(tables, question='crushed box', limit=2)
-        fresh = [item for item in pack['personas'][0]['evidence'] if item['origin'] == 'fresh']
-        assert next(item['feedback_id'] for item in fresh) == 'fresh_late'
+        fresh = _fresh(pack)
+        assert fresh[0] == 'fresh_late'
         assert len(fresh) == 2
 
     def test_limit_zero_is_the_stored_evidence_only(self, tables):
@@ -142,43 +146,29 @@ class TestThePack:
         assert 'fresh_positive' not in ids  # positive is outside its sentiments
         assert 'fresh_late' in ids
 
-    def test_refreshed_reviews_come_first_and_are_not_read_again_as_fresh(self, tables):
-        projects, _ = tables
-        projects.put_item(Item=_persona(evidence_updates=[
-            {'at': GENERATED, 'by': {'sub': 'u1', 'kind': 'user'}, 'reason': 'manual_refresh',
-             'feedback_ids': ['fresh_courier']}]))
-        origins = _origins(_pack(tables))
-        assert origins['fresh_courier'] == 'refreshed'
-        assert list(origins)[:3] == ['fresh_courier', 'cited1', 'cited2']
-
-    def test_a_refresh_makes_the_pack_of_a_persona_citing_more_than_it_holds(self, tables):
-        # (13 cited reviews, more than MAX_STORED_EVIDENCE, then one refresh: the refreshed review is in the pack)
+    def test_a_refreshed_review_that_matches_the_topic_reaches_the_pack_through_the_fresh_read(self, tables):
+        # (review round 1 of the second gate, 7.66.00: the plan's pack, the cited ids plus fresh retrieval; a review a
+        # refresh took is a match since the generation, so it competes there on the topic, and the cited stay)
         projects, feedback = tables
         cited = [f'many{n:02d}' for n in range(13)]
         for n, feedback_id in enumerate(cited):
             feedback.put_item(Item=_review(feedback_id, 20 + n))
         projects.put_item(Item=_persona(evidence_feedback_ids=cited, evidence_updates=[
             {'at': GENERATED, 'by': {'sub': 'u1', 'kind': 'user'}, 'reason': 'manual_refresh',
-             'feedback_ids': ['fresh_courier']}]))
-        stored = {item: origin for item, origin in _origins(_pack(tables)).items() if origin != 'fresh'}
-        assert [len(stored), stored.get('fresh_courier')] == [grounding.MAX_STORED_EVIDENCE, 'refreshed']
+             'feedback_ids': ['fresh_courier', 'fresh_late']}]))
+        ids = _ids(_pack(tables, question='courier rain', limit=1))
+        assert ids == [*cited[:grounding.MAX_STORED_EVIDENCE], 'fresh_courier']
 
-    def test_three_refreshes_never_push_out_the_reviews_it_was_generated_from(self, tables):
-        # (review round 3, 7.66.00: 13 cited reviews and three refreshes of 8: the refreshed and the cited are taken
-        # in turn, newest refresh first, and at least half of the stored evidence stays cited)
+    def test_the_cited_reviews_are_always_kept_however_many_refreshes(self, tables):
         projects, feedback = tables
-        cited = [f'many{n:02d}' for n in range(13)]
         refreshes = [[f'r{k}_{n}' for n in range(8)] for k in range(3)]
-        for n, feedback_id in enumerate([*cited, *(one for refresh in refreshes for one in refresh)]):
-            feedback.put_item(Item=_review(feedback_id, 20 + n))
-        projects.put_item(Item=_persona(evidence_feedback_ids=cited, evidence_updates=[
+        for n, feedback_id in enumerate(one for refresh in refreshes for one in refresh):
+            feedback.put_item(Item=_review(feedback_id, 0, text=f'Late parcel number {n}'))
+        projects.put_item(Item=_persona(evidence_updates=[
             {'at': GENERATED, 'by': {'sub': 'u1', 'kind': 'user'}, 'reason': 'manual_refresh', 'feedback_ids': ids}
             for ids in refreshes]))
-        stored = [(item, origin) for item, origin in _origins(_pack(tables, limit=0)).items()]
-        origins = [origin for _, origin in stored]
-        assert len(stored) == grounding.MAX_STORED_EVIDENCE
-        assert origins.count('cited') >= grounding.MAX_STORED_EVIDENCE // 2
-        assert stored[:2] == [('r2_0', 'refreshed'), ('many00', 'cited')]   # (the newest refresh first, then in turn)
+        pack = _pack(tables, limit=0)
+        assert _ids(pack) == CITED
 
     def test_the_ranking_ignores_the_stop_words_and_reads_the_title_and_summary_too(self, tables):
         # (the similarity ranker's tokens, shared/feedback_similarity.py: "the" and "was" match nothing)
@@ -186,8 +176,7 @@ class TestThePack:
         feedback.put_item(Item=_review('fresh_words', 0, text='the was the was', title='Crushed box'))
         pack = _pack(tables, question='the was crushed', limit=1)
         # (a bare word overlap on the text alone ranked fresh_late first: it shares "the", "was" and "crushed")
-        assert [item['feedback_id'] for item in pack['personas'][0]['evidence'] if item['origin'] == 'fresh'] == [
-            'fresh_words']
+        assert _fresh(pack) == ['fresh_words']
 
     def test_no_micro_feedback_is_ever_evidence(self, tables):
         # (7.66.00: the VoC app's own micro-feedback is no customer's evidence, cited or fresh: shared/item_filters.py)
@@ -233,7 +222,7 @@ class TestWhatThePersonMaySee:
     def test_the_stored_text_is_quoted_never_the_author_or_its_metadata(self, tables):
         items = {item['feedback_id']: item for item in _pack(tables)['personas'][0]['evidence']}
         assert set(items['cited1']) == {'feedback_id', 'text', 'verbatim', 'source_platform', 'category',
-                                        'sentiment_label', 'date', 'origin'}
+                                        'sentiment_label', 'date'}
         assert items['fresh_redacted']['text'] == 'Call me on [PHONE] about the late parcel'
         assert 'Ada Lovelace' not in repr(items)
         assert 'ada@example.com' not in repr(items)

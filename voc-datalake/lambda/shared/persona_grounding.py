@@ -3,14 +3,14 @@
 One module for every surface that lets a project's personas speak: the focus groups (7.64.00) now, the Validate
 phase and the voice personas after them. Each persona's pack is:
 
-* its stored evidence: the reviews its evidence refreshes added (``evidence_updates``, newest first), then the ones its
-  ``supporting_evidence`` cites (``evidence_feedback_ids``, first cited first), at most ``MAX_STORED_EVIDENCE``: a
-  refresh is what a person asked for, so a persona citing many reviews never pushes it out of the pack;
-* fresh retrieval: the reviews imported since the persona was generated that match it and that it does not hold yet
-  (neither its evidence nor the reviews it was written from), at most ``MAX_FRESH`` (8), the ones that share the most
-  words with the question first, then the newest. "Match" is the persona's categories
-  (the categories of the reviews it was written from, most frequent first) within the project's own filters
-  (``filters.sources``, ``categories``, ``sentiments`` on its ``META``).
+* the reviews its ``supporting_evidence`` cites (``evidence_feedback_ids``, first cited first), at most
+  ``MAX_STORED_EVIDENCE``: always kept, whatever the question;
+* fresh retrieval: the reviews imported since the persona was generated that match it, other than those it cites and
+  those it was written from, at most ``MAX_FRESH`` (8), the ones that share the most words with the question first
+  (``shared/feedback_similarity.py``'s tokens: title, problem summary, text), then the newest. A review a refresh added
+  is such a match, so it competes here on the topic, as every review since the generation does. "Match" is the
+  persona's categories (the categories of the reviews it cites, else of those it was written from, most frequent
+  first) within the project's own filters (``filters.sources``, ``categories``, ``sentiments`` on its ``META``).
 
 Every review is read as the person asking: their category scope (``shared.category_access``, its category AND source
 rules) admits it or it is not in the pack, so a pack never holds an id the person could not open. Each review is the
@@ -22,14 +22,14 @@ A pack is ids and short quotes for one request: nothing is stored. Only **Refres
 it found: it appends ``{at, by: {sub, kind}, reason, feedback_ids}`` to the persona's ``evidence_updates`` (at most
 ``MAX_EVIDENCE_UPDATES`` entries, the oldest dropped) and sets ``evidence_refreshed_at``; the persona's own text is
 never rewritten (regenerating stays the generation's). The freshness count is every match since the generation that
-the persona does not hold yet, so a refresh that took 8 of 20 leaves 12 to count and to refresh again.
+the persona neither cites, was written from, nor took in a refresh, so a refresh that took 8 of 20 leaves 12 to
+count and to refresh again.
 
 Not per workspace yet: projects are the deployment's until phase 3 (docs/multi-workspace.md), so a ``workspace`` is
 refused (``require_deployment``) and every read is the deployment's feedback, as the project gate's.
 """
 from __future__ import annotations
 
-import itertools
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -82,9 +82,8 @@ REFRESH_REASON: Final = 'manual_refresh'
 MAX_PACK_PERSONAS: Final = 6
 #: Fresh reviews per persona, and a refresh's at most (the plan's "top 8 since it was generated").
 MAX_FRESH: Final = 8
-#: Stored reviews (refreshed and cited in turn, at least half of them cited while any are left: ``_stored_evidence``)
-#: per persona in a pack, and how many of its listed ids are looked at to find them (a restricted person may see few
-#: of them: the reads stay bounded).
+#: Cited reviews per persona in a pack, and how many of its listed ids are looked at to find them (a restricted person
+#: may see few of them: the reads stay bounded).
 MAX_STORED_EVIDENCE: Final = 12
 MAX_STORED_EXAMINED: Final = 24
 #: Stored ids read to learn a persona's categories (cited first, else the reviews it was written from).
@@ -103,9 +102,6 @@ MAX_QUOTE_CHARS: Final = 400
 MAX_QUESTION_CHARS: Final = 2000
 MAX_ID_CHARS: Final = 128
 
-ORIGIN_CITED: Final = 'cited'
-ORIGIN_REFRESHED: Final = 'refreshed'
-ORIGIN_FRESH: Final = 'fresh'
 
 
 
@@ -184,45 +180,28 @@ def evidence_update_entries(row: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [dict(entry) for entry in entries if isinstance(entry, Mapping)] if isinstance(entries, list) else []
 
 
-def _stored_ids(persona: Mapping[str, Any]) -> list[tuple[str, str]]:
-    """``(feedback_id, origin)`` of the persona's stored evidence: its refreshed reviews (newest refresh first) and
-    its cited ones taken in turn, a refreshed one first, so a refresh always reaches the pack and two or three never
-    push every review it was generated from out of ``MAX_STORED_EXAMINED`` (7.66.00); the longer list's rest after."""
-    cited = [(one, ORIGIN_CITED) for one in listed_ids(persona.get(EVIDENCE_FEEDBACK_IDS_FIELD))]
-    refreshed = [(one, ORIGIN_REFRESHED)
-                 for entry in reversed(evidence_update_entries(persona)) for one in listed_ids(entry.get('feedback_ids'))]
-    turns = [pair for both in itertools.zip_longest(refreshed, cited) for pair in both if pair is not None]
-    seen: set[str] = set()
-    out: list[tuple[str, str]] = []
-    for feedback_id, origin in turns:
-        if feedback_id not in seen:
-            seen.add(feedback_id)
-            out.append((feedback_id, origin))
-    return out
+def _cited_ids(persona: Mapping[str, Any]) -> list[str]:
+    """The reviews the persona cites (``evidence_feedback_ids``), first cited first."""
+    return listed_ids(persona.get(EVIDENCE_FEEDBACK_IDS_FIELD))
 
 
-def _stored_evidence(reader: Reader, persona: Mapping[str, Any], budget: WalkBudget) -> list[dict[str, Any]]:
-    """The persona's stored reviews the person may see, at most ``MAX_STORED_EVIDENCE``, in ``_stored_ids``' turns;
-    the refreshed ones take at most half of it while cited ones are left (a refreshed one past that half comes only
-    once the cited ones run out)."""
+def _refreshed_ids(persona: Mapping[str, Any]) -> list[str]:
+    """The reviews its refreshes added (``evidence_updates``), newest refresh first."""
+    return [one for entry in reversed(evidence_update_entries(persona)) for one in listed_ids(entry.get('feedback_ids'))]
+
+
+def _cited_evidence(reader: Reader, persona: Mapping[str, Any], budget: WalkBudget) -> list[dict[str, Any]]:
+    """The persona's cited reviews the person may see, at most ``MAX_STORED_EVIDENCE`` of the first
+    ``MAX_STORED_EXAMINED`` it lists."""
     kept: list[dict[str, Any]] = []
-    later: list[dict[str, Any]] = []
-    refreshed_room = MAX_STORED_EVIDENCE // 2
-    for feedback_id, origin in _stored_ids(persona)[:MAX_STORED_EXAMINED]:
+    for feedback_id in _cited_ids(persona)[:MAX_STORED_EXAMINED]:
         # The pack's one budget bounds these reads too (a later persona then gets fewer, never a slow answer).
         if len(kept) >= MAX_STORED_EVIDENCE or budget.exhausted():
             break
         row = _by_id(reader, feedback_id)
-        if row is None:
-            continue
-        entry = {**_quote(row), 'origin': origin}
-        if origin == ORIGIN_REFRESHED:
-            if refreshed_room == 0:
-                later.append(entry)
-                continue
-            refreshed_room -= 1
-        kept.append(entry)
-    return [*kept, *later][:MAX_STORED_EVIDENCE]
+        if row is not None:
+            kept.append(_quote(row))
+    return kept
 
 
 def _row_by_id(reader: Reader, feedback_id: str) -> dict | None:
@@ -267,8 +246,14 @@ def _since(persona: Mapping[str, Any]) -> str:
 
 
 def _held_ids(persona: Mapping[str, Any]) -> set[str]:
-    """Every review the persona already holds: its evidence (cited, refreshed) and the reviews it was written from."""
-    return {one for one, _ in _stored_ids(persona)} | set(listed_ids(persona.get('input_feedback_ids')))
+    """The reviews a pack's fresh read skips: those the persona cites and those it was written from (a refreshed one
+    is a match since the generation, so it competes there on the topic)."""
+    return set(_cited_ids(persona)) | set(listed_ids(persona.get('input_feedback_ids')))
+
+
+def _counted_ids(persona: Mapping[str, Any]) -> set[str]:
+    """The reviews the freshness count and a refresh skip: the held ones and those a refresh already took."""
+    return _held_ids(persona) | set(_refreshed_ids(persona))
 
 
 @dataclass(frozen=True)
@@ -371,17 +356,15 @@ def _fresh_items(reader: Reader, match: _Match, skip: set[str], question: str, l
 
 def _persona_pack(reader: Reader, project_id: str, persona: Mapping[str, Any], filters: Mapping[str, list[str]],
                   question: str, limit: int, budget: WalkBudget) -> dict[str, Any]:
-    stored = _stored_evidence(reader, persona, budget)
+    cited = _cited_evidence(reader, persona, budget)
     match = _match_for(reader, persona, filters, _since(persona))
     fresh, capped = _fresh_items(reader, match, _held_ids(persona), question, limit, budget)
     logger.info('Persona evidence pack read', extra={
-        'project_id': project_id, 'stored': len(stored), 'fresh': len(fresh), 'capped': capped})
+        'project_id': project_id, 'cited': len(cited), 'fresh': len(fresh), 'capped': capped})
     return {
         'persona_id': persona['persona_id'],
         'name': str(persona.get('name') or ''),
-        'evidence': [*stored, *({**_quote(item), 'origin': ORIGIN_FRESH} for item in fresh)],
-        'fresh_since': match.day,
-        'fresh_capped': capped,
+        'evidence': [*cited, *(_quote(item) for item in fresh)],
     }
 
 
@@ -393,11 +376,10 @@ def visible_ids(reader: Reader, feedback_ids: Sequence[str]) -> list[str]:
 
 def evidence_pack(reader: Reader, project_id: str, persona_ids: Sequence[str], question: str, limit: int, *,
                   workspace: WorkspaceScope | None = None) -> dict[str, Any]:
-    """``{personas: [...], missing_persona_ids}``: each persona's stored and fresh evidence, as the person may see it.
+    """``{personas: [...], missing_persona_ids}``: each persona's cited and fresh evidence, as the person may see it.
 
     The personas come back in request order; an id the project does not have is in ``missing_persona_ids``. One walk
-    budget covers the whole pack, so a pack of six personas answers within it (``fresh_capped`` says when a persona's
-    fresh read was cut short).
+    budget covers the whole pack, so a pack of six personas answers within it (a cut fresh read is logged).
     """
     require_deployment(workspace, PROJECT_GATE_STORE)
     filters = _project_filters(reader, project_id)
@@ -422,11 +404,12 @@ def _required_persona(reader: Reader, project_id: str, persona_id: str) -> dict:
 
 def _new_matches(reader: Reader, project_id: str, persona_id: str,
                  workspace: WorkspaceScope | None) -> tuple[dict, _Match, _Fresh]:
-    """The persona (or a 404), its match, and the matching reviews since its generation that it does not hold yet."""
+    """The persona (or a 404), its match, and the matching reviews since its generation that it neither holds nor took
+    in a refresh (``_counted_ids``)."""
     require_deployment(workspace, PROJECT_GATE_STORE)
     persona = _required_persona(reader, project_id, persona_id)
     match = _match_for(reader, persona, _project_filters(reader, project_id), _since(persona))
-    return persona, match, _fresh_rows(reader, match, _held_ids(persona), WalkBudget(seconds=WALK_SECONDS))
+    return persona, match, _fresh_rows(reader, match, _counted_ids(persona), WalkBudget(seconds=WALK_SECONDS))
 
 
 def evidence_freshness(reader: Reader, project_id: str, persona_id: str, *,

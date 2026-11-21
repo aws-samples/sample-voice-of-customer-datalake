@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { supportsDocumentBlocks } from '../assistant/runtime/library-mentions.js';
 import {
   capOutputTokens, customContextWindow, customModel, customModels, CUSTOM_MODELS_ENV, DEFAULT_CONTEXT_WINDOW,
-  DEFAULT_MAX_OUTPUT_TOKENS, MAX_CUSTOM_MODELS, readsAttachments, streamCustomModel,
+  DEFAULT_MAX_OUTPUT_TOKENS, MAX_CUSTOM_MODELS, readsAttachments, shownModelId, streamCustomModel,
 } from './custom-models.js';
 import { CHAT_SURFACE_DEFAULT, chatModelForAttachments, fallbackChain } from './model-fallback.js';
 import { takesThinkingBudget } from './model-override.js';
@@ -45,6 +45,10 @@ describe('customModels', () => {
       capabilities: { tools: true, documents: false, json: true, temperature: true } }]);
     expect([customContextWindow(LLAMA), customContextWindow(MINE), customContextWindow(SONNET55),
       customModels(noWindow)[0]?.contextWindow]).toStrictEqual([128_000, 8_192, undefined, DEFAULT_CONTEXT_WINDOW]);
+  });
+
+  it('shows an imported model by its key, never its ARN, and any other model by its id (7.66.00)', () => {
+    expect([shownModelId(MINE), shownModelId(NOVA), shownModelId(SONNET55)]).toStrictEqual(['mine', NOVA, SONNET55]);
   });
 
   it('reads nothing without the env, from a value that is not JSON or not a list', () => {

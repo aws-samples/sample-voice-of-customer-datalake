@@ -145,6 +145,14 @@ describe('the list', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(8200) })
     expect(listCalls()).toHaveLength(before)
   })
+
+  it.each(['extracting', 'pending'] as const)('shows a stale %s item as stopped, with no spinner', async (status) => {
+    route({ 'GET /projects/library': () => libraryPage([libraryItem({ status, stale: true })]) })
+    renderPage()
+    const row = await screen.findByRole('button', { name: /Q3 market report/ })
+    expect(within(row).getByText('Stopped')).toBeInTheDocument()
+    expect(row.querySelector('.animate-spin')).toBeNull()
+  })
 })
 
 describe('in a workspace', () => {

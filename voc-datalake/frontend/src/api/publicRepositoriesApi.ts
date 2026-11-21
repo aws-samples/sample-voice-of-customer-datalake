@@ -31,10 +31,6 @@ export const MAX_QUERY_CHARS = 200
 
 const LicenceSchema = z.object({ spdx: optionalServerText(), name: z.string().catch('') }).nullable().catch(null)
 
-/** (7.60.00) The ways a result can be connected: the App (not archived), a fine-grained token (public, not archived) and a
- * fork (not archived, with a licence). */
-const WaysSchema = z.object({ app: z.boolean().catch(false), token: z.boolean().catch(false), fork: z.boolean().catch(false) })
-
 const PublicRepositorySchema = z.object({
   repository: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/),
   description: optionalServerText(),
@@ -48,11 +44,7 @@ const PublicRepositorySchema = z.object({
   fork: z.boolean().catch(false),
   /** The connection that already reads it; null for none. */
   connected: optionalServerText(),
-  ways: WaysSchema.optional().catch(undefined),
-}).transform(({ ways, ...repository }) => ({
-  ...repository,
-  ways: ways ?? { app: !repository.archived, token: !repository.archived, fork: !repository.archived && repository.licence !== null },
-}))
+})
 
 export type PublicRepository = z.output<typeof PublicRepositorySchema>
 

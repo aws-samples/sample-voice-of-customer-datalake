@@ -29,7 +29,8 @@
     "pending": "等待文件",
     "extracting": "读取中",
     "ready": "就绪",
-    "failed": "失败"
+    "failed": "失败",
+    "stale": "已停止"
   },
   "row": {
     "dated": "日期：{{date}}",

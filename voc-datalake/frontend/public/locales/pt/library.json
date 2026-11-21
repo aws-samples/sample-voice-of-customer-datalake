@@ -29,7 +29,8 @@
     "pending": "Aguardando o arquivo",
     "extracting": "Lendo",
     "ready": "Pronto",
-    "failed": "Falhou"
+    "failed": "Falhou",
+    "stale": "Interrompido"
   },
   "row": {
     "dated": "Data: {{date}}",

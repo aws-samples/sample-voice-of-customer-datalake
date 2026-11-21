@@ -1675,7 +1675,7 @@ bill.) Each entry, checked at synth (`lib/utils/custom-models.ts`; a bad entry f
 | `capabilities` | yes | `tools` (takes tool definitions: required for `chat` and `agent_worker`; `chat` streams its tool calls, so a chat model must take tools on ConverseStream, which **Check tools** tests for any model that may serve chat), `documents` (reads document and image blocks), `json` (returns strict JSON when asked: required for every surface but `chat` and `prototype`), `temperature` (takes the parameter) |
 | `price` | yes | `in` and `out`, USD per million input and output tokens: the cost rollup and the cost page price its tokens with it. An imported model's figure is an estimate, its cost lines `complete: false`: Custom Model Import bills the model's active copies (Custom Model Units by 5-minute windows), not its tokens, so set the price you convert to |
 | `regions` | for a geographic profile other than `eu.`; optional for an `eu.` one | The profile's destination Regions (`aws bedrock get-inference-profile --inference-profile-identifier <id> --query 'models[].modelArn'`); must include the app Region. An `eu.` profile without it is granted the Regions Claude's `eu.` profiles route to (`EU_PROFILE_DESTINATION_REGIONS`); with it, its own, EU Regions only |
-| `contextWindow`, `maxOutputTokens` | no | Its input window and output cap in tokens (32,000 and 4,096 when absent): prompts are sized to the first (the feedback a document is written from takes at most half of what the prompts leave), `maxTokens` capped at the second. A model serving `documents` needs a window of at least 16,000 |
+| `contextWindow`, `maxOutputTokens` | no | Its input window and output cap in tokens (32,000 and 4,096 when absent): prompts are sized to the first (the feedback a document is written from takes at most half of what the prompts leave), `maxTokens` capped at the second; an answer cut at its output cap is continued only while the prompt, the answer so far and the next turn fit the window, then kept as it is (truncated). A model serving `documents` needs a window of at least 16,000 |
 
 Refused at synth: provisioned throughput (`provisioned-model/` ARNs: a fixed cost), a fine-tuned custom model
 (`custom-model/`, which needs provisioned throughput or a deployment), an application inference profile, an id of the
@@ -1687,7 +1687,10 @@ or `us.` profile is refused ([eu-deployment.md](eu-deployment.md#your-own-models
 **What the app does with one:**
 
 - **The picker.** Administration → AI models lists the custom models of a surface under **Your models**
-  (`GET /settings/model` → `custom_models`). Only a per-surface pick can name one: the pick for all surfaces, the
+  (`GET /settings/model` → `custom_models`). To anyone but an administrator an imported model is its `key` and `label`
+  only (its id is an ARN naming the account and the Region), a surface's pick of it and the assistant's
+  `assistant.context` `model` its `key`; a save or a Test may name it by its key, which the server resolves to the ARN
+  (7.66.00). Only a per-surface pick can name one: the pick for all surfaces, the
   deployment's default, the e2e test users' model and the capacity fallback stay Claude. A pick whose model is later
   removed from the registry falls back to the surface default, and the settings and inference logs say so. For the
   model a surface resolves to, the card shows a **Your model** badge (and EU residency), where its inference runs

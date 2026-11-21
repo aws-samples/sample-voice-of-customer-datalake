@@ -393,9 +393,33 @@ def test_a_run_whose_item_was_claimed_again_stops_without_deleting(library):
     item_id = _extract_and_meanwhile(library, claim_again)
     row = library.item(item_id)
     assert (row['status'], row['extract_token']) == ('extracting', 'f' * 16)
+    _assert_output_kept(library, item_id)
+
+
+def _assert_output_kept(library: Any, item_id: str) -> None:
+    """The item's passages and its extracted text are still there."""
     assert library.table.query(KeyConditionExpression='pk = :p',
                                ExpressionAttributeValues={':p': chunks_pk(item_id)})['Items'] != []
     assert library.s3.get_object(Bucket=BUCKET, Key=f'library/{item_id}/extracted')['Body'].read()
+
+
+def test_a_duplicate_delivery_of_one_claim_keeps_the_ready_items_output(library):
+    """Review round 1 of the second gate (7.66.00): the same event delivered twice, its runs overlapping (one token):
+    the second finishes first and the item is ready; the first's ready write is refused, and it keeps the passages and
+    the text (the item is still claimed), never dropping a ready item's output."""
+    events = [call.args[1] for call in library.invoke_async.call_args_list]
+    seen: list[str] = []
+
+    def duplicate(item_id: str) -> None:
+        if seen:
+            return
+        seen.append(item_id)
+        latest = [call.args[1] for call in library.invoke_async.call_args_list][len(events):]
+        assert library_worker.run(latest[0], library.table) == {'status': 'done'}
+
+    item_id = _extract_and_meanwhile(library, duplicate)
+    assert library.item(item_id)['status'] == 'ready'
+    _assert_output_kept(library, item_id)
 
 
 def test_a_run_whose_claim_a_delete_revoked_drops_what_it_wrote(library):
@@ -424,6 +448,17 @@ def test_a_delete_that_fails_part_way_leaves_the_item_to_delete_again(library):
                                ExpressionAttributeValues={':p': chunks_pk(item_id)})['Items'] == []
 
 
+def test_a_delete_whose_object_versions_were_refused_is_503_and_keeps_the_rows(library):
+    """Review round 1 of the second gate (7.66.00): refused version deletes answer 503 before the rows go, so the item
+    is there to delete again."""
+    item = library.upload(REPORT)
+    item_id, path = item['item_id'], f"/projects/library/{item['item_id']}"
+    with patch.object(library_objects.LibraryObjects, 'delete_item', return_value=2):
+        assert library.call('DELETE', path)[0] == 503
+    assert 'Item' in library.table.get_item(Key=item_key(item_id))
+    assert library.call('DELETE', path) == (200, {'success': True, 'deleted': item_id})
+
+
 def test_the_context_signs_native_items_and_searches_the_others(library):
     small = library.upload(REPORT, slug='q3-market')
     big = library.upload(docx(*[f'Paragraph {n} about delivery delays in the south region.' for n in range(400)]),
@@ -440,6 +475,20 @@ def test_the_context_signs_native_items_and_searches_the_others(library):
     assert all(passage['item_id'] == big['item_id'] for passage in body['passages'])
     assert len(body['passages']) <= 8
     assert sum(len(passage['text']) for passage in body['passages']) <= 12_000
+
+
+def test_a_scanned_pdf_is_never_sent_as_a_file_its_passages_are_searched(library):
+    """Review round 1 of the second gate (7.66.00): a PDF whose text Amazon Bedrock read (``method: model``) has no
+    text layer, and a PDF sent without citations is read by it: such an item is searched, never attached."""
+    scanned = library.upload(REPORT, slug='scanned-survey')
+    library.table.update_item(Key=item_key(scanned['item_id']), UpdateExpression='SET #f = :pdf, #m = :model',
+                              ExpressionAttributeNames={'#f': 'format', '#m': 'method'},
+                              ExpressionAttributeValues={':pdf': 'pdf', ':model': 'model'})
+    assert library.item(scanned['item_id'])['native'] is True
+    body = library.call('POST', '/projects/library/context', body={
+        'item_ids': [scanned['item_id']], 'query': 'faster delivery south', 'native_slots': 3})[1]
+    assert body['native'] == []
+    assert {passage['item_id'] for passage in body['passages']} == {scanned['item_id']}
 
 
 def test_the_context_without_ids_finds_items_by_their_words(library):

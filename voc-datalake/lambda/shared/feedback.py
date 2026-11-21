@@ -26,6 +26,7 @@ from shared.feedback_sampling import (
 from shared.indexes import FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX
 from shared.item_filters import NO_ITEM_FILTERS, ItemFilters, parse_item_filters
 from shared.logging import logger as powertools_logger
+from shared.model_config import CHARS_PER_TOKEN
 from shared.prompt_labels import PromptLabels
 from shared.time_budget import WalkBudget
 from shared.timestamps import ISO_DAY_RE
@@ -304,9 +305,8 @@ def sample_walk_days(days: int) -> int:
 # surviving records can be counted rather than estimated.
 REVIEW_BLOCK_MARKER = '### Review '
 
-# Rough Bedrock/Claude tokenisation for English prose. Only used to convert a
-# model's advertised context window (quoted in tokens) into a character budget.
-CHARS_PER_TOKEN = 4
+# Rough Bedrock/Claude tokenisation for English prose (shared/model_config.py's): converts a model's advertised
+# context window (quoted in tokens) into a character budget.
 
 # Tokens a persona/document generation chain spends on things that are NOT
 # feedback content: the system prompts, the templated instructions wrapped

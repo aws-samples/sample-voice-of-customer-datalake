@@ -29,7 +29,8 @@
     "pending": "Czeka na plik",
     "extracting": "Odczytywanie",
     "ready": "Gotowy",
-    "failed": "Błąd"
+    "failed": "Błąd",
+    "stale": "Zatrzymano"
   },
   "row": {
     "dated": "Data: {{date}}",

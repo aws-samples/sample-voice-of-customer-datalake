@@ -22,7 +22,8 @@ sections the **section switch** under it (`SectionSwitch.tsx`), one section at a
 WAI-ARIA tablist (arrow keys, Home and End move and select; it scrolls sideways when it does not fit); below `md` they
 are a select. A tab's panel starts with its one line; on **General**, the first tab, a compact **Needs attention**
 strip (the sources a circuit breaker paused, the people with no way of working saved, the AI models this account
-cannot call, and since 7.60.00 the fine-grained tokens to replace while the Engineering agents tab is shown; nothing
+cannot call, and since 7.60.00 the fine-grained tokens to replace while the Engineering agents tab is shown, which
+leads to Agents → Connections, where each is replaced; nothing
 while nothing does), and the tabs concerned carry a count badge. There is **no page-level
 Save**: every card saves itself and says "Saved" until its next edit (`components/SavedStatus`), and its
 unsaved-changes guard asks before its section (General's brand and theme: the tab) is left.
@@ -37,7 +38,7 @@ The tabs are main's six, in main's order, then the two voc-multiplayer added (Sy
 | Privacy & access (`access`) | Source policies (`policies`: profiles, PII, retention, restriction; the erasure panels `#erasure`); Users (`users`: one table of everyone who can sign in and **Invite person**, `/admin/access/users/invite`; a person's editor, a side sheet at `/admin/access/users/<username>`); Boards (`boards`: the [feedback boards](feature-requests.md), a board's editor at `/admin/access/boards/<boardId>`; Company domains `#domains`; Participant email `#participants`) |
 | AI models (`ai`) | Per-surface model picker, model test, capacity |
 | Workspaces (`workspaces`) | Inside a workspace: This workspace (`settings`: its name, brand, plugins, categories, dimensions, source policies, export and delete, the cards of its Workspace settings page) and Members (`members`); platform admins: All workspaces (`all`) and Deployment brand (`deployment-brand`) |
-| Engineering agents (`agents`) | While the Agents page and the engineering module are on: Hard cap (`#hard-cap`, Agents › Spend's switch); Roles' models (`#models`: each role, the harness it runs on, Kiro or native, and its model, linked to its Registry card where it is chosen); GitHub connections (`#connections`: Connections, where a repository is added through the App, a fine-grained token or a fork, Spend, the setup guide, and since 7.60.00 the fine-grained tokens to replace, each with its expiry chip) |
+| Engineering agents (`agents`) | While the Agents page and the engineering module are on: Hard cap (`#hard-cap`, Agents › Spend's switch); Roles' models (`#models`: each role, the harness it runs on, Kiro or native, and its model, linked to its Registry card where it is chosen); GitHub connections (`#connections`: Connections, where a repository is added through the App, a fine-grained token or a fork, Spend, the setup guide) |
 | System (`system`) | Logs (`logs`: summary; system errors, validation failures, processing errors, scraper runs; alerts); Version (`version`: the build stamps and the release notes) |
 
 A tab or a section hidden from the caller falls back like an unknown one: an unknown tab opens General, an unknown

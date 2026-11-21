@@ -1,7 +1,7 @@
 /**
  * @fileoverview The fine-grained token connections' clients (7.60.00): a new token connection and a replaced token
  * (each with `only_this_repository: true`, the reason only when given), a run's go, the connections' new credential
- * fields, and the public search's `ways` (sent, or derived from the result's facts when left out).
+ * fields.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
@@ -12,7 +12,6 @@ vi.mock('./client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiC
 const { tokenConnectionsApi } = await import('./tokenConnectionsApi')
 const { engineeringGoApi } = await import('./engineeringGoApi')
 const { engineeringConnectionsApi, isTokenConnection } = await import('./engineeringConnectionsApi')
-const { publicRepositoriesApi } = await import('./publicRepositoriesApi')
 
 const CONNECTION = tokenConnection('partner-sdk', 'partner-org/sdk', 10)
 const RUN = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3'
@@ -62,25 +61,5 @@ describe('a run\'s go', () => {
   it('reads an answer without its go as an error', async () => {
     routeFetchApi({ [`POST /agents/engineering/${RUN}/go`]: () => ({ go: { created: true } }) })
     await expect(engineeringGoApi.give(RUN)).rejects.toThrow('The go was unreadable')
-  })
-})
-
-describe('the public search\'s ways', () => {
-  const result = (extra: Record<string, unknown>) => ({
-    repository: 'open-tools/lint-kit', stars: 1, licence: { spdx: 'MIT', name: 'MIT' }, archived: false, ...extra,
-  })
-
-  it('keeps the ways the server sent, and derives them when it sent none', async () => {
-    routeFetchApi({ 'GET /agents/engineering/public-repositories?q=lint': () => ({ repositories: [
-      result({ ways: { app: true, token: false, fork: true } }),
-      result({ repository: 'open-tools/old', archived: true }),
-      result({ repository: 'open-tools/plain', licence: null }),
-    ] }) })
-    const found = (await publicRepositoriesApi.search('lint')).repositories.map((repository) => repository.ways)
-    expect(found).toStrictEqual([
-      { app: true, token: false, fork: true },
-      { app: false, token: false, fork: false },
-      { app: true, token: true, fork: false },
-    ])
   })
 })

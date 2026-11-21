@@ -4,9 +4,8 @@ Agents API's side: the picker and the connection. Nothing here imports ``cryptog
 * **The picker** (``search``, ``GET /agents/engineering/public-repositories?q=``): a name, ``owner/name`` or a GitHub
   address, searched server-side through the token function (``app_tokens.py`` ``public_search``) with a token of the
   deployment's App that holds ``metadata: read`` alone and names no repository; each result with its stars, licence,
-  whether it is archived, its last push, the connection that already has it, and since 7.60.00 the ways it may be
-  connected (``ways_of``: the App, a fine-grained token, a fork). Private repositories are never
-  answered: they connect through the App's installation, as before.
+  whether it is archived, its last push and the connection that already has it (the web app reads from them how it may
+  be connected). Private repositories are never answered: they connect through the App's installation, as before.
 * **The connection** (``connect``, ``POST /agents/engineering/public-connections``): the repository read again through
   the token function (``public_repository``: it must be public on GitHub now), then stored as a ``public_read``
   connection (``connections.PublicRead``: the App installation whose read-only token reads it; no write credential for
@@ -85,15 +84,6 @@ def room_for(stored: Sequence[Mapping[str, Any]], repository: str) -> None:
         raise ConnectionRefused('conflict', f'at most {MAX_CONNECTIONS} connections: remove one to add another')
 
 
-def ways_of(facts: Any) -> dict[str, bool]:
-    """(7.60.00) The "Add a repository" chooser's hints for a public repository found (``upstream.RepositoryFacts``):
-    the App installed on it (``app``) or a fine-grained token (``token``: public repositories only) end with a branch
-    and a pull request on it, a fork (``fork``: one with a licence) with a pull request on the fork; an archived one
-    takes none of them."""
-    takes = not facts.archived
-    return {'app': takes, 'token': takes and not facts.private, 'fork': takes and bool(facts.licence_spdx)}
-
-
 class PublicRepositories:
     """The picker and the connection over the connections (``connections``), the token function (``tokens``: its
     request in, its answer out, a ``ConnectionRefused`` for its failures) and the GitHub Issues source's follow
@@ -120,8 +110,8 @@ class PublicRepositories:
         listed = answer.get('repositories')
         found = [facts for facts in map(facts_from_answer, listed if isinstance(listed, list) else [])
                  if facts is not None and not facts.private]
-        return {'repositories': [{**facts.view(connected.get(facts.repository.lower())), 'ways': ways_of(facts)}
-                                 for facts in found], 'query': words}
+        return {'repositories': [facts.view(connected.get(facts.repository.lower())) for facts in found],
+                'query': words}
 
     def connect(self, body: Mapping[str, object], actor: Actor) -> tuple[dict[str, Any], bool, dict[str, Any] | None]:
         """A ``public_read`` connection for the body's repository (``{repository, reason?}``), read again on GitHub

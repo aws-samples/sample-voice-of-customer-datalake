@@ -29,7 +29,8 @@
     "pending": "ファイル待ち",
     "extracting": "読み取り中",
     "ready": "準備完了",
-    "failed": "失敗"
+    "failed": "失敗",
+    "stale": "停止"
   },
   "row": {
     "dated": "日付: {{date}}",

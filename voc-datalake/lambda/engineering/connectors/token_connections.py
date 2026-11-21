@@ -128,6 +128,17 @@ class TokenConnections:
         logger.info('engineering token connection saved', extra={'connection_id': connection_id})
         return connection, created
 
+    def _renewed_anchor(self, connection_id: str, row: Mapping[str, Any]) -> tuple[str, int]:
+        """The App installation a replaced token reads through: anchored again among the OTHER connections, as a
+        create anchors (7.66.00), so a token replaced after GitHub was connected again reads through the new
+        installation (readiness's ``app_installation`` advice: connect GitHub again, then replace the token); the
+        stored one when no other connection holds an installation."""
+        others = [c for c in self._connections.list() if str(c.get('connection_id', '')) != connection_id]
+        try:
+            return anchor(others)
+        except ConnectionRefused:
+            return _stored_anchor(row)
+
     def renew(self, connection_id: str, body: Mapping[str, object], actor: Actor,
                 live_runs: Callable[[str], list[str]] | None = None) -> dict[str, Any]:
         """The connection's token replaced (a renewal): the connection as saved. ``live_runs``: the connection's runs
@@ -146,12 +157,16 @@ class TokenConnections:
                 runs=len(runs), owner=str(row.get('token_owner_name') or 'its owner')))
         repository = str(row.get('repository', ''))
         facts = self._checked(token, repository)
-        app = (str(row.get('app_id', '')), int(str(row.get('installation_id') or '0')))
+        app = self._renewed_anchor(connection_id, row)
         connection, _ = self._connections.save(connection_id, self._request(
             facts, token, app=app, default_branch=str(row.get('default_branch', '')), reason=reason, actor=actor),
             actor)
         logger.info('engineering token replaced', extra={'connection_id': connection_id})
         return connection
+
+
+def _stored_anchor(row: Mapping[str, Any]) -> tuple[str, int]:
+    return str(row.get('app_id', '')), int(str(row.get('installation_id') or '0'))
 
 
 def go_refusal(row: Mapping[str, Any] | None, subject: str) -> str | None:

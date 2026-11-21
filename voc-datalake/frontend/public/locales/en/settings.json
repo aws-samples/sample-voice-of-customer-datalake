@@ -1085,9 +1085,6 @@
     "modelsDescription": "The harness each role runs on in this deployment and the model it uses. A change is made on the role's Registry card and applies from the next run.",
     "modelsUnread": "Couldn't read the roles' models.",
     "connectionsDescription": "Where the engineering agents get their repositories, what they cost, and the steps before the first run.",
-    "tokensTitle": "Fine-grained tokens to replace",
-    "tokensHint": "Replace each on Agent orchestration › Connections: a run on an expired token is refused at its start.",
-    "tokenUnusable": "Not set, or its expiry is not known",
     "links": {
       "connections": "Agent orchestration › Connections",
       "connectionsHint": "Connect GitHub and choose the repositories the agents work on: through the App, with a fine-grained token, or through a fork",
