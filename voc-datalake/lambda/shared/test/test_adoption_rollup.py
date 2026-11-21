@@ -6,6 +6,8 @@ from typing import Any
 import pytest
 
 from shared import adoption_rollup as ar
+from shared import adoption_validation as av
+from shared import project_validation as pv
 from shared.adoption_rollup import MonthBuckets, month_of, months_between, project_projection
 from shared.adoption_validation import REPORT_OUTCOME_KEY, REPORT_RESULTS_FIELD
 
@@ -162,3 +164,16 @@ def test_the_projection_reads_no_text_of_a_decision_or_a_report():
     assert set(names.values()) - set(ar.PROJECT_ATTRIBUTES) == {
         'verdict', 'decided_at', 'evidence', 'document_ids', 'report_document_id', 'status', 'outcome'}
     assert not {'rationale', 'content', 'title', 'quotes', 'text'} & set(names.values())
+
+
+def test_the_validate_names_are_7_68s_as_shipped():
+    """shared/adoption_validation.py reads 7.68.00's own names (shared/project_validation.py): the META's map, the three
+    document types, a criterion's outcome and the decision prefill's evidence ids."""
+    assert pv.block_of({av.META_VALIDATION_FIELD: {'report_document_id': 'd1'}}) == {'report_document_id': 'd1'}
+    assert av.VALIDATION_TYPES == (pv.PLAN_TYPE, pv.REPORT_TYPE, pv.RUN_TYPE)
+    results = pv.criteria_results([{'id': 'c000001', 'text': 'Quick', 'target': 3}],
+                                  {'criteria': {'c000001': {'n': pv.MIN_RESPONSES, 'average': 4}}}, None)
+    assert [result[av.REPORT_OUTCOME_KEY] for result in results] == [av.OUTCOME_MET]
+    assert av.met_criteria({av.REPORT_RESULTS_FIELD: results}) == 1
+    prefill = pv.decision_prefill('P', results, report_document_id='d1', feedback_ids=[], responses=pv.MIN_RESPONSES)
+    assert prefill['evidence']['document_ids'] == ['d1']

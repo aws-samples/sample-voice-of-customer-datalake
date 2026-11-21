@@ -22,6 +22,8 @@ describe('pageContextFromLocation', () => {
     ['/projects/p1/personas', '', { kind: 'project', path: '/projects/p1/personas', projectId: 'p1', tab: 'personas' }],
     // The query names no tab (no old `?tab=` link is read): the project's own path is its Overview.
     ['/projects/p1', '?tab=personas', { kind: 'project', path: '/projects/p1', projectId: 'p1', tab: 'overview' }],
+    // The import wizard (7.67.00): Data sources' own pack.
+    ['/scrapers/import', '', { kind: 'scrapers', path: '/scrapers/import' }],
     ['/feedback-forms', '', { kind: 'feedback-forms', path: '/feedback-forms' }],
     ['/feedback-forms/fd_1/questions', '', { kind: 'feedback-forms', path: '/feedback-forms/fd_1/questions' }],
     ['/settings', '?tab=a%20b', { kind: 'settings', path: '/settings' }],

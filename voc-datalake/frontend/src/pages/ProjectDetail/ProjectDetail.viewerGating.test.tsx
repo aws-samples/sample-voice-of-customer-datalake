@@ -86,7 +86,8 @@ describe('ProjectDetail gates write controls on project.access.can_edit', () => 
       const cards = within(await screen.findByTestId('overview-cards'))
       expect(cards.getByRole('button', { name: /Run Research/i })).toBeDisabled()
       expect(cards.getAllByRole('button', { name: /Generate/i }).every((b) => b.hasAttribute('disabled'))).toBe(true)
-      expect(cards.getByRole('button', { name: /Open/i })).toBeEnabled()
+      // The product description's Open (a read for a viewer too): exactly that name, never 7.68.00's "Open Validate".
+      expect(cards.getByRole('button', { name: /^Open$/ })).toBeEnabled()
     })
 
     it('offers no Dismiss on a finished job', async () => {

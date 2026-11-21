@@ -45,6 +45,9 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'prioritization', kind: 'prioritization' },
   { route: 'data-explorer/*', kind: 'data-explorer' },
   { route: 'scrapers', kind: 'scrapers' },
+  // Data sources → Import a file (7.67.00, the import wizard; in a workspace `/workspace/{slug}/scrapers/import`, which
+  // the router's basename strips): the scrapers pack, as its sources page.
+  { route: 'scrapers/import', kind: 'scrapers' },
   // The list, the picker and a form's builder and preview are the page's own paths (FeedbackForms/builder/builderPaths.ts).
   { route: 'feedback-forms/*', kind: 'feedback-forms' },
   // Administration is the `settings` kind; `/settings`

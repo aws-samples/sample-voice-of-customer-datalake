@@ -7,13 +7,16 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { createQueryWrapper } from '../../test/query-client'
 import { ACME, JUNIPER } from '../../test/workspaceFixtures'
 import { setCurrentWorkspace, type CurrentWorkspace } from '../../workspace/currentWorkspace'
-import { workspacesApi } from '../../api/workspacesApi'
+import { workspacesApi, type ServerWorkspace } from '../../api/workspacesApi'
 import { useBrandEditRight } from './useBrandEditRight'
 
 function render(isDeploymentAdmin: boolean, workspace: CurrentWorkspace | null) {
   act(() => setCurrentWorkspace(workspace))
   return renderHook(() => useBrandEditRight(isDeploymentAdmin), { wrapper: createQueryWrapper() })
 }
+
+/** The workspace as `GET /me/workspaces/current` serves it: no trial, no suggested playbook (7.71.00). */
+const served = (workspace: CurrentWorkspace): ServerWorkspace => ({ ...workspace, trial: null, playbook: null })
 
 afterEach(() => {
   setCurrentWorkspace(null)
@@ -28,21 +31,21 @@ describe('useBrandEditRight', () => {
   })
 
   it('inside a workspace is true for its admin, also outside the deployment admins', async () => {
-    vi.spyOn(workspacesApi, 'current').mockResolvedValue(ACME)
+    vi.spyOn(workspacesApi, 'current').mockResolvedValue(served(ACME))
     const { result } = render(false, ACME)
     expect(result.current).toBe(false)
     await waitFor(() => expect(result.current).toBe(true))
   })
 
   it('inside a workspace is false for an editor there, even in the deployment admins', async () => {
-    const current = vi.spyOn(workspacesApi, 'current').mockResolvedValue(JUNIPER)
+    const current = vi.spyOn(workspacesApi, 'current').mockResolvedValue(served(JUNIPER))
     const { result } = render(true, JUNIPER)
     await waitFor(() => expect(current).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(result.current).toBe(false))
   })
 
   it('takes the role the server applies over the membership row', async () => {
-    vi.spyOn(workspacesApi, 'current').mockResolvedValue({ ...JUNIPER, role: 'admin' })
+    vi.spyOn(workspacesApi, 'current').mockResolvedValue(served({ ...JUNIPER, role: 'admin' }))
     const { result } = render(false, JUNIPER)
     await waitFor(() => expect(result.current).toBe(true))
   })

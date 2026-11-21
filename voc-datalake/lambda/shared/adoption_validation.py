@@ -1,18 +1,19 @@
 """What the leadership view reads of the Validate phase (7.68.00, idea 4), in one place: every field and document type
-name 7.68.00's spec gives, and the tolerant readers the rollup uses (shared/adoption_rollup.py). docs/leadership-view.md.
+name it reads, and the tolerant readers the rollup uses (shared/adoption_rollup.py). docs/leadership-view.md.
 
-The names, as the 7.68.00 spec defines them (roadmap section 2, "7.68.00 · Idea 4"):
+The names match 7.68.00 as shipped (shared/project_validation.py, shared/validation_documents.py; checked on the
+integrated 7.67.00-7.71.00 stack):
 
-* the project ``META`` gains ``validation: {prd_document_id, criteria, plan_document_id, report_document_id, status}``;
-* the project documents of type ``validation_plan`` and ``validation_report``, and ``validation_run`` (a synthetic run
-  stored with ``synthetic: true``, which never counts as met);
+* the project ``META``'s ``validation`` map, of which the rollup reads ``report_document_id`` and ``status``;
+* the project documents of type ``validation_plan``, ``validation_report`` and ``validation_run`` (``PLAN_TYPE``,
+  ``REPORT_TYPE``, ``RUN_TYPE``); a run is always stored with ``synthetic: true`` and never counts as met;
+* a report's per-criterion results, ``results[i]``, each with its ``outcome`` (``met`` / ``not_met`` /
+  ``not_enough_data``: ``project_validation.MET``, ``NOT_MET``, ``NOT_ENOUGH_DATA``);
 * a decision (shared/decision_records.py) that cites a validation report among its evidence ids
-  (``decision.evidence.document_ids``).
+  (``decision.evidence.document_ids``, as ``project_validation.decision_prefill`` fills them).
 
-A report's outcome per criterion ("met, not met or not enough data against its target") has no field name in the spec:
-``REPORT_RESULTS_FIELD`` / ``REPORT_OUTCOME_KEY`` / ``OUTCOME_MET`` are this module's reading of it, the names to align
-when 7.68.00 lands. Every reader is tolerant: a project, a report or a decision without any of it counts as not
-validated, never as an error, so the view works before, during and after the Validate phase ships.
+Every reader is tolerant: a project, a report or a decision without any of it counts as not validated, never as an
+error, so a project made before 7.68.00 reads as one that was never validated.
 """
 from __future__ import annotations
 

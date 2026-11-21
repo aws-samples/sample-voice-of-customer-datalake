@@ -1658,6 +1658,15 @@ disable's own `PLUGIN#{plugin}` / `WS#{ws}` row (a present row means enabled; it
 `voc-datalake/lib/stacks/trial-expiry.test.ts` (no other delete action of any kind) and
 `lambda/shared/test/test_trial_pause.py` (every row of the workspace but those stays).
 
+**Prototype pins and the Validate card keep working.** A prototype's pins and its "Tell us how it went" card (7.68.00,
+[project-workspace.md → Validate](project-workspace.md#validate)) are prototype review, not a live public form of the
+workspace, so a pause leaves them alone. Projects are still the deployment's ([Phases](#phases), phase 3): a
+prototype's pin form (`pf_…`) is in the deployment's `FEEDBACK_FORM` partition, never a trial's own
+`WS#{ws}#FEEDBACK_FORM`, so the pause, which reads only the trial's forms, never turns a pin form or its card off and
+never records one, and `PUT /projects/{id}/validation/form` is a deployment project's write, which no trial's pause
+refuses (pinned by `lambda/shared/test/test_trial_pause.py`). When projects move into workspaces, a workspace
+project's card is a live form of that workspace and joins the pause and its `trial_paused` refusal in the same change.
+
 **Extend and convert** (`POST /platform/workspaces/{ws}/trial/extend` `{days}` and `…/convert`, platform admins only,
 live-checked; the console's row of a trial): each writes its audit row first (`trial_extended`, `trial_converted`),
 turns a paused trial's recorded plugins and forms back on (each plugin the deployment still offers, each form still

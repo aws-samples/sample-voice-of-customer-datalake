@@ -15,6 +15,8 @@ from shared import trial_pause
 from shared.exceptions import ConflictError
 from shared.ingest_tables import ingest_table
 from shared.platform_workspaces import NewWorkspace, create_workspace
+from shared.prototype_pins import FORM_TYPE_PROTOTYPE_PIN
+from shared.prototype_validation import FORMS_PARTITION, OPEN_FIELD
 from shared.test.moto_tables import create_pk_sk_table
 from shared.trial_pause import (
     ALREADY_PAUSED,
@@ -219,3 +221,18 @@ def test_the_resume_skips_a_plugin_the_deployment_no_longer_offers(world):
     narrower = PauseTables(world.workspaces, world.tables.forms, ('webscraper',))
     assert resume(narrower, WS, trial, 'sub-platform', 'trial_converted')['plugins'] == 1
     assert _enabled(world) == ['webscraper']
+
+
+def test_a_prototypes_pin_form_and_its_validation_card_are_left_working(world):
+    """Pins and 7.68.00's "Tell us how it went" card are prototype review on a project, not a live public form of the
+    workspace, and projects are still the deployment's (docs/multi-workspace.md, "Trial workspaces"): a pin form is in
+    the deployment's forms partition, never a workspace's, so a pause neither turns it or its card off nor records it,
+    and a resume never touches it."""
+    pin = {'pk': FORMS_PARTITION, 'sk': 'FORM#pf_proto1', 'form_type': FORM_TYPE_PROTOTYPE_PIN, 'enabled': True,
+           OPEN_FIELD: True, 'write_count': 2}
+    world.aggregates.put_item(Item=pin)
+    assert pause(world.tables, WS, AFTER_END)['outcome'] == PAUSED_NOW
+    trial = read_meta(world.workspaces, WS)['trial']
+    assert trial['paused']['forms'] == ['legacy', 'live']
+    resume(world.tables, WS, trial, 'sub-platform', 'trial_extended')
+    assert world.aggregates.get_item(Key={'pk': FORMS_PARTITION, 'sk': 'FORM#pf_proto1'})['Item'] == pin

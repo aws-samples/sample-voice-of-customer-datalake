@@ -125,7 +125,7 @@ describe('the voc-adoption-rollup job', () => {
   it('holds a project Query to exactly the attributes the code projects (lambda/shared/adoption_rollup.py)', () => {
     const source = readFileSync(path.join(__dirname, '../../lambda/shared/adoption_rollup.py'), 'utf8');
     const listed = /PROJECT_ATTRIBUTES: Final = \(([^)]*)\)/s.exec(source)?.[1] ?? '';
-    const named = [...listed.matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
+    const named = [...listed.matchAll(/'([a-z_]+)'/g)].map((match) => match[1] ?? '');
     // The two from shared/adoption_validation.py, named by their constants there, and the registry's delete mark.
     expect([...named, 'synthetic', 'validation', 'results', 'deleted_at'].sort(byCodeUnit))
       .toStrictEqual([...PROJECT_QUERY_ATTRIBUTES].sort(byCodeUnit));
