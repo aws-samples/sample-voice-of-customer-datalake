@@ -83,6 +83,10 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       // (plugins/_shared/base_webhook.py), as raw/github_issues/* below for the deployment's.
       raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}feedback_form/*`),
       raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}github_issues/*`),
+      // ws/{one id}/raw/*: the manual-import API's write-once archives of an import in a workspace (7.67.00, the
+      // import wizard; lambda/shared/raw_versions.py raw_root), as raw/* above for the deployment's: one workspace id
+      // per pattern, its bronze layer only (api-data-lambdas.ts ManualImportLambdaRole).
+      raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}*`),
       // ws/{one id}/memory-imports/*: the memory API keeps a workspace's imported page (and the extractor reads it).
       raw.arnForObjects(`${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`),
       // ws/{one id}/exports/*: a workspace's export, signed for download by the workspaces API

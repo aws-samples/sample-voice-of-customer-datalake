@@ -319,7 +319,10 @@ describe('cdk-nag acknowledgements', () => {
       // 145 -> 150 (7.69.00, the all-features shape's -c voicePersonas=true): the projects API's voice sessions'
       // `scratch/voice/*` (its workspace-objects statement, a finding of the raw prefixes' acknowledgement), and the
       // relay's role (voice-relay.ts): a session's evidence and transcript parts and its runtime's log groups and streams.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 150, used: 150 });
+      // 150 -> 151 (7.67.00, counted on the wave's integrated stack): the manual-import API's write-once archives of an
+      // import in a workspace, `ws/{one id}/raw/*` (ManualImportLambdaRole), a finding of VocApiStack's objects'
+      // acknowledgement. 7.70.00's and 7.71.00's grants add none.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 151, used: 151 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });
