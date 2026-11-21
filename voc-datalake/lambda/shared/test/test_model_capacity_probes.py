@@ -18,6 +18,7 @@ from shared.test.repo_paths import repo_root
 
 REGISTRY = (repo_root() / 'lib' / 'test-support' / 'custom-models-env.json').read_text(encoding='utf-8')
 NOVA = 'amazon.nova-pro-v1:0'
+LLAMA = 'us.meta.llama3-3-70b-instruct-v1:0'  # (chat, agent_worker, enrichment: the fixture registry's chat model)
 MINE = 'arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456'
 
 
@@ -81,6 +82,38 @@ class TestToolsProbe:
         world.bedrock_stub.add_response('converse', _answer(
             {'toolUse': {'toolUseId': 't1', 'name': 'other', 'input': {}}}), None)
         assert [model_capacity.probe_model(MINE, 'tools')['status'] for _ in range(2)] == ['probe_failed'] * 2
+
+
+class TestTheStreamedToolsProbe:
+    """A model that may serve chat (every Claude, a custom model declaring it) is checked the way the assistant sends
+    tools, through ConverseStream: a model can take tools on Converse yet not on ConverseStream (7.65.00)."""
+
+    @staticmethod
+    def _streaming(monkeypatch, events: list[dict]) -> list[dict]:
+        sent: list[dict] = []
+
+        class _Client:
+            def converse_stream(self, **kwargs):
+                sent.append(kwargs)
+                return {'stream': iter(events)}
+
+        monkeypatch.setattr(model_capacity, '_bedrock_probe_client', _Client)
+        return sent
+
+    @pytest.mark.usefixtures('world')
+    @pytest.mark.parametrize('model_id', [LLAMA, OPUS55])
+    def test_a_chat_model_streams_the_tools_check(self, monkeypatch, model_id):
+        sent = self._streaming(monkeypatch, [
+            {'messageStart': {'role': 'assistant'}},
+            {'contentBlockStart': {'start': {'toolUse': {'toolUseId': 't1', 'name': model_capacity.TOOLS_PROBE_TOOL}}}},
+            {'messageStop': {'stopReason': 'tool_use'}}])
+        result = model_capacity.probe_model(model_id, 'tools')
+        assert [result['status'], sent[0]['toolConfig']] == ['available', model_capacity._PROBE_TOOL_CONFIG]
+
+    @pytest.mark.usefixtures('world')
+    def test_a_streamed_text_answer_fails_it(self, monkeypatch):
+        self._streaming(monkeypatch, [{'contentBlockDelta': {'delta': {'text': 'I would call it.'}}}])
+        assert model_capacity.probe_model(LLAMA, 'tools')['status'] == 'probe_failed'
 
 
 class TestBasicProbe:

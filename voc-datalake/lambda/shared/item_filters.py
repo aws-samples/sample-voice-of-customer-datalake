@@ -19,6 +19,13 @@ past the cap in a big import (a 26,000-row CSV day: ``channel=google_play`` had
 70 reviews and listed 0). ``urgent`` is pushed down the same way. ``dims`` and
 ``tag`` match ignoring case, which a FilterExpression cannot do, so they stay in memory.
 
+The VoC app's own micro-feedback (items tagged ``voc_app``, shared/app_feedback_tag.py, 7.66.00) is no customer
+feedback: every reader that goes through these filters leaves it out by default, an instance with nothing set
+included (:meth:`ItemFilters.admits`, :meth:`ItemFilters.filter`), so it never counts in a metric, lists in the
+Feedback list or search, or reaches a persona, research, a document, a brief or an agent as evidence. Only a request
+for its tag (``tag=voc_app``) reads it; the form's own Results read its responses from the form's source
+partition, never through them.
+
 The list facets ``source``, ``category``, ``subcategory``, ``sentiment`` and ``usefulness``
 (``shared/item_facets.py``) take one value or a comma-separated any-of list. The sources are
 pushed down through :meth:`ItemFilters.source_condition` (every index projects
@@ -37,7 +44,7 @@ from typing import Any
 
 from boto3.dynamodb.conditions import Attr, ConditionBase
 
-from shared.app_feedback_tag import has_tag
+from shared.app_feedback_tag import asks_for_app_feedback, has_tag, is_app_feedback
 from shared.category_scope_query import combine
 from shared.dimension_config import parse_dims_param
 from shared.item_facets import (
@@ -68,7 +75,7 @@ _URGENT_ON = frozenset({'1', 'true'})
 
 @dataclass(frozen=True)
 class ItemFilters:
-    """The parsed filters; an instance with nothing set admits every item."""
+    """The parsed filters; an instance with nothing set admits every item but the VoC app's own micro-feedback."""
 
     channel: str | None = None
     dims: Mapping[str, str] = field(default_factory=dict)
@@ -109,11 +116,19 @@ class ItemFilters:
         return replace(self, sources=())
 
     @property
+    def app_feedback(self) -> bool:
+        """True when the request asks for the VoC app's own micro-feedback (``tag=voc_app``): the one way a read
+        through these filters sees it (7.66.00)."""
+        return asks_for_app_feedback(self.tag)
+
+    @property
     def rates(self) -> bool:
         """True when a star-rating bound is set."""
         return self.rating_min is not None or self.rating_max is not None
 
     def admits(self, item: Mapping[str, Any]) -> bool:
+        if not self.app_feedback and is_app_feedback(item):
+            return False
         if self.channel and item.get('source_channel') != self.channel:
             return False
         if not self._facets_admit(item):
@@ -168,11 +183,12 @@ class ItemFilters:
         return any_of('source_platform', self.sources)
 
     def filter(self, items: list[Any]) -> list[Any]:
-        """``items`` this admits, in order (``items`` itself when no filter is set)."""
-        return [item for item in items if self.admits(item)] if self.active else items
+        """``items`` this admits, in order: without the VoC app's own micro-feedback even when no filter is set."""
+        return [item for item in items if self.admits(item)]
 
 
-# The no-op filter (an immutable default for optional parameters).
+# The filter of a request that sets none (an immutable default for optional parameters): every item but the VoC
+# app's own micro-feedback.
 NO_ITEM_FILTERS = ItemFilters()
 
 

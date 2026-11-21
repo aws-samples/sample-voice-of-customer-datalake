@@ -110,11 +110,13 @@ must keep the same residency, and the synth checks it: under `-c inferenceScope=
 `"eu": true`, and `"eu": true` needs an `eu.` inference profile or an in-Region model (a Bedrock model id, or an
 imported model's ARN in the app Region and account). A `global.` profile, a `us.` or other non-EU profile and an
 imported model in another Region are refused. An `eu.` custom profile is granted through the profile in each Region
-of `EU_PROFILE_DESTINATION_REGIONS`: the non-Claude `eu.` profiles listed from `eu-central-1` on 2026-11-21 route to
-a subset of those Regions (`eu.amazon.nova-pro-v1:0` to `eu-central-1`, `eu-north-1`, `eu-west-1`, `eu-west-3`;
-`eu.meta.llama3-2-3b-instruct-v1:0` to `eu-central-1`, `eu-west-1`, `eu-west-3`), so the table covers them. Custom
-Model Import answered in `eu-central-1` and was refused in `eu-west-1`, `eu-west-2`, `eu-west-3` and `eu-north-1`
-on that day: an imported model needs an app Region that offers it.
+of `EU_PROFILE_DESTINATION_REGIONS` by default, or of its own `regions` (EU Regions only, the app Region included):
+at the time of writing (2026-11-21) the non-Claude `eu.` profiles listed from `eu-central-1` routed to a subset of
+those Regions (`eu.amazon.nova-pro-v1:0` to `eu-central-1`, `eu-north-1`, `eu-west-1`, `eu-west-3`;
+`eu.meta.llama3-2-3b-instruct-v1:0` to `eu-central-1`, `eu-west-1`, `eu-west-3`), and a profile that routes elsewhere
+in the EU names its `regions`. Custom Model Import answered in `eu-central-1` and was refused in `eu-west-1`,
+`eu-west-2`, `eu-west-3` and `eu-north-1` that day: an imported model needs an app Region that offers it, so check the
+current list on the AWS page [Supported Regions and models for Custom Model Import](https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html).
 
 ## Choosing a region
 

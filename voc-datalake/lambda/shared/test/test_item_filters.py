@@ -6,11 +6,21 @@ from shared.item_filters import ItemFilters, parse_item_filters
 ITEM = {'source_channel': 'email', 'dimensions': {'product': 'App', 'module': 'checkout'}, 'tags': ['VIP', 'beta']}
 
 
-def test_no_params_is_inactive_and_admits_everything():
+def test_no_params_is_inactive_and_admits_every_customer_item():
     filters = parse_item_filters(None)
     assert not filters.active
     items = [{}, ITEM]
-    assert filters.filter(items) is items
+    assert filters.filter(items) == items
+
+
+@pytest.mark.parametrize('tags', [['voc_app'], ['VOC_APP'], [' voc_app ', 'beta']])
+def test_the_app_feedback_is_left_out_unless_its_tag_is_asked_for(tags):
+    # (7.66.00: the VoC app's own micro-feedback is no customer feedback; only tag=voc_app reads it)
+    app = {**ITEM, 'tags': tags}
+    assert [parse_item_filters(None).filter([ITEM, app]), parse_item_filters({'channel': 'email'}).admits(app)] == [
+        [ITEM], False]
+    assert [parse_item_filters({'tag': 'voc_app'}).admits(app), parse_item_filters({'tag': 'Voc_App'}).app_feedback] == [
+        True, True]
 
 
 @pytest.mark.parametrize(('params', 'admitted'), [

@@ -9,9 +9,10 @@ The rows (voc-aggregates, one whole item a day, kept, no TTL; lambda/jobs/cost_r
     pk UNATTRIBUTED#COST sk YYYY-MM-DD   the calls no handler attributed
 
 Each holds ``schema`` 1, ``by_model`` (one entry per model id as sent and service tier: ``calls``, the four token
-counts and ``estimated_usd``), ``totals`` (the counts summed), ``estimated_usd`` (the priced models' sum, None while
-none of the day's models is priced), ``complete`` (every model priced), ``unpriced_models``, ``price_as_of`` and
-``rolled_up_at``. A day with no metered call has no row.
+counts and ``estimated_usd``; an imported model's also ``complete: false``), ``totals`` (the counts summed),
+``estimated_usd`` (the priced models' sum, None while none of the day's models is priced), ``complete`` (every model
+priced, and none an imported model's estimate: shared/model_prices.py ``is_estimate``), ``unpriced_models``,
+``price_as_of`` and ``rolled_up_at``. A day with no metered call has no row.
 
 The route's answer is an estimate from list prices (shared/model_prices.py), never a bill: ``estimate`` true, its
 ``label``, ``currency`` and ``price_as_of``; per workspace (a page of the listing, ``list_workspaces``'s cursor), and on
@@ -156,7 +157,9 @@ def _by_model(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 continue
             key = (str(entry.get('model_id') or ''), str(entry.get('service_tier') or ''))
             usd = _usd(entry.get('estimated_usd'))
-            sums.setdefault(key, _Sum()).add(entry, usd, usd is not None, () if usd is not None else (key[0],))
+            # (an imported model's line is an estimate, complete: false, though priced: jobs/cost_rollup priced)
+            complete = usd is not None and entry.get('complete') is not False
+            sums.setdefault(key, _Sum()).add(entry, usd, complete, () if usd is not None else (key[0],))
     return [{'model_id': model, 'service_tier': tier, **summed.public()} for (model, tier), summed in sorted(sums.items())]
 
 

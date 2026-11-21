@@ -12,7 +12,8 @@ reviews themselves are the row's ``input_feedback_ids``, where an erasure remove
 (``jobs/retention/lineage.py``, which reads no id inside a derivation): only the ids the saver may see (their category
 and source access, checked by the route) are kept. A ``[fb:<id>]`` citation in the text that names no kept review is
 removed before the save, until none is left, so a saved transcript cannot point at a review its lineage does not
-name. The transcript holds the personas' words and the citations, never a review's text.
+name; an edit's text (``PUT``) and a Revise from comments pass's changes are kept to the row's stored ids alike
+(``citable_ids``, 7.66.00). The transcript holds the personas' words and the citations, never a review's text.
 """
 from __future__ import annotations
 
@@ -80,6 +81,15 @@ def cited_only(content: str, feedback_ids: Sequence[str]) -> str:
         if cleaned == content:
             return cleaned
         content = cleaned
+
+
+def citable_ids(document: Mapping[str, Any]) -> list[str] | None:
+    """The review ids a stored focus group document's text may cite (its ``input_feedback_ids``, its lineage), so an
+    edit or a revise pass is ``cited_only`` to them; None for any other document (its citations are its own)."""
+    if document.get('document_type') != FOCUS_GROUP_TYPE:
+        return None
+    stored = document.get(INPUT_FEEDBACK_IDS_FIELD)
+    return [one for one in stored if isinstance(one, str)] if isinstance(stored, list | set | tuple) else []
 
 
 def focus_group_fields(body: Mapping[str, Any], visible: Callable[[Sequence[str]], list[str]]) -> dict[str, Any]:

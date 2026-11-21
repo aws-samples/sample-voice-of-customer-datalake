@@ -204,6 +204,7 @@ def _urgent_row(feedback_id: str, **fields) -> dict:
             'urgency': 'high', 'date': recent, **fields}
 
 
+@patch('metrics_handler.aggregates_table', new=MagicMock())  # (no in-app feedback form chosen: the COUNT read stands)
 class TestGetUrgentFeedback:
     """Tests for GET /feedback/urgent endpoint (batch read-back: test_metrics_urgent_batch.py)."""
 

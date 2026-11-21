@@ -1,7 +1,7 @@
 # Role playbooks
 
 Since 7.66.00, Home's onboarding buddy (the setup checklist) offers a short first-week playbook for four roles:
-**Product manager**, **Scrum master**, **QA** and **Engineering**. The person picks their role and gets five to eight
+**Product manager**, **Scrum master**, **QA** and **Engineering**. The person picks their role and gets five
 steps. Each step links to the screen where it is done and says why it matters. Real activity ticks steps as it
 happens, and the person can tick any other step by hand.
 
@@ -22,20 +22,21 @@ pinned to it by a test. Each step has an id, the path of its screen and its *evi
 
 | Role | Steps (evidence in brackets) |
 |---|---|
-| Product manager | Read this week's dashboard · Ask the assistant a question (assistant used) · Start a research project (owns a project) · Generate personas (one of their projects has personas) · Draft a PR/FAQ or a PRD (one of their projects has a document) · Set your objectives and KPIs (objectives set) · Subscribe to the morning brief (brief on) |
-| Scrum master | Subscribe to the morning brief (brief on) · Review the problems customers report most · Open a project for the sprint's theme (owns a project) · Share the project with your team (one of their projects is shared) · Create a form for the sprint review (a form exists) · Read a form's results and report · Ask the assistant for a stand-up summary (assistant used) |
-| QA | Create a feedback form (a form exists) · Test a form with its test link (a test response exists) · Find the feedback behind an issue · Review the problems · Watch the feedback after a release · Ask the assistant (assistant used) |
-| Engineering | Connect a repository (a connection exists; administrators only) · Find the feedback behind an issue · Start an engineering run from a problem · Build a prototype from a PRD · Use VoC from your IDE (an MCP token exists) · Ask the assistant (assistant used) |
+| Product manager | Read this week's dashboard · Generate personas (one of their projects has personas) · Draft a PR/FAQ or a PRD (one of their projects has a document) · Set your objectives and KPIs (objectives set) · Subscribe to the morning brief (brief on) |
+| Scrum master | Subscribe to the morning brief (brief on) · Review the problems customers report most · Share the project with your team (one of their projects is shared) · Create a form for the sprint review (a form exists) · Read a form's results and report |
+| QA | Create a feedback form (a form exists) · Test a form with its test link (a test response exists) · Find the feedback behind an issue · Review the problems · Watch the feedback after a release |
+| Engineering | Connect a repository (a connection exists; administrators only) · Find the feedback behind an issue · Start an engineering run from a problem · Build a prototype from a PRD · Use VoC from your IDE (an MCP token exists) |
 
-A step with no evidence is ticked by hand. A step that two roles share, such as "Ask the assistant", has the same id
-in both roles, so its tick carries over when the person changes role.
+A step with no evidence is ticked by hand. A step that two roles share, such as "Review the problems", has the same
+id in both roles, so its tick carries over when the person changes role. No playbook repeats the setup checklist
+above it in the same Home section: asking the assistant and starting a project are the checklist's steps, not a
+playbook's, and every role keeps five steps.
 
 ## How a step is ticked
 
 - **Server signals.** `GET /settings/my-onboarding` adds the chosen playbook's signals to the first-run `signals` it
   already sends. They come from voc-aggregates in the request's scope: inside a workspace (`X-Workspace-Id`) they are
   that workspace's, and without the header they are the deployment's. The signals are:
-  - `brief_subscribed`: the person's morning brief is on.
   - `objectives_set`: their objectives row has at least one objective. This is the `USERCTX#{sub}` / `config` row
     that `PUT /settings/my-context` writes.
   - `form_test_response`: a test response of one of the scope's forms exists. Test links are anonymous, so the
@@ -43,8 +44,9 @@ in both roles, so its tick carries over when the person changes role.
   - `feedback_form_configured`: a form exists in the scope.
 
   Each signal is one single-item read or a one-row Query, and only the signals of the chosen playbook are read.
-- **Browser evidence.** Home already reads the person's assistant sessions and projects for the setup checklist,
-  under the same cache keys, so these cost nothing more. A project counts only if the person owns it. Home also
+- **Browser evidence.** Home already reads the person's morning brief settings (its brief card) and projects (the
+  setup checklist), under the same cache keys, so these cost nothing more: "brief on" is the brief's own `enabled`,
+  and a project counts only if the person owns it. Home also
   reads the engineering connections (an administrator's list, read only while the engineering agents are on) and
   the person's MCP tokens (Connect's list), and only for the Engineering playbook.
 - **By hand.** `playbook_done` lists the steps the person ticked. A step whose evidence is true is shown as done and

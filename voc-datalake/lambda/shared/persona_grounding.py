@@ -3,8 +3,9 @@
 One module for every surface that lets a project's personas speak: the focus groups (7.64.00) now, the Validate
 phase and the voice personas after them. Each persona's pack is:
 
-* its stored evidence: the reviews its ``supporting_evidence`` cites (``evidence_feedback_ids``, first cited first)
-  and the ones its evidence refreshes added (``evidence_updates``, newest first), at most ``MAX_STORED_EVIDENCE``;
+* its stored evidence: the reviews its evidence refreshes added (``evidence_updates``, newest first), then the ones its
+  ``supporting_evidence`` cites (``evidence_feedback_ids``, first cited first), at most ``MAX_STORED_EVIDENCE``: a
+  refresh is what a person asked for, so a persona citing many reviews never pushes it out of the pack;
 * fresh retrieval: the reviews imported since the persona was generated that match it and that it does not hold yet
   (neither its evidence nor the reviews it was written from), at most ``MAX_FRESH`` (8), the ones that share the most
   words with the question first, then the newest. "Match" is the persona's categories
@@ -28,7 +29,6 @@ refused (``require_deployment``) and every read is the deployment's feedback, as
 """
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -45,7 +45,9 @@ from shared.exceptions import ConflictError, NotFoundError, ValidationError
 from shared.feedback import DATE_BASIS_IMPORTED, basis_date
 from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, date_partition, feedback_id_partition
 from shared.feedback_sampling import Partition, fetch_full, read_pool
+from shared.feedback_similarity import item_tokens, tokens
 from shared.indexes import FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX
+from shared.item_filters import NO_ITEM_FILTERS
 from shared.logging import logger
 from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, listed_ids
 from shared.project_keys import PROJECT_GATE_STORE, project_pk, require_deployment
@@ -103,7 +105,6 @@ ORIGIN_CITED: Final = 'cited'
 ORIGIN_REFRESHED: Final = 'refreshed'
 ORIGIN_FRESH: Final = 'fresh'
 
-_WORD: Final = re.compile(r'[^\W_]{3,}', re.UNICODE)
 
 
 @dataclass(frozen=True)
@@ -182,13 +183,13 @@ def evidence_update_entries(row: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _stored_ids(persona: Mapping[str, Any]) -> list[tuple[str, str]]:
-    """``(feedback_id, origin)`` of the persona's stored evidence: cited first, then refreshed (newest first)."""
+    """``(feedback_id, origin)`` of the persona's stored evidence: refreshed (newest first), then cited."""
     cited = [(one, ORIGIN_CITED) for one in listed_ids(persona.get(EVIDENCE_FEEDBACK_IDS_FIELD))]
     refreshed = [(one, ORIGIN_REFRESHED)
                  for entry in reversed(evidence_update_entries(persona)) for one in listed_ids(entry.get('feedback_ids'))]
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
-    for feedback_id, origin in [*cited, *refreshed]:
+    for feedback_id, origin in [*refreshed, *cited]:
         if feedback_id not in seen:
             seen.add(feedback_id)
             out.append((feedback_id, origin))
@@ -210,9 +211,11 @@ def _row_by_id(reader: Reader, feedback_id: str) -> dict | None:
 
 
 def _by_id(reader: Reader, feedback_id: str) -> dict | None:
-    """One review by id, when the person may see it (else None, as for an erased one)."""
+    """One review by id, when the person may see it and it is a customer's (else None, as for an erased one: never
+    the VoC app's own micro-feedback, shared/item_filters.py)."""
     row = _row_by_id(reader, feedback_id)
-    return row if row is not None and category_access.admits_item(reader.scope, row) else None
+    admitted = row is not None and category_access.admits_item(reader.scope, row) and NO_ITEM_FILTERS.admits(row)
+    return row if admitted else None
 
 
 def _persona_categories(reader: Reader, persona: Mapping[str, Any]) -> list[str]:
@@ -255,6 +258,8 @@ class _Match:
             and (not self.sources or row.get('source_platform') in self.sources)
             and (not self.sentiments or row.get('sentiment_label') in self.sentiments)
             and category_access.admits_item(scope, row)
+            # (never the VoC app's own micro-feedback: no customer's evidence, shared/item_filters.py)
+            and NO_ITEM_FILTERS.admits(row)
         )
 
 
@@ -300,15 +305,12 @@ def _fresh_rows(reader: Reader, match: _Match, skip: set[str], budget: WalkBudge
     return _Fresh(rows=pool.rows, capped=pool.capped)
 
 
-def _words(text: object) -> set[str]:
-    return {word.casefold() for word in _WORD.findall(text)} if isinstance(text, str) else set()
-
-
 def _ranked(items: Sequence[dict], question: str, limit: int) -> list[dict]:
-    """The ``limit`` items sharing the most words with ``question``, the newest first among equals."""
-    asked = _words(question)
+    """The ``limit`` items sharing the most words with ``question``, the newest first among equals: the similarity
+    ranker's tokens (shared/feedback_similarity.py: its stop list, over a review's title, summary and text)."""
+    asked = tokens(question)
     newest = sorted(items, key=lambda item: basis_date(item, DATE_BASIS_IMPORTED), reverse=True)
-    return sorted(newest, key=lambda item: len(asked & _words(item.get('original_text'))), reverse=True)[:limit]
+    return sorted(newest, key=lambda item: len(asked & item_tokens(item)), reverse=True)[:limit]
 
 
 def _quote(item: Mapping[str, Any]) -> dict[str, Any]:

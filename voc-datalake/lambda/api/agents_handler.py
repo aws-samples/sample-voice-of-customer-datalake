@@ -1772,7 +1772,8 @@ def _readiness_subject(caller: Caller, ports: Any) -> Any:
         agent = _stored_agent(automation)
         if not store.is_engineering_agent(agent):
             raise ValidationError('automation names an engineering agent')
-        subject = agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject, caller.username)
+        subject = agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject, caller.username,
+                                read_revision=eng_runs.revision_reader(_agents_table()))
     else:
         template = next((item for item in engineering_templates.list_templates()
                          if item.get('template_id') == flow), None)
@@ -1805,7 +1806,8 @@ def _not_ready(agent: Mapping[str, Any], caller: Caller) -> Response | None:
     from engineering.readiness_aws import agent_subject
 
     report = _readiness(agent_subject(agent, _find_workflow(agent.get('workflow_id')), caller.subject,
-                                      caller.username), required_only=True)
+                                      caller.username, read_revision=eng_runs.revision_reader(_agents_table())),
+                        required_only=True)
     if report.ready:
         return None
     return _json(409, {'error': NOT_READY, 'checks': [check.view() for check in report.failing]})

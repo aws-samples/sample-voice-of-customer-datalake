@@ -59,6 +59,12 @@ const JSON_SURFACES: readonly string[] = [
 export const DEFAULT_CONTEXT_WINDOW = 32_000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 4_096;
 /**
+ * The smallest window a model serving `documents` may declare: below it the feedback a PR/FAQ, a PRD, a persona set or
+ * a research run is written from holds fewer than seven reviews (lambda/shared/feedback.py `feedback_char_budget`
+ * reserves half of a small window, then fills half of the rest).
+ */
+const MIN_DOCUMENTS_CONTEXT_WINDOW = 16_000;
+/**
  * The env value's ceiling. A Lambda's whole environment is 4 KB (keys and values); the largest that carries the
  * registry is the logs API's, 2,434 characters deployed (measured 2026-11-21 with `aws lambda
  * get-function-configuration` on a 7.5x deployment), so 1,200 more keeps it under 3,700.
@@ -170,7 +176,11 @@ function profileRegions(prefix: (typeof GEO_PREFIXES)[number], entry: Entry, whe
   if (prefix === 'eu') {
     const destinations = EU_PROFILE_DESTINATION_REGIONS[target.region];
     if (destinations === undefined) fail(where, `an eu. profile needs the app in an EU source Region, not ${target.region}`);
-    return destinations;
+    // (a model's own eu. profile may route to other EU Regions than Claude's table: its `regions`, EU ones only)
+    if (entry.regions === undefined) return destinations;
+    if (!entry.regions.every((region) => region.startsWith('eu-'))) fail(where, 'an eu. profile\'s `regions` are EU Regions only');
+    if (!entry.regions.includes(target.region)) fail(where, `\`regions\` must include the app Region ${target.region}`);
+    return [...new Set(entry.regions)];
   }
   if (entry.regions === undefined) fail(where, `declare the ${prefix}. profile's destination Regions in \`regions\` (aws bedrock get-inference-profile)`);
   if (!entry.regions.includes(target.region)) fail(where, `\`regions\` must include the app Region ${target.region}`);
@@ -180,8 +190,8 @@ function profileRegions(prefix: (typeof GEO_PREFIXES)[number], entry: Entry, whe
 /** The Regions the model's inference may run in (throws when the scope or the residency claim forbids them). */
 function regionsOf(entry: Entry, source: CustomModelSource, where: string, target: RegistryTarget): readonly string[] {
   const prefix = source === 'profile' ? geoPrefix(entry.id) : undefined;
-  if (entry.regions !== undefined && (prefix === undefined || prefix === 'eu' || prefix === 'global')) {
-    fail(where, '`regions` is only for a geographic profile other than eu. (such as us.)');
+  if (entry.regions !== undefined && (prefix === undefined || prefix === 'global')) {
+    fail(where, '`regions` is only for a geographic profile (eu., us. …), never a global. one or a model in the Region');
   }
   const regions = prefix === undefined ? [target.region] : profileRegions(prefix, entry, where, target);
   if (target.scope === 'eu' && !entry.eu) fail(where, '-c inferenceScope=eu needs `"eu": true` on every custom model');
@@ -199,6 +209,9 @@ function checkCapabilities(entry: Entry, where: string): void {
   if (new Set(entry.surfaces).size !== entry.surfaces.length) fail(where, 'a surface is listed twice');
   const window = entry.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
   if ((entry.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS) > window) fail(where, 'maxOutputTokens is larger than contextWindow');
+  if (entry.surfaces.includes('documents') && window < MIN_DOCUMENTS_CONTEXT_WINDOW) {
+    fail(where, `documents needs a contextWindow of at least ${String(MIN_DOCUMENTS_CONTEXT_WINDOW)}: a smaller one holds too few reviews to write from`);
+  }
 }
 
 /** The ids no custom model may take: the Claude allowlist (and its eu. and foundation twins) and the GPT models. */

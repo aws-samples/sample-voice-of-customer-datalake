@@ -270,6 +270,24 @@ def test_at_most_twenty_changes_are_kept():
     assert rev.ground_changes({'changes': 'x'}, markdown, REFS) == ([], 0)
 
 
+def test_a_focus_group_s_changes_cite_only_its_lineage():
+    """Review round 2 (7.66.00): a pass over a saved focus group keeps each change's citations to the reviews the
+    row names (``focus_group_documents.citable_ids``), as its save does; a change that only added one is dropped."""
+    from shared.focus_group_documents import citable_ids
+    focus_group = {**DOCUMENT, 'document_type': 'focus_group', 'input_feedback_ids': ['fb1']}
+    answer = {'changes': [
+        _change('keeps every file in step', 'keeps every file in step [fb:fb1] [fb:nope]'),
+        _change('Today we launch', 'Today we launch [fb:[fb:x]y]', threads=['T2']),
+        _change('# Press release', '# Press release[fb:x]'),   # (only a citation the row does not name)
+    ]}
+    kept, dropped = rev.ground_changes(answer, CONTENT, REFS, citable=citable_ids(focus_group))
+    assert [c['after'] for c in kept] == ['keeps every file in step [fb:fb1] ', 'Today we launch ']
+    assert dropped == 1
+    # (another document's changes keep their citations: its own)
+    assert citable_ids(DOCUMENT) is None
+    assert rev.ground_changes(answer, CONTENT, REFS)[0][0]['after'].endswith('[fb:nope]')
+
+
 def test_changes_apply_from_the_end_so_offsets_hold():
     changes = [{'before': 'Today', 'after': 'This week'}, {'before': 'FAQ', 'after': 'Questions'}]
     revised = rev.apply_changes(CONTENT, changes)

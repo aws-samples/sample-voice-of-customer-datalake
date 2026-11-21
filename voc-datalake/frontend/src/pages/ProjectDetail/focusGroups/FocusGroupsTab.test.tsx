@@ -9,7 +9,7 @@ import { renderWithQueryClient } from '@test/query-client'
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { makeDocument, makePersona } from '../project-detail-fixtures'
 import FocusGroupsTab from './FocusGroupsTab'
-import { focusGroupCost } from './focusGroupCost'
+import { focusGroupCost, readingChars } from './focusGroupCost'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
@@ -21,13 +21,13 @@ vi.mock('../../../assistant/runtime/useAssistant', () => ({
 
 const PERSONAS = ['Ada', 'Bea', 'Cy', 'Dee', 'Eli', 'Fay', 'Gus'].map((name, index) => makePersona({ persona_id: `p${String(index + 1)}`, name }))
 const DOCUMENTS = [
-  makeDocument({ document_id: 'd_prd', title: 'Slots PRD', document_type: 'prd' }),
+  makeDocument({ document_id: 'd_prd', title: 'Slots PRD', document_type: 'prd', content: 'x'.repeat(40_000) }),
   makeDocument({ document_id: 'd_proto', title: 'Prototype', document_type: 'prototype' }),
   makeDocument({ document_id: 'd_fg', title: 'Focus group: slots', document_type: 'focus_group', created_at: '2026-11-20T10:00:00Z' }),
 ]
 const LIBRARY_ITEM = {
   item_id: 'lib_20261120000000_0a1b2c3d', slug: 'survey', title: 'Survey', status: 'ready', format: 'pdf', bytes: 10,
-  filename: 'survey.pdf', created_at: '2026-11-20T00:00:00Z', updated_at: '2026-11-20T00:00:00Z',
+  filename: 'survey.pdf', created_at: '2026-11-20T00:00:00Z', updated_at: '2026-11-20T00:00:00Z', extracted_chars: 8_000,
 }
 
 beforeEach(() => {
@@ -88,6 +88,19 @@ describe('the Focus groups tab', () => {
     const cost = focusGroupCost(3, 2)
     expect(screen.getByTestId('focus-group-cost')).toHaveTextContent(
       `About ${String(cost.calls)} model calls on the assistant’s model, roughly ${cost.inputTokens.toLocaleString('en')} input and ${cost.outputTokens.toLocaleString('en')} output tokens.`)
+  })
+
+  it('counts the chosen document and Library item in every persona call’s reading, within their budgets', async () => {
+    const user = userEvent.setup()
+    renderTab()
+    for (const name of ['Ada', 'Bea', 'Cy']) await user.click(screen.getByRole('checkbox', { name }))
+    await user.click(screen.getByRole('checkbox', { name: 'Slots PRD' }))
+    await user.click(await screen.findByRole('checkbox', { name: '#survey · Survey' }))
+    const reading = readingChars([40_000], [8_000])
+    expect(reading).toBe(38_000)   // (the document within its 30,000 characters, the item's 8,000 whole)
+    const cost = focusGroupCost(3, 2, reading)
+    expect(cost.inputTokens).toBeGreaterThan(focusGroupCost(3, 2).inputTokens)
+    expect(screen.getByTestId('focus-group-cost')).toHaveTextContent(`roughly ${cost.inputTokens.toLocaleString('en')} input`)
   })
 
   it('lists the saved focus groups and opens one on the Documents tab', async () => {

@@ -99,7 +99,7 @@ from shared.feedback import (
     get_feedback_context as _get_feedback_context,
 )
 from shared.feedback_sampling import input_feedback_fields, input_feedback_ids
-from shared.focus_group_documents import FOCUS_GROUP_TYPE, focus_group_fields
+from shared.focus_group_documents import FOCUS_GROUP_TYPE, citable_ids, cited_only, focus_group_fields
 from shared.grounding import Grounding
 from shared.human_documents import HUMAN_DOC_TYPES, create_human_document
 from shared.ids import timestamped_id, write_with_fresh_id
@@ -3156,6 +3156,10 @@ def update_document(project_id: str, document_id: str, body: dict, *,
             'Prototype content is stored in S3 and cannot be updated through '
             'generic document CRUD. Use the prototype revision workflow.'
         )
+    citable = citable_ids(document)
+    if citable is not None and isinstance(body.get('content'), str):
+        # (a saved focus group's edit cites only the reviews its lineage names, as its save: focus_group_documents)
+        body = {**body, 'content': cited_only(body['content'], citable)}
     revise = None
     # An unchanged save is edit_document's no-op, whatever pass it names.
     if proposal is not None and not saves_nothing(document, body, title):

@@ -421,17 +421,41 @@ def _passes(probe: str, response: Any) -> bool:
     return isinstance(answer, dict) and answer.get("ok") is True
 
 
-def _invoke_once(kwargs: dict, probe: str = "basic") -> _Outcome | ClientError:
-    """Send the probe request once. A ClientError is returned as is, for _classify."""
+def _streams_tools(model_id: str, probe: str) -> bool:
+    """Whether ``probe`` must be sent the way the assistant sends tools: ConverseStream (7.65.00). The chat surface
+    streams every tool call, and a model can take tools on Converse yet not on ConverseStream, so the tools check of
+    a model that may serve chat (every Claude, a custom model declaring ``chat``) streams."""
+    if probe != "tools":
+        return False
+    custom = custom_model(model_id)
+    return custom is None or "chat" in custom.surfaces
+
+
+def _streamed_tool_call(response: Any) -> bool:
+    """Whether a ConverseStream answer opened a call of the probe's tool (its ``contentBlockStart``)."""
+    for event in response.get("stream") or [] if isinstance(response, dict) else []:
+        start = event.get("contentBlockStart", {}).get("start", {}) if isinstance(event, dict) else {}
+        tool = start.get("toolUse") if isinstance(start, dict) else None
+        if isinstance(tool, dict) and tool.get("name") == TOOLS_PROBE_TOOL:
+            return True
+    return False
+
+
+def _invoke_once(kwargs: dict, probe: str = "basic", *, stream: bool = False) -> _Outcome | ClientError:
+    """Send the probe request once (``stream``: through ConverseStream, read to its end). A ClientError is returned as
+    is, for _classify."""
     try:
-        response = _bedrock_probe_client().converse(**kwargs)
+        if stream:
+            passed = _streamed_tool_call(_bedrock_probe_client().converse_stream(**kwargs))
+        else:
+            passed = _passes(probe, _bedrock_probe_client().converse(**kwargs))
     except ClientError as error:
         return error
     except (ReadTimeoutError, ConnectTimeoutError) as error:
         return _Outcome("unavailable", type(error).__name__)
     except BotoCoreError as error:
         return _Outcome("error", type(error).__name__)
-    return _Outcome("available", None) if _passes(probe, response) else _Outcome("probe_failed", None)
+    return _Outcome("available", None) if passed else _Outcome("probe_failed", None)
 
 
 def _classify(outcome: _Outcome | ClientError, quota: Quota | None) -> _Outcome:
@@ -453,7 +477,7 @@ def probe_model(model_id: str, probe: str = "basic") -> ProbeResult:
     kwargs = _probe_request(model_id, probe)
     invoked_id = str(kwargs["modelId"])
     started = time.monotonic()
-    response = _invoke_once(kwargs, probe)
+    response = _invoke_once(kwargs, probe, stream=_streams_tools(model_id, probe))
     latency_ms = round((time.monotonic() - started) * 1000)
     quota = lookup_quota(model_id)
     status, code = _classify(response, quota)

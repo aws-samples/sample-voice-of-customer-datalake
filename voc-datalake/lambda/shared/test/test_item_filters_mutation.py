@@ -34,8 +34,9 @@ class TestTheSharedNoOpDefault:
     def test_no_item_filters_is_the_empty_inactive_filter(self):
         assert ItemFilters() == NO_ITEM_FILTERS
         assert NO_ITEM_FILTERS.active is False
-        items = [EMAIL, CHAT]
-        assert NO_ITEM_FILTERS.filter(items) is items
+        items = [EMAIL, CHAT, {**CHAT, 'tags': ['voc_app']}]
+        # (every customer item, never the VoC app's own micro-feedback: 7.66.00)
+        assert NO_ITEM_FILTERS.filter(items) == [EMAIL, CHAT]
 
     @pytest.mark.parametrize('name', [f.name for f in dataclasses.fields(ItemFilters)])
     def test_it_cannot_be_mutated(self, name):

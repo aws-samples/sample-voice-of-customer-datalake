@@ -41,6 +41,7 @@ from shared.dynamo_paging import iter_query
 from shared.feedback import DATE_BASIS_REVIEW, basis_date
 from shared.github_metrics import GITHUB_SOURCE, item_version, version_sort_key
 from shared.indexes import FEEDBACK_BY_DATE_INDEX
+from shared.item_filters import NO_ITEM_FILTERS
 from shared.time_budget import WalkBudget, budgeted_days
 
 SENTIMENT_DROP_THRESHOLD = 0.15
@@ -262,7 +263,8 @@ def read_recent_items(table: Any, days: int, *, now: datetime, budget: WalkBudge
     for day in budgeted_days(days, budget, today=now):
         kwargs: dict[str, Any] = {'IndexName': FEEDBACK_BY_DATE_INDEX, 'Limit': _PAGE_LIMIT,
                                   'KeyConditionExpression': Key('gsi1pk').eq(f'DATE#{day}')}
-        items.extend(iter_query(table, kwargs, max_items=max_items - len(items)))
+        # (never the VoC app's own micro-feedback: no customer's reaction to a release, shared/item_filters.py)
+        items.extend(NO_ITEM_FILTERS.filter(list(iter_query(table, kwargs, max_items=max_items - len(items)))))
         if len(items) >= max_items:
             return items, True
     return items, budget.stopped

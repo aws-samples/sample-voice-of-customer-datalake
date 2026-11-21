@@ -1650,7 +1650,7 @@ endpoint). Off by default: without the key no template changes.
 ```bash
 npm run deploy:infra -- -c customModels='[
   {"key":"llama33","id":"us.meta.llama3-3-70b-instruct-v1:0","label":"Llama 3.3 70B","kind":"bedrock",
-   "surfaces":["documents","utility"],"eu":false,"regions":["us-east-1","us-east-2","us-west-2"],
+   "surfaces":["documents","utility"],"eu":false,"regions":["us-east-1","us-east-2","us-west-2"],"contextWindow":128000,
    "capabilities":{"tools":false,"documents":false,"json":true,"temperature":true},"price":{"in":0.72,"out":0.72}},
   {"key":"ours","id":"arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456","label":"Our model",
    "kind":"imported","surfaces":["enrichment"],"eu":false,"maxOutputTokens":2048,"contextWindow":8192,
@@ -1669,10 +1669,10 @@ bill.) Each entry, checked at synth (`lib/utils/custom-models.ts`; a bad entry f
 | `kind` | yes | `bedrock` or `imported` |
 | `surfaces` | yes | The picker surfaces it may serve: `chat`, `documents`, `prototype`, `enrichment`, `utility`, `memory`, `agent_orchestrator`, `agent_worker`, `agent_reviewer`, `agent_persona` |
 | `eu` | yes | `true` claims EU residency: then it must be an `eu.` profile or an in-Region or imported model in an EU Region |
-| `capabilities` | yes | `tools` (takes tool definitions: required for `chat` and `agent_worker`), `documents` (reads document and image blocks), `json` (returns strict JSON when asked: required for every surface but `chat` and `prototype`), `temperature` (takes the parameter) |
-| `price` | yes | `in` and `out`, USD per million input and output tokens: the cost rollup and the cost page price its tokens with it |
-| `regions` | for a geographic profile other than `eu.` | The profile's destination Regions (`aws bedrock get-inference-profile --inference-profile-identifier <id> --query 'models[].modelArn'`); must include the app Region |
-| `contextWindow`, `maxOutputTokens` | no | Its input window and output cap in tokens (32,000 and 4,096 when absent): prompts are sized to the first, `maxTokens` capped at the second |
+| `capabilities` | yes | `tools` (takes tool definitions: required for `chat` and `agent_worker`; `chat` streams its tool calls, so a chat model must take tools on ConverseStream, which **Check tools** tests for any model that may serve chat), `documents` (reads document and image blocks), `json` (returns strict JSON when asked: required for every surface but `chat` and `prototype`), `temperature` (takes the parameter) |
+| `price` | yes | `in` and `out`, USD per million input and output tokens: the cost rollup and the cost page price its tokens with it. An imported model's figure is an estimate, its cost lines `complete: false`: Custom Model Import bills the model's active copies (Custom Model Units by 5-minute windows), not its tokens, so set the price you convert to |
+| `regions` | for a geographic profile other than `eu.`; optional for an `eu.` one | The profile's destination Regions (`aws bedrock get-inference-profile --inference-profile-identifier <id> --query 'models[].modelArn'`); must include the app Region. An `eu.` profile without it is granted the Regions Claude's `eu.` profiles route to (`EU_PROFILE_DESTINATION_REGIONS`); with it, its own, EU Regions only |
+| `contextWindow`, `maxOutputTokens` | no | Its input window and output cap in tokens (32,000 and 4,096 when absent): prompts are sized to the first (the feedback a document is written from takes at most half of what the prompts leave), `maxTokens` capped at the second. A model serving `documents` needs a window of at least 16,000 |
 
 Refused at synth: provisioned throughput (`provisioned-model/` ARNs: a fixed cost), a fine-tuned custom model
 (`custom-model/`, which needs provisioned throughput or a deployment), an application inference profile, an id of the
@@ -1709,8 +1709,10 @@ or `us.` profile is refused ([eu-deployment.md](eu-deployment.md#your-own-models
   `{"ok": true}`) and **Check tools** (it must call the check's one tool); `probe_failed` when it answers otherwise.
   Its tokens-per-minute quota is not read (the Service Quotas names read are Anthropic's).
 
-Custom Model Import answered `ListImportedModels` in us-east-1, us-east-2, us-west-2 and eu-central-1 and refused it in
-eu-west-1, eu-west-2, eu-west-3 and eu-north-1 (2026-11-21): check your Region before planning an imported model.
+At the time of writing (2026-11-21), Custom Model Import answered `ListImportedModels` in us-east-1, us-east-2,
+us-west-2 and eu-central-1 and refused it in eu-west-1, eu-west-2, eu-west-3 and eu-north-1. The Regions change: check
+yours on the AWS page [Supported Regions and models for Custom Model Import](https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html)
+before planning an imported model.
 External, OpenAI-compatible endpoints, SageMaker endpoints and a model choice per workspace are not supported.
 
 ### Model Capacity Fallback

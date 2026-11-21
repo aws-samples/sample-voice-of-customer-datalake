@@ -78,13 +78,21 @@ class TestTheRequest:
 
 
 class TestDocumentBlocks:
-    def test_a_model_that_reads_documents_gets_them_without_claude_citations(self):
+    def test_a_model_that_reads_documents_gets_a_plain_document(self):
+        bedrock = MagicMock(converse=MagicMock(return_value=_reply()))
+        plain = {'document': {k: v for k, v in PDF['document'].items() if k != 'citations'}}
+        converse_blocks(bedrock, [plain, {'text': 'Read it.'}], surface='documents', system_prompt='', max_tokens=100,
+                        step_name='t', model_id=NOVA, max_retries=1)
+        assert [bedrock.converse.call_args.kwargs['modelId'], bedrock.converse.call_args.kwargs['messages'][0]['content'][0]] == [
+            NOVA, plain]
+
+    def test_a_pdf_read_with_its_pages_goes_to_the_surface_s_claude_with_its_citations(self):
+        # (a scanned PDF's transcription: a custom model would get the text layer alone, and a scanned page has none)
         bedrock = MagicMock(converse=MagicMock(return_value=_reply()))
         converse_blocks(bedrock, [PDF, {'text': 'Read it.'}], surface='documents', system_prompt='', max_tokens=100,
                         step_name='t', model_id=NOVA, max_retries=1)
-        content = bedrock.converse.call_args.kwargs['messages'][0]['content']
-        assert content[0] == {'document': {'format': 'pdf', 'name': 'brief', 'source': {'bytes': b'%PDF'}}}
-        assert bedrock.converse.call_args.kwargs['modelId'] == NOVA
+        sent = bedrock.converse.call_args.kwargs
+        assert [sent['modelId'], sent['messages'][0]['content'][0]] == [SURFACE_DEFAULTS['documents'], PDF]
 
     def test_a_model_that_reads_none_leaves_them_to_the_surface_default(self):
         bedrock = MagicMock(converse=MagicMock(return_value=_reply()))

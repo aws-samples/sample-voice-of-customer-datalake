@@ -15,7 +15,7 @@ import { capOutputTokens } from '../../../bedrock/custom-models.js';
 import { invocationModelId, takesThinkingBudget } from '../../../bedrock/model-override.js';
 import { isSupportedLanguage, type SupportedLanguage } from '../../../context/language.js';
 import { buildSinglePersonaPrompt } from '../../../context/persona-prompt.js';
-import { MENTION_LIMITS } from '../../contract.js';
+import { MENTION_LIMITS, PERSONA_READING_CHARS } from '../../contract.js';
 import type { AssistantRunContext } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
 import { clip } from '../format.js';
@@ -30,7 +30,7 @@ const PERSONA_MAX_TOKENS = 1200;
 const PERSONA_THINKING_BUDGET = 1024;
 const MAX_ANSWER_CHARS = 4000;
 /** Text of the tagged documents in each persona's prompt, all of them together (≤ 3 documents). */
-const REFERENCED_DOCUMENTS_BUDGET = 30_000;
+const REFERENCED_DOCUMENTS_BUDGET = PERSONA_READING_CHARS.documents;
 /** Untagged documents named (title only) in the prompt. */
 const MAX_OTHER_DOCUMENTS = 5;
 export const FAILED_ANSWER = '(No answer — this persona could not be consulted right now.)';

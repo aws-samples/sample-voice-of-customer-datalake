@@ -45,7 +45,7 @@ from shared.aws import get_dynamodb_resource
 from shared.exceptions import ConfigurationError
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
-from shared.model_prices import PRICE_LIST, PriceList, estimated_usd
+from shared.model_prices import PRICE_LIST, PriceList, estimated_usd, is_estimate
 from shared.platform_costs import (
     COST_ROW_SCHEMA,
     COUNT_FIELDS,
@@ -235,22 +235,27 @@ def _merge(target: Usage, more: Usage) -> None:
 
 def priced(usage: Usage, price_list: PriceList) -> dict[str, Any]:
     """``by_model``, ``totals``, ``estimated_usd`` (the priced models' sum; None when none is priced), ``complete``
-    and ``unpriced_models`` of one row's usage."""
+    and ``unpriced_models`` of one row's usage. An imported model's line is ``complete: false`` and so is its row: its
+    figure is the registry's estimate, not what Custom Model Import bills (``model_prices.is_estimate``)."""
     by_model: list[dict[str, Any]] = []
     totals = dict.fromkeys(COUNT_FIELDS, 0)
     usd: Decimal | None = None
     unpriced: set[str] = set()
+    estimates = False
     for (model_id, tier), counts in sorted(usage.items()):
         cost = estimated_usd(model_id, tier, counts, price_list)
         stored = None if cost is None else cost.quantize(_STORED_USD_STEP)
-        by_model.append({'model_id': model_id, 'service_tier': tier, **counts, 'estimated_usd': stored})
+        estimate = is_estimate(model_id)
+        estimates = estimates or estimate
+        by_model.append({'model_id': model_id, 'service_tier': tier, **counts, 'estimated_usd': stored,
+                         **({'complete': False} if estimate else {})})
         for name in COUNT_FIELDS:
             totals[name] += counts[name]
         if stored is None:
             unpriced.add(model_id)
         else:
             usd = stored if usd is None else usd + stored
-    return {'by_model': by_model, 'totals': totals, 'estimated_usd': usd, 'complete': not unpriced,
+    return {'by_model': by_model, 'totals': totals, 'estimated_usd': usd, 'complete': not unpriced and not estimates,
             'unpriced_models': sorted(unpriced)}
 
 

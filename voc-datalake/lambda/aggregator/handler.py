@@ -458,6 +458,9 @@ def _check_transaction(items: 'list[TransactWriteItemTypeDef]') -> None:
 # PERSONA_FIELD is named: a second unmarked copy of one of these strings is what makes an
 # argument elsewhere true or false.
 #
+# The field of the daily total's row a VoC app micro-feedback item adds to (7.66.00, `counter_dimensions`): its day's
+# sentinel, as every item writes one, but never the `count` a reader sums.
+APP_FEEDBACK_SENTINEL_FIELD = 'app_feedback_items'
 # DAILY_TOTAL_PK is the sentinel `_day_has_aggregates` reads, and that read is only
 # a sound test of "is this day still here?" because this is the ONE counter every
 # item writes unconditionally — see that docstring. Spelling it twice would leave a
@@ -1204,10 +1207,12 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     ``voc_app`` is feedback about this tool, never about the customer's product (TENETS.md tenet 1), so it
     contributes no counter here and no score to the average (`_image_score`). Both directions read this one
     function, so an edit that adds the tag takes the item's counters back out (the MODIFY's decrements are every
-    counter the old image held) and one that removes it counts the item from then on.
+    counter the old image held) and one that removes it counts the item from then on. It still keeps its day's
+    SENTINEL: one field of the daily total's row that no reader sums (`APP_FEEDBACK_SENTINEL_FIELD`, never
+    `count`), so `_day_has_aggregates` sees a day of micro-feedback alone as live, as it does every other day.
     """
     if is_app_feedback(item):
-        return []
+        return [(DAILY_TOTAL_PK, APP_FEEDBACK_SENTINEL_FIELD)]
     source_platform = item.get('source_platform', 'unknown')
     category = item.get('category', 'other')
     sentiment_label = item.get('sentiment_label', 'neutral')

@@ -220,14 +220,14 @@ class TestPlaybook:
 
     def test_the_product_signals_are_the_persons_own(self, api_gateway_event, lambda_context, table):
         _, before = _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'product'})
-        assert (before['signals']['brief_subscribed'], before['signals']['objectives_set']) == (False, False)
-        table.put_item(Item={'pk': 'USERCTX#user-sub', 'sk': 'briefing', 'enabled': True})
+        assert before['signals']['objectives_set'] is False
         table.put_item(Item={'pk': 'USERCTX#user-sub', 'sk': 'config', 'objectives': [{'id': 'o1', 'title': 'Ship'}]})
         _, mine = _call(api_gateway_event, lambda_context, 'GET')
-        assert (mine['signals']['brief_subscribed'], mine['signals']['objectives_set']) == (True, True)
+        # (the brief is the browser's to read: no server signal reads it)
+        assert [mine['signals']['objectives_set'], 'brief_subscribed' in mine['signals']] == [True, False]
         _call(api_gateway_event, lambda_context, 'PUT', {'playbook': 'product'}, claims=ADMIN)
         _, theirs = _call(api_gateway_event, lambda_context, 'GET', claims=ADMIN)
-        assert (theirs['signals']['brief_subscribed'], theirs['signals']['objectives_set']) == (False, False)
+        assert theirs['signals']['objectives_set'] is False
 
     def test_a_test_response_of_the_scope_ticks_the_qa_step(self, api_gateway_event, lambda_context, table):
         table.put_item(Item={'pk': 'FEEDBACK_FORM_TEST', 'sk': 'f1#2026-11-20T00:00:00+00:00#r1', 'is_test': True})

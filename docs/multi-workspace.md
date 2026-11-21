@@ -1227,7 +1227,10 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
   with the error's code, and the other days still run. Each row is one whole-item PutItem (no ADD,
   so a rerun overwrites it), kept with no TTL: `WS#{ws}#COST` / `YYYY-MM-DD` through the workspace layer,
   `DEPLOYMENT#COST` and `UNATTRIBUTED#COST`, each with `by_model`, `totals`, `estimated_usd` (the priced models'
-  sum, `null` while none is priced), `complete`, `unpriced_models`, `price_as_of`, `rolled_up_at` and `schema` 1. A
+  sum, `null` while none is priced), `complete`, `unpriced_models`, `price_as_of`, `rolled_up_at` and `schema` 1. An
+  imported model's line (`-c customModels`, `source: "imported"`) is `complete: false`, and so is its row and every
+  sum it is in (7.66.00): Custom Model Import bills the Custom Model Units of each active copy by 5-minute windows,
+  not the token, so its registry price per token is the operator's own conversion, an estimate. A
   workspace that is not active gets no row: its calls go to `DEPLOYMENT#COST`'s `deleted_workspaces`. A day with no
   metered call has no row. During a delete's 21-minute fence a day can be counted twice: rolled up while the
   workspace was active (its own row) and again after it turned `deleting` (the deployment's `deleted_workspaces`),

@@ -7,8 +7,7 @@
  * GET also carries the first-run `signals` the aggregates table answers cheaply
  * (the request's workspace's), so Home needs no metrics call to tick "feedback
  * arrived", and, with a role playbook chosen (7.66.00, docs/playbooks.md), the
- * server signals of its steps (`brief_subscribed`, `objectives_set`,
- * `form_test_response`).
+ * server signals of its steps (`objectives_set`, `form_test_response`).
  *
  * Every response is normalized through a lenient Zod schema: a drifted or
  * missing field reads as the first-run default (buddy shown, nothing done).
@@ -59,7 +58,6 @@ const optionalSignal = z.boolean().optional().catch(undefined)
 const SignalsSchema = z.object({
   feedback_present: z.boolean().catch(false),
   feedback_form_configured: z.boolean().catch(false),
-  brief_subscribed: optionalSignal,
   objectives_set: optionalSignal,
   form_test_response: optionalSignal,
 }).catch({ feedback_present: false, feedback_form_configured: false })

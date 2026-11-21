@@ -33,16 +33,6 @@
       "why": "O volume, o sentimento e as principais categorias mostram onde olhar primeiro.",
       "cta": "Abrir o painel"
     },
-    "ask_assistant": {
-      "title": "Faça ao assistente uma pergunta sobre seus clientes",
-      "why": "Ele lê o feedback por você e cita cada avaliação em que se baseia.",
-      "cta": "Abrir o assistente"
-    },
-    "start_project": {
-      "title": "Inicie um projeto de pesquisa",
-      "why": "Um projeto reúne o feedback, as personas e os documentos de um tema.",
-      "cta": "Abrir Projetos"
-    },
     "generate_personas": {
       "title": "Gere personas a partir de feedback real",
       "why": "Personas baseadas em avaliações mantêm as decisões focadas em clientes reais.",

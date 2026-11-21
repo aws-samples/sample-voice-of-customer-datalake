@@ -184,6 +184,26 @@ def _started(library: Library, item_id: str, minutes_ago: int) -> None:
                               ExpressionAttributeValues={':at': started})
 
 
+def test_a_pending_item_whose_upload_link_expired_reads_stale(library):
+    """Review round 2 (7.66.00): a pending item older than its PUT's lifetime gets no file, so it reads ``stale`` (no
+    longer in flight: the SPA stops polling it) and is not retried (409 ``not_failed``: delete it, upload again)."""
+    from shared.library_objects import UPLOAD_SECONDS
+    from shared.library_store import STALE_UPLOAD_SECONDS
+    assert STALE_UPLOAD_SECONDS > UPLOAD_SECONDS
+    status, body = library.call('POST', '/projects/library', body={'filename': 'Q3.pdf', 'content_type': 'application/pdf',
+                                                               'bytes': 10})
+    assert status == 201
+    item_id = body['item']['item_id']
+    path = f'/projects/library/{item_id}'
+    assert 'stale' not in library.call('GET', path)[1]['item']
+    old = (datetime.now(UTC) - timedelta(seconds=STALE_UPLOAD_SECONDS + 5)).isoformat()
+    library.table.update_item(Key=item_key(item_id), UpdateExpression='SET created_at = :at',
+                              ExpressionAttributeValues={':at': old})
+    item = library.call('GET', path)[1]['item']
+    assert (item['status'], item['stale']) == ('pending', True)
+    assert library.call('POST', f'{path}/retry')[1]['code'] == 'not_failed'
+
+
 def test_an_extraction_that_outlived_its_worker_reads_stale_and_can_be_retried(library):
     """Round 1 Q16: 16 minutes or more since an extraction started, the item reads ``stale`` and a retry claims it
     again (202, a new token); a minute in, the retry is refused (409 ``not_failed``) and the item is not stale."""

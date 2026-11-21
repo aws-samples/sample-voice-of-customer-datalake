@@ -12,20 +12,19 @@ import { PLAYBOOK_ROLES } from '../../../api/onboardingApi'
 import type { PlaybookRole } from '../../../api/onboardingApi'
 
 /** Evidence the onboarding GET computes, only for the chosen playbook's steps (shared/playbooks.py `SERVER_SIGNALS`). */
-const SERVER_EVIDENCE = ['brief_subscribed', 'objectives_set', 'feedback_form_configured', 'form_test_response'] as const
+const SERVER_EVIDENCE = ['objectives_set', 'feedback_form_configured', 'form_test_response'] as const
 export type ServerEvidence = typeof SERVER_EVIDENCE[number]
-/** Evidence Home already reads in the browser (`BROWSER_EVIDENCE`). */
+/** Evidence Home already reads in the browser (`BROWSER_EVIDENCE`): the brief's own settings among it. */
 const BROWSER_EVIDENCE = [
-  'assistant_used', 'project_owned', 'personas_generated', 'document_written', 'project_shared', 'repository_connected',
-  'mcp_connected',
+  'brief_subscribed', 'personas_generated', 'document_written', 'project_shared', 'repository_connected', 'mcp_connected',
 ] as const
 export type BrowserEvidence = typeof BROWSER_EVIDENCE[number]
 export type Evidence = ServerEvidence | BrowserEvidence
 
 const STEP_IDS = [
-  'read_dashboard', 'ask_assistant', 'start_project', 'generate_personas', 'write_document', 'set_objectives',
-  'subscribe_brief', 'review_problems', 'share_project', 'create_form', 'read_form_results', 'test_form',
-  'search_feedback', 'watch_release', 'connect_repository', 'run_engineering_agent', 'build_prototype', 'connect_mcp',
+  'read_dashboard', 'generate_personas', 'write_document', 'set_objectives', 'subscribe_brief', 'review_problems',
+  'share_project', 'create_form', 'read_form_results', 'test_form', 'search_feedback', 'watch_release',
+  'connect_repository', 'run_engineering_agent', 'build_prototype', 'connect_mcp',
 ] as const
 export type PlaybookStepId = typeof STEP_IDS[number]
 
@@ -92,8 +91,6 @@ const stepText = (id: PlaybookStepId): StepText => ({ title: `steps.${id}.title`
 /** Each step's title, why it matters and its link's label (`playbooks:steps.<id>.*`). */
 export const STEP_TEXT: Readonly<Record<PlaybookStepId, StepText>> = {
   read_dashboard: stepText('read_dashboard'),
-  ask_assistant: stepText('ask_assistant'),
-  start_project: stepText('start_project'),
   generate_personas: stepText('generate_personas'),
   write_document: stepText('write_document'),
   set_objectives: stepText('set_objectives'),

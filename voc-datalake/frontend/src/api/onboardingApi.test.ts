@@ -27,8 +27,8 @@ describe('normalizeOnboarding', () => {
 
   it('reads an unknown playbook as none, drifted ticks as none, and a drifted playbook signal as not sent (7.66.00)', () => {
     const drifted = normalizeOnboarding({ playbook: 'designer', playbook_done: 'test_form',
-      signals: { feedback_present: true, feedback_form_configured: true, brief_subscribed: 'yes' } })
-    expect([drifted.playbook, drifted.playbook_done, drifted.signals.feedback_present, drifted.signals.brief_subscribed])
+      signals: { feedback_present: true, feedback_form_configured: true, objectives_set: 'yes' } })
+    expect([drifted.playbook, drifted.playbook_done, drifted.signals.feedback_present, drifted.signals.objectives_set])
       .toStrictEqual([null, [], true, undefined])
   })
 

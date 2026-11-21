@@ -1,5 +1,5 @@
 """The role playbooks' catalogue (shared/playbooks.py, 7.66.00): pinned to schemas/playbooks.json (the SPA's copy),
-four roles of five to eight steps, every step's evidence a known one, and the PUT's checks."""
+four roles of five steps or more, every step's evidence a known one, and the PUT's checks."""
 from __future__ import annotations
 
 import json
@@ -49,8 +49,8 @@ def test_every_known_evidence_is_read_by_some_step():
 
 
 @pytest.mark.parametrize(('role', 'signals'), [
-    ('product', ('brief_subscribed', 'objectives_set')),
-    ('scrum_master', ('brief_subscribed', 'feedback_form_configured')),
+    ('product', ('objectives_set',)),
+    ('scrum_master', ('feedback_form_configured',)),
     ('qa', ('feedback_form_configured', 'form_test_response')),
     ('engineering', ()),
     (None, ()),
@@ -73,13 +73,13 @@ def test_any_other_role_is_refused(value):
 
 
 def test_ticks_are_known_step_ids_sorted_once():
-    assert playbooks.validate_done(['test_form', 'ask_assistant', 'test_form']) == ['ask_assistant', 'test_form']
+    assert playbooks.validate_done(['test_form', 'subscribe_brief', 'test_form']) == ['subscribe_brief', 'test_form']
     assert playbooks.validate_done([]) == []
 
 
 @pytest.mark.parametrize(('value', 'message'), [
     ('test_form', 'playbook_done must be a list of at most 40 step ids'),
-    (['ask_assistant'] * 41, 'playbook_done must be a list of at most 40 step ids'),
+    (['subscribe_brief'] * 41, 'playbook_done must be a list of at most 40 step ids'),
     (['fly_to_the_moon'], 'playbook_done names a step no playbook has'),
     ([7], 'playbook_done names a step no playbook has'),
 ])
@@ -91,3 +91,15 @@ def test_bad_ticks_are_refused(value, message):
 def test_a_step_naming_evidence_nobody_computes_is_refused():
     with pytest.raises(ValueError, match='no evidence is called'):
         playbooks.Step('typo', '/chat', 'assistant_usd', 'Title', 'Why.', 'How.')
+
+
+def test_no_playbook_repeats_the_setup_checklist_and_each_keeps_five_steps():
+    # (the checklist above it already asks for the assistant and a project: Home's onboarding steps)
+    ids = {step.id for steps in playbooks.PLAYBOOKS.values() for step in steps}
+    assert [ids & {'ask_assistant', 'start_project'}, min(len(steps) for steps in playbooks.PLAYBOOKS.values())] == [
+        set(), 5]
+
+
+def test_the_brief_is_the_browser_s_to_read():
+    assert ['brief_subscribed' in playbooks.SERVER_SIGNALS, 'brief_subscribed' in playbooks.BROWSER_EVIDENCE] == [
+        False, True]

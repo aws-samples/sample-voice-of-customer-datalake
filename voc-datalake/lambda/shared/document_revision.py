@@ -66,7 +66,9 @@ from shared.document_series import collapse, plain_text, series_of
 from shared.exceptions import ConflictError, ValidationError
 from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
 from shared.feedback_sampling import received_input_feedback_ids
+from shared.focus_group_documents import citable_ids, cited_only
 from shared.indexes import FEEDBACK_BY_ID_INDEX
+from shared.item_filters import NO_ITEM_FILTERS
 from shared.logging import logger
 from shared.memory_store import parse_json_object
 from shared.project_keys import REVISE_FROM_COMMENTS_STORE, require_deployment
@@ -207,7 +209,8 @@ def read_evidence(feedback_table: Any, document: Mapping[str, Any], scope_config
             IndexName=FEEDBACK_BY_ID_INDEX, Limit=1,
             KeyConditionExpression=Key(FEEDBACK_ID_INDEX_PARTITION).eq(feedback_id_partition(None, feedback_id)),
         ).get('Items') or []
-        if rows and (scope is None or category_access.admits_item(scope, rows[0])):
+        # (never the VoC app's own micro-feedback, a document generated before 7.66.00 may cite: shared/item_filters.py)
+        if rows and (scope is None or category_access.admits_item(scope, rows[0])) and NO_ITEM_FILTERS.admits(rows[0]):
             found.append(rows[0])
     return found
 
@@ -300,19 +303,29 @@ def _thread_ids(raw: object, refs: Mapping[str, str]) -> list[str]:
     return list(dict.fromkeys(refs[n.strip()] for n in names if isinstance(n, str) and n.strip() in refs))
 
 
-def ground_changes(answer: Mapping[str, Any], markdown: str,
-                   refs: Mapping[str, str]) -> tuple[list[dict[str, Any]], int]:
-    """``(kept changes, dropped)``: the grounding rules in the module docstring."""
+def ground_changes(answer: Mapping[str, Any], markdown: str, refs: Mapping[str, str], *,
+                   citable: Sequence[str] | None = None) -> tuple[list[dict[str, Any]], int]:
+    """``(kept changes, dropped)``: the grounding rules in the module docstring. ``citable``: a focus group
+    document's lineage (``focus_group_documents.citable_ids``), to which each change's ``after`` is ``cited_only``
+    (one left as its ``before`` is dropped)."""
     listed = answer.get('changes')
     raw_changes = listed if isinstance(listed, list) else []
     kept: list[dict[str, Any]] = []
     spans: list[tuple[int, int]] = []
-    for entry in raw_changes:
+    for raw in raw_changes:
+        entry = _cited(raw, citable)
         change = _grounded(entry, markdown, refs, spans) if len(kept) < MAX_CHANGES else None
         if change is None:
             continue
         kept.append({'change_id': f'ch_{len(kept) + 1}', **change})
     return kept, len(raw_changes) - len(kept)
+
+
+def _cited(entry: object, citable: Sequence[str] | None) -> object:
+    """A change whose ``after`` cites only ``citable`` (unchanged without it, or when it is no change's shape)."""
+    if citable is None or not isinstance(entry, Mapping) or not isinstance(entry.get('after'), str):
+        return entry
+    return {**entry, 'after': cited_only(entry['after'], citable)}
 
 
 def _only_place(text: str, passage: str) -> int | None:
@@ -420,7 +433,7 @@ def run_revision(table: Any, *, project_id: str, series_id: str, document: Mappi
     recommendations = parse_recommendations(answer, refs)
     if outcome == OUTCOME_RECOMMENDATIONS:
         return _result(outcome, document, recommendations, [], 0, model_id=model_id)
-    changes, dropped = ground_changes(answer, markdown, refs)
+    changes, dropped = ground_changes(answer, markdown, refs, citable=citable_ids(document))
     if outcome == OUTCOME_PROPOSAL:
         return _result(outcome, document, recommendations, changes, dropped, model_id=model_id)
     if not changes:

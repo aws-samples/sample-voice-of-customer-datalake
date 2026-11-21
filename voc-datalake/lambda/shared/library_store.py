@@ -69,6 +69,9 @@ PUBLIC_FIELDS: Final = (
 #: An extraction this old (the twin's 15 minutes and a margin) is over, whatever its row still says: the item reads
 #: ``stale`` and can be retried (library_routes.py ``retry_library_item``; the SPA stops polling it then).
 STALE_EXTRACTION_SECONDS: Final = 16 * 60
+#: A pending item this old (its PUT's 15 minutes, ``library_objects.UPLOAD_SECONDS``, and a margin) will get no file:
+#: it reads ``stale`` too, so it is no longer in flight and the SPA stops polling it (delete it, upload again).
+STALE_UPLOAD_SECONDS: Final = 16 * 60
 _COUNT_SK: Final = 'META'
 _SLUG_ATTEMPTS: Final = 5
 _PROJECT_ID: Final = re.compile(r'[A-Za-z0-9_-]{1,128}')
@@ -213,8 +216,16 @@ def extraction_is_over(item: Mapping[str, Any]) -> bool:
         datetime.now(UTC) - started).total_seconds() >= STALE_EXTRACTION_SECONDS
 
 
+def upload_is_over(item: Mapping[str, Any]) -> bool:
+    """Whether the item is ``pending`` since ``STALE_UPLOAD_SECONDS`` or more (its PUT's link has expired)."""
+    created = parse_iso(item.get('created_at'))
+    return item.get('status') == 'pending' and created is not None and (
+        datetime.now(UTC) - created).total_seconds() >= STALE_UPLOAD_SECONDS
+
+
 def public_view(item: Mapping[str, Any]) -> dict[str, Any]:
-    """An item as a client sees it (numbers as ints; ``stale`` when its extraction is over: ``extraction_is_over``)."""
+    """An item as a client sees it (numbers as ints; ``stale`` when its extraction is over, ``extraction_is_over``, or
+    its upload is, ``upload_is_over``)."""
     view: dict[str, Any] = {}
     for field in PUBLIC_FIELDS:
         value = item.get(field)
@@ -223,7 +234,7 @@ def public_view(item: Mapping[str, Any]) -> dict[str, Any]:
         view[field] = int(value) if hasattr(value, 'as_integer_ratio') and not isinstance(value, bool | float) \
             else value
     view.setdefault('tags', [])
-    if extraction_is_over(item):
+    if extraction_is_over(item) or upload_is_over(item):
         view['stale'] = True
     return view
 

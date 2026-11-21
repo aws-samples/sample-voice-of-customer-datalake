@@ -27,6 +27,7 @@ from shared.api import get_raw_categories_config
 from shared.category_access import CategoryScope
 from shared.dynamo_values import as_count
 from shared.indexes import FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_URGENCY_INDEX
+from shared.item_filters import NO_ITEM_FILTERS
 from shared.metric_keys import CATEGORY_PREFIX
 from shared.pii_redaction import redact_text
 
@@ -38,7 +39,8 @@ QUOTES_PER_CATEGORY: Final = 3
 #: Reviews read per day when looking for a category's quotes (the filter runs after the read).
 QUOTE_PAGE: Final = 200
 CATEGORY_SENTIMENT_PREFIX: Final = 'METRIC#category_sentiment#'
-_ITEM_FIELDS: Final = 'feedback_id, category, source_platform, sentiment_label, urgency, #date'
+#: (``tags``: the VoC app's own micro-feedback is never a customer's signal, shared/item_filters.py)
+_ITEM_FIELDS: Final = 'feedback_id, category, source_platform, sentiment_label, urgency, tags, #date'
 _QUOTE_FIELDS: Final = ('direct_customer_quote', 'normalized_text', 'original_text')
 
 
@@ -145,7 +147,7 @@ def _from_items(feedback_table: Any, scope: CategoryScope, names: list[str],
         items, more = _day_items(feedback_table, day, budget)
         budget -= len(items)
         partial = partial or more
-        for item in category_access.filter_items(scope, items):
+        for item in category_access.filter_items(scope, NO_ITEM_FILTERS.filter(items)):
             counts = out.get(category_access.item_category(item))
             if counts is not None:
                 _tally(counts, day, day in current, item.get('sentiment_label') == 'negative')
@@ -191,7 +193,7 @@ def _urgent(feedback_table: Any, scope: CategoryScope, since: str) -> list[dict]
     )
     keys = list({(row['pk'], row['sk']): {'pk': row['pk'], 'sk': row['sk']}
                  for row in page.get('Items', []) if row.get('pk') and row.get('sk')}.values())
-    return category_access.filter_items(scope, _batch_get(feedback_table, keys))
+    return category_access.filter_items(scope, NO_ITEM_FILTERS.filter(_batch_get(feedback_table, keys)))
 
 
 def read_signals(feedback_table: Any, aggregates_table: Any, scope: CategoryScope, now: datetime) -> Signals:
@@ -231,7 +233,7 @@ def recent_quotes(feedback_table: Any, scope: CategoryScope, category: str, now:
             IndexName=FEEDBACK_BY_DATE_INDEX, KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{day}'),
             ScanIndexForward=False, Limit=QUOTE_PAGE, FilterExpression=Attr('category').eq(category),
         )
-        for item in category_access.filter_items(scope, page.get('Items', [])):
+        for item in category_access.filter_items(scope, NO_ITEM_FILTERS.filter(page.get('Items', []))):
             text = _quote_text(item)
             if text and isinstance(item.get('feedback_id'), str):
                 quotes.append({'feedback_id': item['feedback_id'], 'text': text})

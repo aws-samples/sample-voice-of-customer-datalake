@@ -20,7 +20,7 @@ import { startFocusGroup } from '../../../assistant/runtime/runtime'
 import { useRunEnvironment } from '../../../assistant/runtime/useAssistant'
 import { formatDate } from '../../../utils/dateUtils'
 import PersonaAvatar from '../PersonaAvatar'
-import { focusGroupCost } from './focusGroupCost'
+import { focusGroupCost, readingChars } from './focusGroupCost'
 import type { FocusGroup } from '@stream/assistant/contract'
 import type { ProjectDocument } from '../../../api/types'
 import type { ProjectPersona } from '../../../api/projectTypes'
@@ -98,21 +98,33 @@ function CheckList({ legend, items, chosen, max, onToggle }: Readonly<{
   )
 }
 
+/** A choice and the characters of text it holds (its share of every persona's reading: `readingChars`). */
+interface ReadingChoice { id: string; label: string; chars: number }
+
 /** The project documents a group can read: everything but prototypes and saved focus groups. */
-function readableDocuments(documents: readonly ProjectDocument[]): Array<{ id: string; label: string }> {
+function readableDocuments(documents: readonly ProjectDocument[]): ReadingChoice[] {
   return documents.filter((document) => document.document_type !== 'prototype' && document.document_type !== 'focus_group')
-    .map((document) => ({ id: document.document_id, label: document.title || document.document_type }))
+    .map((document) => ({
+      id: document.document_id, label: document.title || document.document_type,
+      chars: typeof document.content === 'string' ? document.content.length : 0,
+    }))
 }
 
-function useLibraryChoices(): Array<{ id: string; label: string }> {
+function useLibraryChoices(): ReadingChoice[] {
   const query = useQuery({ queryKey: libraryKeys.list({ sort: 'newest' }), queryFn: () => libraryApi.list({ sort: 'newest' }) })
   return (query.data?.items ?? []).filter((item) => item.status === 'ready').slice(0, LIBRARY_OFFERED)
-    .map((item) => ({ id: item.item_id, label: `#${item.slug} · ${item.title}` }))
+    .map((item) => ({ id: item.item_id, label: `#${item.slug} · ${item.title}`, chars: item.extracted_chars }))
 }
 
-function CostLine({ personas, rounds }: Readonly<{ personas: number; rounds: number }>) {
+/** The chosen choices' sizes, in the order chosen. */
+function charsOf(choices: readonly ReadingChoice[], chosen: readonly string[]): number[] {
+  const byId = new Map(choices.map((choice) => [choice.id, choice.chars]))
+  return chosen.map((id) => byId.get(id) ?? 0)
+}
+
+function CostLine({ personas, rounds, reading }: Readonly<{ personas: number; rounds: number; reading: number }>) {
   const { t } = useTranslation('projectDetail')
-  const cost = focusGroupCost(Math.max(personas, FOCUS_GROUP_LIMITS.minPersonas), rounds)
+  const cost = focusGroupCost(Math.max(personas, FOCUS_GROUP_LIMITS.minPersonas), rounds, reading)
   return (
     <p className="text-[12px] text-muted" data-testid="focus-group-cost">
       {t('focusGroups.cost', { calls: cost.calls, input: cost.inputTokens, output: cost.outputTokens })}
@@ -166,7 +178,8 @@ function FocusGroupPanel({ personas, documents }: Readonly<Pick<FocusGroupsTabPr
       <CheckList legend={t('focusGroups.library', { max: MENTION_LIMITS.maxLibraryItems })} items={library}
         chosen={libraryIds} max={MENTION_LIMITS.maxLibraryItems}
         onToggle={(id) => setLibraryIds((current) => toggled(current, id, MENTION_LIMITS.maxLibraryItems))} />
-      <CostLine personas={chosen.length} rounds={Number(rounds)} />
+      <CostLine personas={chosen.length} rounds={Number(rounds)}
+        reading={readingChars(charsOf(documentChoices, documentIds), charsOf(library, libraryIds))} />
       <p className="text-[12px] text-muted">{t('focusGroups.synthetic')}</p>
       <StickyActionBar variant="footer">
         <button type="button" disabled={!ready} onClick={start} className="btn btn-primary">

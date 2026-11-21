@@ -200,11 +200,24 @@ function passesFieldFilters(item: FeedbackItem, filters: SearchFilters): boolean
   return true;
 }
 
-/** channel / tag / dims (docs/dimensions.md); unset filters admit everything. */
+/**
+ * The VoC app's own micro-feedback's tag (7.66.00, lambda/shared/app_feedback_tag.py `APP_FEEDBACK_TAG`): its items
+ * are no customer feedback, so a search leaves them out unless it asks for this tag (lambda/shared/item_filters.py).
+ */
+const APP_FEEDBACK_TAG = 'voc_app';
+
+/** A tag as the server compares it: surrounding spaces and case ignored (shared/app_feedback_tag.py `has_tag`). */
+const foldedTag = (tag: string): string => tag.trim().toLowerCase();
+
+const hasTag = (item: FeedbackItem, wanted: string): boolean =>
+  (item.tags ?? []).some((candidate) => foldedTag(candidate) === wanted);
+
+/** channel / tag / dims (docs/dimensions.md); unset filters admit every item but the VoC app's own micro-feedback. */
 function passesItemFilters(item: FeedbackItem, filters: ItemFilters): boolean {
+  const tag = filters.tag === undefined ? '' : foldedTag(filters.tag);
+  if (tag !== APP_FEEDBACK_TAG && hasTag(item, APP_FEEDBACK_TAG)) return false;
   if (filters.channel && item.source_channel !== filters.channel) return false;
-  const tag = filters.tag?.toLowerCase();
-  if (tag && !(item.tags ?? []).some((candidate) => candidate.toLowerCase() === tag)) return false;
+  if (tag && !hasTag(item, tag)) return false;
   return Object.entries(filters.dims ?? {}).every(([key, value]) => item.dimensions?.[key] === value);
 }
 

@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_valid
 
 # Imports nothing else from shared/ (workspace_ids imports only the standard library), so the processor bundle's
 # import graph stays the same.
+from shared.app_feedback_tag import names_app_feedback
 from shared.csv_datasets import CSV_INGESTION_METHOD, DATASET_NAME_MAX_LENGTH
 from shared.dimension_config import validate_tags
 from shared.timestamps import now_iso
@@ -53,6 +54,9 @@ MAX_SOURCE_CHANNEL_LENGTH = 128
 # `<app name>_Android`, s3_import sends `S3 - <folder>`, the webscraper sends the
 # scraper's name (or the page's netloc). See the producer tests.
 MAX_SOURCE_PLATFORM_LENGTH = 256
+#: The feedback forms' source id (also the connector id of their raw copies, shared/feedback_form_raw.py): the one
+#: producer whose messages may carry the in-app micro-feedback's reserved tag.
+FEEDBACK_FORM_SOURCE = 'feedback_form'
 MAX_CATEGORY_LENGTH = 128
 MAX_METADATA_VALUE_LENGTH = 1000
 # Feedback-form custom field answers (feedback_form_handler.MAX_CUSTOM_FIELDS etc.).
@@ -522,6 +526,16 @@ class IngestMessage(BaseModel):
             raise ValueError("csv_replace is accepted only on a csv_upload message")
         if not self.csv_dataset or not self.csv_content_hash:
             raise ValueError("csv_replace needs csv_dataset and csv_content_hash")
+        return self
+
+    @model_validator(mode="after")
+    def app_feedback_tag_only_from_a_form(self) -> "IngestMessage":
+        """The in-app micro-feedback's reserved tag (``voc_app``, shared/app_feedback_tag.py) comes only with a feedback
+        form's response (a form may carry it only when made from its template, feedback_form_handler.py): from any
+        other producer (a CSV or pasted import, a plugin, a webhook, an inbox) it is dropped, never refusing the
+        review, so no customer's review is ever left out of the dashboards by a tag."""
+        if self.tags and self.source_platform != FEEDBACK_FORM_SOURCE and names_app_feedback(self.tags):
+            self.tags = [tag for tag in self.tags if not names_app_feedback([tag])] or None
         return self
 
     @model_validator(mode="after")

@@ -33,16 +33,6 @@
       "why": "El volumen, el sentimiento y las categorías principales muestran dónde mirar primero.",
       "cta": "Abrir el panel"
     },
-    "ask_assistant": {
-      "title": "Hazle al asistente una pregunta sobre tus clientes",
-      "why": "Lee los comentarios por ti y cita cada reseña en la que se basa.",
-      "cta": "Abrir el asistente"
-    },
-    "start_project": {
-      "title": "Inicia un proyecto de investigación",
-      "why": "Un proyecto reúne los comentarios, las personas y los documentos de un tema.",
-      "cta": "Abrir Proyectos"
-    },
     "generate_personas": {
       "title": "Genera personas a partir de comentarios reales",
       "why": "Las personas basadas en reseñas mantienen las decisiones centradas en clientes reales.",

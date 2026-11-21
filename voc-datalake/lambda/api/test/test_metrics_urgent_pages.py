@@ -110,3 +110,40 @@ def test_a_token_this_window_did_not_issue_is_refused(fb, api_gateway_event, lam
 
     assert status == 400
     fb.query.assert_not_called()
+
+
+def test_the_app_s_own_micro_feedback_is_never_urgent(fb, api_gateway_event, lambda_context):
+    # (7.66.00: an item tagged voc_app is no customer feedback, shared/item_filters.py)
+    rows = _rows(4)
+    rows[1] = {**rows[1], 'tags': ['voc_app']}
+    wire_urgency_index(fb, rows)
+
+    _, body = _urgent(api_gateway_event, lambda_context)
+
+    assert [[item['feedback_id'] for item in body['items']], body['total']] == [['0', '2', '3'], 3]
+
+
+def test_once_micro_feedback_was_set_up_the_total_never_counts_it(fb, api_gateway_event, lambda_context):
+    # (the urgency index projects no tags, so its COUNT read would count a voc_app item: not once a form was chosen)
+    rows = [{**row, 'tags': ['voc_app']} if i % 10 == 0 else row for i, row in enumerate(_rows(110))]
+    wire_urgency_index(fb, rows)
+    settings = MagicMock()
+    settings.get_item.return_value = {'Item': {'pk': 'SETTINGS#app_feedback', 'sk': 'config', 'form_id': 'ff_app'}}
+    with patch('metrics_handler.aggregates_table', new=settings):
+        pages = _walk(api_gateway_event, lambda_context, limit='100')
+
+    ids = [item['feedback_id'] for page in pages for item in page['items']]
+    # (the over-fetching page read the whole window: its total is exact, without the 11 micro-feedback items)
+    assert [len(ids), any(int(one) % 10 == 0 for one in ids), pages[0]['total']] == [99, False, 99]
+    assert all(call.kwargs.get('Select') != 'COUNT' for call in fb.query.call_args_list)
+
+
+def test_unreadable_settings_read_the_pages_in_full(fb, api_gateway_event, lambda_context):
+    from botocore.exceptions import ClientError
+    wire_urgency_index(fb, _rows(110))
+    settings = MagicMock()
+    settings.get_item.side_effect = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'GetItem')
+    with patch('metrics_handler.aggregates_table', new=settings):
+        _, body = _urgent(api_gateway_event, lambda_context, limit='100')
+    assert [body['count'], body['total']] == [100, None]
+    assert all(call.kwargs.get('Select') != 'COUNT' for call in fb.query.call_args_list)

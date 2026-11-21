@@ -40,6 +40,7 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any, Final
 
+from shared.app_feedback_tag import RESERVED_MESSAGE, names_app_feedback
 from shared.aws import get_dynamodb_resource
 from shared.dimension_config import (
     allowed_values,
@@ -188,6 +189,8 @@ def _profile(entry: object, dimensions_config: list[dict[str, Any]] | None, *, s
         tags = validate_tags(source.get('tags'))
     except ValueError as e:
         raise ValueError(f'{what}: {e}') from e
+    if names_app_feedback(tags):
+        raise ValueError(f'{what}: {RESERVED_MESSAGE}')
     return {
         'id': source_id,
         'label': bounded_text(source, 'label', MAX_LABEL_CHARS, f'{what} label') or source_id,

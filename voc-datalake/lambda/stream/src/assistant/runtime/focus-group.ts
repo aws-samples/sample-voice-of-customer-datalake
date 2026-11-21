@@ -21,8 +21,8 @@
 import { randomUUID } from 'node:crypto';
 import { EventType } from '@ag-ui/core';
 import {
-  CUSTOM_EVENTS, FOCUS_GROUP_LIMITS, FOCUS_GROUP_TOOL_CALL_PREFIX, type FocusGroup, type FocusGroupEvent,
-  type FocusGroupSynthesis,
+  CUSTOM_EVENTS, FOCUS_GROUP_LIMITS, FOCUS_GROUP_TOOL_CALL_PREFIX, PERSONA_READING_CHARS, type FocusGroup,
+  type FocusGroupEvent, type FocusGroupSynthesis,
 } from '../contract.js';
 import type { AssistantRunContext, FeedbackSource, LibrarySourceRef } from '../types.js';
 import type { ToolDeps } from '../tools/deps.js';
@@ -51,7 +51,7 @@ const FRESH_PER_PERSONA = 8;
 const MAX_ANSWER_CHARS = 4000;
 /** A citation the answer's bound cut in half (`[fb:ab…`): removed, never shown as text. */
 const CUT_CITATION = / ?\[fb:[\w-]*…$/u;
-const LIBRARY_BUDGET_CHARS = 12_000;
+const LIBRARY_BUDGET_CHARS = PERSONA_READING_CHARS.library;
 /** A card's citations and each one's quote: a stored result stays well inside its cap (session/persona-result.ts). */
 const MAX_CARD_CITATIONS = 8;
 const MAX_CARD_QUOTE_CHARS = 200;

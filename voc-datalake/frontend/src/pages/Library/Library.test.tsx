@@ -132,10 +132,13 @@ describe('the list', () => {
     expect(listCalls().length).toBeGreaterThan(before)
   })
 
-  it('stops reading the list again once the server says an extraction is stale', async () => {
+  it.each([
+    ['an extraction', 'extracting'],
+    ['an upload whose link expired', 'pending'],
+  ] as const)('stops reading the list again once the server says %s is stale', async (_what, status) => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     onTestFinished(() => { vi.useRealTimers() })
-    route({ 'GET /projects/library': () => libraryPage([libraryItem({ status: 'extracting', stale: true })]) })
+    route({ 'GET /projects/library': () => libraryPage([libraryItem({ status, stale: true })]) })
     renderPage()
     await screen.findByRole('button', { name: /Q3 market report/ })
     const before = listCalls().length

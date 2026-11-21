@@ -12,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { supportsDocumentBlocks } from '../assistant/runtime/library-mentions.js';
 import {
-  capOutputTokens, customModel, customModels, CUSTOM_MODELS_ENV, DEFAULT_MAX_OUTPUT_TOKENS, MAX_CUSTOM_MODELS,
-  readsAttachments, streamCustomModel,
+  capOutputTokens, customContextWindow, customModel, customModels, CUSTOM_MODELS_ENV, DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_OUTPUT_TOKENS, MAX_CUSTOM_MODELS, readsAttachments, streamCustomModel,
 } from './custom-models.js';
 import { CHAT_SURFACE_DEFAULT, chatModelForAttachments, fallbackChain } from './model-fallback.js';
 import { takesThinkingBudget } from './model-override.js';
@@ -38,6 +38,13 @@ describe('customModels', () => {
     expect(customModels().map((model) => [model.id, model.tools, model.documents, model.maxOutputTokens])).toStrictEqual([
       [NOVA, false, true, 10_000], [LLAMA, true, false, 8_192], [MINE, false, false, 2_048],
     ]);
+  });
+
+  it('reads each window, the synth\'s default when an entry names none, and none for a Claude', () => {
+    const noWindow = JSON.stringify([{ key: 'x', id: 'amazon.nova-lite-v1:0', label: 'Lite', surfaces: ['chat'],
+      capabilities: { tools: true, documents: false, json: true, temperature: true } }]);
+    expect([customContextWindow(LLAMA), customContextWindow(MINE), customContextWindow(SONNET55),
+      customModels(noWindow)[0]?.contextWindow]).toStrictEqual([128_000, 8_192, undefined, DEFAULT_CONTEXT_WINDOW]);
   });
 
   it('reads nothing without the env, from a value that is not JSON or not a list', () => {

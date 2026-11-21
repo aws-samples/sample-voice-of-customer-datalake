@@ -251,7 +251,8 @@ class TestWindow:
 # --------------------------------------------------------------------------
 
 def _gsi_call(day: str, cursor_key: str) -> tuple[str, str, str]:
-    return ('gsi1-by-date', f"(gsi1pk = 'DATE#{day}' AND gsi1sk > '{cursor_key}')", 'category, subcategory')
+    # (tags: the VoC app's own micro-feedback is never a new review, 7.66.00)
+    return ('gsi1-by-date', f"(gsi1pk = 'DATE#{day}' AND gsi1sk > '{cursor_key}')", 'category, subcategory, tags')
 
 
 def _rendered_queries(table: MagicMock) -> list[tuple[str, str, str]]:

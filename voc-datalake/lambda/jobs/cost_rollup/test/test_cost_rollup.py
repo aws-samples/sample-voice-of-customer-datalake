@@ -404,3 +404,27 @@ def test_a_custom_model_is_priced_from_the_registry_and_the_row_is_complete(monk
               'cache_write_tokens': 0}
     part = handler.priced({('us.meta.llama3-3-70b-instruct-v1:0', 'default'): counts}, PRICE_LIST)
     assert (part['estimated_usd'], part['complete'], part['unpriced_models']) == (Decimal('1.44'), True, [])
+    assert 'complete' not in part['by_model'][0]
+
+
+def test_an_imported_model_s_line_is_an_estimate_so_its_row_is_not_complete(monkeypatch):
+    """Review round 2 (7.66.00): Custom Model Import bills by the model's active copies, not the token, so an imported
+    model's registry-priced line is ``complete: false``, and so is its row and the route's sum of it."""
+    from shared.custom_models import CUSTOM_MODELS_ENV
+    from shared.model_prices import PRICE_LIST
+    from shared.platform_costs import summary
+    from shared.test.repo_paths import repo_root
+    monkeypatch.setenv(CUSTOM_MODELS_ENV, (repo_root() / 'lib' / 'test-support' / 'custom-models-env.json')
+                       .read_text(encoding='utf-8'))
+    counts = {'calls': 1, 'input_tokens': 1_000_000, 'output_tokens': 0, 'cache_read_tokens': 0,
+              'cache_write_tokens': 0}
+    imported = 'arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456'
+    part = handler.priced({(imported, 'default'): counts, ('amazon.nova-pro-v1:0', 'default'): counts}, PRICE_LIST)
+    assert (part['estimated_usd'], part['complete'], part['unpriced_models']) == (Decimal('1.3'), False, [])
+    lines = {line['model_id']: line for line in part['by_model']}
+    assert lines[imported]['complete'] is False
+    assert 'complete' not in lines['amazon.nova-pro-v1:0']
+    total = summary([{'sk': YESTERDAY, **part}])['total']
+    assert total['complete'] is False
+    assert {line['model_id']: line['complete'] for line in total['by_model']} == {
+        imported: False, 'amazon.nova-pro-v1:0': True}

@@ -348,15 +348,31 @@ def _budget(definition: Mapping[str, Any]) -> Decimal | None:
     return None if budget is None or broken else Decimal(str(budget['monthly_usd']))
 
 
+def _expanded(definition: Mapping[str, Any], workflow: Mapping[str, Any] | None,
+              read_revision: Any) -> Mapping[str, Any]:
+    """``definition`` with its ``call_flow`` steps expanded as a run's start expands them (``read_revision``:
+    ``engineering_agent_runs.revision_reader``), so readiness judges the flow a run would launch; unchanged without a
+    reader, without calls, or when a call cannot be expanded (the start then refuses it, with its reason)."""
+    from shared import flow_expand
+    if read_revision is None or not flow_expand.calls(definition):
+        return definition
+    root = (workflow or {}).get('workflow_id')
+    try:
+        return flow_expand.expand(definition, read_revision, root=root if isinstance(root, str) else None).definition
+    except flow_expand.ExpansionError:
+        return definition
+
+
 def agent_subject(agent: Mapping[str, Any], workflow: Mapping[str, Any] | None, asker: str,
-                  asker_name: str = '') -> Subject:
-    """An engineering agent as readiness reads it: its connection, language, flow and ``github_issue`` trigger, and
-    whose way of working its runs follow (the administrator who enabled it, else the one asking: who would enable
-    it), by their username."""
+                  asker_name: str = '', *, read_revision: Any = None) -> Subject:
+    """An engineering agent as readiness reads it: its connection, language, flow (its calls expanded with
+    ``read_revision``, as a run's start expands them) and ``github_issue`` trigger, and whose way of working its runs
+    follow (the administrator who enabled it, else the one asking: who would enable it), by their username."""
     from shared import workflow_schema
     engineering = agent.get('engineering')
     settings: Mapping[str, Any] = engineering if isinstance(engineering, Mapping) else {}
-    definition = workflow_schema.decode_definition((workflow or {}).get('definition')) or {}
+    definition = _expanded(workflow_schema.decode_definition((workflow or {}).get('definition')) or {}, workflow,
+                           read_revision)
     trigger = next((trigger for trigger in agent.get('triggers') or []
                     if isinstance(trigger, Mapping) and trigger.get('kind') == 'github_issue'), None)
     owner = str(agent.get('owner_sub') or '') if agent.get('enabled') is True else ''

@@ -249,7 +249,10 @@ On the **Focus groups** tab (`/projects/{id}/focus-groups`) choose the personas 
 topic (at most 2,000 characters; it is the conversation's first message), pick 1, 2 or 3 rounds, and optionally up to
 3 project documents and up to 3 [Documents Library](documents-library.md) items every persona reads. The tab shows the
 cost before you start: the model calls on the assistant's chat model and roughly the tokens they read and write (6
-personas and 2 rounds: 14 calls, about 45,000 input and 8,000 output tokens). No dollar figure is shown: the
+personas and 2 rounds: 14 calls, about 45,000 input and 8,000 output tokens). Every persona call also reads the chosen
+documents' text (within 30,000 characters together, shared equally) and the chosen Library items' best passages
+(within 12,000), and the figure counts them from their sizes at about 4 characters a token: the same group with both
+at their most reads about 171,000 input tokens. No dollar figure is shown: the
 deployment's Bedrock prices are not held by the app (`lambda/shared/model_prices.py` records none it could not read),
 and a guess would read as a quote. **Start focus group** opens the assistant on a new conversation and runs it there.
 
@@ -312,7 +315,9 @@ row is always `synthetic: true` (whatever the body says) and records `derivation
 document_ids, library_item_ids, rounds, feedback_count}`, with its creator (`created_by_sub`) and time (TENETS.md D4).
 The cited reviews are its `input_feedback_ids`, only those the saver may see (the route checks each one with their
 category and source access), so an erasure removes an id there as it does a persona's (D5); a `[fb:<id>]` in the text
-that names no kept review is removed before the save. **A focus group is a reference, never evidence**: its `DOC#` key
+that names no kept review is removed before the save, and from every later edit's text (`PUT`) and every Revise from
+comments pass's changes (7.66.00; a change that only added such a citation is dropped). **A focus group is a reference,
+never evidence**: its `DOC#` key
 is no methodology step (`shared/methodology.py`), so no PR/FAQ, PRD or prototype counts it, and the document says so
 under its text.
 

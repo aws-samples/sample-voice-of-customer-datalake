@@ -179,3 +179,25 @@ class TestBatchGet:
         client = _FlakyBatchClient('feedback', {})
         assert signals._batch_get(self._table(client), []) == []
         assert client.calls == 0
+
+
+class TestTheAppFeedbackIsNoSignal:
+    """The VoC app's own micro-feedback (tagged ``voc_app``, 7.66.00) is never a customer's signal in the brief:
+    neither counted on the items path, nor urgent, nor quoted (shared/item_filters.py)."""
+
+    def test_it_is_not_counted_on_the_items_path(self, world):
+        world.review('f1', category='shipping', day=_day(0))
+        world.review('app1', category='shipping', day=_day(0), source='feedback_form', tags=('voc_app',))
+        signals = read_signals(world.tables.feedback, world.tables.aggregates, NO_PARTNER_SOURCE, NOW)
+        assert signals.categories['shipping'].current == 1
+
+    def test_it_is_never_urgent(self, world):
+        world.review('u1', category='shipping', day=_day(0), urgency='high')
+        world.review('app1', category='shipping', day=_day(0), urgency='high', tags=('VOC_APP',))
+        signals = read_signals(world.tables.feedback, world.tables.aggregates, SHIPPING_ONLY, NOW)
+        assert [item['feedback_id'] for item in signals.urgent_current] == ['u1']
+
+    def test_it_is_never_quoted(self, world):
+        world.review('q1', category='shipping', day=_day(0), text='Late again')
+        world.review('app1', category='shipping', day=_day(0), text='The tool is slow', tags=('voc_app',))
+        assert [q['feedback_id'] for q in recent_quotes(world.tables.feedback, SHIPPING_ONLY, 'shipping', NOW)] == ['q1']

@@ -19,6 +19,7 @@ from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared.app_feedback_tag import RESERVED_MESSAGE, names_app_feedback
 from shared.dimension_config import (
     DIMENSION_KEY_RE,
     DIMENSION_VALUE_RE,
@@ -125,10 +126,12 @@ def validate_label_config(
     }
 
 
-def normalise_label_fields(table: Any, entry: dict[str, Any], scope: WorkspaceScope | None = None) -> None:
+def normalise_label_fields(table: Any, entry: dict[str, Any], scope: WorkspaceScope | None = None, *,
+                           app_feedback: bool = False) -> None:
     """Validate a save body's ``dimension_defaults`` / ``tags`` against the stored
     dimensions config (``scope``'s workspace's for a save in one, the deployment's without one) and normalise them
-    IN PLACE; a body naming neither is untouched.
+    IN PLACE; a body naming neither is untouched. The in-app micro-feedback's tag is refused (400) unless
+    ``app_feedback`` (a form made from its template: shared/app_feedback_tag.py).
 
     ``ValidationError`` (400) for a bad value, ``ServiceError`` (500) when the
     dimensions config cannot be read: a write path must not store what it could
@@ -136,6 +139,8 @@ def normalise_label_fields(table: Any, entry: dict[str, Any], scope: WorkspaceSc
     """
     if 'dimension_defaults' not in entry and 'tags' not in entry:
         return
+    if not app_feedback and names_app_feedback(entry.get('tags')):
+        raise ValidationError(RESERVED_MESSAGE)
     try:
         dimensions_config = load_dimensions_config(table, scope)
     except (ClientError, BotoCoreError, ValueError) as e:

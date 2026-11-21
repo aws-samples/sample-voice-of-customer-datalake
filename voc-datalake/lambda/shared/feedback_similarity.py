@@ -31,7 +31,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
-__all__ = ['rank_similar']
+__all__ = ['item_tokens', 'rank_similar', 'tokens']
 
 #: Below this lexical score a candidate is not "similar", whatever its boosts.
 MIN_LEXICAL_SCORE: Final = 0.1
@@ -79,6 +79,12 @@ def tokens(*texts: object) -> frozenset[str]:
     return frozenset(w for w in words if len(w) >= MIN_TOKEN_CHARS and w not in _STOP_WORDS and not w.isdigit())
 
 
+def item_tokens(item: Mapping[str, Any]) -> frozenset[str]:
+    """A review's tokens as the ranker compares them: its title, problem summary and text (the normalized text, else
+    the original), the stop words left out (persona grounding ranks its fresh evidence on them too)."""
+    return tokens(item.get('title'), item.get('problem_summary'), item.get('normalized_text') or item.get('original_text'))
+
+
 def _overlap(left: frozenset[str], right: frozenset[str]) -> float:
     """Ochiai coefficient: |A & B| / sqrt(|A| |B|), 0 when either side is empty."""
     if not left or not right:
@@ -116,11 +122,10 @@ class _Profile:
 
     @classmethod
     def of(cls, item: Mapping[str, Any]) -> _Profile:
-        body = item.get('normalized_text') or item.get('original_text')
         label = str(item.get('sentiment_label') or '').casefold()
         return cls(
             item=item,
-            text=tokens(item.get('title'), item.get('problem_summary'), body),
+            text=item_tokens(item),
             summary=tokens(item.get('problem_summary')),
             polarity=_POLARITY.get(label, 0),
         )

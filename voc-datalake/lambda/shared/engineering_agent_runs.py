@@ -119,7 +119,7 @@ class StoredFlow:
     expansion: tuple[dict[str, Any], ...] = ()
     #: The calls it still holds (read without a reader): such a flow is never started (``start_request``).
     calls: int = 0
-    #: (7.63.00) Whether a run of it pushes (``workflow_engineering.flow_pushes`` on the stored definition, as readiness
+    #: (7.63.00) Whether a run of it pushes (``workflow_engineering.flow_pushes`` on the expanded definition, as readiness
     #: reads it): only then is a start on an expired or unset fine-grained token refused (``run_connection``).
     pushes: bool = True
 
@@ -153,7 +153,6 @@ def stored_flow(workflow: Mapping[str, Any] | None,
     if broken:
         raise ConflictError(f'the flow\'s stored budget is off its rule ({broken}): save the flow again')
     revision = plain(workflow.get('revision')) or 1
-    pushes = flow_pushes(definition)
     expansion: tuple[dict[str, Any], ...] = ()
     pending = len(flow_expand.calls(definition))
     if pending and read_revision is not None:
@@ -164,6 +163,8 @@ def stored_flow(workflow: Mapping[str, Any] | None,
             raise ConflictError(f'the flow\'s calls cannot be expanded ({refused.message}): change the flow and save '
                                 'it again') from None
         definition, expansion, pending = expanded.definition, expanded.expansion, 0
+    # (on the EXPANDED definition: a flow whose push is in a flow it calls pushes too, as readiness judges it)
+    pushes = flow_pushes(definition)
     return StoredFlow(None if budget is None else float(budget['monthly_usd']),
                       workflow_schema.encode_definition(definition), int(revision), expansion, pending, pushes)
 

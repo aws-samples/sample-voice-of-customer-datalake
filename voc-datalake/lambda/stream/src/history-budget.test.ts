@@ -10,6 +10,8 @@ import { describe, it, expect } from 'vitest';
 import { nth } from './lib/nth-fixtures.js';
 import {
   clampHistoryToBudget,
+  DEFAULT_HISTORY_BUDGET,
+  historyBudgetFor,
   MAX_HISTORY_CONTENT_LENGTH,
   MAX_HISTORY_ENTRIES,
   MAX_HISTORY_TOTAL_LENGTH,
@@ -104,5 +106,19 @@ describe('clampHistoryToBudget', () => {
   it('always keeps the newest turn', () => {
     const history = [turn('a'.repeat(MAX_HISTORY_CONTENT_LENGTH)), turn('newest', 'user')];
     expect(clampHistoryToBudget(history).at(-1)?.content).toBe('newest');
+  });
+});
+
+describe('historyBudgetFor (a custom model\'s window, 7.65.00)', () => {
+  it('keeps a Claude\'s budget, and gives a 32,000-token model a quarter of its window', () => {
+    expect([historyBudgetFor(undefined), historyBudgetFor(32_000), historyBudgetFor(4_000_000)]).toStrictEqual([
+      DEFAULT_HISTORY_BUDGET, { total: 32_000, entry: 32_000 }, DEFAULT_HISTORY_BUDGET]);
+  });
+
+  it('replays only the newest turns that fit a small model, each cut to its budget', () => {
+    const turns = [{ content: 'a'.repeat(20_000) }, { content: 'b'.repeat(20_000) }, { content: 'c'.repeat(40_000) }];
+    const kept = clampHistoryToBudget(turns, historyBudgetFor(32_000));
+    expect(kept.map((turn) => [turn.content[0], turn.content.length])).toStrictEqual([['c', 32_000]]);
+    expect(kept[0]?.content.endsWith(TRUNCATION_MARKER)).toBe(true);
   });
 });

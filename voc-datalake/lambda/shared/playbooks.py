@@ -8,8 +8,8 @@ the evidence that ticks it:
 
 * a SERVER signal (``SERVER_SIGNALS``), computed by ``GET /settings/my-onboarding`` (shared/onboarding.py) from the
   aggregates table in the request's scope, only for the steps of the playbook the person chose;
-* what Home already reads in the browser (the person's assistant sessions, their projects, the engineering
-  connections, their MCP tokens): ``BROWSER_EVIDENCE``;
+* what Home already reads in the browser (the person's brief settings, their projects, the engineering connections,
+  their MCP tokens): ``BROWSER_EVIDENCE``;
 * nothing: the person ticks the step (``playbook_done``).
 
 The person's choice and their ticks live on their own onboarding row (``playbook``, ``playbook_done``). The English
@@ -30,10 +30,10 @@ ROLES: Final = ('product', 'scrum_master', 'qa', 'engineering')
 ROLE_TITLES: Final = {'product': 'Product manager', 'scrum_master': 'Scrum master', 'qa': 'QA',
                       'engineering': 'Engineering'}
 #: The evidence the onboarding GET computes (shared/onboarding.py ``signals``).
-SERVER_SIGNALS: Final = ('brief_subscribed', 'objectives_set', 'feedback_form_configured', 'form_test_response')
+SERVER_SIGNALS: Final = ('objectives_set', 'feedback_form_configured', 'form_test_response')
 #: The evidence the browser already holds on Home.
-BROWSER_EVIDENCE: Final = ('assistant_used', 'project_owned', 'personas_generated', 'document_written',
-                           'project_shared', 'repository_connected', 'mcp_connected')
+BROWSER_EVIDENCE: Final = ('brief_subscribed', 'personas_generated', 'document_written', 'project_shared',
+                           'repository_connected', 'mcp_connected')
 
 
 @dataclass(frozen=True)
@@ -54,15 +54,9 @@ class Step:
             raise ValueError(f'playbook step {self.id}: no evidence is called {self.evidence}')
 
 
-_ASK = Step('ask_assistant', '/chat', 'assistant_used', 'Ask the assistant a question about your customers',
-            'It reads the feedback for you and cites every review it relies on.',
-            'Answer one real question with feedback_search and feedback_get_metrics, citing feedback ids.')
 _BRIEF = Step('subscribe_brief', '/account/briefing', 'brief_subscribed', 'Subscribe to the morning brief',
               'What changed overnight reaches you without opening the app.',
               'Explain what the brief holds; the person subscribes on Account → Morning brief.')
-_PROJECT = Step('start_project', '/projects', 'project_owned', 'Start a research project',
-                "A project keeps a theme's feedback, personas and documents together.",
-                'Suggest a theme from feedback_get_metrics (view=categories); projects_list shows the ones that exist.')
 _PROBLEMS = Step('review_problems', '/problems', None, 'Review the problems customers report most',
                  'The ranked problems tell you what to plan, fix or test first.',
                  'Group recent negative feedback by problem with feedback_search (sentiment=negative).')
@@ -78,8 +72,6 @@ PLAYBOOKS: Final[dict[str, tuple[Step, ...]]] = {
         Step('read_dashboard', '/dashboard', None, "Read this week's dashboard",
              'Volume, sentiment and the top categories show where to look first.',
              'Summarise the week with feedback_get_metrics (view=summary, then categories and sentiment).'),
-        _ASK,
-        _PROJECT,
         Step('generate_personas', '/projects', 'personas_generated', 'Generate personas from real feedback',
              'Personas grounded in reviews keep decisions about real customers.',
              'Explain how a project generates personas; projects_get shows the ones a project has.'),
@@ -94,9 +86,6 @@ PLAYBOOKS: Final[dict[str, tuple[Step, ...]]] = {
     'scrum_master': (
         _BRIEF,
         _PROBLEMS,
-        Step('start_project', '/projects', 'project_owned', "Open a project for the sprint's theme",
-             "A project keeps the sprint's evidence where the whole team can read it.",
-             'Suggest a theme from feedback_get_metrics (view=categories); projects_list shows the ones that exist.'),
         Step('share_project', '/projects', 'project_shared', 'Share the project with your team',
              'Everyone plans from the same evidence.',
              'Explain project sharing; the person adds members on the project.'),
@@ -106,9 +95,6 @@ PLAYBOOKS: Final[dict[str, tuple[Step, ...]]] = {
         Step('read_form_results', '/feedback-forms', None, "Read a form's results and report",
              'The report gives you the themes and quotes to bring to the retrospective.',
              'Explain Results → Report; the person opens it on the form.'),
-        Step('ask_assistant', '/chat', 'assistant_used', 'Ask the assistant for a stand-up summary',
-             'Two minutes of customer signal at the start of the day.',
-             'Summarise the last day with feedback_get_metrics (days=1) and two quoted items.'),
     ),
     'qa': (
         _FORM,
@@ -120,7 +106,6 @@ PLAYBOOKS: Final[dict[str, tuple[Step, ...]]] = {
         Step('watch_release', '/dashboard', None, 'Watch the feedback after a release',
              'A change in volume or sentiment after a release points at a regression.',
              'Compare the days before and after with feedback_get_metrics and feedback_search.'),
-        _ASK,
     ),
     'engineering': (
         Step('connect_repository', '/agents/connections', 'repository_connected', 'Connect a repository',
@@ -136,7 +121,6 @@ PLAYBOOKS: Final[dict[str, tuple[Step, ...]]] = {
         Step('connect_mcp', '/connect', 'mcp_connected', 'Use VoC from your IDE',
              'Your coding assistant reads the same feedback through one MCP endpoint.',
              'Explain the Connect page: a personal token and the skill, read-only unless the person chooses write.'),
-        _ASK,
     ),
 }
 

@@ -33,16 +33,6 @@
       "why": "Volumen, Stimmung und die wichtigsten Kategorien zeigen, wo Sie zuerst hinschauen sollten.",
       "cta": "Dashboard öffnen"
     },
-    "ask_assistant": {
-      "title": "Dem Assistenten eine Frage zu Ihren Kunden stellen",
-      "why": "Er liest das Feedback für Sie und zitiert jede Bewertung, auf die er sich stützt.",
-      "cta": "Assistenten öffnen"
-    },
-    "start_project": {
-      "title": "Forschungsprojekt starten",
-      "why": "Ein Projekt hält das Feedback, die Personas und die Dokumente eines Themas zusammen.",
-      "cta": "Projekte öffnen"
-    },
     "generate_personas": {
       "title": "Personas aus echtem Feedback erstellen",
       "why": "Personas, die auf Bewertungen beruhen, richten Entscheidungen an echten Kunden aus.",

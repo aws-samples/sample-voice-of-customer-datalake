@@ -329,6 +329,29 @@ def test_a_run_starts_from_its_flow_with_the_calls_expanded_and_records_them() -
         assert store.run_view(run)['expansion'] == recorded
 
 
+def test_a_flow_whose_push_is_in_a_flow_it_calls_pushes() -> None:
+    """Review round 2 (7.66.00): ``pushes`` is read on the EXPANDED flow; the caller has no pushing step of its own,
+    the bug fix it calls has (a committer and a pull request author), so its start judges it pushing, as readiness."""
+    from engineering.readiness_aws import agent_subject
+    with agents_env() as env:
+        agent, _row = _engineering_agent(env)
+        called = stored_workflow(env.agents, agent['workflow_id'])
+        caller = _calling_flow(env, f'{called["workflow_id"]}@1')
+        assert eng_runs.stored_flow(caller).pushes is False   # (its calls left in: no pushing step of its own)
+        expanded = eng_runs.stored_flow(caller, eng_runs.revision_reader(env.agents))
+        assert (expanded.pushes, expanded.calls) == (True, 0)
+        subject = agent_subject({**agent, 'workflow_id': caller['workflow_id']}, caller, 'asker', 'alice',
+                                read_revision=eng_runs.revision_reader(env.agents))
+        assert subject.requires['ci_attestation'] is True
+        assert 'call_flow' not in {node['type'] for node in subject.definition['nodes']}
+        unexpanded = agent_subject(agent, caller, 'asker', 'alice')
+        assert unexpanded.requires['ci_attestation'] is False
+        # (a call that cannot be expanded leaves the stored flow: the start refuses it, with its reason)
+        broken = _calling_flow(env, 'wf_0123456789ab@4')
+        kept = agent_subject(agent, broken, 'asker', 'alice', read_revision=eng_runs.revision_reader(env.agents))
+        assert 'call_flow' in {node['type'] for node in kept.definition['nodes']}
+
+
 def test_a_flow_whose_call_cannot_be_expanded_never_starts() -> None:
     with agents_env() as env:
         agent, row = _engineering_agent(env)

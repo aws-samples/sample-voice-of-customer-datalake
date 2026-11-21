@@ -33,16 +33,6 @@
       "why": "Le volume, le sentiment et les principales catégories montrent où regarder en premier.",
       "cta": "Ouvrir le tableau de bord"
     },
-    "ask_assistant": {
-      "title": "Poser à l’assistant une question sur vos clients",
-      "why": "Il lit les retours pour vous et cite chaque avis sur lequel il s’appuie.",
-      "cta": "Ouvrir l’assistant"
-    },
-    "start_project": {
-      "title": "Lancer un projet de recherche",
-      "why": "Un projet regroupe les retours, les personas et les documents d’un thème.",
-      "cta": "Ouvrir les projets"
-    },
     "generate_personas": {
       "title": "Générer des personas à partir de vrais retours",
       "why": "Des personas fondés sur les avis gardent les décisions centrées sur de vrais clients.",

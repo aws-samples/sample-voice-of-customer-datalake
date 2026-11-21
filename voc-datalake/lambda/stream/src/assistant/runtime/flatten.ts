@@ -14,7 +14,7 @@
  */
 import type { ContentPart, Message as AguiMessage, AssistantMessage, ToolMessage } from '@ag-ui/core';
 import type { Message } from '@aws-sdk/client-bedrock-runtime';
-import { clampHistoryToBudget } from '../../history-budget.js';
+import { clampHistoryToBudget, DEFAULT_HISTORY_BUDGET, type HistoryBudget } from '../../history-budget.js';
 import { partsOf, textOfParts } from './input.js';
 
 export interface FlatTurn {
@@ -86,13 +86,13 @@ function mergeNeighbours(turns: readonly FlatTurn[]): FlatTurn[] {
   return merged;
 }
 
-/** Flatten, merge, clamp to the history budget, and restore the invariants. */
-export function flattenHistory(messages: readonly AguiMessage[]): FlatTurn[] {
+/** Flatten, merge, clamp to the history budget (the run's model's: history-budget.ts), and restore the invariants. */
+export function flattenHistory(messages: readonly AguiMessage[], budget: HistoryBudget = DEFAULT_HISTORY_BUDGET): FlatTurn[] {
   const results = collectToolResults(messages);
   const turns = messages
     .map((message) => toTurn(message, results))
     .filter((turn): turn is FlatTurn => turn !== null && turn.content.trim().length > 0);
-  const clamped = clampHistoryToBudget(mergeNeighbours(turns));
+  const clamped = clampHistoryToBudget(mergeNeighbours(turns), budget);
   const firstUser = clamped.findIndex((turn) => turn.role === 'user');
   if (firstUser < 0) return [];
   const window = clamped.slice(firstUser);

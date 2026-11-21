@@ -117,6 +117,18 @@ describe('parseCustomModels: data residency', () => {
     expect(() => one({ ...overrides, eu: true }, target)).toThrow(/"eu": true|EU source Region/);
   });
 
+  it("accepts an eu. profile's own regions, EU ones including the app Region, and keeps Claude's table by default", () => {
+    const own = one({ id: 'eu.amazon.nova-pro-v1:0', eu: true, regions: ['eu-central-1', 'eu-west-1', 'eu-west-1'] }, EU);
+    expect(own[0]?.regions).toStrictEqual(['eu-central-1', 'eu-west-1']);
+    expect(() => one({ id: 'eu.amazon.nova-pro-v1:0', eu: true, regions: ['eu-central-1', 'us-east-1'] }, EU))
+      .toThrow(/EU Regions only/);
+    expect(() => one({ id: 'eu.amazon.nova-pro-v1:0', eu: true, regions: ['eu-west-1'] }, EU)).toThrow(/must include the app Region/);
+  });
+
+  it('keeps a small window for a surface that writes from no reviews', () => {
+    expect(one({ surfaces: ['utility'], contextWindow: 8_000, maxOutputTokens: 2_000 })[0]?.contextWindow).toBe(8_000);
+  });
+
   it('accepts eu: true on an in-Region model of an EU Region under the global scope', () => {
     expect(one({ eu: true }, { ...EU, scope: 'global' })[0]?.regions).toStrictEqual(['eu-central-1']);
   });
@@ -142,6 +154,8 @@ describe('parseCustomModels: price, surfaces and capabilities', () => {
     ['enrichment without JSON', { surfaces: ['enrichment', 'prototype'], capabilities: { ...ALL_CAPABILITIES, json: false } }, /enrichment parse JSON/],
     ['a surface twice', { surfaces: ['prototype', 'prototype'] }, /listed twice/],
     ['an answer larger than the window', { contextWindow: 8_000, maxOutputTokens: 16_000 }, /larger than contextWindow/],
+    ['documents on a window too small to hold reviews', { contextWindow: 8_000, maxOutputTokens: 2_000 },
+      /documents needs a contextWindow of at least 16000/],
   ])('refuses %s', (_name, overrides, error) => {
     expect(() => one(overrides)).toThrow(error);
   });

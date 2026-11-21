@@ -15,8 +15,8 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   project_id: 'p1', name: 'P', description: '', status: 'active', created_at: '', updated_at: '', persona_count: 0,
   document_count: 0, owner: { sub: SUB, username: 'me', email: 'me@example.com' }, ...overrides,
 })
-const NOTHING: BrowserFacts = { userSub: SUB, sessionCount: 0, projects: [], connectionCount: 0, tokenCount: 0 }
-const LOADING: BrowserFacts = { userSub: SUB, sessionCount: undefined, projects: undefined, connectionCount: undefined,
+const NOTHING: BrowserFacts = { userSub: SUB, briefSubscribed: false, projects: [], connectionCount: 0, tokenCount: 0 }
+const LOADING: BrowserFacts = { userSub: SUB, briefSubscribed: undefined, projects: undefined, connectionCount: undefined,
   tokenCount: undefined }
 const statuses = (steps: ReturnType<typeof derivePlaybook>) => Object.fromEntries(steps.map((step) => [step.id, step.status]))
 
@@ -32,7 +32,7 @@ describe('the catalogue', () => {
 
   it('reads only the evidence the chosen playbook needs', () => {
     expect([needsEvidence('engineering', 'repository_connected'), needsEvidence('qa', 'repository_connected'),
-      needsEvidence(null, 'assistant_used')]).toStrictEqual([true, false, false])
+      needsEvidence(null, 'brief_subscribed')]).toStrictEqual([true, false, false])
   })
 })
 
@@ -46,13 +46,12 @@ describe('derivePlaybook', () => {
       form_test_response: false } }
     expect(statuses(derivePlaybook('qa', preference, NOTHING))).toStrictEqual({
       create_form: 'done', test_form: 'todo', search_feedback: 'todo', review_problems: 'todo', watch_release: 'todo',
-      ask_assistant: 'todo',
     })
   })
 
   it('reads a signal the server did not send yet as pending, and a manual step as to do', () => {
     const steps = statuses(derivePlaybook('product', DEFAULT_ONBOARDING, LOADING))
-    expect([steps['set_objectives'], steps['ask_assistant'], steps['read_dashboard']]).toStrictEqual(['pending', 'pending', 'todo'])
+    expect([steps['set_objectives'], steps['subscribe_brief'], steps['read_dashboard']]).toStrictEqual(['pending', 'pending', 'todo'])
   })
 
   it('ticks a step by hand, and lets the person untick it', () => {
@@ -63,8 +62,8 @@ describe('derivePlaybook', () => {
   })
 
   it('never calls a step the evidence ticked a hand tick', () => {
-    const preference = { ...DEFAULT_ONBOARDING, playbook_done: ['ask_assistant'] }
-    const step = derivePlaybook('qa', preference, { ...NOTHING, sessionCount: 2 }).find((s) => s.id === 'ask_assistant')
+    const preference = { ...DEFAULT_ONBOARDING, playbook_done: ['subscribe_brief'] }
+    const step = derivePlaybook('product', preference, { ...NOTHING, briefSubscribed: true }).find((s) => s.id === 'subscribe_brief')
     expect(step).toMatchObject({ status: 'done', ticked: false })
   })
 })
@@ -73,8 +72,8 @@ describe('browserEvidence', () => {
   it("counts only the person's own projects", () => {
     const theirs = project({ owner: { sub: 'someone-else', username: 'x', email: 'x@example.com' }, persona_count: 3, document_count: 2, member_count: 4 })
     const facts = { ...NOTHING, projects: [theirs] }
-    const names = ['project_owned', 'personas_generated', 'document_written', 'project_shared'] as const
-    expect(names.map((name) => browserEvidence(name, facts))).toStrictEqual([false, false, false, false])
+    const names = ['personas_generated', 'document_written', 'project_shared'] as const
+    expect(names.map((name) => browserEvidence(name, facts))).toStrictEqual([false, false, false])
   })
 
   it('reads personas, documents and sharing from their own projects', () => {
@@ -84,9 +83,10 @@ describe('browserEvidence', () => {
     expect(browserEvidence('project_shared', { ...NOTHING, projects: [project({ member_count: 1 })] })).toBe(true)
   })
 
-  it('reads the connections, tokens and sessions counts, unknown while loading', () => {
+  it('reads the connections and tokens counts and the brief, unknown while loading', () => {
     expect([browserEvidence('repository_connected', { ...NOTHING, connectionCount: 1 }),
       browserEvidence('mcp_connected', { ...NOTHING, tokenCount: 0 }),
-      browserEvidence('assistant_used', LOADING)]).toStrictEqual([true, false, undefined])
+      browserEvidence('brief_subscribed', { ...NOTHING, briefSubscribed: true }),
+      browserEvidence('brief_subscribed', LOADING)]).toStrictEqual([true, false, true, undefined])
   })
 })

@@ -42,7 +42,8 @@ from shared.api import (
     validate_int,
     validate_limit,
 )
-from shared.app_feedback_tag import asks_for_app_feedback, is_app_feedback
+from shared.app_feedback import APP_FEEDBACK_KIND
+from shared.app_feedback import DEPLOYMENT_KEY as APP_FEEDBACK_KEY
 from shared.aws import get_dynamodb_resource
 from shared.category_access import CategoryScope
 from shared.category_gate import scope_for_event
@@ -101,6 +102,7 @@ from shared.scoped_query import SortRange, query_partition
 from shared.time_budget import ROW_CAP_PARTIAL_REASON, WalkBudget, budgeted_days
 from shared.urgent_pages import URGENCY_KEY_FIELDS, UrgentPage, read_urgent_page
 from shared.usefulness import USEFULNESS_FIELD
+from shared.workspace_config import get_config_item
 from shared.workspace_request import RequestWorkspace
 from shared.ws_repo import WorkspaceScope, ws_table
 
@@ -512,16 +514,10 @@ def _scoped_window_items(
         read = _aggregate_row_read()
     items, is_partial = _scan_window_items(
         days, date_basis, scope=scope, extra=extra or NO_ITEM_FILTERS, slim=slim, read=read)
-    items = extra.filter(items) if extra is not None else items
-    return category_access.filter_items(scope, _counted_items(items, extra)), is_partial
-
-
-def _counted_items(items: list[dict[str, Any]], extra: ItemFilters | None) -> list[dict[str, Any]]:
-    """``items`` a metric counts: without the VoC app's own micro-feedback (shared/app_feedback_tag.py, 7.66.00), as
-    the aggregates the unfiltered routes read leave it out, unless the request filters on its tag (``tag=voc_app``)."""
-    if extra is not None and asks_for_app_feedback(extra.tag):
-        return items
-    return [item for item in items if not is_app_feedback(item)]
+    # (the filters leave the VoC app's own micro-feedback out unless the request asks for its tag, as the aggregates
+    # the unfiltered routes read do: shared/item_filters.py)
+    items = (extra or NO_ITEM_FILTERS).filter(items)
+    return category_access.filter_items(scope, items), is_partial
 
 
 def _read_with_filters(read: SlimRead | None, extra: ItemFilters) -> SlimRead | None:
@@ -1173,7 +1169,9 @@ def get_urgent_feedback():
     filters = _ItemFilters(params, days, _caller_scope())
     start_key = _urgent_start_key(params.get('next_token'), filters.cutoff_date)
 
-    has_post_filters = _urgent_has_post_filters(filters)
+    # (the urgency index projects no tags, so a COUNT of it would count the VoC app's own micro-feedback: once the
+    # scope chose an in-app feedback form, every urgent page is read in full and its total is the items it admits)
+    has_post_filters = _urgent_has_post_filters(filters) or _app_feedback_chosen()
     since = SortRange('gsi3sk', 'gte', filters.cutoff_date)
     page = read_urgent_page(
         lambda key, rows: _urgency_query(since, filters.extra.sources, key, rows),
@@ -1197,6 +1195,20 @@ def get_urgent_feedback():
         'next_token': encode_key_cursor(page.next_key) if page.next_key else None,
         'items': page.items,
     }
+
+
+def _app_feedback_chosen() -> bool:
+    """Whether the request's scope ever chose a form for the in-app micro-feedback (its settings row exists, on or
+    off; shared/app_feedback.py): then items tagged ``voc_app`` may sit among the urgent ones (7.66.00)."""
+    if aggregates_table is None:
+        return False
+    try:
+        row = get_config_item(aggregates_table, APP_FEEDBACK_KIND, APP_FEEDBACK_KEY, _ws_scope(), consistent=False)
+    except (ClientError, BotoCoreError):
+        # (unknown: read the pages in full, the answer that can never count a micro-feedback item)
+        logger.warning('The in-app feedback settings could not be read; urgent pages are read in full')
+        return True
+    return bool(row)   # (get_config_item answers {} for no row, and for anything but a stored item)
 
 
 def _urgent_has_post_filters(filters: _ItemFilters) -> bool:

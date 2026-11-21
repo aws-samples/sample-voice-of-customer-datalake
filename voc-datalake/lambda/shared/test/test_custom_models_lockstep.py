@@ -38,21 +38,15 @@ def _strings(source: str, name: str) -> tuple[str, ...]:
     return tuple(re.findall(r"'([a-z_]+)'", found.group(1)))
 
 
+@pytest.mark.parametrize('source', [CDK, STREAM], ids=['cdk', 'stream'])
 @pytest.mark.parametrize(('name', 'value'), [
     ('MAX_CUSTOM_MODELS', custom_models.MAX_CUSTOM_MODELS),
     ('DEFAULT_CONTEXT_WINDOW', custom_models.DEFAULT_CONTEXT_WINDOW),
     ('DEFAULT_MAX_OUTPUT_TOKENS', custom_models.DEFAULT_MAX_OUTPUT_TOKENS),
 ])
-def test_the_cdk_numbers_match(name, value):
-    assert _number(CDK, name) == value
-
-
-@pytest.mark.parametrize(('name', 'value'), [
-    ('MAX_CUSTOM_MODELS', custom_models.MAX_CUSTOM_MODELS),
-    ('DEFAULT_MAX_OUTPUT_TOKENS', custom_models.DEFAULT_MAX_OUTPUT_TOKENS),
-])
-def test_the_stream_numbers_match(name, value):
-    assert _number(STREAM, name) == value
+def test_the_numbers_match(source, name, value):
+    """The CDK's and the stream's copies of the registry's numbers are the Python one's."""
+    assert _number(source, name) == value
 
 
 @pytest.mark.parametrize('source', [CDK, STREAM])

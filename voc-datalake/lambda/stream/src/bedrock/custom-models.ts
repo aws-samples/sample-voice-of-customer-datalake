@@ -10,6 +10,9 @@
  * and the plan steps send tools; the synth refuses chat and agent_worker without them). Its requests carry no
  * `thinking` field (model-override.ts takesThinkingBudget), `maxTokens` at most its `maxOutputTokens`, and no
  * document or image block unless it reads them (model-fallback.ts chatModelForAttachments; the Library sends text).
+ * Its `contextWindow` sizes the replayed history (history-budget.ts `historyBudgetFor`). The `json` capability is not
+ * read here: JSON answers are the enrichment and utility surfaces', never a stream surface, and the synth refuses a
+ * model that serves them without it (lib/utils/custom-models.ts), as it refuses chat without tools.
  * Read leniently: an entry this module cannot read is skipped and logged, never thrown.
  */
 import { z } from 'zod';
@@ -18,6 +21,8 @@ export const CUSTOM_MODELS_ENV = 'CUSTOM_MODELS';
 /** At most this many are read (the synth refuses more). */
 export const MAX_CUSTOM_MODELS = 4;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 4_096;
+/** A model's input window when its entry names none (lib/utils/custom-models.ts DEFAULT_CONTEXT_WINDOW). */
+export const DEFAULT_CONTEXT_WINDOW = 32_000;
 
 const CustomModelSchema = z.object({
   key: z.string().min(1),
@@ -26,6 +31,7 @@ const CustomModelSchema = z.object({
   surfaces: z.array(z.string()).min(1),
   capabilities: z.object({ tools: z.boolean(), documents: z.boolean(), json: z.boolean(), temperature: z.boolean() }),
   maxOutputTokens: z.number().int().positive().optional(),
+  contextWindow: z.number().int().positive().optional(),
 });
 
 /** One registry entry, as the stream uses it. */
@@ -35,6 +41,8 @@ export interface StreamCustomModel {
   readonly tools: boolean;
   readonly documents: boolean;
   readonly maxOutputTokens: number;
+  /** Its input window, in tokens. */
+  readonly contextWindow: number;
 }
 
 const parsed = new Map<string, readonly StreamCustomModel[]>();
@@ -61,10 +69,10 @@ function parseRegistry(raw: string): readonly StreamCustomModel[] {
       continue;
     }
     // (the key and the label are the registry's, for the SPA and the logs; the stream reads neither)
-    const { id, surfaces, capabilities, maxOutputTokens } = result.data;
+    const { id, surfaces, capabilities, maxOutputTokens, contextWindow } = result.data;
     models.push({
       id, surfaces, tools: capabilities.tools, documents: capabilities.documents,
-      maxOutputTokens: maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+      maxOutputTokens: maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS, contextWindow: contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     });
   }
   return models;
@@ -88,6 +96,11 @@ export function customModel(modelId: unknown): StreamCustomModel | undefined {
 export function streamCustomModel(value: unknown, surface: string): string | undefined {
   const model = customModel(value);
   return model !== undefined && model.tools && model.surfaces.includes(surface) ? model.id : undefined;
+}
+
+/** A custom model's input window in tokens; undefined for any other model (Claude's windows hold the defaults). */
+export function customContextWindow(modelId: string): number | undefined {
+  return customModel(modelId)?.contextWindow;
 }
 
 /** `maxTokens`, at most a custom model's `maxOutputTokens`. */

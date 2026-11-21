@@ -14,6 +14,9 @@ here with its date.
 The deployment's own models (``-c customModels``, shared/custom_models.py, 7.65.00) carry their price in the registry,
 required at synth: ``price.in`` per million input tokens, ``price.out`` per million output tokens, on every tier (the
 cache reads and writes at the input price, the registry naming no cache price). A custom model is never unpriced.
+An imported one's figure is only an estimate (``is_estimate``, 7.66.00): Custom Model Import bills the Custom Model
+Units of each copy for every 5-minute window it is active (and their storage by the month), not the token, so its
+registry price is the operator's own conversion and its cost line is ``complete: false``.
 """
 from __future__ import annotations
 
@@ -75,6 +78,13 @@ def custom_prices(model_id: str) -> TokenPrices | None:
         return None
     return TokenPrices(input=custom.price_in, output=custom.price_out, cache_read=custom.price_in,
                        cache_write=custom.price_in)
+
+
+def is_estimate(model_id: str) -> bool:
+    """Whether ``model_id``'s figure is only the registry's estimate: an imported model's (Custom Model Import bills
+    by the model's active copies, not the token: the module docstring)."""
+    custom = custom_model(model_id)
+    return custom is not None and custom.source == 'imported'
 
 
 def estimated_usd(model_id: str, service_tier: str, tokens: Mapping[str, int],

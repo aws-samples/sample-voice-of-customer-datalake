@@ -21,22 +21,24 @@ the platform package version.
 
 **Adoption**: role playbooks on Home for Product, Scrum master, QA and Engineering ([playbooks.md](docs/playbooks.md)),
 and in-app micro-feedback after key actions, a thumb up or down and "What's missing?", sent to a normal feedback form
-an administrator chooses, tagged `voc_app` and left out of the dashboards, off by default
-([micro-feedback.md](docs/micro-feedback.md)). No new route resource: the existing settings proxy and the forms'
+an administrator chooses, tagged `voc_app` (a reserved tag) and left out of the dashboards and of every evidence
+read, off by default ([micro-feedback.md](docs/micro-feedback.md)). No new route resource: the existing settings proxy and the forms'
 public submit route carry it.
 
 ### Added
 
 - **Role playbooks** in Home's setup checklist ("Your first week"): the person picks Product manager, Scrum master, QA
-  or Engineering and gets five to eight first-week steps, each with why it matters and a link to its screen. Steps
-  tick themselves from real activity (the morning brief on, objectives set, a form created, a form's test response, the
-  assistant used, a project owned, personas or a document in one of the person's projects, a shared project, a
-  repository connected, an MCP token) or by hand, and can be unticked. "Ask the assistant to walk me through it" opens
+  or Engineering and gets five first-week steps, each with why it matters and a link to its screen (none repeats the
+  setup checklist's own steps above it, such as asking the assistant or starting a project). Steps tick themselves
+  from real activity (the morning brief on, objectives set, a form created, a form's test response, personas or a
+  document in one of the person's projects, a shared project, a repository connected, an MCP token) or by hand, and
+  can be unticked. "Ask the assistant to walk me through it" opens
   a new conversation with the playbook prefilled. A role grants nothing and changes no workspace role; there are no
   badges and nothing is assigned by an admin.
 - `GET|PUT /settings/my-onboarding` take and answer `playbook` (`product | scrum_master | qa | engineering | null`)
   and `playbook_done` (the steps ticked by hand), and the GET adds the chosen playbook's server signals
-  (`brief_subscribed`, `objectives_set`, `form_test_response`), read only for that playbook. The catalogue is one file,
+  (`objectives_set`, `feedback_form_configured`, `form_test_response`), read only for that playbook; whether the
+  brief is on is the browser's (Home already reads the person's brief settings), never a second server read. The catalogue is one file,
   `voc-datalake/schemas/playbooks.json`, read by the web app and pinned to the server's.
 - **The `playbook` prompt** on the global MCP server (`role`): the role's steps for any MCP client, with how the read
   tools show each with the deployment's feedback and where in the app it is done; it asks before anything that writes
@@ -60,11 +62,23 @@ public submit route carry it.
 
 ### Changed
 
-- **The dashboards leave the VoC app's own feedback out**: an item tagged `voc_app` counts in no aggregate (no
-  counter, no score in the sentiment average; tagging an item later takes its counters out, untagging it counts it),
-  and the metric routes' item path (filtered dashboards, categories, sentiment, sources, personas, dimensions, data
-  quality, entities, problems, GitHub, release watch) leaves it out unless the request filters on `tag=voc_app`. The
-  Feedback list, search and the form's own Results still show it. `rebuild_aggregates.py` follows the same rule.
+- **The VoC app's own feedback is never customer evidence**: an item tagged `voc_app` counts in no aggregate (no
+  counter, no score in the sentiment average; tagging an item later takes its counters out, untagging it counts it;
+  it keeps only its day's sentinel on the daily total's row, a field no reader sums, so a later edit on a day of
+  micro-feedback alone still finds the day). The shared item filters (`shared/item_filters.py`) leave it out by
+  default, so every read through them does: the metric routes (filtered dashboards, categories, sentiment, sources,
+  personas, dimensions, data quality, entities, problems, GitHub, release watch), the Feedback list and search (REST,
+  MCP `feedback_search` and the assistant's search tool) and the urgent list (once a scope chose an in-app feedback
+  form its pages are read in full: the urgency index holds no tags); so does every evidence read (persona generation,
+  research, PR/FAQ and PRD generation and merges, the focus groups' packs, freshness and refresh, Revise from
+  comments, the morning brief's counts, urgent reviews and quotes, the release watch card, the agents' new-review
+  triggers). Only a request for `tag=voc_app` reads it; the form's own Results and Report show it, and a review
+  opened by its id, the Data Explorer and a workspace's export and delete read every item. `rebuild_aggregates.py`
+  follows the same rule.
+- **`voc_app` is reserved**: only a form made from the In-app micro-feedback template carries it. Any other form's
+  save, a scraper's or connector's saved labels and a source profile refuse it (400), a manual tag edit can neither
+  give it nor take it (`PUT /feedback/{id}/dimensions`), and every producer other than a form (a CSV or pasted import, a
+  plugin, a webhook, an inbox) has it dropped from its messages, never refusing the review.
 - The onboarding buddy's first-run signals (`feedback_present`, `feedback_form_configured`) are the request's
   workspace's: `GET|PUT /settings/my-onboarding` now resolve `X-Workspace-Id` (the one 404 for a non-member), and a
   request without the header reads the deployment's, as before.
@@ -86,7 +100,8 @@ public submit route carry it.
   response.
 - Items tagged `voc_app` before this release stay in the aggregates they were counted in until those rows age out
   (90 days) or `scripts/retention/rebuild_aggregates.py` recomputes them; a form any team tagged `voc_app` for its own
-  use stops counting in the dashboards, so check that the tag is free first.
+  use stops counting in the dashboards, and its next save is refused until the tag is removed (only the answers it
+  receives after that are counted again: the items it wrote keep the tag), so check that the tag is free first.
 
 ## [7.65.00] - 2026-11-21
 
@@ -103,8 +118,10 @@ policy or Lambda.
   synth: a Bedrock model id or system inference-profile id, or an imported-model ARN in the deployment's own account
   and Region; provisioned throughput (a fixed cost), fine-tuned custom models and application inference profiles are
   refused; a price in USD per million input and output tokens is required; a `us.` or other geographic profile
-  declares its destination Regions (`regions`), which must include the app Region; optional `contextWindow` and
-  `maxOutputTokens` (32,000 and 4,096 when absent). At most four models and 1,200 characters of environment (about
+  declares its destination Regions (`regions`), which must include the app Region, and an `eu.` profile may (EU
+  Regions only, the app Region among them; Claude's EU table when absent); optional `contextWindow` and
+  `maxOutputTokens` (32,000 and 4,096 when absent), a `documents` model's window at least 16,000 tokens (the documents'
+  feedback budget reserves at most half a window, so Claude's budgets are unchanged). At most four models and 1,200 characters of environment (about
   three `eu.` profiles), so the registry fits every Lambda environment that carries it (the logs API's, the largest,
   measured at 2,434 of 4,096 on a deployment).
 - **Data residency at synth**: `-c inferenceScope=eu` needs `"eu": true` on every custom model, and `"eu": true`
@@ -118,19 +135,23 @@ policy or Lambda.
 - **Capabilities shape every request** (`shared/converse.py`, the stream's `bedrock/custom-models.ts`): no
   `thinking` field and no service tier ever, `temperature` only when the model takes one, `maxTokens` at most its
   `maxOutputTokens`, the
-  JSON instruction after the system prompt when it returns JSON, no Claude `citations` on a document, and a request
-  with documents or images goes to the surface's built-in default when the model reads none (the assistant's turn
-  with an attachment too). The synth refuses `chat` and `agent_worker` for a model without `tools`, and the surfaces
+  JSON instruction after the system prompt when it returns JSON, and a request with documents or images goes to the
+  surface's built-in default when the model reads none (the assistant's turn with an attachment too), as does a
+  scanned PDF's transcription on any custom model (it reads the pages as images, with `citations`, which only Claude
+  does). The assistant's replayed history is sized to a custom chat model's `contextWindow` (a quarter of it, at most
+  the Claude budget). The synth refuses `chat` and `agent_worker` for a model without `tools`, and the surfaces
   whose answers are parsed as JSON for a model without `json`; the manual import's Anthropic-format call stays Claude.
 - **Administration → AI models**: the custom models in a **Your models** group of each surface's select, and, for
   the model a surface resolves to, a **Your model** badge (and EU residency), where it runs ("Runs in eu-central-1 ·
   imported model"), its price, the note that the prompts are tuned for Claude, the cold-start note of an imported
   model, and **Check JSON** / **Check tools** beside Test: `POST /settings/model/test` takes `probe: basic | json |
-  tools` (the answer must be the object `{"ok": true}`, or a call of the probe's one tool; `probe_failed` otherwise),
+  tools` (the answer must be the object `{"ok": true}`, or a call of the probe's one tool, streamed for the chat
+  surface as the assistant calls it; `probe_failed` otherwise),
   for a Claude or a custom model; the image and web search models take basic only. `GET /settings/model` lists
   `custom_models`.
 - **Metering**: the cost rollup and the cost page price a custom model's tokens from its registry price
-  (`shared/model_prices.py`, the cache tokens at the input price), so it is never an unpriced line; the
+  (`shared/model_prices.py`, the cache tokens at the input price), so it is never an unpriced line (an imported
+  model's is an estimate, `complete: false`: Custom Model Import bills its active copies, not its tokens); the
   `bedrock_usage` line names it by its id as sent.
 
 ### Changed
@@ -151,9 +172,9 @@ policy or Lambda.
 - Without `-c customModels` nothing changes: no template differs but for the release's code and version.
 - Enable each model's access in the Bedrock console first: the deploy accepts no agreement for a custom model, and
   Service Quotas are read for Claude models only, so a custom model's Test shows no tokens-per-minute quota.
-- Custom Model Import answered in us-east-1, us-east-2, us-west-2 and eu-central-1 and was refused in eu-west-1,
-  eu-west-2, eu-west-3 and eu-north-1 on 2026-11-21 (`aws bedrock list-imported-models`); an imported model scales
-  to zero, so its first request after a pause can take tens of seconds or minutes.
+- Custom Model Import is offered in some Regions only: check the Amazon Bedrock documentation's list for yours
+  ([deployment.md](docs/deployment.md#bring-your-own-model--c-custommodels) records the list at the time of writing).
+  An imported model scales to zero, so its first request after a pause can take tens of seconds or minutes.
 
 ## [7.64.00] - 2026-11-21
 
@@ -168,7 +189,8 @@ reference, never feedback or evidence. No new API Gateway resource (the API stac
 - **The Focus groups tab** (`/projects/{id}/focus-groups`): choose 2–6 personas, a topic (at most 2,000 characters),
   1, 2 or 3 rounds and up to 3 project documents and 3 Documents Library items they read; the cost before the start
   (the model calls on the assistant's model and roughly the tokens: 6 personas × 2 rounds is 14 calls, about 45,000
-  input and 8,000 output tokens); **Start focus group** runs it in the assistant, on a new conversation; the saved focus
+  input and 8,000 output tokens, plus what every persona call reads of the chosen documents, within 30,000
+  characters, and Library items, within 12,000, counted from their sizes); **Start focus group** runs it in the assistant, on a new conversation; the saved focus
   groups are listed and open on the Documents tab.
 - **How a focus group runs** (`POST /chat/stream` with `forwardedProps.focusGroup`, a new schema in the stream
   contract, run by `runtime/focus-group.ts` instead of the model's own turn): round 1 is independent; from round 2 the
@@ -178,8 +200,11 @@ reference, never feedback or evidence. No new API Gateway resource (the API stac
   review, a synthesis card labelled **Synthetic** with **Save focus group**, Stop between batches and Regenerate with
   the same configuration (stored with the conversation, `metadata.voc.focusGroup`).
 - **The shared persona grounding** (`lambda/shared/persona_grounding.py`, also for the Validate phase and the voice
-  personas next): per persona its cited reviews (`evidence_feedback_ids`), its refreshed ones, and up to 8 fresh
-  reviews since it was generated that match its categories within the project's filters, ranked by the topic. Every
+  personas next): per persona its refreshed reviews first (newest refresh first, so a refresh always reaches the
+  pack), then its cited reviews (`evidence_feedback_ids`), and up to 8 fresh reviews since it was generated that match
+  its categories within the project's filters, ranked by the topic with the similarity ranker's own tokens
+  (`shared/feedback_similarity.py`: title, problem summary and text). Never the VoC app's own micro-feedback
+  (`voc_app`, 7.66.00). Every
   review is read as the person asking (their category and source access) and quoted as stored (the source's PII policy
   as applied at ingestion; a summary-only source's summary marked as not the customer's words; never an author, title,
   URL or metadata). **The server strips every cited id outside the speaker's pack.**
@@ -192,8 +217,9 @@ reference, never feedback or evidence. No new API Gateway resource (the API stac
 - **A `focus_group` document type** in the Documents section (`POST /projects/{id}/documents`): the transcript, the
   synthesis and the ids of the reviews cited (never a review's text), always `synthetic: true`, with `derivation:
   {persona_ids, document_ids, library_item_ids, rounds, feedback_count}`; the cited reviews are its
-  `input_feedback_ids`, only those the saver may see; a citation naming no kept review is removed; a notice under it
-  says it is synthetic. No methodology step counts it.
+  `input_feedback_ids`, only those the saver may see; a citation naming no kept review is removed, from the save,
+  every later edit (`PUT`) and every Revise from comments pass's changes alike; a notice under it says it is
+  synthetic. No methodology step counts it.
 
 ### Changed
 
@@ -276,26 +302,26 @@ carry it.
 ### Removed
 
 - `group_by` and `segments` on `GET …/results`, and Compare's one-form trend (`by` without `with`, now a `400`
-  `group_by_invalid`), built in this release (review round 1, F4: no caller): the report keeps its segments.
-- `library_get`, 7.62.00's second Library tool on `/mcp/global` (F1): an item's text page by page stays the web app's
+  `group_by_invalid`), built in this release (no caller): the report keeps its segments.
+- `library_get`, 7.62.00's second Library tool on `/mcp/global`: an item's text page by page stays the web app's
   (`GET /projects/library/{id}/text`), `library_search` gives an agent cited passages, and its room in the `tools/list`
   budget goes to `forms_get_results` (TENETS.md tenet 4).
 
 ### Fixed
 
-- **The AI summary keeps to the view it was made for** (review round 1, Q1): its quotes were joined and its `stale`
+- **The AI summary keeps to the view it was made for**: its quotes were joined and its `stale`
   judged against the reader's whole view, so a report or PDF filtered to one hidden value showed another's summary and
   quotes, and a filtered view never cleared `stale`. Both now apply the summary's stored filters; the Report and the
   PDF show it only on that view, else "Made for another view: ‹filters›" with no summary or quote, and Summarize this
   view.
-- **Secondary suppression** (Q7): when the merged "Other (fewer than 5)" group is withheld but not empty, the smallest
+- **Secondary suppression**: when the merged "Other (fewer than 5)" group is withheld but not empty, the smallest
   named segment is withheld too (`withheld: 'complement'`), in the report's segments, Compare, the page and the PDF
   (10 + 1 responses: neither shows scores, so the one is never the total less the ten).
-- **Most skipped ranks a statement last** (Q8): a statement is never answered, so every showing counted as a skip.
-- **Compare never lines up matrices scored on different scales** (Q20): their column scores are part of the match.
-- **`responses_counted` is the answers the summary read** (Q21): the request's own count is gone, and the app sends
+- **Most skipped ranks a statement last**: a statement is never answered, so every showing counted as a skip.
+- **Compare never lines up matrices scored on different scales**: their column scores are part of the match.
+- **`responses_counted` is the answers the summary read**: the request's own count is gone, and the app sends
   the newest response it read as `last_response_at`.
-- **The summary's job row keeps no respondent's text** (F5): its `config` (the open answers the browser sent) is
+- **The summary's job row keeps no respondent's text**: its `config` (the open answers the browser sent) is
   removed when the job ends, done or failed; a job whose worker never ran keeps it until the row's one-day TTL.
 
 ### Upgrade notes
@@ -353,21 +379,22 @@ Gateway resource (the projects API's `/projects/{proxy+}`), no fixed cost.
 
 ### Fixed
 
-- **An item never names its uploader by address** (review round 1, Q2; `shared/library_routes.py`): an invited member
+- **An item never names its uploader by address** (`shared/library_routes.py`): an invited member
   has no `name` claim, so the Library stored their email as `created_by` / `updated_by`'s name; it is now the `name`
   claim or the username, as document review's comments do. An erasure by email also lists an item whose `created_by`
   / `updated_by` name holds the address (the retention worker's deployment Query may now read those two attributes).
-- **A scanned PDF's citations no longer claim page 1 for all of it** (Q12): the model's transcription keeps the PDF's
+- **A scanned PDF's citations no longer claim page 1 for all of it**: the model's transcription keeps the PDF's
   pages only when it separates exactly those pages with a form feed, as the prompt now asks; otherwise the item has no
   pages (`paged: false`).
-- **A model reading cut at its 16,000-token reply cap is marked truncated** (Q13: Bedrock's `stopReason`
+- **A model reading cut at its 16,000-token reply cap is marked truncated** (Bedrock's `stopReason`
   `max_tokens`).
-- **A stalled extraction can be read again** (Q14, Q16): an item extracting for 16 minutes or more reads `stale: true`;
+- **A stalled extraction can be read again**: an item extracting for 16 minutes or more reads `stale: true`;
   the list and the preview stop checking it, and the preview offers Read it again (the retry's own rule: 16 minutes or
-  more, else `409` `not_failed`).
-- **A file whose fetch failed is searched within the message's 12,000 characters** (Q15): its re-search gets only what
+  more, else `409` `not_failed`). An item still waiting for its file 16 minutes after it was added (its upload link
+  lasts 15) reads `stale: true` too and is no longer checked: delete it and upload the file again.
+- **A file whose fetch failed is searched within the message's 12,000 characters**: its re-search gets only what
   the other items' passages left (`budget`), and none when nothing is left.
-- **A delete leaves nothing orphaned** (Q17, Q18): it revokes the extraction's claim, deletes the passages and every
+- **A delete leaves nothing orphaned**: it revokes the extraction's claim, deletes the passages and every
   stored version of the files, then the item's rows, so a delete that fails part way leaves the item to delete again.
   An extraction that finds its claim gone drops what it wrote only when the item is gone or being deleted; when a retry
   claimed the item again, it stops and deletes nothing.
@@ -427,7 +454,7 @@ empty, a publish guard for a placeholder respondents would see as written, and a
   link builder now takes a value for each hidden field (into the link, the iframe snippet and the script embed's
   `hidden`) and warns about a recalled hidden field the copied link leaves empty.
 - **A Download button on Results** (its menu: the detailed CSV, or one with a row of ids), and the CSV's **familiar**
-  layout (`layout=familiar`, the new default): a UTF-8
+  layout (`layout=familiar`, the button's default; the API's stays `detailed`): a UTF-8
   BOM, one header row (`Submission ID`, `Submitted On` in ISO 8601 UTC, `Locale`, `Tags`, the hidden fields, one
   column per question by its headline, a matrix one per row, a contact question one per field), choices joined with
   `;` and `Other: …` in the form's language, `ids=true` for a second row of ids, and the file named
@@ -441,28 +468,28 @@ empty, a publish guard for a placeholder respondents would see as written, and a
   with it. Turning a form Off always works; the builder lists the same problems, and Publish waits for them.
 - **Results and exports show a headline's placeholders as `[id]`**, never a respondent's value: each question's
   `headline` in Results, the CSV's headers, and the text the processor reads.
-- **`format=csv` answers the familiar layout by default**; 7.55.00's file is `layout=detailed`, unchanged (a matrix
-  answer there is `Row: Column` pairs).
+- **`format=csv` keeps 7.55.00's file by default** (`layout=detailed`, unchanged: a matrix answer there is
+  `Row: Column` pairs); the web app's Download asks for `layout=familiar` (7.66.00: the API's default had become the
+  familiar layout, which broke a script's file).
 
 ### Fixed
 
 - **A matrix response is accepted by the processor**: the queue message's ingest schema (`form_answers`) took no
   nested mapping, so every matrix answer would have been refused before it reached the lake.
 - **A matrix answer whose column is a list or an object is a `400`** (`answer_invalid`) on the public submit, never a
-  `500` (review round 1, Q5).
-- **Link checks count a response towards a hidden field only when the revision it answered declared it** (Q6: the
+  `500`.
+- **Link checks count a response towards a hidden field only when the revision it answered declared it** (the
   form's snapshots): a field added later is never "missing" from the responses sent before it existed.
-- **The widget reads "Thanks {{name}}, {{company}}!" as "Thanks!"** when both are missing (Q19): gaps split only by a
+- **The widget reads "Thanks {{name}}, {{company}}!" as "Thanks!"** when both are missing: gaps split only by a
   separator are one gap (four new `render` cases in `schemas/form-recall-cases.json`, pinned in the widget suite).
-- **A draft is never refused for a placeholder** (F2): 7.61.00's `400` `recall_unknown`, `recall_not_before` and
+- **A draft is never refused for a placeholder**: 7.61.00's `400` `recall_unknown`, `recall_not_before` and
   `recall_type` on a definition save are gone, and the builder's recall problems block only Publish and Update live
-  form; the `409` `unresolved_placeholder` is the one rule. The builder's recall preview is plain substitution (F3):
+  form; the `409` `unresolved_placeholder` is the one rule. The builder's recall preview is plain substitution:
   its copy of the tidy rules and its "Without a value" line are gone, and the widget's preview shows the tidy text.
 
 ### Upgrade notes
 
-- **Scripts that read the responses CSV**: `GET …/responses?format=csv` now answers the familiar layout (a BOM and
-  other columns). Add `layout=detailed` to keep 7.55.00's file exactly as before.
+- **Scripts that read the responses CSV** get 7.55.00's file as before; add `layout=familiar` for the new one.
 - **A live form saved before 7.61.00 whose text happens to hold `{{…}}`** keeps serving (the widget now shows an
   unknown placeholder as nothing, or its fallback), but cannot be saved live or re-enabled until the text is fixed.
   Turning it Off always works.
@@ -522,21 +549,23 @@ Gateway resource.
 
 ### Fixed
 
-- **A token GitHub no longer takes says to replace it** (review round 1, Q9; `connectors/github.py`): a 401 (the token
+- **A token GitHub no longer takes says to replace it** (`connectors/github.py`): a 401 (the token
   revoked, expired or regenerated) or a 404 (it no longer reaches the repository) to one of a fine-grained token's
   writes was a 502 whose write "is not known", which locked the attempt. It is now `409` `token_not_accepted`
   ("nothing was written. Replace the token under Agents → Connections"), a refusal, so the attempt pushes again once
   the token is replaced.
-- **A flow that pushes nothing starts on an expired token** (Q10): the start refused every run on a fine-grained
+- **A flow that pushes nothing starts on an expired token**: the start refused every run on a fine-grained
   connection whose token had expired or was unset, while readiness passed a flow that pushes nothing (a triage). The
-  start and readiness's `connection` check now read one rule off the stored flow (`shared/workflow_engineering.py`
-  `flow_pushes`: its declared `requires.ci_attestation`, else a committer or a PR author among its steps), and the
-  3-day warning is said only beside a run that pushes.
-- **The start's token warning is shown** (Q11): `POST /agents/engineering/runs` answered `warnings` (a token that
+  start and readiness's `connection` check now read one rule off the stored flow, its calls expanded
+  (`shared/workflow_engineering.py` `flow_pushes`: its declared `requires.ci_attestation`, else a committer or a PR
+  author among its steps; a push in a flow it calls counts), and the 3-day warning is said only beside a run that
+  pushes.
+- **The start's token warning is shown**: `POST /agents/engineering/runs` answered `warnings` (a token that
   expires within 3 days) that the web app never read. The Start dialog hands it to the run workspace it opens, which
   shows it at the top until dismissed (nine languages), and the assistant's knowledge-refresh approval passes it on to
-  the person.
-- `TokenFacts.owner_type`, read at a token's save and never used, is gone (Q23).
+  the person. An agent's Run now and its triggers say no such warning: readiness's `write_token` check warns from 14
+  days in the automation's Set up drawer.
+- `TokenFacts.owner_type`, read at a token's save and never used, is gone.
 
 ### Security
 
@@ -621,7 +650,7 @@ messages only name the new places.
 ### Fixed
 
 - `utils/pathPlace.ts`'s `segmentsUnder` example names every segment under the base (`/admin/access/users/u-1` →
-  `['access', 'users', 'u-1']`), and a test holds it (review round 1, Q24).
+  `['access', 'users', 'u-1']`), and a test holds it.
 
 ### Upgrade notes
 
@@ -680,15 +709,15 @@ changes. It sits here by its number, but it landed after 7.59.00–7.63.00, in t
 
 ### Changed
 
-- **A Claude model that does not think adaptively runs on the native harness once priced** (F6,
-  `runtime/harness_switch.py` `native_models`): the native choice is the agents' grant and the deployment's price
+- **A Claude model that does not think adaptively runs on the native harness once priced**
+  (`runtime/harness_switch.py` `native_models`): the native choice is the agents' grant and the deployment's price
   (`-c engineeringModelPrices`), nothing more. 7.58.00 also refused a granted model that does not think adaptively
   (Claude Sonnet 4.6, Haiku 4.5), "which the harness asks of every model"; the Converse loop has asked only the ones
   that do for their summarized thinking since 7.58.00 (`converse_loop.model_request_fields`), so such a model's calls
   carry no thinking field and the run's thread shows its words with no thought and no error. Unpriced it is refused as
   any other ("‹id› isn't enabled in this deployment…"); the Registry's Other model list offers it once priced
   ([autonomous-engineering.md](docs/autonomous-engineering.md#choosing-the-model-75800)).
-- **A form save's precondition is its save count** (F7, Feedback Forms): `PUT /feedback-forms/{id}` checks
+- **A form save's precondition is its save count** (Feedback Forms): `PUT /feedback-forms/{id}` checks
   `expected_write_count` only, and the builder no longer sends `expected_revision`: every save moves the count, and
   only a save moves the revision, so the count implies it. `revision` stays the definition's number. An
   `expected_revision` an older client still sends is **ignored, whatever it holds** (never a `409`, never a `400`), so
@@ -700,11 +729,11 @@ changes. It sits here by its number, but it landed after 7.59.00–7.63.00, in t
   (`https://prod.download.cli.kiro.dev/stable/index.json`, read 2026-11-20, where the 3.4.0 pin's came from), and the
   download hashed the same; its `BUILD-INFO` says 3.5.0, and the build still refuses a binary whose `--version` says
   another. The 12 compiled Kiro agent configs pass kiro-cli 3.5.0's `agent validate`. Rebuild the images: upgrade notes.
-- The Claude effort table is its own bound (F8, `harness/effort.py`): `EFFORT_LEVELS` and the check that a pinned level
+- The Claude effort table is its own bound (`harness/effort.py`): `EFFORT_LEVELS` and the check that a pinned level
   is one of them, which no level could fail, are gone; a test holds the table's three levels.
 - Tests: the Converse loop's cut-reply test compares the two requests as they were sent (the fake Bedrock records a
-  copy: it compared one list with itself), and the cut reply carries a tool call that must not run (R2-4); a restored
-  Kiro session's replayed `turn_completion` adds no credits, and its new turn is counted once (R2-5, on a fake kiro-cli
+  copy: it compared one list with itself), and the cut reply carries a tool call that must not run; a restored
+  Kiro session's replayed `turn_completion` adds no credits, and its new turn is counted once (on a fake kiro-cli
   whose `session/load` replays a turn's completion as kiro-cli does).
 - Docs: 7.58.00's Fixed bullet on the answers lock named the assistant turning a version 1 form's rating off as the
   headless writer; it is a direct REST caller (a `PUT` of a version 1 field such as `rating_enabled`), corrected there
@@ -718,7 +747,7 @@ changes. It sits here by its number, but it landed after 7.59.00–7.63.00, in t
 
 ### Fixed
 
-- **A long model call no longer gets a native agent's task stopped as stalled** (R2-3; `harness/model_wait.py`,
+- **A long model call no longer gets a native agent's task stopped as stalled** (`harness/model_wait.py`,
   `harness/main.py`): the supervisor's stall rule reads progress only (no report for 10 minutes and it asks the agent
   its state, none 3 minutes later and it stops the task), and a Converse call answers only once its whole reply of up
   to 32,000 tokens is written, so one long call, or a cut reply and its retry, could be stopped mid-call and the paid
@@ -729,32 +758,32 @@ changes. It sits here by its number, but it landed after 7.59.00–7.63.00, in t
   line and two requests' lines come within its 13: a test holds both at the supervisor's default timings, the ones the
   stack runs, and a simulated long call, a cut reply and its call again, is never stopped (it was, without the line)
   ([autonomous-engineering.md](docs/autonomous-engineering.md#choosing-the-model-75800)).
-- **A read timeout on a model call is never sent again** (review round 1, Q3; `harness/main.py`): the harness's
+- **A read timeout on a model call is never sent again** (`harness/main.py`): the harness's
   Converse client let botocore send a request that outlasted its 600 s read timeout again, up to 8 times, each one
   reported as the session's liveness, for more than 80 minutes before the session crashed all the same. A read timeout
   now ends the session at once as a crash, `ModelTimedOut` ("the model did not answer within 600 s, the client's read
   timeout: the request was not sent again"), its work checkpointed and continued by the supervisor like any crash;
   throttles and server errors are still retried. The long-call test runs on the real client: a cut reply, then its
   call again whose request times out, two requests in about 20 minutes, never stopped and never sent a third time.
-- **"Waiting on the model" never closes a coordinator's wait** (Q4; `harness/model_wait.py`): the heartbeat's line
+- **"Waiting on the model" never closes a coordinator's wait** (`harness/model_wait.py`): the heartbeat's line
   carries no `waiting`, and a report without it closes the wait on the lease, so a line sent just after its call
   returned could close the wait `wait_for_agents` had just opened. The line now goes while its call cannot end
   (`ModelWait.report`: the call's end waits for a report under way), tested with the call returning mid-report.
-- **Improve with AI gives no question a removed question's id** (R2-1): the builder sends the form's `retired_ids`
+- **Improve with AI gives no question a removed question's id**: the builder sends the form's `retired_ids`
   (with those its unsaved edits removed) in the draft request (`POST /settings/form-drafts` `retired_ids`, at most
   1,000 question ids; anything else is a `400`), and the server's id maker reserves them, so a question the model adds
   or brings back takes another id (`q_why` → `q_why_2`) and the draft validates first time; before, such a draft
   failed its save with `question_id_reused`. On an answered form the builder now locks the id field only of a question
   the stored form has: one added since has no answers under its id, so its id can be changed
   ([docs](docs/feedback-forms.md#ai-drafts)).
-- **An unanswered form's saves no longer read its brand's responses** (R2-2): a form is created with `has_responses:
+- **An unanswered form's saves no longer read its brand's responses**: a form is created with `has_responses:
   false`, so a save that changes its definition trusts the flag, which its first real response sets. Only a form with
   no such field (one created before 7.58.01) is still read for a real response, as before, and marked once one is
   found ([docs](docs/feedback-forms.md#the-lock-of-an-answered-form)).
-- **A failed answered mark is counted** (review round 1, Q22: `FeedbackFormMarkAnsweredFailed`), and a save that would
+- **A failed answered mark is counted** (`FeedbackFormMarkAnsweredFailed`), and a save that would
   drop or reshape an answer on a form whose flag says false reads its responses once a real visitor has opened it (its
   own funnel rows, a cheap read); a save the lock has nothing to refuse reads none.
-- **The Contribute dialog acknowledges the licence GitHub answers now** (Q22's remainder, Agents → Connections →
+- **The Contribute dialog acknowledges the licence GitHub answers now** (Agents → Connections →
   Contribute → Install the App on your fork): it reads the upstream's licence live, as a fork's Acknowledge the current
   licence… does (`GET /agents/engineering/public-repositories?q=<owner/name>`), offers that one to tick and sends it.
   It sent the licence stored at connect time, which the server refuses once the upstream changed it; while the licence

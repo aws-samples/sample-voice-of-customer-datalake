@@ -64,7 +64,7 @@ describe('RolePlaybook', () => {
     render({ playbook: 'qa', signals: QA_SIGNALS })
     expect(screen.getByText('Playbook: QA')).toBeInTheDocument()
     expect(screen.getAllByRole('listitem').map((row) => row.dataset['step'])).toStrictEqual([
-      'create_form', 'test_form', 'search_feedback', 'review_problems', 'watch_release', 'ask_assistant'])
+      'create_form', 'test_form', 'search_feedback', 'review_problems', 'watch_release'])
     expect(within(stepRow('Test a form with its test link')).getByRole('link', { name: /Open Feedback Forms/ }))
       .toHaveAttribute('href', '/feedback-forms')
   })
@@ -73,8 +73,8 @@ describe('RolePlaybook', () => {
     render({ playbook: 'qa', signals: QA_SIGNALS })
     expect(within(stepRow('Create a feedback form')).getByText('Done')).toBeInTheDocument()
     expect(stepRow('Test a form with its test link')).toHaveAttribute('data-status', 'todo')
-    await waitFor(() => expect(stepRow('Ask the assistant a question about your customers')).toHaveAttribute('data-status', 'todo'))
-    expect(screen.getByRole('progressbar', { name: 'Playbook progress' })).toHaveAttribute('aria-valuetext', '1 of 6 done')
+    await waitFor(() => expect(stepRow('Watch the feedback after a release')).toHaveAttribute('data-status', 'todo'))
+    expect(screen.getByRole('progressbar', { name: 'Playbook progress' })).toHaveAttribute('aria-valuetext', '1 of 5 done')
   })
 
   it('ticks and unticks a step by hand, keeping the other ticks', async () => {
@@ -101,6 +101,6 @@ describe('RolePlaybook', () => {
     const [request] = assistant.openAssistant.mock.calls[0] ?? []
     expect(request?.prompt).toContain('playbook for the Product manager role')
     expect(request?.prompt).toContain("1. Read this week's dashboard")
-    expect(request?.prompt).toContain('7. Subscribe to the morning brief')
+    expect(request?.prompt).toContain('5. Subscribe to the morning brief')
   })
 })

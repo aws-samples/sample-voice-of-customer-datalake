@@ -120,3 +120,17 @@ def test_a_corrupt_dimensions_row_is_500(tables, lambda_context):
     tables[1].put_item(Item={'pk': 'SETTINGS#dimensions', 'sk': 'config', 'dimensions': 'corrupt'})
     status, _ = put(tables, lambda_context, {'tags': ['x']})
     assert status == 500
+
+
+@pytest.mark.parametrize('tags', [['voc_app'], ['beta', ' VOC_APP ']])
+def test_no_edit_gives_a_review_the_reserved_micro_feedback_tag(tables, lambda_context, tags):
+    # (7.66.00: voc_app keeps an item out of every customer read, so only the in-app micro-feedback's form gives it)
+    status, body = put(tables, lambda_context, {'tags': tags})
+    assert [status, 'reserved' in body['error'], _stored(tables).get('tags')] == [400, True, None]
+
+
+def test_no_edit_takes_it_from_the_micro_feedback_s_own_review(tables, lambda_context):
+    tables[0].update_item(Key=KEY, UpdateExpression='SET tags = :t', ExpressionAttributeValues={':t': ['voc_app']})
+    refused, _ = put(tables, lambda_context, {'tags': ['beta']})
+    kept, body = put(tables, lambda_context, {'tags': ['voc_app', 'beta']})
+    assert [refused, kept, body['tags']] == [400, 200, ['voc_app', 'beta']]

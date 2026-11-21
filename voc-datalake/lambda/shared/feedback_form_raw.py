@@ -23,14 +23,13 @@ from datetime import datetime
 from typing import Any, Final
 
 from shared.archive_keys import archive_key_stem
+from shared.ingest_schemas import FEEDBACK_FORM_SOURCE  # the forms' source id: one definition, the schema's
 from shared.raw_copy import app_json_copy, source_permits_raw_copy
 from shared.source_policy import raw_archive_allowed
 from shared.ws_repo import WorkspaceScope
 
 __all__ = ['FEEDBACK_FORM_SOURCE', 'archive_submission']
 
-#: The feedback forms' source id, also the connector id of their raw copies.
-FEEDBACK_FORM_SOURCE: Final = 'feedback_form'
 #: The optional body fields the submit route bounds (``feedback_form_handler._validated_submission``) and the
 #: copy keeps as sent; ``text`` and ``dimensions`` are kept as VALIDATED instead (``archive_submission``).
 SUBMITTED_FIELDS: Final = ('rating', 'page_url', 'custom_fields')

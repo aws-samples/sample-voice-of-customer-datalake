@@ -431,15 +431,10 @@ def _resolved_model(model_id: str | None, surface: str) -> str:
 _MEDIA_BLOCKS = ('document', 'image')
 
 
-def _blocks_for(model_id: str, content: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    """``content`` as ``model_id`` takes it: a custom model gets no ``citations`` on a document (Anthropic's)."""
-    if custom_model(model_id) is None:
-        return list(content)
-    return [
-        {'document': {k: v for k, v in block['document'].items() if k != 'citations'}}
-        if isinstance(block.get('document'), Mapping) else block
-        for block in content
-    ]
+def _reads_pages(content: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether a document block asks for ``citations``: its PDF is read with its pages' images (a scanned PDF's
+    transcription), which a custom model cannot do (``model_for_documents``)."""
+    return any(isinstance(block.get('document'), Mapping) and block['document'].get('citations') for block in content)
 
 
 def converse_blocks(
@@ -466,8 +461,8 @@ def converse_blocks(
     """
     used_model = _resolved_model(model_id, surface)
     if any(kind in block for block in content for kind in _MEDIA_BLOCKS):
-        used_model = model_for_documents(used_model, surface)
-    messages = [{'role': 'user', 'content': _blocks_for(used_model, content)}]
+        used_model = model_for_documents(used_model, surface, visual=_reads_pages(content))
+    messages = [{'role': 'user', 'content': list(content)}]
     kwargs = build_blocks_request(used_model, messages=messages, system_prompt=system_prompt, max_tokens=max_tokens)
     return bedrock_call_with_retry(
         lambda: client.converse(**kwargs),

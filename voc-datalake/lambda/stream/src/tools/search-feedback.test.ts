@@ -102,6 +102,20 @@ describe('executeSearchFeedback', () => {
     expect(result.items.map((item) => item.feedback_id)).toStrictEqual(['hit123']);
   });
 
+  it('leaves the VoC app\'s own micro-feedback out unless the search asks for its tag (7.66.00)', async () => {
+    const items = [
+      makeFeedbackItem({ feedback_id: 'cust123', tags: ['beta'] }),
+      makeFeedbackItem({ feedback_id: 'app123', tags: ['voc_app'] }),
+      makeFeedbackItem({ feedback_id: 'spaced123', tags: [' VOC_APP '] }),
+    ];
+
+    const plain = await runSearch(createMockDocClient([items]), {}, { days: 7 });
+    const asked = await runSearch(createMockDocClient([items]), { tag: 'Voc_App' }, { days: 7 });
+
+    expect([plain.items.map((item) => item.feedback_id), asked.items.map((item) => item.feedback_id ?? '').sort((a, b) => a.localeCompare(b))])
+      .toStrictEqual([['cust123'], ['app123', 'spaced123']]);
+  });
+
   it('applies sentiment filter from tool input', async () => {
     const items = [
       makeFeedbackItem({ sentiment_label: 'positive' }),

@@ -65,28 +65,50 @@ credentials. The body is a version 2 response:
 So the forms' own validation, throttles and access rules apply exactly as they do to any respondent, and nothing new
 sits on the public path. `language` is the app's language when the form has it, otherwise it is left out and the form's
 own language is used. The response then becomes a feedback item like any form response: it is enriched (the normal
-per-response cost) and it is listed on the form's Results and in Feedback with the form's tag.
+per-response cost) and it is listed on the form's Results with the form's tag.
+
+**The throttle is shared.** The submit route's limit is one stage method setting for every form of the deployment and
+every caller (20 requests a second, a burst of 40: `.kiro/steering/structure.md`, "Rate limits on the four public
+routes"), so the in-app thumbs and the customers answering the deployment's forms draw on the same budget. A response
+over it is a `429`: the control says "Couldn't send it." and offers Try again, and nothing is lost but that answer. An
+administrator sees these in Administration → System → Logs with warnings shown, as the API access log's rows
+`POST /feedback-forms/{id}/submit → 429`.
 
 Nothing is sent anywhere outside the deployment. There is no telemetry and no screen capture.
 
-## Left out of the dashboards
+## Never customer evidence
 
 The responses are about the tool, never about the customer's product (TENETS.md tenet 1), so they never move a
-customer metric:
+customer metric and never stand as a customer's evidence:
 
 - **The aggregates.** The aggregator counts no item tagged `voc_app` (`lambda/shared/app_feedback_tag.py`). Such an
   item adds no daily total, source, category, sentiment, persona, dimension, tag, channel or usefulness counter, and
-  no score to the sentiment average. If someone later adds the tag to an item, the item's counters are taken out. If
-  someone removes the tag, the item is counted from then on.
-- **The metric routes' item path.** A filtered dashboard, the categories, sentiment, sources, personas, dimensions,
-  data quality, entities, problems, GitHub and release-watch routes (`metrics_handler.py` `_scoped_window_items`)
-  leave these items out too, unless the request filters on the tag itself (`tag=voc_app`). That filter is the way to
-  count them.
-- **What still shows them.** The Feedback list, search and the form's own Results and Report. This is where the team
-  reads them.
+  no score to the sentiment average; it keeps only its day's sentinel (a field of the daily total's row that no
+  reader sums), so a later edit on a day of micro-feedback alone still finds the day.
+- **Every read through the shared item filters** (`lambda/shared/item_filters.py`, whose default leaves these items
+  out): the metric routes (filtered dashboards, categories, sentiment, sources, personas, dimensions, data quality,
+  entities, problems, GitHub, release watch), the Feedback list and search (the REST routes, MCP `feedback_search`
+  and the assistant's `search_feedback` tool, `lambda/stream/src/tools/search-feedback.ts`), and the urgent list
+  (once a scope chose an in-app feedback form its pages are read in full, because the urgency index holds no tags
+  and its count would include these items).
+- **Every evidence read**: persona generation and its pre-check, research, PR/FAQ and PRD generation and the
+  document merger (`lambda/shared/feedback.py`), the persona focus groups' evidence packs, freshness counts and
+  Refresh evidence (`lambda/shared/persona_grounding.py`), Revise from comments' evidence, the morning brief's
+  counts, urgent reviews and quotes, the release watch card, and the agents' new-review triggers.
 
-To have a form's answers counted again, remove the `voc_app` tag from the form. The form then can no longer receive
-in-app feedback.
+Only a request that asks for the tag (`tag=voc_app`) reads them; that filter is the way to count or list them. The
+form's own Results, Report, responses and CSV show them (they read the form's own source partition), and so do a
+review opened by its id, the Data Explorer, and a workspace's export and delete, which read every item.
+
+**The tag is reserved.** Only a form made from the In-app micro-feedback template carries `voc_app`: any other form,
+a scraper's or connector's saved labels and a source profile refuse it (400), a manual tag edit can neither give it
+to a review nor take it from one, and every producer other than a form (a CSV or pasted import, a plugin, a webhook,
+an inbox) has it dropped from its messages, never refusing the review. So no customer's review is left out of the
+dashboards by a tag.
+
+To have a form's answers counted again, remove the `voc_app` tag from the form. Only the answers it receives after
+that are counted: the items it already wrote keep the tag, and stay out. The form then can no longer receive in-app
+feedback.
 
 ## Routes
 

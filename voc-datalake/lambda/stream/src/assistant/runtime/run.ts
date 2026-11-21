@@ -23,6 +23,8 @@ import type {
 } from '../types.js';
 import { resolveChatModelId } from '../../bedrock/converse-stream.js';
 import { chatModelForAttachments } from '../../bedrock/model-fallback.js';
+import { customContextWindow } from '../../bedrock/custom-models.js';
+import { historyBudgetFor } from '../../history-budget.js';
 import { profiledModelId } from '../../bedrock/model-profile.js';
 import { ValidationError } from '../../lib/errors.js';
 import { ProjectAccessLedger } from '../tools/project-access.js';
@@ -140,6 +142,8 @@ interface ConversationInput {
   dataBlocks: readonly (string | undefined)[];
   /** Library files attached to the newest user message (library-mentions.ts), after the person's own. */
   documents: readonly ContentBlock[];
+  /** The run's chat model: a custom one's window sizes the replayed history (history-budget.ts). */
+  modelId: string;
 }
 
 /** A project's personas and documents are mentioned on its page only; a library item on any page. */
@@ -205,8 +209,8 @@ async function libraryForRun(deps: RuntimeDeps, props: ForwardedProps, user: Use
   });
 }
 
-function buildConversation({ split, resume, toolset, dataBlocks, documents }: ConversationInput): Conversation {
-  const history = flatTurnsToBedrock(flattenHistory(split.before));
+function buildConversation({ split, resume, toolset, dataBlocks, documents, modelId }: ConversationInput): Conversation {
+  const history = flatTurnsToBedrock(flattenHistory(split.before, historyBudgetFor(customContextWindow(modelId))));
   const structured = split.idsValid && split.toolNames.every((name) => toolset.byName.has(name));
   const tail = buildTail(split.user, split.after, resume, structured ? 'structured' : 'text');
   const fallback = structured && tail.hasToolCalls ? buildTail(split.user, split.after, resume, 'text') : undefined;
@@ -316,6 +320,7 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
       library.block,
     ],
     documents: library.documents,
+    modelId,
   });
   console.log(JSON.stringify({
     event: 'assistant_run', page: page.kind, packs: toolset.packs, model: modelId,

@@ -45,6 +45,7 @@ from shared import forms_v2 as fv2
 from shared import forms_v2_csv as fcsv
 from shared import forms_v2_responses as fresp
 from shared.api import api_handler, create_api_resolver, get_caller_subject, get_raw_categories_config, validate_limit
+from shared.app_feedback_tag import APP_FEEDBACK_TEMPLATE_ID, RESERVED_MESSAGE, names_app_feedback
 from shared.audit_rows import put_new_audit_row
 from shared.aws import get_dynamodb_resource, get_sqs_client
 from shared.category_gate import scope_for_event
@@ -490,10 +491,18 @@ def _is_widget_dimensions(value: object) -> TypeGuard[dict]:
     return isinstance(value, dict) and len(value) <= MAX_WIDGET_DIMENSIONS
 
 
-def _validate_form_labels(body: dict, scope: WorkspaceScope | None = None) -> None:
+def _validate_form_labels(body: dict, scope: WorkspaceScope | None = None, *, app_feedback: bool) -> None:
     """Normalise `dimension_defaults` / `tags` in a create/update body in place (400 when invalid), against the
-    dimensions of the form's workspace (``scope``; the deployment's for a deployment form)."""
-    normalise_label_fields(_forms_table(), body, scope)
+    dimensions of the form's workspace (``scope``; the deployment's for a deployment form). ``app_feedback``: the form
+    may carry the in-app micro-feedback's reserved tag (one made from its template, shared/app_feedback_tag.py)."""
+    normalise_label_fields(_forms_table(), body, scope, app_feedback=app_feedback)
+
+
+def _made_for_app_feedback(form: Mapping[str, Any]) -> bool:
+    """Whether ``form`` (a create body, or a stored form) was made from the In-app micro-feedback template: the one
+    kind of form whose tags may hold ``voc_app`` (7.66.00)."""
+    template = fv2.plain(form.get('template'))
+    return isinstance(template, Mapping) and template.get('id') == APP_FEEDBACK_TEMPLATE_ID
 
 def validate_link_fields(body: dict) -> None:
     """Reject a malformed project_id / document_id before it is persisted.
@@ -1036,7 +1045,7 @@ def create_form():
     """Create a new feedback form (in a workspace: its form, and the lookup row that routes its public id there)."""
     scope = _request_scope(write=True)
     body = json_object_body(app)
-    _validate_form_labels(body, scope)
+    _validate_form_labels(body, scope, app_feedback=_made_for_app_feedback(body))
     # Link fields and the definition are validated inside build_form_item, structurally.
     item = build_form_item(body, scope=scope, actor=get_caller_subject(app.current_event.raw_event))
 
@@ -1320,11 +1329,14 @@ def update_form(form_id: str):
     body = json_object_body(app)
     validate_link_fields(body)
     validate_theme(body)
-    _validate_form_labels(body, scope)
+    # (the reserved tag is judged on the stored form's template, below)
+    _validate_form_labels(body, scope, app_feedback=True)
     _require_update_fields(body)
     if scope is None:
         _refuse_a_workspaces_id(form_id, 'Failed to update form')
     stored = _read_form(form_id, 'Failed to update form', scope)
+    if names_app_feedback(body.get('tags')) and not _made_for_app_feedback(stored):
+        raise ValidationError(RESERVED_MESSAGE)
     plan = _plan_update(stored, body, get_caller_subject(app.current_event.raw_event),
                         answered=lambda: _answered_before(form_id, stored, scope))
     try:
@@ -2676,8 +2688,9 @@ def _page_offset(params: Mapping[str, Any]) -> int:
 
 
 def _csv_options(params: Mapping[str, Any]) -> tuple[str, bool]:
-    """``layout`` (``familiar``, the default since 7.61.00, or ``detailed``) and ``ids`` (``true`` / ``false``)."""
-    layout = str(params.get('layout') or 'familiar')
+    """``layout`` (``detailed``, 7.55.00's and the default when a request names none, so an existing script's file is
+    unchanged; or ``familiar``, 7.61.00's, which the web app asks for) and ``ids`` (``true`` / ``false``)."""
+    layout = str(params.get('layout') or 'detailed')
     if layout not in fcsv.LAYOUTS:
         raise ValidationError(f'layout must be one of: {", ".join(fcsv.LAYOUTS)}')
     ids = str(params.get('ids') or 'false').lower()
@@ -2706,8 +2719,8 @@ def get_form_responses(form_id: str):
 
     ``include_test``: ``false`` (default), ``true``, or ``only`` (the Test tab's list). Pages of ``limit`` (default
     50, at most 100) from ``cursor`` (the previous page's ``next_cursor``); ``format=csv`` answers every matching
-    response (the newest 10,000) as a CSV file instead, in ``layout`` ``familiar`` (the default since 7.61.00, with
-    ``ids=true`` a second header row of ids) or ``detailed`` (7.55.00's).
+    response (the newest 10,000) as a CSV file instead, in ``layout`` ``detailed`` (7.55.00's, the default) or
+    ``familiar`` (7.61.00's, the web app's Download; with ``ids=true`` a second header row of ids).
     """
     workspace = _request_scope(write=True)
     params = app.current_event.query_string_parameters or {}

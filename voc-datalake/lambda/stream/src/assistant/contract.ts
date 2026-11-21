@@ -464,6 +464,12 @@ export type Mentions = z.infer<typeof mentionsSchema>;
  */
 export const FOCUS_GROUP_LIMITS = { minPersonas: 2, maxPersonas: 6, maxRounds: 3, maxTopicChars: 2000 } as const;
 /**
+ * What every persona call reads besides its profile and evidence, in characters: the chosen project documents' text,
+ * all of them together, shared equally (`documents`), and a focus group's Documents Library passages (`library`). The
+ * stream bounds the prompts by these; the Focus groups tab's cost line counts them before the start.
+ */
+export const PERSONA_READING_CHARS = { documents: 30_000, library: 12_000 } as const;
+/**
  * Tool call ids of a focus group's persona answers start with this, then the round (`focus_r2_…`): each answer is a
  * `consult_personas` call the server makes itself, the persona round's shape (MENTION_TOOL_CALL_PREFIX).
  */

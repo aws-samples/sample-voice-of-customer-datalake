@@ -56,10 +56,11 @@ Signals (read-only, single-item reads or one-row queries), in the request's scop
 - ``feedback_form_configured`` — at least one row in the scope's forms partition
   (``FEEDBACK_FORM``, ``WS#{ws}#FEEDBACK_FORM``).
 - the chosen playbook's own (``playbooks.server_signals_of``), only for that playbook:
-  ``brief_subscribed`` (the person's morning brief is on), ``objectives_set`` (their
-  objectives row holds one; the deployment's ``USERCTX#{sub}`` / ``config``, where
-  ``PUT /settings/my-context`` writes it), ``form_test_response`` (a test response of
-  a form of the scope exists: test links are anonymous, so not necessarily theirs).
+  ``objectives_set`` (their objectives row holds one; the deployment's ``USERCTX#{sub}`` /
+  ``config``, where ``PUT /settings/my-context`` writes it), ``form_test_response`` (a
+  test response of a form of the scope exists: test links are anonymous, so not
+  necessarily theirs). Whether their morning brief is on is the browser's to read (Home
+  reads the brief's settings anyway: ``playbooks.BROWSER_EVIDENCE``).
 
 Data-layer only; the routes live in ``settings_handler.py``.
 """
@@ -68,7 +69,6 @@ from typing import TYPE_CHECKING, Any, Final
 
 from shared import playbooks
 from shared.agents_store import is_run_id
-from shared.briefing_prefs import preferences_key, stored_preferences
 from shared.company_context import get_my_context, user_context_pk
 from shared.earliest_date import earliest_date_from_item, earliest_date_key
 from shared.exceptions import ValidationError
@@ -254,8 +254,6 @@ def _has_a_row(table: Any, scope: 'WorkspaceScope | None', partition: str) -> bo
 
 def _playbook_signal(name: str, table: Any, sub: str, scope: 'WorkspaceScope | None') -> bool:
     """One playbook signal (``playbooks.SERVER_SIGNALS`` less the first-run two, which ``signals`` always reads)."""
-    if name == 'brief_subscribed':
-        return stored_preferences(table.get_item(Key=preferences_key(sub)).get('Item'))['enabled']
     if name == 'objectives_set':
         return bool(get_my_context(table, sub)['objectives'])
     return _has_a_row(table, scope, test_responses_partition(scope))

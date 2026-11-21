@@ -1,7 +1,8 @@
 /**
  * @fileoverview "N new matching reviews since ‹date›" in a project persona's header, and **Refresh evidence**
  * (docs/project-workspace.md → Persona focus groups): the reviews of the persona's categories, within the project's
- * filters, that arrived since it was generated or its evidence was last refreshed, of those the person may see.
+ * filters, that arrived since it was generated and that it does not hold yet (a refresh's reviews are held, so they
+ * leave the count), of those the person may see.
  * Refreshing (edit access) adds them to the persona's evidence (`evidence_updates`, who, when and which reviews); it
  * never rewrites the persona, which stays the generation's to redo. Manual only: nothing refreshes on its own.
  *

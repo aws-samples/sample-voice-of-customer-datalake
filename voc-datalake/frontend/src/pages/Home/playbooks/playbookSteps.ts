@@ -24,7 +24,8 @@ export interface PlaybookStep extends PlaybookStepDef {
 /** What Home read in the browser for the browser evidence; `undefined` while a read is in flight (or not asked). */
 export interface BrowserFacts {
   readonly userSub: string | undefined
-  readonly sessionCount: number | undefined
+  /** The caller's morning brief is on (its settings, as Home reads them). */
+  readonly briefSubscribed: boolean | undefined
   readonly projects: readonly Project[] | undefined
   readonly connectionCount: number | undefined
   readonly tokenCount: number | undefined
@@ -43,9 +44,7 @@ const positive = (count: number | undefined): boolean | undefined => (count === 
 /** One browser evidence: true, false, or undefined while unknown. */
 export function browserEvidence(name: BrowserEvidence, facts: BrowserFacts): boolean | undefined {
   switch (name) {
-    case 'assistant_used': return positive(facts.sessionCount)
-    case 'project_owned':
-      return facts.projects === undefined ? undefined : ownsAProject(facts.projects, facts.userSub)
+    case 'brief_subscribed': return facts.briefSubscribed
     case 'personas_generated': return someOwn(facts, (project) => project.persona_count > 0)
     case 'document_written': return someOwn(facts, (project) => project.document_count > 0)
     case 'project_shared':

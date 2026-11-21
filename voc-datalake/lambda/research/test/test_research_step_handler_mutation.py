@@ -441,8 +441,9 @@ class TestStepInitialize:
     def test_the_budget_follows_the_model_window(self) -> None:
         with patch('research_step_handler.surface_context_window_tokens', return_value=1_000_000):
             assert rsh.research_feedback_budget() == (1_920_000, 872)
+        # (7.66.00: a small window reserves at most half of itself, 25,000 here where the fixed 40,000 left 10,000)
         with patch('research_step_handler.surface_context_window_tokens', return_value=50_000):
-            assert rsh.research_feedback_budget() == (20_000, 9)
+            assert rsh.research_feedback_budget() == (50_000, 22)
 
     @pytest.mark.usefixtures('job_status', 'initialize_stubs')
     def test_the_selection_and_web_search_are_threaded_through(self) -> None:

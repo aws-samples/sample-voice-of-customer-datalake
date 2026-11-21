@@ -165,8 +165,8 @@ class TestTheCsv:
                                               form_hidden={'app_version': '=1+1'}))
         return fid
 
-    def test_the_familiar_layout_is_the_default_named_after_the_form(self, lambda_context, answered):
-        status, response = _csv(lambda_context, answered)
+    def test_the_familiar_layout_is_named_after_the_form(self, lambda_context, answered):
+        status, response = _csv(lambda_context, answered, layout='familiar')
         assert (status, response['body'][0]) == (200, '﻿')
         disposition = response['multiValueHeaders']['Content-Disposition'][0]
         assert disposition.startswith('attachment; filename="warsztat-lodz-responses-20')
@@ -176,12 +176,18 @@ class TestTheCsv:
                         ['f1', '2026-11-20T09:30:00Z', 'pl', 'pilot', "'=1+1", '', 'Dobrze', '']]
 
     def test_ids_adds_the_row_of_ids_and_detailed_keeps_7_55s_file(self, lambda_context, answered):
-        rows = list(csv.reader(io.StringIO(_csv(lambda_context, answered, ids='true')[1]['body'][1:])))
+        rows = list(csv.reader(io.StringIO(_csv(lambda_context, answered, layout='familiar', ids='true')[1]['body'][1:])))
         assert rows[1][-2:] == ['q_phases.intro', 'q_phases.lab']
         _status, detailed = _csv(lambda_context, answered, layout='detailed')
         assert detailed['multiValueHeaders']['Content-Disposition'] == [
             f'attachment; filename="{answered}-responses.csv"']
         assert list(csv.reader(io.StringIO(detailed['body'])))[2][6] == 'Wstęp: Dobrze'
+
+    def test_a_request_naming_no_layout_gets_7_55s_file_unchanged(self, lambda_context, answered):
+        # (an existing script's format=csv keeps its file: the familiar layout is asked for by the web app)
+        _status, plain = _csv(lambda_context, answered)
+        assert [plain['multiValueHeaders']['Content-Disposition'], plain['body'][0] != '﻿'] == [
+            [f'attachment; filename="{answered}-responses.csv"'], True]
 
     @pytest.mark.parametrize('query', [{'layout': 'wide'}, {'ids': 'maybe'}], ids=['layout', 'ids'])
     def test_an_unknown_layout_or_ids_is_a_400(self, lambda_context, answered, query):

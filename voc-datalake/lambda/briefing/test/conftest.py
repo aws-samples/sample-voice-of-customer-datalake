@@ -49,13 +49,14 @@ class World:
     queue_url: str
 
     def review(self, feedback_id: str, *, category: str, day: str, source: str = 'webscraper',
-               urgency: str = 'low', sentiment: str = 'neutral', text: str = 'It was fine') -> None:
+               urgency: str = 'low', sentiment: str = 'neutral', text: str = 'It was fine',
+               tags: tuple[str, ...] = ()) -> None:
         stamp = f'{day}T08:00:00+00:00'
         self.tables.feedback.put_item(Item={
             'pk': f'SOURCE#{source}', 'sk': f'FEEDBACK#{feedback_id}', 'feedback_id': feedback_id,
             'gsi1pk': f'DATE#{day}', 'gsi1sk': f'{stamp}#{feedback_id}', 'gsi3pk': f'URGENCY#{urgency}',
             'gsi3sk': stamp, 'category': category, 'source_platform': source, 'sentiment_label': sentiment,
-            'urgency': urgency, 'date': day, 'original_text': text,
+            'urgency': urgency, 'date': day, 'original_text': text, **({'tags': list(tags)} if tags else {}),
         })
 
     def counter(self, pk: str, day: str, count: int) -> None:

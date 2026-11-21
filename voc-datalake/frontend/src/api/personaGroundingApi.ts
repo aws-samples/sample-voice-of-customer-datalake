@@ -2,7 +2,7 @@
  * @fileoverview A persona's evidence and a saved focus group (docs/project-workspace.md → Persona focus groups).
  *
  * - `GET /projects/{id}/personas/{pid}/evidence-freshness` → how many matching reviews arrived since the persona was
- *   generated or its evidence last refreshed, of those the person may see (the persona header's badge);
+ *   generated that it does not hold yet, of those the person may see (the persona header's badge);
  * - `POST /projects/{id}/personas/{pid}/evidence/refresh` → append them to the persona's `evidence_updates` (edit
  *   access; the persona's text is never rewritten);
  * - `POST /projects/{id}/documents` with `document_type: 'focus_group'` → the transcript, synthesis and citations as a

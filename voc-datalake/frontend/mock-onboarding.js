@@ -21,7 +21,7 @@ const ROUTE = '/settings/my-onboarding';
 const PLAYBOOKS = JSON.parse(readFileSync(new URL('../schemas/playbooks.json', import.meta.url), 'utf8'));
 const ROLES = PLAYBOOKS.roles;
 const STEP_IDS = new Set(Object.values(PLAYBOOKS.steps).flat().map((step) => step.id));
-const SERVER_SIGNALS = ['brief_subscribed', 'objectives_set', 'feedback_form_configured', 'form_test_response'];
+const SERVER_SIGNALS = ['objectives_set', 'feedback_form_configured', 'form_test_response'];
 const MAX_DONE = 40;
 const STATES = ['active', 'hidden', 'dismissed', 'skipped'];
 const START_PAGES = ['home', 'dashboard'];

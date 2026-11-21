@@ -1,6 +1,6 @@
-"""The metric routes leave the VoC app's own micro-feedback out (an item tagged ``voc_app``, 7.66.00,
-shared/app_feedback_tag.py), as the aggregates the unfiltered routes read do; a filter on the tag itself counts it;
-the Feedback list still lists it (moto)."""
+"""The metric and list routes leave the VoC app's own micro-feedback out (an item tagged ``voc_app``, 7.66.00,
+shared/item_filters.py), as the aggregates the unfiltered routes read do; a filter on the tag itself reads it, in the
+metrics, the Feedback list and search (moto)."""
 from __future__ import annotations
 
 from contextlib import ExitStack
@@ -13,9 +13,8 @@ from handler_events_fixtures import call_route
 from moto import mock_aws
 from moto_helpers import pk_sk_table
 
-from metrics_handler import _counted_items, lambda_handler
+from metrics_handler import lambda_handler
 from shared.api import clear_categories_cache
-from shared.item_filters import NO_ITEM_FILTERS, parse_item_filters
 
 ADMIN_CLAIMS = {'sub': 'sub-admin', 'cognito:groups': 'admins', 'cognito:username': 'ada'}
 #: Each review: its id, source and tags (two are the micro-feedback's).
@@ -70,16 +69,11 @@ def test_a_filter_on_its_tag_counts_it(get):
     assert sources['sources'] == {'feedback_form': 2}
 
 
-def test_the_feedback_list_still_lists_it(get):
-    status, body = get('/feedback', source='feedback_form')
-    assert status == 200
-    assert sorted(item['feedback_id'] for item in body['items']) == ['f1', 'f2']
-
-
-@pytest.mark.parametrize(('extra', 'kept'), [
-    (None, ['w1']), (NO_ITEM_FILTERS, ['w1']), (parse_item_filters({'tag': 'beta'}), ['w1']),
-    (parse_item_filters({'tag': 'voc_app'}), ['w1', 'f1']),
-])
-def test_counted_items(extra, kept):
-    items = [{'feedback_id': 'w1'}, {'feedback_id': 'f1', 'tags': ['voc_app']}]
-    assert [item['feedback_id'] for item in _counted_items(items, extra)] == kept
+def test_the_feedback_list_and_search_leave_it_out_unless_asked_by_tag(get):
+    _, listed = get('/feedback', source='feedback_form')
+    _, tagged = get('/feedback', tag='voc_app')
+    _, searched = get('/feedback/search', q='Problem')
+    _, asked = get('/feedback/search', q='Problem', tag='voc_app')
+    assert [listed['items'], sorted(item['feedback_id'] for item in tagged['items'])] == [[], ['f1', 'f2']]
+    assert [sorted(item['feedback_id'] for item in searched['items']),
+            sorted(item['feedback_id'] for item in asked['items'])] == [['w1', 'w2'], ['f1', 'f2']]

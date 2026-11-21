@@ -143,6 +143,20 @@ class TestFocusGroupDocument:
         content = self._create(self._body(content='Nested [fb:[fb:nope]fb2] and [fb:[fb:[fb:x]y]z].'))['content']
         assert '[fb:' not in content
 
+    @pytest.mark.parametrize(('document_type', 'kept'), [
+        ('focus_group', 'Ada: late [fb:fb1]. Bea: new .'), ('custom', 'Ada: late [fb:fb1]. Bea: new [fb:fb7].')])
+    def test_an_edit_of_a_focus_group_cites_only_its_lineage(self, document_type, kept):
+        """Review round 2 (7.66.00): ``PUT`` of a saved focus group keeps its text's citations to the reviews the
+        row names (its ``input_feedback_ids``), as its save; another document's edit is its own."""
+        import projects
+        stored = {'pk': 'PROJECT#p1', 'sk': 'DOC#doc_1', 'document_id': 'doc_1', 'document_type': document_type,
+                  'title': 'Focus group: delivery', 'content': 'Ada: late [fb:fb1].', 'input_feedback_ids': ['fb1']}
+        with patch.object(projects, 'projects_table', object()), \
+                patch.object(projects, '_source_document_item', return_value=stored), \
+                patch.object(projects, 'edit_document', return_value={'success': True}) as edit:
+            projects.update_document('p1', 'doc_1', {'content': 'Ada: late [fb:fb1]. Bea: new [fb:fb7].'})
+        assert edit.call_args.args[3]['content'] == kept
+
     def test_the_saver_s_scope_decides_what_is_kept(self):
         scope = {'all': False, 'categories': ['billing']}
         self._create(self._body(), scope=scope)

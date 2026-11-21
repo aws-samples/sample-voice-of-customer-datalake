@@ -33,16 +33,6 @@
       "why": "Wolumen, sentyment i najważniejsze kategorie pokazują, gdzie zajrzeć najpierw.",
       "cta": "Otwórz pulpit"
     },
-    "ask_assistant": {
-      "title": "Zadaj asystentowi pytanie o swoich klientów",
-      "why": "Czyta opinie za ciebie i cytuje każdą recenzję, na której się opiera.",
-      "cta": "Otwórz asystenta"
-    },
-    "start_project": {
-      "title": "Rozpocznij projekt badawczy",
-      "why": "Projekt trzyma razem opinie, persony i dokumenty jednego tematu.",
-      "cta": "Otwórz Projekty"
-    },
     "generate_personas": {
       "title": "Wygeneruj persony z prawdziwych opinii",
       "why": "Persony oparte na recenzjach utrzymują decyzje przy prawdziwych klientach.",

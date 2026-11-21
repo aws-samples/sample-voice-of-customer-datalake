@@ -77,5 +77,10 @@ class TestCustomModelPrices:
         arn = 'arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456'
         assert estimated_usd(arn, 'default', {'input_tokens': 2_000_000, 'output_tokens': 1_000_000}) == Decimal('2.5')
 
+    def test_only_an_imported_model_s_figure_is_an_estimate(self):
+        from shared.model_prices import is_estimate
+        assert is_estimate('arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456') is True
+        assert (is_estimate('amazon.nova-pro-v1:0'), is_estimate('amazon.nova-lite-v1:0')) == (False, False)
+
     def test_a_model_the_registry_does_not_list_stays_unpriced(self):
         assert estimated_usd('amazon.nova-lite-v1:0', 'default', {'input_tokens': 1}) is None

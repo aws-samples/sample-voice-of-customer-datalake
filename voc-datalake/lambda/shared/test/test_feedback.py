@@ -684,11 +684,13 @@ class TestFeedbackBudgetDerivation:
         assert feedback_char_budget(window_tokens=400_000) > feedback_char_budget()
         assert feedback_char_budget(window_tokens=100_000) < feedback_char_budget()
 
-    def test_a_window_smaller_than_the_overhead_yields_no_budget(self):
-        """Never returns a negative budget, which would slice to nothing."""
-        from shared.feedback import CONTEXT_OVERHEAD_TOKENS, feedback_char_budget
+    def test_a_small_window_reserves_half_and_still_reads_reviews(self):
+        """A 32,000-token custom Documents model (the registry's default window) writes from more than one review:
+        the reserve is at most half the window, so its fetch limit is above 1 (it was 1 under a fixed 40,000)."""
+        from shared.feedback import feedback_char_budget, feedback_item_limit
 
-        assert feedback_char_budget(window_tokens=CONTEXT_OVERHEAD_TOKENS // 2) == 0
+        assert [feedback_char_budget(window_tokens=32_000), feedback_item_limit(feedback_char_budget(window_tokens=32_000))] == [
+            32_000, 14]
 
     def test_the_item_limit_is_never_zero(self):
         """A tiny budget still fetches one item rather than none."""

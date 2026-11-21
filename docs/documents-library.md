@@ -22,7 +22,9 @@ Since 7.62.00 ([GitHub issue #566](https://github.com/aws-samples/sample-voice-o
 - After the upload the file's text is read once (**extracting**, usually seconds, up to a few minutes for a long
   PDF); the item is then **ready**. A file that cannot be read is **failed**, with the reason, and can be retried.
   A reading that has not finished after 16 minutes has stopped (the worker runs 15 at most): the item reads `stale`,
-  the page stops checking it and offers **Read it again**.
+  the page stops checking it and offers **Read it again**. An item still waiting for its file 16 minutes after it was
+  added (its upload link lasts 15) reads `stale` too: no file will arrive, so the page stops checking it; delete it and
+  upload the file again (7.66.00).
 - **Preview** shows the item's details, its extracted text page by page (a PDF's pages, a presentation's slides, or
   parts of 20,000 characters) and a link to download the original (valid 5 minutes). Its details can be edited;
   someone else's edit since you opened it is refused ("changed since you opened it"), so nothing is overwritten.

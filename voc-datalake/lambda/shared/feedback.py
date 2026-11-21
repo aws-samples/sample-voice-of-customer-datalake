@@ -366,8 +366,13 @@ def feedback_char_budget(
 
     Returns:
         A character budget, never negative.
+
+    The reserve is sized to the model: at most half its window (a 32,000-token custom model reserves 16,000, where
+    the fixed 40,000 left it nothing, and every document was written from one review); a window of 80,000 tokens or
+    more reserves ``overhead_tokens`` as before, so Claude's budgets are unchanged.
     """
-    usable_tokens = max(window_tokens - overhead_tokens, 0)
+    reserve_tokens = min(overhead_tokens, window_tokens // 2)
+    usable_tokens = max(window_tokens - reserve_tokens, 0)
     return int(usable_tokens * utilisation) * CHARS_PER_TOKEN
 
 

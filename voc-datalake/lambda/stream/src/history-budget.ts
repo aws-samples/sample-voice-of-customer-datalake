@@ -65,6 +65,29 @@ export const MAX_HISTORY_TOTAL_LENGTH = MAX_HISTORY_CONTENT_LENGTH * 4;
 /** Most recent turns kept, regardless of length. */
 export const MAX_HISTORY_ENTRIES = 50;
 
+/** The share of a custom model's input window the replayed history may take (7.65.00: a 32,000-token chat model). */
+const HISTORY_WINDOW_SHARE = 0.25;
+
+/** How much replayed history fits: its aggregate and its longest turn, in characters. */
+export interface HistoryBudget {
+  readonly total: number;
+  readonly entry: number;
+}
+
+/** A Claude's (its window holds four full answers beside the prompt, the context and the tool results). */
+export const DEFAULT_HISTORY_BUDGET: HistoryBudget = { total: MAX_HISTORY_TOTAL_LENGTH, entry: MAX_HISTORY_CONTENT_LENGTH };
+
+/**
+ * The history budget for a model of `windowTokens` (undefined: a Claude, the defaults): a quarter of a custom model's
+ * window, never more than a Claude's, so a 32,000-token chat model is resent about 8,000 tokens of history rather than
+ * 64,000 it cannot hold.
+ */
+export function historyBudgetFor(windowTokens: number | undefined): HistoryBudget {
+  if (windowTokens === undefined) return DEFAULT_HISTORY_BUDGET;
+  const total = Math.min(MAX_HISTORY_TOTAL_LENGTH, Math.floor(windowTokens * HISTORY_WINDOW_SHARE) * CHARS_PER_TOKEN);
+  return { total, entry: Math.min(MAX_HISTORY_CONTENT_LENGTH, total) };
+}
+
 /**
  * Appended when a single turn is truncated, so the model can tell that it is
  * seeing a partial turn rather than an answer that simply stopped mid-sentence.
@@ -75,9 +98,9 @@ interface HistoryLike {
   readonly content: string;
 }
 
-function truncateEntry<T extends HistoryLike>(entry: T): T {
-  if (entry.content.length <= MAX_HISTORY_CONTENT_LENGTH) return entry;
-  const keep = MAX_HISTORY_CONTENT_LENGTH - TRUNCATION_MARKER.length;
+function truncateEntry<T extends HistoryLike>(entry: T, longest: number): T {
+  if (entry.content.length <= longest) return entry;
+  const keep = longest - TRUNCATION_MARKER.length;
   return {
     ...entry, content: entry.content.slice(0, keep) + TRUNCATION_MARKER,
   };
@@ -98,16 +121,17 @@ interface Budget<T> {
  * an older small one, which would hand the model a conversation with a hole in
  * the middle.
  */
-export function clampHistoryToBudget<T extends HistoryLike>(history: readonly T[]): T[] {
+export function clampHistoryToBudget<T extends HistoryLike>(history: readonly T[],
+  budget: HistoryBudget = DEFAULT_HISTORY_BUDGET): T[] {
   // Prepending is O(n^2), bounded by MAX_HISTORY_ENTRIES, so it stays trivial.
   const kept = history
     .slice(-MAX_HISTORY_ENTRIES)
-    .map(truncateEntry)
+    .map((entry) => truncateEntry(entry, budget.entry))
     .reduceRight<Budget<T>>(
     (acc, entry) => {
       if (acc.full) return acc;
       const total = acc.total + entry.content.length;
-      if (total > MAX_HISTORY_TOTAL_LENGTH) {
+      if (total > budget.total) {
         return {
           ...acc, full: true,
         };

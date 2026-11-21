@@ -1359,3 +1359,21 @@ def test_the_forms_lambda_serves_no_ai_draft(lambda_context, method, path, ws):
 def test_the_gateway_bounds_are_the_schemas():
     assert (h.MAX_FORM_ANSWERS, h.MAX_HIDDEN_FIELDS, h.MAX_TEST_TOKEN_CHARS) == (
         h.fv2.MAX_QUESTIONS, h.fv2.MAX_HIDDEN_FIELDS, h.fresp.MAX_TEST_TOKEN_CHARS)
+
+
+class TestTheReservedAppFeedbackTag:
+    """Only a form made from the In-app micro-feedback template carries ``voc_app`` (7.66.00): the tag keeps every
+    response out of the customer reads (shared/item_filters.py), so no other form may take it."""
+
+    @pytest.mark.usefixtures('world')
+    def test_a_form_from_the_template_takes_it(self, lambda_context):
+        form = _create(lambda_context, {**V2_FORM, 'template': {'id': 'app_micro_feedback', 'version': 1},
+                                        'tags': ['voc_app']})
+        assert form['tags'] == ['voc_app']
+
+    @pytest.mark.usefixtures('world')
+    def test_any_other_form_is_refused_it_on_create_and_on_save(self, lambda_context):
+        created, answer = _call(lambda_context, 'POST', '/feedback-forms', body={**V2_FORM, 'tags': ['VOC_APP']})
+        fid = _create(lambda_context)['form_id']
+        saved, _ = _call(lambda_context, 'PUT', f'/feedback-forms/{fid}', body={'tags': ['beta', 'voc_app']})
+        assert [created, 'reserved' in answer['error'], saved] == [400, True, 400]

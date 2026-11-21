@@ -1000,8 +1000,10 @@ claim (`with: {credential: fine_grained_token, login, expires_at}`).
 **The go and the start.** `POST /agents/engineering/<run_id>/go` on a run of this kind takes the token owner's go
 alone (403 `token_owner_go` for any other administrator, before anything is written; the run page's button reads
 "Push with ‹login›'s token"). A run's start (`POST /agents/engineering/runs`, an agent's Run now and its triggers) of a
-flow that pushes is refused on an expired or unset token (409 "replace it"), and the 202 answer carries `warnings` when
-3 days or fewer remain, which the flow's page shows after the start (7.63.00). A flow that pushes nothing (a triage)
+flow that pushes is refused on an expired or unset token (409 "replace it"). The Start dialog's start
+(`POST /agents/engineering/runs`) also answers `warnings` when 3 days or fewer remain, which the run workspace it opens
+shows at the top until dismissed (7.63.00); an agent's Run now and its triggers start with no such warning (readiness's
+`write_token` check warns from 14 days, in its automation's **Set up** drawer). A flow that pushes nothing (a triage)
 starts on any token, with no warning: the start and readiness's `connection` check read one rule off the stored flow
 (7.63.00, `workflow_engineering.flow_pushes`: its declared `requires.ci_attestation`, else a committer or a PR
 author among its steps; before, every start on such a token was refused). Readiness: `connection` says "‹repo›, pushed with ‹login›'s fine-grained token: a branch and a pull request

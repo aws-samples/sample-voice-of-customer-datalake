@@ -133,8 +133,8 @@ roadmap), when to use it, its key arguments and, for a write, that it needs a wr
 confirmation. The names changed in 6.10.00 ([Renamed in 6.10.00](#renamed-in-61000)).
 
 **Budget.** The whole list (what an administrator's write token is shown: 42 tools) stays under an estimated
-10,000 tokens (`test_mcp_global_tools_budget.py`; about 9,840 since 7.63.00, when `forms_get_results` took the room
-`library_get` freed). Clients cache it: a 2026-07-28 client is
+10,000 tokens (`test_mcp_global_tools_budget.py`; 9,841 measured at 7.66.00, since 7.63.00's `forms_get_results`
+took the room `library_get` freed). Clients cache it: a 2026-07-28 client is
 told so by `tools/list` itself (`ttlMs` 5 minutes, `cacheScope: "private"`, [Protocol](#protocol)), a legacy
 client keeps it for the session, and a client that caches its prompt prefix pays for the list once per
 conversation, not on every turn. Past about 10,000 tokens a client is better served by searching tools on demand,

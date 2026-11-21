@@ -1,6 +1,6 @@
 /**
  * @fileoverview The role playbook in Home's onboarding buddy (7.66.00, docs/playbooks.md): the person picks their role
- * (Product, Scrum master, QA, Engineering) and gets that role's first week, five to eight steps, each linking to its
+ * (Product, Scrum master, QA, Engineering) and gets that role's first week, five steps, each linking to its
  * screen and saying why it matters. A step ticks itself from real state (the onboarding GET's signals, what Home
  * already reads: playbookSteps.ts); the person may tick any other one by hand, and untick it. "Ask the assistant to
  * walk me through it" opens a new conversation with the playbook prefilled (nothing is sent until they press send).

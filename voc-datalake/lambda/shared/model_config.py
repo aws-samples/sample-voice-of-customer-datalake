@@ -501,14 +501,18 @@ def max_output_tokens(model_id: str) -> int | None:
     return custom.max_output_tokens if custom is not None else None
 
 
-def model_for_documents(model_id: str, surface: str) -> str:
+def model_for_documents(model_id: str, surface: str, *, visual: bool = False) -> str:
     """The model a request with document or image blocks goes to: ``model_id``, unless it is a custom model that
-    reads none, then the surface's built-in default (a Claude model), logged."""
+    reads none, then the surface's built-in default (a Claude model), logged. ``visual``: the request reads a PDF's
+    pages as images (its document block asks for ``citations``, as a scanned PDF's transcription does), which only a
+    Claude model does: a custom model, even one that reads documents, would get the text layer alone, and a scanned
+    page has none, so that request goes to the default too."""
     custom = custom_model(model_id)
-    if custom is None or custom.documents:
+    if custom is None or (custom.documents and not visual):
         return model_id
     fallback = surface_default(surface)
-    logger.info(f"Custom model '{custom.key}' reads no documents or images; this request uses {fallback}")
+    what = "a PDF's pages as images" if custom.documents else 'documents or images'
+    logger.info(f"Custom model '{custom.key}' reads no {what}; this request uses {fallback}")
     return fallback
 
 

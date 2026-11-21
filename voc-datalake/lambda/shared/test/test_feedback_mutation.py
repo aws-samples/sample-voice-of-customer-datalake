@@ -177,9 +177,13 @@ class TestCharBudgetArithmetic:
     @pytest.mark.parametrize(('window', 'expected'), [
         (200_000, 320_000),
         (100_000, 120_000),
-        (40_001, 0),
-        (40_002, 4),
-        (40_000, 0),
+        # (a window under 80,000 reserves half of itself, never the whole 40,000)
+        (80_000, 80_000),
+        (79_999, 80_000),
+        (40_001, 40_000),
+        (40_000, 40_000),
+        (32_000, 32_000),
+        (1, 0),
         (0, 0),
     ])
     def test_budget_for_a_window(self, window, expected):

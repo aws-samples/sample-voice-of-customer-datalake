@@ -19,7 +19,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-__all__ = ['APP_FEEDBACK_TAG', 'asks_for_app_feedback', 'has_tag', 'is_app_feedback']
+__all__ = ['APP_FEEDBACK_TAG', 'APP_FEEDBACK_TEMPLATE_ID', 'RESERVED_MESSAGE', 'asks_for_app_feedback', 'has_tag',
+           'is_app_feedback', 'names_app_feedback']
 
 #: The tag (lower case; tags match ignoring case, as the ``tag`` filter does).
 APP_FEEDBACK_TAG: Final = 'voc_app'
@@ -39,6 +40,19 @@ def has_tag(item: Mapping[str, Any], wanted: str) -> bool:
 def is_app_feedback(item: Mapping[str, Any]) -> bool:
     """True for an item tagged ``voc_app`` (any case): the VoC app's own micro-feedback."""
     return has_tag(item, APP_FEEDBACK_TAG)
+
+
+#: The template whose forms alone may carry the tag (frontend/src/pages/FeedbackForms/templates/appTemplates.ts).
+APP_FEEDBACK_TEMPLATE_ID: Final = 'app_micro_feedback'
+#: Why a write that would give or take the tag is refused.
+RESERVED_MESSAGE: Final = (
+    f'The tag {APP_FEEDBACK_TAG} is reserved for the in-app micro-feedback: only a form made from the In-app '
+    'micro-feedback template carries it, and its responses keep it')
+
+
+def names_app_feedback(tags: object) -> bool:
+    """True when a tag list (as a write sends it) holds ``voc_app``, ignoring case and surrounding spaces."""
+    return has_tag({'tags': tags}, APP_FEEDBACK_TAG)
 
 
 def asks_for_app_feedback(tag_filter: object) -> bool:

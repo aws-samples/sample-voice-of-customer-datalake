@@ -1,19 +1,18 @@
 /**
- * @fileoverview What the chosen role playbook's browser evidence reads (7.66.00): the caller's assistant sessions and
- * projects (under the SAME query keys the assistant sidebar, the Projects page and the setup checklist use, so they
- * share the cache), the engineering connections (an administrator's list, only while the engineering agents are on)
+ * @fileoverview What the chosen role playbook's browser evidence reads (7.66.00): the caller's brief settings and
+ * projects (under the SAME query keys Home's brief, the Projects page and the setup checklist use, so they share the
+ * cache), the engineering connections (an administrator's list, only while the engineering agents are on)
  * and the caller's MCP tokens (Connect's list). Each is read only when the playbook has a step it ticks, so a playbook
  * costs nothing it does not show. A failed read counts as "not done yet": the step's link still leads where to do it.
  *
  * @module pages/Home/playbooks/usePlaybookFacts
  */
 import { useQuery } from '@tanstack/react-query'
+import { briefPreferencesKey, briefingApi } from '../../../api/briefingApi'
 import { connectApi, CONNECT_TOKENS_KEY } from '../../../api/connectApi'
 import { engineeringConnectionsApi, engineeringConnectionsKeys } from '../../../api/engineeringConnectionsApi'
 import { projectsApi } from '../../../api/projectsApi'
 import { projectsKey } from '../../../api/projectQueryKeys'
-import { listSessions } from '../../../assistant/sessions/sessionsApi'
-import { SESSIONS_QUERY_KEY } from '../../../assistant/sessions/queryKeys'
 import { isMenuItemEnabled } from '../../../config/menuConfig'
 import { isEngineeringAvailable } from '../../../runtimeConfig'
 import { useAuthStore, useIsAdmin } from '../../../store/authStore'
@@ -28,14 +27,21 @@ function countOf<T>(query: { data: T | undefined; isError: boolean }, rows: (dat
   return query.data === undefined ? undefined : rows(query.data).length
 }
 
-const PROJECT_EVIDENCE = ['project_owned', 'personas_generated', 'document_written', 'project_shared'] as const
+const PROJECT_EVIDENCE = ['personas_generated', 'document_written', 'project_shared'] as const
+
+/** Whether the caller's morning brief is on (false once the read failed, undefined while loading or not asked). */
+function useBriefSubscribed(role: PlaybookRole | null, enabled: boolean, userSub: string | undefined): boolean | undefined {
+  // (Home's brief reads the same settings under the same key: useBriefPreferences)
+  const brief = useQuery({ queryKey: [...briefPreferencesKey(), userSub ?? ''] as const, queryFn: briefingApi.getPreferences,
+    enabled: enabled && needsEvidence(role, 'brief_subscribed') })
+  return brief.isError ? false : brief.data?.enabled
+}
 
 export function usePlaybookFacts(role: PlaybookRole | null): BrowserFacts {
   const userSub = useAuthStore().user?.sub
   const isAdmin = useIsAdmin()
   const enabled = useConfigStore((s) => s.config.apiEndpoint) !== ''
-  const sessions = useQuery({ queryKey: SESSIONS_QUERY_KEY, queryFn: listSessions,
-    enabled: enabled && needsEvidence(role, 'assistant_used') })
+  const briefSubscribed = useBriefSubscribed(role, enabled, userSub)
   const projects = useQuery({ queryKey: projectsKey(), queryFn: projectsApi.getProjects,
     enabled: enabled && PROJECT_EVIDENCE.some((name) => needsEvidence(role, name)) })
   // The connections list is an administrator's, on while the engineering agents are (useAdminLocation's rule).
@@ -46,7 +52,7 @@ export function usePlaybookFacts(role: PlaybookRole | null): BrowserFacts {
     enabled: enabled && needsEvidence(role, 'mcp_connected') })
   return {
     userSub,
-    sessionCount: countOf(sessions, (rows) => rows),
+    briefSubscribed,
     projects: projects.isError ? [] : projects.data?.projects,
     // Not shown to this person: never "done" by itself, the step stays theirs to tick.
     connectionCount: connectionsShown ? countOf(connections, (list) => list.connections) : 0,

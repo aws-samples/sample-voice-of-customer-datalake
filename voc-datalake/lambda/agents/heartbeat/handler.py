@@ -54,6 +54,7 @@ from shared.exceptions import ApiError
 from shared.feedback_types import FEEDBACK_TYPE_KEY
 from shared.indexes import FEEDBACK_BY_DATE_INDEX
 from shared.invocation_cost import instrumented_handler
+from shared.item_filters import NO_ITEM_FILTERS
 from shared.logging import logger, metrics
 from shared.metric_keys import CATEGORY_PREFIX, SUBCATEGORY_PREFIX
 from shared.timestamps import parse_iso
@@ -166,8 +167,9 @@ def _window_first_day(trigger: Mapping[str, Any], now: datetime) -> str:
 # --------------------------------------------------------------------------
 
 def _counted(scope: Mapping[str, Any], item: Mapping[str, Any], feedback_type: str | None) -> bool:
-    """In scope, and (for an engineering agent) of its kind."""
-    if not store.item_in_scope(scope, item):
+    """In scope, a customer's (never the VoC app's own micro-feedback, shared/item_filters.py), and (for an engineering
+    agent) of its kind."""
+    if not store.item_in_scope(scope, item) or not NO_ITEM_FILTERS.admits(item):
         return False
     dimensions = item.get('dimensions')
     return feedback_type is None or (isinstance(dimensions, Mapping) and dimensions.get(FEEDBACK_TYPE_KEY) == feedback_type)
@@ -181,7 +183,7 @@ def walk_reviews(feedback_table: Any, scope: Mapping[str, Any], since: datetime,
     cursor_key = store.iso(since)
     count, kept = 0, []
     # (only what the scope and the kind read: an agent's source scope its sources, an engineering agent its ids)
-    fields = ['category', 'subcategory', *(['source_platform'] if scope.get('sources') else []),
+    fields = ['category', 'subcategory', 'tags', *(['source_platform'] if scope.get('sources') else []),
               *(['feedback_id', '#dims'] if feedback_type else [])]
     for day in store.iter_days(since.strftime('%Y-%m-%d'), now.strftime('%Y-%m-%d')):
         kwargs: dict[str, Any] = {

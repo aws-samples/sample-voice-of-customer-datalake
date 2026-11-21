@@ -496,7 +496,7 @@ embeddable widget calls from the customer's own site.
 >
 > | Route | Rate / burst | Why |
 > |---|---|---|
-> | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota |
+> | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota. The in-app micro-feedback (7.66.00) posts here too, so its thumbs share this budget with every form's respondents; a throttled answer is a 429, listed in Administration → System → Logs (warnings) |
 > | `GET /config`, `GET /iframe` | **100 rps / 200** | Fetched on every page load of every embed; cheap (one `get_item`, and a static HTML render, respectively) |
 > | `POST /events` | **100 rps / 200** | The widget's funnel beacons, at most two per visit: page-view demand, one or two `UpdateItem`s each, never a model call; a 429 costs one funnel count |
 >

@@ -17,8 +17,6 @@
   },
   "steps": {
     "read_dashboard": { "title": "Read this week's dashboard", "why": "Volume, sentiment and the top categories show where to look first.", "cta": "Open the dashboard" },
-    "ask_assistant": { "title": "Ask the assistant a question about your customers", "why": "It reads the feedback for you and cites every review it relies on.", "cta": "Open the assistant" },
-    "start_project": { "title": "Start a research project", "why": "A project keeps a theme's feedback, personas and documents together.", "cta": "Open Projects" },
     "generate_personas": { "title": "Generate personas from real feedback", "why": "Personas grounded in reviews keep decisions about real customers.", "cta": "Open Projects" },
     "write_document": { "title": "Draft a PR/FAQ or a PRD", "why": "Writing it down from the evidence makes the case for the work.", "cta": "Open Projects" },
     "set_objectives": { "title": "Set your objectives and KPIs", "why": "The assistant and the brief weigh feedback against what you are measured on.", "cta": "Set objectives" },
