@@ -7,7 +7,9 @@
  * `submission_invalid` there. Its saves and Results answer as the handler does (7.58.00): every save counts one
  * (`write_count`, a stale `expected_write_count` is the 409), a removed question's id is never taken again, an answered
  * question keeps its type, and Results count the test responses either way and have no funnel under a language
- * filter. Boots mock-server.js on a free port.
+ * filter. A rule whose op its question's type does not take is refused in the server's words
+ * (schemas/form-logic-ops.json: a consent's `equals`, which the templates wrote until 7.58.02, is a 400 on a real
+ * deployment). Boots mock-server.js on a free port.
  *
  * Run: node --test scripts/mock-forms-events.test.mjs
  */
@@ -89,5 +91,39 @@ describe('the saves and Results (as the handler answers them)', () => {
     assert.equal(plain.test_responses, included.test_responses)
     assert.equal(included.responses, plain.responses + plain.test_responses)
     assert.deepStrictEqual([plain.funnel === null, filtered.funnel], [false, null])
+  })
+})
+
+describe("a rule's op, refused as the server refuses it (schemas/form-logic-ops.json)", () => {
+  const consent = (logic) => ({ id: 'q_ok', type: 'consent', required: false, headline: { en: 'May we contact you?' }, label: { en: 'Yes' }, logic })
+  const more = { id: 'q_more', type: 'open_text', required: false, headline: { en: 'Anything else?' }, long: true, input_type: 'text' }
+  const body = (logic) => ({
+    schema_version: 2, name: 'Consent rules', language: 'en', languages: ['en'], welcome: { enabled: false, title: {} },
+    questions: [consent(logic), more], hidden_fields: [], endings: [{ id: 'end_thanks', title: { en: 'Thank you!' } }],
+  })
+  const toEnd = (when) => ({ when, then: { jump_to: 'end_thanks' } })
+
+  it("refuses a consent's `equals` on a create and on a save, in the server's words", async () => {
+    const [refused, created] = await call('POST', '/feedback-forms', body([toEnd({ op: 'equals', value: false })]))
+    assert.deepStrictEqual([refused, created.error], [400, 'questions[0].logic[0].when.op must be one of skipped, submitted for a consent question'])
+    const [status, saved] = await call('POST', '/feedback-forms', body([toEnd({ op: 'skipped' })]))
+    assert.equal(status, 200)
+    const [resaved, again] = await call('PUT', `/feedback-forms/${saved.form.form_id}`, body([toEnd({ op: 'submitted' }), toEnd({ op: 'equals', value: true })]))
+    assert.deepStrictEqual([resaved, again.error], [400, 'questions[0].logic[1].when.op must be one of skipped, submitted for a consent question'])
+  })
+
+  it('refuses a value on an op that takes none, and an op another type takes', async () => {
+    const [valued, withValue] = await call('POST', '/feedback-forms', body([toEnd({ op: 'skipped', value: false })]))
+    assert.deepStrictEqual([valued, withValue.error], [400, 'questions[0].logic[0].when.value is not used by "skipped"'])
+    const text = { ...body([]), questions: [{ ...more, logic: [toEnd({ op: 'gte', value: 3 })] }] }
+    const [compared, refused] = await call('POST', '/feedback-forms', text)
+    assert.deepStrictEqual([compared, refused.error], [400, 'questions[0].logic[0].when.op must be one of equals, not_equals, skipped, submitted for a open_text question'])
+  })
+
+  it("takes a consent's accepted and not accepted, and saves the seeded NPS form as it is", async () => {
+    const [status] = await call('POST', '/feedback-forms', body([toEnd({ op: 'submitted' }), { when: { op: 'skipped' }, then: { jump_to: 'q_more' } }]))
+    assert.equal(status, 200)
+    const [, { form }] = await call('GET', '/feedback-forms/fv2_nps')
+    assert.equal((await call('PUT', '/feedback-forms/fv2_nps', { schema_version: 2, questions: form.questions, endings: form.endings }))[0], 200)
   })
 })

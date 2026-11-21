@@ -17,6 +17,7 @@ import {
   DEFAULT_THEME, DISPLAYS, FORM_LANGUAGES, INPUT_TYPES, MATRIX_DISPLAYS, RATING_RANGES, RATING_SCALES, RULE_OPS,
   SHUFFLES, TEST_RECORDS, THEME_FONTS, THEME_MODES, THEME_TEXT_SIZES, isFormLanguage,
 } from './formsV2'
+import { withCurrentRules } from './rules'
 
 const text = z.record(z.string(), z.unknown()).catch({}).transform((raw): I18nText =>
   Object.fromEntries(Object.entries(raw).filter((entry): entry is [FormLanguage, string] =>
@@ -125,9 +126,12 @@ const matrix = z.object({
 
 const question = z.discriminatedUnion('type', [choice, openText, rating, score, statement, consent, contact, matrix])
 
+/** Each question the editor knows; a consent's rule written before 7.58.02 (`equals true / false`, which the server
+ * refuses) read as the `submitted` / `skipped` it meant, so a draft made then (a new form's, kept with its history
+ * entry) still saves. */
 const questions = z.array(z.unknown()).catch([]).transform((items) => items.flatMap((item) => {
   const parsed = question.safeParse(item)
-  if (parsed.success) return [parsed.data]
+  if (parsed.success) return [withCurrentRules(parsed.data)]
   console.warn('Leaving out a form question that is not one the editor knows:', parsed.error.issues, item)
   return []
 }))

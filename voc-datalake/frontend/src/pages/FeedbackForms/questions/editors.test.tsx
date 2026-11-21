@@ -140,10 +140,10 @@ describe('the ending editor', () => {
 })
 
 describe('the ending editor: its rules, its texts and its id', () => {
-  /** A consent whose No ends at end_bye, then a question whose Otherwise does. */
+  /** A consent whose not accepted (`skipped`) ends at end_bye, then a question whose Otherwise does. */
   const consent: Question = {
     id: 'q_ok', type: 'consent', headline: { en: 'May we contact you?' }, required: false, label: { en: 'Yes' },
-    logic: [{ when: { op: 'equals', value: false }, then: { jump_to: 'end_bye' } }],
+    logic: [{ when: { op: 'skipped' }, then: { jump_to: 'end_bye' } }],
   }
   const last: Question = { ...after, required: true, logic: [{ when: { op: 'submitted' }, then: { jump_to: 'end_bye' } }] }
   const bye = { id: 'end_bye', title: { en: 'Bye' } }

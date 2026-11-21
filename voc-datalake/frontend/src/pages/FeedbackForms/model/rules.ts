@@ -6,6 +6,11 @@
  * statement, plus `{op: skipped} → X` for an optional one. On load, such a trailing rule (or pair, same target) reads
  * back as Otherwise; anything else stays an ordinary rule. The round trip is lossless.
  *
+ * A consent has no value to compare (7.58.02): "is accepted" is `submitted`, "is not accepted" `skipped` (an unticked
+ * box is no answer, to the server and the widget alike), the only ops the server takes for it
+ * (`schemas/form-logic-ops.json`). A rule written before as `equals true` / `equals false` reads as those
+ * (`currentRule`), and is written so the next time its question's logic is.
+ *
  * @module pages/FeedbackForms/model/rules
  */
 import type { Question, Rule, RuleOp, RuleValue } from './formsV2'
@@ -17,8 +22,8 @@ const VALUE_OPS: Readonly<Record<Question['type'], readonly RuleOp[]>> = {
   single_select: ['equals', 'not_equals', 'includes_any'],
   multi_select: ['includes_any', 'includes_all'],
   rating: SCALE_OPS, nps: SCALE_OPS, csat: SCALE_OPS, ces: SCALE_OPS,
-  consent: ['equals'],
-  open_text: [], contact_info: [], statement: [], matrix: [],
+  // (a consent's accepted / not accepted are its `submitted` / `skipped`; a required one is only ever accepted)
+  consent: [], open_text: [], contact_info: [], statement: [], matrix: [],
 }
 
 /** The operators a question's type offers (UX §5.1), in the order the Logic section lists them. */
@@ -26,6 +31,25 @@ export function opsFor(question: Question): readonly RuleOp[] {
   // `skipped` only for an optional question (a required one is never skipped); a statement only "Then go to".
   const skippable = !question.required && question.type !== 'statement'
   return [...VALUE_OPS[question.type], 'submitted', ...(skippable ? ['skipped' as const] : [])]
+}
+
+/** A consent rule's op as the server takes it: a legacy `equals false` is `skipped`, `equals true` `submitted`. */
+export const consentOp = (op: RuleOp, value: RuleValue | undefined): RuleOp => {
+  if (op !== 'equals') return op
+  return value === false ? 'skipped' : 'submitted'
+}
+
+/** `rule` as the server takes it on `question`: a consent's legacy `equals true / false` as `submitted` / `skipped`. */
+export function currentRule(question: Question, rule: Rule): Rule {
+  if (question.type !== 'consent' || rule.when.op !== 'equals') return rule
+  return { when: { op: consentOp(rule.when.op, rule.when.value) }, then: rule.then }
+}
+
+/** `question` with every rule as the server takes it (`currentRule`). */
+export function withCurrentRules<Q extends Question>(question: Q): Q {
+  const logic = question.logic
+  if (question.type !== 'consent' || logic === undefined) return question
+  return { ...question, logic: logic.map((rule) => currentRule(question, rule)) }
 }
 
 /** Does `op` need a value? */
@@ -100,13 +124,17 @@ export function splitOtherwise(question: Question): SplitLogic {
   return { rules: logic.slice(0, logic.length - length), otherwise: target }
 }
 
-/** The stored logic for `rules` and an Otherwise target (null: none, the form goes to the next question). */
+/**
+ * The stored logic for `rules` and an Otherwise target (null: none, the form goes to the next question), each rule
+ * as the server takes it (`currentRule`).
+ */
 export function joinOtherwise(question: Question, rules: readonly Rule[], otherwise: string | null): Rule[] {
-  if (otherwise === null) return [...rules]
+  const own = rules.map((rule) => currentRule(question, rule))
+  if (otherwise === null) return own
   const submitted: Rule = { when: { op: 'submitted' }, then: { jump_to: otherwise } }
   const skipped: Rule = { when: { op: 'skipped' }, then: { jump_to: otherwise } }
   const encoded = question.required || question.type === 'statement' ? [submitted] : [submitted, skipped]
-  return [...rules, ...encoded]
+  return [...own, ...encoded]
 }
 
 /** `question` with its logic rewritten from rules and an Otherwise (an empty logic is dropped). */

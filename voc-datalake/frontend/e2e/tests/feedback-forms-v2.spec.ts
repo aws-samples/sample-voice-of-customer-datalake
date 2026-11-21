@@ -472,6 +472,10 @@ test.describe('Feedback Forms v2: the owner\'s test plan', () => {
         await main(page).getByRole('button', { name: 'Add question', exact: true }).click()
         await page.getByRole('menu', { name: 'Question types' }).getByRole('menuitem', { name: added.menu }).click()
         const headline = main(page).getByRole('textbox', { name: added.menu.source.includes('Statement') ? 'Text' : 'Question', exact: true })
+        // The new question's editor opens with its first field focused; until then the editor shown is the previous
+        // question's (the selection is a navigation), whose field a fill would overwrite.
+        await expect(headline).toBeFocused()
+        await expect(headline).toHaveValue('')
         await headline.fill(added.headline)
         if (added.menu.source.includes('Single choice')) {
           await main(page).getByRole('textbox', { name: 'Option 1', exact: true }).fill('Free')
@@ -499,7 +503,9 @@ test.describe('Feedback Forms v2: the owner\'s test plan', () => {
 
       // A second ending, and a logic jump to it from the NPS question (a score of 2 or less).
       await main(page).getByRole('button', { name: 'Add ending' }).click()
-      await main(page).getByRole('textbox', { name: 'Title', exact: true }).fill(SECOND_ENDING)
+      const endingTitle = main(page).getByRole('textbox', { name: 'Title', exact: true })
+      await expect(endingTitle).toBeFocused()
+      await endingTitle.fill(SECOND_ENDING)
       await shot(page, 'second-ending')
       await main(page).getByRole('list', { name: 'Questions' }).getByRole('button', { name: /^6 NPS/ }).click()
       const logic = main(page).getByRole('region', { name: /^Logic/ })
@@ -522,7 +528,9 @@ test.describe('Feedback Forms v2: the owner\'s test plan', () => {
 
       // A second language.
       await builderTab(page, 'Languages').click()
-      await main(page).getByRole('combobox', { name: 'Add language' }).selectOption({ label: 'Polski' })
+      // (a menu button of the languages the form lacks, its menu in a portal)
+      await main(page).getByRole('button', { name: 'Add language' }).click()
+      await page.getByRole('menu', { name: 'Add language' }).getByRole('menuitem', { name: 'Polski' }).click()
       await expect(main(page).getByText('Polski').first()).toBeVisible()
       await shot(page, 'languages-polish')
 
@@ -608,6 +616,11 @@ test.describe('Feedback Forms v2: the owner\'s test plan', () => {
       await page.goto(site(`/feedback-forms/${formId}/questions`), { waitUntil: 'domcontentloaded' })
       const published = page.waitForResponse((r) => isApi(r, 'PUT', /\/feedback-forms\/[^/]+$/))
       await page.getByRole('button', { name: 'Publish' }).click()
+      // Polski is offered untranslated: Publish asks first, saying what its respondents will see in English.
+      const untranslated = page.getByRole('dialog', { name: 'Publish with missing translations?' })
+      await expect(untranslated).toContainText(/Polski respondents will see \d+ texts? in English\./)
+      await shot(page, 'publish-missing-translations')
+      await untranslated.getByRole('button', { name: 'Publish anyway' }).click()
       expect((await published).status()).toBeLessThan(300)
       await expect(await storedForm(formId ?? '')).toMatchObject({ enabled: true })
       await shot(page, 'published')

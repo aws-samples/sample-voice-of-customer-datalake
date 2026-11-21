@@ -1,7 +1,12 @@
 /**
- * @fileoverview What a rule row's controls offer (UX §5.1): the operator choices of a question (a consent's `equals`
- * reads as two, "is accepted" and "is not accepted"), the value a rule keeps when its operator changes, and the
- * targets its "go to" lists (the next question, the later ones, the endings; never an earlier one).
+ * @fileoverview What a rule row's controls offer (UX §5.1): the operator choices of a question (a consent's read as
+ * "is accepted" and "is not accepted", its `submitted` and `skipped`; only accepted for a required one, which is never
+ * left unticked), the value a rule keeps when its operator changes, and the targets its "go to" lists (the next
+ * question, the later ones, the endings; never an earlier one).
+ *
+ * The choices stay within the ops the server takes (`schemas/form-logic-ops.json`, ruleControls.test.ts). A consent
+ * rule written before 7.58.02 as `equals true / false` still selects accepted / not accepted, and its next change
+ * writes `submitted` / `skipped`.
  *
  * @module pages/FeedbackForms/logic/ruleControls
  */
@@ -9,41 +14,34 @@ import type { TFunction } from 'i18next'
 import type { FormV2, Question, Rule, RuleOp } from '../model/formsV2'
 import { isScale } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
-import { opTakesCodes, opTakesValue, opsFor, valueCodes } from '../model/rules'
+import { currentRule, opTakesCodes, opTakesValue, opsFor, valueCodes } from '../model/rules'
 import { fallthroughTarget } from '../model/paths'
 import { opText, targetText } from './ruleSentence'
 
-/** One entry of the operator select: an operator, and for a consent the yes/no it compares with. */
+/** One entry of the operator select: its key (the select's value) and the operator it writes. */
 export interface OpChoice {
   readonly key: string
   readonly op: RuleOp
-  readonly consent?: boolean
   readonly label: string
 }
 
+/** A consent's choices by their meaning; any other question's by its operator. */
+const CONSENT_KEYS: Partial<Record<RuleOp, string>> = { submitted: 'accepted', skipped: 'notAccepted' }
+const keyOf = (question: Question, op: RuleOp): string => (question.type === 'consent' ? CONSENT_KEYS[op] : undefined) ?? op
+
 export function opChoices(t: TFunction<'feedbackForms'>, question: Question): OpChoice[] {
-  return opsFor(question).flatMap((op): OpChoice[] => {
-    if (question.type === 'consent' && op === 'equals') {
-      return [
-        { key: 'accepted', op, consent: true, label: opText(t, question, op, true) },
-        { key: 'notAccepted', op, consent: false, label: opText(t, question, op, false) },
-      ]
-    }
-    return [{ key: op, op, label: opText(t, question, op) }]
-  })
+  return opsFor(question).map((op) => ({ key: keyOf(question, op), op, label: opText(t, question, op) }))
 }
 
-/** The operator select's value for `rule`. */
+/** The operator select's value for `rule` (a consent's legacy `equals true / false` as accepted / not accepted). */
 export function choiceKey(question: Question, rule: Rule): string {
-  if (question.type === 'consent' && rule.when.op === 'equals') return rule.when.value === false ? 'notAccepted' : 'accepted'
-  return rule.when.op
+  return keyOf(question, currentRule(question, rule).when.op)
 }
 
 /** `rule` with the operator `choice`, keeping what of its value still fits (a code becomes a list of one…). */
 export function withChoice(question: Question, rule: Rule, choice: OpChoice): Rule {
   const old = rule.when.value
   const then = rule.then
-  if (choice.consent !== undefined) return { when: { op: choice.op, value: choice.consent }, then }
   if (!opTakesValue(choice.op)) return { when: { op: choice.op }, then }
   if (isScale(question)) return typeof old === 'number' ? { when: { op: choice.op, value: old }, then } : { when: { op: choice.op }, then }
   const codes = valueCodes(old)

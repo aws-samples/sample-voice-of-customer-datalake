@@ -58,6 +58,19 @@ describe('rules', () => {
     expect(joinOtherwise(choice(), rules, null)).toStrictEqual(rules)
   })
 
+  it("gives a consent accepted and not accepted as submitted and skipped, and writes a legacy `equals` so (7.58.02)", () => {
+    const consent: Question = { id: 'q_ok', type: 'consent', headline: { en: 'May we contact you?' }, required: false, label: { en: 'Yes' } }
+    expect([opsFor(consent), opsFor({ ...consent, required: true })]).toStrictEqual([['submitted', 'skipped'], ['submitted']])
+    expect(defaultOp(consent)).toBe('submitted')
+    const legacy: Rule[] = [{ when: { op: 'equals', value: true }, then: { jump_to: 'q_contact' } }, { when: { op: 'equals', value: false }, then: { jump_to: 'end_thanks' } }]
+    expect(withLogic(consent, legacy, null).logic).toStrictEqual([
+      { when: { op: 'submitted' }, then: { jump_to: 'q_contact' } }, { when: { op: 'skipped' }, then: { jump_to: 'end_thanks' } },
+    ])
+    // (a draft made before, kept with its history entry, reads the same: it saves as the server takes it)
+    const parsed = parseFormV2(toWireForm(formOf([{ ...consent, logic: legacy }, text('q_contact')])))
+    expect(parsed?.questions[0]?.logic?.map((rule) => rule.when)).toStrictEqual([{ op: 'submitted' }, { op: 'skipped' }])
+  })
+
   it('lists the scale values of NPS, CSAT and a 7-point rating', () => {
     expect(scaleValues({ id: 'q_n', type: 'nps', headline: {}, required: true })).toHaveLength(11)
     expect(scaleValues({ id: 'q_r', type: 'rating', headline: {}, required: true, scale: 'number', range: 7 }).at(-1)).toBe(7)

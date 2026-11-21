@@ -77,13 +77,15 @@ const feedbackFormSubmission: apigateway.JsonSchema = {
       patternProperties: { [HIDDEN_ID]: { type: [STRING, NULL] } }, additionalProperties: false,
     },
     form_revision: { type: [INTEGER, NULL], minimum: 1 },
-    language: { type: [STRING, NULL], enum: [...FORM_LOCALES, null] },
+    // A pattern, not an enum with null: CloudFormation refuses a null value anywhere in a template, and draft-4 applies
+    // `pattern` to strings only, so null (and absence) still pass as before.
+    language: { type: [STRING, NULL], pattern: `^(${FORM_LOCALES.join('|')})$` },
     ending_id: optionalString(formBounds.MAX_FORM_ID_CHARS),
     // The widget's random id of the visit (closes the funnel's dedupe row of its `left`): no person's data.
     session: { type: [STRING, NULL], pattern: SESSION_ID },
     // Where it was answered (7.55.01): the API's own page, that page framed, or a script embed; a widget from before
     // 7.55.01 sends none.
-    channel: { type: [STRING, NULL], enum: [...FORM_CHANNELS, null] },
+    channel: { type: [STRING, NULL], pattern: `^(${FORM_CHANNELS.join('|')})$` },
     form_id: optionalString(formBounds.FORM_ID_MAX_LENGTH),
     // The form's test token (the test link's `test=`), checked against the form by the handler.
     test: optionalString(formBounds.MAX_TEST_TOKEN_CHARS),

@@ -117,10 +117,10 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
           patternProperties: { '^[a-z][a-z0-9_]{0,39}$': { type: ['string', 'null'] } }, additionalProperties: false,
         },
         form_revision: { type: ['integer', 'null'], minimum: 1 },
-        language: { type: ['string', 'null'], enum: ['en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko', 'pl', null] },
+        language: { type: ['string', 'null'], pattern: '^(en|es|fr|de|pt|ja|zh|ko|pl)$' },
         ending_id: { type: ['string', 'null'], maxLength: 44 },
         session: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_-]{8,64}$' },
-        channel: { type: ['string', 'null'], enum: ['link', 'iframe', 'script', null] },
+        channel: { type: ['string', 'null'], pattern: '^(link|iframe|script)$' },
         form_id: { type: ['string', 'null'], maxLength: 64 },
         test: { type: ['string', 'null'], maxLength: 64 },
         rating: { type: ['number', 'null'], minimum: 1, maximum: 10 },
@@ -163,6 +163,19 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
   // lambda/api/test/test_public_body_models_parity.py runs every boundary body through the handlers AND these
   // models (draft-4 validator), from this pinned copy: a deliberate model change updates the JSON file too (the
   // failure prints the difference).
+  // CloudFormation refuses a null value anywhere in a template ("'null' values are not allowed in templates", the
+  // 7.58.00 deploy of VocApiStack): a nullable field says so with `type`, never with null in an `enum`.
+  it('no model holds a null value, which CloudFormation refuses in a template', () => {
+    const nulls: string[] = [];
+    const walk = (value: unknown, path: string): void => {
+      if (value === null) nulls.push(path);
+      else if (Array.isArray(value)) value.forEach((item, index) => walk(item, `${path}/${index}`));
+      else if (typeof value === 'object') Object.entries(value).forEach(([key, item]) => walk(item, `${path}/${key}`));
+    };
+    walk(schemas(), '');
+    expect(nulls).toStrictEqual([]);
+  });
+
   it('the parity test reads exactly the synthesized models (schemas/public-body-models.json)', () => {
     expect(JSON.parse(readFileSync(PINNED_MODELS, 'utf8'))).toStrictEqual(schemas());
   });

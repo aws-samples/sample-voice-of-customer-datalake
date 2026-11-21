@@ -44,18 +44,7 @@
           "string",
           "null"
         ],
-        "enum": [
-          "en",
-          "es",
-          "fr",
-          "de",
-          "pt",
-          "ja",
-          "zh",
-          "ko",
-          "pl",
-          null
-        ]
+        "pattern": "^(en|es|fr|de|pt|ja|zh|ko|pl)$"
       },
       "ending_id": {
         "type": [
@@ -76,12 +65,7 @@
           "string",
           "null"
         ],
-        "enum": [
-          "link",
-          "iframe",
-          "script",
-          null
-        ]
+        "pattern": "^(link|iframe|script)$"
       },
       "form_id": {
         "type": [

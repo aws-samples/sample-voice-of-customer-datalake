@@ -1,8 +1,9 @@
 /**
- * @fileoverview What is wrong with a question's rules (UX §5.5), rule by rule: a target that no longer exists or is
- * now earlier, a missing value, an option that was removed, a number outside the scale (errors, which block Save);
- * a `skipped` rule on a required question and a rule an earlier one always pre-empts (warnings); a rule that sends
- * everyone it catches where they would go without it (a note).
+ * @fileoverview What is wrong with a question's rules (UX §5.5), rule by rule: an operator the server refuses for
+ * the question's type (`schemas/form-logic-ops.json`, as a consent's `equals` written before 7.58.02), a target that
+ * no longer exists or is now earlier, a missing value, an option that was removed, a number outside the scale
+ * (errors, which block Save); a `skipped` rule on a required question and a rule an earlier one always pre-empts
+ * (warnings); a rule that sends everyone it catches where they would go without it (a note).
  *
  * @module pages/FeedbackForms/model/ruleProblems
  */
@@ -11,6 +12,7 @@ import { isScale } from './formsV2'
 import { textIn } from './i18nText'
 import { matchesEverything, opTakesValue, opsFor, ruleCodes, scaleOf, scaleValues, splitOtherwise, valueCodes } from './rules'
 import { noMatchTarget } from './paths'
+import { serverTakesOp } from './logicOps'
 import { sameJson } from '../../../lib/sameJson'
 
 export type ProblemSeverity = 'error' | 'warning' | 'note'
@@ -49,6 +51,8 @@ function scaleProblem(question: Question, value: Rule['when']['value']): Found |
 
 function valueProblem(question: Question, rule: Rule): Found | null {
   const { op, value } = rule.when
+  // (an op the server refuses for the type is its 400 on Save, whatever the editor offers)
+  if (!serverTakesOp(question.type, op)) return { severity: 'error', code: 'opInvalid', params: { op } }
   if (!opsFor(question).includes(op)) {
     return op === 'skipped' && question.required
       ? { severity: 'warning', code: 'skippedOnRequired', params: {} }
@@ -56,7 +60,6 @@ function valueProblem(question: Question, rule: Rule): Found | null {
   }
   if (!opTakesValue(op)) return null
   if (isScale(question)) return scaleProblem(question, value)
-  if (question.type === 'consent') return typeof value === 'boolean' ? null : { severity: 'error', code: 'noValueOption', params: {} }
   return codesProblem(question, value)
 }
 
@@ -70,21 +73,34 @@ function codesProblem(question: Question, value: Rule['when']['value']): Found |
 
 const sameCondition = (a: Rule, b: Rule): boolean => sameJson(a.when, b.when)
 
+/**
+ * Does the rule at `index` catch everyone the rule at `at` could (a `submitted` on a required question or a
+ * statement)? On an optional question a `submitted` catches everyone only with the `skipped` right after it, and that
+ * `skipped` itself still runs: it is the one catching those who did not answer ("is accepted → X", then "is not
+ * accepted → Y").
+ */
+function catchesAllBefore(question: Question, rules: readonly Rule[], index: number, at: number): boolean {
+  const rule = rules[index]
+  if (rule === undefined || !matchesEverything(question, rule, rules[index + 1])) return false
+  return question.required || question.type === 'statement' || index + 1 < at
+}
+
 function shadowProblem(question: Question, rules: readonly Rule[], at: number): Found | null {
   const rule = rules[at]
   if (rule === undefined) return null
-  const earlier = rules.slice(0, at).findIndex((before, index) => matchesEverything(question, before, rules[index + 1]) || sameCondition(before, rule))
+  const earlier = rules.slice(0, at).findIndex((before, index) => catchesAllBefore(question, rules, index, at) || sameCondition(before, rule))
   return earlier === -1 ? null : { severity: 'warning', code: 'ruleNeverRuns', params: { number: earlier + 1 } }
 }
 
-/** One answer as a rule reads it: an option code, a score, a consent's yes/no, true for any other answer, null for none. */
+/** One answer as a rule reads it: an option code, a score, true for any other answer (a ticked consent's), null for none. */
 type Answer = string | number | boolean | null
 
-/** Every answer a question of one of the listable types can be given (a typed text is just "answered"). */
+/** Every answer a question of one of the listable types can be given (a typed text is just "answered"; an unticked
+ * consent is no answer, as the widget reads it). */
 function givenAnswers(question: Question): readonly Answer[] {
   if (question.type === 'single_select') return ruleCodes(question)
   if (isScale(question)) return scaleValues(question)
-  return question.type === 'consent' ? [true, false] : [true]
+  return [true]
 }
 
 /**

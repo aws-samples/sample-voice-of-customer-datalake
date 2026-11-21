@@ -4,7 +4,10 @@
 //   GET    /feedback-forms/{id}                      {form}: one form with `response_count` (only this read counts);
 //                                                    v2 as stored, a v1 record as v1 with `migrated_from: 1` (the
 //                                                    real API serves it migrated; the app migrates it the same way)
-//   POST   /feedback-forms            (schema 2)     create, Off, revision 1, no test token yet
+//   POST   /feedback-forms            (schema 2)     create, Off, revision 1, no test token yet; a rule whose op its
+//                                                    question's type does not take is 400 as the server words it
+//                                                    (schemas/form-logic-ops.json: a consent takes only submitted /
+//                                                    skipped), on a save too
 //   PUT    /feedback-forms/{id}       (schema 2, or a v2 form's {enabled})  save over `expected_write_count`
 //                                                    (every save counts one, the revision moves with the definition
 //                                                    only; an old client's `expected_revision` is ignored); a stale one is 409 {code:
@@ -47,6 +50,7 @@
 // Wired by mock-forms.js handleFormRoutes, which owns the v1 routes and passes v1 requests through.
 
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { seedResponses } from './mock-forms-seeds.js';
 import { formResults, filteredResponses, headlineOf, responseView, responsesCsv } from './mock-forms-results.js';
 import { draftAnswer, draftJob } from './mock-forms-draft.js';
@@ -143,13 +147,44 @@ export function listedForm(item) {
     has_responses: item.has_responses === true || responsesOf(item.form_id).some((r) => !r.is_test) };
 }
 
+/**
+ * The logic ops each question type takes (shared/forms_v2.py OPS_BY_TYPE, pinned by test_form_logic_ops_lockstep.py),
+ * each list sorted as the server's refusal names them. A consent compares no value: `submitted` / `skipped` only.
+ */
+const LOGIC_OPS = JSON.parse(readFileSync(new URL('../schemas/form-logic-ops.json', import.meta.url), 'utf8')).ops_by_type;
+const VALUELESS_OPS = ['submitted', 'skipped'];
+
+/** Why the server refuses `rule` of a `type` question (forms_v2.py `_rule`: its op for the type, a value an op
+ * without one was given), worded as its 400; null when it takes it. Its target is not checked here. */
+function ruleError(rule, type, where) {
+  if (!isPlainObject(rule)) return `${where} must be an object`;
+  if (!isPlainObject(rule.when)) return `${where}.when must be an object`;
+  const { op, value } = rule.when;
+  const allowed = LOGIC_OPS[type];
+  if (!allowed.includes(op)) return `${where}.when.op must be one of ${allowed.join(', ')} for a ${type} question`;
+  return VALUELESS_OPS.includes(op) && value != null ? `${where}.when.value is not used by "${op}"` : null;
+}
+
+/** The first rule a save is refused for, in the server's words; null when there is none. */
+function logicError(questions) {
+  for (const [index, question] of questions.entries()) {
+    if (LOGIC_OPS[question.type] === undefined || !Array.isArray(question.logic)) continue;
+    for (const [n, rule] of question.logic.entries()) {
+      const error = ruleError(rule, question.type, `questions[${String(index)}].logic[${String(n)}]`);
+      if (error) return error;
+    }
+  }
+  return null;
+}
+
 /** A v2 body's own problems the mock checks (the real validator checks the whole contract). */
 function v2BodyError(body) {
   if (!Array.isArray(body.questions) || body.questions.length === 0) return 'questions must hold 1 to 30 questions';
   if (body.questions.length > 30) return 'questions must hold 1 to 30 questions';
   if (!Array.isArray(body.endings) || body.endings.length === 0) return 'endings must hold 1 to 5 endings';
   const bad = body.questions.find((q) => !isPlainObject(q) || !/^q_[a-z0-9_]{1,40}$/.test(q.id ?? ''));
-  return bad === undefined ? null : `questions[${String(body.questions.indexOf(bad))}].id must match ^q_[a-z0-9_]{1,40}$`;
+  if (bad !== undefined) return `questions[${String(body.questions.indexOf(bad))}].id must match ^q_[a-z0-9_]{1,40}$`;
+  return logicError(body.questions);
 }
 
 // ── The theme (lambda/shared/form_theme.py: the same schema, defaults and publish rule) ──────────────────────────

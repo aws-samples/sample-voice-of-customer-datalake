@@ -1,10 +1,13 @@
 /**
- * A rule row's controls (UX §5.1): the operators a question offers (a consent's "is" reads as accepted / not
- * accepted), the value a rule keeps when its operator changes, and the targets its "go to" lists.
+ * A rule row's controls (UX §5.1): the operators a question offers (a consent's accepted / not accepted, its
+ * `submitted` / `skipped`), always within the ops the server takes (schemas/form-logic-ops.json), the value a rule
+ * keeps when its operator changes, and the targets its "go to" lists.
  */
 import { describe, expect, it } from 'vitest'
 import i18n from 'i18next'
-import type { Question, Rule } from '../model/formsV2'
+import logicOps from '../../../../../schemas/form-logic-ops.json'
+import type { Question, QuestionType, Rule } from '../model/formsV2'
+import { RULE_OPS } from '../model/formsV2'
 import { newQuestion } from '../model/defaults'
 import { sampleForm } from '../test/draftHarness'
 import { defined } from '../../../test/defined'
@@ -27,28 +30,49 @@ const FORM = sampleForm({
 })
 
 describe('opChoices and choiceKey', () => {
-  it('reads a consent\'s "is" as two choices, accepted and not accepted', () => {
-    expect(opChoices(t, consent).map((choice) => [choice.key, choice.label])).toStrictEqual([
-      ['accepted', 'is accepted'], ['notAccepted', 'is not accepted'], ['submitted', 'is answered'], ['skipped', 'is skipped'],
+  it("reads a consent's two choices, accepted and not accepted, as its submitted and skipped", () => {
+    expect(opChoices(t, consent).map((choice) => [choice.key, choice.op, choice.label])).toStrictEqual([
+      ['accepted', 'submitted', 'is accepted'], ['notAccepted', 'skipped', 'is not accepted'],
     ])
+  })
+
+  it('offers a required consent only accepted: it is never left unticked', () => {
+    expect(opChoices(t, { ...consent, required: true }).map((choice) => choice.key)).toStrictEqual(['accepted'])
   })
 
   it('offers a choice question its operators by name', () => {
     expect(opChoices(t, reason).map((choice) => choice.label)).toStrictEqual(['is', 'is not', 'is one of', 'is answered'])
   })
 
-  it('selects a consent rule by its yes or no, any other rule by its operator', () => {
+  it('selects a consent rule by what it means (a legacy `equals true / false` too), any other rule by its operator', () => {
+    expect([when('submitted'), when('skipped')].map((rule) => choiceKey(consent, rule))).toStrictEqual(['accepted', 'notAccepted'])
     expect(choiceKey(consent, when('equals', false))).toBe('notAccepted')
     expect(choiceKey(consent, when('equals', true))).toBe('accepted')
     expect(choiceKey(reason, when('not_equals', 'price'))).toBe('not_equals')
   })
 })
 
+describe('the choices stay within the ops the server takes (schemas/form-logic-ops.json)', () => {
+  const SERVER: Readonly<Record<QuestionType, readonly string[]>> = logicOps.ops_by_type
+  const TYPES: readonly QuestionType[] = ['single_select', 'multi_select', 'open_text', 'rating', 'nps', 'csat', 'ces', 'statement', 'consent', 'contact_info', 'matrix']
+
+  it('names every question type the builder has, and only ops a rule can hold', () => {
+    const sorted = (types: readonly string[]) => [...types].sort((a, b) => a.localeCompare(b))
+    expect(sorted(Object.keys(SERVER))).toStrictEqual(sorted(TYPES))
+    expect(Object.values(SERVER).flat().filter((op) => !RULE_OPS.some((known) => known === op))).toStrictEqual([])
+  })
+
+  it.each(TYPES.map((type) => [type]))('offers a %s question, required or not, only what the server takes', (type) => {
+    const offered = [true, false].flatMap((required) => opChoices(t, { ...newQuestion(type, 'q_x'), required }).map((choice) => choice.op))
+    expect(offered.filter((op) => !SERVER[type].includes(op))).toStrictEqual([])
+  })
+})
+
 describe('withChoice', () => {
-  it('writes a consent choice as its yes or no, and drops the value of "is answered"', () => {
-    const notAccepted = choiceOf(consent, 'notAccepted')
+  it('writes a consent choice as submitted or skipped (a legacy rule too), and drops the value of "is answered"', () => {
     const submitted = choiceOf(reason, 'submitted')
-    expect(withChoice(consent, when('equals', true), notAccepted)).toStrictEqual({ when: { op: 'equals', value: false }, then: { jump_to: 'end_thanks' } })
+    expect(withChoice(consent, when('equals', true), choiceOf(consent, 'notAccepted'))).toStrictEqual({ when: { op: 'skipped' }, then: { jump_to: 'end_thanks' } })
+    expect(withChoice(consent, when('equals', false), choiceOf(consent, 'accepted'))).toStrictEqual({ when: { op: 'submitted' }, then: { jump_to: 'end_thanks' } })
     expect(withChoice(reason, when('equals', 'price'), submitted)).toStrictEqual({ when: { op: 'submitted' }, then: { jump_to: 'end_thanks' } })
   })
 

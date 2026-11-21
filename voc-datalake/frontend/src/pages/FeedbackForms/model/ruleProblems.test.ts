@@ -51,3 +51,29 @@ describe('ruleProblems: a rule with no effect (the "goes there anyway" note)', (
     expect(notes(form)).toStrictEqual([{ severity: 'note', code: 'whereAnywayEnding', ruleIndex: 0, params: { title: 'Thank you!' } }])
   })
 })
+
+describe('ruleProblems: an op the server does not take, and a consent\'s two rules', () => {
+  const consent = (required: boolean, logic: readonly Rule[]): Question => ({
+    id: 'q_ok', type: 'consent', headline: { en: 'May we contact you?' }, required, label: { en: 'Yes' }, logic,
+  })
+  const problemsOf = (first: Question) => ruleProblems(formOf(first), 0).map((problem) => [problem.severity, problem.code, problem.ruleIndex])
+
+  it('refuses, as an error, an op the server refuses for the type (schemas/form-logic-ops.json)', () => {
+    // (a consent's `equals`, as the templates wrote it before 7.58.02; a comparison on an open text; a statement's skipped)
+    expect(problemsOf(consent(false, [rule('equals', false, 'end_thanks')]))).toStrictEqual([['error', 'opInvalid', 0]])
+    expect(problemsOf({ ...text('q_more'), logic: [rule('gte', 3, 'end_thanks')] })).toStrictEqual([['error', 'opInvalid', 0]])
+    const statement: Question = { id: 'q_note', type: 'statement', headline: { en: 'Thanks' }, required: false, logic: [rule('skipped', undefined, 'end_thanks')] }
+    expect(problemsOf(statement)).toStrictEqual([['error', 'opInvalid', 0]])
+  })
+
+  it('takes accepted → one place and not accepted → another, neither pre-empting the other', () => {
+    const form = formOf(consent(false, [rule('submitted', undefined, 'q_task'), rule('skipped', undefined, 'end_thanks')]))
+    expect(ruleProblems(form, 0)).toStrictEqual([])
+  })
+
+  it('still says a rule after both never runs, and warns of not accepted on a consent that must be ticked', () => {
+    const after = formOf(consent(false, [rule('submitted', undefined, 'q_task'), rule('skipped', undefined, 'end_thanks'), rule('skipped', undefined, 'q_missing')]))
+    expect(ruleProblems(after, 0).map((problem) => [problem.code, problem.ruleIndex])).toStrictEqual([['ruleNeverRuns', 2]])
+    expect(problemsOf(consent(true, [rule('skipped', undefined, 'end_thanks')]))).toStrictEqual([['warning', 'skippedOnRequired', 0]])
+  })
+})

@@ -12,7 +12,7 @@ import type { TFunction } from 'i18next'
 import type { FormV2, Question, Rule } from '../model/formsV2'
 import { isChoice } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
-import { splitOtherwise, valueCodes } from '../model/rules'
+import { consentOp, splitOtherwise, valueCodes } from '../model/rules'
 
 /** An option code as it reads: its label, or "Other (typed answer)" / "None of these". */
 export function codeLabel(t: TFunction<'feedbackForms'>, form: FormV2, question: Question, code: string): string {
@@ -25,9 +25,14 @@ export function codeLabel(t: TFunction<'feedbackForms'>, form: FormV2, question:
 
 const quoted = (t: TFunction<'feedbackForms'>, text: string): string => t('logic.values.quoted', { text })
 
-/** The operator's words for this question ("is", "includes any of", "is at most"…). */
+/**
+ * The operator's words for this question ("is", "includes any of", "is at most"…; a consent's `submitted` "is
+ * accepted", its `skipped` "is not accepted", as a legacy `equals true / false` reads too).
+ */
 export function opText(t: TFunction<'feedbackForms'>, question: Question, op: Rule['when']['op'], value?: Rule['when']['value']): string {
-  if (question.type === 'consent' && op === 'equals') return value === false ? t('logic.ops.notAccepted') : t('logic.ops.accepted')
+  const consent = question.type === 'consent' ? consentOp(op, value) : null
+  if (consent === 'submitted') return t('logic.ops.accepted')
+  if (consent === 'skipped') return t('logic.ops.notAccepted')
   if (op === 'includes_any') return question.type === 'multi_select' ? t('logic.ops.includesAnyMulti') : t('logic.ops.includesAnySingle')
   return t(`logic.ops.${op}`)
 }

@@ -111,16 +111,20 @@ function contact(id: string, shown: readonly ContactField[], required: readonly 
 /** If the answer [op] [value] → `to`. */
 export const jumpWhen = (op: Rule['when']['op'], value: RuleValue, to: string): Rule => ({ when: { op, value }, then: { jump_to: to } })
 
+/** If the question is answered (`submitted`) or not (`skipped`) → `to`: the ops that take no value. */
+const jumpIf = (op: 'submitted' | 'skipped', to: string): Rule => ({ when: { op }, then: { jump_to: to } })
+
 /**
- * A flow's last two questions when it offers a follow-up: may we contact you (no: on to `declined`, its plain ending),
- * then the contact details (`shown`, the email required), which end at `end_contact`.
+ * A flow's last two questions when it offers a follow-up: may we contact you (not accepted, the box left unticked:
+ * on to `declined`, its plain ending), then the contact details (`shown`, the email required), which end at
+ * `end_contact`. A consent compares no value: not accepted is `skipped` (schemas/form-logic-ops.json).
  */
 export function followUp(shown: readonly ContactField[] = ['name', 'email'], declined = 'end_thanks'): [ConsentQuestion, ContactQuestion] {
-  return [consent('q_follow_up_ok', [jumpWhen('equals', false, declined)]), contact('q_contact', shown, ['email'], otherwise('end_contact'))]
+  return [consent('q_follow_up_ok', [jumpIf('skipped', declined)]), contact('q_contact', shown, ['email'], otherwise('end_contact'))]
 }
 
 /** "Otherwise → `to`" as stored (UX §5.3): `submitted` for a required question, plus `skipped` for an optional one. */
 export function otherwise(to: string, optional = false): Rule[] {
-  const submitted: Rule = { when: { op: 'submitted' }, then: { jump_to: to } }
-  return optional ? [submitted, { when: { op: 'skipped' }, then: { jump_to: to } }] : [submitted]
+  const submitted = jumpIf('submitted', to)
+  return optional ? [submitted, jumpIf('skipped', to)] : [submitted]
 }

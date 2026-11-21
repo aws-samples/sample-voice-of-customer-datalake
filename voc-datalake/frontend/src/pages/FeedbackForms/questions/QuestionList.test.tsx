@@ -58,6 +58,22 @@ describe('QuestionList', () => {
     expect(add).toHaveFocus()
   })
 
+  it('keeps the type menu open on the scroll that brought "Add question" into view, and closes it when a scroll moves the trigger', async () => {
+    const user = userEvent.setup()
+    renderList(sampleForm())
+    const add = screen.getByRole('button', { name: 'Add question' })
+    const triggerAt = (top: number) => vi.spyOn(add, 'getBoundingClientRect').mockReturnValue(new DOMRect(260, top, 120, 28))
+    triggerAt(736)
+    await user.click(add)
+    // The browser dispatches a scroll's event at the next frame: that of the list pane scrolled to show the trigger
+    // (before the press: a screen reader's activate, Playwright's click) comes after the menu opened.
+    fireEvent.scroll(window)
+    expect(screen.getByRole('menu', { name: 'Question types' })).toBeInTheDocument()
+    triggerAt(636)
+    fireEvent.scroll(window)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
   it('moves through the types by their first letters (type-ahead), and End to the last', async () => {
     const user = userEvent.setup()
     renderList(sampleForm())

@@ -7,8 +7,9 @@ import { TEMPLATE_GROUPS } from './templates/templateKit'
 import { blockingProblems, validateForm } from './model/validateForm'
 import { formPaths, minutesToAnswer } from './model/paths'
 import { FORM_LANGUAGES } from './model/formsV2'
-import type { FormLanguage } from './model/formsV2'
+import type { FormLanguage, QuestionType } from './model/formsV2'
 import { isRecord } from '../../lib/typeGuards'
+import logicOps from '../../../../schemas/form-logic-ops.json'
 
 const LOCALES = join(__dirname, '..', '..', '..', 'public', 'locales')
 
@@ -45,6 +46,26 @@ describe('the thirteen templates', () => {
     const flow = templateById(id)
     const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
     expect(form === null ? ['missing'] : blockingProblems(validateForm(form))).toStrictEqual([])
+  })
+
+  // (the server's ops per type, schemas/form-logic-ops.json: the NPS template's consent rule `equals false` was a 400
+  // on "Use this template" until 7.58.02, which the builder's validator did not know then)
+  it.each(FORM_TEMPLATES.map((flow) => [flow.id]))('%s writes only rules the server takes: its op for the type, no value on submitted / skipped', (id) => {
+    const server: Readonly<Record<QuestionType, readonly string[]>> = logicOps.ops_by_type
+    const flow = templateById(id)
+    const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
+    const refused = (form?.questions ?? []).flatMap((q) => (q.logic ?? [])
+      .filter(({ when }) => !server[q.type].includes(when.op) || ((when.op === 'submitted' || when.op === 'skipped') && when.value !== undefined))
+      .map(({ when }) => `${q.id} (${q.type}): ${when.op}`))
+    expect(form === null ? ['missing'] : refused).toStrictEqual([])
+    expect(form === null ? ['missing'] : validateForm(form).filter((problem) => problem.code === 'opInvalid')).toStrictEqual([])
+  })
+
+  it('ends the follow-up for those who do not accept being contacted: the consent\'s `skipped`', () => {
+    const flow = templateById('nps')
+    const form = flow === undefined ? null : templateForm(flow, 'en', lookupIn('en'))
+    const consent = form?.questions.find((q) => q.type === 'consent')
+    expect(consent?.logic).toStrictEqual([{ when: { op: 'skipped' }, then: { jump_to: 'end_thanks' } }])
   })
 
   it.each(FORM_TEMPLATES.map((flow) => [flow.id]))('every path of %s reaches an ending, and every question is on one', (id) => {

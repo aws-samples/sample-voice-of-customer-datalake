@@ -5,8 +5,8 @@
  * Contact info is offered once per form: a second is `aria-disabled` "Already in this form".
  *
  * The menu is fixed and in a portal (utils/fixedMenu.ts, as `RowActionsMenu`), so the scrolling list pane never clips
- * it: it opens under the trigger, flipped above when there is no room, and closes when the page scrolls or the window
- * resizes. The `insert` trigger is the 24 px round "+" of the insertion line between two cards; `handle` lets the
+ * it: it opens under the trigger, flipped above when there is no room, and closes when a scroll moves the trigger or the
+ * window resizes. The `insert` trigger is the 24 px round "+" of the insertion line between two cards; `handle` lets the
  * card's ⋯ › Add question below open the picker without its trigger being pressed.
  *
  * @module pages/FeedbackForms/questions/TypePicker

@@ -140,7 +140,8 @@ const NPS = {
     {
       id: 'q_follow_up_ok', type: 'consent', required: false, headline: en('Can we follow up on your answers?'),
       label: en('Yes, you may contact me about my feedback.'),
-      logic: [{ when: { op: 'equals', value: false }, then: { jump_to: 'end_thanks' } }],
+      // (not accepted, the box left unticked, is `skipped`: a consent compares no value, schemas/form-logic-ops.json)
+      logic: [{ when: { op: 'skipped' }, then: { jump_to: 'end_thanks' } }],
     },
     {
       id: 'q_contact', type: 'contact_info', required: true, headline: en('Where can we reach you?'),

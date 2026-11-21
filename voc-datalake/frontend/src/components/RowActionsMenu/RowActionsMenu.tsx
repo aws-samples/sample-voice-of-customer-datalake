@@ -8,8 +8,8 @@
  * takes the focus (ArrowUp on the button: the last), the arrows, Home and End move, Escape closes it with the focus back
  * on the button, a press outside closes it. The menu is fixed and in a portal (utils/fixedMenu.ts), so a list card's
  * `overflow-hidden` never clips it; it opens under the button at its end, flipped above when there is no room, closes
- * when the page scrolls or the window resizes, and Tab leaves it for the control after (Shift+Tab: before) the button,
- * as if it were still beside it.
+ * when a scroll moves the button or the window resizes, and Tab leaves it for the control after (Shift+Tab: before)
+ * the button, as if it were still beside it.
  *
  * An item that cannot act now stays in the menu and focusable (`aria-disabled`) with its reason as its visible text
  * (`reason`), never a hover hint (the design system's Tooltips content rule). Choosing an item closes the menu, focus

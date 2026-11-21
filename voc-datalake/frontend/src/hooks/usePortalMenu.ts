@@ -1,7 +1,7 @@
 /**
  * @fileoverview A menu button's menu in a portal at a fixed position (utils/fixedMenu.ts): placed under its trigger
- * while open (`align`: its left or its right edge on the trigger's), closed when the page scrolls or the window resizes
- * (hooks/useCloseOnViewportChange), and its key handler: the menu sits at the end of the page, so Tab closes it and goes
+ * while open (`align`: its left or its right edge on the trigger's), closed when a scroll moves the trigger or the window
+ * resizes (hooks/useCloseOnViewportChange), and its key handler: the menu sits at the end of the page, so Tab closes it and goes
  * on from the trigger, as if the menu were still beside it; every other key is `onKey`'s (the menu button's arrows,
  * Home, End and Escape, a type-ahead). The row ⋯ menu, the forms builder's ⋯ menus and its question type picker.
  *
@@ -17,7 +17,7 @@ type PortalMenuButton = Pick<ReturnType<typeof useMenuButton>, 'open' | 'close' 
 
 export function usePortalMenu({ open, close, buttonRef, menuRef }: PortalMenuButton, align: 'start' | 'end',
   onKey: (event: KeyboardEvent<HTMLDivElement>) => void): (event: KeyboardEvent<HTMLDivElement>) => void {
-  useCloseOnViewportChange(open, close, menuRef)
+  useCloseOnViewportChange(open, close, menuRef, buttonRef)
   useLayoutEffect(() => {
     const menu = menuRef.current
     const button = buttonRef.current

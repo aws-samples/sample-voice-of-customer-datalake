@@ -435,6 +435,44 @@ messages only name the new places.
   [account-vs-admin.md](docs/account-vs-admin.md#administration-mains-tabs-75900)), 7.54.00's readiness links
   (`/admin/people`, `/admin/sources/github_issues?scope=deployment`) included.
 
+## [7.58.02] - 2026-11-21
+
+The 7.58.00 deploy of VocApiStack failed at its change set ("'null' values are not allowed in templates"): the public
+submit model (`FeedbackFormSubmission`) declared its nullable `language` and `channel` with `null` inside their
+`enum`, and CloudFormation refuses a null value anywhere in a template. On the deployed fix, the Feedback Forms v2 e2e
+suite then found that a form made from the NPS template could not be saved.
+
+### Fixed
+
+- **The public submit model has no null in it** (`lib/stacks/api-request-models.ts`, `schemas/public-body-models.json`):
+  `language` and `channel` are `type: [string, null]` with an anchored `pattern` (`^(en|es|fr|de|pt|ja|zh|ko|pl)$`,
+  `^(link|iframe|script)$`) instead of an `enum` holding `null`. Draft-4 applies `pattern` to strings only, so a null or
+  absent value passes as before and every other value is judged the same: `test_public_body_models_parity.py` runs
+  the same boundary bodies through the model and the handler. A new spec refuses any null value in the models
+  (`api-request-validation.test.ts`).
+- **The NPS and other follow-up templates saved with a consent rule the server refused**: "Use this template" on
+  Net Promoter Score, Cancellation / churn, Feature request / feedback box or Bug report answered 400
+  "questions[5].logic[0].when.op must be one of skipped, submitted for a consent question", and so did a consent rule
+  made in the Logic section. The server compares no value for a consent (accepted is `submitted`, not accepted
+  `skipped`: an unticked box is no answer, to the server and the widget alike), but the templates' follow-up wrote
+  `equals false` (`templateKit.ts`) and the Logic section `equals true` / `false` (`ruleControls.ts`). Both now write
+  `submitted` / `skipped`, and a required consent offers only "is accepted"; a consent rule written before still reads
+  as accepted / not accepted and is saved as the server takes it (a new form's unsaved draft, kept with its history
+  entry, included). Nothing had caught it before a real deploy: the builder's problems did not know the server's ops
+  and the dev mock took any. The ops each type takes are now one list, `schemas/form-logic-ops.json`, pinned to the
+  server's `OPS_BY_TYPE` (`test_form_logic_ops_lockstep.py`): the builder refuses any other op as an error that
+  blocks Save, its op choices and every template's rules are tested against it (`ruleControls.test.ts`,
+  `formTemplates.test.ts`), and the mock refuses by it in the server's words (its seeded NPS form had the same rule).
+  The Logic section no longer says "This rule never runs" of a "not accepted" rule right after an "is accepted" one
+  (an optional question's `skipped` after its `submitted` still catches those who did not answer).
+- **The question type menu closed as it opened, under a long list of questions** (`hooks/useCloseOnViewportChange.ts`):
+  a fixed menu closes on a scroll, so it never points at a trigger that moved, but it closed on any scroll, and a
+  browser dispatches a scroll's event at the next frame. A press that first brings "Add question" into view (a screen
+  reader's activate, Voice Control, Playwright's click: the Feedback Forms v2 e2e, at its fifth question) opened the
+  menu, and that scroll's event then closed it. Given its trigger, a menu now closes on a scroll only when the trigger
+  moved, and a scroll elsewhere (another pane, the assistant's log) leaves it open: the builder's type picker and ⋯
+  menus, the row ⋯ menus, the assistant's More actions and a connection's details (`QuestionList.test.tsx`).
+
 ## [7.58.01] - 2026-11-21
 
 The review gate's deferred findings on the 7.49–7.58 batch, fixed right after its push: a long model call no longer

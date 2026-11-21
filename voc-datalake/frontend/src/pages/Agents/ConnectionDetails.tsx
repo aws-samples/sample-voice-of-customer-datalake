@@ -137,7 +137,7 @@ export function ConnectionDetails({ connection, issues, labelName }: Readonly<{
   const titleId = useId()
   const close = () => { setOpen(false) }
   useOverlayFocus(panelRef, open, { onClose: close, closeOnFocusOut: true, returnFocusTo: buttonRef })
-  useCloseOnViewportChange(open, close, panelRef)
+  useCloseOnViewportChange(open, close, panelRef, buttonRef)
   useCloseOnPressOutside(open, close, panelRef, buttonRef)
   useLayoutEffect(() => {
     const panel = panelRef.current

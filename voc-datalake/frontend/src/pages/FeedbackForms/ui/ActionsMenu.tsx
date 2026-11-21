@@ -4,8 +4,8 @@
  * carries its name and a label Tooltip (R5, R16). An item that is off says why in visible text under its label and
  * stays focusable (`aria-disabled`). The menu is fixed and in a portal (utils/fixedMenu.ts, as `RowActionsMenu`), so a
  * scrolling pane or a card's `overflow-hidden` never clips it (the last question card's menu in the builder's
- * full-height list pane): it opens under its trigger, flipped above it when there is no room, and closes when the page
- * scrolls or the window resizes; Tab leaves it for the control after the trigger.
+ * full-height list pane): it opens under its trigger, flipped above it when there is no room, and closes when a scroll
+ * moves the trigger or the window resizes; Tab leaves it for the control after the trigger.
  *
  * @module pages/FeedbackForms/ui/ActionsMenu
  */

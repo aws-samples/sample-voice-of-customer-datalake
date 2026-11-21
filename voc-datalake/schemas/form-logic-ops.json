@@ -1,0 +1,16 @@
+{
+  "$comment": "The logic operators each Feedback Forms v2 question type admits (a rule with any other is refused, 400 \"questions[i].logic[n].when.op must be one of <these, sorted> for a <type> question\"). The server's copy is OPS_BY_TYPE in lambda/shared/forms_v2.py (schemas/ is not bundled into Lambdas); test_form_logic_ops_lockstep.py pins the two. The builder reads this file (frontend/src/pages/FeedbackForms/model/logicOps.ts: its validator refuses any other op, and its op choices stay within it) and so does the dev mock (frontend/mock-forms-v2.js). A consent has no value to compare: accepted is `submitted`, not accepted (unticked, which is no answer) is `skipped`. See docs/feedback-forms.md#logic.",
+  "ops_by_type": {
+    "open_text": ["equals", "not_equals", "skipped", "submitted"],
+    "single_select": ["equals", "includes_any", "not_equals", "skipped", "submitted"],
+    "multi_select": ["includes_all", "includes_any", "skipped", "submitted"],
+    "rating": ["equals", "gt", "gte", "lt", "lte", "not_equals", "skipped", "submitted"],
+    "nps": ["equals", "gt", "gte", "lt", "lte", "not_equals", "skipped", "submitted"],
+    "csat": ["equals", "gt", "gte", "lt", "lte", "not_equals", "skipped", "submitted"],
+    "ces": ["equals", "gt", "gte", "lt", "lte", "not_equals", "skipped", "submitted"],
+    "statement": ["submitted"],
+    "consent": ["skipped", "submitted"],
+    "contact_info": ["skipped", "submitted"],
+    "matrix": ["skipped", "submitted"]
+  }
+}

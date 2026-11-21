@@ -236,10 +236,21 @@ question or an ending, so no logic can loop, and it must exist.
 | `single_select` | `equals`, `not_equals` (a code), `includes_any` (codes), `submitted`, `skipped` |
 | `multi_select` | `includes_any`, `includes_all` (codes), `submitted`, `skipped` |
 | `rating`, `nps`, `csat`, `ces` | `equals`, `not_equals`, `lt`, `lte`, `gt`, `gte` (a number in the range), `submitted`, `skipped` |
-| `consent`, `contact_info`, `matrix` | `submitted`, `skipped` |
+| `consent` | `submitted` (accepted: the box ticked), `skipped` (not accepted: an unticked box is no answer, to the server and the widget alike; a required consent, which must be ticked, is never skipped). A consent compares no value: `equals` is refused |
+| `contact_info`, `matrix` | `submitted`, `skipped` |
 | `statement` | `submitted` (always true once shown: an unconditional jump) |
 
-At most 20 rules per question. "Otherwise go to" is written as trailing `submitted` and `skipped` rules.
+At most 20 rules per question. "Otherwise go to" is written as trailing `submitted` and `skipped` rules. An op
+that takes no value (`submitted`, `skipped`) must have none.
+
+**One list of ops for every client (7.58.02).** The table is `schemas/form-logic-ops.json`, the copy of
+`OPS_BY_TYPE` (`shared/forms_v2.py`) that `test_form_logic_ops_lockstep.py` keeps equal to it. The builder reads
+it: its problems refuse any other op as an error (which blocks Save, as the server's 400 would), and the ops its
+Logic section offers and every template's rules are tested against it (`ruleControls.test.ts`,
+`formTemplates.test.ts`); the dev mock refuses by it too, in the server's words (`mock-forms-v2.js`). The Logic
+section reads a consent's rule as "is accepted" (`submitted`) or "is not accepted" (`skipped`, offered only on an
+optional consent). A consent rule written before 7.58.02 as `equals true` / `equals false` (the templates' and the
+builder's, which the server refused) reads as accepted / not accepted, and is saved as `submitted` / `skipped`.
 
 ### Hidden fields
 

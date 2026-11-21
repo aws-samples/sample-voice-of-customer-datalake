@@ -124,7 +124,7 @@ export default function MoreMenu({ label, items, className, triggerRef, iconSize
     returnFocusTo: ownTriggerRef,
     initialFocus: '[role^="menuitem"]:not([disabled])',
   })
-  useCloseOnViewportChange(open, close, menuRef)
+  useCloseOnViewportChange(open, close, menuRef, ownTriggerRef)
   useLayoutEffect(() => {
     const menu = menuRef.current
     const button = ownTriggerRef.current
