@@ -10,8 +10,8 @@
  * assistant exactly as it applies to the signed-in user's own requests.
  *
  * Only GET is allowed, plus the internal reads that are POSTs (`READ_POSTS`:
- * project chat context, memory recall, workflow validation, scraper URL analysis — each pinned to
- * its owning function). Writes never go through here — they
+ * project chat context, the library's context, the personas' evidence pack, memory recall, workflow
+ * validation, scraper URL analysis — each pinned to its owning function). Writes never go through here — they
  * are client tools executed by the SPA after human approval.
  *
  * The Powertools resolver routes on `httpMethod` + `path`; `resource` and
@@ -92,6 +92,13 @@ export const SCRAPER_ANALYZE_RESOURCE = '/scrapers/analyze-url';
 export const LIBRARY_CONTEXT_RESOURCE = '/projects/library/context';
 
 /**
+ * A read despite the verb: the personas' evidence pack for a focus group (lambda/shared/persona_grounding_routes.py),
+ * each persona's cited and fresh reviews as the caller may see them (their category and source access). It writes
+ * nothing.
+ */
+export const EVIDENCE_PACK_RESOURCE = '/projects/{project_id}/personas/evidence-pack';
+
+/**
  * The only non-GET routes this invoker may call, each pinned to the function
  * that owns it — reads that carry a body. Anything else that is not a GET is
  * refused before an invoke.
@@ -99,6 +106,7 @@ export const LIBRARY_CONTEXT_RESOURCE = '/projects/library/context';
 const READ_POSTS: ReadonlyMap<string, ApiFunction> = new Map([
   [CHAT_CONTEXT_RESOURCE, 'projects'],
   [LIBRARY_CONTEXT_RESOURCE, 'projects'],
+  [EVIDENCE_PACK_RESOURCE, 'projects'],
   [MEMORY_RETRIEVE_RESOURCE, 'memory'],
   [WORKFLOW_VALIDATE_RESOURCE, 'agents'],
   [SCRAPER_ANALYZE_RESOURCE, 'scrapers'],

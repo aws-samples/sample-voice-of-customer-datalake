@@ -9,7 +9,7 @@
  * Any error becomes RUN_ERROR{message, code} and the run ends; the HTTP status
  * stays 200 because the SSE headers are already sent.
  */
-import type { Message as AguiMessage, ResumeEntry, UserMessage } from '@ag-ui/core';
+import type { Message as AguiMessage, ResumeEntry, RunFinishedOutcome, UserMessage } from '@ag-ui/core';
 import type { ContentBlock, Message } from '@aws-sdk/client-bedrock-runtime';
 import { AGUI_PROTOCOL_VERSION, CUSTOM_EVENTS, type ForwardedProps, type Mentions } from '../contract.js';
 import type {
@@ -40,10 +40,11 @@ import { buildPageContextBlock, withDataBlocks } from './page-context.js';
 import { preloadDefaultProject, type ProjectPreload } from './preload.js';
 import { buildDynamicPrompt, buildStaticPrompt } from './system-prompt.js';
 import { buildTail, inspectTail } from './tail.js';
-import { logUsage, toAguiUsage } from './usage.js';
+import { logUsage, toAguiUsage, type UsageTotals } from './usage.js';
 import { createSessionEmitter, startRunSession, type SessionEmitter, type SessionPersistence } from '../session/run-session.js';
 import { watchForStop, type CancelWatch } from '../session/cancel.js';
 import type { PersonaRound } from './persona-round.js';
+import type { FocusGroupOutcome, FocusGroupRunner } from './focus-group.js';
 import {
   supportsDocumentBlocks, withLibraryDocuments, type LibraryMentions, type LibraryMentionsInput,
 } from './library-mentions.js';
@@ -75,6 +76,8 @@ export interface RuntimeDeps {
   personaRound?: PersonaRound;
   /** `#slug` Documents Library mentions (library-mentions.ts). Absent = library mentions are ignored. */
   resolveLibrary?: (input: Omit<LibraryMentionsInput, 'invoke'>) => Promise<LibraryMentions>;
+  /** A persona focus group (focus-group.ts, `forwardedProps.focusGroup`). Absent = a focus group is refused. */
+  focusGroup?: FocusGroupRunner;
 }
 
 export function dedupeFeedback(sources: readonly FeedbackSource[]): FeedbackSource[] {
@@ -144,6 +147,17 @@ function enforceMentionsPage(props: ForwardedProps): void {
   if (mentions?.personas === undefined && mentions?.documents === undefined) return;
   if (props.page.kind !== 'project' || props.page.projectId === undefined) {
     throw new ValidationError('Mentions (@persona, #document) are only available on a project page');
+  }
+}
+
+/** A focus group runs on its project's page, and names its own personas, documents and library items. */
+function enforceFocusGroupPage(props: ForwardedProps): void {
+  if (props.focusGroup === undefined) return;
+  if (props.page.kind !== 'project' || props.page.projectId === undefined) {
+    throw new ValidationError('A focus group is only available on a project page');
+  }
+  if (props.mentions !== undefined) {
+    throw new ValidationError('A focus group names its own personas and documents: send it without mentions');
   }
 }
 
@@ -247,6 +261,7 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
   const props = parseForwardedProps(input);
   enforceLimits(input);
   enforceMentionsPage(props);
+  enforceFocusGroupPage(props);
   const isAdmin = isAdminCaller(claims);
   const { page } = props;
 
@@ -279,6 +294,12 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
   ctx.aiWriting = aiWriting;
   // Stop in the SPA (session/cancel.ts): polled for the rest of the run (persona round included), ended with it.
   const stopWatch = stopWatchFor(session, input);
+  if (props.focusGroup !== undefined) {
+    // A persona focus group replaces the model's own turn (focus-group.ts); review-only, in every way of working.
+    const outcome = await runFocusGroup(deps, { props, user: split.user, ctx, stopWatch });
+    finishRun(emitter, input, { ...outcome, webSources: [], modelId, outcome: { type: 'success' } });
+    return;
+  }
   // Review-only persona answers, allowed in every way of working (the model's own turn keeps its mode).
   const mentionsBlock = await mentionsForRun({ deps, props, question: textOfParts(split.user.content), ctx, signal: stopWatch?.signal });
   const library = await libraryForRun(deps, props, split.user, modelId, claims);
@@ -313,14 +334,52 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
     ...(stopWatch === undefined ? {} : { signal: stopWatch.signal }),
   }).finally(() => stopWatch?.stop());
 
-  if (result.stopped) emitter.emit(events.custom(CUSTOM_EVENTS.stopped, {}));
+  finishRun(emitter, input, { ...result, librarySources: [...library.sources, ...result.librarySources] });
+}
+
+interface RunEnd {
+  stopped: boolean;
+  sources: readonly FeedbackSource[];
+  webSources: readonly WebSourceRef[];
+  librarySources: readonly LibrarySourceRef[];
+  usage: UsageTotals;
+  modelId: string;
+  outcome: RunFinishedOutcome;
+}
+
+/** [CUSTOM assistant.stopped] → CUSTOM assistant.sources → RUN_FINISHED, with the run's usage logged. */
+function finishRun(emitter: SessionEmitter, input: { threadId: string; runId: string }, end: RunEnd): void {
+  if (end.stopped) emitter.emit(events.custom(CUSTOM_EVENTS.stopped, {}));
   emitter.emit(events.custom(CUSTOM_EVENTS.sources, {
-    feedback: dedupeFeedback(result.sources),
-    web: dedupeWeb(result.webSources),
-    library: dedupeLibrary([...library.sources, ...result.librarySources]),
+    feedback: dedupeFeedback(end.sources),
+    web: dedupeWeb(end.webSources),
+    library: dedupeLibrary(end.librarySources),
   }));
-  logUsage(result.usage, result.modelId);
-  emitter.emit(events.runFinished(input.threadId, input.runId, result.outcome, toAguiUsage(result.usage, result.modelId)));
+  logUsage(end.usage, end.modelId);
+  emitter.emit(events.runFinished(input.threadId, input.runId, end.outcome, toAguiUsage(end.usage, end.modelId)));
+}
+
+interface FocusGroupRun {
+  props: ForwardedProps;
+  user: UserMessage;
+  ctx: AssistantRunContext;
+  stopWatch: CancelWatch | undefined;
+}
+
+/** The focus group of this message (focus-group.ts); refused when this deployment's stream does not run them. */
+async function runFocusGroup(deps: RuntimeDeps, { props, user, ctx, stopWatch }: FocusGroupRun): Promise<FocusGroupOutcome> {
+  const focusGroup = props.focusGroup;
+  if (focusGroup === undefined || deps.focusGroup === undefined) {
+    stopWatch?.stop();
+    throw new ValidationError('Focus groups are not available here');
+  }
+  console.log(JSON.stringify({
+    event: 'assistant_focus_group', personas: focusGroup.persona_ids.length, rounds: focusGroup.rounds,
+    documents: focusGroup.documents?.length ?? 0, library: focusGroup.library?.length ?? 0, model: ctx.modelId,
+  }));
+  return deps.focusGroup({
+    focusGroup, topic: textOfParts(user.content), ctx, ...(stopWatch === undefined ? {} : { signal: stopWatch.signal }),
+  }).finally(() => stopWatch?.stop());
 }
 
 const MAX_LOGGED_ERROR_CHARS = 300;

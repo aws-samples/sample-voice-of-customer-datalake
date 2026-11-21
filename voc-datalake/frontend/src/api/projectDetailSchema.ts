@@ -193,6 +193,8 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   feedback_count: optionalNonnegativeInteger,
   input_feedback_ids: optionalStringArray,
   erased_evidence: optionalErasedEvidenceSchema,
+  /** A saved persona focus group's (7.64.00): its statements are synthetic, never evidence. */
+  synthetic: z.boolean().optional().catch(undefined),
   revised_from_id: optionalNullableString,
   revised_from_draft_id: optionalNullableString,
   revision_feedback: optionalString,

@@ -479,6 +479,8 @@ def is_library_path(path: str) -> bool:
 # write is promoted to manage.
 _ROUTE_OVERRIDES: Final = (
     ('POST', ('chat-context',), LEVEL_VIEW),
+    # The personas' evidence pack (shared/persona_grounding_routes.py): a read with a body, the focus groups' own.
+    ('POST', ('personas', 'evidence-pack'), LEVEL_VIEW),
     ('DELETE', (), LEVEL_MANAGE),
     ('PUT', ('visibility',), LEVEL_MANAGE),
     ('POST', ('owner',), LEVEL_MANAGE),

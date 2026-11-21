@@ -1,7 +1,7 @@
 /**
  * Test fixtures for the tool catalogue (imported by *.test.ts only).
  */
-import type { BaseEvent } from '@ag-ui/core';
+import type { BaseEvent, EventType } from '@ag-ui/core';
 import type { ConverseCommandOutput } from '@aws-sdk/client-bedrock-runtime';
 import type { PageContext, PageKind } from '../contract.js';
 import type { AssistantRunContext, ClientToolDefinition, ServerToolDefinition } from '../types.js';
@@ -122,4 +122,9 @@ export function converseAnswer(text: string, reasoning?: string): ConverseComman
     metrics: { latencyMs: 1 },
     $metadata: {},
   };
+}
+
+/** The events of one type a run emitted, as plain records (a spec reads their fields by name). */
+export function eventsOfType(events: readonly BaseEvent[], type: EventType): Record<string, unknown>[] {
+  return events.filter((event) => event.type === type).map((event) => ({ ...event }));
 }

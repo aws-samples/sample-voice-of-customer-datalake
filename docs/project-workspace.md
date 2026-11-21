@@ -7,8 +7,8 @@ the Prioritization board, and hand the result to an external agent through the a
 [Sharing and permissions](#sharing-and-permissions).
 
 Open **Projects** in the sidebar (`/projects`). A project page (`/projects/{id}`) has these tabs, each a path (`/projects/{id}/<tab>`):
-**Overview**, **Personas**, **Product**, **Documents**, **Decisions** ([decision records](decisions-and-release-watch.md))
-and **Participants** ([participants](participants.md)). The AI assistant knows which project you are on and can use
+**Overview**, **Personas**, **Focus groups** ([persona focus groups](#persona-focus-groups)), **Product**, **Documents**,
+**Decisions** ([decision records](decisions-and-release-watch.md)) and **Participants** ([participants](participants.md)). The AI assistant knows which project you are on and can use
 its personas and documents ([mentions](assistant-mentions.md)).
 
 ## Workflow
@@ -235,6 +235,116 @@ In the wizard's add-or-replace choice ([persona generation](persona-generation.m
   (`shared/persona_overlap.py`), and a new persona with a protected one's name is dropped
   (`duplicate_names_dropped` in the job result);
 - the wizard's hint and confirmation count only the personas it deletes and say how many protected ones stay.
+
+## Persona focus groups
+
+Since 7.64.00. Put 2 to 6 of the project's personas in one panel and give them a topic. You watch them answer and
+react to each other, each citing real feedback, and a synthesis ends it. When new feedback matching a persona
+arrives, its card says so, and you can refresh its evidence. Every statement is **synthetic**: a hypothesis to test,
+never customer feedback and never evidence (owner decision). Only the reviews the personas cite are real.
+
+### Running one
+
+On the **Focus groups** tab (`/projects/{id}/focus-groups`) choose the personas (at least 2, at most 6), write the
+topic (at most 2,000 characters; it is the conversation's first message), pick 1, 2 or 3 rounds, and optionally up to
+3 project documents and up to 3 [Documents Library](documents-library.md) items every persona reads. The tab shows the
+cost before you start: the model calls on the assistant's chat model and roughly the tokens they read and write (6
+personas and 2 rounds: 14 calls, about 45,000 input and 8,000 output tokens). No dollar figure is shown: the
+deployment's Bedrock prices are not held by the app (`lambda/shared/model_prices.py` records none it could not read),
+and a guess would read as a quote. **Start focus group** opens the assistant on a new conversation and runs it there.
+
+1. **Round 1 is independent**: each persona answers on its own, as a mention round does, so no answer is anchored on
+   another.
+2. **From round 2** the moderator (one model call) asks one follow-up question that makes the participants engage with
+   where they differ. Each persona then reads an **anonymised digest** of the others' last answers ("Participant 1",
+   "Participant 2": no name, theirs or anyone's, and no citation, since another persona's reviews are not its to cite;
+   each answer clipped to 600 characters) and agrees, disagrees or builds on them.
+3. **The synthesis** (one call) lists agreements, disagreements and open questions, at most five points each, naming
+   who holds each view and keeping a citation a participant used.
+
+The answers are persona cards, one per persona and round, each in its own colour (the categorical chart palette,
+in the order the group first shows them) with its avatar and its round; each `[fb:<id>]` citation is a numbered chip
+that opens the review (FeedbackDetail, with your own access). The synthesis is a card with the **Synthetic** label
+and **Save focus group**. **Stop** ends it between batches: every persona call still gets a result and the card says
+there is no synthesis. **Regenerate** runs the same group again (its stored configuration).
+
+### What a persona answers from: the evidence pack
+
+`lambda/shared/persona_grounding.py`, one module for every surface that lets a project's personas speak (the
+focus groups now; the Validate phase and the voice personas next). Per persona:
+
+- **its stored evidence**: the reviews its `supporting_evidence` cites (`evidence_feedback_ids`, first cited first)
+  and those its evidence refreshes added (`evidence_updates`, newest first), at most 12;
+- **fresh retrieval**: the reviews imported since the persona was generated that match it and that it does not hold
+  yet (neither its evidence nor the reviews it was written from), at most 8, those that share the most words with the
+  topic first, then the newest. "Match" is the persona's categories (the categories of
+  the reviews it cites, else of those it was written from, most frequent first, at most 5) within the project's own
+  filters (`filters.sources`, `categories` and `sentiments` on its META; the filters are the floor: a persona whose
+  categories are all outside them is matched on the filters' categories). The read walks the day partitions back to
+  that day (at most 365 days) within one 8-second budget for the whole pack; `fresh_capped` says when a persona's
+  read was cut short.
+
+Every review is read **as the person asking**: their category scope (its category and source rules,
+`shared/category_access.py`) admits it or it is not in the pack, so a pack never holds an id they could not open; a
+person who cannot see a persona's categories gets no fresh review, never another category's instead. A review's text
+is the **stored text**, which is already the source's PII policy as applied at ingestion: a `redact` source's text is
+redacted, a `summary_only` source's is its summary and is marked `verbatim: false` (the persona is told it is not the
+customer's words). The author, title, URL and metadata are never read into a pack, each text is clipped to 400
+characters, and a text that reads like an instruction to a model is withheld. Nothing about a pack is stored.
+
+The stream Lambda asks for the pack through its read-only invoker (`POST /projects/{id}/personas/evidence-pack`, a
+read despite the verb, on the projects API's `/projects/{proxy+}`), with the caller's own claims. Each persona's
+system prompt is its profile and the documents (the library's passages in a `<library>` block), as a mention round's
+is; its user turn carries its reviews in an `<evidence>` DATA block and, from round 2, the others' digest in a
+`<transcript>` DATA block (data, never instructions, every text neutralised), then the question, with the rule to
+cite each review it draws on as `[fb:<id>]`, never an id that is not listed, and to say a point no review supports as
+its opinion. **The server strips every cited id outside the speaker's pack** (the synthesis': outside every pack),
+repeated until none is left, before an answer is shown, stored or quoted; the cited reviews are the run's feedback
+sources. An unreadable pack fails open: the personas speak from their profiles and cite nothing.
+
+### Saving it
+
+**Save focus group** files the turn as a `focus_group` document in the Documents section
+(`POST /projects/{id}/documents` with `document_type: 'focus_group'`, `shared/focus_group_documents.py`): the topic, a
+synthetic banner, each round with its follow-up and answers, the synthesis and the ids of the reviews cited (never a
+review's text: the document is read by everyone on the project, and an erasure never rewrites a document's text). The
+row is always `synthetic: true` (whatever the body says) and records `derivation: {kind: focus_group, persona_ids,
+document_ids, library_item_ids, rounds, feedback_count}`, with its creator (`created_by_sub`) and time (TENETS.md D4).
+The cited reviews are its `input_feedback_ids`, only those the saver may see (the route checks each one with their
+category and source access), so an erasure removes an id there as it does a persona's (D5); a `[fb:<id>]` in the text
+that names no kept review is removed before the save. **A focus group is a reference, never evidence**: its `DOC#` key
+is no methodology step (`shared/methodology.py`), so no PR/FAQ, PRD or prototype counts it, and the document says so
+under its text.
+
+### Freshness and Refresh evidence
+
+A project persona's header shows "N new matching reviews since ‹date›"
+(`GET /projects/{id}/personas/{pid}/evidence-freshness`, view): the matching reviews since it was generated (by day)
+that it does not hold yet (its evidence, refreshes included, and the reviews it was written from), of those the person
+may see ("At least N" when the 8-second count was cut short). **Refresh evidence** (edit) appends the newest of them
+(at most 8) to the persona's `evidence_updates` (`POST /projects/{id}/personas/{pid}/evidence/refresh`): one entry
+`{at, by: {sub, kind}, reason: manual_refresh, feedback_ids}`, at most 20 entries kept (the oldest dropped), and sets
+`evidence_refreshed_at`; a refresh that took 8 of 20 leaves 12 counted, for the next one. It never rewrites the
+persona's text: regenerating stays the generation's ([persona generation](persona-generation.md)). Nothing new writes
+nothing (`added: 0`); a refresh that raced another write (another refresh, or a regeneration under the same key) is a
+409 and writes nothing. A copied persona keeps its source's evidence, refreshes included. Refreshing is manual only (owner
+decision): no schedule refreshes a persona. Both fields are in a workspace's export with the persona, and the retention
+worker's lineage pass removes an erased review's id from a refresh entry (the entry, its actor and its time stay).
+
+### Access, limits and cost
+
+- Reads (the pack, the freshness count) need view access to the project; the refresh and the save need edit. A
+  stranger gets the project's one 404.
+- Limits (stream contract `FOCUS_GROUP_LIMITS`): 2–6 personas, 1–3 rounds, a topic of at most 2,000 characters, at
+  most 3 documents and 3 library items. A focus group runs on its project's page only and is refused with mentions.
+- Model calls are the chat surface's (the assistant's model), 3 personas at a time: personas × rounds, one moderator
+  call before rounds 2 and 3, one synthesis. No fixed cost and no new AWS resource: the routes ride
+  `/projects/{proxy+}` and `/chat/stream`.
+- Projects are the deployment's until phase 3 (docs/multi-workspace.md), so the pack reads the deployment's feedback,
+  as every project route does; a workspace scope is refused in code (`require_deployment`).
+- MCP: no focus group tool. The global server's tool list is at its token budget (TENETS.md tenet 4 records the gap);
+  an API client runs one through `POST /chat/stream` with a signed-in person's token, as the web app does, and an MCP
+  client reads a saved one with `documents_get`.
 
 ## Managed Document Versions
 

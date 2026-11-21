@@ -361,5 +361,35 @@
     "urgentOnly": "Urgent only",
     "categories": "Categories",
     "noCategories": "No categories in this time range."
+  },
+  "focusGroup": {
+    "round": "Round {{round, number}}",
+    "moderator": "Moderator",
+    "citation": "Review {{index, number}}",
+    "openCitation": "Open cited review {{index, number}}",
+    "synthetic": "Synthetic",
+    "stoppedNote": "Stopped before the end: the answers so far are all there is, with no synthesis.",
+    "missingPersonas_one": "{{count, number}} chosen persona is no longer in this project.",
+    "missingPersonas_other": "{{count, number}} chosen personas are no longer in this project.",
+    "referenceOnly": "The personas are synthetic: treat what they say as hypotheses to test. A saved focus group is a reference, never evidence; only the reviews it cites are customer feedback.",
+    "synthesis": {
+      "title": "Focus group synthesis",
+      "agreements": "Agreements",
+      "disagreements": "Disagreements",
+      "openQuestions": "Open questions",
+      "unavailable": "The synthesis could not be written; the answers above are the whole focus group."
+    },
+    "save": {
+      "idle": "Save focus group",
+      "saving": "Saving…",
+      "saved": "Saved to documents",
+      "error": "Save failed – retry"
+    },
+    "document": {
+      "title": "Focus group: {{topic}} – {{date}}",
+      "heading": "Focus group: {{topic}}",
+      "banner": "Synthetic: every statement below is a persona’s, a hypothesis to test, never customer feedback. The reviews cited are real.",
+      "cited": "Reviews cited"
+    }
   }
 }

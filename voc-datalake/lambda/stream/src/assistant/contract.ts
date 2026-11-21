@@ -294,6 +294,13 @@ export const CUSTOM_EVENTS = {
    * cancel marker the run polls, session/cancel.ts): the answer so far is all there is.
    */
   stopped: 'assistant.stopped',
+  /**
+   * A persona focus group's state (`FocusGroupEvent`, runtime/focus-group.ts): once when it starts (`status:
+   * 'running'`, its `config`) and once when it ends (`finished` with its `synthesis` and citations, or `stopped`).
+   * The session stores the last one on the run's last assistant message (`metadata.voc.focusGroup`), so the
+   * synthesis card, Save and Regenerate survive a reload.
+   */
+  focusGroup: 'assistant.focus_group',
 } as const;
 
 /**
@@ -448,10 +455,68 @@ export const mentionsSchema = z.object({
 });
 export type Mentions = z.infer<typeof mentionsSchema>;
 
+/**
+ * A persona focus group (docs/project-workspace.md "Persona focus groups"), started from the project's Focus groups
+ * tab or its assistant: 2 to 6 of the project's personas, a topic (the message's own text), 1 to 3 rounds, and the
+ * project documents and Documents Library items every persona reads. Round 1 is independent; from round 2 each
+ * persona reads an anonymised digest of the others' points after one moderator follow-up; a synthesis ends it.
+ * Every statement is synthetic and cites real feedback as `[fb:<id>]` from the persona's evidence pack only.
+ */
+export const FOCUS_GROUP_LIMITS = { minPersonas: 2, maxPersonas: 6, maxRounds: 3, maxTopicChars: 2000 } as const;
+/**
+ * Tool call ids of a focus group's persona answers start with this, then the round (`focus_r2_…`): each answer is a
+ * `consult_personas` call the server makes itself, the persona round's shape (MENTION_TOOL_CALL_PREFIX).
+ */
+export const FOCUS_GROUP_TOOL_CALL_PREFIX = 'focus_';
+/**
+ * A review citation in a persona's answer or the synthesis: `[fb:<feedback_id>]`. The server strips every id outside
+ * the persona's evidence pack (runtime/focus-group.ts) before it is shown or stored; the SPA renders the rest as
+ * chips that open the review. LOCKSTEP with lambda/shared/focus_group_documents.py CITATION.
+ */
+export const FEEDBACK_CITATION = /\[fb:([A-Za-z0-9_-]{1,128})\]/g;
+
+export const focusGroupSchema = z.object({
+  persona_ids: z.array(z.string().min(1).max(MAX_ID_LENGTH))
+    .min(FOCUS_GROUP_LIMITS.minPersonas).max(FOCUS_GROUP_LIMITS.maxPersonas)
+    .refine((ids) => new Set(ids).size === ids.length, 'Each persona takes part once'),
+  rounds: z.number().int().min(1).max(FOCUS_GROUP_LIMITS.maxRounds),
+  documents: z.array(z.object({ document_id: z.string().min(1).max(MAX_ID_LENGTH) }))
+    .min(1).max(MENTION_LIMITS.maxDocuments).optional(),
+  library: z.array(z.object({ item_id: z.string().regex(LIBRARY_ITEM_ID) }))
+    .min(1).max(MENTION_LIMITS.maxLibraryItems).optional(),
+}).strict();
+export type FocusGroup = z.infer<typeof focusGroupSchema>;
+
+/** One point of a synthesis: a sentence, its citations inline. */
+const synthesisPoints = z.array(z.string().max(1000)).max(8);
+export const focusGroupSynthesisSchema = z.object({
+  agreements: synthesisPoints,
+  disagreements: synthesisPoints,
+  open_questions: synthesisPoints,
+});
+export type FocusGroupSynthesis = z.infer<typeof focusGroupSynthesisSchema>;
+
+export const FOCUS_GROUP_STATUSES = ['running', 'finished', 'stopped'] as const;
+/** The `assistant.focus_group` CUSTOM event's value (CUSTOM_EVENTS.focusGroup). */
+export const focusGroupEventSchema = z.object({
+  status: z.enum(FOCUS_GROUP_STATUSES),
+  config: focusGroupSchema,
+  /** The rounds every persona was asked (fewer than `config.rounds` when stopped). */
+  rounds_completed: z.number().int().min(0).max(FOCUS_GROUP_LIMITS.maxRounds),
+  synthesis: focusGroupSynthesisSchema.optional(),
+  /** Every review cited in the answers and the synthesis, each from a pack: the saved document's lineage. */
+  cited_feedback_ids: z.array(z.string().min(1).max(MAX_ID_LENGTH)).max(120),
+  /** Personas the project no longer has; personas without an answer are named in their cards. */
+  missing_persona_ids: z.array(z.string().min(1).max(MAX_ID_LENGTH)).max(FOCUS_GROUP_LIMITS.maxPersonas),
+});
+export type FocusGroupEvent = z.infer<typeof focusGroupEventSchema>;
+
 export const forwardedPropsSchema = z.object({
   page: pageContextSchema,
   /** Personas and documents (project pages only) and library items (any page) mentioned in THIS message. */
   mentions: mentionsSchema.optional(),
+  /** A persona focus group on this message's topic (project pages only; FOCUS_GROUP_LIMITS). */
+  focusGroup: focusGroupSchema.optional(),
   /** Global time-range picker, 0–9999 (0 = all time), default 7. 9999 = MAX_WINDOW_DAYS (pinned in server-tools.test.ts). */
   days: z.number().int().min(ALL_TIME_DAYS).max(9999).optional(),
   dateBasis: z.enum(['imported', 'review']).optional(),

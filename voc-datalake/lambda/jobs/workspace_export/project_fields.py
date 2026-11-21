@@ -81,6 +81,10 @@ EXPORTED: Final = frozenset({
     'persona_id', 'tagline', 'avatar_url', 'avatar_prompt', 'confidence', 'feedback_count', 'identity',
     'goals_motivations', 'pain_points', 'behaviors', 'context_environment', 'quotes', 'scenario', 'source_breakdown',
     'source_feedback_ids', 'input_feedback_ids', 'imported_from', 'copied_from', 'protected',
+    # A persona's evidence refreshes (7.64.00, shared/persona_grounding.py): who refreshed, when, why, the review ids.
+    'evidence_updates', 'evidence_refreshed_at', 'feedback_ids', 'sub',
+    # A saved focus group (7.64.00, shared/focus_group_documents.py): synthetic, never evidence.
+    'synthetic',
 })
 
 #: A project ``META``'s ``members`` entry (api/projects.py: who was added, with which role, by whom and when); an

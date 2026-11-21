@@ -7,6 +7,7 @@
     "personaTitle": "Persona löschen?"
   },
   "documents": {
+    "syntheticNotice": "Eine Fokusgruppe synthetischer Personas: Ihre Aussagen sind Hypothesen zum Prüfen, nie Kundenfeedback oder Belege. Nur die zitierten Bewertungen sind echt.",
     "deleteDocument": "Dokument löschen",
     "card": {
       "more": "Weitere Aktionen",
@@ -393,6 +394,17 @@
     "occupationPlaceholder": "Produktmanagerin"
   },
   "personas": {
+    "evidence": {
+      "new_one": "{{count, number}} neue passende Bewertung seit {{date}}",
+      "new_other": "{{count, number}} neue passende Bewertungen seit {{date}}",
+      "atLeastNew_one": "Mindestens {{count, number}} neue passende Bewertung seit {{date}}",
+      "atLeastNew_other": "Mindestens {{count, number}} neue passende Bewertungen seit {{date}}",
+      "upToDate": "Keine neuen passenden Bewertungen seit {{date}}",
+      "refresh": "Belege aktualisieren",
+      "added_one": "{{count, number}} Bewertung zu den Belegen hinzugefügt",
+      "added_other": "{{count, number}} Bewertungen zu den Belegen hinzugefügt",
+      "refreshFailed": "Die Belege konnten nicht aktualisiert werden. Bitte erneut versuchen."
+    },
     "addNote": "Notiz hinzufügen",
     "addResearchNotes": "Forschungsnotizen hinzufügen",
     "addResearchNotesDesc": "Dokumentieren Sie Ihre Beobachtungen, Erkenntnisse und Hypothesen zu dieser Persona",
@@ -581,6 +593,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "Fokusgruppen",
     "aiChat": "KI-Chat",
     "documents": "Dokumente",
     "overview": "Übersicht",
@@ -810,5 +823,26 @@
       "showThread": "Kommentar anzeigen: {{label}}",
       "threadGone": "(Kommentar gelöscht)"
     }
+  },
+  "focusGroups": {
+    "intro": "Setzen Sie 2 bis 6 Personas dieses Projekts in ein Panel und geben Sie ihnen ein Thema. In Runde 1 antwortet jede für sich; ab Runde 2 liest jede nach einer Nachfrage der Moderation die Punkte der anderen, anonymisiert, und stimmt zu, widerspricht oder baut darauf auf. Jede Antwort zitiert echte Bewertungen aus den Belegen der Persona, eine Synthese schließt ab. Das läuft im Assistenten.",
+    "needPersonas_one": "Eine Fokusgruppe braucht mindestens {{count, number}} Personas. Erzeugen oder fügen Sie zuerst Personas im Tab Personas hinzu.",
+    "needPersonas_other": "Eine Fokusgruppe braucht mindestens {{count, number}} Personas. Erzeugen oder fügen Sie zuerst Personas im Tab Personas hinzu.",
+    "newGroup": "Neue Fokusgruppe",
+    "personas_one": "Personas: {{count, number}} gewählt, höchstens {{max, number}}",
+    "personas_other": "Personas: {{count, number}} gewählt, höchstens {{max, number}}",
+    "topic": "Thema",
+    "topicHint": "Worüber sollen die Personas sprechen? Das ist die erste Nachricht der Unterhaltung.",
+    "rounds": "Runden",
+    "roundCount_one": "{{count, number}} Runde",
+    "roundCount_other": "{{count, number}} Runden",
+    "roundsHint": "Runde 1 ist unabhängig, sodass keine Antwort an einer anderen ausgerichtet wird. Ab Runde 2 liest jede Persona nach einer Nachfrage der Moderation die Punkte der anderen, anonymisiert.",
+    "documents": "Projektdokumente, die jede Persona liest (höchstens {{max, number}})",
+    "library": "Einträge der Dokumentenbibliothek, die jede Persona liest (höchstens {{max, number}})",
+    "cost": "Etwa {{calls, number}} Aufrufe des Assistentenmodells, rund {{input, number}} Eingabe- und {{output, number}} Ausgabetoken.",
+    "synthetic": "Jede Aussage ist synthetisch und nichts wird zu Feedback; jede Persona zitiert echte Bewertungen, die Sie öffnen können.",
+    "start": "Fokusgruppe starten",
+    "saved": "Gespeicherte Fokusgruppen",
+    "noneSaved": "Noch keine gespeicherte Fokusgruppe. Speichern Sie eine über ihre Synthesekarte im Assistenten."
   }
 }

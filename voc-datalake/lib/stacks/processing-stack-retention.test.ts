@@ -129,7 +129,7 @@ describe('voc-retention worker', () => {
         'created_by_name', 'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes',
         's3_raw_key', 'content_type', 'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at',
         'completed_at', 'release', 'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
-        'input_feature_request_ids', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'] },
+        'input_feature_request_ids', 'evidence_updates', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'] },
       // A Query naming no attribute would pass ForAllValues and read whole rows: SPECIFIC_ATTRIBUTES is required.
       StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
     }));
@@ -230,7 +230,7 @@ describe('voc-retention worker', () => {
     expect(json).toContain(JSON.stringify({
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*', `${ws}#PROJECT#*`] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'input_feedback_ids',
-        'evidence_feedback_ids', 'input_feature_request_ids', 'erased_evidence'] },
+        'evidence_feedback_ids', 'input_feature_request_ids', 'evidence_updates', 'erased_evidence'] },
       StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] },
     }));
     expect(json).toContain(JSON.stringify({

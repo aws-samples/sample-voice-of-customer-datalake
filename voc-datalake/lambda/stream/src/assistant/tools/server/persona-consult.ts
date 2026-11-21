@@ -23,7 +23,7 @@ import { renderDocument } from './project-shape.js';
 
 export const MAX_CONSULTED_PERSONAS = MENTION_LIMITS.maxPersonas;
 /** Personas answered concurrently (bounded to stay clear of Bedrock throttling). */
-const PERSONA_CONCURRENCY = 3;
+export const PERSONA_CONCURRENCY = 3;
 const PERSONA_MAX_TOKENS = 1200;
 /** Non-adaptive models get a small explicit thinking budget (Bedrock minimum 1024). */
 const PERSONA_THINKING_BUDGET = 1024;
@@ -32,9 +32,9 @@ const MAX_ANSWER_CHARS = 4000;
 const REFERENCED_DOCUMENTS_BUDGET = 30_000;
 /** Untagged documents named (title only) in the prompt. */
 const MAX_OTHER_DOCUMENTS = 5;
-const FAILED_ANSWER = '(No answer — this persona could not be consulted right now.)';
+export const FAILED_ANSWER = '(No answer — this persona could not be consulted right now.)';
 /** Appended to the question: a persona reviews, it never writes. */
-const REVIEW_ONLY_NOTE = '\n\n(Answer as yourself with your honest feedback. You only review and comment: do not '
+export const REVIEW_ONLY_NOTE = '\n\n(Answer as yourself with your honest feedback. You only review and comment: do not '
   + 'rewrite or draft documents for the team.)';
 
 export interface PersonaResponse {
@@ -77,7 +77,8 @@ export function briefingFor(tagged: readonly ChatContextDocument[], all: readonl
   };
 }
 
-function personaConverseCommand(modelId: string, systemPrompt: string, question: string): ConverseCommand {
+/** One persona's non-streaming call: the run's model, no tools, bounded tokens (the focus groups' too). */
+export function personaConverseCommand(modelId: string, systemPrompt: string, question: string): ConverseCommand {
   const adaptive = usesAdaptiveThinking(modelId);
   return new ConverseCommand({
     modelId: invocationModelId(modelId),
@@ -91,7 +92,8 @@ function personaConverseCommand(modelId: string, systemPrompt: string, question:
   });
 }
 
-function step(type: EventType.STEP_STARTED | EventType.STEP_FINISHED, name: string): StepStartedEvent | StepFinishedEvent {
+/** The AG-UI step around one persona's answer (`persona:<name>`). */
+export function personaStep(type: EventType.STEP_STARTED | EventType.STEP_FINISHED, name: string): StepStartedEvent | StepFinishedEvent {
   return type === EventType.STEP_STARTED
     ? { type: EventType.STEP_STARTED, stepName: `persona:${name}` }
     : { type: EventType.STEP_FINISHED, stepName: `persona:${name}` };
@@ -110,7 +112,7 @@ export interface Consultation {
 async function consultOne(job: Consultation, persona: ChatContextPersona): Promise<PersonaResponse> {
   const { deps, ctx, briefing } = job;
   const name = persona.name ?? 'Persona';
-  ctx.emit(step(EventType.STEP_STARTED, name));
+  ctx.emit(personaStep(EventType.STEP_STARTED, name));
   const systemPrompt = buildSinglePersonaPrompt(
     job.projectName, persona, briefing.referenced, briefing.others, '', [], [], [],
     normalizeLanguage(ctx.props.responseLanguage),
@@ -129,7 +131,7 @@ async function consultOne(job: Consultation, persona: ChatContextPersona): Promi
       return null;
     }),
   ]);
-  ctx.emit(step(EventType.STEP_FINISHED, name));
+  ctx.emit(personaStep(EventType.STEP_FINISHED, name));
   return { persona_id: persona.persona_id, name, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), answer };
 }
 

@@ -142,6 +142,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'participants': 'standard', // lists, people, asks (an ask's detail polls itself while sending)
   'passkey': 'config', // whether the signed-in person has a passkey (Cognito, read once for the sign-in offer)
   'persona-copy-sources': 'standard', // a project's "Copy from…" sources (library + the caller's projects)
+  'persona-evidence': 'feedbackData', // (7.64.00) a persona's new matching reviews: they arrive with ingestion
   'platform-workspaces': 'standard', // the platform console's list of every workspace (GET /platform/workspaces)
   'prioritization-config': 'config', // the workspace scoring setup (metrics, weights)
   'prioritization-scores': 'standard',

@@ -1,11 +1,11 @@
 import type { ConverseCommand, ConverseCommandOutput } from '@aws-sdk/client-bedrock-runtime';
-import { EventType, type BaseEvent } from '@ag-ui/core';
+import { EventType } from '@ag-ui/core';
 import { describe, expect, it } from 'vitest';
 import { ServiceError } from '../../lib/errors.js';
 import { nth } from '../../lib/nth-fixtures.js';
 import { MENTION_TOOL_CALL_PREFIX } from '../contract.js';
 import type { ToolDeps } from '../tools/deps.js';
-import { converseAnswer, fakeContext, fakeDeps } from '../tools/test-fixtures.js';
+import { converseAnswer, eventsOfType as ofType, fakeContext, fakeDeps } from '../tools/test-fixtures.js';
 import { createPersonaRound } from './persona-round.js';
 
 const ROUTE = 'POST /projects/proj_1/chat-context';
@@ -41,10 +41,6 @@ function setup(context: unknown = CONTEXT, overrides: Partial<ToolDeps> = {}) {
     ...overrides,
   });
   return { round: createPersonaRound(deps), commands, deps, ctx: fakeContext('project', PAGE) };
-}
-
-function ofType(events: readonly BaseEvent[], type: EventType): Record<string, unknown>[] {
-  return events.filter((event) => event.type === type).map((event) => ({ ...event }));
 }
 
 describe('persona round', () => {

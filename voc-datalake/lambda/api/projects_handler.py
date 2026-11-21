@@ -102,6 +102,7 @@ from shared import (
     model_profile,
     persona_copy_routes,
     persona_evidence_marker,
+    persona_grounding_routes,
     project_access,
     project_gate,
     prototype_drafts,
@@ -144,6 +145,7 @@ from shared.exceptions import (
     ServiceError,
     ValidationError,
 )
+from shared.focus_group_documents import FOCUS_GROUP_TYPE
 from shared.jobs import create_job
 from shared.logging import logger, tracer
 from shared.persona_import import validate_import_config
@@ -1094,7 +1096,9 @@ def api_create_document(project_id: str):
     caller = _request_caller()
     if ai_writing.writing_kind(app.current_event.raw_event) == ai_writing.KIND_AUTONOMOUS:
         _require_ai_writing(project_id, body.get('document_type'))
-    return create_document(project_id, body, creator_sub=caller.subject)
+    # A saved focus group keeps only the cited reviews its saver may see (shared/focus_group_documents.py).
+    scope = _caller_category_scope() if body.get('document_type') == FOCUS_GROUP_TYPE else None
+    return create_document(project_id, body, creator_sub=caller.subject, category_scope=scope)
 
 
 @app.post("/projects/<project_id>/documents/merge")
@@ -5506,6 +5510,8 @@ company_personas_routes.configure(company_personas_routes.PersonaOps(
 ))
 app.include_router(company_personas_routes.app)
 app.include_router(persona_copy_routes.app)
+# The personas' evidence pack, freshness and refresh (shared/persona_grounding_routes.py, 7.64.00 focus groups).
+app.include_router(persona_grounding_routes.app)
 # The Documents Library (shared/library_routes.py, docs/documents-library.md): its own scope's roles, not a project's.
 app.include_router(library_routes.app)
 

@@ -162,6 +162,14 @@ describe('reasoning, sources and navigation', () => {
     ]);
   });
 
+  it('stores a focus group\'s last state on the last assistant message', () => {
+    const { feed, output } = record();
+    feed(text('a1', 'x'), customEvent(CUSTOM_EVENTS.focusGroup, { status: 'running' }),
+      customEvent(CUSTOM_EVENTS.focusGroup, { status: 'finished', synthesis: { agreements: ['A'] } }));
+    expect(output()).toStrictEqual([{ id: 'a1', role: 'assistant', content: 'x',
+      metadata: { voc: { focusGroup: { status: 'finished', synthesis: { agreements: ['A'] } } } } }]);
+  });
+
   it('stores navigation alone without a sources key', () => {
     const { feed, output } = record();
     feed(text('a1', 'x'), customEvent(CUSTOM_EVENTS.navigation, { path: '/n' }));

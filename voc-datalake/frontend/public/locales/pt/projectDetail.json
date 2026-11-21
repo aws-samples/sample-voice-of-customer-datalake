@@ -7,6 +7,7 @@
     "personaTitle": "Deletar Persona?"
   },
   "documents": {
+    "syntheticNotice": "Um grupo focal de personas sintéticas: o que dizem são hipóteses a testar, nunca feedback de clientes nem evidência. Só as avaliações citadas são reais.",
     "deleteDocument": "Deletar documento",
     "card": {
       "more": "Mais ações",
@@ -409,6 +410,17 @@
     "occupationPlaceholder": "Gerente de produto"
   },
   "personas": {
+    "evidence": {
+      "new_one": "{{count, number}} nova avaliação correspondente desde {{date}}",
+      "new_other": "{{count, number}} novas avaliações correspondentes desde {{date}}",
+      "atLeastNew_one": "Pelo menos {{count, number}} nova avaliação correspondente desde {{date}}",
+      "atLeastNew_other": "Pelo menos {{count, number}} novas avaliações correspondentes desde {{date}}",
+      "upToDate": "Nenhuma nova avaliação correspondente desde {{date}}",
+      "refresh": "Atualizar evidências",
+      "added_one": "{{count, number}} avaliação adicionada às evidências",
+      "added_other": "{{count, number}} avaliações adicionadas às evidências",
+      "refreshFailed": "Não foi possível atualizar as evidências. Tente novamente."
+    },
     "addNote": "Adicionar Nota",
     "addResearchNotes": "Adicione Suas Notas de Pesquisa",
     "addResearchNotesDesc": "Documente suas observações, insights e hipóteses sobre esta persona",
@@ -601,6 +613,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "Grupos focais",
     "aiChat": "Chat IA",
     "documents": "Documentos",
     "overview": "Visão Geral",
@@ -844,5 +857,26 @@
       "showThread": "Mostrar o comentário: {{label}}",
       "threadGone": "(comentário excluído)"
     }
+  },
+  "focusGroups": {
+    "intro": "Reúna de 2 a 6 personas deste projeto num painel e dê-lhes um tema. Na rodada 1 cada uma responde sozinha; a partir da rodada 2 cada uma lê os pontos das outras, anonimizados, após uma pergunta de acompanhamento do moderador, e concorda, discorda ou complementa. Cada resposta cita avaliações reais das evidências da persona, e uma síntese encerra. Isso acontece no assistente.",
+    "needPersonas_one": "Um grupo focal precisa de pelo menos {{count, number}} personas. Gere ou adicione personas primeiro na aba Personas.",
+    "needPersonas_other": "Um grupo focal precisa de pelo menos {{count, number}} personas. Gere ou adicione personas primeiro na aba Personas.",
+    "newGroup": "Novo grupo focal",
+    "personas_one": "Personas: {{count, number}} escolhida, no máximo {{max, number}}",
+    "personas_other": "Personas: {{count, number}} escolhidas, no máximo {{max, number}}",
+    "topic": "Tema",
+    "topicHint": "Sobre o que as personas devem conversar? Esta é a primeira mensagem da conversa.",
+    "rounds": "Rodadas",
+    "roundCount_one": "{{count, number}} rodada",
+    "roundCount_other": "{{count, number}} rodadas",
+    "roundsHint": "A rodada 1 é independente, para que nenhuma resposta se ancore em outra. A partir da rodada 2 cada persona lê os pontos das outras, anonimizados, após uma pergunta de acompanhamento do moderador.",
+    "documents": "Documentos do projeto que cada persona lê (no máximo {{max, number}})",
+    "library": "Itens da Biblioteca de documentos que cada persona lê (no máximo {{max, number}})",
+    "cost": "Cerca de {{calls, number}} chamadas ao modelo do assistente, aproximadamente {{input, number}} tokens de entrada e {{output, number}} de saída.",
+    "synthetic": "Toda afirmação é sintética e nada vira feedback; cada persona cita avaliações reais que você pode abrir.",
+    "start": "Iniciar grupo focal",
+    "saved": "Grupos focais salvos",
+    "noneSaved": "Nenhum grupo focal salvo ainda. Salve um pelo cartão de síntese no assistente."
   }
 }

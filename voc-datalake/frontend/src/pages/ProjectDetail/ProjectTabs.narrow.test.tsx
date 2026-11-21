@@ -16,7 +16,7 @@ describe('ProjectTabs at a narrow width', () => {
     expect(lists).toHaveLength(1)
     expect(lists[0]).toHaveClass('flex-wrap')
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual([
-      'Overview', 'Personas(3)', 'Product', 'Documents(6)', 'Decisions', 'Participants',
+      'Overview', 'Personas(3)', 'Focus groups', 'Product', 'Documents(6)', 'Decisions', 'Participants',
     ])
   })
 

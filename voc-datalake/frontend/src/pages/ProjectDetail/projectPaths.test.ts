@@ -20,6 +20,7 @@ describe('projectPlacePath and parseProjectRest', () => {
     ['/projects/p1/documents', tabPlace('documents')],
     ['/projects/p1/decisions', tabPlace('decisions')],
     ['/projects/p1/participants', tabPlace('participants')],
+    ['/projects/p1/focus-groups', tabPlace('focus-groups')],
     ['/projects/p1/documents/prfaq_3', documentPlace('prfaq_3')],
     ['/projects/p1/documents/prfaq_3/v/2', { ...documentPlace('prfaq_3'), version: 2 }],
     ['/projects/p1/documents/prfaq_3/focus', { ...documentPlace('prfaq_3'), focus: true }],

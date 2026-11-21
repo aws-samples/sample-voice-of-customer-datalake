@@ -32,10 +32,11 @@ import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { CUSTOM_EVENTS } from '@stream/assistant/contract'
 import { adoptAfterStop, adoptServerSession, followServerRun } from './followServerRun'
 import { mentionsOfLastTurn } from '../mentions/mentionsOfTurn'
+import { focusGroupOfLastTurn } from './focusGroupOfTurn'
 import type { AguiEvent } from '../agui/sse'
 import type { ContentPart, Message, ResumeEntry } from '@ag-ui/core'
 import { EventType } from '@ag-ui/core'
-import type { Mentions, PageContext } from '@stream/assistant/contract'
+import type { FocusGroup, Mentions, PageContext } from '@stream/assistant/contract'
 import type { ApprovalResolution } from '../types'
 import type { ThreadAction } from '../thread/reducer'
 import type { ThreadState } from '../thread/types'
@@ -163,6 +164,8 @@ interface RunOptions {
   beforeStream?: () => Promise<void>
   /** The personas / documents the user mentioned in the message this run answers. */
   mentions?: Mentions
+  /** The persona focus group this run is (its topic is the message). */
+  focusGroup?: FocusGroup
 }
 
 /**
@@ -175,7 +178,7 @@ interface RunOptions {
  * by the browser as a failed request) — awaiting it first leaves the server the
  * only writer for the rest of the run.
  */
-async function executeRun(threadId: string, env: RunEnvironment, { resume, beforeStream, mentions }: RunOptions): Promise<void> {
+async function executeRun(threadId: string, env: RunEnvironment, { resume, beforeStream, mentions, focusGroup }: RunOptions): Promise<void> {
   inFlight.get(threadId)?.abort()
   const controller = new AbortController()
   inFlight.set(threadId, controller)
@@ -188,6 +191,7 @@ async function executeRun(threadId: string, env: RunEnvironment, { resume, befor
     messages: toWireMessages(started?.messages ?? []),
     forwardedProps: buildForwardedProps({
       page: env.page, language: env.language, useWebSearch: env.useWebSearch, mentions, scope: chatScopeFor(threadId),
+      focusGroup,
     }),
     resume,
   })
@@ -247,6 +251,7 @@ function announceEnd(threadId: string): void {
  */
 export async function sendMessage(
   content: string | ContentPart[], env: RunEnvironment, threadId: string = activeId(), mentions?: Mentions,
+  focusGroup?: FocusGroup,
 ): Promise<void> {
   const status = threadOf(threadId)?.status
   // `generating`: the server is still answering the previous message (followServerRun).
@@ -259,7 +264,20 @@ export async function sendMessage(
   // starts — it used to race the stream Lambda's first write and lose with a
   // 409 on about half of first messages. No adopting on a refusal here: the
   // run about to start owns the answer, and adopting could drop the question.
-  await executeRun(threadId, env, { beforeStream: () => persistThread(threadId, env.page, false, false), mentions })
+  await executeRun(threadId, env, {
+    beforeStream: () => persistThread(threadId, env.page, false, false), mentions, focusGroup,
+  })
+}
+
+/**
+ * Start a persona focus group (the project's Focus groups tab): a NEW conversation whose first message is its topic,
+ * sent at once with the group's personas, rounds and documents. The person chose all of it and saw its cost first;
+ * it writes nothing (Save is the person's own click on the synthesis card). The panel opens to show it live.
+ */
+export async function startFocusGroup(topic: string, focusGroup: FocusGroup, env: RunEnvironment): Promise<void> {
+  newThread()
+  if (!isChatRoute(appPathname())) useAssistantUiStore.getState().setOpen(true)
+  await sendMessage(topic, env, activeId(), undefined, focusGroup)
 }
 
 /**
@@ -300,10 +318,15 @@ async function settleStoppedRun(threadId: string, page: PageContext | null): Pro
 export async function regenerate(env: RunEnvironment, threadId: string = activeId()): Promise<void> {
   const status = threadOf(threadId)?.status
   if (status !== 'idle' && status !== 'error') return
-  // The same personas answer again: the round's own calls name them (an @all is already resolved there).
-  const mentions = mentionsOfLastTurn(threadOf(threadId)?.messages ?? [])
+  // The same personas answer again: the round's own calls name them (an @all is already resolved there); a focus
+  // group runs again as it was configured (its stored state on the answer).
+  const thread = threadOf(threadId)
+  const focusGroup = thread === undefined ? undefined : focusGroupOfLastTurn(thread)
+  const mentions = focusGroup === undefined ? mentionsOfLastTurn(thread?.messages ?? []) : undefined
   dispatchTo(threadId, { type: 'local/regenerate' })
-  await executeRun(threadId, env, { beforeStream: () => persistThread(threadId, env.page, false, false), mentions })
+  await executeRun(threadId, env, {
+    beforeStream: () => persistThread(threadId, env.page, false, false), mentions, focusGroup,
+  })
 }
 
 /** Start the resume run once every pending approval has a resolution. */

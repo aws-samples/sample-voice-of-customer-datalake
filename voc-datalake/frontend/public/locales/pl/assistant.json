@@ -409,5 +409,37 @@
     "urgentOnly": "Tylko pilne",
     "categories": "Kategorie",
     "noCategories": "Brak kategorii w tym zakresie czasu."
+  },
+  "focusGroup": {
+    "round": "Runda {{round, number}}",
+    "moderator": "Moderator",
+    "citation": "Opinia {{index, number}}",
+    "openCitation": "Otwórz cytowaną opinię {{index, number}}",
+    "synthetic": "Syntetyczne",
+    "stoppedNote": "Zatrzymano przed końcem: dotychczasowe odpowiedzi to wszystko, bez podsumowania.",
+    "missingPersonas_one": "{{count, number}} wybrana persona nie należy już do tego projektu.",
+    "missingPersonas_other": "{{count, number}} wybranych person nie należy już do tego projektu.",
+    "missingPersonas_few": "{{count, number}} wybrane persony nie należą już do tego projektu.",
+    "missingPersonas_many": "{{count, number}} wybranych person nie należy już do tego projektu.",
+    "referenceOnly": "Persony są syntetyczne: traktuj ich wypowiedzi jak hipotezy do sprawdzenia. Zapisana grupa fokusowa to materiał pomocniczy, nigdy dowód; opiniami klientów są tylko cytowane opinie.",
+    "synthesis": {
+      "title": "Podsumowanie grupy fokusowej",
+      "agreements": "Zgodności",
+      "disagreements": "Różnice zdań",
+      "openQuestions": "Otwarte pytania",
+      "unavailable": "Nie udało się napisać podsumowania; powyższe odpowiedzi to cała grupa fokusowa."
+    },
+    "save": {
+      "idle": "Zapisz grupę fokusową",
+      "saving": "Zapisywanie…",
+      "saved": "Zapisano w dokumentach",
+      "error": "Zapis nie powiódł się – ponów"
+    },
+    "document": {
+      "title": "Grupa fokusowa: {{topic}} – {{date}}",
+      "heading": "Grupa fokusowa: {{topic}}",
+      "banner": "Syntetyczne: każda wypowiedź poniżej należy do persony, to hipoteza do sprawdzenia, nigdy opinia klienta. Cytowane opinie są prawdziwe.",
+      "cited": "Cytowane opinie"
+    }
   }
 }

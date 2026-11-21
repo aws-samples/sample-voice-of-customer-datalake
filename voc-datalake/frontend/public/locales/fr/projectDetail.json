@@ -7,6 +7,7 @@
     "personaTitle": "Supprimer le persona ?"
   },
   "documents": {
+    "syntheticNotice": "Un groupe de discussion de personas synthétiques : leurs propos sont des hypothèses à vérifier, jamais du feedback client ni des preuves. Seuls les avis cités sont réels.",
     "deleteDocument": "Supprimer le document",
     "card": {
       "more": "Plus d’actions",
@@ -409,6 +410,17 @@
     "occupationPlaceholder": "Chef de produit"
   },
   "personas": {
+    "evidence": {
+      "new_one": "{{count, number}} nouvel avis correspondant depuis le {{date}}",
+      "new_other": "{{count, number}} nouveaux avis correspondants depuis le {{date}}",
+      "atLeastNew_one": "Au moins {{count, number}} nouvel avis correspondant depuis le {{date}}",
+      "atLeastNew_other": "Au moins {{count, number}} nouveaux avis correspondants depuis le {{date}}",
+      "upToDate": "Aucun nouvel avis correspondant depuis le {{date}}",
+      "refresh": "Actualiser les preuves",
+      "added_one": "{{count, number}} avis ajouté à ses preuves",
+      "added_other": "{{count, number}} avis ajoutés à ses preuves",
+      "refreshFailed": "Les preuves n’ont pas pu être actualisées. Réessayez."
+    },
     "addNote": "Ajouter une note",
     "addResearchNotes": "Ajouter vos notes de recherche",
     "addResearchNotesDesc": "Documentez vos observations, insights et hypothèses concernant ce persona",
@@ -601,6 +613,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "Groupes de discussion",
     "aiChat": "Chat IA",
     "documents": "Fichiers",
     "overview": "Aperçu",
@@ -844,5 +857,26 @@
       "showThread": "Afficher le commentaire : {{label}}",
       "threadGone": "(commentaire supprimé)"
     }
+  },
+  "focusGroups": {
+    "intro": "Réunissez 2 à 6 personas de ce projet dans un panel et donnez-leur un sujet. Au tour 1, chacune répond seule ; à partir du tour 2, chacune lit les points des autres, anonymisés, après une relance du modérateur, et les approuve, les conteste ou les complète. Chaque réponse cite de vrais avis issus des preuves de la persona, et une synthèse conclut. Cela se déroule dans l’assistant.",
+    "needPersonas_one": "Un groupe de discussion a besoin d’au moins {{count, number}} personas. Générez ou ajoutez d’abord des personas dans l’onglet Personas.",
+    "needPersonas_other": "Un groupe de discussion a besoin d’au moins {{count, number}} personas. Générez ou ajoutez d’abord des personas dans l’onglet Personas.",
+    "newGroup": "Nouveau groupe de discussion",
+    "personas_one": "Personas : {{count, number}} choisie, au plus {{max, number}}",
+    "personas_other": "Personas : {{count, number}} choisies, au plus {{max, number}}",
+    "topic": "Sujet",
+    "topicHint": "De quoi les personas doivent-elles discuter ? C’est le premier message de la conversation.",
+    "rounds": "Tours",
+    "roundCount_one": "{{count, number}} tour",
+    "roundCount_other": "{{count, number}} tours",
+    "roundsHint": "Le tour 1 est indépendant : aucune réponse n’est influencée par une autre. À partir du tour 2, chaque persona lit les points des autres, anonymisés, après une relance du modérateur.",
+    "documents": "Documents du projet que lit chaque persona (au plus {{max, number}})",
+    "library": "Éléments de la Bibliothèque de documents que lit chaque persona (au plus {{max, number}})",
+    "cost": "Environ {{calls, number}} appels au modèle de l’assistant, soit à peu près {{input, number}} jetons en entrée et {{output, number}} en sortie.",
+    "synthetic": "Chaque propos est synthétique et rien ne devient du feedback ; chaque persona cite de vrais avis que vous pouvez ouvrir.",
+    "start": "Lancer le groupe de discussion",
+    "saved": "Groupes de discussion enregistrés",
+    "noneSaved": "Aucun groupe de discussion enregistré. Enregistrez-en un depuis sa carte de synthèse dans l’assistant."
   }
 }

@@ -46,6 +46,7 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 
 - **AI assistant**: one page-aware assistant on every page and at `/chat`. Its tools only read; every write is an approval card that runs with your own permissions. It can propose multi-step plans, consult `@personas` about `#documents`, and stays inside the filters on screen ([Plan mode](docs/assistant-plan-mode.md), [Mentions](docs/assistant-mentions.md), [Chat scope](docs/assistant-chat-scope.md))
 - **Projects**: personas, research, PR/FAQs, PRDs and clickable prototypes generated from the reviews, and each artifact lists the reviews it was written from ([Project Workspace](docs/project-workspace.md), [Persona Generation](docs/persona-generation.md))
+- **Persona focus groups**: 2 to 6 personas discuss a topic over up to 3 rounds, reading each other's points anonymised from round 2, each citing real reviews from its own evidence; a synthesis you can save as a document. Synthetic, never feedback or evidence ([Persona focus groups](docs/project-workspace.md#persona-focus-groups))
 - **Company personas**: a shared persona library that projects copy from and promote into ([Project Workspace](docs/project-workspace.md#company-personas))
 - **Document canvas**: each project document as a page with an outline and its evidence, edited in place (blocks, "/" menu, Markdown shortcuts), every save a new version ([Document canvas](docs/document-canvas.md))
 - **Document review**: margin comments, "Ask personas to review" and share-for-review links on PR/FAQs and PRDs ([Document review](docs/document-review.md))
@@ -242,7 +243,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Radar](docs/radar.md) | Other brands: love and hate, news and releases from web search, comparison |
 | [Decisions and Release Watch](docs/decisions-and-release-watch.md) | Decision records on projects and before/after feedback per release |
 | [Project Workspace](docs/project-workspace.md) | Projects, the Product tab, cited reviews, document versions, sharing, company personas |
-| [Persona Generation](docs/persona-generation.md) | Adding personas next to the existing ones or replacing them |
+| [Persona Generation](docs/persona-generation.md) | Adding personas next to the existing ones or replacing them; refreshing a persona's evidence |
 | [Document canvas](docs/document-canvas.md) | The Documents tab's page view: outline, evidence, editing in place, saving, history, the assistant's diffs |
 | [Prototype builder](docs/prototype-builder.md) | Back to an earlier version, edits from the assistant's chat bubble as previewed drafts, tester feedback selected into a revision, documents in sections, and a skippable guided walkthrough on a prototype |
 | [Document review](docs/document-review.md) | Margin comments, "Ask personas to review", share-for-review links and their sign-in |

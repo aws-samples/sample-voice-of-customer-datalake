@@ -6,14 +6,14 @@
  * unlabelled navigation landmark next to the sidebar's tripped axe's
  * landmark-unique. Arrow keys / Home / End move between tabs (roving tabindex).
  *
- * ONE tab bar that WRAPS (the Settings section-switch precedent): at 390 px the six
+ * ONE tab bar that WRAPS (the Settings section-switch precedent): at 390 px the seven
  * tabs take two rows. It used to scroll sideways with a hidden scrollbar and an edge
  * fade, which a mouse or trackpad without horizontal scrolling could not reach. A
  * wrapped bar shows every tab to every input with no scrolling at all.
  */
 import clsx from 'clsx'
 import {
-  Users, FileText, Sparkles, Package, Scale, Contact,
+  Users, FileText, Sparkles, Package, Scale, Contact, MessagesSquare,
 } from 'lucide-react'
 import { useRef, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -33,6 +33,11 @@ const TABS: readonly {
     id: 'personas',
     labelKey: 'tabs.personas',
     icon: Users,
+  },
+  {
+    id: 'focus-groups',
+    labelKey: 'tabs.focusGroups',
+    icon: MessagesSquare,
   },
   {
     id: 'product',

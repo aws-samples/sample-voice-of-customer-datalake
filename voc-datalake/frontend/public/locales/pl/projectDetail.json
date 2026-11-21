@@ -7,6 +7,7 @@
     "personaTitle": "Usunąć personę?"
   },
   "documents": {
+    "syntheticNotice": "Grupa fokusowa syntetycznych person: ich wypowiedzi to hipotezy do sprawdzenia, nigdy opinie klientów ani dowody. Prawdziwe są tylko cytowane opinie.",
     "derivation": {
       "roles": {
         "mergeInput": "Scalono z",
@@ -429,6 +430,23 @@
     "occupationPlaceholder": "Menedżer produktu"
   },
   "personas": {
+    "evidence": {
+      "new_one": "{{count, number}} nowa pasująca opinia od {{date}}",
+      "new_other": "{{count, number}} nowych pasujących opinii od {{date}}",
+      "new_few": "{{count, number}} nowe pasujące opinie od {{date}}",
+      "new_many": "{{count, number}} nowych pasujących opinii od {{date}}",
+      "atLeastNew_one": "Co najmniej {{count, number}} nowa pasująca opinia od {{date}}",
+      "atLeastNew_other": "Co najmniej {{count, number}} nowych pasujących opinii od {{date}}",
+      "atLeastNew_few": "Co najmniej {{count, number}} nowe pasujące opinie od {{date}}",
+      "atLeastNew_many": "Co najmniej {{count, number}} nowych pasujących opinii od {{date}}",
+      "upToDate": "Brak nowych pasujących opinii od {{date}}",
+      "refresh": "Odśwież dowody",
+      "added_one": "Dodano {{count, number}} opinię do dowodów",
+      "added_other": "Dodano {{count, number}} opinii do dowodów",
+      "added_few": "Dodano {{count, number}} opinie do dowodów",
+      "added_many": "Dodano {{count, number}} opinii do dowodów",
+      "refreshFailed": "Nie udało się odświeżyć dowodów. Spróbuj ponownie."
+    },
     "addNote": "Dodaj notatkę",
     "addResearchNotes": "Dodaj własne notatki badawcze",
     "addResearchNotesDesc": "Zapisz swoje obserwacje, wnioski i hipotezy dotyczące tej persony",
@@ -625,6 +643,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "Grupy fokusowe",
     "aiChat": "Czat AI",
     "documents": "Dokumenty",
     "overview": "Przegląd",
@@ -882,5 +901,32 @@
       "showThread": "Pokaż komentarz: {{label}}",
       "threadGone": "(komentarz usunięty)"
     }
+  },
+  "focusGroups": {
+    "intro": "Zbierz od 2 do 6 person tego projektu w jednym panelu i podaj im temat. W rundzie 1 każda odpowiada samodzielnie; od rundy 2 każda czyta zanonimizowane punkty pozostałych po jednym pytaniu uzupełniającym moderatora i zgadza się z nimi, nie zgadza lub je rozwija. Każda odpowiedź cytuje prawdziwe opinie z dowodów persony, a całość zamyka podsumowanie. Działa w asystencie.",
+    "needPersonas_one": "Grupa fokusowa potrzebuje co najmniej {{count, number}} person. Najpierw wygeneruj lub dodaj persony na karcie Persony.",
+    "needPersonas_other": "Grupa fokusowa potrzebuje co najmniej {{count, number}} person. Najpierw wygeneruj lub dodaj persony na karcie Persony.",
+    "needPersonas_few": "Grupa fokusowa potrzebuje co najmniej {{count, number}} person. Najpierw wygeneruj lub dodaj persony na karcie Persony.",
+    "needPersonas_many": "Grupa fokusowa potrzebuje co najmniej {{count, number}} person. Najpierw wygeneruj lub dodaj persony na karcie Persony.",
+    "newGroup": "Nowa grupa fokusowa",
+    "personas_one": "Persony: wybrano {{count, number}}, maksymalnie {{max, number}}",
+    "personas_other": "Persony: wybrano {{count, number}}, maksymalnie {{max, number}}",
+    "personas_few": "Persony: wybrano {{count, number}}, maksymalnie {{max, number}}",
+    "personas_many": "Persony: wybrano {{count, number}}, maksymalnie {{max, number}}",
+    "topic": "Temat",
+    "topicHint": "O czym mają rozmawiać persony? To będzie pierwsza wiadomość rozmowy.",
+    "rounds": "Rundy",
+    "roundCount_one": "{{count, number}} runda",
+    "roundCount_other": "{{count, number}} rundy",
+    "roundCount_few": "{{count, number}} rundy",
+    "roundCount_many": "{{count, number}} rund",
+    "roundsHint": "Runda 1 jest niezależna, więc żadna odpowiedź nie sugeruje się inną. Od rundy 2 każda persona czyta zanonimizowane punkty pozostałych po jednym pytaniu uzupełniającym moderatora.",
+    "documents": "Dokumenty projektu czytane przez każdą personę (maksymalnie {{max, number}})",
+    "library": "Elementy Biblioteki dokumentów czytane przez każdą personę (maksymalnie {{max, number}})",
+    "cost": "Około {{calls, number}} wywołań modelu asystenta, mniej więcej {{input, number}} tokenów wejściowych i {{output, number}} wyjściowych.",
+    "synthetic": "Każda wypowiedź jest syntetyczna i nic nie staje się opinią klienta; każda persona cytuje prawdziwe opinie, które możesz otworzyć.",
+    "start": "Rozpocznij grupę fokusową",
+    "saved": "Zapisane grupy fokusowe",
+    "noneSaved": "Nie ma jeszcze zapisanych grup fokusowych. Zapisz grupę z jej karty podsumowania w asystencie."
   }
 }

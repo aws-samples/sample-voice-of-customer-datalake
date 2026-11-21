@@ -361,5 +361,35 @@
     "urgentOnly": "긴급만",
     "categories": "카테고리",
     "noCategories": "이 기간에는 카테고리가 없습니다."
+  },
+  "focusGroup": {
+    "round": "{{round, number}}라운드",
+    "moderator": "진행자",
+    "citation": "리뷰 {{index, number}}",
+    "openCitation": "인용된 리뷰 {{index, number}} 열기",
+    "synthetic": "합성",
+    "stoppedNote": "끝나기 전에 중지되었습니다. 지금까지의 답변이 전부이며 종합은 없습니다.",
+    "missingPersonas_one": "선택한 페르소나 {{count, number}}명이 더 이상 이 프로젝트에 없습니다.",
+    "missingPersonas_other": "선택한 페르소나 {{count, number}}명이 더 이상 이 프로젝트에 없습니다.",
+    "referenceOnly": "페르소나는 합성입니다. 그들의 발언은 검증할 가설로 다루세요. 저장된 포커스 그룹은 참고 자료일 뿐 근거가 아니며, 고객 피드백은 인용된 리뷰뿐입니다.",
+    "synthesis": {
+      "title": "포커스 그룹 종합",
+      "agreements": "합의점",
+      "disagreements": "이견",
+      "openQuestions": "남은 질문",
+      "unavailable": "종합을 작성할 수 없습니다. 위의 답변이 포커스 그룹의 전부입니다."
+    },
+    "save": {
+      "idle": "포커스 그룹 저장",
+      "saving": "저장 중…",
+      "saved": "문서에 저장됨",
+      "error": "저장 실패 – 다시 시도"
+    },
+    "document": {
+      "title": "포커스 그룹: {{topic}} – {{date}}",
+      "heading": "포커스 그룹: {{topic}}",
+      "banner": "합성: 아래의 모든 발언은 페르소나의 것으로, 검증할 가설이며 고객 피드백이 아닙니다. 인용된 리뷰는 실제입니다.",
+      "cited": "인용된 리뷰"
+    }
   }
 }

@@ -45,6 +45,10 @@ Two passes (since 7.43.00, projects 3g-b; the deployment's by Query since 7.48.0
   ``ws_table``). No Scan: what it reads is the walked workspaces' own projects. A registry row (or a scanned ``META``)
   not shaped like a project id is skipped and counted (``project_ids_malformed``).
 
+A persona's evidence refreshes (``evidence_updates``, 7.64.00: ``{at, by, reason, feedback_ids}`` entries) are read and
+marked the same way: an erased review leaves an entry's ``feedback_ids`` (the entry, its actor and time, stays), and
+counts in the mark like a listed id.
+
 What neither pass reads (follow-ups): an id cited inside a document's ``derivation`` (its
 ``input_feature_request_ids`` there, beside the top-level list this pass filters on), and a persona job's ``result``
 in voc-jobs, which holds the persona's lineage ids until the job row's 7-day ``ttl`` deletes it.
@@ -68,6 +72,7 @@ from shared.feedback_sampling import INPUT_FEATURE_REQUEST_IDS_FIELD, INPUT_FEED
 from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD
+from shared.persona_grounding import EVIDENCE_UPDATES_FIELD, evidence_update_entries, listed_ids
 from shared.project_keys import project_partitions
 from shared.project_walk import checked_ids, checked_key, is_project_id, query_page
 from shared.retention import BOARD_COUNTER
@@ -82,26 +87,41 @@ PAGE_SIZE: Final = 100
 #: The attributes a mark's UpdateItem names, with the key: lib/stacks/retention-worker.ts grants them on the
 #: deployment's and one workspace id's ``PROJECT#*`` partitions only (since 7.48.00: no pass Scans any more), in a
 #: statement of their own (a test holds the two to each other).
-LINEAGE_UPDATE_ATTRIBUTES: Final = ('pk', 'sk', *ID_FIELDS, MARK_FIELD)
+LINEAGE_UPDATE_ATTRIBUTES: Final = ('pk', 'sk', *ID_FIELDS, EVIDENCE_UPDATES_FIELD, MARK_FIELD)
 #: What both passes read of a row, and the names they read it by.
-_PROJECTION: Final = '#pk, #sk, #ids, #cited, #requests, #mark'
+_PROJECTION: Final = '#pk, #sk, #ids, #cited, #requests, #updates, #mark'
 _NAMES: Final = {'#pk': 'pk', '#sk': 'sk', '#ids': ID_FIELDS[0], '#cited': ID_FIELDS[1], '#requests': ID_FIELDS[2],
-                 '#mark': MARK_FIELD}
+                 '#updates': EVIDENCE_UPDATES_FIELD, '#mark': MARK_FIELD}
 #: Both passes' filter: the rows that carry a list.
-_CARRIES_A_LIST: Final = 'attribute_exists(#ids) OR attribute_exists(#cited) OR attribute_exists(#requests)'
+_CARRIES_A_LIST: Final = ('attribute_exists(#ids) OR attribute_exists(#cited) OR attribute_exists(#requests) '
+                          'OR attribute_exists(#updates)')
 
 
 class TombstonesUnreadable(RuntimeError):
     """The tombstone lookup left keys unprocessed (the run fails and says so; nothing is half-marked)."""
 
 
-def _listed_ids(row: Mapping[str, Any], fields: Sequence[str] = ID_FIELDS) -> list[str]:
-    ids: list[str] = []
-    for field in fields:
-        values = row.get(field)
-        if isinstance(values, list):
-            ids.extend(value for value in values if isinstance(value, str) and value)
+def _listed_ids(row: Mapping[str, Any], fields: Sequence[str] = ID_FIELDS, *, refreshed: bool = True) -> list[str]:
+    """The ids the row's ``fields`` list, then (``refreshed``) those its evidence refreshes added."""
+    ids = [value for field in fields for value in listed_ids(row.get(field))]
+    if refreshed:
+        ids.extend(value for entry in evidence_update_entries(row) for value in listed_ids(entry.get('feedback_ids')))
     return list(dict.fromkeys(ids))
+
+
+def _kept_updates(row: Mapping[str, Any], erased: set[str]) -> tuple[list[Any], int]:
+    """``evidence_updates`` without ``erased`` in any entry's ``feedback_ids`` (every entry kept), and how many went."""
+    kept: list[Any] = []
+    removed = 0
+    for entry in row[EVIDENCE_UPDATES_FIELD]:
+        ids = entry.get('feedback_ids') if isinstance(entry, Mapping) else None
+        if not isinstance(ids, list):
+            kept.append(entry)
+            continue
+        left = [value for value in ids if value not in erased]
+        removed += len(ids) - len(left)
+        kept.append({**entry, 'feedback_ids': left})
+    return kept, removed
 
 
 def erased_ids(aggregates_table: Any, sources: Sequence[str], ids: Iterable[str],
@@ -143,6 +163,13 @@ def _list_update(row: Mapping[str, Any], erased: set[str]) -> tuple[list[str], l
         values.update({f':old{n}': listed, f':new{n}': kept})
         sets.append(f'#f{n} = :new{n}')
         conditions.append(f'#f{n} = :old{n}')
+    if isinstance(row.get(EVIDENCE_UPDATES_FIELD), list):
+        kept, gone = _kept_updates(row, erased)
+        removed += gone
+        names['#fu'] = EVIDENCE_UPDATES_FIELD
+        values.update({':oldu': row[EVIDENCE_UPDATES_FIELD], ':newu': kept})
+        sets.append('#fu = :newu')
+        conditions.append('#fu = :oldu')
     return sets, conditions, names, values, removed
 
 
@@ -199,7 +226,7 @@ def _workspace_hits(aggregates_table: Any, run: Mapping[str, Any], rows: Sequenc
     (``{ws}#{id}``), its board requests by the deployment's (``feature_requests`` / ``{id}``)."""
     sources = list(run['erased_sources'])
     reviews = [_listed_ids(row, ID_FIELDS[:2]) for row in rows]
-    requests = [_listed_ids(row, ID_FIELDS[2:]) for row in rows]
+    requests = [_listed_ids(row, ID_FIELDS[2:], refreshed=False) for row in rows]
     erased_reviews = erased_ids(aggregates_table, [source for source in sources if source != FEATURE_REQUESTS_SOURCE],
                                 (one for ids in reviews for one in ids), scope)
     erased_requests = erased_ids(aggregates_table, [FEATURE_REQUESTS_SOURCE] if FEATURE_REQUESTS_SOURCE in sources

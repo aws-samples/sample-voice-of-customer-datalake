@@ -63,6 +63,15 @@ documents and its own profile. Then the assistant adds a short synthesis.
 The `consult_personas` tool also takes `document_ids` (up to 3), so the model can ground a
 roundtable on documents itself.
 
+## Focus groups: several rounds, with real reviews cited
+
+A mention round is one independent answer per persona. A **persona focus group** (7.64.00) goes further: 2 to 6
+personas, 1 to 3 rounds, the others' points read anonymised from round 2 after one moderator follow-up, each persona
+grounded on its own evidence pack of real reviews it cites as `[fb:<id>]`, and a synthesis you can save. It starts
+from the project's **Focus groups** tab (or `forwardedProps.focusGroup` from a project page; sent with no mentions,
+since it names its own personas and documents). Everything about it is in
+[project-workspace.md → Persona focus groups](project-workspace.md#persona-focus-groups).
+
 ## Ways of working
 
 Persona replies are review only, so they are allowed in every way of working
@@ -79,7 +88,8 @@ go first when space is short. The stream Lambda and the SPA store it with the sa
 `lambda/stream/src/assistant/session/persona-result.ts` (the SPA imports it through `@stream`).
 
 **Regenerate** on a mention answer asks the same personas again. They are read back from the round's
-saved `mention_` calls, so an `@all` comes back as the personas it asked.
+saved `mention_` calls, so an `@all` comes back as the personas it asked. On a focus group it runs the group again
+as it was configured, read back from its saved state (`metadata.voc.focusGroup` on its last answer).
 
 ## Local development
 

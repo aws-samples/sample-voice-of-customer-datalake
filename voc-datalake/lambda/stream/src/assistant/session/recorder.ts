@@ -10,7 +10,8 @@
  * it as parent; TOOL_CALL_ARGS deltas concatenate; TOOL_CALL_RESULT appends a
  * `tool` message; REASONING_ENCRYPTED_VALUE lands on `encryptedValue`; the
  * sources / navigation CUSTOM events ride in the last assistant message's
- * `metadata.voc`; an interrupt outcome parks its interrupts as
+ * `metadata.voc` (a focus group's CUSTOM assistant.focus_group too, its last value, as `focusGroup`);
+ * an interrupt outcome parks its interrupts as
  * `pendingInterrupts`; CUSTOM assistant.stopped (Stop, session/cancel.ts) saves the run as
  * `stopped` with `metadata.voc.stopped` on its last assistant message.
  *
@@ -70,6 +71,8 @@ interface RecorderState {
   charsSinceFlush: number;
   sources: unknown;
   navigation: unknown[];
+  /** The focus group's last CUSTOM assistant.focus_group value (runtime/focus-group.ts), or undefined. */
+  focusGroup: unknown;
   /** The user stopped the run (CUSTOM assistant.stopped): saved as `stopped`, the answer marked. */
   stopped: boolean;
   /** The revision of the newest queued write. */
@@ -92,7 +95,8 @@ function contentText(content: unknown): string {
 export function createSessionRecorder(base: RecorderBase, writer: SessionWriter, nowMs: () => number): SessionRecorder {
   const state: RecorderState = {
     messages: [], lastAssistantId: null, pending: [], status: 'running',
-    lastFlushMs: nowMs(), charsSinceFlush: 0, sources: undefined, navigation: [], stopped: false, revision: 0,
+    lastFlushMs: nowMs(), charsSinceFlush: 0, sources: undefined, navigation: [], focusGroup: undefined, stopped: false,
+    revision: 0,
   };
 
   function ensureAssistant(id: string): void {
@@ -121,11 +125,13 @@ export function createSessionRecorder(base: RecorderBase, writer: SessionWriter,
     const anchor = state.lastAssistantId;
     const hasSources = state.sources !== undefined;
     const hasNavigation = state.navigation.length > 0;
+    const hasFocusGroup = state.focusGroup !== undefined;
     // A null anchor matches no message id, so the map below leaves the list as it is.
-    if (!hasSources && !hasNavigation && !state.stopped) return state.messages;
+    if (!hasSources && !hasNavigation && !hasFocusGroup && !state.stopped) return state.messages;
     const voc = {
       ...(hasSources ? { sources: state.sources } : {}),
       ...(hasNavigation ? { navigation: state.navigation } : {}),
+      ...(hasFocusGroup ? { focusGroup: state.focusGroup } : {}),
       ...(state.stopped ? { stopped: true } : {}),
     };
     return state.messages.map((m) => (m.id === anchor && isAssistant(m) ? { ...m, metadata: { ...m.metadata, voc } } : m));
@@ -183,6 +189,7 @@ export function createSessionRecorder(base: RecorderBase, writer: SessionWriter,
     if (!parsed.success) return;
     if (parsed.data.name === CUSTOM_EVENTS.sources) state.sources = parsed.data.value;
     if (parsed.data.name === CUSTOM_EVENTS.navigation) state.navigation.push(parsed.data.value);
+    if (parsed.data.name === CUSTOM_EVENTS.focusGroup) state.focusGroup = parsed.data.value;
     if (parsed.data.name === CUSTOM_EVENTS.stopped) state.stopped = true;
   }
 

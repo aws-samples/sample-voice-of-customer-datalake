@@ -361,5 +361,35 @@
     "urgentOnly": "緊急のみ",
     "categories": "カテゴリ",
     "noCategories": "この期間にカテゴリはありません。"
+  },
+  "focusGroup": {
+    "round": "ラウンド{{round, number}}",
+    "moderator": "モデレーター",
+    "citation": "レビュー{{index, number}}",
+    "openCitation": "引用されたレビュー{{index, number}}を開く",
+    "synthetic": "合成",
+    "stoppedNote": "最後まで終わらずに停止しました。ここまでの回答がすべてで、まとめはありません。",
+    "missingPersonas_one": "選択したペルソナのうち{{count, number}}人はこのプロジェクトにもういません。",
+    "missingPersonas_other": "選択したペルソナのうち{{count, number}}人はこのプロジェクトにもういません。",
+    "referenceOnly": "ペルソナは合成です。発言は検証すべき仮説として扱ってください。保存したフォーカスグループは参考資料であり、エビデンスではありません。顧客フィードバックは引用されたレビューだけです。",
+    "synthesis": {
+      "title": "フォーカスグループのまとめ",
+      "agreements": "合意点",
+      "disagreements": "相違点",
+      "openQuestions": "未解決の問い",
+      "unavailable": "まとめを作成できませんでした。上の回答がフォーカスグループのすべてです。"
+    },
+    "save": {
+      "idle": "フォーカスグループを保存",
+      "saving": "保存中…",
+      "saved": "ドキュメントに保存しました",
+      "error": "保存に失敗しました – 再試行"
+    },
+    "document": {
+      "title": "フォーカスグループ：{{topic}} – {{date}}",
+      "heading": "フォーカスグループ：{{topic}}",
+      "banner": "合成：以下の発言はすべてペルソナのもので、検証すべき仮説であり、顧客フィードバックではありません。引用されたレビューは実在します。",
+      "cited": "引用されたレビュー"
+    }
   }
 }

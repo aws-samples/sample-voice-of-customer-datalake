@@ -1014,6 +1014,28 @@ class TestTheDeploymentsLineageByQuery:
         for pk in ('PROJECT#p1', 'PROJECT#p2', 'PROJECT#company_personas'):
             assert _row(aws, {'pk': pk, 'sk': 'PERSONA#a'})['input_feedback_ids'] == ['f9']
 
+    def test_a_persona_s_evidence_refreshes_and_a_saved_focus_group_are_marked(self, aws, worker_context):
+        """7.64.00: an erased review leaves a refresh entry's ids (the entry, its actor and time, stays) and a focus group
+        document's lineage; the transcript's text is the owner's and never rewritten."""
+        put_feedback(aws, 'f1', author='Reviewer One')
+        deployment_project(aws, 'p1')
+        with_marker(aws)
+        entry = {'at': STAMP, 'by': {'sub': 'sub-ada', 'kind': 'user'}, 'reason': 'manual_refresh',
+                 'feedback_ids': ['f1', 'f9']}
+        aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PERSONA#a', 'evidence_updates': [entry]})
+        aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'DOC#fg', 'document_type': 'focus_group',
+                                       'content': 'Ada: late [fb:f1].', 'input_feedback_ids': ['f1']})
+
+        result = handler.handle_event(erasure_job(aws, JOB_ID, 'author', 'Reviewer One', legal_basis=BASIS),
+                                      worker_context)
+
+        assert result['artifacts_marked'] == 2
+        persona = _row(aws, {'pk': 'PROJECT#p1', 'sk': 'PERSONA#a'})
+        assert persona['evidence_updates'] == [{**entry, 'feedback_ids': ['f9']}]
+        assert persona['erased_evidence']['count'] == 1
+        document = _row(aws, {'pk': 'PROJECT#p1', 'sk': 'DOC#fg'})
+        assert (document['input_feedback_ids'], document['content']) == ([], 'Ada: late [fb:f1].')
+
     def test_its_steps_hand_over_and_resume_with_one_row_pages(self, aws):
         aws['aggregates'].put_item(Item={'pk': 'AUDIT#tombstone#web', 'sk': 'f1'})
         for project_id in ('p1', 'p2', 'p3'):

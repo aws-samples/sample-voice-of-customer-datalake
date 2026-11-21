@@ -26,6 +26,8 @@ import {
   NavigationChips, PersonaAnswers, ReasoningBlock, SourcesBlock, ToolSteps,
 } from './messageParts'
 import { navigationAtTurnEnd, parsePersonaResponses } from './messageHelpers'
+import { FocusGroupCard } from './focusGroupParts'
+import { personaColours } from './focusGroupModel'
 import PlanProgress from '../planProgress/PlanProgress'
 import { approvedPlanIds } from '../planProgress/planIds'
 import { useAssistantUiStore } from '../store/assistantStore'
@@ -105,10 +107,14 @@ function RegenerateButton({ onRegenerate }: Readonly<{ onRegenerate: () => void 
   )
 }
 
-function AnswerActions({ text, page, onRegenerate }: Readonly<{ text: string; page: PageContext; onRegenerate?: () => void }>) {
+function AnswerActions({ text, page, onRegenerate, saves = true }: Readonly<{
+  text: string; page: PageContext; onRegenerate?: () => void
+  /** False on a focus group's synthesis: its own card saves the whole group. */
+  saves?: boolean
+}>) {
   const { t } = useTranslation('assistant')
   const { copy, copiedKey } = useCopyToClipboard()
-  const projectId = page.kind === 'project' ? page.projectId : undefined
+  const projectId = page.kind === 'project' && saves ? page.projectId : undefined
   const { state, save } = useSaveAsDocument(projectId)
   if (text.trim() === '') return onRegenerate === undefined ? null : <div className="mt-1 flex items-center gap-1"><RegenerateButton onRegenerate={onRegenerate} /></div>
   return (
@@ -178,26 +184,43 @@ function AssistantBubble({ message, thread, page, isStreaming, navigation, toolC
   const personas = personaResponsesFor(message, thread)
   const plans = approvedPlanIds(message.toolCalls ?? [], thread)
   const stopped = ownEntry(thread.stopped, message.id) === true ? true : undefined
+  const focusGroup = ownEntry(thread.focusGroups, message.id)
   // A tool-only turn whose steps show on the group's first message renders nothing (no empty gap).
-  if (nothingToShow([text, reasoning], [toolCalls, personas, plans], [sources, navigation, stopped, onRegenerate])) return null
+  if (nothingToShow([text, reasoning], [toolCalls, personas, plans], [sources, navigation, stopped, onRegenerate, focusGroup])) return null
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[95%] min-w-0">
         {reasoning !== '' && <ReasoningBlock text={reasoning} />}
         <ToolSteps calls={toolCalls} statuses={thread.toolCallStatus} />
-        <PersonaAnswers responses={personas} />
+        <PersonaAnswers responses={personas} colours={personaColours(thread)} />
         <PlanBlocks planIds={plans} />
-        {text !== '' && (
-          <div className="md-content break-words rounded-xl rounded-bl-sm border border-border bg-bg-accent px-3 py-2 text-sm text-text">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
-          </div>
-        )}
+        <AnswerBody message={message} thread={thread} page={page} />
         {sources !== undefined && <SourcesBlock sources={sources} />}
         {navigation !== undefined && <NavigationChips items={navigation} />}
         {stopped && <StoppedMarker />}
-        {!isStreaming && <AnswerActions text={text} page={page} onRegenerate={onRegenerate} />}
+        {!isStreaming && <AnswerActions text={text} page={page} onRegenerate={onRegenerate} saves={focusGroup === undefined} />}
       </div>
     </div>
+  )
+}
+
+/** The answer's text, or a focus group's synthesis card (localised, with Save) instead of its markdown. */
+function AnswerBody({ message, thread, page }: Readonly<{ message: AssistantMessage; thread: ThreadState; page: PageContext }>) {
+  const focusGroup = ownEntry(thread.focusGroups, message.id)
+  // A synthesis' markdown is what the model reads in a later turn; the person reads its card.
+  const text = focusGroup?.synthesis === undefined ? message.content ?? '' : ''
+  return (
+    <>
+      {text !== '' && (
+        <div className="md-content break-words rounded-xl rounded-bl-sm border border-border bg-bg-accent px-3 py-2 text-sm text-text">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
+        </div>
+      )}
+      {focusGroup !== undefined && (
+        <FocusGroupCard event={focusGroup} thread={thread} messageId={message.id}
+          projectId={page.kind === 'project' ? page.projectId : undefined} />
+      )}
+    </>
   )
 }
 

@@ -498,6 +498,7 @@ export type DocTypeFieldPinWouldSeeDrift = MustBeTrue<BothWays<GenerateDocumentB
 // @ts-expect-error the field is narrower than itself plus a member, so NOT equal
 export type DocTypeFieldPinWouldSeeNarrowing = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType | 'not-a-doc-type'>>
 
+/** Every document type the SPA knows; `focus_group` (7.64.00) is a saved persona focus group: synthetic, a reference. */
 export type KnownProjectDocumentType =
   | 'prd'
   | 'prfaq'
@@ -506,6 +507,7 @@ export type KnownProjectDocumentType =
   | 'product_report'
   | 'prototype'
   | 'decision'
+  | 'focus_group'
 
 export interface ProjectDocument {
   document_id: string
@@ -590,6 +592,8 @@ export interface ProjectDocument {
    * "This replaces that" is a DIFFERENT relation from "this was built from
    * that", so these are deliberately not part of `derivation`.
    */
+  /** A saved persona focus group's (7.64.00): its statements are synthetic, never evidence. */
+  synthetic?: boolean
   revised_from_id?: string | null
   revision_feedback?: string
   /** A prototype version written by applying a draft (docs/prototype-builder.md parts 2-3): that draft's id. */

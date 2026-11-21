@@ -361,5 +361,35 @@
     "urgentOnly": "仅紧急",
     "categories": "类别",
     "noCategories": "此时间范围内没有类别。"
+  },
+  "focusGroup": {
+    "round": "第 {{round, number}} 轮",
+    "moderator": "主持人",
+    "citation": "评论 {{index, number}}",
+    "openCitation": "打开引用的评论 {{index, number}}",
+    "synthetic": "合成",
+    "stoppedNote": "在结束前已停止：目前的回答就是全部，没有总结。",
+    "missingPersonas_one": "有 {{count, number}} 个所选画像已不在本项目中。",
+    "missingPersonas_other": "有 {{count, number}} 个所选画像已不在本项目中。",
+    "referenceOnly": "这些用户画像是合成的：请把它们的发言当作有待验证的假设。保存的焦点小组只是参考，绝不是证据；只有其引用的评论才是客户反馈。",
+    "synthesis": {
+      "title": "焦点小组总结",
+      "agreements": "共识",
+      "disagreements": "分歧",
+      "openQuestions": "待解决的问题",
+      "unavailable": "无法生成总结；上面的回答就是焦点小组的全部内容。"
+    },
+    "save": {
+      "idle": "保存焦点小组",
+      "saving": "正在保存…",
+      "saved": "已保存到文档",
+      "error": "保存失败 – 重试"
+    },
+    "document": {
+      "title": "焦点小组：{{topic}} – {{date}}",
+      "heading": "焦点小组：{{topic}}",
+      "banner": "合成：以下每条发言都来自用户画像，是有待验证的假设，绝不是客户反馈。所引用的评论是真实的。",
+      "cited": "引用的评论"
+    }
   }
 }

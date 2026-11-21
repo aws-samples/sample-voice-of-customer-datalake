@@ -369,5 +369,35 @@
     "urgentOnly": "Solo urgentes",
     "categories": "Categorías",
     "noCategories": "No hay categorías en este periodo."
+  },
+  "focusGroup": {
+    "round": "Ronda {{round, number}}",
+    "moderator": "Moderador",
+    "citation": "Opinión {{index, number}}",
+    "openCitation": "Abrir la opinión citada {{index, number}}",
+    "synthetic": "Sintético",
+    "stoppedNote": "Detenido antes del final: las respuestas hasta ahora son todo lo que hay, sin síntesis.",
+    "missingPersonas_one": "{{count, number}} persona elegida ya no está en este proyecto.",
+    "missingPersonas_other": "{{count, number}} personas elegidas ya no están en este proyecto.",
+    "referenceOnly": "Las personas son sintéticas: trata lo que dicen como hipótesis que comprobar. Un grupo focal guardado es una referencia, nunca evidencia; solo las opiniones que cita son feedback de clientes.",
+    "synthesis": {
+      "title": "Síntesis del grupo focal",
+      "agreements": "Acuerdos",
+      "disagreements": "Desacuerdos",
+      "openQuestions": "Preguntas abiertas",
+      "unavailable": "No se pudo redactar la síntesis; las respuestas de arriba son todo el grupo focal."
+    },
+    "save": {
+      "idle": "Guardar grupo focal",
+      "saving": "Guardando…",
+      "saved": "Guardado en documentos",
+      "error": "Error al guardar – reintentar"
+    },
+    "document": {
+      "title": "Grupo focal: {{topic}} – {{date}}",
+      "heading": "Grupo focal: {{topic}}",
+      "banner": "Sintético: cada afirmación de abajo es de una persona, una hipótesis que comprobar, nunca feedback de clientes. Las opiniones citadas son reales.",
+      "cited": "Opiniones citadas"
+    }
   }
 }

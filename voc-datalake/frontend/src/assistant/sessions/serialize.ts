@@ -23,7 +23,7 @@ turn-preserving helper, so a long thread keeps saving its newest turns.
  */
 import { z } from 'zod'
 import { createThreadState, contentToText, parseToolArguments } from '../thread/reducer'
-import { parseNavigation, parseSources } from '../thread/customEvents'
+import { parseFocusGroup, parseNavigation, parseSources } from '../thread/customEvents'
 import { expiredResolution, isExpired } from '../thread/resume'
 import { attachmentName, keepNewestTurns } from '../thread/wire'
 import { LIMITS } from '@stream/assistant/contract'
@@ -72,6 +72,21 @@ function storedToolText(text: string, toolChars: number, personaChars: number): 
   return storedPersonaResult(text, personaChars) ?? text.slice(0, toolChars)
 }
 
+/** What an assistant message carries in `metadata.voc` (sources, chips, a focus group, the Stopped marker), if any. */
+function vocOf(state: ThreadState, messageId: string): Record<string, unknown> | undefined {
+  const hasSources = Object.hasOwn(state.sources, messageId)
+  const hasNavigation = Object.hasOwn(state.navigation, messageId)
+  const focusGroup = Object.hasOwn(state.focusGroups, messageId) ? state.focusGroups[messageId] : undefined
+  const stopped = state.stopped[messageId] === true
+  if (!hasSources && !hasNavigation && focusGroup === undefined && !stopped) return undefined
+  return {
+    ...(hasSources ? { sources: state.sources[messageId] } : {}),
+    ...(hasNavigation ? { navigation: state.navigation[messageId] } : {}),
+    ...(focusGroup === undefined ? {} : { focusGroup }),
+    ...(stopped ? { stopped: true } : {}),
+  }
+}
+
 function storedMessage(message: Message, state: ThreadState): Message {
   if (message.role === 'tool') {
     return { ...message, content: storedToolText(contentToText(message.content), MAX_STORED_TOOL_CHARS, MAX_STORED_PERSONA_CHARS) }
@@ -80,15 +95,8 @@ function storedMessage(message: Message, state: ThreadState): Message {
     return { ...message, content: message.content.map(stripPart) }
   }
   if (message.role === 'assistant') {
-    const hasSources = Object.hasOwn(state.sources, message.id)
-    const hasNavigation = Object.hasOwn(state.navigation, message.id)
-    const stopped = state.stopped[message.id] === true
-    if (!hasSources && !hasNavigation && !stopped) return message
-    const voc = {
-      ...(hasSources ? { sources: state.sources[message.id] } : {}),
-      ...(hasNavigation ? { navigation: state.navigation[message.id] } : {}),
-      ...(stopped ? { stopped: true } : {}),
-    }
+    const voc = vocOf(state, message.id)
+    if (voc === undefined) return message
     return { ...message, metadata: { ...message.metadata, voc } }
   }
   return message
@@ -156,7 +164,10 @@ export function dropOldestTurns(messages: readonly Message[]): Message[] {
 // ── restore ────────────────────────────────────────────────────────────────
 
 const vocMetadataSchema = z.object({
-  voc: z.object({ sources: z.unknown().optional(), navigation: z.unknown().optional(), stopped: z.boolean().catch(false).optional() }),
+  voc: z.object({
+    sources: z.unknown().optional(), navigation: z.unknown().optional(), focusGroup: z.unknown().optional(),
+    stopped: z.boolean().catch(false).optional(),
+  }),
 })
 
 function outcomeStatus(content: string): ToolCallStatus {
@@ -166,6 +177,12 @@ function outcomeStatus(content: string): ToolCallStatus {
   } catch {
     return 'complete'
   }
+}
+
+/** A stored focus group's state on its message (`metadata.voc.focusGroup`), when it still reads as the contract's. */
+function restoredFocusGroups(state: ThreadState, messageId: string, value: unknown): ThreadState['focusGroups'] {
+  const group = value === undefined ? null : parseFocusGroup(value)
+  return group === null ? state.focusGroups : { ...state.focusGroups, [messageId]: group }
 }
 
 function restoreMetadata(state: ThreadState, message: Message): ThreadState {
@@ -182,6 +199,7 @@ function restoreMetadata(state: ThreadState, message: Message): ThreadState {
     sources: meta.data.voc.sources === undefined ? state.sources : { ...state.sources, [message.id]: parseSources(meta.data.voc.sources) },
     navigation: navigation.length === 0 ? state.navigation : { ...state.navigation, [message.id]: navigation },
     stopped: meta.data.voc.stopped === true ? { ...state.stopped, [message.id]: true } : state.stopped,
+    focusGroups: restoredFocusGroups(state, message.id, meta.data.voc.focusGroup),
   }
 }
 

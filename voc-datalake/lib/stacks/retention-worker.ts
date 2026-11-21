@@ -139,7 +139,7 @@ const DEPLOYMENT_QUERY_ATTRIBUTES = ['pk', 'sk', 'author', 'replies', 'status_by
   'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes', 's3_raw_key', 'content_type',
   'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at', 'completed_at', 'release',
   'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
-  'input_feature_request_ids', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'];
+  'input_feature_request_ids', 'evidence_updates', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'];
 /**
  * What the worker's Scan of voc-projects may read (7.48.00; lambda/shared/review_registries.py `SCAN_ATTRIBUTES`, which
  * a test holds to this list): a row's key, a routing row's workspace, a link's project and series, and a link's or a
@@ -149,16 +149,16 @@ const DEPLOYMENT_QUERY_ATTRIBUTES = ['pk', 'sk', 'author', 'replies', 'status_by
 const SCAN_ATTRIBUTES = ['pk', 'sk', 'workspace_id', 'project_id', 'series_id', 'created_at'];
 /**
  * The attributes the worker's UpdateItems name on voc-projects, the key included (`dynamodb:Attributes`), as two
- * statements: the lineage marks' three id lists and `erased_evidence`, on the deployment's and one workspace id's
- * project partitions only (`LINEAGE_UPDATE_PARTITIONS`; since 7.48.00 neither lineage pass Scans, so no other row is
- * marked); and what an erasure by email rewrites (a META's owner and member addresses; a thread's authors, replies and
+ * statements: the lineage marks' three id lists, a persona's `evidence_updates` (7.64.00) and `erased_evidence`, on
+ * the deployment's and one workspace id's project partitions only (`LINEAGE_UPDATE_PARTITIONS`; since 7.48.00 neither
+ * lineage pass Scans, so no other row is marked); and what an erasure by email rewrites (a META's owner and member addresses; a thread's authors, replies and
  * resolver; a link's audience, creator and revoker names and its revocation; a persona's research notes), on the
  * deployment's and one workspace id's `PROJECT#*`, `DCOMMENTS#*` and `DOCSHARE#*` partitions only (the deployment's
  * since 7.48.00). lambda/jobs/retention/test/test_project_erasure.py holds each list to project_people.py's
  * `LINEAGE_UPDATE_ATTRIBUTES` and `PEOPLE_UPDATE_ATTRIBUTES` and to every update the job sends.
  */
 const LINEAGE_UPDATE_ATTRIBUTES = ['pk', 'sk', 'input_feedback_ids', 'evidence_feedback_ids',
-  'input_feature_request_ids', 'erased_evidence'];
+  'input_feature_request_ids', 'evidence_updates', 'erased_evidence'];
 const PEOPLE_UPDATE_ATTRIBUTES = ['pk', 'sk', 'author', 'replies', 'status_by', 'audience', 'created_by_name',
   'revoked_by', 'revoked', 'owner_email', 'members', 'research_notes'];
 /** The partitions the lineage marks write: the deployment's and one workspace id's projects (their libraries too). */

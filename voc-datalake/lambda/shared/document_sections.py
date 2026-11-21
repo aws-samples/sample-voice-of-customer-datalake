@@ -28,6 +28,7 @@ SECTION_BY_TYPE: Final[dict[str, str]] = {
     'custom': FALLBACK_SECTION,
     'product_report': FALLBACK_SECTION,
     'decision': FALLBACK_SECTION,
+    'focus_group': FALLBACK_SECTION,
 }
 
 

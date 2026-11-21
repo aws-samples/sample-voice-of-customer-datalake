@@ -2,6 +2,7 @@
  * TabContent - Renders the active tab content
  */
 import DocumentsTab from './DocumentsTab'
+import FocusGroupsTab from './focusGroups/FocusGroupsTab'
 import DecisionsTab from './decisions/DecisionsTab'
 import OverviewTab, { type OverviewTabProps } from './OverviewTab'
 import PersonasTab from './PersonasTab'
@@ -128,6 +129,10 @@ export default function TabContent({
         isSavingNotes={isSavingNotes}
       />
     )
+  }
+
+  if (activeTab === 'focus-groups') {
+    return <FocusGroupsTab personas={personas} documents={documents} onSelectDoc={onSelectDoc} />
   }
 
   if (activeTab === 'product') {

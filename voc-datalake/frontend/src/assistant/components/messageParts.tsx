@@ -4,6 +4,7 @@
  *
  * @module assistant/components/messageParts
  */
+import clsx from 'clsx'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -18,6 +19,8 @@ import { useReviewModal } from '../../hooks/useReviewModal'
 import { useRouteNavigate } from '../../hooks/useRouteNavigate'
 import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { CitedText } from './focusGroupParts'
+import { citationsOf } from './focusGroupModel'
 import type { PersonaResponse } from './messageHelpers'
 import type { ToolCall } from '@ag-ui/core'
 import type { Tone } from '../../theme/tones'
@@ -245,26 +248,47 @@ function isSafeAvatar(url: string | undefined): url is string {
   return url !== undefined && (/^https:\/\//i.test(url) || (url.startsWith('/') && !url.startsWith('//')))
 }
 
-export function PersonaAnswers({ responses }: Readonly<{ responses: readonly PersonaResponse[] }>) {
+/** A focus group's round label, when the answers are one (they all carry the same `round`). */
+function RoundLabel({ responses }: Readonly<{ responses: readonly PersonaResponse[] }>) {
+  const { t } = useTranslation('assistant')
+  const round = responses.find((response) => response.round !== undefined)?.round
+  if (round === undefined) return null
+  return <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-muted">{t('focusGroup.round', { round })}</p>
+}
+
+/** One answer's text: a focus group's with its citations as chips, any other as written. */
+function AnswerText({ response }: Readonly<{ response: PersonaResponse }>) {
+  if (response.citations === undefined) return <p className="whitespace-pre-wrap text-text">{response.answer}</p>
+  return <p className="whitespace-pre-wrap text-text"><CitedText text={response.answer} citations={citationsOf([response])} /></p>
+}
+
+export function PersonaAnswers({ responses, colours }: Readonly<{
+  responses: readonly PersonaResponse[]
+  /** A focus group's persona colours (focusGroupParts.ts `personaColours`), by persona id. */
+  colours?: ReadonlyMap<string, string>
+}>) {
   const { t } = useTranslation('assistant')
   if (responses.length === 0) return null
   return (
-    <ul className="mb-2 space-y-2" aria-label={t('message.personaAnswers')}>
-      {responses.map((r) => (
-        <li key={r.persona_id} className="card flex gap-2.5 p-3">
-          {isSafeAvatar(r.avatar_url)
-            ? <img src={r.avatar_url} alt="" className="h-8 w-8 flex-shrink-0 rounded-full object-cover" />
-            : (
-              <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-accent-subtle text-accent-text">
-                <MessageSquareQuote size={16} aria-hidden />
-              </span>
-            )}
-          <div className="min-w-0 text-sm">
-            <p className="font-medium text-text-strong">{r.name}</p>
-            <p className="whitespace-pre-wrap text-text">{r.answer}</p>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <div className="mb-2">
+      <RoundLabel responses={responses} />
+      <ul className="space-y-2" aria-label={t('message.personaAnswers')}>
+        {responses.map((r) => (
+          <li key={r.persona_id} className={clsx('card flex gap-2.5 p-3', colours?.has(r.persona_id) === true && ['border-l-4', colours.get(r.persona_id)])}>
+            {isSafeAvatar(r.avatar_url)
+              ? <img src={r.avatar_url} alt="" className="h-8 w-8 flex-shrink-0 rounded-full object-cover" />
+              : (
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-accent-subtle text-accent-text">
+                  <MessageSquareQuote size={16} aria-hidden />
+                </span>
+              )}
+            <div className="min-w-0 text-sm">
+              <p className="font-medium text-text-strong">{r.name}</p>
+              <AnswerText response={r} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

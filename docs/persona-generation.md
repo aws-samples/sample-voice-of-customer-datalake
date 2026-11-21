@@ -72,3 +72,11 @@ Adding personas never touches the kept personas' rows or avatars. Avatars are ma
 personas that survive the name check. `@all` in the project assistant asks the first 6 personas in project
 order ([assistant mentions](assistant-mentions.md)), so a larger set does not make a round more expensive.
 Because names never repeat, no persona answers twice.
+
+## Refreshing a persona's evidence (no regeneration)
+
+Since 7.64.00 a project persona's header says how many new reviews matching it arrived since it was generated, and
+**Refresh evidence** adds the newest of them to its evidence (`evidence_updates`: who, when, why and which reviews)
+without touching its text. The focus groups ground each persona on that evidence plus fresh matches
+([project-workspace.md → Persona focus groups](project-workspace.md#persona-focus-groups)). Rewriting a persona from
+the new feedback stays a generation (add or replace, above); a refresh never rewrites anything.

@@ -93,6 +93,11 @@ _INJECTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+#: What a customer's text that reads like an instruction to a model shows in a prompt instead (the revise-from-comments
+#: evidence, a persona's evidence pack).
+WITHHELD = '[withheld: this text reads like an instruction to the AI]'
+
+
 def injection_findings(text: object) -> list[str]:
     """Names of the injection patterns ``text`` matches ([] when clean).
 

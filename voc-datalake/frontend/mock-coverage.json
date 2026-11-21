@@ -717,6 +717,53 @@
     ]
   },
   {
+    "file": "api/personaGroundingApi.ts",
+    "method": "GET",
+    "call": "`${projectPersonaPath(projectId, personaId)}/evidence-freshness`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1/evidence-freshness"
+      }
+    ]
+  },
+  {
+    "file": "api/personaGroundingApi.ts",
+    "method": "POST",
+    "call": "`${projectPersonaPath(projectId, personaId)}/evidence/refresh`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_2/evidence/refresh"
+      }
+    ]
+  },
+  {
+    "file": "api/personaGroundingApi.ts",
+    "method": "POST",
+    "call": "`/projects/${encodeURIComponent(projectId)}/documents`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents",
+        "body": {
+          "document_type": "focus_group",
+          "title": "Focus group: delivery",
+          "content": "# Focus group\n\n**Ada:** late [fb:fb_1]",
+          "derivation": {
+            "persona_ids": [
+              "persona_1",
+              "persona_2"
+            ],
+            "feedback_ids": [
+              "fb_1"
+            ],
+            "document_ids": [],
+            "library_item_ids": [],
+            "rounds": 2
+          }
+        }
+      }
+    ]
+  },
+  {
     "file": "api/tokenConnectionsApi.ts",
     "method": "POST",
     "call": "CREATE_PATH",

@@ -7,6 +7,7 @@
     "personaTitle": "删除人物角色？"
   },
   "documents": {
+    "syntheticNotice": "这是由合成用户画像组成的焦点小组：其发言是有待验证的假设，绝不是客户反馈或证据。只有其引用的评论是真实的。",
     "deleteDocument": "删除文档",
     "card": {
       "more": "更多操作",
@@ -393,6 +394,17 @@
     "occupationPlaceholder": "产品经理"
   },
   "personas": {
+    "evidence": {
+      "new_one": "自 {{date}} 起有 {{count, number}} 条新的匹配评论",
+      "new_other": "自 {{date}} 起有 {{count, number}} 条新的匹配评论",
+      "atLeastNew_one": "自 {{date}} 起至少有 {{count, number}} 条新的匹配评论",
+      "atLeastNew_other": "自 {{date}} 起至少有 {{count, number}} 条新的匹配评论",
+      "upToDate": "自 {{date}} 起没有新的匹配评论",
+      "refresh": "刷新证据",
+      "added_one": "已向其证据添加 {{count, number}} 条评论",
+      "added_other": "已向其证据添加 {{count, number}} 条评论",
+      "refreshFailed": "无法刷新证据，请重试。"
+    },
     "addNote": "添加备注",
     "addResearchNotes": "添加研究笔记",
     "addResearchNotesDesc": "记录您对该用户角色的观察、洞察和假设",
@@ -581,6 +593,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "焦点小组",
     "aiChat": "AI 对话",
     "documents": "文档",
     "overview": "概览",
@@ -810,5 +823,26 @@
       "showThread": "显示评论：{{label}}",
       "threadGone": "（评论已删除）"
     }
+  },
+  "focusGroups": {
+    "intro": "把本项目的 2 到 6 个用户画像放进一个小组，并给出一个话题。第 1 轮各自独立回答；从第 2 轮起，在主持人追问一次之后，每个画像阅读其他人（已匿名）的观点，并表示同意、反对或补充。每个回答都会引用该画像证据中的真实评论，最后给出总结。它在助手中运行。",
+    "needPersonas_one": "焦点小组至少需要 {{count, number}} 个用户画像。请先在“用户画像”标签页中生成或添加画像。",
+    "needPersonas_other": "焦点小组至少需要 {{count, number}} 个用户画像。请先在“用户画像”标签页中生成或添加画像。",
+    "newGroup": "新建焦点小组",
+    "personas_one": "用户画像：已选 {{count, number}} 个，最多 {{max, number}} 个",
+    "personas_other": "用户画像：已选 {{count, number}} 个，最多 {{max, number}} 个",
+    "topic": "话题",
+    "topicHint": "希望用户画像讨论什么？这将是对话的第一条消息。",
+    "rounds": "轮次",
+    "roundCount_one": "{{count, number}} 轮",
+    "roundCount_other": "{{count, number}} 轮",
+    "roundsHint": "第 1 轮相互独立，任何回答都不会被其他回答带偏。从第 2 轮起，在主持人追问一次之后，每个画像会阅读其他人已匿名的观点。",
+    "documents": "每个画像阅读的项目文档（最多 {{max, number}} 个）",
+    "library": "每个画像阅读的文档库条目（最多 {{max, number}} 个）",
+    "cost": "大约调用助手模型 {{calls, number}} 次，约 {{input, number}} 个输入令牌和 {{output, number}} 个输出令牌。",
+    "synthetic": "所有发言都是合成的，不会成为反馈；每个画像引用的都是你可以打开查看的真实评论。",
+    "start": "开始焦点小组",
+    "saved": "已保存的焦点小组",
+    "noneSaved": "还没有保存的焦点小组。可在助手的总结卡片中保存。"
   }
 }

@@ -7,6 +7,7 @@
     "personaTitle": "Delete Persona?"
   },
   "documents": {
+    "syntheticNotice": "A focus group of synthetic personas: what they say are hypotheses to test, never customer feedback or evidence. Only the reviews it cites are real.",
     "deleteDocument": "Delete document",
     "card": {
       "more": "More actions",
@@ -393,6 +394,17 @@
     "occupationPlaceholder": "Product Manager"
   },
   "personas": {
+    "evidence": {
+      "new_one": "{{count, number}} new matching review since {{date}}",
+      "new_other": "{{count, number}} new matching reviews since {{date}}",
+      "atLeastNew_one": "At least {{count, number}} new matching review since {{date}}",
+      "atLeastNew_other": "At least {{count, number}} new matching reviews since {{date}}",
+      "upToDate": "No new matching reviews since {{date}}",
+      "refresh": "Refresh evidence",
+      "added_one": "Added {{count, number}} review to its evidence",
+      "added_other": "Added {{count, number}} reviews to its evidence",
+      "refreshFailed": "The evidence could not be refreshed. Try again."
+    },
     "addNote": "Add Note",
     "addResearchNotes": "Add Your Research Notes",
     "addResearchNotesDesc": "Document your observations, insights, and hypotheses about this persona",
@@ -581,6 +593,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "Focus groups",
     "aiChat": "AI Chat",
     "documents": "Documents",
     "overview": "Overview",
@@ -810,5 +823,26 @@
       "showThread": "Show the comment: {{label}}",
       "threadGone": "(comment deleted)"
     }
+  },
+  "focusGroups": {
+    "intro": "Put 2 to 6 of this project’s personas in one panel and give them a topic. In round 1 each answers on its own; from round 2 each reads the others’ points, anonymised, after one follow-up from the moderator, and agrees, disagrees or builds on them. Every answer cites real reviews from the persona’s evidence, and a synthesis ends it. It runs in the assistant.",
+    "needPersonas_one": "A focus group needs at least {{count, number}} personas. Generate or add personas on the Personas tab first.",
+    "needPersonas_other": "A focus group needs at least {{count, number}} personas. Generate or add personas on the Personas tab first.",
+    "newGroup": "New focus group",
+    "personas_one": "Personas: {{count, number}} chosen, at most {{max, number}}",
+    "personas_other": "Personas: {{count, number}} chosen, at most {{max, number}}",
+    "topic": "Topic",
+    "topicHint": "What should the personas discuss? This is the first message of the conversation.",
+    "rounds": "Rounds",
+    "roundCount_one": "{{count, number}} round",
+    "roundCount_other": "{{count, number}} rounds",
+    "roundsHint": "Round 1 is independent, so no answer is anchored on another. From round 2 each persona reads the others’ points, anonymised, after one follow-up from the moderator.",
+    "documents": "Project documents every persona reads (at most {{max, number}})",
+    "library": "Documents Library items every persona reads (at most {{max, number}})",
+    "cost": "About {{calls, number}} model calls on the assistant’s model, roughly {{input, number}} input and {{output, number}} output tokens.",
+    "synthetic": "Every statement is synthetic and nothing becomes feedback; each persona cites real reviews you can open.",
+    "start": "Start focus group",
+    "saved": "Saved focus groups",
+    "noneSaved": "No saved focus group yet. Save one from its synthesis card in the assistant."
   }
 }

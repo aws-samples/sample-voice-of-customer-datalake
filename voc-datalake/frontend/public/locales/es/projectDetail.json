@@ -7,6 +7,7 @@
     "personaTitle": "¿Eliminar Persona?"
   },
   "documents": {
+    "syntheticNotice": "Un grupo focal de personas sintéticas: lo que dicen son hipótesis que comprobar, nunca feedback de clientes ni evidencia. Solo son reales las opiniones que cita.",
     "deleteDocument": "Eliminar documento",
     "card": {
       "more": "Más acciones",
@@ -409,6 +410,17 @@
     "occupationPlaceholder": "Gerente de producto"
   },
   "personas": {
+    "evidence": {
+      "new_one": "{{count, number}} opinión nueva coincidente desde el {{date}}",
+      "new_other": "{{count, number}} opiniones nuevas coincidentes desde el {{date}}",
+      "atLeastNew_one": "Al menos {{count, number}} opinión nueva coincidente desde el {{date}}",
+      "atLeastNew_other": "Al menos {{count, number}} opiniones nuevas coincidentes desde el {{date}}",
+      "upToDate": "No hay opiniones nuevas coincidentes desde el {{date}}",
+      "refresh": "Actualizar evidencia",
+      "added_one": "Se añadió {{count, number}} opinión a su evidencia",
+      "added_other": "Se añadieron {{count, number}} opiniones a su evidencia",
+      "refreshFailed": "No se pudo actualizar la evidencia. Inténtalo de nuevo."
+    },
     "addNote": "Agregar nota",
     "addResearchNotes": "Agregar tus notas de investigación",
     "addResearchNotesDesc": "Documenta tus observaciones, insights e hipótesis sobre esta persona",
@@ -601,6 +613,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "Grupos focales",
     "aiChat": "Chat IA",
     "documents": "Documentos",
     "overview": "Descripción General",
@@ -844,5 +857,26 @@
       "showThread": "Mostrar el comentario: {{label}}",
       "threadGone": "(comentario eliminado)"
     }
+  },
+  "focusGroups": {
+    "intro": "Reúne de 2 a 6 personas de este proyecto en un panel y dales un tema. En la ronda 1 cada una responde por su cuenta; desde la ronda 2 cada una lee los puntos de las demás, anonimizados, tras una pregunta de seguimiento del moderador, y está de acuerdo, discrepa o los amplía. Cada respuesta cita opiniones reales de la evidencia de la persona, y una síntesis lo cierra. Se ejecuta en el asistente.",
+    "needPersonas_one": "Un grupo focal necesita al menos {{count, number}} personas. Genera o añade personas primero en la pestaña Personas.",
+    "needPersonas_other": "Un grupo focal necesita al menos {{count, number}} personas. Genera o añade personas primero en la pestaña Personas.",
+    "newGroup": "Nuevo grupo focal",
+    "personas_one": "Personas: {{count, number}} elegida, como máximo {{max, number}}",
+    "personas_other": "Personas: {{count, number}} elegidas, como máximo {{max, number}}",
+    "topic": "Tema",
+    "topicHint": "¿De qué deben hablar las personas? Es el primer mensaje de la conversación.",
+    "rounds": "Rondas",
+    "roundCount_one": "{{count, number}} ronda",
+    "roundCount_other": "{{count, number}} rondas",
+    "roundsHint": "La ronda 1 es independiente, así ninguna respuesta se ancla en otra. Desde la ronda 2 cada persona lee los puntos de las demás, anonimizados, tras una pregunta de seguimiento del moderador.",
+    "documents": "Documentos del proyecto que lee cada persona (como máximo {{max, number}})",
+    "library": "Elementos de la Biblioteca de documentos que lee cada persona (como máximo {{max, number}})",
+    "cost": "Unas {{calls, number}} llamadas al modelo del asistente, aproximadamente {{input, number}} tokens de entrada y {{output, number}} de salida.",
+    "synthetic": "Cada afirmación es sintética y nada se convierte en feedback; cada persona cita opiniones reales que puedes abrir.",
+    "start": "Iniciar grupo focal",
+    "saved": "Grupos focales guardados",
+    "noneSaved": "Aún no hay grupos focales guardados. Guarda uno desde su tarjeta de síntesis en el asistente."
   }
 }

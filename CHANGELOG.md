@@ -17,6 +17,64 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.64.00] - 2026-11-21
+
+**Persona focus groups**: put 2 to 6 of a project's personas in one panel, give them a topic and 1 to 3 rounds, and
+watch them answer and react to each other, each citing real feedback, ending in a synthesis you can save; a persona's
+card says when new feedback matches it, and Refresh evidence adds it
+([project-workspace.md](docs/project-workspace.md#persona-focus-groups)). Everything they say is synthetic: a
+reference, never feedback or evidence. No new API Gateway resource (the API stack stays at 425), no fixed cost.
+
+### Added
+
+- **The Focus groups tab** (`/projects/{id}/focus-groups`): choose 2–6 personas, a topic (at most 2,000 characters),
+  1, 2 or 3 rounds and up to 3 project documents and 3 Documents Library items they read; the cost before the start
+  (the model calls on the assistant's model and roughly the tokens: 6 personas × 2 rounds is 14 calls, about 45,000
+  input and 8,000 output tokens); **Start focus group** runs it in the assistant, on a new conversation; the saved focus
+  groups are listed and open on the Documents tab.
+- **How a focus group runs** (`POST /chat/stream` with `forwardedProps.focusGroup`, a new schema in the stream
+  contract, run by `runtime/focus-group.ts` instead of the model's own turn): round 1 is independent; from round 2 the
+  moderator asks one follow-up and each persona reads an anonymised digest of the others' last answers (no names, no
+  citations) and agrees, disagrees or builds on them; the synthesis lists agreements, disagreements and open
+  questions. Live persona cards with each persona's colour, avatar and round, `[fb:<id>]` citation chips that open the
+  review, a synthesis card labelled **Synthetic** with **Save focus group**, Stop between batches and Regenerate with
+  the same configuration (stored with the conversation, `metadata.voc.focusGroup`).
+- **The shared persona grounding** (`lambda/shared/persona_grounding.py`, also for the Validate phase and the voice
+  personas next): per persona its cited reviews (`evidence_feedback_ids`), its refreshed ones, and up to 8 fresh
+  reviews since it was generated that match its categories within the project's filters, ranked by the topic. Every
+  review is read as the person asking (their category and source access) and quoted as stored (the source's PII policy
+  as applied at ingestion; a summary-only source's summary marked as not the customer's words; never an author, title,
+  URL or metadata). **The server strips every cited id outside the speaker's pack.**
+  `POST /projects/{id}/personas/evidence-pack` (view; a read the stream's invoker may call).
+- **Freshness and Refresh evidence** on a project persona's header: "N new matching reviews since ‹date›", the matches
+  since it was generated that it does not hold yet (`GET /projects/{id}/personas/{pid}/evidence-freshness`, view), and
+  **Refresh evidence** (`POST /projects/{id}/personas/{pid}/evidence/refresh`, edit), which appends the newest 8 as
+  `{at, by, reason, feedback_ids}` to the persona's `evidence_updates` (at most 20 entries) and sets
+  `evidence_refreshed_at`; the persona's text is never rewritten. Manual only.
+- **A `focus_group` document type** in the Documents section (`POST /projects/{id}/documents`): the transcript, the
+  synthesis and the ids of the reviews cited (never a review's text), always `synthetic: true`, with `derivation:
+  {persona_ids, document_ids, library_item_ids, rounds, feedback_count}`; the cited reviews are its
+  `input_feedback_ids`, only those the saver may see; a citation naming no kept review is removed; a notice under it
+  says it is synthetic. No methodology step counts it.
+
+### Changed
+
+- The retention worker's lineage pass also removes an erased review's id from a persona's `evidence_updates` (the
+  entry, its actor and its time stay); its project-row reads and marks name `evidence_updates` (VocProcessingStack,
+  `dynamodb:Attributes`). A saved focus group's cited reviews are its `input_feedback_ids`, so an erasure marks it too.
+- A workspace's export carries a persona's `evidence_updates` and `evidence_refreshed_at`, and a document's
+  `synthetic`.
+
+### Upgrade notes
+
+- No new AWS resource, stack, route resource or flag: the evidence routes ride the projects API's
+  `/projects/{proxy+}`, a focus group `/chat/stream`; the projects role already reads `voc-feedback`. The stream's
+  read-only invoker allows the one new read POST (`/projects/{project_id}/personas/evidence-pack`).
+- A focus group's model calls are the chat surface's: personas × rounds, one moderator call before rounds 2 and 3,
+  and one synthesis (at most 21 for 6 personas and 3 rounds), shown before the start.
+- The global MCP server gets no focus group tools: its `tools/list` budget is full (TENETS.md tenet 4); an MCP client
+  reads a saved focus group with `documents_get`.
+
 ## [7.63.00] - 2026-11-21
 
 **Event feedback**: an event or workshop feedback template whose forms can be compared, "Ask why when the score is

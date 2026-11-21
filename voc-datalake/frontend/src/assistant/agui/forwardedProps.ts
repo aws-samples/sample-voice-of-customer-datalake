@@ -1,8 +1,9 @@
 /**
  * @fileoverview `forwardedProps` for a run: the page the user is on, the global
  * time range / date basis, the UI language, the web-search opt-in and the
- * personas / documents the message mentions (`@`, `#`; project pages only) and, on `/chat`, the
- * filter panel's scope (a floor the stream's feedback tools cannot widen).
+ * personas / documents the message mentions (`@`, `#`; project pages only), a persona focus group
+ * (project pages only; it names its own personas and documents, so it travels without mentions) and,
+ * on `/chat`, the filter panel's scope (a floor the stream's feedback tools cannot widen).
  *
  * Validated against the contract schema before it leaves the SPA, so a page
  * context that would be rejected server-side (an over-long title, say) is
@@ -13,9 +14,11 @@
 import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS } from '../../api/baseUrl'
 import { getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import { chatScopeSchema, forwardedPropsSchema, mentionsSchema, pageContextSchema } from '@stream/assistant/contract'
+import {
+  chatScopeSchema, focusGroupSchema, forwardedPropsSchema, mentionsSchema, pageContextSchema,
+} from '@stream/assistant/contract'
 import { REFUSED_SCOPE } from '../store/chatScopeStore'
-import type { ChatScope, ForwardedProps, Mentions, PageContext } from '@stream/assistant/contract'
+import type { ChatScope, FocusGroup, ForwardedProps, Mentions, PageContext } from '@stream/assistant/contract'
 
 const MAX_TITLE = 120
 const MAX_PATH = 200
@@ -40,6 +43,8 @@ export interface ForwardedPropsInput {
   mentions?: Mentions
   /** The /chat filter panel's scope (chatScopeStore); sent from the chat page only. */
   scope?: ChatScope
+  /** A persona focus group on this message's topic (the Focus groups tab, or its Regenerate). */
+  focusGroup?: FocusGroup
 }
 
 /** The scope only travels from `/chat`; one the contract refuses becomes a scope that admits nothing. */
@@ -65,13 +70,21 @@ function mentionsFor(page: PageContext, mentions: Mentions | undefined): { menti
   return Object.keys(kept).length === 0 ? {} : { mentions: kept }
 }
 
-export function buildForwardedProps({ page, language, useWebSearch, mentions, scope }: ForwardedPropsInput): ForwardedProps {
+/** A focus group travels from its project's page only, and only when it passes the contract. */
+function focusGroupFor(page: PageContext, focusGroup: FocusGroup | undefined): { focusGroup?: FocusGroup } {
+  if (focusGroup === undefined || page.kind !== 'project' || page.projectId === undefined) return {}
+  const parsed = focusGroupSchema.safeParse(focusGroup)
+  return parsed.success ? { focusGroup: parsed.data } : {}
+}
+
+export function buildForwardedProps({ page, language, useWebSearch, mentions, scope, focusGroup }: ForwardedPropsInput): ForwardedProps {
   const { timeRange, customDays, dateBasis } = useConfigStore.getState()
   const range = getDateRangeParams(timeRange, customDays, dateBasis)
   const clampedPage = clampPageContext(page)
+  const group = focusGroupFor(clampedPage, focusGroup)
   const candidate: ForwardedProps = {
     page: clampedPage,
-    ...mentionsFor(clampedPage, mentions),
+    ...(group.focusGroup === undefined ? mentionsFor(clampedPage, mentions) : group),
     ...scopeFor(clampedPage, scope),
     ...(range.days !== undefined ? { days: Math.min(MAX_CUSTOM_DAYS, Math.max(ALL_TIME_CUSTOM_DAYS, range.days)) } : {}),
     dateBasis: range.date_basis ?? 'imported',

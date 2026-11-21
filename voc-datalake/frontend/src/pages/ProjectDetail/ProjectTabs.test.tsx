@@ -40,7 +40,7 @@ describe('ProjectTabs', () => {
     render(<ProjectTabs {...defaultProps} />)
     expect(screen.queryByRole('tab', { name: /MCP|Export/ })).not.toBeInTheDocument()
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual([
-      'Overview', 'Personas(3)', 'Product', 'Documents(5)', 'Decisions', 'Participants',
+      'Overview', 'Personas(3)', 'Focus groups', 'Product', 'Documents(5)', 'Decisions', 'Participants',
     ])
   })
 
@@ -66,15 +66,15 @@ describe('ProjectTabs', () => {
     render(<ProjectTabs {...defaultProps} />)
     expect(screen.getByRole('tablist')).toHaveAccessibleName()
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
-    // Overview, Personas, Product, Documents, Decisions, Participants (project chat moved
+    // Overview, Personas, Focus groups, Product, Documents, Decisions, Participants (project chat moved
     // to the floating assistant, Export / MCP to the global Connect page).
-    expect(screen.getAllByRole('tab')).toHaveLength(6)
+    expect(screen.getAllByRole('tab')).toHaveLength(7)
   })
 
   it('only the selected tab is in the Tab order (roving tabindex)', () => {
     render(<ProjectTabs {...defaultProps} activeTab="documents" />)
     const tabIndexes = screen.getAllByRole('tab').map((tab) => tab.getAttribute('tabindex'))
-    expect(tabIndexes).toStrictEqual(['-1', '-1', '-1', '0', '-1', '-1'])
+    expect(tabIndexes).toStrictEqual(['-1', '-1', '-1', '-1', '0', '-1', '-1'])
   })
 
   it('arrow keys move the selection and wrap around', async () => {
@@ -120,6 +120,13 @@ describe('ProjectTabs', () => {
     
     await user.click(screen.getByText('Product'))
     expect(onTabChange).toHaveBeenCalledWith('product')
+  })
+
+  it('offers a Focus groups tab after Personas', async () => {
+    const { user, onTabChange } = renderWithUser()
+
+    await user.click(screen.getByRole('tab', { name: 'Focus groups' }))
+    expect(onTabChange).toHaveBeenCalledWith('focus-groups')
   })
 
   it('offers a Participants tab that opens the project participants', async () => {

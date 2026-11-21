@@ -29,6 +29,7 @@ EXPECTED = {
     'custom': 'documents',
     'product_report': 'documents',
     'decision': 'documents',
+    'focus_group': 'documents',
 }
 _UNION = re.compile(r'export type KnownProjectDocumentType\s*=\s*((?:\s*\|\s*\'[a-z_]+\')+)')
 
@@ -44,7 +45,7 @@ class TestTheSpasTypes:
     def test_the_union_parses_out_of_types_ts(self):
         """The positive control (shared/test/repo_paths.py): the comparison below compares against something."""
         assert _spa_document_types() == ['prd', 'prfaq', 'research', 'custom', 'product_report', 'prototype',
-                                         'decision']
+                                         'decision', 'focus_group']
 
     def test_the_server_and_the_spa_know_the_same_types(self):
         assert sorted(SECTION_BY_TYPE) == sorted(_spa_document_types())

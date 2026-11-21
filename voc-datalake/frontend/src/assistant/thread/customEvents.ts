@@ -10,7 +10,8 @@
  * @module assistant/thread/customEvents
  */
 import { z } from 'zod'
-import { INTERRUPT_REASON_TOOL_APPROVAL } from '@stream/assistant/contract'
+import { INTERRUPT_REASON_TOOL_APPROVAL, focusGroupEventSchema } from '@stream/assistant/contract'
+import type { FocusGroupEvent } from '@stream/assistant/contract'
 import { parseEach } from '../../api/lenientFields'
 import { asRecord } from '../../api/wireRecord'
 import type { ApprovalInterrupt } from '../types'
@@ -67,6 +68,12 @@ export function parseSources(value: unknown): MessageSources {
     web: parseEach(webSourceSchema, record.web).filter(isSafeWebSource),
     library: parseEach(librarySourceSchema, record.library).map(toLibraryRef),
   }
+}
+
+/** A focus group's state as the contract pins it, or null when the wire does not match (never half-read). */
+export function parseFocusGroup(value: unknown): FocusGroupEvent | null {
+  const parsed = focusGroupEventSchema.safeParse(value)
+  return parsed.success ? parsed.data : null
 }
 
 const navigationSchema = z.object({

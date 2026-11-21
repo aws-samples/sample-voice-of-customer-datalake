@@ -382,6 +382,12 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /projects/<project_id>/personas/<persona_id>/promote',
         'POST /projects/<project_id>/personas/copy',
     }),
+    # 7.64.00: a persona's evidence pack, freshness and refresh, the project's (and its feedback the deployment's).
+    'persona_grounding_routes.py': frozenset({
+        'GET /projects/<project_id>/personas/<persona_id>/evidence-freshness',
+        'POST /projects/<project_id>/personas/<persona_id>/evidence/refresh',
+        'POST /projects/<project_id>/personas/evidence-pack',
+    }),
     'projects_handler.py': frozenset({
         'DELETE /projects/<project_id>',
         'DELETE /projects/<project_id>/documents/<document_id>',

@@ -20,7 +20,7 @@
  * @module assistant/thread/reducer
  */
 import { EventType } from '@ag-ui/core'
-import { parseApprovalInterrupts, parseNavigation, parseSources } from './customEvents'
+import { parseApprovalInterrupts, parseFocusGroup, parseNavigation, parseSources } from './customEvents'
 import { CUSTOM_EVENTS } from '@stream/assistant/contract'
 import type { AssistantMessage, Message, ToolCall } from '@ag-ui/core'
 import type { AguiEvent } from '../agui/sse'
@@ -53,6 +53,7 @@ export function createThreadState(threadId: string): ThreadState {
     sources: {},
     navigation: {},
     stopped: {},
+    focusGroups: {},
     usage: [],
     status: 'idle',
     error: null,
@@ -251,6 +252,10 @@ function reduceCustom(state: ThreadState, event: EventOf<EventType.CUSTOM>): Thr
     const nav = parseNavigation(event.value)
     if (nav === null) return state
     return { ...state, navigation: { ...state.navigation, [anchor]: [...(state.navigation[anchor] ?? []), nav] } }
+  }
+  if (event.name === CUSTOM_EVENTS.focusGroup) {
+    const group = parseFocusGroup(event.value)
+    return group === null ? state : { ...state, focusGroups: { ...state.focusGroups, [anchor]: group } }
   }
   return state
 }

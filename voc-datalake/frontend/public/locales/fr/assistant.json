@@ -369,5 +369,35 @@
     "urgentOnly": "Urgents uniquement",
     "categories": "Catégories",
     "noCategories": "Aucune catégorie sur cette période."
+  },
+  "focusGroup": {
+    "round": "Tour {{round, number}}",
+    "moderator": "Modérateur",
+    "citation": "Avis {{index, number}}",
+    "openCitation": "Ouvrir l’avis cité {{index, number}}",
+    "synthetic": "Synthétique",
+    "stoppedNote": "Arrêté avant la fin : les réponses obtenues sont tout ce qu’il y a, sans synthèse.",
+    "missingPersonas_one": "{{count, number}} persona choisie ne fait plus partie de ce projet.",
+    "missingPersonas_other": "{{count, number}} personas choisies ne font plus partie de ce projet.",
+    "referenceOnly": "Les personas sont synthétiques : traitez leurs propos comme des hypothèses à vérifier. Un groupe de discussion enregistré est une référence, jamais une preuve ; seuls les avis cités sont du feedback client.",
+    "synthesis": {
+      "title": "Synthèse du groupe de discussion",
+      "agreements": "Points d’accord",
+      "disagreements": "Désaccords",
+      "openQuestions": "Questions ouvertes",
+      "unavailable": "La synthèse n’a pas pu être rédigée ; les réponses ci-dessus constituent tout le groupe de discussion."
+    },
+    "save": {
+      "idle": "Enregistrer le groupe de discussion",
+      "saving": "Enregistrement…",
+      "saved": "Enregistré dans les documents",
+      "error": "Échec de l’enregistrement – réessayer"
+    },
+    "document": {
+      "title": "Groupe de discussion : {{topic}} – {{date}}",
+      "heading": "Groupe de discussion : {{topic}}",
+      "banner": "Synthétique : chaque propos ci-dessous est celui d’une persona, une hypothèse à vérifier, jamais du feedback client. Les avis cités sont réels.",
+      "cited": "Avis cités"
+    }
   }
 }

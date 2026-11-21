@@ -7,6 +7,7 @@
  */
 import { DerivationFooter, RevisionFooter } from '../../../pages/ProjectDetail/DocumentLineageFooters'
 import { DeletedSourcesNotice } from '../../../pages/ProjectDetail/DeletedSourcesNotice'
+import { FocusGroupNotice } from '../../../pages/ProjectDetail/FocusGroupNotice'
 import { MethodologyNotice } from '../../../pages/ProjectDetail/MethodologyNotice'
 import type { ProjectDocument } from '../../../api/types'
 
@@ -23,6 +24,7 @@ export default function DocumentProvenance({ document, documents, onSelectDoc }:
       <DerivationFooter doc={document} documents={documents} onSelectDoc={onSelectDoc} />
       <DeletedSourcesNotice doc={document} />
       <MethodologyNotice doc={document} />
+      <FocusGroupNotice doc={document} />
     </>
   )
 }

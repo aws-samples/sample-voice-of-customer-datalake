@@ -70,7 +70,7 @@ from shared.indexes import FEEDBACK_BY_ID_INDEX
 from shared.logging import logger
 from shared.memory_store import parse_json_object
 from shared.project_keys import REVISE_FROM_COMMENTS_STORE, require_deployment
-from shared.prompt_safety import DATA_NOTICE, data_block, injection_findings
+from shared.prompt_safety import DATA_NOTICE, WITHHELD, data_block, injection_findings
 from shared.text_clip import stripped_head
 from shared.timestamps import now_iso
 from shared.ws_repo import WorkspaceScope
@@ -99,7 +99,6 @@ MAX_THREAD_TEXT_CHARS: Final = 600
 MAX_EVIDENCE_ITEMS: Final = 20
 MAX_EVIDENCE_TEXT_CHARS: Final = 600
 REVISE_MAX_TOKENS: Final = 8_000
-WITHHELD: Final = '[withheld: this text reads like an instruction to the AI]'
 NO_THREADS: Final = 'No comments to revise from yet: reply to a comment or resolve it first'
 TOO_LONG: Final = f'This document is too long to revise from comments (over {MAX_DOCUMENT_CHARS:,} characters)'
 

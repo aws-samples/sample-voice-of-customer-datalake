@@ -15,11 +15,24 @@ export function humanizeToolName(name: string): string {
   return words === '' ? name : words.charAt(0).toUpperCase() + words.slice(1)
 }
 
+/** A review a focus group answer cites (`[fb:<id>]`): its chip's id and tooltip. */
+const citationSchema = z.object({
+  feedback_id: z.string().min(1),
+  text: z.string().catch(''),
+  source_platform: z.string().catch(''),
+})
+
+export type PersonaCitation = z.infer<typeof citationSchema>
+
 const personaResponseSchema = z.object({
   persona_id: z.string(),
   name: z.string().catch(''),
   avatar_url: z.string().optional().catch(undefined),
   answer: z.string().catch(''),
+  /** A focus group's round (1–3); absent on a mention round's or the model's consultation. */
+  round: z.number().int().positive().optional().catch(undefined),
+  citations: z.array(z.unknown()).optional().catch(undefined)
+    .transform((rows) => (rows === undefined ? undefined : parseEach(citationSchema, rows))),
 })
 
 export type PersonaResponse = z.infer<typeof personaResponseSchema>

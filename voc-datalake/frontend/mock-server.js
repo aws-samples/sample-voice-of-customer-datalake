@@ -43,6 +43,7 @@ import { handleWorkspaceDeleteRoutes } from './mock-workspace-delete.js';
 import { handleDataQualityRoutes, stampBands } from './mock-data-quality.js';
 import { handleFeedbackCatalogueRoutes } from './mock-feedback-catalogue.js';
 import { handlePersonaRoutes } from './mock-personas.js';
+import { focusGroupEvents, handleFocusGroupRoutes } from './mock-focus-groups.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
@@ -1519,6 +1520,7 @@ function handleDomainModules(req, res, url) {
     || handleDocumentReviewRoutes(req, res, url, send, shared)
     || handleCompanyPersonaRoutes(req, res, url, send, shared)
     || handlePersonaRoutes(req, res, url, send, shared)
+    || handleFocusGroupRoutes(req, res, url, send, shared)
     || handleProjectActionRoutes(req, res, url, send, shared)
     || handleOnboardingRoutes(req, res, url, send, shared)
     || handleAppearanceRoutes(req, res, url, send, shared)
@@ -2190,6 +2192,7 @@ const seriesVersion = (fields) => ({
 
 /** The read's `section` of a document type (docs/prototype-builder.md "Part 4"); unknown types are Documents. */
 const MOCK_SECTION_OF_TYPE = { prd: 'prd', prfaq: 'prfaq', prototype: 'prototypes' };
+// focus_group (7.64.00) and every other type are Documents.
 const mockDocumentSection = (documentType) => (Object.hasOwn(MOCK_SECTION_OF_TYPE, documentType)
   ? MOCK_SECTION_OF_TYPE[documentType] : 'documents');
 
@@ -2897,6 +2900,13 @@ function handleAssistantStream(body, res) {
     : firstRunEvents(page, lastUserText(messages), ids);
   const round = outcomes.length > 0 ? [] : mentionRoundEvents(page, input.forwardedProps && input.forwardedProps.mentions, lastUserText(messages));
   const usage = [{ provider: 'anthropic', model: ASSISTANT_MODEL, inputTokens: 1200, outputTokens: 80, totalTokens: 1280, cachedInputTokens: 900, cacheWriteInputTokens: 0 }];
+  // A persona focus group replaces the model's own turn (runtime/focus-group.ts), on its project's page only.
+  const focusGroup = input.forwardedProps && input.forwardedProps.focusGroup;
+  if (focusGroup && outcomes.length === 0 && page.kind === 'project') {
+    const group = focusGroupEvents(mockProjectDetails[page.projectId], focusGroup, lastUserText(messages), { mockFeedback, nextMockId });
+    writeSseEvents(res, [...head, ...group, { type: 'RUN_FINISHED', threadId, runId, outcome: { type: 'success' }, usage }]);
+    return;
+  }
   writeSseEvents(res, [...head, ...round, ...events, { type: 'RUN_FINISHED', threadId, runId, outcome, usage }]);
 }
 
@@ -4371,9 +4381,16 @@ const server = http.createServer((req, res) => {
     withEditableProject(projectDocumentsMatch[1], (detail, body) => {
       // prfaq / prd = written by hand from the blank template (shared/human_documents.py).
       const handWritten = body.document_type === 'prfaq' || body.document_type === 'prd';
+      // A saved persona focus group (shared/focus_group_documents.py): always synthetic, its cited reviews its lineage.
+      const focusGroup = body.document_type === 'focus_group';
+      const derivation = focusGroup && body.derivation && typeof body.derivation === 'object' ? body.derivation : null;
       const document = {
         document_id: `doc_${Date.now()}`,
-        document_type: handWritten ? body.document_type : 'custom',
+        document_type: handWritten || focusGroup ? body.document_type : 'custom',
+        ...(focusGroup ? {
+          synthetic: true, derivation: { kind: 'focus_group', ...derivation },
+          input_feedback_ids: Array.isArray(derivation?.feedback_ids) ? derivation.feedback_ids : [],
+        } : {}),
         title: typeof body.title === 'string' ? body.title : 'Untitled',
         content: typeof body.content === 'string' && body.content !== ''
           ? body.content

@@ -8,6 +8,7 @@
  * @module assistant/thread/types
  */
 import type { Message, TokenUsage } from '@ag-ui/core'
+import type { FocusGroupEvent } from '@stream/assistant/contract'
 import type { ApprovalInterrupt, ApprovalResolution } from '../types'
 
 /**
@@ -84,6 +85,8 @@ export interface ThreadState {
   navigation: Record<string, NavigationSuggestion[]>
   /** Answers the user stopped (Stop), keyed by assistant message id: shown with a Stopped marker. */
   stopped: Record<string, boolean>
+  /** A persona focus group's last state (CUSTOM assistant.focus_group), keyed by the assistant message it ended on. */
+  focusGroups: Record<string, FocusGroupEvent>
   usage: TokenUsage[]
   status: ThreadStatus
   error: ThreadError | null

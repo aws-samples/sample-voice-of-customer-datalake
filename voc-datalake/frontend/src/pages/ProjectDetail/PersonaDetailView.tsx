@@ -22,6 +22,7 @@ import {
   ScenarioSection,
 } from './PersonaSections'
 import ErasedEvidenceNote from './ErasedEvidenceNote'
+import PersonaEvidenceFreshness from './PersonaEvidenceFreshness'
 import FeedbackCorpus from './FeedbackCorpus'
 import { featureRequestIdsOf } from './featureRequestCitations'
 import ResearchNotes from './ResearchNotes'
@@ -54,12 +55,14 @@ interface PersonaDetailViewProps {
   readonly protection?: PersonaProtection
 }
 
-/** The header's left side: avatar, name, tagline, confidence, protection, corpus and copy origin. */
-function PersonaHeaderIdentity({ persona, shown, protection }: {
+/** The header's left side: avatar, name, tagline, confidence, protection, corpus, evidence freshness and copy origin. */
+function PersonaHeaderIdentity({ persona, shown, protection, scope, canEdit }: {
   readonly persona: ProjectPersona
   /** The persona with a just-regenerated avatar URL, when there is one. */
   readonly shown: ProjectPersona
   readonly protection?: PersonaProtection
+  readonly scope: PersonaScope
+  readonly canEdit: boolean
 }) {
   const { t } = useTranslation('projectDetail')
   return (
@@ -77,6 +80,9 @@ function PersonaHeaderIdentity({ persona, shown, protection }: {
         ) : null}
         <FeedbackCorpus feedbackIds={persona.input_feedback_ids} citedIds={persona.evidence_feedback_ids}
           featureRequestIds={featureRequestIdsOf(persona)} className="mt-1.5" />
+        {scope.kind === 'project' ? (
+          <PersonaEvidenceFreshness projectId={scope.projectId} personaId={persona.persona_id} canEdit={canEdit} />
+        ) : null}
         <ErasedEvidenceNote erasedEvidence={persona.erased_evidence} className="mt-1" />
         <CopiedFromLine copiedFrom={persona.copied_from} />
         <NoEvidenceNote persona={persona} className="mt-1" />
@@ -107,7 +113,7 @@ export default function PersonaDetailView({
       {/* Header with Avatar */}
       <div className="p-4 sm:p-6 border-b border-border bg-bg-accent">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <PersonaHeaderIdentity persona={persona} shown={shown} protection={protection} />
+          <PersonaHeaderIdentity persona={persona} shown={shown} protection={protection} scope={scope} canEdit={canEdit} />
           <div className="flex items-center gap-1 self-end sm:self-start">
             <PersonaExportMenu persona={persona} />
             {canEdit ? (

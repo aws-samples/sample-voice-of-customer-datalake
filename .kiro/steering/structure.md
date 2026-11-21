@@ -279,7 +279,10 @@ Per-day walks stop on a time budget and say so (`is_partial`, `partial_reason:
 Every route is scoped to `USER#{cognito sub}` (`WS#{ws}#USER#{cognito sub}` for a request inside a workspace the
 caller is a member of; docs/multi-workspace.md). The assistant itself streams at
 `POST /chat/stream` (`voc-chat-stream`, TypeScript): AG-UI `RunAgentInput` in,
-AG-UI events out; read-only server tools, human-approved client-tool writes.
+AG-UI events out; read-only server tools, human-approved client-tool writes. A persona focus group
+(`forwardedProps.focusGroup`, 7.64.00, `runtime/focus-group.ts`) replaces the model's own turn on a project page:
+rounds of `consult_personas` calls (`focus_r{n}_…`), the moderator's follow-ups, a synthesis and CUSTOM
+`assistant.focus_group` (docs/project-workspace.md → Persona focus groups).
 
 **Server-side session persistence.** While a run streams, `voc-chat-stream` saves the
 conversation (user turn + the in-progress answer, tool calls/results trimmed) to the
@@ -578,8 +581,11 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | POST | `/projects/{id}/personas/copy` | Copy `{source: {scope: company} \| {scope: project, project_id}, persona_ids: [1–20]}` in (edit) → 201 `{success, personas}`; notes never copied, avatars copied |
 | POST | `/projects/{id}/feedback-preview` | The persona / research wizards' live count `{sources, categories, sentiments, days, date_basis, mode: estimate\|exact, purpose: personas\|research}` → `{matched, matched_is_lower_bound, estimated, sample_limit}`: exact = the generation's own read (20 s budget, then a lower bound), estimate = a scaled feedback-id-index sample; cached 5 min per project + selection + scope (`shared/persona_feedback_preview.py`, docs/project-workspace.md) |
 | PUT | `/projects/{id}/personas/{persona_id}/protection` | `{protected: bool}` (400 otherwise, 404 unknown persona): a replace regeneration keeps a protected persona and tells the model about it (`shared/persona_replace.py`) |
+| POST | `/projects/{id}/personas/evidence-pack` | A read (view; the stream's focus groups through their read-only invoker): `{persona_ids: [1–6], question?, limit?: 0–8}` → `{personas: [{persona_id, name, evidence: [{feedback_id, text, verbatim, source_platform, category, sentiment_label, date, origin: cited\|refreshed\|fresh}], fresh_since, fresh_capped}], missing_persona_ids, limit}`, every review admitted by the caller's category and source access, its stored text (the source's PII policy as applied at ingestion), never its author (`shared/persona_grounding.py`, docs/project-workspace.md → Persona focus groups) |
+| GET | `/projects/{id}/personas/{persona_id}/evidence-freshness` | `{persona_id, since, count, count_is_lower_bound, refreshed_at, updates}`: the matching reviews since the persona was generated that it does not hold yet, of those the caller may see (view) |
+| POST | `/projects/{id}/personas/{persona_id}/evidence/refresh` | Append the newest matching reviews (at most 8) to `evidence_updates` `{at, by: {sub, kind}, reason: manual_refresh, feedback_ids}` (at most 20 entries) and set `evidence_refreshed_at` (edit); nothing new writes nothing (`added: 0`); a concurrent refresh is 409; the persona's text is never rewritten |
 | POST | `/projects/{id}/research` | Run research job (Step Functions); like `POST /document` and `POST /build-prototype` it answers a `methodology` block `{step, skipped, warnings, evidence}` (stored on the PR/FAQ / PRD / prototype); `build-prototype` with no PRD and no PR/FAQ is 409 before any job; PR/FAQ / PRD read feedback unless `data_sources.feedback: false` |
-| POST | `/projects/{id}/documents` | Create a custom document, or a hand-written PR/FAQ / PRD from a blank template (`document_type: prfaq\|prd`, `{title, content?, create_id?}`, `origin: human`) |
+| POST | `/projects/{id}/documents` | Create a custom document, or a hand-written PR/FAQ / PRD from a blank template (`document_type: prfaq\|prd`, `{title, content?, create_id?}`, `origin: human`), or a saved persona focus group (`document_type: focus_group`, `{title, content, derivation: {persona_ids, feedback_ids, document_ids, library_item_ids, rounds}}`: always `synthetic: true`; the cited ids the caller may see become its `input_feedback_ids` and the stored derivation keeps `feedback_count`; a `[fb:<id>]` naming no kept review removed; `shared/focus_group_documents.py`) |
 | — | (project chat) | Now the unified AI assistant at `POST /chat/stream` with `forwardedProps.page.projectId` |
 | PUT | `/projects/{id}/visibility` | Set public/private (manage) |
 | GET | `/projects/{id}/members` | Owner, members, caller's access (view) |

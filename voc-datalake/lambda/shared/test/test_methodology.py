@@ -105,3 +105,18 @@ class TestHumanAndOverview:
         assert out['steps']['prfaq'] == {'missing': [], 'count': 2}
         assert out['steps']['prototype'] == {'missing': ['prd'], 'count': 0, 'blocked': False}
         assert out['steps']['research']['missing'] == []
+
+
+FOCUS_GROUP = {'sk': 'DOC#doc_fg', 'document_id': 'doc_fg', 'document_type': 'focus_group', 'synthetic': True,
+               'input_feedback_ids': ['f1', 'f2']}
+
+
+class TestAFocusGroupIsAReferenceOnly:
+    """7.64.00, owner decision: a saved focus group (synthetic personas) is never a methodology step or evidence."""
+
+    def test_it_is_no_step(self):
+        assert m.present_steps([FOCUS_GROUP]) == {step: [] for step in m.STEPS}
+
+    def test_a_prd_after_it_still_misses_its_personas_and_pr_faq(self):
+        skipped = m.assess('prd', [FOCUS_GROUP])['skipped']
+        assert {entry['step'] for entry in skipped} == {'personas', 'prfaq'}

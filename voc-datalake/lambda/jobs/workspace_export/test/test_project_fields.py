@@ -30,6 +30,8 @@ WRITERS: Final = frozenset({
     'lambda/shared/human_documents.py', 'lambda/shared/methodology.py', 'lambda/shared/persona_copy.py',
     'lambda/shared/persona_replace.py', 'lambda/shared/persona_save.py', 'lambda/shared/project_writes.py',
     'lambda/shared/prototype_drafts.py', 'lambda/shared/prototype_versions.py', 'lambda/shared/deleted_sources.py',
+    # 7.64.00: a persona's evidence refreshes (evidence_updates, evidence_refreshed_at).
+    'lambda/shared/persona_grounding.py',
 })
 #: Modules that name a project's keys and write, but none of its own rows: each has its own export allowlist or none.
 NOT_PROJECT_ROW_WRITERS: Final = {

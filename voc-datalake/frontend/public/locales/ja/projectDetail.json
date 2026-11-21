@@ -7,6 +7,7 @@
     "personaTitle": "ペルソナを削除しますか?"
   },
   "documents": {
+    "syntheticNotice": "合成ペルソナによるフォーカスグループです。発言は検証すべき仮説であり、顧客フィードバックやエビデンスではありません。実在するのは引用されたレビューだけです。",
     "deleteDocument": "ドキュメントを削除",
     "card": {
       "more": "その他の操作",
@@ -393,6 +394,17 @@
     "occupationPlaceholder": "プロダクトマネージャー"
   },
   "personas": {
+    "evidence": {
+      "new_one": "{{date}}以降に一致する新しいレビューが{{count, number}}件",
+      "new_other": "{{date}}以降に一致する新しいレビューが{{count, number}}件",
+      "atLeastNew_one": "{{date}}以降に一致する新しいレビューが{{count, number}}件以上",
+      "atLeastNew_other": "{{date}}以降に一致する新しいレビューが{{count, number}}件以上",
+      "upToDate": "{{date}}以降、一致する新しいレビューはありません",
+      "refresh": "エビデンスを更新",
+      "added_one": "エビデンスにレビューを{{count, number}}件追加しました",
+      "added_other": "エビデンスにレビューを{{count, number}}件追加しました",
+      "refreshFailed": "エビデンスを更新できませんでした。もう一度お試しください。"
+    },
     "addNote": "ノートを追加",
     "addResearchNotes": "リサーチノートを追加",
     "addResearchNotesDesc": "このペルソナに関する観察、インサイト、仮説を記録してください",
@@ -581,6 +593,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "フォーカスグループ",
     "aiChat": "AIチャット",
     "documents": "ドキュメント",
     "overview": "概要",
@@ -810,5 +823,26 @@
       "showThread": "コメントを表示: {{label}}",
       "threadGone": "(コメントは削除されました)"
     }
+  },
+  "focusGroups": {
+    "intro": "このプロジェクトのペルソナを2～6人パネルに集め、テーマを与えます。ラウンド1では各自が単独で答え、ラウンド2以降はモデレーターのフォローアップの後、他の参加者の論点（匿名化）を読んで、賛成・反対・補足をします。各回答はペルソナのエビデンスにある実際のレビューを引用し、最後にまとめが出ます。アシスタント内で実行されます。",
+    "needPersonas_one": "フォーカスグループには少なくとも{{count, number}}人のペルソナが必要です。先に「ペルソナ」タブでペルソナを生成または追加してください。",
+    "needPersonas_other": "フォーカスグループには少なくとも{{count, number}}人のペルソナが必要です。先に「ペルソナ」タブでペルソナを生成または追加してください。",
+    "newGroup": "新しいフォーカスグループ",
+    "personas_one": "ペルソナ：{{count, number}}人選択（最大{{max, number}}人）",
+    "personas_other": "ペルソナ：{{count, number}}人選択（最大{{max, number}}人）",
+    "topic": "テーマ",
+    "topicHint": "ペルソナに何を話し合ってほしいですか？これが会話の最初のメッセージになります。",
+    "rounds": "ラウンド",
+    "roundCount_one": "{{count, number}}ラウンド",
+    "roundCount_other": "{{count, number}}ラウンド",
+    "roundsHint": "ラウンド1は独立しているため、回答が他の回答に引きずられません。ラウンド2以降は、モデレーターのフォローアップの後、各ペルソナが他の参加者の論点を匿名で読みます。",
+    "documents": "各ペルソナが読むプロジェクトドキュメント（最大{{max, number}}件）",
+    "library": "各ペルソナが読むドキュメントライブラリの項目（最大{{max, number}}件）",
+    "cost": "アシスタントのモデルを約{{calls, number}}回呼び出し、入力トークン約{{input, number}}、出力トークン約{{output, number}}です。",
+    "synthetic": "すべての発言は合成であり、フィードバックにはなりません。各ペルソナは開いて確認できる実際のレビューを引用します。",
+    "start": "フォーカスグループを開始",
+    "saved": "保存済みのフォーカスグループ",
+    "noneSaved": "保存済みのフォーカスグループはまだありません。アシスタントのまとめカードから保存してください。"
   }
 }

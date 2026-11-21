@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -21,6 +21,7 @@ from shared import (
     draft_intent,
     methodology,
     persona_feedback_preview,
+    persona_grounding,
     persona_overlap,
     persona_replace,
     persona_save,
@@ -98,6 +99,7 @@ from shared.feedback import (
     get_feedback_context as _get_feedback_context,
 )
 from shared.feedback_sampling import input_feedback_fields, input_feedback_ids
+from shared.focus_group_documents import FOCUS_GROUP_TYPE, focus_group_fields
 from shared.grounding import Grounding
 from shared.human_documents import HUMAN_DOC_TYPES, create_human_document
 from shared.ids import timestamped_id, write_with_fresh_id
@@ -3041,14 +3043,26 @@ def suggest_research_questions(project_id: str, body: dict, *, category_scope: d
     return {'suggestions': cleaned[:3]}
 
 
+def _visible_feedback(category_scope: dict | None) -> Callable[[Sequence[str]], list[str]]:
+    """The review ids of ``category_scope`` (the caller's; None: every review) that exist, for a focus group's save."""
+    reader = persona_grounding.Reader(
+        projects_table=projects_table, feedback_table=feedback_table,
+        scope=category_access.scope_from_config(category_scope) or category_access.UNRESTRICTED,
+    )
+    return lambda ids: persona_grounding.visible_ids(reader, ids)
+
+
 @tracer.capture_method
-def create_document(project_id: str, body: dict, *, creator_sub: str = '') -> dict:
+def create_document(project_id: str, body: dict, *, creator_sub: str = '', category_scope: dict | None = None) -> dict:
     """Create a custom document, or a hand-written PR/FAQ / PRD from a blank template.
 
     ``prfaq`` / ``prd`` join their series as a person's draft (shared/human_documents.py);
     the route gates an autonomous caller first (shared/ai_writing.py). A custom document may
     start blank (``content`` absent or ``''``: the page's "New" opens an empty canvas, written
-    and saved there); it records its creator's ``created_by_sub`` like a hand-written one.
+    and saved there); it records its creator's ``created_by_sub`` like a hand-written one. A
+    ``focus_group`` is a saved focus group's transcript (shared/focus_group_documents.py):
+    always ``synthetic``, with its derivation of persona and document ids, and of the cited reviews
+    the saver may see (``category_scope``, the caller's as stored config; None reads unrestricted).
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -3060,12 +3074,15 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '') -> di
     if document_type in HUMAN_DOC_TYPES:
         item = create_human_document(projects_table, project_id, document_type, body, creator_sub=creator_sub)
         return {'success': True, 'document': item}
-    if document_type != 'custom':
+    if document_type not in ('custom', FOCUS_GROUP_TYPE):
         raise ValidationError(
-            'Only custom, prfaq and prd documents can be created directly. Every other '
+            'Only custom, focus_group, prfaq and prd documents can be created directly. Every other '
             'managed or workflow document type must use its dedicated route.'
         )
-    if not isinstance(content, str):
+    # A focus group's transcript (shared/focus_group_documents.py): synthetic, its derivation validated.
+    fields = (focus_group_fields(body, _visible_feedback(category_scope)) if document_type == FOCUS_GROUP_TYPE
+              else {'document_type': document_type, 'title': title, 'content': content})
+    if not isinstance(fields['content'], str):
         raise ValidationError('content must be a string')
 
     now_dt = datetime.now(UTC)
@@ -3075,9 +3092,7 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '') -> di
         return {
             **document_keys(project_id, f'DOC#{doc_id}', now),
             'document_id': doc_id,
-            'document_type': document_type,
-            'title': title,
-            'content': content,
+            **fields,
             'created_at': now,
             'updated_at': now,
             **({'created_by_sub': creator_sub} if creator_sub else {}),

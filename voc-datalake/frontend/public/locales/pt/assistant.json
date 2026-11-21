@@ -369,5 +369,35 @@
     "urgentOnly": "Somente urgentes",
     "categories": "Categorias",
     "noCategories": "Nenhuma categoria neste período."
+  },
+  "focusGroup": {
+    "round": "Rodada {{round, number}}",
+    "moderator": "Moderador",
+    "citation": "Avaliação {{index, number}}",
+    "openCitation": "Abrir a avaliação citada {{index, number}}",
+    "synthetic": "Sintético",
+    "stoppedNote": "Interrompido antes do fim: as respostas até agora são tudo o que há, sem síntese.",
+    "missingPersonas_one": "{{count, number}} persona escolhida já não está neste projeto.",
+    "missingPersonas_other": "{{count, number}} personas escolhidas já não estão neste projeto.",
+    "referenceOnly": "As personas são sintéticas: trate o que dizem como hipóteses a testar. Um grupo focal salvo é uma referência, nunca evidência; só as avaliações citadas são feedback de clientes.",
+    "synthesis": {
+      "title": "Síntese do grupo focal",
+      "agreements": "Concordâncias",
+      "disagreements": "Discordâncias",
+      "openQuestions": "Perguntas em aberto",
+      "unavailable": "Não foi possível escrever a síntese; as respostas acima são todo o grupo focal."
+    },
+    "save": {
+      "idle": "Salvar grupo focal",
+      "saving": "Salvando…",
+      "saved": "Salvo em documentos",
+      "error": "Falha ao salvar – tentar de novo"
+    },
+    "document": {
+      "title": "Grupo focal: {{topic}} – {{date}}",
+      "heading": "Grupo focal: {{topic}}",
+      "banner": "Sintético: cada afirmação abaixo é de uma persona, uma hipótese a testar, nunca feedback de clientes. As avaliações citadas são reais.",
+      "cited": "Avaliações citadas"
+    }
   }
 }

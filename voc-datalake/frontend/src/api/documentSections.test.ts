@@ -11,7 +11,7 @@ import type { KnownProjectDocumentType } from './types'
 /** Every `KnownProjectDocumentType` (a type added there without a row here fails to compile). */
 const KNOWN: Readonly<Record<KnownProjectDocumentType, string>> = {
   prd: 'prd', prfaq: 'prfaq', prototype: 'prototypes', research: 'documents', custom: 'documents',
-  product_report: 'documents', decision: 'documents',
+  product_report: 'documents', decision: 'documents', focus_group: 'documents',
 }
 
 describe('DOCUMENT_SECTIONS', () => {

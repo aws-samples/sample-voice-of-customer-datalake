@@ -47,6 +47,25 @@ def create_table_with_gsi1(resource, table_name: str, index: str):
     return _create_pk_sk_table_with_index(table_name, resource, index, 'gsi1pk', 'gsi1sk')
 
 
+def create_feedback_table_by_date_and_id(table_name: str, resource=None):
+    """voc-feedback with the two indexes a by-id and by-day read needs (core-stack.ts): ``gsi1-by-date``
+    (``gsi1pk`` / ``gsi1sk``) and ``gsi4-by-feedback-id`` (``gsi4pk``), all attributes projected."""
+    if resource is None:
+        resource = boto3.resource('dynamodb', region_name='us-east-1')
+    full = {'ProjectionType': 'ALL'}
+    return resource.create_table(
+        TableName=table_name, BillingMode='PAY_PER_REQUEST',
+        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
+        AttributeDefinitions=[{'AttributeName': a, 'AttributeType': 'S'} for a in ('pk', 'sk', 'gsi1pk', 'gsi1sk', 'gsi4pk')],
+        GlobalSecondaryIndexes=[
+            {'IndexName': 'gsi1-by-date', 'Projection': full, 'KeySchema': [
+                {'AttributeName': 'gsi1pk', 'KeyType': 'HASH'}, {'AttributeName': 'gsi1sk', 'KeyType': 'RANGE'}]},
+            {'IndexName': 'gsi4-by-feedback-id', 'Projection': full,
+             'KeySchema': [{'AttributeName': 'gsi4pk', 'KeyType': 'HASH'}]},
+        ],
+    )
+
+
 def create_projects_table_with_type_index(table_name: str, resource=None):
     """voc-projects as in core-stack.ts: ``pk`` + ``sk`` plus the ``gsi1-by-type`` index (``gsi1pk`` HASH,
     ``gsi1sk`` RANGE, all attributes projected)."""

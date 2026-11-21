@@ -20,6 +20,7 @@ const SECTION_OF_TYPE: Readonly<Record<string, DocumentSection>> = {
   custom: 'documents',
   product_report: 'documents',
   decision: 'documents',
+  focus_group: 'documents',
 };
 
 const SECTIONS: ReadonlySet<string> = new Set(SECTION_ORDER);

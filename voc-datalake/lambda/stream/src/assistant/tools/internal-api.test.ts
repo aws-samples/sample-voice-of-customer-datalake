@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildProxyEvent,
   CHAT_CONTEXT_RESOURCE,
+  EVIDENCE_PACK_RESOURCE,
   createInternalApiInvoker,
   functionNamesFromEnv,
   MEMORY_RETRIEVE_RESOURCE,
@@ -117,6 +118,15 @@ describe('createInternalApiInvoker', () => {
     expect(sentEvent(send)).toMatchObject({ httpMethod: 'POST', body: '{"selected_document_ids":["d1"]}' });
   });
 
+  it('allows the personas\' evidence-pack POST, a read, on the projects function', async () => {
+    const { send, invoke } = setup(proxy(200, { personas: [], missing_persona_ids: [] }));
+    await invoke({
+      fn: 'projects', method: 'POST', path: '/projects/p1/personas/evidence-pack', resource: EVIDENCE_PACK_RESOURCE,
+      body: { persona_ids: ['a'] },
+    }, CLAIMS);
+    expect(sentEvent(send)).toMatchObject({ httpMethod: 'POST', path: '/projects/p1/personas/evidence-pack' });
+  });
+
   it('refuses any other POST before invoking', async () => {
     const { send, invoke } = setup(proxy(200, {}));
     await expect(invoke({ fn: 'projects', method: 'POST', path: '/projects', resource: '/projects' }, CLAIMS))
@@ -143,6 +153,9 @@ describe('createInternalApiInvoker', () => {
     ['projects', '/projects/p1/chat-context/x', CHAT_CONTEXT_RESOURCE],
     ['projects', '/projects/p1/documents', CHAT_CONTEXT_RESOURCE],
     ['memory', '/memory/forget', MEMORY_RETRIEVE_RESOURCE],
+    // The refresh is a write: it never rides the pack's read resource.
+    ['projects', '/projects/p1/personas/p2/evidence/refresh', EVIDENCE_PACK_RESOURCE],
+    ['projects', '/projects/p1/personas/evidence', EVIDENCE_PACK_RESOURCE],
   ] as const)('refuses a %s write path smuggled under an allowlisted read resource (%s)', async (fn, path, resource) => {
     const { send, invoke } = setup(proxy(200, {}), { memory: 'm', agents: 'a', projects: 'p' });
     await expect(invoke({ fn, method: 'POST', path, resource }, CLAIMS)).rejects.toMatchObject({ code: 'not_permitted' });

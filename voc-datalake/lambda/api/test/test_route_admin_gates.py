@@ -435,6 +435,11 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'DELETE /projects/<project_id>/documents/<document_id>/comments/<comment_id>',
           'POST /projects/<project_id>/documents/<document_id>/share',
           'DELETE /projects/<project_id>/documents/<document_id>/share'),
+    _open("a persona's evidence (7.64.00 focus groups, shared/persona_grounding_routes.py): per-project access, the "
+          'pack a read at view (a POST for its body), the refresh an edit; every review read as the caller, by their '
+          'category and source access',
+          'persona_grounding_routes.py', 'POST /projects/<project_id>/personas/evidence-pack',
+          'POST /projects/<project_id>/personas/<persona_id>/evidence/refresh'),
     _open('copy personas into a project: edit on the target project, and the source is the library or a '
           'project the caller owns or is a member of (since 5.60.00)',
           'persona_copy_routes.py', 'POST /projects/<project_id>/personas/copy'),

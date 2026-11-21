@@ -361,5 +361,35 @@
     "urgentOnly": "Nur dringende",
     "categories": "Kategorien",
     "noCategories": "Keine Kategorien in diesem Zeitraum."
+  },
+  "focusGroup": {
+    "round": "Runde {{round, number}}",
+    "moderator": "Moderation",
+    "citation": "Bewertung {{index, number}}",
+    "openCitation": "Zitierte Bewertung {{index, number}} öffnen",
+    "synthetic": "Synthetisch",
+    "stoppedNote": "Vor dem Ende angehalten: Die bisherigen Antworten sind alles, ohne Synthese.",
+    "missingPersonas_one": "{{count, number}} gewählte Persona ist nicht mehr in diesem Projekt.",
+    "missingPersonas_other": "{{count, number}} gewählte Personas sind nicht mehr in diesem Projekt.",
+    "referenceOnly": "Die Personas sind synthetisch: Behandeln Sie ihre Aussagen als Hypothesen zum Prüfen. Eine gespeicherte Fokusgruppe ist eine Referenz, nie ein Beleg; nur die zitierten Bewertungen sind Kundenfeedback.",
+    "synthesis": {
+      "title": "Synthese der Fokusgruppe",
+      "agreements": "Übereinstimmungen",
+      "disagreements": "Meinungsverschiedenheiten",
+      "openQuestions": "Offene Fragen",
+      "unavailable": "Die Synthese konnte nicht geschrieben werden; die Antworten oben sind die ganze Fokusgruppe."
+    },
+    "save": {
+      "idle": "Fokusgruppe speichern",
+      "saving": "Wird gespeichert…",
+      "saved": "In Dokumenten gespeichert",
+      "error": "Speichern fehlgeschlagen – erneut versuchen"
+    },
+    "document": {
+      "title": "Fokusgruppe: {{topic}} – {{date}}",
+      "heading": "Fokusgruppe: {{topic}}",
+      "banner": "Synthetisch: Jede Aussage unten stammt von einer Persona, eine Hypothese zum Prüfen, nie Kundenfeedback. Die zitierten Bewertungen sind echt.",
+      "cited": "Zitierte Bewertungen"
+    }
   }
 }

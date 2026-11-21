@@ -7,6 +7,7 @@
     "personaTitle": "페르소나를 삭제하시겠습니까?"
   },
   "documents": {
+    "syntheticNotice": "합성 페르소나로 구성된 포커스 그룹입니다. 발언은 검증할 가설일 뿐 고객 피드백이나 근거가 아닙니다. 인용된 리뷰만 실제입니다.",
     "deleteDocument": "문서 삭제",
     "card": {
       "more": "추가 작업",
@@ -393,6 +394,17 @@
     "occupationPlaceholder": "프로덕트 매니저"
   },
   "personas": {
+    "evidence": {
+      "new_one": "{{date}} 이후 일치하는 새 리뷰 {{count, number}}개",
+      "new_other": "{{date}} 이후 일치하는 새 리뷰 {{count, number}}개",
+      "atLeastNew_one": "{{date}} 이후 일치하는 새 리뷰 {{count, number}}개 이상",
+      "atLeastNew_other": "{{date}} 이후 일치하는 새 리뷰 {{count, number}}개 이상",
+      "upToDate": "{{date}} 이후 일치하는 새 리뷰가 없습니다",
+      "refresh": "근거 새로 고침",
+      "added_one": "근거에 리뷰 {{count, number}}개를 추가했습니다",
+      "added_other": "근거에 리뷰 {{count, number}}개를 추가했습니다",
+      "refreshFailed": "근거를 새로 고칠 수 없습니다. 다시 시도하세요."
+    },
     "addNote": "노트 추가",
     "addResearchNotes": "연구 노트 추가",
     "addResearchNotesDesc": "이 페르소나에 대한 관찰, 인사이트, 가설을 기록하세요",
@@ -581,6 +593,7 @@
     }
   },
   "tabs": {
+    "focusGroups": "포커스 그룹",
     "aiChat": "AI 채팅",
     "documents": "문서",
     "overview": "개요",
@@ -810,5 +823,26 @@
       "showThread": "댓글 보기: {{label}}",
       "threadGone": "(삭제된 댓글)"
     }
+  },
+  "focusGroups": {
+    "intro": "이 프로젝트의 페르소나 2~6명을 하나의 패널에 모으고 주제를 정하세요. 1라운드에서는 각자 따로 답하고, 2라운드부터는 진행자의 후속 질문 뒤에 다른 참가자들의 의견(익명 처리)을 읽고 동의하거나 반대하거나 보탭니다. 모든 답변은 페르소나의 근거에 있는 실제 리뷰를 인용하며, 마지막에 종합이 나옵니다. 어시스턴트에서 실행됩니다.",
+    "needPersonas_one": "포커스 그룹에는 페르소나가 최소 {{count, number}}명 필요합니다. 먼저 페르소나 탭에서 페르소나를 생성하거나 추가하세요.",
+    "needPersonas_other": "포커스 그룹에는 페르소나가 최소 {{count, number}}명 필요합니다. 먼저 페르소나 탭에서 페르소나를 생성하거나 추가하세요.",
+    "newGroup": "새 포커스 그룹",
+    "personas_one": "페르소나: {{count, number}}명 선택, 최대 {{max, number}}명",
+    "personas_other": "페르소나: {{count, number}}명 선택, 최대 {{max, number}}명",
+    "topic": "주제",
+    "topicHint": "페르소나가 무엇을 논의해야 하나요? 대화의 첫 메시지가 됩니다.",
+    "rounds": "라운드",
+    "roundCount_one": "{{count, number}}라운드",
+    "roundCount_other": "{{count, number}}라운드",
+    "roundsHint": "1라운드는 독립적이라 어떤 답변도 다른 답변에 끌려가지 않습니다. 2라운드부터는 진행자의 후속 질문 뒤에 각 페르소나가 다른 참가자들의 의견을 익명으로 읽습니다.",
+    "documents": "각 페르소나가 읽는 프로젝트 문서(최대 {{max, number}}개)",
+    "library": "각 페르소나가 읽는 문서 라이브러리 항목(최대 {{max, number}}개)",
+    "cost": "어시스턴트 모델을 약 {{calls, number}}회 호출하며, 입력 토큰 약 {{input, number}}개와 출력 토큰 약 {{output, number}}개를 사용합니다.",
+    "synthetic": "모든 발언은 합성이며 피드백이 되지 않습니다. 각 페르소나는 열어 볼 수 있는 실제 리뷰를 인용합니다.",
+    "start": "포커스 그룹 시작",
+    "saved": "저장된 포커스 그룹",
+    "noneSaved": "저장된 포커스 그룹이 아직 없습니다. 어시스턴트의 종합 카드에서 저장하세요."
   }
 }

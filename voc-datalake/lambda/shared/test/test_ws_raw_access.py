@@ -445,6 +445,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # scope's own library prefix before S3 (the presigned PUT and GET, the extracted text's put).
     'lambda/shared/library_keys.py': (3, {'LIBRARY': 2, 'library/': 1}),
     'lambda/shared/library_routes.py': (3, {'get_projects_table': 1}),
+    # A persona's evidence routes (7.64.00): the project's personas, the deployment's feedback (read by id and by day
+    # through shared/feedback_partitions.py, as the project's own), and the caller's category access row.
+    'lambda/shared/persona_grounding_routes.py': (3, {'get_aggregates_table': 1, 'get_feedback_table': 1,
+                                                      'get_projects_table': 1}),
     'lambda/shared/library_worker.py': (3, {'get_projects_table': 1}),
     'lambda/shared/library_index.py': (3, {'batch': 2}),
     'lambda/shared/library_objects.py': (3, {'generate_presigned_url': 2, 'put_object': 1}),
