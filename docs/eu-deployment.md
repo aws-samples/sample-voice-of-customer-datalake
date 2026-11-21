@@ -103,6 +103,19 @@ aws bedrock get-inference-profile --region <your region> \
 
 add the new Region to `EU_PROFILE_DESTINATION_REGIONS`, then redeploy.
 
+## Your own models
+
+A model of your own (`-c customModels`, 7.65.00, [deployment.md](deployment.md#bring-your-own-model--c-custommodels))
+must keep the same residency, and the synth checks it: under `-c inferenceScope=eu` every custom model needs
+`"eu": true`, and `"eu": true` needs an `eu.` inference profile or an in-Region model (a Bedrock model id, or an
+imported model's ARN in the app Region and account). A `global.` profile, a `us.` or other non-EU profile and an
+imported model in another Region are refused. An `eu.` custom profile is granted through the profile in each Region
+of `EU_PROFILE_DESTINATION_REGIONS`: the non-Claude `eu.` profiles listed from `eu-central-1` on 2026-11-21 route to
+a subset of those Regions (`eu.amazon.nova-pro-v1:0` to `eu-central-1`, `eu-north-1`, `eu-west-1`, `eu-west-3`;
+`eu.meta.llama3-2-3b-instruct-v1:0` to `eu-central-1`, `eu-west-1`, `eu-west-3`), so the table covers them. Custom
+Model Import answered in `eu-central-1` and was refused in `eu-west-1`, `eu-west-2`, `eu-west-3` and `eu-north-1`
+on that day: an imported model needs an app Region that offers it.
+
 ## Choosing a region
 
 - Use a region that has the `eu.` Bedrock profiles, Comprehend, Translate and Titan

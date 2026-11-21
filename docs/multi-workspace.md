@@ -1211,7 +1211,10 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
   region, adds each model id their deployment sends (the `model_id` of the `bedrock_usage` lines: `eu.…` in an EU
   deployment) with its four prices per tier, removes it from `unpriced`, sets `as_of` to the day read and `basis` to
   the region, and redeploys; a test fails for an allowlisted model that is neither priced nor unpriced with a reason.
-  A rollup records the `price_as_of` it priced with; a backfill reprices the days it reruns.
+  A rollup records the `price_as_of` it priced with; a backfill reprices the days it reruns. A model of the
+  deployment's own (`-c customModels`, 7.65.00, [deployment.md](deployment.md#bring-your-own-model--c-custommodels))
+  is priced from the registry, where its price is required: `price.in` per million input tokens (the cache reads
+  and writes too) and `price.out` per million output tokens, on every tier; it is never unpriced.
 - **The rollup (slice B).** `voc-cost-rollup` (lambda/jobs/cost_rollup/, VocProcessingStack) runs at 02:15 UTC and
   rolls up yesterday and the day before (a line that arrives late is counted the second time). It finds the
   deployment's `voc-*` Lambda log groups as Administration → System → Logs does, runs one Logs Insights query per 50 groups (four at

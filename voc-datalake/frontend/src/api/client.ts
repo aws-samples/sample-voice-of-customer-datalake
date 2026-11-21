@@ -71,9 +71,9 @@ import { normalizeFeedbackItem, normalizeFeedbackItems } from './feedbackSchema'
 import { cursorFieldsOf } from './feedbackPagination'
 import { normalizeGithubMetrics } from './githubMetricsSchema'
 import { normalizeFormStatsMap, parseFormStatsResponse } from './feedbackFormStatsSchema'
-import { normalizeModelCapacity, normalizeModelTestResult } from './modelTestSchema'
+import { normalizeModelCapacity, normalizeModelTestResult, type ModelTestProbe } from './modelTestSchema'
 import { normalizeImageModelCapacity, normalizeImageModelInfo } from './imageModelSchema'
-import { normalizeWebSearchModels, readSurfaceAllowlist } from './modelSettingsSchema'
+import { normalizeCustomModels, normalizeWebSearchModels, readSurfaceAllowlist } from './modelSettingsSchema'
 import { normalizeResetSource, normalizeSourcesStatus } from './sourcesStatusSchema'
 
 // API response parser using Zod for runtime validation
@@ -375,11 +375,14 @@ export const api = {
   // `image_model` is the fixed persona-avatar image model (null on an older API).
   // Each surface picks from its `allowlist`: `claude` (`available_models`) or, for the web search surface,
   // `web_search` (`web_search_models`, OpenAI GPT models; api/modelSettingsSchema.ts).
+  // `custom_models` (7.65.00) are the deployment's own models (`-c customModels`), each naming the Claude-list
+  // surfaces it may serve; empty on an older API.
   getModelSettings: async () => {
     const raw = await fetchApi<{
       available_models: Array<{ key: string; id: string; label: string; description: string }>
       surfaces: Array<{ key: string; default_id: string; selected: string | null; allowlist?: unknown }>
       web_search_models?: unknown
+      custom_models?: unknown
       model_id: string | null
       // The deployment's default (`-c defaultModelId`, SETTINGS#model_default), below every pick; absent on an older API.
       deployment_default?: string | null
@@ -389,6 +392,7 @@ export const api = {
       ...raw,
       surfaces: raw.surfaces.map((surface) => ({ ...surface, allowlist: readSurfaceAllowlist(surface.allowlist) })),
       web_search_models: normalizeWebSearchModels(raw.web_search_models),
+      custom_models: normalizeCustomModels(raw.custom_models),
       image_model: normalizeImageModelInfo(raw.image_model),
     }
   },
@@ -400,9 +404,11 @@ export const api = {
 
   // Send ONE minimal request to exactly this allowlisted model (admin-only; no
   // fallback) and classify the outcome — see lambda/shared/model_capacity.py.
-  testModel: async (modelId: string) => normalizeModelTestResult(
-    await fetchApi<unknown>('/settings/model/test', post({ model_id: modelId })),
+  // `probe` (7.65.00): `basic` asks for a reply, `json` for a JSON object, `tools` for a call of the check's tool.
+  testModel: async (modelId: string, probe: ModelTestProbe = 'basic') => normalizeModelTestResult(
+    await fetchApi<unknown>('/settings/model/test', post(probe === 'basic' ? { model_id: modelId } : { model_id: modelId, probe })),
     modelId,
+    probe,
   ),
 
   // Tokens-per-minute quota of every allowlisted model, plus the image model's access and

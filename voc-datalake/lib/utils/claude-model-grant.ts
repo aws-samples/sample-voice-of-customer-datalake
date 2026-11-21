@@ -21,12 +21,19 @@
  *
  * The image model and the Titan embedder are in-Region models invoked directly; their exact ARNs stay in the
  * callers' own statements (model-allowlist.ts imageModelArn / embeddingModelArn).
+ *
+ * The deployment's own models (`-c customModels`, custom-models.ts, 7.65.00) join the same shared policies, each by
+ * its exact ARNs (an in-Region or imported model directly; a profile in the same three-part shape), spread over the
+ * policies so each stays under the 6,144-character quota (checked at synth). A role granted with
+ * `{ customModels: false }` (the engineering runtime: its harness is Claude-only) attaches a Claude-only twin set
+ * instead, made only when custom models exist, so without the flag every template is unchanged.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import type { IConstruct } from 'constructs';
 
+import { customModelArns, type CustomModel, markCustomModelRole, stackCustomModels } from './custom-models';
 import { type ClaudeModelArns, stackModelArns } from './model-allowlist';
 
 /** Models per managed policy; measured sizes in lib/utils/claude-model-grant.test.ts. */
@@ -48,12 +55,20 @@ const POLICY_ID_PREFIX: Readonly<Record<ClaudeInvokeVariant, string>> = {
   invoke: 'ClaudeInvokePolicy',
   stream: 'ClaudeInvokeStreamPolicy',
 };
+/** The Claude-only twin set's, made beside the shared set only when `-c customModels` lists a model. */
+const TWIN_POLICY_ID_PREFIX: Readonly<Record<ClaudeInvokeVariant, string>> = {
+  invoke: 'ClaudeOnlyInvokePolicy',
+  stream: 'ClaudeOnlyInvokeStreamPolicy',
+};
 
 function chunk<T>(items: readonly T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
   return chunks;
 }
+
+/** IAM's quota on a customer-managed policy document, in characters without whitespace. */
+const MANAGED_POLICY_CHARS = 6_144;
 
 /** The one `requestingRegion` of `models` (global scope), or undefined (eu); throws on a mix. */
 function requestingRegionOf(models: readonly ClaudeModelArns[]): string | undefined {
@@ -63,21 +78,23 @@ function requestingRegionOf(models: readonly ClaudeModelArns[]): string | undefi
   return region;
 }
 
-/** The three-part statements for `models` (part 3 only when the scope has a global foundation model). */
-function claudeModelStatements(models: readonly ClaudeModelArns[], actions: readonly string[]): iam.PolicyStatement[] {
+/** The three-part statements for `models` (part 3 only when the scope has a global foundation model), their Sids
+ *  prefixed `sid` (`Claude` for the allowlist). */
+function claudeModelStatements(models: readonly ClaudeModelArns[], actions: readonly string[], sid = 'Claude'): iam.PolicyStatement[] {
+  if (models.length === 0) return [];
   const profiles = models.map((m) => m.profile);
   const viaProfile = { 'bedrock:InferenceProfileArn': profiles };
   const requesting = requestingRegionOf(models);
   const inRegion = requesting === undefined ? {} : { 'aws:RequestedRegion': requesting };
   const statements = [
     new iam.PolicyStatement({
-      sid: 'ClaudeProfiles',
+      sid: `${sid}Profiles`,
       actions: [...actions],
       resources: profiles,
       ...(requesting === undefined ? {} : { conditions: { StringEquals: inRegion } }),
     }),
     new iam.PolicyStatement({
-      sid: 'ClaudeRegionalModels',
+      sid: `${sid}RegionalModels`,
       actions: [...actions],
       resources: models.flatMap((m) => m.regionalModels),
       conditions: { StringEquals: { ...inRegion, ...viaProfile } },
@@ -86,7 +103,7 @@ function claudeModelStatements(models: readonly ClaudeModelArns[], actions: read
   const globalModels = models.flatMap((m) => (m.globalModel === undefined ? [] : [m.globalModel]));
   if (globalModels.length > 0) {
     statements.push(new iam.PolicyStatement({
-      sid: 'ClaudeGlobalModels',
+      sid: `${sid}GlobalModels`,
       actions: [...actions],
       resources: globalModels,
       conditions: { StringEquals: { 'aws:RequestedRegion': 'unspecified', ...viaProfile } },
@@ -95,16 +112,55 @@ function claudeModelStatements(models: readonly ClaudeModelArns[], actions: read
   return statements;
 }
 
-/** The stack's shared managed policies for `variant`, created on first use. */
-function stackClaudePolicies(scope: IConstruct, variant: ClaudeInvokeVariant): iam.ManagedPolicy[] {
+/**
+ * The statements for the deployment's own `models`: the in-Region and imported models by their ARNs
+ * (`CustomModels`), a `global.` profile in the three parts (`CustomCrossRegion*`), any other profile in the
+ * geographic two (`CustomGeo*`, each foundation model in each of its Regions, through the profile only).
+ */
+function customModelStatements(models: readonly CustomModel[], stack: cdk.Stack, actions: readonly string[]): iam.PolicyStatement[] {
+  const grants = models.map((model) => customModelArns(model, stack));
+  const direct = grants.flatMap((grant) => (grant.kind === 'direct' ? [grant.arn] : []));
+  const profiles = grants.flatMap((grant) => (grant.kind === 'profile' ? [grant.arns] : []));
+  return [
+    ...(direct.length > 0 ? [new iam.PolicyStatement({ sid: 'CustomModels', actions: [...actions], resources: direct })] : []),
+    ...claudeModelStatements(profiles.filter((p) => p.globalModel !== undefined), actions, 'CustomCrossRegion'),
+    ...claudeModelStatements(profiles.filter((p) => p.globalModel === undefined), actions, 'CustomGeo'),
+  ];
+}
+
+/** Throws when `statements` would not fit one managed policy (IAM counts the document without whitespace). A guard:
+ *  the registry's own caps (four models, 1,200 characters) keep the largest grant at 86 % of the quota
+ *  (claude-model-grant.test.ts). */
+export function assertFitsManagedPolicy(stack: cdk.Stack, id: string, statements: readonly iam.PolicyStatement[]): void {
+  const chars = JSON.stringify(stack.resolve(new iam.PolicyDocument({ statements: [...statements] }).toJSON())).length;
+  if (chars > MANAGED_POLICY_CHARS) {
+    throw new Error(`${stack.stackName}/${id}: the Claude and custom model grant is ${chars} characters, over the `
+      + `${MANAGED_POLICY_CHARS}-character managed-policy quota: list fewer -c customModels (or Regions)`);
+  }
+}
+
+/**
+ * The stack's shared managed policies for `variant`, created on first use: the Claude allowlist in
+ * {@link MODELS_PER_POLICY} chunks, the custom models spread over the chunks (model `j` in chunk `j mod n`). With
+ * `withCustom` false and custom models present, the Claude-only twin set (`ClaudeOnly…`) instead.
+ */
+function stackClaudePolicies(scope: IConstruct, variant: ClaudeInvokeVariant, withCustom: boolean): iam.ManagedPolicy[] {
   const stack = cdk.Stack.of(scope);
-  return chunk(stackModelArns(stack), MODELS_PER_POLICY).map((models, index) => {
-    const id = `${POLICY_ID_PREFIX[variant]}${index}`;
+  const custom = stackCustomModels(stack);
+  const twin = custom.length > 0 && !withCustom;
+  const chunks = chunk(stackModelArns(stack), MODELS_PER_POLICY);
+  return chunks.map((models, index) => {
+    const id = `${(twin ? TWIN_POLICY_ID_PREFIX : POLICY_ID_PREFIX)[variant]}${index}`;
     const existing = stack.node.tryFindChild(id);
     if (existing instanceof iam.ManagedPolicy) return existing;
+    const actions = CLAUDE_INVOKE_ACTIONS[variant];
+    const own = twin ? [] : custom.filter((_, j) => j % chunks.length === index);
+    const statements = [...claudeModelStatements(models, actions), ...customModelStatements(own, stack, actions)];
+    if (own.length > 0) assertFitsManagedPolicy(stack, id, statements);
+    const subject = own.length > 0 ? 'allowlisted Claude models and the deployment\'s custom models' : 'allowlisted Claude models';
     return new iam.ManagedPolicy(stack, id, {
-      description: `bedrock ${CLAUDE_INVOKE_ACTIONS[variant].join(', ')} on allowlisted Claude models (part ${index + 1})`,
-      statements: claudeModelStatements(models, CLAUDE_INVOKE_ACTIONS[variant]),
+      description: `bedrock ${actions.join(', ')} on ${subject} (part ${index + 1})`,
+      statements,
     });
   });
 }
@@ -124,22 +180,32 @@ class DefaultPolicyAfterClaudePolicies implements cdk.IAspect {
   }
 }
 
+/** How a role is granted the models. */
+export interface ClaudeGrantOptions {
+  /** `false`: the Claude allowlist only, never a `-c customModels` model (the engineering runtime, Claude-only). */
+  readonly customModels?: boolean;
+}
+
 /**
- * Grant `role` `variant` on every allowlisted Claude model (model-allowlist.ts), via the stack's shared policies.
+ * Grant `role` `variant` on every allowlisted Claude model (model-allowlist.ts) and, unless `customModels` is
+ * false, on every `-c customModels` model (custom-models.ts), via the stack's shared policies.
  *
  * The role's default inline policy is made to depend on the shared ones, so a deploy that moves the grant out of
  * the inline policy (5.76 → this shape) attaches the managed policies BEFORE it removes the inline statements,
  * instead of racing the two updates.
  */
-export function grantClaudeModels(role: iam.IRole, variant: ClaudeInvokeVariant): iam.ManagedPolicy[] {
-  const policies = stackClaudePolicies(role, variant);
+export function grantClaudeModels(role: iam.IRole, variant: ClaudeInvokeVariant, options: ClaudeGrantOptions = {}): iam.ManagedPolicy[] {
+  const withCustom = options.customModels ?? true;
+  if (withCustom) markCustomModelRole(role);
+  const policies = stackClaudePolicies(role, variant, withCustom);
   for (const policy of policies) policy.attachToRole(role);
   cdk.Aspects.of(role).add(new DefaultPolicyAfterClaudePolicies(policies));
   return policies;
 }
 
 /** {@link grantClaudeModels} on a function's execution role (CDK-created roles; an imported function has none). */
-export function grantClaudeModelsToFunction(fn: lambda.IFunction, variant: ClaudeInvokeVariant): iam.ManagedPolicy[] {
+export function grantClaudeModelsToFunction(fn: lambda.IFunction, variant: ClaudeInvokeVariant,
+  options: ClaudeGrantOptions = {}): iam.ManagedPolicy[] {
   if (fn.role === undefined) throw new Error(`${fn.node.path} has no execution role to grant Claude models to`);
-  return grantClaudeModels(fn.role, variant);
+  return grantClaudeModels(fn.role, variant, options);
 }

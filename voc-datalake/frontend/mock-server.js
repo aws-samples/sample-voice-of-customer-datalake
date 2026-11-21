@@ -5,6 +5,7 @@ import http from 'http';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { handleConnectRoutes } from './mock-connect.js';
+import { MOCK_CUSTOM_MODELS, mockCustomModelTest, mockCustomModelsFor, mockProbeOf } from './mock-custom-models.js';
 import { handleOAuthRoutes } from './mock-oauth.js';
 import {
   GITHUB_REFERENCE, WEBSITE_REFERENCE, draftedLogoUrl, duplicateMockReference, publicDesignSystem, routeDesignExtract, serveMockLogo,
@@ -387,9 +388,10 @@ const mockWebSearchModels = [
 ];
 // The GPT model the mock account "has no capacity for" (its test answers no_capacity, HTTP 429).
 const MOCK_NO_CAPACITY_WEB_SEARCH_MODEL = 'openai.gpt-5.4';
-/** The models `surface` may pick (shared/model_config.py surface_allowlist). */
+/** The models `surface` may pick (shared/model_config.py surface_allowlist): the Claude list plus the deployment's
+ *  own models that declare it (7.65.00, mock-custom-models.js), or the web search surface's GPT models. */
 function mockSurfaceModels(surface) {
-  return surface === WEB_SEARCH_SURFACE ? mockWebSearchModels : mockAvailableModels;
+  return surface === WEB_SEARCH_SURFACE ? mockWebSearchModels : [...mockAvailableModels, ...mockCustomModelsFor(surface)];
 }
 
 // Categories config — real contract shape (id + subcategories, issue #181).
@@ -695,6 +697,8 @@ const handlers = {
   'GET /settings/model': () => ({
     available_models: mockAvailableModels,
     web_search_models: mockWebSearchModels,
+    // The deployment's own models (7.65.00, -c customModels), each with the surfaces it may serve.
+    custom_models: MOCK_CUSTOM_MODELS,
     surfaces: Object.entries(mockSurfaceDefaults).map(([key, defaultId]) => ({
       key,
       default_id: defaultId,
@@ -725,6 +729,17 @@ const handlers = {
   // Model test + capacity (shared/model_capacity.py). Opus 4.8 is the deliberate
   // zero-quota model so local dev always shows the "No capacity — wait" state.
   'POST /settings/model/test': (body) => {
+    // 7.65.00: `probe` (basic | json | tools); the image and web search models take the basic test only.
+    const probe = mockProbeOf(body);
+    const basicOnly = body?.model_id === mockImageModel.id || mockWebSearchModels.some((m) => m.id === body?.model_id);
+    if (probe === null || (probe !== 'basic' && basicOnly)) {
+      return { __status: 400, body: { success: false, message: 'probe must be basic, json or tools (basic only for this model)' } };
+    }
+    const custom = mockCustomModelTest(body?.model_id, probe, mockModelTestRuns);
+    if (custom) {
+      mockModelTestRuns += 1;
+      return custom;
+    }
     if (body?.model_id === mockImageModel.id) {
       // shared/image_model_status.py probe_image_model: one image call, no token quota.
       mockModelTestRuns += 1;
@@ -756,7 +771,7 @@ const handlers = {
     mockModelTestRuns += 1;
     if (model.id === MOCK_NO_AGREEMENT_MODEL) {
       return {
-        model_id: model.id, invoked_id: model.id, status: 'no_access', ok: false, latency_ms: null,
+        model_id: model.id, invoked_id: model.id, status: 'no_access', ok: false, probe, latency_ms: null,
         message: 'This account has no access to the model (model access, use case or agreement). (AccessDeniedException)',
         quota, checked_at: new Date().toISOString(),
       };
@@ -767,6 +782,7 @@ const handlers = {
       invoked_id: model.id,
       status: noCapacity ? 'no_capacity' : 'available',
       ok: !noCapacity,
+      probe,
       latency_ms: noCapacity ? null : 300 + (mockModelTestRuns % 7) * 90,
       message: noCapacity
         ? 'The token quota for this model is 0 in this account; nothing to do but wait. (ThrottlingException)'

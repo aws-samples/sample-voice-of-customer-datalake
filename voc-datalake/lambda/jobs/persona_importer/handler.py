@@ -23,7 +23,7 @@ from shared.image_limits import converse_image_format
 from shared.invocation_cost import instrumented_handler
 from shared.jobs import JobContext, job_handler
 from shared.logging import logger
-from shared.model_config import get_active_model_id
+from shared.model_config import get_active_model_id, model_for_documents
 from shared.persona_import import validate_import_config
 from shared.project_keys import personas_index_pk, project_pk
 from shared.project_writes import put_project_item_and_increment
@@ -123,6 +123,9 @@ def handle_job(ctx: JobContext, project_id: str, _job_id: str, import_config: di
     # single throttle would fail the import job outright, and this surface is
     # reached straight after an upload). No temperature is sent.
     model_id = get_active_model_id('documents')
+    if input_type == 'image':
+        # The model that reads the image: a picked custom model that reads none leaves it to the surface default.
+        model_id = model_for_documents(model_id, 'documents')
     logger.info(f"[IMPORT_PERSONA_JOB] Invoking Bedrock with model {model_id}")
     response = converse_blocks(
         get_bedrock_client(), converse_content, surface='documents', model_id=model_id, system_prompt=system_prompt,

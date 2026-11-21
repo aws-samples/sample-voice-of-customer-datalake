@@ -61,6 +61,13 @@ GATED_CONTEXT: dict[str, object] = {
     'inferenceScope': 'eu',          # BEDROCK_INFERENCE_SCOPE / AVATARS_ENABLED on every Lambda
     'enableWebSearch': False,        # the one default-ON feature: its env must look optional too
     'workspaceHardDelete': True,     # voc-workspace-delete and the delete routes' DELETE_FUNCTION
+    # CUSTOM_MODELS on the custom-granted functions and the two readers (lib/utils/custom-models.ts, 7.65.00): an
+    # eu. profile, as the eu scope above requires
+    'customModels': [{
+        'key': 'novaeu', 'id': 'eu.amazon.nova-pro-v1:0', 'label': 'Amazon Nova Pro', 'kind': 'bedrock',
+        'surfaces': ['documents'], 'eu': True, 'price': {'in': 0.8, 'out': 3.2},
+        'capabilities': {'tools': False, 'documents': True, 'json': True, 'temperature': True},
+    }],
     'anthropicUseCase': {
         'companyName': 'Example Air', 'companyWebsite': 'https://example.com', 'intendedUsers': '0',
         'industryOption': 'Technology', 'useCases': 'Audit synth.', 'otherIndustryOption': '',

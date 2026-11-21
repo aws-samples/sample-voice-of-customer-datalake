@@ -35,7 +35,22 @@
       }
     },
     "automaticOption": "自动 — {{model}}",
+    "custom": {
+      "badge": "您的模型",
+      "euBadge": "欧盟境内处理",
+      "runsIn": "运行于 {{regions}} · {{source}}",
+      "runsAnywhere": "可在任意商业 AWS 区域运行 · {{source}}",
+      "source": {
+        "model": "Bedrock 模型",
+        "profile": "推理配置文件",
+        "imported": "导入的模型"
+      },
+      "price": "每百万 token {{in}} / {{out}} 美元（输入 / 输出）",
+      "claudeTuned": "提示词针对 Claude 调优：在此功能中依赖该模型之前，请先检查它的回答。",
+      "coldStart": "导入的模型会缩减到零：闲置一段时间后，第一个请求可能需要数十秒到数分钟。"
+    },
     "groupOther": "其他模型",
+    "groupCustom": "您的模型",
     "groupRecommended": "推荐",
     "intro": "选择为每项 AI 功能提供支持的模型（Claude，或为从 Bedrock 网页搜索索引读取的评论页面选择 OpenAI GPT），或保持“自动”以使用每项功能的调优默认值。正在运行的函数会在一分钟内应用更改。",
     "loadFailed": "无法加载模型设置。",
@@ -93,6 +108,14 @@
       "test": "测试",
       "testTitle": "为 {{surface}} 向 {{model}} 发送一个测试请求",
       "testing": "测试中...",
+      "probe": {
+        "json": "检查 JSON",
+        "tools": "检查工具",
+        "jsonTitle": "请 {{model}} 返回一次 JSON 对象",
+        "toolsTitle": "请 {{model}} 调用一次工具",
+        "jsonResult": "JSON 检查",
+        "toolsResult": "工具检查"
+      },
       "notTested": "未测试",
       "unsaved": "有未保存的更改",
       "save": "保存",
@@ -119,6 +142,7 @@
         "throttled": "已限流",
         "not_ready": "未就绪",
         "unavailable": "暂不可用",
+        "probe_failed": "检查未通过",
         "error": "错误"
       },
       "detail": {
@@ -129,6 +153,7 @@
         "throttled": "模型当前正在限制请求；请稍后重试。",
         "not_ready": "模型尚未就绪；请几分钟后重试。",
         "unavailable": "模型暂时不可用；请稍后重试。",
+        "probe_failed": "模型已回答，但不符合检查的要求（一个 JSON 对象，或调用检查用的工具）。",
         "error": "测试请求失败。"
       },
       "confirm": {

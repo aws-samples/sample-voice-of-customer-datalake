@@ -15,6 +15,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import AiModelSection from './AiModelSection'
+import { surfaceRowOf as rowOf } from './ai-model-section-fixtures'
 import type { ModelTestResult, ModelTestStatus } from '../../api/modelTestSchema'
 
 const getSettings = vi.fn<() => Promise<unknown>>()
@@ -46,21 +47,15 @@ const settings = {
     { key: 'prototype', default_id: OPUS55, selected: OPUS55 },
   ],
   web_search_models: [],
+  custom_models: [],
   model_id: null,
 }
 
 function result(modelId: string, status: ModelTestStatus, extra: Partial<ModelTestResult> = {}): ModelTestResult {
   return {
-    model_id: modelId, invoked_id: modelId, status, latency_ms: null, message: '',
+    model_id: modelId, invoked_id: modelId, status, probe: 'basic', latency_ms: null, message: '',
     quota: null, checked_at: '2026-10-08T00:00:00+00:00', ...extra,
   }
-}
-
-/** The surface row holding the select labelled `label`. */
-function rowOf(label: string): HTMLElement {
-  const row = screen.getByLabelText(label).closest<HTMLElement>('[data-surface]')
-  if (!row) throw new Error(`no row for ${label}`)
-  return row
 }
 
 type User = ReturnType<typeof userEvent.setup>

@@ -11,7 +11,8 @@
 import { ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { EventType, type StepFinishedEvent, type StepStartedEvent } from '@ag-ui/core';
 import { answerText } from '../../../bedrock/answer-text.js';
-import { invocationModelId, usesAdaptiveThinking } from '../../../bedrock/model-override.js';
+import { capOutputTokens } from '../../../bedrock/custom-models.js';
+import { invocationModelId, takesThinkingBudget } from '../../../bedrock/model-override.js';
 import { isSupportedLanguage, type SupportedLanguage } from '../../../context/language.js';
 import { buildSinglePersonaPrompt } from '../../../context/persona-prompt.js';
 import { MENTION_LIMITS } from '../../contract.js';
@@ -79,16 +80,16 @@ export function briefingFor(tagged: readonly ChatContextDocument[], all: readonl
 
 /** One persona's non-streaming call: the run's model, no tools, bounded tokens (the focus groups' too). */
 export function personaConverseCommand(modelId: string, systemPrompt: string, question: string): ConverseCommand {
-  const adaptive = usesAdaptiveThinking(modelId);
+  const budget = takesThinkingBudget(modelId);
   return new ConverseCommand({
     modelId: invocationModelId(modelId),
     system: [{ text: systemPrompt }],
     messages: [{ role: 'user', content: [{ text: question }] }],
     // Temperature is never sent (adaptive models reject it; it is not needed here).
-    inferenceConfig: { maxTokens: adaptive ? PERSONA_MAX_TOKENS : PERSONA_MAX_TOKENS + PERSONA_THINKING_BUDGET },
-    ...(adaptive
-      ? {}
-      : { additionalModelRequestFields: { thinking: { type: 'enabled', budget_tokens: PERSONA_THINKING_BUDGET } } }),
+    inferenceConfig: { maxTokens: budget ? PERSONA_MAX_TOKENS + PERSONA_THINKING_BUDGET : capOutputTokens(modelId, PERSONA_MAX_TOKENS) },
+    ...(budget
+      ? { additionalModelRequestFields: { thinking: { type: 'enabled', budget_tokens: PERSONA_THINKING_BUDGET } } }
+      : {}),
   });
 }
 

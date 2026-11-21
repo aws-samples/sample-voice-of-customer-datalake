@@ -3,7 +3,11 @@
  * choice, a Test button for the model that draft resolves to (Automatic
  * included), the last test result, and Save / Discard while the draft differs
  * from what is stored. Nothing is saved until Save.
+ *
+ * 7.65.00: the deployment's own models that declare the surface are listed last, under "Your models", and while the
+ * draft resolves to one of them the row shows what the caller hands it in `details` (CustomModelDetails.tsx).
  */
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FlaskConical, Save, Undo2 } from 'lucide-react'
 import SavedStatus from '../../components/SavedStatus/SavedStatus'
@@ -26,6 +30,10 @@ interface SurfaceRowProps {
   /** Label of the model the draft resolves to (what Test and the pill are about). */
   readonly resolvedLabel: string
   readonly models: readonly SurfaceRowModel[]
+  /** The deployment's own models that may serve this surface (`custom_models`), listed under "Your models". */
+  readonly customModels?: readonly SurfaceRowModel[]
+  /** Shown under the row while the draft resolves to one of the deployment's own models. */
+  readonly details?: ReactNode
   /** The model tuned for this surface (its built-in default): listed first, as "Recommended". */
   readonly recommendedId: string
   readonly result: ModelTestResult | undefined
@@ -60,7 +68,7 @@ export default function AiModelSurfaceRow(props: SurfaceRowProps) {
             onChange={(event) => props.onDraft(event.target.value)}
           >
             <option value="">{t('aiModel.automaticOption', { model: automaticLabel })}</option>
-            <ModelOptions models={models} recommendedId={props.recommendedId} />
+            <ModelOptions models={models} customModels={props.customModels ?? []} recommendedId={props.recommendedId} />
           </select>
           <Tooltip kind="description" content={t('aiModel.test.testTitle', { model: props.resolvedLabel, surface: surfaceLabel })}>
             <button
@@ -74,26 +82,37 @@ export default function AiModelSurfaceRow(props: SurfaceRowProps) {
           </Tooltip>
         </div>
       </div>
+      {props.details}
       <RowStatus {...props} />
     </div>
   )
 }
 
+interface ModelOptionsProps {
+  readonly models: readonly SurfaceRowModel[]
+  readonly customModels: readonly SurfaceRowModel[]
+  readonly recommendedId: string
+}
+
+const options = (list: readonly SurfaceRowModel[]) => list.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)
+
 /**
- * The explicit choices, in two groups: the model tuned for this surface under
+ * The explicit choices, in groups: the model tuned for this surface under
  * "Recommended", every other allowlisted model (older generations, other
- * families) under "Other models". Without a match the list stays flat.
+ * families) under "Other models", then the deployment's own models under
+ * "Your models". Without a recommended match the allowlisted models stay flat.
  */
-function ModelOptions({ models, recommendedId }: Readonly<{ models: readonly SurfaceRowModel[]; recommendedId: string }>) {
+function ModelOptions({ models, customModels, recommendedId }: ModelOptionsProps) {
   const { t } = useTranslation('settings')
   const recommended = models.filter((model) => model.id === recommendedId)
   const others = models.filter((model) => model.id !== recommendedId)
-  const options = (list: readonly SurfaceRowModel[]) => list.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)
-  if (recommended.length === 0) return <>{options(others)}</>
+  const yours = customModels.length > 0 && <optgroup label={t('aiModel.groupCustom')}>{options(customModels)}</optgroup>
+  if (recommended.length === 0) return <>{options(others)}{yours}</>
   return (
     <>
       <optgroup label={t('aiModel.groupRecommended')}>{options(recommended)}</optgroup>
       {others.length > 0 && <optgroup label={t('aiModel.groupOther')}>{options(others)}</optgroup>}
+      {yours}
     </>
   )
 }

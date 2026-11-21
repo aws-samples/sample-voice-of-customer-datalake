@@ -391,3 +391,16 @@ def test_the_handler_wires_the_lambdas_remaining_time(world, monkeypatch, lambda
     lambda_context.get_remaining_time_in_millis = lambda: 900_000
     assert handler.lambda_handler({'days': [YESTERDAY]}, lambda_context)['written'][YESTERDAY]['workspaces'] == 0
     assert seen == [900.0]
+
+
+def test_a_custom_model_is_priced_from_the_registry_and_the_row_is_complete(monkeypatch):
+    """-c customModels (7.65.00): the rollup prices a custom model's tokens with its required registry price."""
+    from shared.custom_models import CUSTOM_MODELS_ENV
+    from shared.model_prices import PRICE_LIST
+    from shared.test.repo_paths import repo_root
+    monkeypatch.setenv(CUSTOM_MODELS_ENV, (repo_root() / 'lib' / 'test-support' / 'custom-models-env.json')
+                       .read_text(encoding='utf-8'))
+    counts = {'calls': 3, 'input_tokens': 1_000_000, 'output_tokens': 1_000_000, 'cache_read_tokens': 0,
+              'cache_write_tokens': 0}
+    part = handler.priced({('us.meta.llama3-3-70b-instruct-v1:0', 'default'): counts}, PRICE_LIST)
+    assert (part['estimated_usd'], part['complete'], part['unpriced_models']) == (Decimal('1.44'), True, [])

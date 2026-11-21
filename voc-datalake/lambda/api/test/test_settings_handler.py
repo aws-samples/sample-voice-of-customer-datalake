@@ -389,7 +389,7 @@ class TestModelTestAndCapacityRoutes:
         )
 
         assert (response['statusCode'], body['status']) == (200, 'available')
-        probe.assert_called_once_with(self.OPUS55)
+        probe.assert_called_once_with(self.OPUS55, 'basic')
 
     @pytest.mark.parametrize('body', [{'model_id': 'anthropic.evil-model-v9'}, {'model_id': None}, {}])
     @patch('settings_handler.model_capacity.probe_model')

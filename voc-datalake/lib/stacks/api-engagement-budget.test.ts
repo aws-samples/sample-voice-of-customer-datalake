@@ -87,6 +87,10 @@
  * (api-stack-snapstart.test.ts, 500 less its 75 of headroom), which is unchanged. The next resource this stack adds
  * must first give one back (the strict model is the cheapest to fold: the submit's lenient one would then bound the
  * beacons, as it did before).
+ *
+ * 7.65.00 (bring your own model, `-c customModels`) spends none, with the flag or without: a custom model's exact
+ * ARNs join the stack's shared Claude policies (lib/utils/claude-model-grant.ts) and its routes are the existing
+ * `/settings/model` ones; the ceiling and the gate stay 425.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -129,6 +133,18 @@ describe('VocApiStack resource budget with the engagement API', () => {
     const count = resourceCount(tier.toJSON().Resources);
     console.info(`VocApiStack resources, all plugins + performanceTier: ${count}`);
     expect(count).toBeLessThanOrEqual(ENGAGEMENT_RELEASE_CEILING);
+  }, SYNTH_TIMEOUT_MS * 2);
+
+  it('adds no resource with -c customModels (7.65.00: the models join the shared Claude policies, no policy of their own)', () => {
+    const customModels = JSON.stringify([{
+      key: 'nova', id: 'amazon.nova-pro-v1:0', label: 'Amazon Nova Pro', kind: 'bedrock', surfaces: ['chat', 'documents'],
+      eu: false, capabilities: { tools: true, documents: true, json: true, temperature: true }, price: { in: 0.8, out: 3.2 },
+    }]);
+    const withCustom = synthApiTemplate({ customModels }, discoverPluginIds());
+    const count = resourceCount(withCustom.toJSON().Resources);
+    console.info(`VocApiStack resources, all plugins + customModels: ${count}`);
+    expect(count).toBe(resourceCount(apiTemplateAllPlugins().toJSON().Resources));
+    expect(JSON.stringify(withCustom.toJSON())).toContain('foundation-model/amazon.nova-pro-v1:0');
   }, SYNTH_TIMEOUT_MS * 2);
 
   it('adds no resource with -c emailFrom (the board authorizer is on every deployment since 5.45.00)', () => {

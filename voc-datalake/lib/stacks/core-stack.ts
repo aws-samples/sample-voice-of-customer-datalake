@@ -523,7 +523,9 @@ export class VocCoreStack extends VocStack {
       workspacesTable: this.workspacesTable, aggregatesTable: this.aggregatesTable,
     });
     this.kmsKey.grantEncryptDecrypt(productDocExtractor);
-    grantClaudeModelsToFunction(productDocExtractor, 'invoke');
+    // Claude only: a stdlib Lambda whose own resolver reads the Claude allowlist alone (MODEL_ALLOWLIST), never the
+    // -c customModels registry.
+    grantClaudeModelsToFunction(productDocExtractor, 'invoke', { customModels: false });
     notifyProductDocExtractor(this.rawDataBucket, productDocExtractor);
 
     // bin/voc-datalake.ts gives this stack no stack-wide acknowledgement, so

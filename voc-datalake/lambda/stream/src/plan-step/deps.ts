@@ -12,6 +12,7 @@
 import { ConverseCommand, type ConverseCommandOutput, type Message, type SystemContentBlock, type Tool } from '@aws-sdk/client-bedrock-runtime';
 import type { AssistantToolDefinition, CallerClaims } from '../assistant/types.js';
 import type { ApiCall } from '../assistant/tools/internal-api.js';
+import { capOutputTokens } from '../bedrock/custom-models.js';
 import { invocationModelId } from '../bedrock/model-override.js';
 import type { StoreLookupFn } from '../assistant/tools/client/store-app-check.js';
 
@@ -46,7 +47,7 @@ export function converseCommand(request: ConverseRequest): ConverseCommand {
     modelId: invocationModelId(request.modelId),
     system,
     messages: request.messages,
-    inferenceConfig: { maxTokens: request.maxTokens },
+    inferenceConfig: { maxTokens: capOutputTokens(request.modelId, request.maxTokens) },
     ...(request.tools === undefined || request.tools.length === 0 ? {} : { toolConfig: { tools: request.tools } }),
   });
 }

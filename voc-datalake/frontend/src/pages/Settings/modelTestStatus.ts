@@ -7,9 +7,11 @@
  * warn = wait / retry, danger = this account cannot use it, muted / info = not
  * offered here / not ready. `no_capacity` deliberately offers no action: the
  * model is subscribed but its quota is 0, and the only thing to do is wait.
+ * `probe_failed` (7.65.00, a custom model's JSON or tools check) is a warning: the
+ * model runs, but its answer was not the one the check asked for.
  */
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, CheckCircle2, CloudOff, Hourglass, Lock, MapPinOff, Timer } from 'lucide-react'
+import { AlertCircle, CheckCircle2, CircleX, CloudOff, Hourglass, Lock, MapPinOff, Timer } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Tone } from '../../theme/tones'
 import type { ModelTestStatus } from '../../api/modelTestSchema'
@@ -30,6 +32,7 @@ export const STATUS_META: Record<ModelTestStatus, StatusMeta> = {
   throttled: { tone: 'warn', icon: Timer, labelKey: 'settings:aiModel.test.status.throttled', detailKey: 'settings:aiModel.test.detail.throttled' },
   not_ready: { tone: 'info', icon: Hourglass, labelKey: 'settings:aiModel.test.status.not_ready', detailKey: 'settings:aiModel.test.detail.not_ready' },
   unavailable: { tone: 'warn', icon: CloudOff, labelKey: 'settings:aiModel.test.status.unavailable', detailKey: 'settings:aiModel.test.detail.unavailable' },
+  probe_failed: { tone: 'warn', icon: CircleX, labelKey: 'settings:aiModel.test.status.probe_failed', detailKey: 'settings:aiModel.test.detail.probe_failed' },
   error: { tone: 'danger', icon: AlertCircle, labelKey: 'settings:aiModel.test.status.error', detailKey: 'settings:aiModel.test.detail.error' },
 }
 

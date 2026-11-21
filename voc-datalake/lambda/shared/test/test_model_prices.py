@@ -54,3 +54,28 @@ def test_an_unknown_model_or_tier_has_no_price():
 def test_an_unpriced_model_has_no_price_on_the_real_list():
     for model_id in UNPRICED:
         assert estimated_usd(model_id, 'default', {'input_tokens': 5}) is None
+
+
+class TestCustomModelPrices:
+    """A -c customModels model (7.65.00) is priced from its registry price, on every tier, never unpriced."""
+
+    @pytest.fixture(autouse=True)
+    def _registry(self, monkeypatch):
+        from shared.custom_models import CUSTOM_MODELS_ENV
+        from shared.test.repo_paths import repo_root
+        monkeypatch.setenv(CUSTOM_MODELS_ENV, (repo_root() / 'lib' / 'test-support' / 'custom-models-env.json')
+                           .read_text(encoding='utf-8'))
+
+    def test_input_and_cache_at_the_input_price_output_at_the_output_price(self):
+        tokens = {'input_tokens': 1_000_000, 'output_tokens': 500_000, 'cache_read_tokens': 100_000,
+                  'cache_write_tokens': 100_000}
+        # Nova: 0.8 in, 3.2 out per million tokens.
+        assert estimated_usd('amazon.nova-pro-v1:0', 'default', tokens) == Decimal('0.8') + Decimal('1.6') + Decimal('0.16')
+        assert estimated_usd('amazon.nova-pro-v1:0', 'flex', tokens, LIST) == estimated_usd('amazon.nova-pro-v1:0', 'default', tokens)
+
+    def test_an_imported_model_is_priced_by_its_arn_as_sent(self):
+        arn = 'arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456'
+        assert estimated_usd(arn, 'default', {'input_tokens': 2_000_000, 'output_tokens': 1_000_000}) == Decimal('2.5')
+
+    def test_a_model_the_registry_does_not_list_stays_unpriced(self):
+        assert estimated_usd('amazon.nova-lite-v1:0', 'default', {'input_tokens': 1}) is None

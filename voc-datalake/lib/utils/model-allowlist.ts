@@ -13,6 +13,11 @@
  * agreements from ALLOWED_FOUNDATION_MODEL_IDS — both derived from the one
  * list below.
  *
+ * The deployment's own models (`-c customModels`, 7.65.00) extend the picker per deployment through
+ * lib/utils/custom-models.ts, which builds each one's exact ARNs with this module's partitionOf and
+ * EU_PROFILE_DESTINATION_REGIONS; claude-model-grant.ts adds them to the same shared policies (never a wildcard),
+ * and shared/model_config.py's surface_allowlist offers them beside this list. This list stays Claude only.
+ *
  * Note on Opus 5 and Opus 4.8: each is a selectable model in its own right AND
  * a safety-fallback target — Opus 5.5 re-runs a request its classifiers decline
  * on Opus 5, and Opus 5 on Opus 4.8. Both roles need the same grant, so no

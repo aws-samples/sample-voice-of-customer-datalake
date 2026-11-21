@@ -20,7 +20,7 @@ from shared.converse import bedrock_call_with_retry
 from shared.exceptions import ValidationError
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, tracer
-from shared.model_config import get_active_model_id, uses_adaptive_thinking
+from shared.model_config import anthropic_model, get_active_model_id, uses_adaptive_thinking
 
 dynamodb = get_dynamodb_resource()
 bedrock = get_bedrock_client()
@@ -244,7 +244,8 @@ def _parse_job(table: Any, job_id: str) -> tuple[str | None, object]:
         # applies in its single-call form: max_tokens=16000 must fit the whole
         # JSON answer in one call; a truncated response falls through
         # parse_llm_response() into unparsed_sections rather than corrupting.
-        model_id = get_active_model_id('utility')
+        # Claude's own request body (anthropic_version): a custom model picked for utilities is not sent it.
+        model_id = anthropic_model(get_active_model_id('utility'), 'utility')
         logger.info(f"Invoking Bedrock for job {job_id} with model {model_id}")
 
         # Through the shared retry policy: this raw invoke_model path does not go

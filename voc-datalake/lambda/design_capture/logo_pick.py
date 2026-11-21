@@ -167,9 +167,10 @@ def _bedrock_client() -> Any:
 def ask_logo_model(content: Sequence[dict]) -> ModelAnswer:
     """The model's raw answer to the ONE pick call, with the model id the surface resolved (production collaborator)."""
     from shared.converse import converse_blocks
-    from shared.model_config import get_active_model_id
+    from shared.model_config import get_active_model_id, model_for_documents
 
-    model_id = get_active_model_id(SURFACE)
+    # The model that reads the images: a picked custom model that reads none leaves them to the surface default.
+    model_id = model_for_documents(get_active_model_id(SURFACE), SURFACE)
     response = converse_blocks(_bedrock_client(), content, surface=SURFACE, system_prompt=PICK_SYSTEM_PROMPT,
                                max_tokens=PICK_MAX_TOKENS, max_retries=1, step_name=STEP_NAME, model_id=model_id,
                                call_label='client.converse(logo pick)')

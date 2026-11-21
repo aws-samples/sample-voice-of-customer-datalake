@@ -51,6 +51,7 @@ const modelSettingsFixture = {
     { key: 'utility', default_id: SONNET5, selected: null },
   ],
   web_search_models: [],
+  custom_models: [],
   model_id: null,
 }
 

@@ -37,6 +37,7 @@ function settingsWith(imageModel: ImageModelInfo | null) {
     available_models: [{ key: 'sonnet55', id: SONNET55, label: 'Claude Sonnet 5.5', description: 'Flagship' }],
     surfaces: [{ key: 'chat', default_id: SONNET55, selected: null }],
     web_search_models: [],
+    custom_models: [],
     model_id: null,
     image_model: imageModel,
   }
@@ -53,7 +54,7 @@ function imageCapacity(status: ImageAccessStatus, extra: Partial<ImageModelCapac
 }
 
 function result(modelId: string, status: ModelTestResult['status']): ModelTestResult {
-  return { model_id: modelId, invoked_id: modelId, status, latency_ms: 900, message: '', quota: null, checked_at: '2026-10-28T00:00:00+00:00' }
+  return { model_id: modelId, invoked_id: modelId, status, probe: 'basic', latency_ms: 900, message: '', quota: null, checked_at: '2026-10-28T00:00:00+00:00' }
 }
 
 async function imageRow(): Promise<HTMLElement> {
@@ -158,6 +159,7 @@ const agreementSettings = {
   ],
   surfaces: [{ key: 'chat', default_id: OPUS55, selected: null }],
   web_search_models: [],
+  custom_models: [],
   model_id: null,
 }
 
@@ -209,7 +211,7 @@ describe('AiModelSection — model agreements', () => {
   it('Test checks exactly the listed model and shows its result in the notice', async () => {
     getCapacity.mockResolvedValue(capacity(agreementAccess('not_subscribed')))
     testModel.mockResolvedValue({
-      model_id: HAIKU45, invoked_id: HAIKU45, status: 'no_access', latency_ms: null, message: '', quota: null, checked_at: '',
+      model_id: HAIKU45, invoked_id: HAIKU45, status: 'no_access', probe: 'basic', latency_ms: null, message: '', quota: null, checked_at: '',
     })
     const user = userEvent.setup()
     await renderCard()

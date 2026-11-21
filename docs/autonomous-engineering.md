@@ -2372,7 +2372,9 @@ wait closes.
   writes the runtimes' logs, nothing else. Everything else a session does is done with the agent role's 15-minute
   session the launcher hands its agent user (below), whose grants are, all scoped by its session tags: read its
   connection's cache and its run's workspace keys, write its own keys (create-only), call the board's and the
-  broker's function URLs, put events on the bus with its own source only, and call the allowlisted Bedrock models.
+  broker's function URLs, put events on the bus with its own source only, and call the allowlisted Bedrock models
+  (the Claude allowlist only: a `-c customModels` model, 7.65.00, is never granted to the engineering runtime, whose
+  harness runs Claude's adaptive thinking; its roles attach the Claude-only copy of the model policies).
   *For the owner's sign-off*: that agent role, not the execution role, is what a session can reach in AWS.
 - **One runtime path, two runtimes per language.** "One runtime" is one runtime path (AgentCore, the MicroVMs' path
   removed), not one AgentCore runtime: a resource configuration is set per runtime, so each language with an image has

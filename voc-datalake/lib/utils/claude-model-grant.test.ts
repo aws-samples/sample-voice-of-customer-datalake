@@ -11,7 +11,10 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { CLAUDE_INVOKE_ACTIONS, type ClaudeInvokeVariant, grantClaudeModels, MODELS_PER_POLICY } from './claude-model-grant';
+import {
+  assertFitsManagedPolicy, CLAUDE_INVOKE_ACTIONS, type ClaudeInvokeVariant, grantClaudeModels, MODELS_PER_POLICY,
+} from './claude-model-grant';
+import { parseCustomModels, type RegistryTarget } from './custom-models';
 import { ALLOWED_MODEL_IDS, toFoundationModelId } from './model-allowlist';
 
 const ACCOUNT = '111111111111';
@@ -160,4 +163,91 @@ describe('managed-policy size', () => {
       expect(sizes.filter((s) => s.chars >= MANAGED_POLICY_LIMIT * WARN_FRACTION)).toStrictEqual([]);
     },
   );
+});
+
+describe('grantClaudeModels with -c customModels (7.65.00)', () => {
+  const CAPABILITIES = { tools: true, documents: true, json: true, temperature: true };
+  const custom = (key: string, id: string, extra: Record<string, unknown> = {}) => ({
+    key, id, label: key, kind: 'bedrock', surfaces: ['documents'], eu: false, capabilities: CAPABILITIES, price: { in: 1, out: 2 }, ...extra,
+  });
+  const registry = [
+    custom('nova', 'amazon.nova-pro-v1:0'),
+    custom('lite', 'global.amazon.nova-2-lite-v1:0'),
+    custom('llama', 'us.meta.llama3-3-70b-instruct-v1:0', { regions: ['us-east-1', 'us-east-2', 'us-west-2'] }),
+    custom('mine', `arn:aws:bedrock:us-west-2:${ACCOUNT}:imported-model/abc123def456`, { kind: 'imported' }),
+  ];
+  const template = stackWithRoles('us-west-2', { customModels: JSON.stringify(registry) }, [['RoleA', 'invoke'], ['RoleB', 'stream']]);
+  const text = JSON.stringify(managedPolicies(template));
+
+  it('adds each custom model to the shared policies by its exact ARNs, spread over the parts', () => {
+    const invoke = managedPolicies(template).filter(([id]) => id.startsWith('ClaudeInvokePolicy'));
+    expect(invoke).toHaveLength(Math.ceil(ALLOWED_MODEL_IDS.length / MODELS_PER_POLICY));
+    const sids = invoke.map(([, policy]) => policy.Properties.PolicyDocument.Statement
+      .flatMap((statement) => z.object({ Sid: z.string() }).parse(statement).Sid).filter((sid) => sid.startsWith('Custom')));
+    expect(sids).toStrictEqual([
+      ['CustomModels', 'CustomGeoProfiles', 'CustomGeoRegionalModels'],
+      ['CustomModels', 'CustomCrossRegionProfiles', 'CustomCrossRegionRegionalModels', 'CustomCrossRegionGlobalModels'],
+    ]);
+    for (const arn of [
+      'arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-pro-v1:0',
+      `arn:aws:bedrock:us-west-2:${ACCOUNT}:imported-model/abc123def456`,
+      `arn:aws:bedrock:us-west-2:${ACCOUNT}:inference-profile/global.amazon.nova-2-lite-v1:0`,
+      'arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0',
+      `arn:aws:bedrock:us-west-2:${ACCOUNT}:inference-profile/us.meta.llama3-3-70b-instruct-v1:0`,
+      'arn:aws:bedrock:us-east-2::foundation-model/meta.llama3-3-70b-instruct-v1:0',
+    ]) expect(text).toContain(`"${arn}"`);
+  });
+
+  it('grants no wildcard, no provisioned throughput and no model-management action', () => {
+    expect(text).not.toContain('*');
+    expect(text).not.toContain('foundation-model/*');
+    expect(text).not.toMatch(/bedrock:(?:Create|Delete|Update)|ProvisionedModelThroughput|provisioned-model/);
+  });
+
+  it('keeps the stream variant\'s actions on the custom models too', () => {
+    const stream = managedPolicies(template).filter(([id]) => id.startsWith('ClaudeInvokeStreamPolicy'));
+    expect(JSON.stringify(stream)).toContain('"CustomModels"');
+    expect(JSON.stringify(stream)).toContain(JSON.stringify(CLAUDE_INVOKE_ACTIONS.stream));
+  });
+
+  it('leaves every template without the key unchanged (the default synth is pinned by app-baseline.test.ts)', () => {
+    expect(JSON.stringify(managedPolicies(stackWithRoles('us-west-2')))).not.toContain('Custom');
+  });
+
+  // The largest shapes the registry allows (four models, and an env value of at most 1,200 characters): eu. profiles
+  // from eu-central-2 (seven destinations each), and us. profiles with eight declared Regions, both with ids of 48
+  // characters, the longest listed in us-west-2 and eu-central-1 on 2026-11-21. As many as fit.
+  const long = (prefix: string, i: number) => `${prefix}.example.${'model-name-'.repeat(3)}${i}-v1:0`.padEnd(48, 'x');
+  const fitting = (models: Record<string, unknown>[], target: RegistryTarget) => {
+    const fits = (n: number) => {
+      try {
+        return parseCustomModels(models.slice(0, n), target).length === n;
+      } catch {
+        return false;
+      }
+    };
+    return models.slice(0, [4, 3, 2, 1].find(fits) ?? 0);
+  };
+  it.each([
+    ['eu-central-2', { inferenceScope: 'eu' }, fitting([0, 1, 2, 3].map((i) => custom(`e${i}`, long('eu', i), { eu: true })),
+      { region: 'eu-central-2', account: ACCOUNT, scope: 'eu' })],
+    ['us-east-1', {}, fitting([0, 1, 2, 3].map((i) => custom(`u${i}`, long('us', i), {
+      regions: ['us-east-1', 'us-east-2', 'us-west-1', 'us-west-2', 'ca-central-1', 'ca-west-1', 'mx-central-1', 'us-west-3'],
+    })), { region: 'us-east-1', account: ACCOUNT, scope: 'global' })],
+  ])('keeps every shared policy under 90%% of the 6,144-character managed quota with the largest registry (%s)', (region, context, models) => {
+    expect(models.length).toBeGreaterThanOrEqual(2);
+    const sizes = managedPolicies(stackWithRoles(region, { ...context, customModels: models }, [['RoleA', 'invoke'], ['RoleB', 'stream']]))
+      .map(([id, policy]) => ({ id, chars: JSON.stringify(policy.Properties.PolicyDocument).length }));
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(sizes.filter((s) => s.chars >= MANAGED_POLICY_LIMIT * 0.9)).toStrictEqual([]);
+  });
+
+  it('refuses at synth a grant that would pass the quota', () => {
+    const stack = new cdk.Stack(new cdk.App(), 'Big', { env: { account: ACCOUNT, region: 'us-east-1' } });
+    const arns = Array.from({ length: 120 }, (_, i) => `arn:aws:bedrock:us-east-1::foundation-model/example.model-${String(i)}-v1:0`);
+    const statement = new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: arns });
+    expect(() => assertFitsManagedPolicy(stack, 'P', [statement])).toThrow(/over the 6144-character managed-policy quota/);
+    expect(() => assertFitsManagedPolicy(stack, 'P', [new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: arns.slice(0, 5) })]))
+      .not.toThrow();
+  });
 });

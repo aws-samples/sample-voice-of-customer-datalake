@@ -30,6 +30,7 @@ from shared import (
     category_access,
     company_context,
     company_logo,
+    custom_models,
     design_assets,
     design_icons,
     design_logo,
@@ -265,6 +266,8 @@ def get_model_settings():
     (``available_models``) or, for the web search surface, ``web_search``
     (``web_search_models``, the OpenAI GPT models; empty, and the surface
     absent, unless a deployed plugin reads with it: shared/model_config.py).
+    A ``claude`` surface also offers the deployment's own models that declare it
+    (``custom_models``, ``-c customModels``: shared/custom_models.py, 7.65.00).
     """
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
@@ -288,6 +291,7 @@ def get_model_settings():
         ]
         result = {
             'available_models': ALLOWED_MODELS,
+            'custom_models': custom_models.picker_rows(),
             'web_search_models': WEB_SEARCH_MODELS if web_search_offered() else [],
             'surfaces': surfaces,
             'model_id': legacy_global if legacy_global in ALLOWED_MODEL_IDS else None,
@@ -362,28 +366,36 @@ def save_model_settings():
 @app.post("/settings/model/test")
 @tracer.capture_method
 def run_model_test():
-    """Send ONE minimal request to exactly one allowlisted model and report the outcome.
+    """Send ONE minimal request to exactly one allowlisted or custom model and report the outcome.
 
     Admin-only (it spends a model call). No fallback and no retry: the answer is
     about the model named in the body, never a stand-in (shared/model_capacity.py).
-    The persona-avatar image model is accepted too: ONE minimal image call, nothing
-    stored (shared/image_model_status.py). So is a GPT model of the web search
-    surface while it is offered: ONE tiny Responses request on bedrock-mantle, no
-    tool (shared/web_search_model_probe.py).
+    ``probe`` (7.65.00) is ``basic`` (default), ``json`` or ``tools``: what the
+    answer must be to pass, for a Claude or a custom model. The persona-avatar image
+    model is accepted too, basic only: ONE minimal image call, nothing stored
+    (shared/image_model_status.py). So is a GPT model of the web search surface while
+    it is offered, basic only: ONE tiny Responses request on bedrock-mantle, no tool
+    (shared/web_search_model_probe.py).
     """
     require_admin(app.current_event.raw_event)
     body = json_object_body(app)
     model_id = body.get('model_id')
+    probe = body.get('probe', 'basic')
+    if probe not in model_capacity.PROBES:
+        raise ValidationError(f"probe must be one of: {', '.join(model_capacity.PROBES)}")
     image_model_id = image_model_status.image_model_info()['id']
+    web_search_ids = WEB_SEARCH_MODEL_IDS if web_search_offered() else frozenset()
+    if probe != 'basic' and (model_id == image_model_id or (isinstance(model_id, str) and model_id in web_search_ids)):
+        raise ValidationError('probe json and tools test a Claude or custom model; this model takes basic only')
     if model_id == image_model_id:
         return image_model_status.probe_image_model()
-    web_search_ids = WEB_SEARCH_MODEL_IDS if web_search_offered() else frozenset()
     if isinstance(model_id, str) and model_id in web_search_ids:
         return web_search_model_probe.probe_web_search_model(model_id)
-    if not isinstance(model_id, str) or model_id not in ALLOWED_MODEL_IDS:
-        allowed = ', '.join([*sorted(ALLOWED_MODEL_IDS), *sorted(web_search_ids), image_model_id])
+    text_models = ALLOWED_MODEL_IDS | custom_models.custom_model_ids()
+    if not isinstance(model_id, str) or model_id not in text_models:
+        allowed = ', '.join([*sorted(text_models), *sorted(web_search_ids), image_model_id])
         raise ValidationError(f"model_id must be one of: {allowed}")
-    return model_capacity.probe_model(model_id)
+    return model_capacity.probe_model(model_id, probe)
 
 
 @app.get("/settings/model/capacity")

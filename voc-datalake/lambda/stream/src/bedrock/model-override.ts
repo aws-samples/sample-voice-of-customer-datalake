@@ -12,10 +12,14 @@
  * The allowlist and the adaptive-thinking capability set MIRROR
  * lambda/shared/model_config.py and are enforced here too, so a tampered DB
  * value can't steer inference to an arbitrary model. The Python lockstep tests
- * read this file and assert the allowlist matches.
+ * read this file and assert the allowlist matches. A per-surface pick may also
+ * name one of the deployment's own models (7.65.00, custom-models.ts) that
+ * declares the surface and calls tools; the other levels stay Claude.
  */
 import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
+
+import { customModel, streamCustomModel } from './custom-models.js';
 
 const settingsRecordSchema = z.record(z.string(), z.unknown());
 
@@ -67,6 +71,12 @@ export function invocationModelId(modelId: string, scope = process.env.BEDROCK_I
 /** True when the model runs adaptive thinking always-on (no explicit budget). */
 export function usesAdaptiveThinking(modelId: string): boolean {
   return ADAPTIVE_THINKING_IDS.has(modelId);
+}
+
+/** True when a request may carry an explicit `thinking` budget: not an adaptive-thinking Claude, never a custom
+ *  model (Anthropic's field). Mirrors model_config.py::takes_thinking_budget. */
+export function takesThinkingBudget(modelId: string): boolean {
+  return !usesAdaptiveThinking(modelId) && customModel(modelId) === undefined;
 }
 
 const CACHE_TTL_MS = 60_000;
@@ -150,7 +160,8 @@ export async function resolveModelOverride(
   const item = await loadSettings(docClient, tableName);
   const surfaces = settingsRecordSchema.safeParse(item.surfaces);
   if (surfaces.success) {
-    const perSurface = allowlisted(surfaces.data[surface]);
+    const picked = surfaces.data[surface];
+    const perSurface = streamCustomModel(picked, surface) ?? allowlisted(picked);
     if (perSurface) return perSurface;
   }
   return allowlisted(item.model_id) ?? allowlisted(item[DEPLOYMENT_DEFAULT]);

@@ -26,7 +26,8 @@ import {
   type Tool,
   type ConverseStreamOutput,
 } from '@aws-sdk/client-bedrock-runtime';
-import { invocationModelId, usesAdaptiveThinking } from './model-override.js';
+import { capOutputTokens } from './custom-models.js';
+import { invocationModelId, takesThinkingBudget } from './model-override.js';
 import { CHAT_SURFACE_DEFAULT } from './model-fallback.js';
 import { MAX_OUTPUT_TOKENS } from '../history-budget.js';
 
@@ -138,16 +139,18 @@ export async function* converseStream(
     messages: cache ? withMessageCachePoint(messages, params.cacheMessageIndex) : messages,
     system: buildSystem(params, cache),
     toolConfig: toolList ? { tools: toolList } : undefined,
-    inferenceConfig: { maxTokens },
+    // A custom model's own output cap (custom-models.ts); a Claude's is above the stream's.
+    inferenceConfig: { maxTokens: capOutputTokens(resolvedModel, maxTokens) },
     // Models with always-on adaptive thinking (Sonnet 5 / 5.5) reject an
-    // explicit budget — omit the field and let their thinking run automatically.
-    ...(usesAdaptiveThinking(resolvedModel)
-      ? {}
-      : {
+    // explicit budget — omit the field and let their thinking run automatically;
+    // a custom model gets none (Anthropic's field).
+    ...(takesThinkingBudget(resolvedModel)
+      ? {
           additionalModelRequestFields: {
             thinking: { type: 'enabled', budget_tokens: thinkingBudget },
           },
-        }),
+        }
+      : {}),
   });
 
   const bedrockClient = getBedrockClient();

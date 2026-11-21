@@ -17,6 +17,73 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.65.00] - 2026-11-21
+
+**Bring your own model**: a deployment can add up to four Bedrock models, inference profiles or Custom Model Import
+models of its own to the AI surfaces' picker, beside the Claude allowlist, behind `-c customModels` (off by default)
+([deployment.md](docs/deployment.md#bring-your-own-model--c-custommodels)). Inside AWS only: no external endpoint, and
+the deployment's data residency is checked at synth. No new route resource (the API stack stays at 425), managed
+policy or Lambda.
+
+### Added
+
+- **`-c customModels='[{"key","id","label","kind":"bedrock|imported","surfaces":[...],"eu":bool,"capabilities":
+  {"tools","documents","json","temperature"},"price":{"in","out"}}]'`** (`lib/utils/custom-models.ts`), checked at
+  synth: a Bedrock model id or system inference-profile id, or an imported-model ARN in the deployment's own account
+  and Region; provisioned throughput (a fixed cost), fine-tuned custom models and application inference profiles are
+  refused; a price in USD per million input and output tokens is required; a `us.` or other geographic profile
+  declares its destination Regions (`regions`), which must include the app Region; optional `contextWindow` and
+  `maxOutputTokens` (32,000 and 4,096 when absent). At most four models and 1,200 characters of environment (about
+  three `eu.` profiles), so the registry fits every Lambda environment that carries it (the logs API's, the largest,
+  measured at 2,434 of 4,096 on a deployment).
+- **Data residency at synth**: `-c inferenceScope=eu` needs `"eu": true` on every custom model, and `"eu": true`
+  needs an `eu.` profile or an in-Region or imported model in an EU Region; a `global.` or `us.` profile is refused
+  under eu, and an imported model in another Region is refused in any scope.
+- **The custom family** (`lambda/shared/custom_models.py`, `shared/model_config.py`): a surface offers the Claude
+  allowlist plus the custom models that declare it (`surface_allowlist`), every picker surface but the web search
+  one's; the engineering harness, the avatars and the embeddings pick no model and stay fixed. Only a per-surface pick
+  names a custom model (the pick for all surfaces, the deployment's default, a model profile and the capacity
+  fallback stay Claude), and a pick whose model was removed falls back to the surface default, logged.
+- **Capabilities shape every request** (`shared/converse.py`, the stream's `bedrock/custom-models.ts`): no
+  `thinking` field and no service tier ever, `temperature` only when the model takes one, `maxTokens` at most its
+  `maxOutputTokens`, the
+  JSON instruction after the system prompt when it returns JSON, no Claude `citations` on a document, and a request
+  with documents or images goes to the surface's built-in default when the model reads none (the assistant's turn
+  with an attachment too). The synth refuses `chat` and `agent_worker` for a model without `tools`, and the surfaces
+  whose answers are parsed as JSON for a model without `json`; the manual import's Anthropic-format call stays Claude.
+- **Administration → AI models**: the custom models in a **Your models** group of each surface's select, and, for
+  the model a surface resolves to, a **Your model** badge (and EU residency), where it runs ("Runs in eu-central-1 ·
+  imported model"), its price, the note that the prompts are tuned for Claude, the cold-start note of an imported
+  model, and **Check JSON** / **Check tools** beside Test: `POST /settings/model/test` takes `probe: basic | json |
+  tools` (the answer must be the object `{"ok": true}`, or a call of the probe's one tool; `probe_failed` otherwise),
+  for a Claude or a custom model; the image and web search models take basic only. `GET /settings/model` lists
+  `custom_models`.
+- **Metering**: the cost rollup and the cost page price a custom model's tokens from its registry price
+  (`shared/model_prices.py`, the cache tokens at the input price), so it is never an unpriced line; the
+  `bedrock_usage` line names it by its id as sent.
+
+### Changed
+
+- **IAM** (`lib/utils/claude-model-grant.ts`): each custom model's exact ARNs join the stack's shared Claude
+  policies, spread over them and checked against the 6,144-character managed-policy quota at synth (the largest
+  registry the caps allow, three `eu.` profiles with 48-character ids from eu-central-2, peaks at 5,296 characters,
+  86 %; without the flag the policies are unchanged at 2.4–3.3 KB): an in-Region or imported model by its ARN, a
+  `global.` profile in the three documented parts, an `eu.` profile through the profile in each Region of
+  `EU_PROFILE_DESTINATION_REGIONS`, another geographic profile in each declared Region. No `foundation-model/*`, no
+  Region wildcard, no provisioned-throughput action. The engineering runtime's roles (the native harness and the
+  learning coach) attach a Claude-only twin set instead, made only when custom models exist.
+- `CUSTOM_MODELS` is set on exactly the Lambdas whose role holds the custom grant, the cost rollup and the logs API
+  (System → Environment); the engineering runtime's functions never get it.
+
+### Upgrade notes
+
+- Without `-c customModels` nothing changes: no template differs but for the release's code and version.
+- Enable each model's access in the Bedrock console first: the deploy accepts no agreement for a custom model, and
+  Service Quotas are read for Claude models only, so a custom model's Test shows no tokens-per-minute quota.
+- Custom Model Import answered in us-east-1, us-east-2, us-west-2 and eu-central-1 and was refused in eu-west-1,
+  eu-west-2, eu-west-3 and eu-north-1 on 2026-11-21 (`aws bedrock list-imported-models`); an imported model scales
+  to zero, so its first request after a pause can take tens of seconds or minutes.
+
 ## [7.64.00] - 2026-11-21
 
 **Persona focus groups**: put 2 to 6 of a project's personas in one panel, give them a topic and 1 to 3 rounds, and

@@ -95,6 +95,7 @@
         "throttled": "Ograniczanie żądań",
         "not_ready": "Niegotowy",
         "unavailable": "Niedostępny",
+        "probe_failed": "Sprawdzenie nieudane",
         "error": "Błąd"
       },
       "detail": {
@@ -105,6 +106,7 @@
         "throttled": "Model obecnie ogranicza żądania; ponów próbę za chwilę.",
         "not_ready": "Model nie jest jeszcze gotowy. Spróbuj ponownie za kilka minut.",
         "unavailable": "Model jest chwilowo niedostępny. Spróbuj ponownie później.",
+        "probe_failed": "Model odpowiedział, ale nie tak, jak wymagało sprawdzenie (obiekt JSON lub wywołanie narzędzia sprawdzenia).",
         "error": "Test zakończył się niepowodzeniem."
       },
       "confirm": {
@@ -116,6 +118,14 @@
       "test": "Testuj",
       "testTitle": "Wyślij jedno testowe zapytanie do {{model}} dla: {{surface}}",
       "testing": "Testowanie...",
+      "probe": {
+        "json": "Sprawdź JSON",
+        "tools": "Sprawdź narzędzia",
+        "jsonTitle": "Poproś {{model}} raz o obiekt JSON",
+        "toolsTitle": "Poproś {{model}} raz o wywołanie narzędzia",
+        "jsonResult": "Sprawdzenie JSON",
+        "toolsResult": "Sprawdzenie narzędzi"
+      },
       "notTested": "Nie testowano",
       "unsaved": "Niezapisana zmiana",
       "save": "Zapisz",
@@ -130,7 +140,22 @@
       "allRunning": "Testowanie {{current}} z {{total, number}}..."
     },
     "automaticOption": "Automatycznie — {{model}}",
+    "custom": {
+      "badge": "Twój model",
+      "euBadge": "Przetwarzanie w UE",
+      "runsIn": "Działa w {{regions}} · {{source}}",
+      "runsAnywhere": "Działa w dowolnym komercyjnym regionie AWS · {{source}}",
+      "source": {
+        "model": "model Bedrock",
+        "profile": "profil wnioskowania",
+        "imported": "model zaimportowany"
+      },
+      "price": "{{in}} / {{out}} USD za milion tokenów (wejście / wyjście)",
+      "claudeTuned": "Prompty są dostrojone do Claude: sprawdź odpowiedzi tego modelu w tym obszarze, zanim zaczniesz na nim polegać.",
+      "coldStart": "Zaimportowany model skaluje się do zera: po przerwie pierwsze żądanie może trwać dziesiątki sekund lub minuty."
+    },
     "groupOther": "Pozostałe modele",
+    "groupCustom": "Twoje modele",
     "groupRecommended": "Zalecane",
     "intro": "Wybierz, który model obsługuje każdą funkcję AI (Claude albo OpenAI GPT dla stron z recenzjami odczytywanych z indeksu wyszukiwania internetowego Bedrock), lub pozostaw opcję Automatycznie, aby używać dostrojonego domyślnego ustawienia danej funkcji. Działające funkcje zastosują zmiany w ciągu minuty.",
     "loadFailed": "Nie udało się wczytać ustawień modeli.",

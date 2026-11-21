@@ -85,6 +85,7 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `skipUseCaseSubmission` | `false` | `true` validates an `anthropicUseCase` block but does not submit it |
 | `modelAgreementRetry` | none | A new value re-attempts every Bedrock model agreement ([Model agreements](#model-agreements-every-deploy-in-the-app-region-best-effort)) |
 | `defaultModelId` | none | Pins every AI surface to one allowlisted model ([Pinning All AI Surfaces](#pinning-all-ai-surfaces-to-one-model)) |
+| `customModels` | none | Up to four Bedrock models, inference profiles or imported models of your own, offered on the surfaces each declares ([Bring your own model](#bring-your-own-model--c-custommodels)) |
 | `emailFrom` | none | Sender address for participant asks and board sign-in codes through SES ([Participant email](#participant-email-and-feedback-boards--c-emailfrom)) |
 | `inboundEmailDomain` (+ `inboundEmailHostedZoneId`, `inboundEmailHostedZoneName`, `inboundEmailRuleSet`, `inboundEmailCreateIdentity`) | none | Receives feedback by email through SES ([email-intake.md](email-intake.md)) |
 | `deploymentPrefix` | none | Namespaces a second copy in the same account and region ([Two Deployments](#two-deployments-in-one-account-and-region)) |
@@ -1538,7 +1539,11 @@ differs from what is stored; saving a model whose last test was not *Available*
 models** runs the test for every allowlisted model one at a time and shows a
 table with each model's status, latency and tokens-per-minute quota (the quota
 column is filled before any test from `GET /settings/model/capacity`, which reads
-Service Quotas and calls no model).
+Service Quotas and calls no model). A model of your own (`-c customModels`) also has
+**Check JSON** and **Check tools**: `POST /settings/model/test` takes `probe: basic | json |
+tools` (basic by default; json and tools for a Claude or custom model), answered
+`probe_failed` when the model replies but not as asked
+([Bring your own model](#bring-your-own-model--c-custommodels)).
 
 | Status | Meaning | What to do |
 |---|---|---|
@@ -1634,6 +1639,79 @@ the manifests' `infrastructure.ingestor.webSearch`).
 - **IAM.** The settings role holds `bedrock-mantle:CreateInference` on
   `arn:aws:bedrock-mantle:<region>:<account>:project/default` only, and only while the plugin is enabled
   (`lib/stacks/api-marketplace.ts` `grantWebSearchModelProbe`); nothing of `bedrock-websearch:*`.
+
+### Bring your own model (`-c customModels`)
+
+A deployment under a data-processing agreement can make the AI surfaces use models its owner approved: a Bedrock model
+in the app Region, a system inference profile, or a model of its own brought in with Custom Model Import. They are
+added to the picker beside the Claude allowlist, never instead of it, and everything stays inside AWS (no external
+endpoint). Off by default: without the key no template changes.
+
+```bash
+npm run deploy:infra -- -c customModels='[
+  {"key":"llama33","id":"us.meta.llama3-3-70b-instruct-v1:0","label":"Llama 3.3 70B","kind":"bedrock",
+   "surfaces":["documents","utility"],"eu":false,"regions":["us-east-1","us-east-2","us-west-2"],
+   "capabilities":{"tools":false,"documents":false,"json":true,"temperature":true},"price":{"in":0.72,"out":0.72}},
+  {"key":"ours","id":"arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456","label":"Our model",
+   "kind":"imported","surfaces":["enrichment"],"eu":false,"maxOutputTokens":2048,"contextWindow":8192,
+   "capabilities":{"tools":false,"documents":false,"json":true,"temperature":false},"price":{"in":0.5,"out":1.5}}
+]'
+```
+
+(The prices above are placeholders: put your model's own, from the Bedrock pricing page or your Custom Model Import
+bill.) Each entry, checked at synth (`lib/utils/custom-models.ts`; a bad entry fails the synth with its reason):
+
+| Field | Required | Meaning |
+|---|---|---|
+| `key` | yes | A lower-case letter, then 1 to 23 lower-case letters or digits; unique |
+| `id` | yes | `bedrock`: a model id (`amazon.nova-pro-v1:0`, invoked in the app Region) or a system inference-profile id (`global.`, `eu.`, `us.` …). `imported`: the imported model's ARN, in the deployment's account and app Region |
+| `label` | yes | The name the picker shows (up to 60 characters) |
+| `kind` | yes | `bedrock` or `imported` |
+| `surfaces` | yes | The picker surfaces it may serve: `chat`, `documents`, `prototype`, `enrichment`, `utility`, `memory`, `agent_orchestrator`, `agent_worker`, `agent_reviewer`, `agent_persona` |
+| `eu` | yes | `true` claims EU residency: then it must be an `eu.` profile or an in-Region or imported model in an EU Region |
+| `capabilities` | yes | `tools` (takes tool definitions: required for `chat` and `agent_worker`), `documents` (reads document and image blocks), `json` (returns strict JSON when asked: required for every surface but `chat` and `prototype`), `temperature` (takes the parameter) |
+| `price` | yes | `in` and `out`, USD per million input and output tokens: the cost rollup and the cost page price its tokens with it |
+| `regions` | for a geographic profile other than `eu.` | The profile's destination Regions (`aws bedrock get-inference-profile --inference-profile-identifier <id> --query 'models[].modelArn'`); must include the app Region |
+| `contextWindow`, `maxOutputTokens` | no | Its input window and output cap in tokens (32,000 and 4,096 when absent): prompts are sized to the first, `maxTokens` capped at the second |
+
+Refused at synth: provisioned throughput (`provisioned-model/` ARNs: a fixed cost), a fine-tuned custom model
+(`custom-model/`, which needs provisioned throughput or a deployment), an application inference profile, an id of the
+Claude or web search allowlist, a model in another Region (an imported model's ARN names the app Region), more than
+four models or a registry over 1,200 characters (it is in the environment of every Lambda that calls a model, which
+AWS caps at 4 KB). **Residency:** under `-c inferenceScope=eu` every custom model needs `"eu": true`, and a `global.`
+or `us.` profile is refused ([eu-deployment.md](eu-deployment.md#your-own-models)).
+
+**What the app does with one:**
+
+- **The picker.** Administration → AI models lists the custom models of a surface under **Your models**
+  (`GET /settings/model` → `custom_models`). Only a per-surface pick can name one: the pick for all surfaces, the
+  deployment's default, the e2e test users' model and the capacity fallback stay Claude. A pick whose model is later
+  removed from the registry falls back to the surface default, and the settings and inference logs say so. For the
+  model a surface resolves to, the card shows a **Your model** badge (and EU residency), where its inference runs
+  ("Runs in eu-central-1 · imported model"), its price, a note that the prompts are tuned for Claude and, for an
+  imported model, that its first request after a pause can take tens of seconds or minutes (Custom Model Import
+  scales to zero).
+- **The requests** (`lambda/shared/converse.py`, `lambda/stream/src/bedrock/custom-models.ts`): no `thinking` field
+  and no service tier (the memory surface's Flex is Claude's), `temperature` only when it takes one, `maxTokens` capped at its `maxOutputTokens`, an instruction to answer JSON
+  without prose or a fence when it returns JSON, no Claude `citations` on a document, and no document or image block
+  unless it reads them (that request, or the assistant's turn with an attachment, goes to the surface's built-in
+  Claude default). The manual import's Anthropic-format call always uses Claude.
+- **Not offered:** the engineering harness (Claude's adaptive thinking), the persona avatars and the memory
+  embeddings, which pick no model; the web search surface keeps its own GPT models.
+- **IAM** (`lib/utils/claude-model-grant.ts`): `bedrock:InvokeModel` (and `InvokeModelWithResponseStream` where the
+  role streams) on exactly each model's ARNs, in the stack's shared Claude policies: an in-Region or imported model
+  by its ARN, a `global.` profile in the documented three parts, an `eu.` profile through the profile in each Region
+  of `EU_PROFILE_DESTINATION_REGIONS`, another geographic profile in each declared Region. No `foundation-model/*`, no
+  Region wildcard, no provisioned-throughput action; each policy is checked against the 6,144-character quota at
+  synth. The engineering runtime's roles attach a Claude-only copy and never see a custom model.
+- **Access:** the deploy accepts no agreement for a custom model: enable its access in the Bedrock console (or
+  import it) first. Test it from its row: **Test** (any answer), **Check JSON** (the answer must be the object
+  `{"ok": true}`) and **Check tools** (it must call the check's one tool); `probe_failed` when it answers otherwise.
+  Its tokens-per-minute quota is not read (the Service Quotas names read are Anthropic's).
+
+Custom Model Import answered `ListImportedModels` in us-east-1, us-east-2, us-west-2 and eu-central-1 and refused it in
+eu-west-1, eu-west-2, eu-west-3 and eu-north-1 (2026-11-21): check your Region before planning an imported model.
+External, OpenAI-compatible endpoints, SageMaker endpoints and a model choice per workspace are not supported.
 
 ### Model Capacity Fallback
 

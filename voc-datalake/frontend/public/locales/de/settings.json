@@ -35,7 +35,22 @@
       }
     },
     "automaticOption": "Automatisch — {{model}}",
+    "custom": {
+      "badge": "Ihr Modell",
+      "euBadge": "EU-Datenresidenz",
+      "runsIn": "Läuft in {{regions}} · {{source}}",
+      "runsAnywhere": "Läuft in jeder kommerziellen AWS-Region · {{source}}",
+      "source": {
+        "model": "Bedrock-Modell",
+        "profile": "Inferenzprofil",
+        "imported": "importiertes Modell"
+      },
+      "price": "{{in}} / {{out}} USD pro Million Tokens (Eingabe / Ausgabe)",
+      "claudeTuned": "Die Prompts sind auf Claude abgestimmt: Prüfen Sie die Antworten dieses Modells für diesen Bereich, bevor Sie sich darauf verlassen.",
+      "coldStart": "Ein importiertes Modell skaliert auf null: Nach einer Pause kann die erste Anfrage Dutzende Sekunden bis Minuten dauern."
+    },
     "groupOther": "Weitere Modelle",
+    "groupCustom": "Ihre Modelle",
     "groupRecommended": "Empfohlen",
     "intro": "Wählen Sie, welches Modell die einzelnen KI-Funktionen antreibt (Claude, oder OpenAI GPT für Bewertungsseiten aus dem Bedrock-Websuchindex), oder behalten Sie „Automatisch“ bei, um die abgestimmte Voreinstellung jeder Funktion zu nutzen. Laufende Funktionen übernehmen Änderungen innerhalb einer Minute.",
     "loadFailed": "Modelleinstellungen konnten nicht geladen werden.",
@@ -93,6 +108,14 @@
       "test": "Testen",
       "testTitle": "Eine Testanfrage an {{model}} für {{surface}} senden",
       "testing": "Wird getestet...",
+      "probe": {
+        "json": "JSON prüfen",
+        "tools": "Tools prüfen",
+        "jsonTitle": "{{model}} einmal um ein JSON-Objekt bitten",
+        "toolsTitle": "{{model}} einmal ein Tool aufrufen lassen",
+        "jsonResult": "JSON-Prüfung",
+        "toolsResult": "Tool-Prüfung"
+      },
       "notTested": "Nicht getestet",
       "unsaved": "Nicht gespeicherte Änderung",
       "save": "Speichern",
@@ -119,6 +142,7 @@
         "throttled": "Gedrosselt",
         "not_ready": "Nicht bereit",
         "unavailable": "Nicht erreichbar",
+        "probe_failed": "Prüfung fehlgeschlagen",
         "error": "Fehler"
       },
       "detail": {
@@ -129,6 +153,7 @@
         "throttled": "Das Modell drosselt gerade Anfragen; versuchen Sie es gleich noch einmal.",
         "not_ready": "Das Modell ist noch nicht bereit; versuchen Sie es in einigen Minuten erneut.",
         "unavailable": "Das Modell ist vorübergehend nicht erreichbar; versuchen Sie es später erneut.",
+        "probe_failed": "Das Modell hat geantwortet, aber nicht wie von der Prüfung verlangt (ein JSON-Objekt oder ein Aufruf des Prüf-Tools).",
         "error": "Die Testanfrage ist fehlgeschlagen."
       },
       "confirm": {

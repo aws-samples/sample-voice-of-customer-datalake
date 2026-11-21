@@ -35,7 +35,22 @@
       }
     },
     "automaticOption": "自動 — {{model}}",
+    "custom": {
+      "badge": "独自のモデル",
+      "euBadge": "EU 内で処理",
+      "runsIn": "{{regions}} で実行 · {{source}}",
+      "runsAnywhere": "任意の商用 AWS リージョンで実行 · {{source}}",
+      "source": {
+        "model": "Bedrock モデル",
+        "profile": "推論プロファイル",
+        "imported": "インポートしたモデル"
+      },
+      "price": "100 万トークンあたり {{in}} / {{out}} USD（入力 / 出力）",
+      "claudeTuned": "プロンプトは Claude 向けに調整されています。この画面でこのモデルの回答を確認してから利用してください。",
+      "coldStart": "インポートしたモデルはゼロまでスケールします。しばらく使われないと、最初のリクエストに数十秒から数分かかることがあります。"
+    },
     "groupOther": "その他のモデル",
+    "groupCustom": "独自のモデル",
     "groupRecommended": "おすすめ",
     "intro": "各AI機能を動かすモデル（Claude、または Bedrock ウェブ検索インデックスから読み取るレビューページには OpenAI GPT）を選択するか、「自動」のままにして各機能に最適化されたデフォルトを使用します。実行中の関数は1分以内に変更を反映します。",
     "loadFailed": "モデル設定を読み込めませんでした。",
@@ -93,6 +108,14 @@
       "test": "テスト",
       "testTitle": "{{surface}} 用に {{model}} へテストリクエストを 1 件送信",
       "testing": "テスト中...",
+      "probe": {
+        "json": "JSON を確認",
+        "tools": "ツールを確認",
+        "jsonTitle": "{{model}} に JSON オブジェクトを 1 回求める",
+        "toolsTitle": "{{model}} にツールの呼び出しを 1 回求める",
+        "jsonResult": "JSON の確認",
+        "toolsResult": "ツールの確認"
+      },
       "notTested": "未テスト",
       "unsaved": "未保存の変更",
       "save": "保存",
@@ -119,6 +142,7 @@
         "throttled": "スロットリング中",
         "not_ready": "準備中",
         "unavailable": "一時的に利用不可",
+        "probe_failed": "確認に失敗",
         "error": "エラー"
       },
       "detail": {
@@ -129,6 +153,7 @@
         "throttled": "モデルが現在リクエストを制限しています。しばらくしてから再試行してください。",
         "not_ready": "モデルはまだ準備ができていません。数分後に再試行してください。",
         "unavailable": "モデルは一時的に利用できません。後で再試行してください。",
+        "probe_failed": "モデルは応答しましたが、確認が求めた形ではありませんでした（JSON オブジェクト、または確認用ツールの呼び出し）。",
         "error": "テストリクエストが失敗しました。"
       },
       "confirm": {

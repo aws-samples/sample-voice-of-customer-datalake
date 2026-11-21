@@ -28,6 +28,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
+import { readsCustomModelRegistry } from '../utils/custom-models';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { logGroupArn } from '../utils/lambda-log-grants';
 import { LOG_RETENTION } from '../utils/log-retention';
@@ -127,6 +128,8 @@ export function createCostRollupWorker(scope: Construct, id: string, props: Cost
     }),
   });
 
+  // A -c customModels model's tokens are priced from the registry (shared/model_prices.py), though the job calls no model.
+  readsCustomModelRegistry(fn);
   // 02:15 UTC daily: yesterday is over, and the day before is rolled up again for lines that arrived late.
   scheduleWorker(worker, 'CostRollupSchedule', fn, uniqueName('voc-cost-rollup-schedule'),
     events.Schedule.cron({ hour: '2', minute: '15' }),

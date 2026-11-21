@@ -11,7 +11,9 @@ The crew model follows KiroCrew: a **conductor** decides and verifies but never 
 (worker, reviewer, persona) are Bedrock tool loops with their own transcript, and they talk only through the
 conductor (`[sent by conductor]` envelopes). Default models: conductor and final reviewer Claude Opus 5.5, workers
 and personas Claude Sonnet 5.5. Each is overridable per surface (`agent_orchestrator`, `agent_worker`,
-`agent_reviewer`, `agent_persona`) in Administration → AI models (`/admin/ai`), and per agent.
+`agent_reviewer`, `agent_persona`) in Administration → AI models (`/admin/ai`), and per agent (an agent's own
+override names a Claude model). A surface may also pick one of the deployment's own models that declares it
+(`-c customModels`, 7.65.00, [deployment.md](deployment.md#bring-your-own-model--c-custommodels)).
 
 ## Using agents
 

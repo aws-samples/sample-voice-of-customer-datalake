@@ -11,6 +11,8 @@
  *   1. every Lambda logs to its own retained log group and its role writes only that group (log-retention.ts);
  *   2. `protectData` (on unless `-c protectData=false`): every log group is retained on stack deletion;
  *   3. `-c inferenceScope=eu`: the EU inference env on every Lambda (inference-scope.ts; a no-op for `global`);
+ *      then `-c customModels`: the checked registry (`CUSTOM_MODELS`) on every Lambda of a stack that grants the
+ *      models, but a Claude-only role's (custom-models.ts; a no-op without the key);
  *   4. CDK grant wildcards become the exact actions and index ARNs (exact-grants.ts). Not an aspect: it wraps
  *      the policies that exist when it is called, so call this once, after every stack is built.
  *
@@ -20,6 +22,7 @@
  */
 import type { IConstruct } from 'constructs';
 import { applyAuditRowGuard, auditRowGuardFor, type AuditRowTables } from './audit-row-guard';
+import { applyCustomModelsEnv } from './custom-models';
 import { shouldProtectData } from './data-protection';
 import { applyExactGrants } from './exact-grants';
 import { applyInferenceScopeEnv } from './inference-scope';
@@ -48,5 +51,6 @@ export function applyAppAspects(scope: IConstruct, { auditRowTables }: AppAspect
   applyLambdaLogRetention(scope);
   applyProtectedLogRetention(scope, shouldProtectData(scope.node.tryGetContext('protectData')));
   applyInferenceScopeEnv(scope);
+  applyCustomModelsEnv(scope);
   applyExactGrants(scope);
 }

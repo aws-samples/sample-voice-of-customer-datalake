@@ -20,6 +20,7 @@ import { WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets
 import type { ApiStackContext } from './api-context';
 import { OPS_ALERTS_NAG_REASON, opsAlertsWiring } from './dlq-alarms';
 import { grantLogsDiagnostics } from './api-logs-diagnostics';
+import { readsCustomModelRegistry } from '../utils/custom-models';
 
 export interface EngagementLambdas {
   logsLambda: lambda.Function;
@@ -144,6 +145,8 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     layers: [apiLayer],
     logGroup: ctx.logGroup('LogsApiLogs', ctx.uniqueName('voc-logs-api')),
   });
+  // System → Environment names each surface's effective model, a -c customModels pick included (no model call).
+  readsCustomModelRegistry(logsLambda);
 
   // Users API
   const usersRole = ctx.role('UsersLambdaRole');

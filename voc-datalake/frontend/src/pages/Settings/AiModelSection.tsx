@@ -13,6 +13,11 @@
  * while a deployed plugin reads with it. "Test all models" stays on the Claude
  * list (its table is about their token quotas); a GPT model is tested from its row.
  *
+ * The deployment's own models (7.65.00, `custom_models`: `-c customModels`, docs/deployment.md "Bring your own
+ * model") are offered on the Claude-list surfaces each declares, under "Your models"; while a row resolves to one,
+ * it says so, where the model runs, its price, that the prompts are tuned for Claude, and offers its JSON and tools
+ * checks (CustomModelDetails.tsx). "Test all models" stays on the Claude list.
+ *
  * Draft, test, then save: changing a select only changes the row's DRAFT. The
  * row's Test button sends one request to exactly the model the draft resolves
  * to (POST /settings/model/test, no fallback), and Save writes it. Saving a
@@ -37,6 +42,7 @@ import { Cpu, Loader2, AlertCircle } from 'lucide-react'
 import { api } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import AiModelSurfaceRow from './AiModelSurfaceRow'
+import CustomModelDetails from './CustomModelDetails'
 import ImageModelRow from './ImageModelRow'
 import ModelTestAllPanel from './ModelTestAllPanel'
 import { useModelTestStatusLabel } from './modelTestStatus'
@@ -134,8 +140,10 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
     },
   })
 
-  // Model id → display label (product name, served by the backend), across both lists.
-  const labelForId = new Map([...data.available_models, ...data.web_search_models].map((model) => [model.id, model.label]))
+  // Model id → display label (product name, served by the backend), across every list.
+  const labelForId = new Map([...data.available_models, ...data.web_search_models, ...data.custom_models]
+    .map((model) => [model.id, model.label]))
+  const customById = new Map(data.custom_models.map((model) => [model.id, model]))
   const labelOf = (id: string) => labelForId.get(id) ?? id
 
   // 🔑 The global pick (`settings.model_id`; on a deployment pinned before the
@@ -176,6 +184,7 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
           const stored = surface.selected ?? ''
           const draft = drafts[surface.key] ?? stored
           const resolvedId = draft === '' ? automaticId : draft
+          const customModel = customById.get(resolvedId)
           return (
             <AiModelSurfaceRow
               key={surface.key}
@@ -185,6 +194,8 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
               automaticLabel={labelOf(automaticId)}
               resolvedLabel={labelOf(resolvedId)}
               models={ownFamily ? data.web_search_models : data.available_models}
+              customModels={ownFamily ? [] : data.custom_models.filter((model) => model.surfaces.includes(surface.key))}
+              details={customModel && <CustomModelDetails model={customModel} tests={tests} busy={tests.allProgress !== null} />}
               recommendedId={surface.default_id}
               result={tests.results[resolvedId]}
               testing={tests.testing.has(resolvedId)}

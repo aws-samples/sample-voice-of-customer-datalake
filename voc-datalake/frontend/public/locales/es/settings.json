@@ -35,7 +35,22 @@
       }
     },
     "automaticOption": "Automático — {{model}}",
+    "custom": {
+      "badge": "Su modelo",
+      "euBadge": "Residencia en la UE",
+      "runsIn": "Se ejecuta en {{regions}} · {{source}}",
+      "runsAnywhere": "Se ejecuta en cualquier región comercial de AWS · {{source}}",
+      "source": {
+        "model": "modelo de Bedrock",
+        "profile": "perfil de inferencia",
+        "imported": "modelo importado"
+      },
+      "price": "{{in}} / {{out}} USD por millón de tokens (entrada / salida)",
+      "claudeTuned": "Las instrucciones están ajustadas para Claude: revise las respuestas de este modelo en esta área antes de confiar en él.",
+      "coldStart": "Un modelo importado escala a cero: tras una pausa, su primera solicitud puede tardar decenas de segundos o minutos."
+    },
     "groupOther": "Otros modelos",
+    "groupCustom": "Sus modelos",
     "groupRecommended": "Recomendado",
     "intro": "Elija qué modelo impulsa cada función de IA (Claude, u OpenAI GPT para las páginas de reseñas leídas del índice de búsqueda web de Bedrock), o mantenga Automático para usar el valor predeterminado ajustado de cada función. Las funciones en ejecución aplican los cambios en un minuto.",
     "loadFailed": "No se pudo cargar la configuración de modelos.",
@@ -93,6 +108,14 @@
       "test": "Probar",
       "testTitle": "Enviar una solicitud de prueba a {{model}} para {{surface}}",
       "testing": "Probando...",
+      "probe": {
+        "json": "Comprobar JSON",
+        "tools": "Comprobar herramientas",
+        "jsonTitle": "Pedir una vez a {{model}} un objeto JSON",
+        "toolsTitle": "Pedir una vez a {{model}} que llame a una herramienta",
+        "jsonResult": "Comprobación JSON",
+        "toolsResult": "Comprobación de herramientas"
+      },
       "notTested": "Sin probar",
       "unsaved": "Cambio sin guardar",
       "save": "Guardar",
@@ -119,6 +142,7 @@
         "throttled": "Limitado",
         "not_ready": "No preparado",
         "unavailable": "No disponible",
+        "probe_failed": "Comprobación fallida",
         "error": "Error"
       },
       "detail": {
@@ -129,6 +153,7 @@
         "throttled": "El modelo está limitando las solicitudes; vuelva a intentarlo en un momento.",
         "not_ready": "El modelo aún no está preparado; vuelva a intentarlo en unos minutos.",
         "unavailable": "El modelo no está disponible temporalmente; vuelva a intentarlo más tarde.",
+        "probe_failed": "El modelo respondió, pero no como pedía la comprobación (un objeto JSON o una llamada a la herramienta de la comprobación).",
         "error": "La solicitud de prueba falló."
       },
       "confirm": {

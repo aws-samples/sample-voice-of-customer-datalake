@@ -32,7 +32,12 @@ const resourcesOf = (stack: string) => Object.entries(TemplateSchema.parse(eu.te
 
 /** Role logical ids (per stack) whose inline or managed policy may invoke a Bedrock model. */
 function bedrockRoles(stack: string): Set<string> {
-  return new Set(resourcesOf(stack).flatMap(([, resource]) => {
+  return bedrockRolesOf(eu.template(stack));
+}
+
+/** {@link bedrockRoles} of one synthesized template. */
+function bedrockRolesOf(template: unknown): Set<string> {
+  return new Set(Object.values(TemplateSchema.parse(template).Resources).flatMap((resource) => {
     const policy = IamPolicyResourceSchema.safeParse(resource);
     if (!policy.success) return [];
     const invokes = policy.data.Properties.PolicyDocument.Statement
@@ -99,5 +104,88 @@ describe('inferenceScope validation', () => {
 
   it('rejects eu in a region with no eu. inference profiles (every Claude call would fail)', () => {
     expect(() => synthApp({ inferenceScope: 'eu' })).toThrow(/needs the app deployed to an EU source Region/);
+  }, SYNTH_TIMEOUT_MS);
+});
+
+/**
+ * `-c customModels` (7.65.00, lib/utils/custom-models.ts) in an EU deployment with the engineering agents: each
+ * custom model is granted by its exact ARNs in the shared policies (an `eu.` profile through the profile in each
+ * destination Region, an imported model in the app Region), the registry reaches every Bedrock caller but the
+ * engineering runtime (Claude-only, on its twin policies), and nothing is a wildcard or provisioned throughput.
+ */
+describe('inferenceScope=eu with -c customModels', () => {
+  const CAPABILITIES = { tools: true, documents: true, json: true, temperature: true };
+  const IMPORTED = `arn:aws:bedrock:${EU_REGION}:111111111111:imported-model/abc123def456`;
+  const registry = [
+    { key: 'novaeu', id: 'eu.amazon.nova-pro-v1:0', label: 'Amazon Nova Pro', kind: 'bedrock',
+      surfaces: ['chat', 'documents', 'enrichment'], eu: true, capabilities: CAPABILITIES, price: { in: 0.8, out: 3.2 } },
+    { key: 'ownmodel', id: IMPORTED, label: 'Example imported model', kind: 'imported', surfaces: ['memory'], eu: true,
+      capabilities: { tools: false, documents: false, json: true, temperature: false }, price: { in: 0.5, out: 1.5 } },
+  ];
+  const custom = synthApp({ inferenceScope: 'eu', engineeringAgents: true, customModels: JSON.stringify(registry) }, EU_REGION);
+  const customText = custom.stackNames.map((stack) => JSON.stringify(custom.template(stack))).join('\n');
+  const customResources = (stack: string) => Object.entries(TemplateSchema.parse(custom.template(stack)).Resources);
+  const ManagedPolicySchema = z.object({
+    Type: z.literal('AWS::IAM::ManagedPolicy'),
+    Properties: z.object({ Roles: z.array(z.object({ Ref: z.string() })).optional(), PolicyDocument: z.unknown() }),
+  });
+  /** `<stack>/<role>` of every role attaching a policy whose logical id starts with `prefix`, with those policies. */
+  const rolesAttaching = (prefix: string) => new Map<string, string>(custom.stackNames.flatMap((stack) => customResources(stack)
+    .flatMap(([id, resource]) => {
+      const policy = ManagedPolicySchema.safeParse(resource);
+      return policy.success && id.startsWith(prefix)
+        ? (policy.data.Properties.Roles ?? []).map((role) => [`${stack}/${role.Ref}`, JSON.stringify(policy.data.Properties.PolicyDocument)] as const)
+        : [];
+    })));
+
+  it('grants the eu. profile in each destination Region and the imported model by its ARN', () => {
+    expect(customText).toContain('inference-profile/eu.amazon.nova-pro-v1:0');
+    for (const region of ['eu-central-1', 'eu-north-1', 'eu-south-1', 'eu-south-2', 'eu-west-1', 'eu-west-3']) {
+      expect(customText).toContain(`arn:aws:bedrock:${region}::foundation-model/amazon.nova-pro-v1:0`);
+    }
+    expect(customText).toContain(`"${IMPORTED}"`);
+  });
+
+  it('grants no wildcard model, no global. profile and no provisioned throughput anywhere', () => {
+    expect(customText).not.toContain('foundation-model/*');
+    expect(customText).not.toMatch(/inference-profile\/global\.|arn:aws:bedrock:\*|bedrock:::foundation-model/);
+    expect(customText).not.toMatch(/ProvisionedModelThroughput|provisioned-model/);
+  });
+
+  it('keeps the engineering runtime on its Claude-only twin, with no custom model', () => {
+    const twins = rolesAttaching('ClaudeOnly');
+    expect(twins.size).toBeGreaterThan(0);
+    const shared = rolesAttaching('ClaudeInvoke');
+    expect([...twins.keys()].filter((role) => shared.has(role))).toStrictEqual([]);
+    expect([...twins.values()].filter((document) => /amazon\.nova|imported-model/.test(document))).toStrictEqual([]);
+  });
+
+  it('gives the registry to every Bedrock-calling Lambda but a Claude-only role\'s, and to its two readers only', () => {
+    const twins = rolesAttaching('ClaudeOnly');
+    const functions = custom.stackNames.flatMap((stack) => customResources(stack).flatMap(([id, resource]) => {
+      const fn = FunctionSchema.safeParse(resource);
+      if (!fn.success) return [];
+      const role = fn.data.Properties.Role?.['Fn::GetAtt'][0];
+      return [{ id: `${stack}/${id}`, role: role === undefined ? undefined : `${stack}/${role}`, env: fn.data.Properties.Environment?.Variables ?? {} }];
+    }));
+    const callers = new Set(custom.stackNames.flatMap((stack) => [...bedrockRolesOf(custom.template(stack))].map((role) => `${stack}/${role}`)));
+    const missing = functions.filter((fn) => fn.role !== undefined && callers.has(fn.role) && !twins.has(fn.role) && fn.env.CUSTOM_MODELS === undefined);
+    const leaked = functions.filter((fn) => fn.role !== undefined && twins.has(fn.role) && fn.env.CUSTOM_MODELS !== undefined);
+    expect([missing.map((fn) => fn.id), leaked.map((fn) => fn.id)]).toStrictEqual([[], []]);
+    // The readers that call no model: the cost rollup (prices) and the logs API (System → Environment).
+    const readers = functions.filter((fn) => fn.role !== undefined && !callers.has(fn.role) && fn.env.CUSTOM_MODELS !== undefined);
+    expect(readers.map((fn) => fn.id.replace(/[0-9A-F]{8}$/, '')).sort())
+      .toStrictEqual(['VocApiStack/LogsApi', 'VocProcessingStack/CostRollupWorkerCostRollup']);
+  });
+
+  it('leaves the avatar image model\'s grant as it is without the key', () => {
+    const imageStatements = (text: string) => text.match(/\{[^{}]*foundation-model\/stability\.[^{}]*\}/g) ?? [];
+    expect(imageStatements(customText)).toStrictEqual(imageStatements(allTemplatesText));
+  });
+
+  it('refuses a global. custom model at synth', () => {
+    const global = [{ ...registry[0], key: 'lite', id: 'global.amazon.nova-2-lite-v1:0' }];
+    expect(() => synthApp({ inferenceScope: 'eu', customModels: JSON.stringify(global) }, EU_REGION))
+      .toThrow(/global\. profile is refused under -c inferenceScope=eu/);
   }, SYNTH_TIMEOUT_MS);
 });

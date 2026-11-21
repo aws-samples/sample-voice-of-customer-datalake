@@ -16,6 +16,7 @@
  * could not be read.
  */
 import type { ContentBlock, DocumentFormat, ImageFormat, Message } from '@aws-sdk/client-bedrock-runtime';
+import { customModel } from '../../bedrock/custom-models.js';
 import type { Mentions } from '../contract.js';
 import type { CallerClaims, LibrarySourceRef } from '../types.js';
 import type { ApiInvoker } from '../tools/internal-api.js';
@@ -74,10 +75,10 @@ export interface LibraryMentions {
 
 const NONE: LibraryMentions = { block: undefined, documents: [], sources: [] };
 
-/** Whether a Converse model reads document blocks: every Claude on Bedrock (the allowlist's), a capability a
- *  bring-your-own-model entry must declare to join (the stream sends none to any other model). */
+/** Whether a Converse model reads document blocks: every Claude on Bedrock (the allowlist's), and a
+ *  `-c customModels` model that declares `documents` (7.65.00); the stream sends none to any other model. */
 export function supportsDocumentBlocks(modelId: string): boolean {
-  return modelId.includes('anthropic.claude');
+  return modelId.includes('anthropic.claude') || customModel(modelId)?.documents === true;
 }
 
 /** The file behind a presigned GET of the raw-data bucket: HTTPS, an S3 host, no redirect, within `maxBytes`. */

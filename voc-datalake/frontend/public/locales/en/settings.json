@@ -35,7 +35,22 @@
       }
     },
     "automaticOption": "Automatic — {{model}}",
+    "custom": {
+      "badge": "Your model",
+      "euBadge": "EU residency",
+      "runsIn": "Runs in {{regions}} · {{source}}",
+      "runsAnywhere": "Runs in any commercial AWS Region · {{source}}",
+      "source": {
+        "model": "Bedrock model",
+        "profile": "inference profile",
+        "imported": "imported model"
+      },
+      "price": "{{in}} / {{out}} USD per million tokens (input / output)",
+      "claudeTuned": "The prompts are tuned for Claude: check this model's answers on this surface before relying on it.",
+      "coldStart": "An imported model scales to zero: after a pause, its first request can take tens of seconds or minutes."
+    },
     "groupOther": "Other models",
+    "groupCustom": "Your models",
     "groupRecommended": "Recommended",
     "intro": "Choose which model powers each AI feature (Claude, or OpenAI GPT for review pages read from the Bedrock web search index), or keep Automatic to use each feature’s tuned default. Running functions pick up changes within a minute.",
     "loadFailed": "Could not load model settings.",
@@ -93,6 +108,14 @@
       "test": "Test",
       "testTitle": "Send one test request to {{model}} for {{surface}}",
       "testing": "Testing...",
+      "probe": {
+        "json": "Check JSON",
+        "tools": "Check tools",
+        "jsonTitle": "Ask {{model}} for a JSON object, once",
+        "toolsTitle": "Ask {{model}} to call a tool, once",
+        "jsonResult": "JSON check",
+        "toolsResult": "Tools check"
+      },
       "notTested": "Not tested",
       "unsaved": "Unsaved change",
       "save": "Save",
@@ -119,6 +142,7 @@
         "throttled": "Throttled",
         "not_ready": "Not ready",
         "unavailable": "Unavailable",
+        "probe_failed": "Check failed",
         "error": "Error"
       },
       "detail": {
@@ -129,6 +153,7 @@
         "throttled": "The model is throttling requests right now; retry in a moment.",
         "not_ready": "The model is not ready yet; retry in a few minutes.",
         "unavailable": "The model is temporarily unavailable; retry later.",
+        "probe_failed": "The model answered, but not as the check asked (a JSON object, or a call of the check's tool).",
         "error": "The test request failed."
       },
       "confirm": {

@@ -11,7 +11,7 @@ describe('normalizeModelTestResult', () => {
     }
 
     expect(normalizeModelTestResult(raw, OPUS55)).toStrictEqual({
-      model_id: OPUS55, invoked_id: 'eu.anthropic.claude-opus-5-5', status: 'no_capacity',
+      model_id: OPUS55, invoked_id: 'eu.anthropic.claude-opus-5-5', status: 'no_capacity', probe: 'basic',
       latency_ms: null, message: 'wait', quota: { name: 'q', tokens_per_minute: 0 }, checked_at: 'now',
     })
   })
@@ -23,7 +23,17 @@ describe('normalizeModelTestResult', () => {
   })
 
   it('turns an unusable payload into an error result for the requested model', () => {
-    expect(normalizeModelTestResult('oops', OPUS55)).toMatchObject({ model_id: OPUS55, status: 'error' })
+    expect(normalizeModelTestResult('oops', OPUS55)).toMatchObject({ model_id: OPUS55, status: 'error', probe: 'basic' })
+  })
+
+  it('keeps the probe a check asked and its probe_failed status; an unknown probe reads as basic', () => {
+    const raw = { model_id: OPUS55, status: 'probe_failed', probe: 'json' }
+    expect(normalizeModelTestResult(raw, OPUS55)).toMatchObject({ status: 'probe_failed', probe: 'json' })
+    expect(normalizeModelTestResult({ ...raw, probe: 'vision' }, OPUS55).probe).toBe('basic')
+  })
+
+  it("names the check's probe on the error result of an unusable payload", () => {
+    expect(normalizeModelTestResult(null, OPUS55, 'tools')).toMatchObject({ status: 'error', probe: 'tools' })
   })
 })
 

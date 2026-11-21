@@ -35,6 +35,7 @@ const settings = (overrides: Record<string, unknown> = {}) => ({
     { key: 'gpt56luna', id: LUNA, label: 'OpenAI GPT-5.6 Luna', description: 'Cheapest' },
     { key: 'gpt56sol', id: SOL, label: 'OpenAI GPT-5.6 Sol', description: 'Largest' },
   ],
+  custom_models: [],
   surfaces: [
     { key: 'chat', default_id: SONNET55, selected: null, allowlist: 'claude' },
     { key: 'web_reviews_search', default_id: LUNA, selected: null, allowlist: 'web_search' },
@@ -51,7 +52,7 @@ beforeEach(() => {
   mockGetModelSettings.mockResolvedValue(settings())
   mockSaveModelSettings.mockResolvedValue({ success: true, surface: 'web_reviews_search', model_id: SOL })
   mockTestModel.mockImplementation((modelId) => Promise.resolve({
-    model_id: modelId, invoked_id: modelId, status: 'available', latency_ms: 900, message: '', quota: null, checked_at: '',
+    model_id: modelId, invoked_id: modelId, status: 'available', probe: 'basic', latency_ms: 900, message: '', quota: null, checked_at: '',
   }))
 })
 

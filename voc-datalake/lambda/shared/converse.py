@@ -13,6 +13,7 @@ from aws_lambda_powertools.metrics import MetricUnit, single_metric
 from botocore.exceptions import ClientError, ReadTimeoutError
 
 from shared.aws import get_bedrock_client
+from shared.custom_models import JSON_INSTRUCTION, custom_model
 from shared.logging import logger, metrics
 from shared.model_config import (
     DEFAULT_SURFACE,
@@ -21,10 +22,12 @@ from shared.model_config import (
     fallback_chain,
     get_active_model_id,
     invocation_model_id,
+    max_output_tokens,
+    model_for_documents,
     omits_temperature,
     supports_flex,
     surface_service_tier,
-    uses_adaptive_thinking,
+    takes_thinking_budget,
 )
 from shared.model_fallback import run_with_fallback
 from shared.model_profile import active_profile
@@ -238,8 +241,11 @@ def _wire_tier(requested_tier: str | None, model_id: str) -> str | None:
     for the same 'default' answer. Such a model is sent 'default' up front —
     the tier the refusal fallback would have landed on — which is a planned
     choice, not a fallback: no FlexFallback metric, ``flex_fallback`` stays
-    False, and ``requested_tier`` still records that Flex was asked for.
+    False, and ``requested_tier`` still records that Flex was asked for. A custom
+    model (shared/custom_models.py) is sent no tier at all: its tiers are not known.
     """
+    if custom_model(model_id) is not None:
+        return None
     if requested_tier != 'flex' or supports_flex(model_id):
         return requested_tier
     logger.info(f"[BEDROCK] Model {model_id} does not support the Flex service tier; sending 'default'")
@@ -315,10 +321,13 @@ def build_blocks_request(
 
     The shaping every request shares: the scoped invocation id, ``temperature``
     only where the model accepts it, no ``system`` block without a system prompt.
-    ``_build_request`` adds the thinking budget for a text turn on top; nothing
-    here adds a thinking budget or a service tier.
+    A custom model (shared/custom_models.py) also gets ``maxTokens`` at most its
+    ``maxOutputTokens`` and, when it returns JSON, the JSON instruction after the
+    system prompt. ``_build_request`` adds the thinking budget for a text turn on
+    top; nothing here adds a thinking budget or a service tier.
     """
-    inference_config: dict[str, float] = {'maxTokens': max_tokens}
+    cap = max_output_tokens(model_id)
+    inference_config: dict[str, float] = {'maxTokens': max_tokens if cap is None else min(max_tokens, cap)}
     if temperature is not None and not omits_temperature(model_id):
         inference_config['temperature'] = temperature
     kwargs: dict[str, Any] = {
@@ -326,8 +335,12 @@ def build_blocks_request(
         'messages': list(messages),
         'inferenceConfig': inference_config,
     }
-    if system_prompt:
-        kwargs['system'] = [{'text': system_prompt}]
+    custom = custom_model(model_id)
+    system = system_prompt
+    if custom is not None and custom.json:
+        system = f'{system_prompt}\n\n{JSON_INSTRUCTION}' if system_prompt else JSON_INSTRUCTION
+    if system:
+        kwargs['system'] = [{'text': system}]
     return kwargs
 
 
@@ -348,7 +361,7 @@ def _build_request(
     # constrains `temperature` (see below). Models with always-on adaptive
     # thinking (Sonnet 5, Opus 4.7+) reject an explicit budget, so the field is
     # skipped for them — their thinking runs automatically.
-    explicit_thinking = thinking_budget > 0 and not uses_adaptive_thinking(model_id)
+    explicit_thinking = thinking_budget > 0 and takes_thinking_budget(model_id)
 
     # `temperature` is dropped in three cases:
     #   - the caller passed None explicitly;
@@ -414,6 +427,21 @@ def _resolved_model(model_id: str | None, surface: str) -> str:
     return apply_model_profile(model_id) if model_id else get_active_model_id(surface)
 
 
+#: The content block types a model reads only when it reads documents (a custom model's ``documents`` flag).
+_MEDIA_BLOCKS = ('document', 'image')
+
+
+def _blocks_for(model_id: str, content: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """``content`` as ``model_id`` takes it: a custom model gets no ``citations`` on a document (Anthropic's)."""
+    if custom_model(model_id) is None:
+        return list(content)
+    return [
+        {'document': {k: v for k, v in block['document'].items() if k != 'citations'}}
+        if isinstance(block.get('document'), Mapping) else block
+        for block in content
+    ]
+
+
 def converse_blocks(
     client: Any,
     content: Sequence[Mapping[str, Any]],
@@ -436,11 +464,11 @@ def converse_blocks(
     (text).
     ``client`` is the caller's Bedrock runtime client (each caller keeps its own seam).
     """
-    messages = [{'role': 'user', 'content': list(content)}]
-    kwargs = build_blocks_request(
-        _resolved_model(model_id, surface), messages=messages, system_prompt=system_prompt,
-        max_tokens=max_tokens,
-    )
+    used_model = _resolved_model(model_id, surface)
+    if any(kind in block for block in content for kind in _MEDIA_BLOCKS):
+        used_model = model_for_documents(used_model, surface)
+    messages = [{'role': 'user', 'content': _blocks_for(used_model, content)}]
+    kwargs = build_blocks_request(used_model, messages=messages, system_prompt=system_prompt, max_tokens=max_tokens)
     return bedrock_call_with_retry(
         lambda: client.converse(**kwargs),
         max_retries=max_retries, step_name=step_name, call_label=call_label,
@@ -498,7 +526,8 @@ def _retry_with_raised_budget(
         return None
     current_max = kwargs['inferenceConfig']['maxTokens']
     raised = _raised_empty_budget(current_max)
-    if raised is None:
+    cap = max_output_tokens(model_id)
+    if raised is None or (cap is not None and raised > cap):
         logger.warning(
             f"[BEDROCK] Step '{step_name}' produced no visible text at "
             f"maxTokens={current_max}, which is already at/above the raise "

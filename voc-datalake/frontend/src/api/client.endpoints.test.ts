@@ -110,6 +110,9 @@ const SETTINGS_CASES: EndpointCase[] = [
   { name: 'getSourceRunStatus (one app)', call: () => api.getSourceRunStatus('web_reviews', { appId: 'https://www.g2.com/p/x?a=1&b=2' }), response: { source: 'web_reviews', status: 'running' }, url: `${API}/sources/status?run_status=web_reviews&app_id=https%3A%2F%2Fwww.g2.com%2Fp%2Fx%3Fa%3D1%26b%3D2` },
   { name: 'getSourceRunStatus (one run)', call: () => api.getSourceRunStatus('web_reviews', { appId: 'a1', executionId: 'run_web_reviews_20261115093000_0a1b2c3d' }), response: { source: 'web_reviews', status: 'completed' }, url: `${API}/sources/status?run_status=web_reviews&app_id=a1&execution_id=run_web_reviews_20261115093000_0a1b2c3d` },
   { name: 'resetSource', call: () => api.resetSource('webscraper'), response: { success: true, source: 'webscraper', enabled: false, circuit: { tripped: false, tripped_at: null, failure_count: 0, last_error: null } }, url: `${API}/sources/webscraper/reset`, init: post(), returnsResponse: true },
+  // A model's basic Test names no probe; a custom model's check (7.65.00) adds it.
+  { name: 'testModel', call: () => api.testModel('global.anthropic.claude-haiku-5-5'), response: { status: 'available' }, url: `${API}/settings/model/test`, init: post({ model_id: 'global.anthropic.claude-haiku-5-5' }) },
+  { name: 'testModel (a check)', call: () => api.testModel('us.meta.llama3-3-70b-instruct-v1:0', 'json'), response: { status: 'available', probe: 'json' }, url: `${API}/settings/model/test`, init: post({ model_id: 'us.meta.llama3-3-70b-instruct-v1:0', probe: 'json' }) },
   { name: 'patchPrioritizationScores', call: () => api.patchPrioritizationScores(CHANGED_SCORES), response: { success: true, updated_count: 1 }, url: `${API}/projects/prioritization`, init: { method: 'PATCH', body: JSON.stringify({ scores: CHANGED_SCORES }) } },
 ]
 

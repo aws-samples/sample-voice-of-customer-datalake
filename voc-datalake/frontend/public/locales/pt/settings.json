@@ -35,7 +35,22 @@
       }
     },
     "automaticOption": "Automático — {{model}}",
+    "custom": {
+      "badge": "O seu modelo",
+      "euBadge": "Residência na UE",
+      "runsIn": "Executa em {{regions}} · {{source}}",
+      "runsAnywhere": "Executa em qualquer região comercial da AWS · {{source}}",
+      "source": {
+        "model": "modelo do Bedrock",
+        "profile": "perfil de inferência",
+        "imported": "modelo importado"
+      },
+      "price": "{{in}} / {{out}} USD por milhão de tokens (entrada / saída)",
+      "claudeTuned": "Os prompts estão ajustados para o Claude: verifique as respostas deste modelo nesta área antes de confiar nele.",
+      "coldStart": "Um modelo importado reduz-se a zero: após uma pausa, o primeiro pedido pode demorar dezenas de segundos ou minutos."
+    },
     "groupOther": "Outros modelos",
+    "groupCustom": "Os seus modelos",
     "groupRecommended": "Recomendado",
     "intro": "Escolha qual modelo alimenta cada recurso de IA (Claude, ou OpenAI GPT para páginas de avaliações lidas do índice de pesquisa na web do Bedrock), ou mantenha Automático para usar o padrão ajustado de cada recurso. Funções em execução aplicam as alterações em até um minuto.",
     "loadFailed": "Não foi possível carregar as configurações de modelo.",
@@ -93,6 +108,14 @@
       "test": "Testar",
       "testTitle": "Enviar uma solicitação de teste a {{model}} para {{surface}}",
       "testing": "Testando...",
+      "probe": {
+        "json": "Verificar JSON",
+        "tools": "Verificar ferramentas",
+        "jsonTitle": "Pedir uma vez a {{model}} um objeto JSON",
+        "toolsTitle": "Pedir uma vez a {{model}} que chame uma ferramenta",
+        "jsonResult": "Verificação de JSON",
+        "toolsResult": "Verificação de ferramentas"
+      },
       "notTested": "Não testado",
       "unsaved": "Alteração não salva",
       "save": "Salvar",
@@ -119,6 +142,7 @@
         "throttled": "Limitado",
         "not_ready": "Não pronto",
         "unavailable": "Indisponível",
+        "probe_failed": "Verificação falhou",
         "error": "Erro"
       },
       "detail": {
@@ -129,6 +153,7 @@
         "throttled": "O modelo está limitando solicitações agora; tente novamente em instantes.",
         "not_ready": "O modelo ainda não está pronto; tente novamente em alguns minutos.",
         "unavailable": "O modelo está temporariamente indisponível; tente novamente mais tarde.",
+        "probe_failed": "O modelo respondeu, mas não como a verificação pediu (um objeto JSON ou uma chamada da ferramenta da verificação).",
         "error": "A solicitação de teste falhou."
       },
       "confirm": {

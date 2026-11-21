@@ -4,12 +4,16 @@ Model access and capacity checks for the Settings model picker.
 Two read-mostly helpers behind ``POST /settings/model/test`` and
 ``GET /settings/model/capacity`` (settings_handler.py):
 
-- ``probe_model(model_id)`` sends ONE minimal Converse request to exactly that
-  allowlisted model — shaped by shared.converse.build_single_turn_request, the
+- ``probe_model(model_id, probe)`` sends ONE minimal Converse request to exactly that
+  allowlisted or custom model — shaped by shared.converse.build_single_turn_request, the
   same per-model rules converse() applies, under the deployment's inference
   scope — and classifies the outcome. There is deliberately NO fallback chain
   and no retry: testing model X must never be answered by model Y, and a
-  throttle is a result to report, not something to wait out.
+  throttle is a result to report, not something to wait out. The probe (7.65.00)
+  is ``basic`` (any answer), ``json`` (the answer must be the JSON object
+  ``{"ok": true}``) or ``tools`` (the answer must call the probe's one tool); an
+  answer that does not is ``probe_failed``. A custom model (shared/custom_models.py)
+  has no Service Quotas reading here.
 - ``lookup_quota(model_id)`` finds the account's tokens-per-minute quota for the
   model's inference profile in Service Quotas (cached per container, stored in the
   aggregates table: shared/model_quota_store.py). A stored reading that is out of date
@@ -21,6 +25,7 @@ Two read-mostly helpers behind ``POST /settings/model/test`` and
 Neither function ever logs the prompt or any credential, and neither returns
 raw AWS error text to the caller beyond the error code.
 """
+import json
 import os
 import re
 import time
@@ -33,12 +38,26 @@ from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError,
 from shared import model_quota_store
 from shared.aws import invoke_lambda_async
 from shared.converse import build_single_turn_request
+from shared.custom_models import custom_model
+from shared.llm_json import first_json_object
 from shared.logging import logger
 from shared.model_config import ALLOWED_MODELS, invocation_model_id, model_label, scope_bedrock_client
 from shared.timestamps import now_iso
 
 PROBE_PROMPT: Final = "Reply with OK"
 PROBE_MAX_TOKENS: Final = 16
+#: What a test checks: any answer, a JSON answer, or a tool call (POST /settings/model/test ``probe``).
+PROBES: Final = ("basic", "json", "tools")
+JSON_PROBE_PROMPT: Final = 'Reply with exactly this JSON object and nothing else: {"ok": true}'
+TOOLS_PROBE_PROMPT: Final = "Call the report_status tool with ok set to true."
+TOOLS_PROBE_TOOL: Final = "report_status"
+#: Room for a short answer and an adaptive-thinking Claude's thinking (a custom model's cap still applies).
+CHECK_PROBE_MAX_TOKENS: Final = 512
+_PROBE_TOOL_CONFIG: Final = {"tools": [{"toolSpec": {
+    "name": TOOLS_PROBE_TOOL,
+    "description": "Reports whether the model can call a tool.",
+    "inputSchema": {"json": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}},
+}}]}
 
 # Service Quotas listing cache (one listing serves every model).
 QUOTA_CACHE_TTL_SECONDS: Final = 600
@@ -73,6 +92,7 @@ STATUS_MESSAGES: Final = {
     "throttled": "The model is throttling requests right now; retry later.",
     "not_ready": "The model is not ready yet; retry in a few minutes.",
     "unavailable": "The model is temporarily unavailable; retry later.",
+    "probe_failed": "The model answered, but not as the check asked (the JSON object, or a call of the check's tool).",
     "error": "The test request failed.",
 }
 
@@ -100,6 +120,7 @@ class Quota(TypedDict):
 class ProbeResult(TypedDict):
     model_id: str
     invoked_id: str
+    probe: NotRequired[str]
     status: str
     ok: bool
     latency_ms: int | None
@@ -156,10 +177,11 @@ def quota_name(model_id: str) -> str | None:
     """The Service Quotas name of ``model_id``'s tokens-per-minute quota under the scope in force.
 
     ``global.`` profiles use the global cross-region quota; a geo profile
-    (``eu.``, ``us.``) the cross-region one. None for a model outside the allowlist.
+    (``eu.``, ``us.``) the cross-region one. None for a model outside the allowlist
+    (a custom model included: its quota is not an Anthropic one).
     """
     label = model_label(model_id)
-    if label is None:
+    if label is None or custom_model(model_id) is not None:
         return None
     prefix = _GLOBAL_QUOTA_PREFIX if invocation_model_id(model_id).startswith("global.") else _GEO_QUOTA_PREFIX
     return prefix + label
@@ -371,17 +393,45 @@ class _Outcome(NamedTuple):
     code: str | None
 
 
-def _invoke_once(kwargs: dict) -> _Outcome | ClientError:
+def _probe_request(model_id: str, probe: str) -> dict:
+    """The one request of ``probe`` to ``model_id`` (the basic one is converse()'s first request, unchanged)."""
+    if probe == "basic":
+        return build_single_turn_request(model_id, prompt=PROBE_PROMPT, max_tokens=PROBE_MAX_TOKENS)
+    prompt = JSON_PROBE_PROMPT if probe == "json" else TOOLS_PROBE_PROMPT
+    kwargs = build_single_turn_request(model_id, prompt=prompt, max_tokens=CHECK_PROBE_MAX_TOKENS)
+    if probe == "tools":
+        kwargs["toolConfig"] = _PROBE_TOOL_CONFIG
+    return kwargs
+
+
+def _passes(probe: str, response: Any) -> bool:
+    """Whether the answer is what ``probe`` asked for (any answer passes the basic probe)."""
+    if probe == "basic":
+        return True
+    content = response.get("output", {}).get("message", {}).get("content", []) if isinstance(response, dict) else []
+    blocks = [block for block in content if isinstance(block, dict)]
+    if probe == "tools":
+        return any(isinstance(block.get("toolUse"), dict) and block["toolUse"].get("name") == TOOLS_PROBE_TOOL
+                   for block in blocks)
+    # Read as the app reads a JSON answer (shared/llm_json.py: the first object, prose or a fence around it allowed).
+    try:
+        answer = first_json_object("".join(str(block.get("text", "")) for block in blocks))
+    except json.JSONDecodeError:
+        return False
+    return isinstance(answer, dict) and answer.get("ok") is True
+
+
+def _invoke_once(kwargs: dict, probe: str = "basic") -> _Outcome | ClientError:
     """Send the probe request once. A ClientError is returned as is, for _classify."""
     try:
-        _bedrock_probe_client().converse(**kwargs)
+        response = _bedrock_probe_client().converse(**kwargs)
     except ClientError as error:
         return error
     except (ReadTimeoutError, ConnectTimeoutError) as error:
         return _Outcome("unavailable", type(error).__name__)
     except BotoCoreError as error:
         return _Outcome("error", type(error).__name__)
-    return _Outcome("available", None)
+    return _Outcome("available", None) if _passes(probe, response) else _Outcome("probe_failed", None)
 
 
 def _classify(outcome: _Outcome | ClientError, quota: Quota | None) -> _Outcome:
@@ -394,27 +444,29 @@ def _classify(outcome: _Outcome | ClientError, quota: Quota | None) -> _Outcome:
     return _Outcome(classify_client_error(code, message, quota), code)
 
 
-def probe_model(model_id: str) -> ProbeResult:
-    """Send ONE minimal request to exactly ``model_id`` (allowlisted) and classify the outcome.
+def probe_model(model_id: str, probe: str = "basic") -> ProbeResult:
+    """Send ONE minimal ``probe`` request to exactly ``model_id`` (allowlisted or custom) and classify the outcome.
 
     No fallback, no retry. The quota is looked up for every result (cached), and
     decides between ``no_capacity`` (quota 0: wait) and ``throttled`` (retry later).
     """
-    kwargs = build_single_turn_request(model_id, prompt=PROBE_PROMPT, max_tokens=PROBE_MAX_TOKENS)
+    kwargs = _probe_request(model_id, probe)
     invoked_id = str(kwargs["modelId"])
     started = time.monotonic()
-    response = _invoke_once(kwargs)
+    response = _invoke_once(kwargs, probe)
     latency_ms = round((time.monotonic() - started) * 1000)
     quota = lookup_quota(model_id)
     status, code = _classify(response, quota)
     logger.info(
         "Model test finished",
-        extra={"model_id": model_id, "invoked_id": invoked_id, "status": status,
+        extra={"model_id": model_id, "invoked_id": invoked_id, "probe": probe, "status": status,
                "error_code": code, "latency_ms": latency_ms},
     )
-    return probe_result(
+    result = probe_result(
         model_id, invoked_id, status,
-        latency_ms=latency_ms if status == "available" else None,
+        latency_ms=latency_ms if status in ("available", "probe_failed") else None,
         code=code, quota=quota,
     )
+    result["probe"] = probe
+    return result
 

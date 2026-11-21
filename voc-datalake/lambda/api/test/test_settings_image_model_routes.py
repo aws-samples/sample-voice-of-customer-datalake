@@ -95,7 +95,7 @@ class TestImageModelTest:
     def test_a_claude_id_still_takes_the_text_probe(self, image_probe, text_probe, route):
         text_probe.return_value = {'model_id': OPUS55, 'status': 'available'}
         route('POST', '/settings/model/test', body={'model_id': OPUS55})
-        text_probe.assert_called_once_with(OPUS55)
+        text_probe.assert_called_once_with(OPUS55, 'basic')
         image_probe.assert_not_called()
 
     @patch('settings_handler.image_model_status.probe_image_model')

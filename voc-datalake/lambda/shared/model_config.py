@@ -34,6 +34,14 @@ Responses API, so its allowlist is ``WEB_SEARCH_MODELS`` alone (``surface_allowl
 GPT model, and it may pick no Claude one. It resolves to its own pick, else its built-in default; the pick for all
 surfaces, the deployment's default and a model profile are Claude models and do not apply to it.
 
+The deployment's own models (``-c customModels``, 7.65.00, shared/custom_models.py) are a third family: up to four
+Bedrock models, inference profiles or imported models, each offered only on the surfaces it declares, beside the
+Claude allowlist (``surface_allowlist`` is the Claude allowlist plus the custom models of that surface). Only a
+per-surface pick can name one: the pick for all surfaces, the deployment's default, the fallback chain and a model
+profile stay Claude. Their capability flags shape each request (``omits_temperature``, ``takes_thinking_budget``,
+``max_output_tokens``, ``model_for_documents``; the JSON instruction in shared/converse.py). The engineering harness,
+the avatars and the embeddings pick no model here and stay fixed.
+
 Lambdas without the AGGREGATES_TABLE environment variable, or without read
 access to the table, silently use the surface default — the lookup must
 never break an inference path.
@@ -43,6 +51,7 @@ import time
 from collections.abc import Set as AbstractSet
 
 from shared.aws import BEDROCK_MODEL_ID, get_dynamodb_resource
+from shared.custom_models import custom_ids_for, custom_model
 from shared.logging import logger
 from shared.model_profile import E2E_PROFILE, active_profile
 from shared.usage_meter import log_usage, remember_request
@@ -204,9 +213,10 @@ _LABELS = {m["id"]: m["label"] for m in ALLOWED_MODELS}
 
 
 def model_label(model_id: str) -> str | None:
-    """The display label of an allowlisted ``model_id`` (e.g. "Claude Sonnet 5.5"), None for any other id:
-    a stored provenance stamp may name a model that has since left the allowlist."""
-    return _LABELS.get(model_id)
+    """The display label of an allowlisted or custom ``model_id`` (e.g. "Claude Sonnet 5.5"), None for any other
+    id: a stored provenance stamp may name a model that has since left the allowlist."""
+    custom = custom_model(model_id)
+    return custom.label if custom is not None else _LABELS.get(model_id)
 
 # Window assumed for a model ID that is not in the allowlist — i.e. a legacy
 # BEDROCK_MODEL_ID value, or an override written before an allowlist change.
@@ -333,9 +343,13 @@ _OWN_FAMILY_SURFACES: dict[str, tuple[frozenset[str], tuple[str, ...]]] = {
 
 
 def surface_allowlist(surface: str) -> AbstractSet[str]:
-    """The model ids ``surface`` may pick: the web search surface's GPT models, else the Claude allowlist."""
+    """The model ids ``surface`` may pick: the web search surface's GPT models, else the Claude allowlist plus the
+    deployment's custom models that declare ``surface`` (shared/custom_models.py)."""
     family = _OWN_FAMILY_SURFACES.get(surface)
-    return family[0] if family is not None else ALLOWED_MODEL_IDS
+    if family is not None:
+        return family[0]
+    custom = custom_ids_for(surface)
+    return ALLOWED_MODEL_IDS | custom if custom else ALLOWED_MODEL_IDS
 
 
 def web_search_offered() -> bool:
@@ -464,14 +478,49 @@ def fallback_chain(primary: str, surface: str = DEFAULT_SURFACE) -> tuple[str, .
 
 
 def omits_temperature(model_id: str) -> bool:
-    """True when the model rejects the `temperature` inference parameter."""
-    return model_id in _OMIT_TEMPERATURE_IDS
+    """True when the model rejects the `temperature` inference parameter (a custom model without ``temperature``)."""
+    custom = custom_model(model_id)
+    return not custom.temperature if custom is not None else model_id in _OMIT_TEMPERATURE_IDS
 
 
 def uses_adaptive_thinking(model_id: str) -> bool:
     """True when the model runs adaptive thinking always-on and rejects an
     explicit extended-thinking budget (skip the `thinking` request field)."""
     return model_id in _ADAPTIVE_THINKING_IDS
+
+
+def takes_thinking_budget(model_id: str) -> bool:
+    """True when a request may carry an explicit ``thinking`` budget: not an adaptive-thinking Claude, and never a
+    custom model (Anthropic's field; another model refuses it)."""
+    return not uses_adaptive_thinking(model_id) and custom_model(model_id) is None
+
+
+def max_output_tokens(model_id: str) -> int | None:
+    """A custom model's ``maxOutputTokens`` (``maxTokens`` is capped to it), None for any other model."""
+    custom = custom_model(model_id)
+    return custom.max_output_tokens if custom is not None else None
+
+
+def model_for_documents(model_id: str, surface: str) -> str:
+    """The model a request with document or image blocks goes to: ``model_id``, unless it is a custom model that
+    reads none, then the surface's built-in default (a Claude model), logged."""
+    custom = custom_model(model_id)
+    if custom is None or custom.documents:
+        return model_id
+    fallback = surface_default(surface)
+    logger.info(f"Custom model '{custom.key}' reads no documents or images; this request uses {fallback}")
+    return fallback
+
+
+def anthropic_model(model_id: str, surface: str) -> str:
+    """The model for a caller whose request body is Anthropic's own (``invoke_model`` with ``anthropic_version``):
+    ``model_id`` unless it is a custom model, then the surface's built-in default (a Claude model), logged."""
+    custom = custom_model(model_id)
+    if custom is None:
+        return model_id
+    fallback = surface_default(surface)
+    logger.info(f"Custom model '{custom.key}' takes no Anthropic request body; this call uses {fallback}")
+    return fallback
 
 
 def supports_flex(model_id: str) -> bool:
@@ -487,10 +536,13 @@ def supports_flex(model_id: str) -> bool:
 def context_window_tokens(model_id: str) -> int:
     """Input context window, in tokens, for a model ID. Never raises.
 
-    Unknown IDs get FALLBACK_CONTEXT_WINDOW_TOKENS — the narrowest allowlisted
-    window — so a caller sizing a prompt against an unrecognised model
+    A custom model's is its registry's ``contextWindow``. Unknown IDs get FALLBACK_CONTEXT_WINDOW_TOKENS — the
+    narrowest allowlisted window — so a caller sizing a prompt against an unrecognised model
     under-fills rather than overflowing it.
     """
+    custom = custom_model(model_id)
+    if custom is not None:
+        return custom.context_window
     return _CONTEXT_WINDOWS.get(model_id, FALLBACK_CONTEXT_WINDOW_TOKENS)
 
 
@@ -571,6 +623,8 @@ def _allowlisted(model_id, allowlist: AbstractSet[str] = ALLOWED_MODEL_IDS) -> s
     if isinstance(model_id, str) and model_id in allowlist:
         return model_id
     if model_id:
+        # A removed custom model, a tampered row: logged, and the next level of the resolution answers (the surface
+        # default last).
         logger.warning(f"Configured model '{str(model_id)[:80]}' not in allowlist; ignoring")
     return None
 
@@ -599,7 +653,8 @@ def get_active_model_id(surface: str = DEFAULT_SURFACE) -> str:
     settings = _load_settings()
     surfaces = settings.get("surfaces")
     if isinstance(surfaces, dict):
-        per_surface = _allowlisted(surfaces.get(surface))
+        # The surface's own allowlist: a custom model is picked per surface only, among those that declare it.
+        per_surface = _allowlisted(surfaces.get(surface), surface_allowlist(surface))
         if per_surface:
             return per_surface
     legacy_global = _allowlisted(settings.get("model_id"))

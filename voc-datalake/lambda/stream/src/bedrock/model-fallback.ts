@@ -12,6 +12,7 @@
  * lambda/shared/test/test_model_fallback_lockstep.py reads this file and fails on
  * drift of the order, the cooldown, the error codes or the message patterns.
  */
+import { readsAttachments } from './custom-models.js';
 import { ALLOWED_MODEL_IDS } from './model-override.js';
 import { applyModelProfile, PROFILE_FALLBACKS, type ModelProfile } from './model-profile.js';
 import { METRIC_NAMESPACE } from '../lib/metric-namespace.js';
@@ -73,6 +74,17 @@ export function fallbackChain(primary: string, profile?: ModelProfile): string[]
   return candidates.filter(
     (model, index) => (index === 0 || ALLOWED_MODEL_IDS.has(model)) && candidates.indexOf(model) === index,
   );
+}
+
+/**
+ * The model a chat turn runs on when the message carries an image or a document: `modelId`, unless it is a
+ * `-c customModels` model that reads none (custom-models.ts), then the chat default (logged). Mirrors
+ * model_config.py::model_for_documents.
+ */
+export function chatModelForAttachments(modelId: string, hasAttachments: boolean): string {
+  if (!hasAttachments || readsAttachments(modelId)) return modelId;
+  console.warn(`Model ${modelId} reads no attachments; this turn runs on ${CHAT_SURFACE_DEFAULT}`);
+  return CHAT_SURFACE_DEFAULT;
 }
 
 /** True when `err` means this model cannot serve now (try another model). */

@@ -3,7 +3,8 @@
  * `POST /settings/model/test` and `GET /settings/model/capacity`
  * (lambda/shared/model_capacity.py).
  *
- * Lenient on purpose: an unknown `status` (a newer API) reads as `error`, a
+ * Lenient on purpose: an unknown `status` (a newer API) reads as `error`, an absent `probe` (an older API) as
+ * `basic` (7.65.00: `json` and `tools` check a custom model's answers, `probe_failed` says it answered otherwise), a
  * malformed `quota` as unknown (null), and a capacity row without a model id is
  * dropped, so a surprising payload can degrade the pill but never crash the card. A row's
  * `access` (the model agreement, lambda/shared/model_agreements.py) is null when absent (an older
@@ -15,10 +16,16 @@ import { z } from 'zod'
 import { ImageAccessSchema } from './imageModelSchema'
 
 const MODEL_TEST_STATUSES = [
-  'available', 'no_access', 'not_in_region', 'no_capacity', 'throttled', 'not_ready', 'unavailable', 'error',
+  'available', 'no_access', 'not_in_region', 'no_capacity', 'throttled', 'not_ready', 'unavailable', 'probe_failed',
+  'error',
 ] as const
 
 export type ModelTestStatus = (typeof MODEL_TEST_STATUSES)[number]
+
+/** What a test asks (7.65.00): a reply, a JSON object, or a call of the check's tool. */
+const MODEL_TEST_PROBES = ['basic', 'json', 'tools'] as const
+
+export type ModelTestProbe = (typeof MODEL_TEST_PROBES)[number]
 
 const QuotaSchema = z.object({
   name: z.string(),
@@ -33,6 +40,8 @@ const ModelTestResultSchema = z.object({
   model_id: z.string(),
   invoked_id: z.string().catch(''),
   status: z.enum(MODEL_TEST_STATUSES).catch('error'),
+  // An older API names no probe: its test is the basic one.
+  probe: z.enum(MODEL_TEST_PROBES).catch('basic'),
   latency_ms: z.number().nonnegative().nullable().catch(null),
   message: z.string().catch(''),
   quota: LenientQuota,
@@ -42,14 +51,16 @@ const ModelTestResultSchema = z.object({
 export type ModelTestResult = z.infer<typeof ModelTestResultSchema>
 
 /** The result recorded when a test produced nothing usable (bad payload, failed request). */
-export function failedModelTestResult(modelId: string): ModelTestResult {
-  return { model_id: modelId, invoked_id: '', status: 'error', latency_ms: null, message: '', quota: null, checked_at: '' }
+export function failedModelTestResult(modelId: string, probe: ModelTestProbe = 'basic'): ModelTestResult {
+  return {
+    model_id: modelId, invoked_id: '', status: 'error', probe, latency_ms: null, message: '', quota: null, checked_at: '',
+  }
 }
 
 /** The test result, or a synthetic `error` result for ``modelId`` when the payload is unusable. */
-export function normalizeModelTestResult(raw: unknown, modelId: string): ModelTestResult {
+export function normalizeModelTestResult(raw: unknown, modelId: string, probe: ModelTestProbe = 'basic'): ModelTestResult {
   const parsed = ModelTestResultSchema.safeParse(raw)
-  return parsed.success ? parsed.data : failedModelTestResult(modelId)
+  return parsed.success ? parsed.data : failedModelTestResult(modelId, probe)
 }
 
 const CapacityRowSchema = z.object({

@@ -10,6 +10,10 @@ is then incomplete), never a guess.
 As of 2026-11-14 the page could not be fetched from the build session (the fetch was refused), so every allowlisted
 model is unpriced for that reason and every estimate is ``None`` until the page is read and the figures recorded
 here with its date.
+
+The deployment's own models (``-c customModels``, shared/custom_models.py, 7.65.00) carry their price in the registry,
+required at synth: ``price.in`` per million input tokens, ``price.out`` per million output tokens, on every tier (the
+cache reads and writes at the input price, the registry naming no cache price). A custom model is never unpriced.
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import Final
 
+from shared.custom_models import custom_model
 from shared.model_config import ALLOWED_MODEL_IDS
 
 #: Tokens per priced unit: every price here is per million tokens (a page figure per 1,000 is recorded x 1,000).
@@ -63,11 +68,21 @@ PRICE_LIST: Final = PriceList(
 )
 
 
+def custom_prices(model_id: str) -> TokenPrices | None:
+    """A custom model's registry price (the same on every tier), None for any other model."""
+    custom = custom_model(model_id)
+    if custom is None:
+        return None
+    return TokenPrices(input=custom.price_in, output=custom.price_out, cache_read=custom.price_in,
+                       cache_write=custom.price_in)
+
+
 def estimated_usd(model_id: str, service_tier: str, tokens: Mapping[str, int],
                   price_list: PriceList = PRICE_LIST) -> Decimal | None:
     """The list-price cost of ``tokens`` (the usage line's token fields; a missing one is 0) of ``model_id`` on
-    ``service_tier``, in USD; ``None`` for a model or tier the list has no price for."""
-    prices = price_list.prices.get(model_id, {}).get(service_tier)
+    ``service_tier``, in USD; ``None`` for a model or tier the list has no price for. A custom model is priced from
+    the registry (``custom_prices``)."""
+    prices = price_list.prices.get(model_id, {}).get(service_tier) or custom_prices(model_id)
     if prices is None:
         return None
     return sum((Decimal(tokens.get(name, 0)) * price / TOKENS_PER_UNIT for name, price in prices.per_field().items()),

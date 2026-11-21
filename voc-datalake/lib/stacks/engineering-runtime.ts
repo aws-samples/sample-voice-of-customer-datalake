@@ -477,7 +477,8 @@ class EngineeringRuntime extends Construct {
     }));
     // The bucket's key, only through S3 (its reads and its own puts): never a direct KMS call.
     role.addToPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3']));
-    grantClaudeModels(role, 'invoke');
+    // The Claude allowlist only: the native harness runs Claude's adaptive thinking (Q17), never a -c customModels model.
+    grantClaudeModels(role, 'invoke', { customModels: false });
     return role;
   }
 
@@ -581,7 +582,7 @@ class EngineeringRuntime extends Construct {
     role.addToPrincipalPolicy(keyed('LearningRoleLessons',
       ['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:UpdateItem'], [ROLE_MEMORY_PARTITIONS]));
     role.addToPrincipalPolicy(keyed('LearningScorecards', ['dynamodb:PutItem'], [SCORECARD_PARTITIONS]));
-    grantClaudeModels(role, 'invoke');
+    grantClaudeModels(role, 'invoke', { customModels: false });   // the coach asks Claude only (coach/model.py)
     grantInvokeByName(cdk.Stack.of(this), role, [functionName], 'LearningHandsOnToItself');
   }
 

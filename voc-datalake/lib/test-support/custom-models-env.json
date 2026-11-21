@@ -1,0 +1,21 @@
+[
+  {
+    "key": "nova", "id": "amazon.nova-pro-v1:0", "label": "Amazon Nova Pro", "source": "model",
+    "surfaces": ["documents", "utility", "prototype"], "eu": false, "regions": ["us-west-2"],
+    "capabilities": {"tools": false, "documents": true, "json": true, "temperature": true},
+    "price": {"in": 0.8, "out": 3.2}, "contextWindow": 300000, "maxOutputTokens": 10000
+  },
+  {
+    "key": "llama", "id": "us.meta.llama3-3-70b-instruct-v1:0", "label": "Llama 3.3 70B Instruct",
+    "source": "profile", "surfaces": ["chat", "agent_worker", "enrichment"], "eu": false,
+    "regions": ["us-east-1", "us-east-2", "us-west-2"],
+    "capabilities": {"tools": true, "documents": false, "json": true, "temperature": true},
+    "price": {"in": 0.72, "out": 0.72}, "contextWindow": 128000, "maxOutputTokens": 8192
+  },
+  {
+    "key": "mine", "id": "arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456", "label": "Example imported model",
+    "source": "imported", "surfaces": ["memory"], "eu": false, "regions": ["us-west-2"],
+    "capabilities": {"tools": false, "documents": false, "json": true, "temperature": false},
+    "price": {"in": 0.5, "out": 1.5}, "contextWindow": 8192, "maxOutputTokens": 2048
+  }
+]
