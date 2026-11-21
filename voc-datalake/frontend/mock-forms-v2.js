@@ -30,9 +30,8 @@
 //   GET    /feedback-forms/{id}/results?…            per-question results (include_test, language, ending, hidden.<id>,
 //                                                    from) and the funnel {opened, left: {qid: n}, completed}
 //   GET    /feedback-forms/{id}/responses?…          paged responses (limit, cursor, include_test=false|true|only)
-//   GET    /feedback-forms/{id}/responses?format=csv the same as CSV: layout=detailed (7.55.00's, the default) or
-//                                                    familiar (7.61.00's, the web app's: a BOM, one header row, `ids=true`
-//                                                    adds the row of ids)
+//   GET    /feedback-forms/{id}/responses?format=csv the same as CSV: layout=familiar (the default, 7.61.00: a BOM, one
+//                                                    header row, `ids=true` adds the row of ids) or detailed (7.55.00's)
 //   POST   /settings/form-drafts                     an AI draft: 202 {job_id}, a marker in the description or the
 //                                                    instruction refuses (mock-forms-draft.js); the settings API's
 //                                                    route (shared/forms_v2_draft_routes.py), served here beside the
@@ -636,7 +635,7 @@ function classify(method, pathname, shared) {
 
 /** A CSV request's layout and ids parameters checked (the handler's 400s), or the refusal. */
 function csvChoiceError(url) {
-  const layout = url.searchParams.get('layout') ?? 'detailed';
+  const layout = url.searchParams.get('layout') ?? 'familiar';
   const ids = url.searchParams.get('ids') ?? 'false';
   if (layout !== 'familiar' && layout !== 'detailed') return fail(400, 'layout must be one of: familiar, detailed');
   if (ids !== 'true' && ids !== 'false') return fail(400, 'ids must be true or false');
@@ -645,7 +644,7 @@ function csvChoiceError(url) {
 
 function sendCsv(res, item, url) {
   const rows = filteredResponses(responsesOf(item.form_id), url.searchParams);
-  const detailed = (url.searchParams.get('layout') ?? 'detailed') === 'detailed';
+  const detailed = url.searchParams.get('layout') === 'detailed';
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   const filename = detailed ? `${item.form_id}-responses.csv` : familiarFilename(item);
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

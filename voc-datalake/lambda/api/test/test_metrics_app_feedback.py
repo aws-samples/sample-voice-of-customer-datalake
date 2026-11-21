@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 from handler_events_fixtures import call_route
 from moto import mock_aws
-from moto_helpers import pk_sk_table
+from moto_helpers import indexed_table, pk_sk_table
 
 from metrics_handler import lambda_handler
 from shared.api import clear_categories_cache
@@ -77,3 +77,31 @@ def test_the_feedback_list_and_search_leave_it_out_unless_asked_by_tag(get):
     assert [listed['items'], sorted(item['feedback_id'] for item in tagged['items'])] == [[], ['f1', 'f2']]
     assert [sorted(item['feedback_id'] for item in searched['items']),
             sorted(item['feedback_id'] for item in asked['items'])] == [['w1', 'w2'], ['f1', 'f2']]
+
+
+def test_the_similar_reviews_leave_it_out(get):
+    """Review round 3 (7.66.00): ``/feedback/{id}/similar`` (the web app's Similar panel, and the assistant's
+    ``get_feedback_item`` and MCP ``feedback_get`` with ``include_similar``, which both call this route) ranks no
+    micro-feedback, though it shares the review's category partition."""
+    today = datetime.now(UTC).strftime('%Y-%m-%d')
+    text = {'normalized_text': 'The courier delivered the parcel late and the box was crushed'}
+    source, *candidates = [{**_review(today, n, row), **text} for n, row in enumerate(REVIEWS)]
+    with patch('metrics_handler._feedback_by_id', return_value=source), \
+            patch('metrics_handler._feedback_query', return_value={'Items': [source, *candidates]}) as read:
+        status, similar = get('/feedback/w1/similar')
+    assert read.call_args.kwargs['IndexName'] == 'gsi2-by-category'
+    assert (status, [item['feedback_id'] for item in similar['items']]) == (200, ['w2'])
+
+
+def test_the_entities_issue_sample_leaves_it_out(get):
+    """Review round 3 (7.66.00): ``/feedback/entities``' issue sample (its projected rows carry the tags now) counts no
+    micro-feedback's problem, as the aggregates beside it count none of its reviews; a filtered request's sample too."""
+    import boto3
+    aggregates = indexed_table(boto3.resource('dynamodb', region_name='us-east-1'), 'app-aggregates-indexed',
+                               {'gsi1-by-metric-type': ('metric_type', 'pk')})
+    aggregates.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': [{'name': 'delivery'}]})
+    with patch('metrics_handler.aggregates_table', aggregates):   # (the unfiltered branch reads the aggregates' index)
+        _, entities = get('/feedback/entities')
+    _, filtered = get('/feedback/entities', source='web,feedback_form')
+    assert [sorted(entities['entities']['issues']), sorted(filtered['entities']['issues'])] == [
+        ['problem w1', 'problem w2'], ['problem w1', 'problem w2']]

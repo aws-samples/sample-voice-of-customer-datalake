@@ -212,10 +212,18 @@ const foldedTag = (tag: string): string => tag.trim().toLowerCase();
 const hasTag = (item: FeedbackItem, wanted: string): boolean =>
   (item.tags ?? []).some((candidate) => foldedTag(candidate) === wanted);
 
+/**
+ * Whether the search asks for the micro-feedback's tag: its own `tag` filter, or the user's on-screen floor (a page
+ * filtered on `tag=voc_app`, `floor.lists.tag`), as either one reads the items it names.
+ */
+function asksForAppFeedback(filters: ItemFilters, floor: FeedbackFloor): boolean {
+  return [filters.tag ?? '', ...(floor.lists.tag ?? [])].some((tag) => foldedTag(tag) === APP_FEEDBACK_TAG);
+}
+
 /** channel / tag / dims (docs/dimensions.md); unset filters admit every item but the VoC app's own micro-feedback. */
-function passesItemFilters(item: FeedbackItem, filters: ItemFilters): boolean {
+function passesItemFilters(item: FeedbackItem, filters: ItemFilters, appFeedback: boolean): boolean {
   const tag = filters.tag === undefined ? '' : foldedTag(filters.tag);
-  if (tag !== APP_FEEDBACK_TAG && hasTag(item, APP_FEEDBACK_TAG)) return false;
+  if (!appFeedback && hasTag(item, APP_FEEDBACK_TAG)) return false;
   if (filters.channel && item.source_channel !== filters.channel) return false;
   if (tag && !hasTag(item, tag)) return false;
   return Object.entries(filters.dims ?? {}).every(([key, value]) => item.dimensions?.[key] === value);
@@ -243,7 +251,7 @@ function matchesFeedbackItem(
     && admitsFloor(floor, item)
     && passesDateFilter(item, cutoffDate, dateBasis)
     && passesFieldFilters(item, filters)
-    && passesItemFilters(item, filters)
+    && passesItemFilters(item, filters, asksForAppFeedback(filters, floor))
     && passesTextSearch(item, query);
 }
 

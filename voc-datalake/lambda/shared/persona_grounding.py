@@ -29,6 +29,7 @@ refused (``require_deployment``) and every read is the deployment's feedback, as
 """
 from __future__ import annotations
 
+import itertools
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -81,8 +82,9 @@ REFRESH_REASON: Final = 'manual_refresh'
 MAX_PACK_PERSONAS: Final = 6
 #: Fresh reviews per persona, and a refresh's at most (the plan's "top 8 since it was generated").
 MAX_FRESH: Final = 8
-#: Stored reviews (cited, then refreshed) per persona in a pack, and how many of its listed ids are looked at to find
-#: them (a restricted person may see few of them: the reads stay bounded).
+#: Stored reviews (refreshed and cited in turn, at least half of them cited while any are left: ``_stored_evidence``)
+#: per persona in a pack, and how many of its listed ids are looked at to find them (a restricted person may see few
+#: of them: the reads stay bounded).
 MAX_STORED_EVIDENCE: Final = 12
 MAX_STORED_EXAMINED: Final = 24
 #: Stored ids read to learn a persona's categories (cited first, else the reviews it was written from).
@@ -183,17 +185,44 @@ def evidence_update_entries(row: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _stored_ids(persona: Mapping[str, Any]) -> list[tuple[str, str]]:
-    """``(feedback_id, origin)`` of the persona's stored evidence: refreshed (newest first), then cited."""
+    """``(feedback_id, origin)`` of the persona's stored evidence: its refreshed reviews (newest refresh first) and
+    its cited ones taken in turn, a refreshed one first, so a refresh always reaches the pack and two or three never
+    push every review it was generated from out of ``MAX_STORED_EXAMINED`` (7.66.00); the longer list's rest after."""
     cited = [(one, ORIGIN_CITED) for one in listed_ids(persona.get(EVIDENCE_FEEDBACK_IDS_FIELD))]
     refreshed = [(one, ORIGIN_REFRESHED)
                  for entry in reversed(evidence_update_entries(persona)) for one in listed_ids(entry.get('feedback_ids'))]
+    turns = [pair for both in itertools.zip_longest(refreshed, cited) for pair in both if pair is not None]
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
-    for feedback_id, origin in [*refreshed, *cited]:
+    for feedback_id, origin in turns:
         if feedback_id not in seen:
             seen.add(feedback_id)
             out.append((feedback_id, origin))
     return out
+
+
+def _stored_evidence(reader: Reader, persona: Mapping[str, Any], budget: WalkBudget) -> list[dict[str, Any]]:
+    """The persona's stored reviews the person may see, at most ``MAX_STORED_EVIDENCE``, in ``_stored_ids``' turns;
+    the refreshed ones take at most half of it while cited ones are left (a refreshed one past that half comes only
+    once the cited ones run out)."""
+    kept: list[dict[str, Any]] = []
+    later: list[dict[str, Any]] = []
+    refreshed_room = MAX_STORED_EVIDENCE // 2
+    for feedback_id, origin in _stored_ids(persona)[:MAX_STORED_EXAMINED]:
+        # The pack's one budget bounds these reads too (a later persona then gets fewer, never a slow answer).
+        if len(kept) >= MAX_STORED_EVIDENCE or budget.exhausted():
+            break
+        row = _by_id(reader, feedback_id)
+        if row is None:
+            continue
+        entry = {**_quote(row), 'origin': origin}
+        if origin == ORIGIN_REFRESHED:
+            if refreshed_room == 0:
+                later.append(entry)
+                continue
+            refreshed_room -= 1
+        kept.append(entry)
+    return [*kept, *later][:MAX_STORED_EVIDENCE]
 
 
 def _row_by_id(reader: Reader, feedback_id: str) -> dict | None:
@@ -342,14 +371,7 @@ def _fresh_items(reader: Reader, match: _Match, skip: set[str], question: str, l
 
 def _persona_pack(reader: Reader, project_id: str, persona: Mapping[str, Any], filters: Mapping[str, list[str]],
                   question: str, limit: int, budget: WalkBudget) -> dict[str, Any]:
-    stored: list[dict[str, Any]] = []
-    for feedback_id, origin in _stored_ids(persona)[:MAX_STORED_EXAMINED]:
-        # The pack's one budget bounds these reads too (a later persona then gets fewer, never a slow answer).
-        if len(stored) >= MAX_STORED_EVIDENCE or budget.exhausted():
-            break
-        row = _by_id(reader, feedback_id)
-        if row is not None:
-            stored.append({**_quote(row), 'origin': origin})
+    stored = _stored_evidence(reader, persona, budget)
     match = _match_for(reader, persona, filters, _since(persona))
     fresh, capped = _fresh_items(reader, match, _held_ids(persona), question, limit, budget)
     logger.info('Persona evidence pack read', extra={

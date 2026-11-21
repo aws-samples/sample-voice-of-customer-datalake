@@ -162,8 +162,9 @@ SIMILAR_CANDIDATE_ROWS = 100
 # The caps and page size are the full-row walk's, so the walk reads exactly the same
 # rows, pages and partial flags as before; only the attributes decoded shrink.
 METRIC_ROW_FIELDS = ('pk', 'sk', *CHANNEL_INDEX_FIELDS)
-# `/feedback/entities`' issue sample reads only the problem summary.
-ISSUE_SAMPLE_PROJECTION = {'ProjectionExpression': '#ps', 'ExpressionAttributeNames': {'#ps': 'problem_summary'}}
+# `/feedback/entities`' issue sample reads only the problem summary, and the tags its filter reads (7.66.00).
+ISSUE_SAMPLE_PROJECTION = {'ProjectionExpression': '#ps, #tags',
+                           'ExpressionAttributeNames': {'#ps': 'problem_summary', '#tags': 'tags'}}
 
 def _metric_row_read() -> SlimRead:
     """`METRIC_ROW_FIELDS` with the full-row walk's caps, read at call time like the walk reads them.
@@ -1418,7 +1419,8 @@ def get_entities():
             ScanIndexForward=False,
             **ISSUE_SAMPLE_PROJECTION,
         )
-        feedback_items.extend(response.get('Items', []))
+        # (never the VoC app's own micro-feedback, as the counts beside it: shared/item_filters.py, 7.66.00)
+        feedback_items.extend(NO_ITEM_FILTERS.filter(response.get('Items', [])))
         if len(feedback_items) >= limit:
             break
 
@@ -1647,8 +1649,9 @@ def get_similar_feedback(feedback_id: str):
 
     # Filter the RESULTS too: the partition is keyed on gsi2pk, which is not
     # guaranteed to agree with each item's `category`, so admitting the source
-    # item does not admit its neighbours.
-    candidates = category_access.filter_items(_caller_scope(), response.get('Items', []))
+    # item does not admit its neighbours. Never the VoC app's own micro-feedback
+    # (shared/item_filters.py, 7.66.00): the index projects every attribute, tags too.
+    candidates = category_access.filter_items(_caller_scope(), NO_ITEM_FILTERS.filter(response.get('Items', [])))
     similar_items = rank_similar(source_item, candidates, limit)
 
     return {

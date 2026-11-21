@@ -18,6 +18,9 @@ from shared.ws_repo import WorkspaceScope, metric_pk, metric_type
 #: How every deployment-wide counter partition starts (the workspace's starts ``WS#{ws}#`` before it).
 METRIC_PARTITION_PREFIX: Final = 'METRIC#'
 DAILY_TOTAL_PK: Final = 'METRIC#daily_total'
+#: The field of a daily total's row a VoC app micro-feedback item adds to (7.66.00, aggregator ``counter_dimensions``):
+#: its day's sentinel, never the ``count`` a metric sums; the export's counts check adds it (every item is exported).
+APP_FEEDBACK_SENTINEL_FIELD: Final = 'app_feedback_items'
 #: The high-urgency daily count (alerts, ``/metrics/summary``'s ``urgent_count``).
 URGENT_PK: Final = 'METRIC#urgent'
 SENTIMENT_AVG_PK: Final = 'METRIC#daily_sentiment_avg'

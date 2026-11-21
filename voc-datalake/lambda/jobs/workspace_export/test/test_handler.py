@@ -218,6 +218,21 @@ def test_a_counts_mismatch_is_reported_not_fatal(world):
     assert (check['feedback'], check['daily_total'], check['matches']) == (FEEDBACK_COUNT, FEEDBACK_COUNT + 3, False)
 
 
+def test_the_counts_check_counts_the_micro_feedback_the_export_holds(world):
+    """Review round 3 (7.66.00): a micro-feedback item (``voc_app``) adds no ``count`` to its day, only the day's
+    sentinel (``APP_FEEDBACK_SENTINEL_FIELD``), and the export holds it as any review: the check adds the sentinel, so
+    a workspace with micro-feedback still matches."""
+    from shared.metric_keys import APP_FEEDBACK_SENTINEL_FIELD
+    seed(world, daily_total=FEEDBACK_COUNT - 2)
+    world.aggregates.update_item(Key={'pk': f'WS#{WS}#METRIC#daily_total', 'sk': day(1)},
+                                 UpdateExpression='SET #app = :two',
+                                 ExpressionAttributeNames={'#app': APP_FEEDBACK_SENTINEL_FIELD},
+                                 ExpressionAttributeValues={':two': 2})
+    _run(world, queue(world))
+    check = json.loads(_unzip(world)['manifest.json'])['counts_check']
+    assert (check['feedback'], check['daily_total'], check['matches']) == (FEEDBACK_COUNT, FEEDBACK_COUNT, True)
+
+
 def test_a_duplicate_or_stale_delivery_claims_nothing_and_does_nothing(world):
     seed(world)
     event = queue(world)

@@ -11,13 +11,26 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from shared.app_feedback_tag import names_app_feedback
+from shared.app_feedback_tag import names_app_feedback, refuses_tag_edit
 from shared.exceptions import ValidationError
 from shared.ingest_schemas import validate_message
 from shared.producer_labels import normalise_label_fields
 from shared.source_profiles import validate_source_profiles
 
 MESSAGE = {'id': 'r1', 'text': 'Late again', 'created_at': '2026-11-20T09:00:00Z'}
+
+
+@pytest.mark.parametrize(('source', 'stored', 'edited', 'refused'), [
+    ('web', [], ['voc_app'], True),                         # (giving it: refused everywhere)
+    ('feedback_form', [], [' VOC_APP '], True),
+    ('feedback_form', ['voc_app'], ['beta'], True),         # (taking it from a form's response: refused)
+    ('web', ['voc_app', 'beta'], ['beta'], False),          # (round 3: a review of another source tagged before 7.66)
+    ('feedback_form', ['voc_app'], ['VOC_APP', 'beta'], False),
+    ('web', ['beta'], [], False),
+])
+def test_a_manual_tag_edit_never_gives_the_tag_and_takes_it_only_from_a_non_form_review(source, stored, edited,
+                                                                                         refused):
+    assert refuses_tag_edit({'source_platform': source, 'tags': stored}, edited) is refused
 
 
 @pytest.mark.parametrize('source', ['s3_import', 'manual_import', 'webscraper', 'email_inbox'])

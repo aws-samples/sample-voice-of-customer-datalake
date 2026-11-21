@@ -464,6 +464,15 @@ describe('the settings Lambda can test models and read their quotas', () => {
     expect(missingModelGrants([grant], ALLOWED_MODEL_IDS, 'global')).toStrictEqual([]);
   });
 
+  it('may stream every model it may invoke (Check tools on the chat surface calls ConverseStream, 7.66.00)', () => {
+    // shared/model_capacity.py _streamed_tool_call: without InvokeModelWithResponseStream every tools check of a
+    // model that may serve chat answers no_access. The custom models' statements are the same policies' (the stream
+    // variant keeps its actions on them: lib/utils/claude-model-grant.test.ts).
+    const grant = claudeRoleGrantOf('Api', apiTemplate().toJSON(), ROLE);
+    expect(grant.statements.length).toBeGreaterThan(0);
+    expect(grant.statements.filter((s) => !s.actions.includes('bedrock:InvokeModelWithResponseStream'))).toStrictEqual([]);
+  });
+
   it('holds ListServiceQuotas on * and GetServiceQuota on Bedrock quotas only, no other Service Quotas action', () => {
     const quotaStatements = roleStatements(apiTemplate(), ROLE)
       .filter((s) => s.actions.some((action) => action.startsWith('servicequotas:')));

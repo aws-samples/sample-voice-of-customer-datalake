@@ -1543,7 +1543,10 @@ Service Quotas and calls no model). A model of your own (`-c customModels`) also
 **Check JSON** and **Check tools**: `POST /settings/model/test` takes `probe: basic | json |
 tools` (basic by default; json and tools for a Claude or custom model), answered
 `probe_failed` when the model replies but not as asked
-([Bring your own model](#bring-your-own-model--c-custommodels)).
+([Bring your own model](#bring-your-own-model--c-custommodels)). Check tools of a model that may serve chat (every
+Claude model, a custom model declaring `chat`) is sent through ConverseStream, as the assistant sends tools, so the
+Settings API's role holds `bedrock:InvokeModelWithResponseStream` beside `bedrock:InvokeModel` on every model it may
+test (7.66.00).
 
 | Status | Meaning | What to do |
 |---|---|---|

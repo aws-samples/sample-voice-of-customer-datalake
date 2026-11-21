@@ -157,8 +157,8 @@
       "reason": "the app's nine locales, held twice on purpose: forms_v2.py imports nothing but the standard library and two pure shared modules (portable to main as is, pinned by test_forms_v2.py), and test_forms_v2.py and test_feedback_form_handler.py hold FORM_LOCALES to frontend/public/locales and supportedLanguages"
     },
     {
-      "key": "FEEDBACK_FORM_SOURCE|FORM_DELETE_KIND::lambda/api/feedback_form_handler.py,lambda/shared/ingest_schemas.py",
-      "reason": "the same word in two vocabularies: the source id every form response is filed under (ingest_schemas.py since 7.66.00, which reserves the voc_app tag to it; feedback_form_raw.py imports it; stored on every item) and the kind of a deployment form's AUDIT#delete row (shared/delete_audit.py kinds: persona, document, feedback_form...); one may change without the other"
+      "key": "FEEDBACK_FORM_SOURCE|FORM_DELETE_KIND::lambda/api/feedback_form_handler.py,lambda/shared/app_feedback_tag.py",
+      "reason": "the same word in two vocabularies: the source id every form response is filed under (shared/app_feedback_tag.py since 7.66.00, which reserves the voc_app tag to it; ingest_schemas.py and feedback_form_raw.py import it; stored on every item) and the kind of a deployment form's AUDIT#delete row (shared/delete_audit.py kinds: persona, document, feedback_form...); one may change without the other"
     },
     {
       "key": "MICRO_CREDITS::lambda/engineering/runtime/interface.py,lambda/engineering/runtime/unit_runner.py",

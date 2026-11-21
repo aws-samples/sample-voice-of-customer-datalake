@@ -2688,9 +2688,8 @@ def _page_offset(params: Mapping[str, Any]) -> int:
 
 
 def _csv_options(params: Mapping[str, Any]) -> tuple[str, bool]:
-    """``layout`` (``detailed``, 7.55.00's and the default when a request names none, so an existing script's file is
-    unchanged; or ``familiar``, 7.61.00's, which the web app asks for) and ``ids`` (``true`` / ``false``)."""
-    layout = str(params.get('layout') or 'detailed')
+    """``layout`` (``familiar``, the default since 7.61.00, or ``detailed``) and ``ids`` (``true`` / ``false``)."""
+    layout = str(params.get('layout') or 'familiar')
     if layout not in fcsv.LAYOUTS:
         raise ValidationError(f'layout must be one of: {", ".join(fcsv.LAYOUTS)}')
     ids = str(params.get('ids') or 'false').lower()
@@ -2719,8 +2718,8 @@ def get_form_responses(form_id: str):
 
     ``include_test``: ``false`` (default), ``true``, or ``only`` (the Test tab's list). Pages of ``limit`` (default
     50, at most 100) from ``cursor`` (the previous page's ``next_cursor``); ``format=csv`` answers every matching
-    response (the newest 10,000) as a CSV file instead, in ``layout`` ``detailed`` (7.55.00's, the default) or
-    ``familiar`` (7.61.00's, the web app's Download; with ``ids=true`` a second header row of ids).
+    response (the newest 10,000) as a CSV file instead, in ``layout`` ``familiar`` (the default since 7.61.00, with
+    ``ids=true`` a second header row of ids) or ``detailed`` (7.55.00's).
     """
     workspace = _request_scope(write=True)
     params = app.current_event.query_string_parameters or {}

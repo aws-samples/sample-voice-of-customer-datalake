@@ -130,7 +130,18 @@ def test_no_edit_gives_a_review_the_reserved_micro_feedback_tag(tables, lambda_c
 
 
 def test_no_edit_takes_it_from_the_micro_feedback_s_own_review(tables, lambda_context):
-    tables[0].update_item(Key=KEY, UpdateExpression='SET tags = :t', ExpressionAttributeValues={':t': ['voc_app']})
+    tables[0].update_item(Key=KEY, UpdateExpression='SET tags = :t, source_platform = :s',
+                          ExpressionAttributeValues={':t': ['voc_app'], ':s': 'feedback_form'})
     refused, _ = put(tables, lambda_context, {'tags': ['beta']})
     kept, body = put(tables, lambda_context, {'tags': ['voc_app', 'beta']})
     assert [refused, kept, body['tags']] == [400, 200, ['voc_app', 'beta']]
+
+
+def test_a_customer_review_tagged_before_the_tag_was_reserved_may_lose_it(tables, lambda_context):
+    # (review round 3, 7.66.00: a review of any source but a form, tagged voc_app before 7.66.00 reserved it, can be
+    # untagged, so it is counted again; giving it back stays refused)
+    tables[0].update_item(Key=KEY, UpdateExpression='SET tags = :t, source_platform = :s',
+                          ExpressionAttributeValues={':t': ['voc_app', 'beta'], ':s': 'web'})
+    untagged, body = put(tables, lambda_context, {'tags': ['beta']})
+    again, _ = put(tables, lambda_context, {'tags': ['beta', 'VOC_APP']})
+    assert [untagged, body['tags'], again, _stored(tables)['tags']] == [200, ['beta'], 400, ['beta']]

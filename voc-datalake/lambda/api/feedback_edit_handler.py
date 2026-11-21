@@ -43,7 +43,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import category_access
 from shared.api import api_handler, create_api_resolver
-from shared.app_feedback_tag import RESERVED_MESSAGE, is_app_feedback, names_app_feedback
+from shared.app_feedback_tag import RESERVED_MESSAGE, refuses_tag_edit
 from shared.category_access import CategoryScope
 from shared.category_gate import scope_for_caller
 from shared.category_override import public_override
@@ -224,8 +224,9 @@ def set_feedback_dimensions(feedback_id: str):
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     new_tags = item.get('tags') if tags is None else tags
-    # (7.66.00: no edit gives or takes the in-app micro-feedback's tag, shared/app_feedback_tag.py)
-    if names_app_feedback(new_tags) != is_app_feedback(item):
+    # (7.66.00: no edit gives the in-app micro-feedback's tag, nor takes it from a form's response; a review of any
+    # other source tagged before the tag was reserved may lose it: shared/app_feedback_tag.py)
+    if refuses_tag_edit(item, new_tags):
         raise ValidationError(RESERVED_MESSAGE)
     edit = _edit(event, REASON_DIMENSIONS_EDIT)
     kwargs = _dimensions_update_kwargs(item, dimensions, sources, new_tags, edit)

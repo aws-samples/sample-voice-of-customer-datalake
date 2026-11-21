@@ -51,7 +51,7 @@ from shared.earliest_date import EARLIEST_DATE_ATTRIBUTE, earliest_date_key, par
 from shared.form_test_responses import TEST_RESPONSES_PK
 from shared.import_runs import DETAIL_SK, LIST_PK
 from shared.indexes import FEEDBACK_BY_DATE_INDEX
-from shared.metric_keys import DAILY_TOTAL_PK, metric_partition
+from shared.metric_keys import APP_FEEDBACK_SENTINEL_FIELD, DAILY_TOTAL_PK, metric_partition
 from shared.onboarding import FEEDBACK_FORM_PK
 from shared.retention import ERASURE_JOB_PREFIX
 from shared.ws_repo import (
@@ -328,9 +328,11 @@ class Source:
     # ── The counts check ────────────────────────────────────────────────────────────────────────────────────
 
     def daily_total(self) -> int:
-        """The sum of the workspace's ``daily_total`` counters (``WS#{ws}#METRIC#daily_total``, every day)."""
+        """The sum of the workspace's ``daily_total`` counters (``WS#{ws}#METRIC#daily_total``, every day): each day's
+        ``count`` and its micro-feedback items (``APP_FEEDBACK_SENTINEL_FIELD``, 7.66.00), which the export holds too,
+        though no metric counts them."""
         rows = self._aggregates.iter_query('pk', metric_partition(self.scope, DAILY_TOTAL_PK))
-        return sum(as_count(row.get('count')) for row in rows)
+        return sum(as_count(row.get('count')) + as_count(row.get(APP_FEEDBACK_SENTINEL_FIELD)) for row in rows)
 
 
 def _erasure_jobs(scope: WorkspaceScope) -> tuple[str, str | None, dict[str, str]]:

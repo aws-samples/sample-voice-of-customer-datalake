@@ -65,19 +65,23 @@ public submit route carry it.
 - **The VoC app's own feedback is never customer evidence**: an item tagged `voc_app` counts in no aggregate (no
   counter, no score in the sentiment average; tagging an item later takes its counters out, untagging it counts it;
   it keeps only its day's sentinel on the daily total's row, a field no reader sums, so a later edit on a day of
-  micro-feedback alone still finds the day). The shared item filters (`shared/item_filters.py`) leave it out by
+  micro-feedback alone still finds the day, and a workspace export's counts check adds it, since the export holds
+  these items). The shared item filters (`shared/item_filters.py`) leave it out by
   default, so every read through them does: the metric routes (filtered dashboards, categories, sentiment, sources,
-  personas, dimensions, data quality, entities, problems, GitHub, release watch), the Feedback list and search (REST,
-  MCP `feedback_search` and the assistant's search tool) and the urgent list (once a scope chose an in-app feedback
-  form its pages are read in full: the urgency index holds no tags); so does every evidence read (persona generation,
+  personas, dimensions, data quality, entities and its issue sample, problems, GitHub, release watch), the Feedback
+  list and search (REST, MCP `feedback_search` and the assistant's search tool, which reads it when the search or the
+  on-screen filters ask for the tag), a review's similar reviews (`/feedback/{id}/similar`: the Similar panel, and
+  `include_similar` of the assistant's and MCP's review lookups) and the urgent list (once a scope chose an in-app
+  feedback form its pages are read in full: the urgency index holds no tags); so does every evidence read (persona generation,
   research, PR/FAQ and PRD generation and merges, the focus groups' packs, freshness and refresh, Revise from
   comments, the morning brief's counts, urgent reviews and quotes, the release watch card, the agents' new-review
   triggers). Only a request for `tag=voc_app` reads it; the form's own Results and Report show it, and a review
   opened by its id, the Data Explorer and a workspace's export and delete read every item. `rebuild_aggregates.py`
   follows the same rule.
 - **`voc_app` is reserved**: only a form made from the In-app micro-feedback template carries it. Any other form's
-  save, a scraper's or connector's saved labels and a source profile refuse it (400), a manual tag edit can neither
-  give it nor take it (`PUT /feedback/{id}/dimensions`), and every producer other than a form (a CSV or pasted import, a
+  save, a scraper's or connector's saved labels and a source profile refuse it (400), a manual tag edit
+  (`PUT /feedback/{id}/dimensions`) never gives it and never takes it from a form's response (a review of any other
+  source may lose it), and every producer other than a form (a CSV or pasted import, a
   plugin, a webhook, an inbox) has it dropped from its messages, never refusing the review.
 - The onboarding buddy's first-run signals (`feedback_present`, `feedback_form_configured`) are the request's
   workspace's: `GET|PUT /settings/my-onboarding` now resolve `X-Workspace-Id` (the one 404 for a non-member), and a
@@ -102,6 +106,10 @@ public submit route carry it.
   (90 days) or `scripts/retention/rebuild_aggregates.py` recomputes them; a form any team tagged `voc_app` for its own
   use stops counting in the dashboards, and its next save is refused until the tag is removed (only the answers it
   receives after that are counted again: the items it wrote keep the tag), so check that the tag is free first.
+- A customer review that a CSV import, a plugin or a person tagged `voc_app` before this release drops out of the
+  dashboards and every evidence read: remove the tag from it (the review's dimensions and tags editor, `PUT
+  /feedback/{id}/dimensions`; find it with `tag=voc_app`), which this release allows on any review that is not a form's response, and it is
+  counted again. Adding the tag stays refused.
 
 ## [7.65.00] - 2026-11-21
 
@@ -145,9 +153,9 @@ policy or Lambda.
   the model a surface resolves to, a **Your model** badge (and EU residency), where it runs ("Runs in eu-central-1 ·
   imported model"), its price, the note that the prompts are tuned for Claude, the cold-start note of an imported
   model, and **Check JSON** / **Check tools** beside Test: `POST /settings/model/test` takes `probe: basic | json |
-  tools` (the answer must be the object `{"ok": true}`, or a call of the probe's one tool, streamed for the chat
-  surface as the assistant calls it; `probe_failed` otherwise),
-  for a Claude or a custom model; the image and web search models take basic only. `GET /settings/model` lists
+  tools` (the answer must be the object `{"ok": true}`, or a call of the probe's one tool, streamed through
+  ConverseStream for a model that may serve chat, as the assistant calls it, so the Settings role may stream every
+  model it may invoke; `probe_failed` otherwise), for a Claude or a custom model; the image and web search models take basic only. `GET /settings/model` lists
   `custom_models`.
 - **Metering**: the cost rollup and the cost page price a custom model's tokens from its registry price
   (`shared/model_prices.py`, the cache tokens at the input price), so it is never an unpriced line (an imported
@@ -187,11 +195,12 @@ reference, never feedback or evidence. No new API Gateway resource (the API stac
 ### Added
 
 - **The Focus groups tab** (`/projects/{id}/focus-groups`): choose 2–6 personas, a topic (at most 2,000 characters),
-  1, 2 or 3 rounds and up to 3 project documents and 3 Documents Library items they read; the cost before the start
-  (the model calls on the assistant's model and roughly the tokens: 6 personas × 2 rounds is 14 calls, about 45,000
-  input and 8,000 output tokens, plus what every persona call reads of the chosen documents, within 30,000
-  characters, and Library items, within 12,000, counted from their sizes); **Start focus group** runs it in the assistant, on a new conversation; the saved focus
-  groups are listed and open on the Documents tab.
+  1, 2 or 3 rounds and up to 3 project documents and 3 Documents Library items they read; the cost before the start:
+  the model calls on the assistant's model (personas × rounds, plus one moderator call before each round after the
+  first, plus one synthesis: 6 personas × 2 rounds is 14 calls) and roughly the tokens (about 45,000 input and 8,000
+  output for those 14, plus what every persona call reads of the chosen documents, within 30,000 characters, and
+  Library items, within 12,000, counted from their sizes); **Start focus group** runs it in the assistant, on a new
+  conversation; the saved focus groups are listed and open on the Documents tab.
 - **How a focus group runs** (`POST /chat/stream` with `forwardedProps.focusGroup`, a new schema in the stream
   contract, run by `runtime/focus-group.ts` instead of the model's own turn): round 1 is independent; from round 2 the
   moderator asks one follow-up and each persona reads an anonymised digest of the others' last answers (no names, no
@@ -200,8 +209,10 @@ reference, never feedback or evidence. No new API Gateway resource (the API stac
   review, a synthesis card labelled **Synthetic** with **Save focus group**, Stop between batches and Regenerate with
   the same configuration (stored with the conversation, `metadata.voc.focusGroup`).
 - **The shared persona grounding** (`lambda/shared/persona_grounding.py`, also for the Validate phase and the voice
-  personas next): per persona its refreshed reviews first (newest refresh first, so a refresh always reaches the
-  pack), then its cited reviews (`evidence_feedback_ids`), and up to 8 fresh reviews since it was generated that match
+  personas next): per persona its refreshed reviews (newest refresh first) and its cited ones
+  (`evidence_feedback_ids`) taken in turn, at most 12 with at least half cited while any is left (a refresh always
+  reaches the pack, and never pushes out the reviews it was generated from), and up to 8 fresh reviews since it was
+  generated that match
   its categories within the project's filters, ranked by the topic with the similarity ranker's own tokens
   (`shared/feedback_similarity.py`: title, problem summary and text). Never the VoC app's own micro-feedback
   (`voc_app`, 7.66.00). Every
@@ -234,8 +245,8 @@ reference, never feedback or evidence. No new API Gateway resource (the API stac
 - No new AWS resource, stack, route resource or flag: the evidence routes ride the projects API's
   `/projects/{proxy+}`, a focus group `/chat/stream`; the projects role already reads `voc-feedback`. The stream's
   read-only invoker allows the one new read POST (`/projects/{project_id}/personas/evidence-pack`).
-- A focus group's model calls are the chat surface's: personas × rounds, one moderator call before rounds 2 and 3,
-  and one synthesis (at most 21 for 6 personas and 3 rounds), shown before the start.
+- A focus group's model calls are the chat surface's, by the formula under Added: at most 21 (6 personas, 3 rounds),
+  shown before the start.
 - The global MCP server gets no focus group tools: its `tools/list` budget is full (TENETS.md tenet 4); an MCP client
   reads a saved focus group with `documents_get`.
 
@@ -454,7 +465,7 @@ empty, a publish guard for a placeholder respondents would see as written, and a
   link builder now takes a value for each hidden field (into the link, the iframe snippet and the script embed's
   `hidden`) and warns about a recalled hidden field the copied link leaves empty.
 - **A Download button on Results** (its menu: the detailed CSV, or one with a row of ids), and the CSV's **familiar**
-  layout (`layout=familiar`, the button's default; the API's stays `detailed`): a UTF-8
+  layout (`layout=familiar`, the new default, which the web app's Download asks for): a UTF-8
   BOM, one header row (`Submission ID`, `Submitted On` in ISO 8601 UTC, `Locale`, `Tags`, the hidden fields, one
   column per question by its headline, a matrix one per row, a contact question one per field), choices joined with
   `;` and `Other: …` in the form's language, `ids=true` for a second row of ids, and the file named
@@ -468,9 +479,8 @@ empty, a publish guard for a placeholder respondents would see as written, and a
   with it. Turning a form Off always works; the builder lists the same problems, and Publish waits for them.
 - **Results and exports show a headline's placeholders as `[id]`**, never a respondent's value: each question's
   `headline` in Results, the CSV's headers, and the text the processor reads.
-- **`format=csv` keeps 7.55.00's file by default** (`layout=detailed`, unchanged: a matrix answer there is
-  `Row: Column` pairs); the web app's Download asks for `layout=familiar` (7.66.00: the API's default had become the
-  familiar layout, which broke a script's file).
+- **`format=csv` answers the familiar layout by default**; 7.55.00's file is `layout=detailed`, unchanged (a matrix
+  answer there is `Row: Column` pairs).
 
 ### Fixed
 
@@ -489,7 +499,8 @@ empty, a publish guard for a placeholder respondents would see as written, and a
 
 ### Upgrade notes
 
-- **Scripts that read the responses CSV** get 7.55.00's file as before; add `layout=familiar` for the new one.
+- **Scripts that read the responses CSV**: `GET …/responses?format=csv` now answers the familiar layout (a BOM and
+  other columns). A script that reads 7.55.00's layout passes `layout=detailed` to keep its file exactly as before.
 - **A live form saved before 7.61.00 whose text happens to hold `{{…}}`** keeps serving (the widget now shows an
   unknown placeholder as nothing, or its fallback), but cannot be saved live or re-enabled until the text is fixed.
   Turning it Off always works.

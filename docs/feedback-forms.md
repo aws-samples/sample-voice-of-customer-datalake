@@ -1084,7 +1084,7 @@ language, ending_id, answers, hidden, path, sentiment?}], next_cursor}`, 50 per 
 responses (the newest 10,000) as a CSV file, the Results tab's **Download**, in one of two layouts
 (`layout=familiar|detailed`, 7.61.00):
 
-- **`familiar`** (7.61.00; the web app's Download asks for it): the file Excel and Sheets open as they are. It starts with a UTF-8 BOM
+- **`familiar`** (the default since 7.61.00): the file Excel and Sheets open as they are. It starts with a UTF-8 BOM
   (accents intact) and has one header row: `Submission ID`, `Submitted On` (ISO 8601, UTC: `2026-11-20T09:30:00Z`),
   `Locale`, `Tags` (the form's tags, and `test` for a test response, joined with `;`), one column per hidden field
   (its label, else its id), then one per question by its primary-language headline (a placeholder shown as `[id]`):
@@ -1095,11 +1095,10 @@ responses (the newest 10,000) as a CSV file, the Results tab's **Download**, in 
   (`submission_id`, `submitted_on`, `locale`, `tags`, `hidden.<id>`, `<question id>`, `<question id>.<row code>`,
   `<question id>.<field>`). The file is named `<form-name-slug>-responses-<yyyy-mm-dd>.csv` (the date in UTC; the
   form id when the name gives no slug).
-- **`detailed`** (the default: a request that names no `layout` gets it): 7.55.00's layout, unchanged for the
-  scripts that read it (no BOM): the time, ids, `is_test`,
+- **`detailed`**: 7.55.00's layout, unchanged for the scripts that read it (no BOM): the time, ids, `is_test`,
   revision, language and ending, one column per question (headlines in the first header row, ids in the second;
   choices by their labels; a matrix as `row: column` pairs) and one per hidden field, named `<form id>-responses.csv`.
-  A script that read `format=csv` before 7.61.00 keeps the same file without a change.
+  A script that read `format=csv` before 7.61.00 asks for `layout=detailed`.
 
 The Results tab's **Download** takes the familiar file with the view's filters; its menu also offers "Detailed CSV
 (for scripts)" and "CSV with a row of ids". A browser cannot read the answer's `Content-Disposition` across origins

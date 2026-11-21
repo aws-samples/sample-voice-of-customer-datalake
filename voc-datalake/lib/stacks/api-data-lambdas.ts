@@ -411,7 +411,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // Assist jobs (category generation):
   // the job row in the jobs table (shared/assist_jobs.py).
   jobsTable.grant(settingsRole, ...ASSIST_JOB_TABLE_ACTIONS);
-  grantClaudeModels(settingsRole, 'invoke');
+  // (stream: Check tools on the chat surface calls ConverseStream, as the assistant does: shared/model_capacity.py
+  // _streamed_tool_call, 7.66.00; the custom models' statements ride the same variant's policies)
+  grantClaudeModels(settingsRole, 'stream');
   // POST /settings/model/test and GET /settings/model/capacity read the account's
   // Bedrock tokens-per-minute quotas (shared/model_capacity.py). Read-only, and
   // ListServiceQuotas supports no resource-level permission, hence `*`.

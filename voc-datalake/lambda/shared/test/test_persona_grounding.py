@@ -163,6 +163,23 @@ class TestThePack:
         stored = {item: origin for item, origin in _origins(_pack(tables)).items() if origin != 'fresh'}
         assert [len(stored), stored.get('fresh_courier')] == [grounding.MAX_STORED_EVIDENCE, 'refreshed']
 
+    def test_three_refreshes_never_push_out_the_reviews_it_was_generated_from(self, tables):
+        # (review round 3, 7.66.00: 13 cited reviews and three refreshes of 8: the refreshed and the cited are taken
+        # in turn, newest refresh first, and at least half of the stored evidence stays cited)
+        projects, feedback = tables
+        cited = [f'many{n:02d}' for n in range(13)]
+        refreshes = [[f'r{k}_{n}' for n in range(8)] for k in range(3)]
+        for n, feedback_id in enumerate([*cited, *(one for refresh in refreshes for one in refresh)]):
+            feedback.put_item(Item=_review(feedback_id, 20 + n))
+        projects.put_item(Item=_persona(evidence_feedback_ids=cited, evidence_updates=[
+            {'at': GENERATED, 'by': {'sub': 'u1', 'kind': 'user'}, 'reason': 'manual_refresh', 'feedback_ids': ids}
+            for ids in refreshes]))
+        stored = [(item, origin) for item, origin in _origins(_pack(tables, limit=0)).items()]
+        origins = [origin for _, origin in stored]
+        assert len(stored) == grounding.MAX_STORED_EVIDENCE
+        assert origins.count('cited') >= grounding.MAX_STORED_EVIDENCE // 2
+        assert stored[:2] == [('r2_0', 'refreshed'), ('many00', 'cited')]   # (the newest refresh first, then in turn)
+
     def test_the_ranking_ignores_the_stop_words_and_reads_the_title_and_summary_too(self, tables):
         # (the similarity ranker's tokens, shared/feedback_similarity.py: "the" and "was" match nothing)
         _, feedback = tables

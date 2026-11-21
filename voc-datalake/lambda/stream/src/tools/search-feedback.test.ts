@@ -6,6 +6,7 @@ import { DAY_SCAN_CONCURRENCY, MAX_LOOKBACK_DAYS, MAX_SAMPLE_WALK_DAYS } from '.
 import { FEEDBACK_BY_ID_INDEX } from '../indexes.js';
 import { nth } from '../lib/nth-fixtures.js';
 import { executeSearchFeedback } from './search-feedback.js';
+import { NO_FLOOR } from '../assistant/tools/server/feedback-floor.js';
 import {
   ALL_CATEGORIES,
   NO_PROSE_GAPS,
@@ -114,6 +115,20 @@ describe('executeSearchFeedback', () => {
 
     expect([plain.items.map((item) => item.feedback_id), asked.items.map((item) => item.feedback_id ?? '').sort((a, b) => a.localeCompare(b))])
       .toStrictEqual([['cust123'], ['app123', 'spaced123']]);
+  });
+
+  it('reads the micro-feedback when the user\'s on-screen floor is its tag, as for the search\'s own tag (7.66.00)', async () => {
+    const items = [
+      makeFeedbackItem({ feedback_id: 'cust123', tags: ['beta'] }),
+      makeFeedbackItem({ feedback_id: 'app123', tags: ['voc_app'] }),
+    ];
+    const floor = { ...NO_FLOOR, lists: { tag: ['VOC_APP'] } };
+
+    const onScreen = await runSearch(createMockDocClient([items]), {}, { days: 7, floor });
+    const otherTag = await runSearch(createMockDocClient([items]), {}, { days: 7, floor: { ...NO_FLOOR, lists: { tag: ['beta'] } } });
+
+    expect([onScreen.items.map((item) => item.feedback_id), otherTag.items.map((item) => item.feedback_id)])
+      .toStrictEqual([['app123'], ['cust123']]);
   });
 
   it('applies sentiment filter from tool input', async () => {

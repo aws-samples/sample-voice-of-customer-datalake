@@ -84,7 +84,8 @@ customer metric and never stand as a customer's evidence:
 - **The aggregates.** The aggregator counts no item tagged `voc_app` (`lambda/shared/app_feedback_tag.py`). Such an
   item adds no daily total, source, category, sentiment, persona, dimension, tag, channel or usefulness counter, and
   no score to the sentiment average; it keeps only its day's sentinel (a field of the daily total's row that no
-  reader sums), so a later edit on a day of micro-feedback alone still finds the day.
+  reader sums), so a later edit on a day of micro-feedback alone still finds the day. A workspace export's counts
+  check adds that field to the day's `count`, since the export holds these items like any review.
 - **Every read through the shared item filters** (`lambda/shared/item_filters.py`, whose default leaves these items
   out): the metric routes (filtered dashboards, categories, sentiment, sources, personas, dimensions, data quality,
   entities, problems, GitHub, release watch), the Feedback list and search (the REST routes, MCP `feedback_search`
@@ -101,8 +102,9 @@ form's own Results, Report, responses and CSV show them (they read the form's ow
 review opened by its id, the Data Explorer, and a workspace's export and delete, which read every item.
 
 **The tag is reserved.** Only a form made from the In-app micro-feedback template carries `voc_app`: any other form,
-a scraper's or connector's saved labels and a source profile refuse it (400), a manual tag edit can neither give it
-to a review nor take it from one, and every producer other than a form (a CSV or pasted import, a plugin, a webhook,
+a scraper's or connector's saved labels and a source profile refuse it (400), a manual tag edit never gives it to a
+review and never takes it from a form's response (a review of any other source tagged `voc_app` before 7.66.00
+reserved it may lose it, and is counted again), and every producer other than a form (a CSV or pasted import, a plugin, a webhook,
 an inbox) has it dropped from its messages, never refusing the review. So no customer's review is left out of the
 dashboards by a tag.
 

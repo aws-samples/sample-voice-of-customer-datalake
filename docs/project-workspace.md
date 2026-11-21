@@ -276,8 +276,10 @@ there is no synthesis. **Regenerate** runs the same group again (its stored conf
 `lambda/shared/persona_grounding.py`, one module for every surface that lets a project's personas speak (the
 focus groups now; the Validate phase and the voice personas next). Per persona:
 
-- **its stored evidence**: the reviews its `supporting_evidence` cites (`evidence_feedback_ids`, first cited first)
-  and those its evidence refreshes added (`evidence_updates`, newest first), at most 12;
+- **its stored evidence**: the reviews its evidence refreshes added (`evidence_updates`, newest refresh first) and
+  those its `supporting_evidence` cites (`evidence_feedback_ids`, first cited first), taken in turn, a refreshed one
+  first, at most 12, of which at least half are cited while any cited one is left (so a refresh always reaches the
+  pack, and two or three refreshes never push out the reviews it was generated from);
 - **fresh retrieval**: the reviews imported since the persona was generated that match it and that it does not hold
   yet (neither its evidence nor the reviews it was written from), at most 8, those that share the most words with the
   topic first, then the newest. "Match" is the persona's categories (the categories of

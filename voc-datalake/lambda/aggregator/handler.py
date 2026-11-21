@@ -272,6 +272,7 @@ from shared.ingest_tables import table_view, update_with_key
 # Shared module imports
 from shared.logging import logger, metrics, tracer
 from shared.metric_keys import (
+    APP_FEEDBACK_SENTINEL_FIELD,
     CATEGORY_PREFIX,
     CHANNEL_PREFIX,
     DAILY_TOTAL_PK,
@@ -458,9 +459,9 @@ def _check_transaction(items: 'list[TransactWriteItemTypeDef]') -> None:
 # PERSONA_FIELD is named: a second unmarked copy of one of these strings is what makes an
 # argument elsewhere true or false.
 #
-# The field of the daily total's row a VoC app micro-feedback item adds to (7.66.00, `counter_dimensions`): its day's
-# sentinel, as every item writes one, but never the `count` a reader sums.
-APP_FEEDBACK_SENTINEL_FIELD = 'app_feedback_items'
+# APP_FEEDBACK_SENTINEL_FIELD (shared.metric_keys) is the field of the daily total's row a VoC app micro-feedback item
+# adds to (7.66.00, `counter_dimensions`): its day's sentinel, as every item writes one, but never the `count` a
+# reader sums.
 # DAILY_TOTAL_PK is the sentinel `_day_has_aggregates` reads, and that read is only
 # a sound test of "is this day still here?" because this is the ONE counter every
 # item writes unconditionally — see that docstring. Spelling it twice would leave a
