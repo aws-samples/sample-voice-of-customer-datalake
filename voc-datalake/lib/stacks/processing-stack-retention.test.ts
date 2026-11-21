@@ -2,7 +2,7 @@
  * voc-retention — the per-source retention / erasure worker (retention-worker.ts,
  * docs/source-policies.md). The one role allowed to delete customer data, so its
  * grants are pinned EXACTLY: any widening (a Put on feedback, a bucket-wide delete,
- * a delete on aggregates) fails here.
+ * a delete on aggregates outside the test responses' own partition) fails here.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Template } from 'aws-cdk-lib/assertions';
@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { itemAt } from '../test-support/guards';
-import { allowedActions, roleStatements } from '../test-support/iam-statements';
+import { IamPolicySchema, allowedActions, isAttachedToRole, roleStatements, statementActions } from '../test-support/iam-statements';
 import { byCodeUnit } from '../utils/compare';
 import { expectSelfInvokeOnly, findWorkerFunction } from '../test-support/worker-function';
 
@@ -52,11 +52,39 @@ describe('voc-retention worker', () => {
       .toStrictEqual(['dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan']);
   });
 
-  it('holds exactly Get/Put/Update/Query plus the tombstone batches on aggregates — never a delete', () => {
+  it('holds exactly Get/Put/Update/Query plus the tombstone batches on aggregates, and a delete of test responses only', () => {
     expect(allowedActions(statements(), 'dynamodb:', 'Aggregates')).toStrictEqual([
-      'dynamodb:BatchGetItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
+      'dynamodb:BatchGetItem', 'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
       'dynamodb:Query', 'dynamodb:UpdateItem',
     ]);
+  });
+
+  /** Every Allow of the role (its inline AND managed policies) that can delete on aggregates. */
+  const aggregatesDeletes = () => {
+    const role = worker().Role['Fn::GetAtt'][0];
+    return [...Object.values(template.findResources('AWS::IAM::Policy')),
+      ...Object.values(template.findResources('AWS::IAM::ManagedPolicy'))]
+      .map((resource) => IamPolicySchema.parse(resource).Properties)
+      .filter((policy) => isAttachedToRole(policy, role))
+      .flatMap((policy) => policy.PolicyDocument.Statement)
+      .filter((statement) => (statement.Effect ?? 'Allow') === 'Allow'
+        && JSON.stringify(statement.Resource).includes('Aggregates')
+        && statementActions(statement).some((a) => ['dynamodb:DeleteItem', 'dynamodb:BatchWriteItem', 'dynamodb:*'].includes(a)));
+  };
+
+  it('deletes on aggregates only in the test responses\' own partition, FEEDBACK_FORM_TEST (form_tests.py)', () => {
+    // One statement, DeleteItem alone (never a batch), pinned to exactly that partition.
+    expect(aggregatesDeletes().map((statement) => [statementActions(statement), statement.Condition])).toStrictEqual([
+      [['dynamodb:DeleteItem'], { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['FEEDBACK_FORM_TEST'] } }],
+    ]);
+  });
+
+  it('cannot delete a form\'s definition, revision or funnel row, nor any other aggregates row', () => {
+    // No delete without a partition pin, and none that names the forms partition (FEEDBACK_FORM: FORM#, FORMREV#,
+    // FORMFUNNEL#, FORMLEFT#) or a pattern (a `*` would reach it): only the one exact partition.
+    const pins = aggregatesDeletes().map((statement) => JSON.stringify(statement.Condition ?? null));
+    expect(pins.filter((pin) => pin === 'null')).toStrictEqual([]);
+    expect(pins.filter((pin) => pin.includes('"FEEDBACK_FORM"') || pin.includes('*'))).toStrictEqual([]);
   });
 
   it('holds exactly Scan/DeleteItem on radar, plus the version bump pinned to SETTINGS#radar', () => {

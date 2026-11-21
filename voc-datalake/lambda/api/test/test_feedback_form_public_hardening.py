@@ -115,6 +115,7 @@ class TestIframePage:
             'formId': 'deadbeef',
             'configEndpoint': '/feedback-forms/deadbeef/config',
             'submitEndpoint': '/feedback-forms/deadbeef/submit',
+            'eventsEndpoint': '/feedback-forms/deadbeef/events',
         }
         table.get_item.assert_called_once_with(Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#deadbeef'})
 
@@ -296,24 +297,28 @@ class TestRatingAndNonFiniteNumbers:
 
 
 class TestPublicConfigRatingMax:
+    """A version 1 form's stored ``rating_max`` (a v1 PUT stored whatever JSON it was sent) is served as the migrated
+    rating question's ``range``: never a 500, an odd maximum moved up to the next range schema v2 has."""
+
     @staticmethod
-    def _served_rating_max(feedback_form_handler, api_gateway_event, lambda_context, table, stored):
+    def _served_range(feedback_form_handler, api_gateway_event, lambda_context, table, stored):
         table.get_item.return_value = {'Item': {'form_id': 'deadbeef', 'enabled': True, 'rating_max': stored}}
         response, payload = call_route(
             feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='GET', path='/feedback-forms/deadbeef/config', path_params={'form_id': 'deadbeef'},
         )
         assert response['statusCode'] == 200, payload
-        return payload['config']['rating_max']
+        [rating] = [q for q in payload['config']['questions'] if q['type'] == 'rating']
+        return rating['range']
 
     @pytest.mark.parametrize(('stored', 'served'), [
         ('abc', 5), ([3], 5), ({'x': 1}, 5), (True, 5), (None, 5), ('NaN', 5), ('Infinity', 5),
-        (0, 1), (-3, 1), (99, 10), ('7', 7), (10, 10), (Decimal('8'), 8),   # DynamoDB returns Decimal
+        (0, 3), (-3, 3), (99, 10), ('7', 7), (10, 10), (Decimal('8'), 10),   # DynamoDB returns Decimal
     ])
     @patch('feedback_form_handler.aggregates_table')
     def test_a_stored_rating_max_is_clamped_and_never_500s(
         self, table, feedback_form_handler, api_gateway_event, lambda_context, stored, served
     ):
-        assert self._served_rating_max(
+        assert self._served_range(
             feedback_form_handler, api_gateway_event, lambda_context, table, stored,
         ) == served

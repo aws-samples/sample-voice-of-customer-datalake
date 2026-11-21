@@ -36,6 +36,7 @@ const DRAFT4 = 'http://json-schema.org/draft-04/schema#';
 const PINNED_MODELS = join(ROOT, 'schemas', 'public-body-models.json');
 
 const VALIDATED_ROUTES: Record<string, string> = {
+  'POST /feedback-forms/{form_id}/events': 'FeedbackFormEvent',
   'POST /feedback-forms/{form_id}/submit': 'FeedbackFormSubmission',
   'POST /voting-sessions/{session_id}/submit': 'BallotSubmission',
 };
@@ -87,7 +88,7 @@ describe('the request validator', () => {
     expect(validatedRoutes(synth())).toStrictEqual(VALIDATED_ROUTES);
   });
 
-  it('skipFeedbackFormItemRoutes: the widget route is absent, the other two keep their model', () => {
+  it('skipFeedbackFormItemRoutes: the widget routes are absent, the ballot keeps its model', () => {
     const rest = Object.fromEntries(Object.entries(VALIDATED_ROUTES)
       .filter(([route]) => !route.startsWith('POST /feedback-forms/')));
     expect(validatedRoutes(apiTemplateFlagged())).toStrictEqual(rest);
@@ -105,9 +106,23 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
 
   it('feedback form submission', () => {
     expect(schemas().FeedbackFormSubmission).toStrictEqual({
-      $schema: DRAFT4, title: 'FeedbackFormSubmission', type: 'object', required: ['text'],
+      $schema: DRAFT4, title: 'FeedbackFormSubmission', type: 'object',
       properties: {
         text: { type: 'string', minLength: 1 },
+        answers: {
+          type: 'object', maxProperties: 30, patternProperties: { '^q_[a-z0-9_]{1,40}$': {} }, additionalProperties: false,
+        },
+        hidden: {
+          type: ['object', 'null'], maxProperties: 20,
+          patternProperties: { '^[a-z][a-z0-9_]{0,39}$': { type: ['string', 'null'] } }, additionalProperties: false,
+        },
+        form_revision: { type: ['integer', 'null'], minimum: 1 },
+        language: { type: ['string', 'null'], pattern: '^(en|es|fr|de|pt|ja|zh|ko|pl)$' },
+        ending_id: { type: ['string', 'null'], maxLength: 44 },
+        session: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_-]{8,64}$' },
+        channel: { type: ['string', 'null'], pattern: '^(link|iframe|script)$' },
+        form_id: { type: ['string', 'null'], maxLength: 64 },
+        test: { type: ['string', 'null'], maxLength: 64 },
         rating: { type: ['number', 'null'], minimum: 1, maximum: 10 },
         name: { type: ['string', 'null'], maxLength: 200 },
         email: { type: ['string', 'null'], maxLength: 254 },
@@ -121,6 +136,24 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
     });
   });
 
+  it('feedback form event: strict, the beacons only (7.04.00)', () => {
+    expect(schemas().FeedbackFormEvent).toStrictEqual({
+      $schema: DRAFT4, title: 'FeedbackFormEvent', type: 'object', required: ['event'], additionalProperties: false,
+      properties: {
+        event: {
+          type: 'object', required: ['kind', 'session'], additionalProperties: false,
+          properties: {
+            kind: { type: 'string', enum: ['left', 'opened'] },
+            question_id: { type: 'string', pattern: '^q_[a-z0-9_]{1,40}$' },
+            session: { type: 'string', pattern: '^[A-Za-z0-9_-]{8,64}$' },
+            revision: { type: 'integer', minimum: 1 },
+          },
+        },
+        test: { type: ['string', 'null'], maxLength: 64 },
+      },
+    });
+  });
+
   it('ballot submission', () => {
     expect(schemas().BallotSubmission).toStrictEqual({
       $schema: DRAFT4, title: 'BallotSubmission', type: 'object', properties: { notes: { type: ['string', 'null'] } },
@@ -130,26 +163,45 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
   // lambda/api/test/test_public_body_models_parity.py runs every boundary body through the handlers AND these
   // models (draft-4 validator), from this pinned copy: a deliberate model change updates the JSON file too (the
   // failure prints the difference).
+  // CloudFormation refuses a null value anywhere in a template ("'null' values are not allowed in templates": a
+  // VocApiStack deploy with null in an `enum`): a nullable field says so with `type`, never with null in an `enum`.
+  it('no model holds a null value, which CloudFormation refuses in a template', () => {
+    const nulls: string[] = [];
+    const walk = (value: unknown, path: string): void => {
+      if (value === null) nulls.push(path);
+      else if (Array.isArray(value)) value.forEach((item, index) => walk(item, `${path}/${index}`));
+      else if (typeof value === 'object') Object.entries(value).forEach(([key, item]) => walk(item, `${path}/${key}`));
+    };
+    walk(schemas(), '');
+    expect(nulls).toStrictEqual([]);
+  });
+
   it('the parity test reads exactly the synthesized models (schemas/public-body-models.json)', () => {
     expect(JSON.parse(readFileSync(PINNED_MODELS, 'utf8'))).toStrictEqual(schemas());
   });
 
-  it('no model refuses extra fields (widget participant_token, pin bodies)', () => {
-    for (const schema of Object.values(schemas())) {
+  it('no model refuses extra fields (widget participant_token, pin bodies), but the beacons\' own', () => {
+    // The events model is strict on purpose: it is new, and no older widget sends anything else there.
+    const lenient = Object.entries(schemas()).filter(([model]) => model !== 'FeedbackFormEvent').map(([, schema]) => schema);
+    expect(lenient).toHaveLength(2);
+    for (const schema of lenient) {
       expect(z.object({ additionalProperties: z.unknown().optional() }).parse(schema).additionalProperties).toBeUndefined();
     }
   });
 
-  it('every field the embeddable widget sends is declared, and only `text` is required', () => {
+  // 7.04.00 rewrites the widget's payload against schema version 2 (`answers`, `hidden`, `form_revision`, …):
+  // the check below reads the version 1 literal until then.
+  it('every field the embeddable widget sends is declared, and nothing is required', () => {
     const widget = readFileSync(join(ROOT, 'lambda', 'api', 'static', 'feedback-widget.js'), 'utf8');
     // The widget's flat payload literal; a nested object in it would end the match early, so the list is pinned.
     const payload = /var payload = \{([^}]*)\}/.exec(widget)?.[1] ?? '';
     expect(payload, 'feedback-widget.js: no flat `var payload = {…}` literal').not.toBe('');
     const fields = payload.split(',').map((entry) => entry.split(':')[0]?.trim());
     expect(fields).toStrictEqual(['text', 'rating', 'name', 'email', 'page_url']);
-    const schema = z.object({ required: z.array(z.string()), properties: z.record(z.string(), z.unknown()) })
+    const schema = z.object({ required: z.array(z.string()).optional(), properties: z.record(z.string(), z.unknown()) })
       .parse(schemas().FeedbackFormSubmission);
-    expect(schema.required).toStrictEqual(['text']);
+    // A version 2 response has no `text` (its answers make the item's text), so the gateway requires nothing.
+    expect(schema.required).toBeUndefined();
     for (const field of fields) expect(Object.keys(schema.properties)).toContain(field);
   });
 });

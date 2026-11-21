@@ -1,16 +1,15 @@
 /**
  * @fileoverview A feedback form's collected figures: the submission count and
- * the average rating (and, in the panel, how many submissions were rated).
+ * the average rating.
  *
- * One place for what the Feedback Forms card, the Prioritization evidence panel
- * and the submissions dialog each used to build by hand: counts are grouped in
+ * One place for what the Prioritization evidence panel (and, before 7.04.00, the
+ * form card and the submissions dialog) built by hand: counts are grouped in
  * the app language ("26,622", de "26.622") and the average carries one decimal
  * with the locale's mark ("4.5", pl "4,5"). Not loaded and "no ratings" both
  * read as an em dash, never as 0 — a 0 would look like unanimously bad feedback.
  *
- * - `compact`: two icon-chip figures, rendered as siblings so the caller's grid
- *   lays them out next to its own controls.
- * - `panel`: three centred figures in their own band (the dialog header).
+ * Two icon-chip figures, rendered as siblings so the caller's grid lays them out
+ * next to its own controls.
  *
  * The labels come from the caller, already translated in its own namespace (the
  * submissions label pluralised on the count, "1 Submission").
@@ -32,12 +31,9 @@ const DASH = '—'
 interface FormStatsLabels {
   readonly submissions: string
   readonly avgRating: string
-  /** The panel's third figure, the rated-submission count. */
-  readonly rated?: string
 }
 
 interface FormStatsFiguresProps {
-  readonly variant: 'compact' | 'panel'
   /** Null / undefined while loading or when the read gave nothing usable. */
   readonly stats: FormStats | null | undefined
   readonly labels: FormStatsLabels
@@ -50,12 +46,11 @@ function FigureValue({ value, busy }: Readonly<{ value: string; busy: boolean }>
   return busy ? <span className="skeleton inline-block h-6 w-10 align-middle" aria-hidden="true" /> : <>{value}</>
 }
 
-/** The three figures as display strings in `language`. */
+/** The two figures as display strings in `language`. */
 function formStatsText(stats: FormStats | null | undefined, language: string) {
   return {
     submissions: stats ? formatCount(stats.total_submissions, language) : DASH,
     avgRating: typeof stats?.avg_rating === 'number' ? formatDecimal(stats.avg_rating, language, 1) : DASH,
-    rated: stats ? formatCount(stats.rating_count, language) : DASH,
   }
 }
 
@@ -71,27 +66,9 @@ function CompactFigure({ icon, value, label, busy }: Readonly<{ icon: ReactNode;
   )
 }
 
-function PanelFigure({ value, label, busy }: Readonly<{ value: string; label: string; busy: boolean }>): ReactElement {
-  return (
-    <div className="text-center" aria-busy={busy}>
-      <p className="text-2xl font-bold font-mono text-text-strong"><FigureValue value={value} busy={busy} /></p>
-      <p className="text-xs font-medium uppercase tracking-[.04em] text-muted">{label}</p>
-    </div>
-  )
-}
-
-export default function FormStatsFigures({ variant, stats, labels, busy = false }: FormStatsFiguresProps): ReactElement {
+export default function FormStatsFigures({ stats, labels, busy = false }: FormStatsFiguresProps): ReactElement {
   const { i18n } = useTranslation()
   const text = formStatsText(stats, i18n.language)
-  if (variant === 'panel') {
-    return (
-      <div className="grid grid-cols-3 gap-2 sm:gap-4 px-4 py-3 sm:p-4 bg-bg-accent border-b border-border">
-        <PanelFigure value={text.submissions} label={labels.submissions} busy={busy} />
-        <PanelFigure value={text.avgRating} label={labels.avgRating} busy={busy} />
-        {labels.rated === undefined ? null : <PanelFigure value={text.rated} label={labels.rated} busy={busy} />}
-      </div>
-    )
-  }
   // The star keeps the rating colour the stars themselves are drawn in: it IS a rating.
   return (
     <>

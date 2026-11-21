@@ -28,6 +28,13 @@ const VALID: Record<string, Record<string, unknown>> = {
   generate_personas: { persona_count: 3 },
   merge_documents: { output_type: 'prd', title: 'Merged', instructions: 'Combine', document_ids: ['d1', 'd2'] },
   update_feedback_form: { form_id: 'abc12345', updates: { enabled: true, title: 'Tell us' } },
+  draft_feedback_form: {
+    form: {
+      name: 'Old UI', language: 'en',
+      questions: [{ id: 'q_why', type: 'open_text', headline: { en: 'Why?' }, required: true }],
+      endings: [{ id: 'end_thanks', title: { en: 'Thanks' } }],
+    },
+  },
   run_scraper: { scraper_id: 'scraper_1' },
   save_brand_settings: { brand_name: 'Acme', hashtags: ['#acme'] },
   ...NEW_TOOL_VALID_ARGS,
@@ -170,12 +177,24 @@ describe('updates allowlists', () => {
   const validateFormUpdates = (updates: Record<string, unknown>) => tool('update_feedback_form')
     .validate({ form_id: 'f1', updates }, dashboard).ok;
 
-  it('update_feedback_form accepts the flat display settings', () => {
-    expect(FEEDBACK_FORM_UPDATE_FIELDS).toHaveLength(14);
-    expect(validateFormUpdates({ rating_type: 'emoji', collect_email: false })).toBe(true);
+  it('update_feedback_form accepts the settings every version 2 form takes', () => {
+    expect(FEEDBACK_FORM_UPDATE_FIELDS).toHaveLength(8);
+    expect(validateFormUpdates({ enabled: false, title: '', success_message: 'Dziękujemy!' })).toBe(true);
   });
 
   it.each<Record<string, unknown>>([
+    // (7.04.00: the version 1 fields a version 2 form refuses, and the definition, which only the builder edits)
+    { question: 'How was it?' },
+    { text_question: 'Why?' },
+    { placeholder: 'Tell us' },
+    { rating_enabled: true },
+    { rating_type: 'emoji' },
+    { collect_email: true },
+    { collect_name: true },
+    { language: 'pl' },
+    { questions: [] },
+    { endings: [] },
+    { success_message: '' },
     { rating_max: 5 },
     { category: 'billing' },
     { theme: { primary_color: '#000' } },
@@ -198,10 +217,7 @@ describe('allowlist constants describe the schemas', () => {
     tool('update_persona').validate({ persona_id: 'p1', updates }, projectPage).ok;
 
   it('update_feedback_form accepts exactly FEEDBACK_FORM_UPDATE_FIELDS', () => {
-    const sample: Record<string, unknown> = {
-      enabled: true, rating_enabled: true, collect_email: true, collect_name: true, rating_type: 'stars',
-      dimension_defaults: { product: 'app' }, tags: ['vip'],
-    };
+    const sample: Record<string, unknown> = { enabled: true, dimension_defaults: { product: 'app' }, tags: ['vip'] };
     const accepted = FEEDBACK_FORM_UPDATE_FIELDS.filter((field) => tool('update_feedback_form')
       .validate({ form_id: 'f1', updates: { [field]: sample[field] ?? 'x' } }, dashboard).ok);
     expect(accepted).toStrictEqual([...FEEDBACK_FORM_UPDATE_FIELDS]);

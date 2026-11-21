@@ -309,6 +309,7 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   webSearchGatewayArn: webSearchStack?.gatewayArn,
   webSearchToolName: webSearchStack?.toolName,
   brandName: config.brandName,
+  primaryLanguage: config.primaryLanguage,
   enabledSources,
 });
 apiStack.addStackDependency(coreStack);

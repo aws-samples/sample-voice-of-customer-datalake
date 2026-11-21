@@ -62,7 +62,8 @@ describe('feedback form type boundary', () => {
   })
 
   it('keeps the validation link off the public widget shape FeedbackFormConfig', () => {
-    const body = interfaceBody(source, 'FeedbackFormConfig')
+    // (schema version 2 since 7.04.00, in its own file)
+    const body = interfaceBody(readFileSync(join(__dirname, 'feedbackFormsV2Types.ts'), 'utf-8'), 'FeedbackFormConfig')
 
     for (const field of LINK_FIELDS) {
       expect(body).not.toContain(field)

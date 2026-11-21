@@ -1,87 +1,387 @@
 {
+  "newForm": "Nouveau formulaire",
+  "migration": {
+    "tellUsMore": "Dites-nous-en plus",
+    "contactHeadline": "Où pouvons-nous vous joindre ?"
+  },
+  "types": {
+    "single_select": {
+      "name": "Choix unique",
+      "hint": "Choisir une option, par ex. un motif"
+    },
+    "multi_select": {
+      "name": "Choix multiple",
+      "hint": "Choisir plusieurs options"
+    },
+    "open_text": {
+      "name": "Texte",
+      "hint": "Une réponse saisie, courte ou longue",
+      "short": "Texte court",
+      "long": "Texte long"
+    },
+    "rating": {
+      "name": "Notation",
+      "hint": "Étoiles, chiffres ou émoticônes, de 3 à 10 points"
+    },
+    "nps": {
+      "name": "NPS",
+      "hint": "0–10 : probabilité de recommandation"
+    },
+    "csat": {
+      "name": "CSAT",
+      "hint": "1–5 émoticônes : niveau de satisfaction"
+    },
+    "ces": {
+      "name": "CES",
+      "hint": "1–7 : niveau de facilité"
+    },
+    "statement": {
+      "name": "Texte informatif",
+      "hint": "Un texte à lire, avec un bouton de lien facultatif"
+    },
+    "consent": {
+      "name": "Consentement",
+      "hint": "Une case que l’on coche"
+    },
+    "contact_info": {
+      "name": "Coordonnées",
+      "hint": "Nom, e-mail, téléphone, entreprise"
+    },
+    "groups": {
+      "ask": "Demander",
+      "measure": "Mesurer",
+      "other": "Autres"
+    },
+    "ending": "Écran de fin",
+    "welcome": "Carte d’accueil"
+  },
+  "problems": {
+    "count_one": "{{count, number}} problème",
+    "count_other": "{{count, number}} problèmes",
+    "warnings_one": "{{count, number}} avertissement",
+    "warnings_other": "{{count, number}} avertissements",
+    "goTo": "Aller à",
+    "listLabel": "Problèmes de ce formulaire",
+    "where": {
+      "question": "Q{{number}}",
+      "ending": "Écran de fin « {{title}} »",
+      "welcome": "Carte d’accueil",
+      "hidden": "Champ masqué {{id}}",
+      "language": "{{language}}",
+      "form": "Formulaire",
+      "themeLight": "Style (clair)",
+      "themeDark": "Style (sombre)"
+    },
+    "otherProblems": "Autres problèmes",
+    "noQuestions": "Un formulaire doit comporter au moins une question.",
+    "tooManyQuestions": "Un formulaire peut comporter jusqu’à 30 questions.",
+    "noEndings": "Un formulaire doit comporter au moins un écran de fin.",
+    "tooManyEndings": "Un formulaire peut comporter jusqu’à 5 écrans de fin.",
+    "tooManyHidden": "Un formulaire peut comporter jusqu’à 20 champs masqués.",
+    "headlineEmpty": "Rédigez la question.",
+    "optionEmpty": "L’option {{number}} n’a pas de texte.",
+    "endingTitleEmpty": "Rédigez le titre de l’écran de fin.",
+    "welcomeTitleEmpty": "L’écran d’accueil doit avoir un titre.",
+    "consentLabelEmpty": "Rédigez le texte de la case à cocher.",
+    "duplicateQuestionId": "Une autre question a l’identifiant {{id}}.",
+    "retiredQuestionId": "L’identifiant {{id}} appartenait à une question supprimée auparavant, et les identifiants ne sont jamais réutilisés. Choisissez-en un autre.",
+    "answeredReshaped": "La question {{number}} a des réponses : son type et ses points ne peuvent pas changer. Annulez la modification, ou ajoutez une nouvelle question pour cela.",
+    "invalidQuestionId": "L’identifiant d’une question commence par q_ et utilise des minuscules, des chiffres et _.",
+    "duplicateEndingId": "Un autre écran de fin a l’identifiant {{id}}.",
+    "invalidEndingId": "L’identifiant d’un écran de fin commence par end_ et utilise des minuscules, des chiffres et _.",
+    "duplicateHiddenId": "Déjà utilisé dans ce formulaire.",
+    "invalidHiddenId": "Commencez par une lettre ; utilisez des minuscules, des chiffres et _.",
+    "reservedHiddenId": "{{id}} est un nom réservé ; choisissez-en un autre.",
+    "duplicateCode": "Deux options ont le code {{code}}.",
+    "reservedCode": "Ce code est réservé aux lignes Autre et Aucune.",
+    "invalidCode": "Un code utilise des minuscules, des chiffres et _, jusqu’à 40 caractères.",
+    "noOptions": "Ajoutez au moins une option.",
+    "tooManyOptions": "Une question comporte au plus 50 options.",
+    "minOverMax": "Au moins ne peut pas dépasser Au plus.",
+    "maxOverChoices": "Au plus ne peut pas dépasser les {{count, number}} choix.",
+    "minOverChoices": "Au moins ne peut pas dépasser les {{count, number}} choix.",
+    "buttonUrl": "L’adresse doit commencer par https://",
+    "buttonLabelEmpty": "Rédigez le libellé du bouton.",
+    "ctaUrl": "L’adresse doit commencer par https://",
+    "contactNoField": "Affichez au moins un champ.",
+    "contactTwice": "Un formulaire comporte une seule question de coordonnées.",
+    "maxCharsRange": "La limite va de 1 à 5 000 caractères.",
+    "facesRange": "Les émoticônes vont de 3 à 5 points.",
+    "aiAddress": "Confirmez ou retirez l’adresse suggérée par l’IA.",
+    "missingTranslations_one": "Il manque {{count, number}} texte en {{language}} ; les personnes qui lisent en {{language}} le verront en {{primary}}.",
+    "missingTranslations_other": "Il manque {{count, number}} textes en {{language}} ; les personnes qui lisent en {{language}} les verront en {{primary}}.",
+    "unreachableQuestion": "Aucun chemin n’atteint cette question : toutes les règles au-dessus la sautent.",
+    "unreachableEnding": "Aucune règle ne mène ici.",
+    "chipsLong": "Les pastilles conviennent aux libellés courts ; les longs passent à la ligne.",
+    "dropdownFew": "Une liste affiche tous les choix d’un coup ; une liste déroulante les masque.",
+    "noCategory": "Aucune option ne classe le feedback dans une catégorie, et le formulaire n’en a pas : définissez-en une dans Paramètres › Routage par catégorie.",
+    "themeUnreadable": "Le texte sur le fond a un contraste de {{ratio}}:1, sous 3:1 : les répondants ne peuvent pas le lire.",
+    "themeUnreadableLive": "Le texte de ce formulaire est difficile à lire ({{ratio}}:1, sous 3:1). Corrigez ses couleurs ; d’ici là, vos autres modifications sont tout de même publiées.",
+    "themeTextLow": "Le texte sur le fond a un contraste de {{ratio}}:1, sous 4,5:1 : beaucoup de personnes ne peuvent pas le lire.",
+    "themePrimaryLow": "La couleur principale sur le fond a un contraste de {{ratio}}:1, sous 3:1 : l’anneau de focus, la progression et les réponses choisies sont difficiles à voir.",
+    "themeLabelLow": "Ni un texte blanc ni un texte sombre ne se lit sur cette couleur principale : {{ratio}}:1, sous 4,5:1.",
+    "blocksPublishOnly": "La publication attend cette correction ; l’enregistrement fonctionne toujours.",
+    "targetMissingQuestion": "Cette règle mène à une question supprimée. Choisissez où elle doit aller.",
+    "targetMissingEnding": "Cette règle mène à un écran de fin supprimé. Choisissez un autre écran de fin.",
+    "targetBackwards": "Les sauts ne vont que vers l’avant, et la question {{number}} est maintenant au-dessus de celle-ci. Déplacez-la en dessous ou choisissez une autre cible.",
+    "noValueOption": "Choisissez une option.",
+    "noValueNumber": "Choisissez un nombre.",
+    "optionRemoved": "« {{code}} » n’est plus une option. Choisissez-en une autre ou supprimez cette règle.",
+    "outsideScale": "{{value}} est hors de l’échelle {{min}}–{{max}} de cette question.",
+    "opInvalid": "Cette question ne peut pas être comparée ainsi. Choisissez une autre condition.",
+    "skippedOnRequired": "Cette question est obligatoire, elle n’est donc jamais passée : cette règle ne s’applique jamais.",
+    "ruleNeverRuns": "Cette règle ne s’applique jamais : la règle {{number}} couvre déjà toutes les réponses qu’elle couvrirait.",
+    "whereAnyway": "Cette règle n’a aucun effet : toutes les personnes qui l’atteignent vont de toute façon à la question {{number}}.",
+    "whereAnywayEnding": "Cette règle n’a aucun effet : toutes les personnes qui l’atteignent voient de toute façon l’écran de fin « {{title}} »."
+  },
+  "logic": {
+    "ops": {
+      "equals": "est",
+      "not_equals": "n’est pas",
+      "includesAnySingle": "est l’une de",
+      "includesAnyMulti": "inclut l’une de",
+      "includes_all": "inclut à la fois",
+      "lt": "est inférieure à",
+      "lte": "est au plus",
+      "gt": "est supérieure à",
+      "gte": "est au moins",
+      "submitted": "est fournie",
+      "skipped": "est omise",
+      "accepted": "est affirmative",
+      "notAccepted": "n’est pas affirmative"
+    },
+    "values": {
+      "other": "Autre (réponse saisie)",
+      "none": "Aucune de ces réponses",
+      "quoted": "« {{text}} »",
+      "separator": ", "
+    },
+    "target": {
+      "question": "{{number}} · {{headline}}",
+      "ending": "Écran de fin : {{title}}",
+      "missing": "une question ou un écran de fin supprimé",
+      "next": "Question suivante",
+      "nextNumbered": "Question suivante : {{number}} · {{headline}}",
+      "defaultEnding": "Fin : {{title}}"
+    },
+    "sentence": {
+      "rule": "Si la réponse {{condition}} → {{target}}",
+      "otherwise": "Sinon → {{target}}"
+    },
+    "ifTheAnswer": "Si la réponse",
+    "goTo": "→ aller à",
+    "otherwise": "Sinon",
+    "thenGoTo": "Puis aller à",
+    "firstWins": "La première règle qui correspond l’emporte",
+    "rulesLabel": "Règles",
+    "addRule": "Ajouter une règle",
+    "moved": "Règle {{from}} déplacée en position {{to}} sur {{total, number}}.",
+    "controls": {
+      "operator": "Règle {{number}} : opérateur",
+      "value": "Règle {{number}} : valeur",
+      "goTo": "Règle {{number}} : aller à"
+    },
+    "actions": {
+      "label": "Plus d’actions pour la règle {{number}}",
+      "moveUp": "Monter",
+      "moveDown": "Descendre",
+      "duplicate": "Dupliquer",
+      "delete": "Supprimer",
+      "first": "C’est déjà la première règle.",
+      "last": "C’est déjà la dernière règle."
+    },
+    "chooseNumber": "Choisissez un nombre…",
+    "chooseOption": "Choisissez une option…",
+    "chooseOptions": "Choisissez des options…",
+    "addOption": "Ajouter une option…",
+    "removedOption": "« {{code}} » (n’est plus une option)",
+    "removeValue": "Retirer {{option}}",
+    "numberWithLabel": "{{value}} — {{label}}",
+    "groups": {
+      "next": "Question suivante",
+      "later": "Questions ultérieures",
+      "endings": "Écrans de fin"
+    }
+  },
+  "builder": {
+    "back": "Formulaires de feedback",
+    "loading": "Chargement du formulaire…",
+    "loadFailed": "Impossible de charger ce formulaire.",
+    "name": {
+      "label": "Nom du formulaire (interne)",
+      "rename": "Renommer le formulaire",
+      "untitled": "Formulaire sans titre"
+    },
+    "state": {
+      "live": "En ligne",
+      "off": "Désactivé",
+      "testOn": "Lien de test activé",
+      "notSaved": "Pas encore enregistré"
+    },
+    "save": {
+      "unsaved": "Modifications non enregistrées",
+      "saving": "Enregistrement…",
+      "saved": "Enregistré",
+      "fixToSave_one": "Corrigez {{count, number}} problème pour enregistrer.",
+      "fixToSave_other": "Corrigez {{count, number}} problèmes pour enregistrer.",
+      "fixToPublish_one": "Corrigez {{count, number}} problème pour publier.",
+      "fixToPublish_other": "Corrigez {{count, number}} problèmes pour publier.",
+      "fixToPublishSaveWorks_one": "Corrigez {{count, number}} problème pour publier. L’enregistrement fonctionne toujours.",
+      "fixToPublishSaveWorks_other": "Corrigez {{count, number}} problèmes pour publier. L’enregistrement fonctionne toujours.",
+      "themeRefused": "Impossible d’enregistrer : un formulaire en ligne doit avoir un texte lisible par les répondants, d’au moins 3:1 sur son fond. Modifiez les couleurs dans Style.",
+      "questionIdReused": "Enregistrement impossible : l’identifiant {{id}} appartenait à une question supprimée auparavant, et les identifiants ne sont jamais réutilisés. Donnez un autre identifiant à cette question dans Avancé.",
+      "themeHardToRead": "Le texte de ce formulaire est difficile à lire.",
+      "themeFix": "Corriger les couleurs",
+      "save": "Enregistrer",
+      "publish": "Publier",
+      "update": "Mettre à jour le formulaire en ligne",
+      "failed": "Impossible d’enregistrer : {{reason}}.",
+      "failedGeneric": "Impossible d’enregistrer. Vérifiez votre connexion et réessayez.",
+      "retry": "Réessayer"
+    },
+    "published": "En ligne. Les répondants voient désormais cette version.",
+    "firstSave": "Enregistré. Ce formulaire est désactivé : son lien affiche « Formulaire d'avis indisponible. » jusqu’à ce que vous le publiiez.",
+    "aiSaved": "Enregistré. Le brouillon de l’IA est désormais votre formulaire.",
+    "turnedOff": "Désactivé. Son lien affiche « Formulaire d'avis indisponible. » ; le lien de test continue de fonctionner.",
+    "menu": {
+      "label": "Plus d’actions sur le formulaire",
+      "improve": "Améliorer avec l’IA…",
+      "askAssistant": "Demander à l’assistant",
+      "discard": "Abandonner les modifications",
+      "duplicate": "Dupliquer le formulaire",
+      "preview": "Aperçu dans une fenêtre",
+      "turnOff": "Désactiver",
+      "delete": "Supprimer le formulaire…",
+      "saveFirst": "Enregistrez d’abord le formulaire.",
+      "nothingToDiscard": "Aucune modification non enregistrée."
+    },
+    "copyName": "{{name}} (copie)",
+    "confirmRemoval": {
+      "title": "Mettre à jour le formulaire en ligne ?",
+      "message": "Éléments retirés : {{list}}. Leurs réponses restent dans Résultats.",
+      "confirm": "Mettre à jour le formulaire en ligne",
+      "question": "la question « {{text}} »",
+      "option": "l’option « {{text}} »",
+      "ending": "l’écran de fin « {{text}} »"
+    },
+    "confirmLanguages": {
+      "titlePublish": "Publier avec des traductions manquantes ?",
+      "titleUpdate": "Mettre à jour le formulaire en ligne avec des traductions manquantes ?",
+      "line_one": "Les répondants en {{language}} verront {{count, number}} texte en {{primary}}.",
+      "line_other": "Les répondants en {{language}} verront {{count, number}} textes en {{primary}}.",
+      "publishAnyway": "Publier quand même",
+      "updateAnyway": "Mettre à jour quand même",
+      "translate": "Traduire en {{language}}"
+    },
+    "confirmAiPublish": {
+      "title": "Publier ce brouillon de l’IA ?",
+      "message": "Les répondants le verront tel quel. Vérifiez d’abord les questions, les options et les écrans de fin.",
+      "confirm": "Publier"
+    },
+    "confirmDiscard": {
+      "title": "Abandonner vos modifications ?",
+      "message": "Le formulaire revient à sa dernière version enregistrée.",
+      "messageNew": "Le formulaire revient à son état d’ouverture. Rien n’a été enregistré.",
+      "confirm": "Abandonner les modifications"
+    },
+    "confirmDelete": {
+      "title": "Supprimer le formulaire ?",
+      "message": "Supprimer « {{name}} » ? Son lien cessera de fonctionner. Cette action est irréversible.",
+      "messageResponses_one": "Supprimer « {{name}} » et sa {{count, number}} réponse ? Son lien cessera de fonctionner. Cette action est irréversible.",
+      "messageResponses_other": "Supprimer « {{name}} » et ses {{count, number}} réponses ? Son lien cessera de fonctionner. Cette action est irréversible.",
+      "confirm": "Supprimer le formulaire"
+    },
+    "conflict": {
+      "messageAnonymous": "Quelqu’un d’autre a enregistré ce formulaire pendant que vous le modifiiez.",
+      "explain": "Enregistrer maintenant écraserait sa version. Comparez-les, rechargez la sienne ou enregistrez la vôtre par-dessus.",
+      "compare": "Comparer",
+      "reload": "Recharger la sienne",
+      "saveMine": "Enregistrer la mienne",
+      "compareTitle": "Sa version et la vôtre",
+      "compareDescription": "Ce que l’enregistrement de la vôtre changerait dans la sienne.",
+      "noDifferences": "Aucune différence dans les questions, les écrans de fin, les champs masqués ou les langues.",
+      "readFailed": "Impossible de lire sa version. Réessayez.",
+      "added": "La vôtre ajoute",
+      "removed": "La vôtre retire",
+      "changed": "La vôtre modifie",
+      "close": "Fermer",
+      "messageSelf": "Vous avez enregistré ce formulaire à {{time}}, dans un autre onglet ou une autre fenêtre."
+    },
+    "migrated": "Ce formulaire utilise désormais le nouvel éditeur : sa note et sa zone de texte sont les questions 1 et 2. L’enregistrement le stocke au nouveau format ; les répondants voient les mêmes questions.",
+    "tabs": {
+      "label": "Sections de l’éditeur de formulaire",
+      "questions": "Questions",
+      "flow": "Parcours",
+      "languages": "Langues",
+      "hidden-fields": "Champs masqués",
+      "test": "Test",
+      "share": "Partager",
+      "results": "Résultats",
+      "settings": "Paramètres",
+      "withProblems_one": "{{count, number}} problème",
+      "withProblems_other": "{{count, number}} problèmes",
+      "withMissing_one": "{{count, number}} traduction manquante",
+      "withMissing_other": "{{count, number}} traductions manquantes",
+      "scrollStart": "Faire défiler vers les onglets précédents",
+      "scrollEnd": "Faire défiler vers d’autres onglets"
+    },
+    "shortcut": "Ctrl+S ou ⌘+S pour enregistrer."
+  },
+  "previewFrame": {
+    "loading": "Chargement de l’aperçu…",
+    "unavailable": "L’aperçu ne peut pas démarrer : le widget du formulaire ne s’est pas chargé. Rechargez la page pour réessayer."
+  },
   "card": {
-    "avgRating": "Note moyenne",
-    "category": "Catégorie :",
-    "collects": "Collecte",
-    "copy": "Copier",
-    "deleteForm": "Supprimer le formulaire",
-    "directLink": "Lien direct",
-    "prototypePins": "Épingles de prototype",
-    "editForm": "Modifier le formulaire",
-    "hideEmbedCode": "Masquer le code d'intégration",
-    "iframeEmbed": "Intégration iFrame",
-    "preview": "Aperçu",
-    "ratingAndText": "Note et texte",
-    "ratingType": "Type de notation",
-    "showEmbedCode": "Afficher le code d'intégration",
-    "submissions_one": "Soumission",
-    "submissions_other": "Soumissions",
-    "submissions_many": "Soumissions",
-    "themeLabel": "Thème",
-    "themeDefault": "Couleurs par défaut",
-    "themeCustom": "Couleur personnalisée",
-    "viewSubmissions": "Voir les soumissions",
-    "collectsName": "Nom",
-    "collectsEmail": "E-mail",
-    "disabledNotice": "Ce formulaire est désactivé. Son lien et son intégration affichent « Feedback form unavailable. » jusqu’à ce que vous l’activiez.",
     "live": "En ligne",
     "off": "Désactivé",
-    "noSubmissionsYet": "Aucune réponse pour l’instant : partagez le formulaire pour en recevoir.",
-    "themeSwatch": "Couleur du formulaire"
+    "prototypePins": "Épingles de prototype",
+    "testLinkOn": "Lien de test activé",
+    "summary_one": "{{count, number}} question · {{languages}}",
+    "summary_other": "{{count, number}} questions · {{languages}}",
+    "responses_one": "{{formatted}} réponse",
+    "responses_other": "{{formatted}} réponses",
+    "reading": "Lecture des réponses…",
+    "lastResponse": "Dernière réponse : {{when}}",
+    "channels": {
+      "label": "Répondu via",
+      "link": "Lien",
+      "script": "Script du site web",
+      "iframe": "Intégré"
+    },
+    "average": "{{average}} / {{max}}",
+    "results": "Résultats",
+    "actions": "Plus d’actions pour {{name}}",
+    "edit": "Modifier",
+    "copyLink": "Copier le lien",
+    "qr": "Code QR",
+    "qrTitle": "Code QR",
+    "preview": "Aperçu",
+    "duplicate": "Dupliquer",
+    "delete": "Supprimer…",
+    "copyName": "{{name}} (copie)",
+    "cannotRead": "Impossible de lire ce formulaire.",
+    "unnamed": "Formulaire sans titre",
+    "fixFirst_one": "Corrigez {{count, number}} problème avant de publier.",
+    "fixFirst_other": "Corrigez {{count, number}} problèmes avant de publier.",
+    "open": "Ouvrir",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "Note moyenne",
+      "ces": "Effort moyen (CES)"
+    },
+    "turnOff": {
+      "title": "Désactiver « {{name}} » ?",
+      "message": "Son lien et ses intégrations afficheront « Formulaire d'avis indisponible. » aux prochains répondants.",
+      "confirm": "Désactiver"
+    }
   },
   "configureApiFirst": "Configurez le point de terminaison API dans Administration → Général pour gérer les formulaires de feedback.",
-  "createForm": "Créer un formulaire",
   "deleteConfirmLabel": "Supprimer",
   "deleteConfirmMessage": "Êtes-vous sûr de vouloir supprimer ce formulaire ? Cette action est irréversible.",
   "deleteConfirmMessageNamed": "Supprimer le formulaire « {{name}} » ? Cette action est irréversible.",
   "deleteConfirmTitle": "Supprimer le formulaire",
   "editor": {
-    "backgroundColor": "Couleur de fond",
-    "borderRadius": "Rayon de bordure",
-    "cancel": "Annuler",
-    "categoryHint": "Les catégories sont configurées dans Administration → Taxonomie → Catégories",
-    "categoryLabel": "Catégorie",
-    "categoryRoutingDescription": "Assignez une catégorie à ce formulaire. Tous les retours soumis via ce formulaire seront automatiquement tagués avec la catégorie sélectionnée.",
-    "categoryRoutingTitle": "Routage par catégorie",
-    "collectEmail": "Collecter l'email",
-    "collectName": "Collecter le nom",
-    "createForm": "Créer le formulaire",
-    "createTitle": "Créer un nouveau formulaire de feedback",
-    "creating": "Création...",
-    "description": "Légende",
-    "editTitle": "Modifier le formulaire de feedback",
-    "enableRating": "Activer la notation",
-    "formName": "Nom du formulaire (interne)",
-    "formNamePlaceholder": "ex., Formulaire pied de page",
-    "formTitle": "Titre du formulaire",
-    "placeholderText": "Texte d'espace réservé",
-    "preview": "Aperçu",
-    "previewLabel": "Aperçu :",
-    "previewTagged": "Le feedback de ce formulaire sera tagué comme :",
-    "primaryColor": "Couleur primaire",
-    "question": "Libellé de la question",
-    "ratingEmoji": "Émoji",
-    "ratingNumeric": "Numérique (1-10)",
-    "ratingStars": "Étoiles",
-    "saveChanges": "Enregistrer les modifications",
-    "saving": "Enregistrement...",
-    "selectCategory": "-- Sélectionner une catégorie --",
-    "selectSubcategory": "-- Sélectionner une sous-catégorie --",
-    "startButton": "Commencer →",
-    "subcategoryLabel": "Sous-catégorie (optionnel)",
-    "submitButtonText": "Texte du bouton d'envoi",
-    "successMessage": "Message de succès",
-    "tabs": {
-      "category": "Catégorie",
-      "categoryRouting": "Routage par catégorie",
-      "formSettings": "Paramètres du formulaire",
-      "settings": "Paramètres",
-      "theme": "Thème",
-      "validates": "Projet lié",
-      "validatesShort": "Projet",
-      "label": "Sections de l’éditeur de formulaire"
-    },
-    "textColor": "Couleur du texte",
     "validationDescription": "Indiquez éventuellement à quel projet — et à quel PRD ou PR/FAQ — se rapportent les retours de ce formulaire. Les notes recueillies apparaîtront alors à côté de ce document sur la page Priorisation. Laissez les deux champs vides pour un formulaire autonome, comme une enquête sur un site web.",
     "validationDocumentHint": "Laissez sur l'ensemble du projet pour conserver le lien lorsqu'un document est régénéré.",
     "validationDocumentLabel": "Document (facultatif)",
@@ -95,60 +395,1697 @@
     "validationUnknownProject": "Projet lié (plus disponible)",
     "validationUnverifiedDocument": "Document lié (vérification impossible)",
     "validationUnverifiedProject": "Projet lié (vérification impossible)",
-    "validationWholeProject": "-- Tout le projet --",
-    "dimensionsHint": "Chaque envoi porte ces valeurs. Une intégration peut définir les siennes par page avec l'option dimensions, par exemple",
-    "dimensionsDevHint": "Pour les développeurs : définissez-les par page dans le code d’intégration"
+    "validationWholeProject": "-- Tout le projet --"
   },
   "empty": {
-    "createButton": "Créer votre premier formulaire",
+    "title": "Pas encore de formulaires de feedback",
     "description": "Créez votre premier formulaire pour commencer à collecter les retours clients.",
-    "title": "Pas encore de formulaires de feedback"
+    "startsLabel": "Pour commencer",
+    "describeHint": "Dites ce que vous voulez savoir, et l’IA rédige les questions."
   },
   "infoBanner": {
-    "item1": "Créez plusieurs formulaires pour différents usages (site web, app, support, etc.)",
-    "item2": "Chaque formulaire a sa propre URL et code d'intégration",
-    "item3": "Assignez des catégories pour router le feedback automatiquement",
-    "item4": "Toutes les soumissions passent par l'enrichissement IA (sentiment, personas, etc.)",
-    "title": "Fonctionnement des formulaires de feedback"
+    "title": "Fonctionnement des formulaires de feedback",
+    "item1": "Chaque formulaire a son propre lien, son code d’intégration et son lien de test.",
+    "item2": "Les réponses passent par l’enrichissement IA (sentiment, personas…) ; les réponses de test, jamais.",
+    "dismiss": "Masquer cette explication"
   },
-  "submissions": {
-    "avgRating": "Note moyenne",
-    "close": "Fermer",
-    "failedToLoad": "Échec du chargement des soumissions",
-    "noRating": "Pas de note",
-    "noSubmissions": "Pas encore de soumissions",
-    "noSubmissionsHint": "Les soumissions apparaîtront ici une fois que les utilisateurs auront soumis du feedback via ce formulaire.",
-    "rated": "Notés",
-    "title": "Soumissions du formulaire",
-    "totalSubmissions": "Total des soumissions"
+  "list": {
+    "toolbarLabel": "Trouver un formulaire",
+    "search": "Rechercher des formulaires",
+    "searchPlaceholder": "Rechercher par nom",
+    "stateLabel": "Afficher",
+    "states": {
+      "all": "Tous",
+      "live": "En ligne",
+      "off": "Désactivés",
+      "test": "Lien de test activé"
+    },
+    "sortLabel": "Trier",
+    "sorts": {
+      "newest": "Plus récents",
+      "lastResponse": "Dernière réponse",
+      "name": "Nom",
+      "responses": "Réponses"
+    },
+    "shown_one": "{{shown, number}} sur {{count, number}} formulaire",
+    "shown_other": "{{shown, number}} sur {{count, number}} formulaires",
+    "noMatchTitle": "Aucun formulaire ne correspond",
+    "noMatch": "Aucun formulaire ne correspond à cette recherche ou à ce filtre.",
+    "clear": "Afficher tous les formulaires"
   },
   "subtitle": "Créez des formulaires intégrables pour collecter les retours clients",
   "title": "Formulaires de feedback",
-  "wizard": {
-    "anonymous": "Anonyme",
-    "anonymousDesc": "Aucune PII collectée",
-    "cancel": "Annuler",
-    "contactInfoDescription": "Choisissez quelles informations personnelles collecter auprès des répondants.",
-    "contactInfoTitle": "Collecte d'informations de contact",
-    "continue": "Continuer",
-    "emailOnly": "Email uniquement",
-    "emailOnlyDesc": "Collecter l'email",
-    "nameAndEmail": "Nom et email",
-    "nameAndEmailDesc": "Coordonnées complètes",
-    "nameOnly": "Nom uniquement",
-    "nameOnlyDesc": "Collecter le nom",
-    "selectedTemplate": "Sélectionné : {{name}}",
-    "selectPrompt": "Sélectionnez un modèle pour continuer",
-    "subtitle": "Choisissez un modèle pour commencer",
-    "title": "Créer un nouveau formulaire"
-  },
-  "createdDisabled": {
-    "dismiss": "Ignorer",
-    "enable": "Activer maintenant",
-    "message": "« {{name}} » a été créé et est désactivé : quiconque ouvre son lien voit « Feedback form unavailable. » jusqu’à ce que vous l’activiez."
-  },
   "systemForms": {
     "title": "Formulaires système ({{n, number}})",
     "description": "Créés automatiquement pour chaque prototype que vous construisez, afin de recueillir les épingles des testeurs. Inutile de les partager ou de les modifier."
+  },
+  "templates": {
+    "nps": {
+      "name": "Net Promoter Score",
+      "purpose": "Mesurez la fidélité sur l’échelle de 0 à 10, puis posez des questions de suivi différentes aux détracteurs et aux promoteurs.",
+      "q": {
+        "q_nps": {
+          "headline": "Quelle est la probabilité que vous nous recommandiez à un ami ou à un collègue ?",
+          "lower": "Pas du tout probable",
+          "upper": "Extrêmement probable"
+        },
+        "q_passive_improve": {
+          "headline": "Qu’est-ce qui vous donnerait davantage envie de nous recommander ?",
+          "placeholder": "Votre réponse"
+        },
+        "q_detractor_reason": {
+          "headline": "Quelle est la principale raison de votre note ?",
+          "other": "Autre chose",
+          "otherPlaceholder": "Précisez",
+          "options": {
+            "price": "C’est trop cher",
+            "missing_features": "Il manque des fonctionnalités dont j’ai besoin",
+            "hard_to_use": "C’est difficile à utiliser",
+            "reliability": "Il y a des bugs ou des interruptions",
+            "support": "Le support n’a pas résolu mon problème"
+          }
+        },
+        "q_detractor_fix": {
+          "headline": "Que devrions-nous corriger en priorité ?",
+          "placeholder": "Votre réponse"
+        },
+        "q_promoter_value": {
+          "headline": "Qu’appréciez-vous le plus ?",
+          "other": "Autre chose",
+          "options": {
+            "ease": "C’est facile à utiliser",
+            "features": "Les fonctionnalités",
+            "reliability": "C’est fiable",
+            "support": "L’équipe support",
+            "value": "Un bon rapport qualité-prix"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "Pouvons-nous revenir vers vous au sujet de vos réponses ?",
+          "label": "Oui, vous pouvez me contacter au sujet de mon avis."
+        },
+        "q_contact": {
+          "headline": "Où pouvons-nous vous joindre ?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci !",
+          "description": "Votre avis nous aide à décider quoi améliorer ensuite."
+        },
+        "end_contact": {
+          "title": "Merci, nous reviendrons peut-être vers vous",
+          "description": "Si nous avons des questions sur vos réponses, un membre de notre équipe vous écrira par e-mail."
+        }
+      }
+    },
+    "csat_support": {
+      "name": "Satisfaction support (CSAT)",
+      "purpose": "Faites noter une conversation de support à sa clôture, et découvrez ce qui n’a pas fonctionné quand la note est basse.",
+      "q": {
+        "q_csat": {
+          "headline": "Dans quelle mesure êtes-vous satisfait de l’aide reçue ?",
+          "lower": "Très insatisfait",
+          "upper": "Très satisfait"
+        },
+        "q_what_wrong": {
+          "headline": "Qu’est-ce qui n’a pas fonctionné ?",
+          "other": "Autre chose",
+          "options": {
+            "slow": "La réponse a mis trop de temps à arriver",
+            "not_solved": "Mon problème n’a pas été résolu",
+            "unclear": "La réponse était difficile à suivre",
+            "passed_around": "J’ai été renvoyé d’une personne à l’autre",
+            "tone": "Le ton n’était pas aimable"
+          }
+        },
+        "q_resolved": {
+          "headline": "Votre problème est-il résolu ?",
+          "options": {
+            "yes": "Oui",
+            "partly": "En partie",
+            "no": "Non"
+          }
+        },
+        "q_comment": {
+          "headline": "Souhaitez-vous ajouter quelque chose sur cette conversation ?",
+          "placeholder": "Votre commentaire"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci pour votre avis",
+          "description": "Il aide notre équipe support à mieux vous aider."
+        }
+      }
+    },
+    "ces": {
+      "name": "Effort client (CES)",
+      "purpose": "Demandez si une tâche a été facile, juste après l’avoir faite, et ce qui a gêné.",
+      "q": {
+        "q_ces": {
+          "headline": "Dans quelle mesure a-t-il été facile de faire ce que vous vouliez aujourd’hui ?",
+          "lower": "Très difficile",
+          "upper": "Très facile"
+        },
+        "q_obstacle": {
+          "headline": "Qu’est-ce qui a rendu la tâche difficile ?",
+          "other": "Autre chose",
+          "options": {
+            "start": "Savoir par où commencer",
+            "steps": "Trop d’étapes",
+            "labels": "Des libellés ou des instructions peu clairs",
+            "errors": "Des erreurs, ou quelque chose qui ne marchait pas",
+            "slow": "L’attente du chargement"
+          }
+        },
+        "q_easier": {
+          "headline": "Quel changement rendrait la tâche plus facile ?",
+          "placeholder": "Votre idée"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci",
+          "description": "Nous lisons toutes les réponses."
+        }
+      }
+    },
+    "churn": {
+      "name": "Résiliation / attrition",
+      "purpose": "Découvrez pourquoi les clients résilient, avec la bonne question de suivi pour chaque raison.",
+      "q": {
+        "q_reason": {
+          "headline": "Quelle est la principale raison de votre résiliation ?",
+          "other": "Une autre raison",
+          "otherPlaceholder": "Précisez laquelle",
+          "options": {
+            "too_expensive": "C’est trop cher pour moi",
+            "missing_features": "Il manque des fonctionnalités dont j’ai besoin",
+            "hard_to_use": "C’est difficile à utiliser",
+            "switching_product": "Je passe à un autre produit",
+            "not_needed": "Je n’en ai plus besoin",
+            "technical_issues": "Des bugs ou des problèmes de performance"
+          }
+        },
+        "q_price": {
+          "headline": "Qu’est-ce qui aurait pu vous retenir ?",
+          "other": "Autre chose",
+          "otherPlaceholder": "Précisez",
+          "options": {
+            "lower_price": "Un prix plus bas",
+            "smaller_plan": "Une offre plus petite avec moins de fonctionnalités",
+            "annual_discount": "Une remise pour un paiement annuel",
+            "pause": "La possibilité de suspendre mon abonnement"
+          }
+        },
+        "q_missing_feature": {
+          "headline": "Quelle fonctionnalité vous manquait ?",
+          "placeholder": "par ex. l’export vers Excel"
+        },
+        "q_hard_part": {
+          "headline": "Qu’est-ce qui a été le plus difficile à utiliser ?",
+          "placeholder": "Dites-nous où cela s’est compliqué"
+        },
+        "q_competitor": {
+          "headline": "Vers quel produit partez-vous, et que fait-il de mieux ?"
+        },
+        "q_technical": {
+          "headline": "Qu’est-ce qui n’a pas fonctionné ? Tout détail dont vous vous souvenez nous aide à le retrouver."
+        },
+        "q_follow_up_ok": {
+          "headline": "Pouvons-nous revenir vers vous ?",
+          "label": "Oui, vous pouvez me contacter au sujet de mes réponses."
+        },
+        "q_contact": {
+          "headline": "Où pouvons-nous vous joindre ?"
+        }
+      },
+      "endings": {
+        "end_bye": {
+          "title": "Merci de nous l’avoir dit",
+          "description": "Nous sommes désolés de vous voir partir. Vos réponses sont transmises directement à notre équipe produit."
+        },
+        "end_contact": {
+          "title": "Merci, nous reviendrons vers vous",
+          "description": "Un membre de notre équipe vous écrira peut-être par e-mail au sujet de vos réponses."
+        }
+      }
+    },
+    "old_ui": {
+      "name": "Retour à l’ancienne interface",
+      "purpose": "Demandez pourquoi aux personnes qui quittent une refonte, au moment où elles reviennent en arrière.",
+      "q": {
+        "q_why": {
+          "headline": "Qu’est-ce qui vous a fait revenir à l’ancienne interface ?",
+          "other": "Autre chose",
+          "otherPlaceholder": "Précisez",
+          "options": {
+            "cant_find": "Je ne trouve pas ce dont j’ai besoin",
+            "slower_work": "Mon travail prend plus de temps",
+            "missing_function": "Une fonction que j’utilise est absente",
+            "errors": "Quelque chose ne fonctionne pas ou affiche une erreur",
+            "slow_loading": "Le chargement est trop lent",
+            "layout": "La disposition de l’écran est difficile à lire",
+            "prefer_known": "Je préfère la disposition que je connais et je n’ai pas le temps d’apprendre"
+          }
+        },
+        "q_missing_function": {
+          "headline": "Quelle fonction manque ?",
+          "subheader": "Où l’utilisiez-vous dans l’ancienne interface ?",
+          "placeholder": "par ex. la comptabilisation groupée des factures dans Ventes"
+        },
+        "q_task": {
+          "headline": "Sur quelle tâche travaillez-vous en ce moment ?",
+          "placeholder": "par ex. un état des stocks"
+        },
+        "q_return": {
+          "headline": "Allez-vous réessayer la nouvelle interface ?",
+          "options": {
+            "yes_soon": "Oui, bientôt",
+            "when_fixed": "Oui, une fois que ce que j’ai signalé sera corrigé",
+            "not_sure": "Je ne sais pas encore",
+            "no": "Non, je garde l’ancienne"
+          }
+        },
+        "q_comment": {
+          "headline": "Autre chose que l’équipe devrait savoir ?",
+          "placeholder": "Votre commentaire"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci",
+          "description": "Vos réponses sont transmises directement à l’équipe qui travaille sur la nouvelle interface."
+        }
+      },
+      "hidden": {
+        "user_id": "Utilisateur",
+        "app_version": "Version de l’app",
+        "screen": "Écran où la personne a basculé"
+      }
+    },
+    "abandonment": {
+      "name": "Abandon de paiement ou d’inscription",
+      "purpose": "Découvrez pourquoi des personnes s’arrêtent avant de terminer un paiement ou une inscription.",
+      "q": {
+        "q_stopped": {
+          "headline": "Pourquoi n’avez-vous pas terminé ?",
+          "other": "Autre chose",
+          "options": {
+            "price": "Le total était plus élevé que prévu",
+            "payment": "Mon moyen de paiement n’était pas disponible",
+            "account": "Je ne voulais pas créer de compte",
+            "too_long": "C’était trop long",
+            "trust": "Je doutais de la sécurité",
+            "technical": "Quelque chose n’a pas fonctionné",
+            "just_looking": "Je regardais simplement"
+          }
+        },
+        "q_payment": {
+          "headline": "Quel moyen de paiement auriez-vous utilisé ?",
+          "other": "Un autre moyen",
+          "options": {
+            "card": "Carte de crédit ou de débit",
+            "bank_transfer": "Virement bancaire",
+            "paypal": "PayPal",
+            "wallet": "Apple Pay ou Google Pay",
+            "invoice": "Paiement différé sur facture"
+          }
+        },
+        "q_technical": {
+          "headline": "Que s’est-il passé ?",
+          "subheader": "Un message d’erreur, ou l’étape où vous étiez, nous aide à le retrouver."
+        },
+        "q_come_back": {
+          "headline": "Prévoyez-vous de revenir pour terminer ?",
+          "options": {
+            "yes": "Oui",
+            "maybe": "Peut-être",
+            "no": "Non"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci, cela nous aide",
+          "description": "Nous utiliserons votre réponse pour rendre cette étape plus rapide pour tout le monde."
+        }
+      }
+    },
+    "pmf": {
+      "name": "Adéquation produit-marché",
+      "purpose": "Le test du « très déçu » : combien d’utilisateurs regretteraient le produit, et pourquoi.",
+      "q": {
+        "q_disappointment": {
+          "headline": "Que ressentiriez-vous si vous ne pouviez plus utiliser le produit ?",
+          "options": {
+            "very": "Très déçu",
+            "somewhat": "Assez déçu",
+            "not": "Pas déçu"
+          }
+        },
+        "q_main_benefit": {
+          "headline": "Quel est le principal avantage que vous en tirez ?"
+        },
+        "q_ideal_user": {
+          "headline": "À qui, selon vous, profiterait-il le plus ?",
+          "placeholder": "par ex. les équipes financières des entreprises de taille moyenne"
+        },
+        "q_improve": {
+          "headline": "Comment pourrions-nous l’améliorer pour vous ?"
+        },
+        "q_role": {
+          "headline": "Qu’est-ce qui décrit le mieux votre fonction ?",
+          "other": "Autre chose",
+          "options": {
+            "manager": "Responsable ou chef d’équipe",
+            "specialist": "Spécialiste",
+            "executive": "Dirigeant ou propriétaire",
+            "it": "Informatique ou administration système",
+            "consultant": "Consultant ou partenaire"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci",
+          "description": "Vos réponses nous aident à décider quoi développer ensuite."
+        }
+      }
+    },
+    "feature_request": {
+      "name": "Demande de fonctionnalité / boîte à idées",
+      "purpose": "Une boîte à avis toujours ouverte : idées, problèmes et compliments, chacun avec son propre suivi.",
+      "q": {
+        "q_kind": {
+          "headline": "Que souhaitez-vous partager ?",
+          "options": {
+            "idea": "Une idée",
+            "problem": "Un problème",
+            "praise": "Un compliment",
+            "question": "Une question"
+          }
+        },
+        "q_idea": {
+          "headline": "Que voudriez-vous que le produit fasse ?",
+          "placeholder": "Décrivez la fonctionnalité ou le changement que vous avez en tête"
+        },
+        "q_idea_importance": {
+          "headline": "Quelle importance cela a-t-il pour votre travail ?",
+          "options": {
+            "nice": "Ce serait un plus",
+            "important": "Important",
+            "blocking": "Je ne peux pas travailler sans"
+          }
+        },
+        "q_problem": {
+          "headline": "Qu’est-ce qui n’a pas fonctionné ?",
+          "subheader": "Ce que vous avez fait, ce que vous attendiez et ce qui s’est passé à la place."
+        },
+        "q_praise": {
+          "headline": "Qu’est-ce qui vous plaît ?"
+        },
+        "q_question": {
+          "headline": "Quelle est votre question ?"
+        },
+        "q_follow_up_ok": {
+          "headline": "Pouvons-nous revenir vers vous ?",
+          "label": "Oui, vous pouvez me contacter à ce sujet."
+        },
+        "q_contact": {
+          "headline": "Où pouvons-nous vous joindre ?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci pour votre message",
+          "description": "Il est transmis directement à l’équipe produit."
+        },
+        "end_contact": {
+          "title": "Merci, nous reviendrons peut-être vers vous",
+          "description": "Si nous avons une question ou une réponse pour vous, nous vous écrirons par e-mail."
+        }
+      }
+    },
+    "feature_satisfaction": {
+      "name": "Satisfaction sur une fonctionnalité",
+      "purpose": "Faites noter une fonctionnalité après son utilisation, et découvrez ce qui l’améliorerait.",
+      "q": {
+        "q_rating": {
+          "headline": "Dans quelle mesure êtes-vous satisfait de cette fonctionnalité ?",
+          "lower": "Pas du tout",
+          "upper": "Très satisfait"
+        },
+        "q_better": {
+          "headline": "Qu’est-ce qui l’améliorerait ?",
+          "other": "Autre chose",
+          "options": {
+            "faster": "La rendre plus rapide",
+            "clearer": "La rendre plus facile à comprendre",
+            "more_options": "Offrir plus d’options",
+            "fewer_steps": "Moins d’étapes",
+            "fix": "Corriger ce qui ne fonctionne pas"
+          }
+        },
+        "q_frequency": {
+          "headline": "À quelle fréquence l’utilisez-vous ?",
+          "options": {
+            "daily": "Tous les jours",
+            "weekly": "Toutes les semaines",
+            "monthly": "Tous les mois",
+            "rarely": "Moins souvent",
+            "first_time": "C’était la première fois"
+          }
+        },
+        "q_comment": {
+          "headline": "Autre chose à propos de cette fonctionnalité ?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci",
+          "description": "Votre note est transmise à l’équipe responsable de cette fonctionnalité."
+        }
+      }
+    },
+    "bug_report": {
+      "name": "Signalement de bug",
+      "purpose": "Permettez de signaler un problème, avec le contexte dont l’équipe a besoin pour le reproduire.",
+      "q": {
+        "q_what_happened": {
+          "headline": "Qu’est-ce qui n’a pas fonctionné ?",
+          "placeholder": "Décrivez ce qui s’est passé"
+        },
+        "q_steps": {
+          "headline": "Que faisiez-vous juste avant ?",
+          "placeholder": "1. J’ai ouvert…  2. J’ai cliqué…"
+        },
+        "q_expected": {
+          "headline": "À quoi vous attendiez-vous ?"
+        },
+        "q_frequency": {
+          "headline": "À quelle fréquence cela se produit-il ?",
+          "options": {
+            "every_time": "À chaque fois",
+            "sometimes": "Parfois",
+            "once": "Une seule fois"
+          }
+        },
+        "q_impact": {
+          "headline": "Dans quelle mesure cela gêne-t-il votre travail ?",
+          "options": {
+            "blocked": "Je ne peux pas continuer mon travail",
+            "workaround": "J’ai trouvé une solution de contournement",
+            "minor": "C’est une petite gêne"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "Pouvons-nous vous contacter si nous avons besoin de plus de détails ?",
+          "label": "Oui, vous pouvez me contacter au sujet de ce signalement."
+        },
+        "q_contact": {
+          "headline": "Où pouvons-nous vous joindre ?"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci pour votre signalement",
+          "description": "Votre signalement est transmis directement à l’équipe qui corrige les problèmes."
+        },
+        "end_contact": {
+          "title": "Merci, nous reviendrons peut-être vers vous",
+          "description": "Si nous avons besoin de plus de détails, nous vous écrirons par e-mail."
+        }
+      }
+    },
+    "onboarding": {
+      "name": "Segmentation des nouveaux utilisateurs",
+      "purpose": "Demandez aux nouveaux utilisateurs qui ils sont et ce qu’ils viennent chercher, pour adapter leurs premiers pas.",
+      "welcome": {
+        "title": "Bienvenue !",
+        "description": "Quatre questions rapides pour vous montrer d’abord ce qui compte pour vous.",
+        "button": "C’est parti"
+      },
+      "q": {
+        "q_role": {
+          "headline": "Quelle est votre fonction ?",
+          "other": "Autre chose",
+          "options": {
+            "management": "Direction",
+            "finance": "Finance ou comptabilité",
+            "sales": "Ventes",
+            "operations": "Opérations ou logistique",
+            "it": "Informatique ou administration"
+          }
+        },
+        "q_company_size": {
+          "headline": "Combien de personnes travaillent dans votre entreprise ?",
+          "options": {
+            "size_1": "Juste moi",
+            "size_2_10": "2–10",
+            "size_11_50": "11–50",
+            "size_51_250": "51–250",
+            "size_251_1000": "251–1 000",
+            "size_1000_plus": "Plus de 1 000"
+          }
+        },
+        "q_first_goal": {
+          "headline": "Que voulez-vous faire en premier ?",
+          "none": "Je ne sais pas encore",
+          "options": {
+            "import": "Importer mes données",
+            "invite": "Inviter mon équipe",
+            "reports": "Configurer des rapports",
+            "connect": "Connecter un autre outil",
+            "explore": "Faire le tour"
+          }
+        },
+        "q_experience": {
+          "headline": "Avez-vous déjà utilisé un produit similaire ?",
+          "options": {
+            "daily": "Oui, tous les jours",
+            "some": "Oui, un peu",
+            "no": "Non, c’est le premier"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Tout est prêt",
+          "description": "Nous adapterons vos premiers pas à vos réponses."
+        },
+        "end_newcomer": {
+          "title": "Bienvenue à bord",
+          "description": "Nous commencerons par les bases."
+        }
+      },
+      "tips": {
+        "end_newcomer": "Ajoutez un bouton vers votre guide de démarrage."
+      }
+    },
+    "blank": {
+      "name": "Formulaire vierge",
+      "purpose": "Une question ouverte. Construisez le reste vous-même.",
+      "q": {
+        "q_feedback": {
+          "headline": "Que souhaitez-vous nous dire ?",
+          "placeholder": "Saisissez votre réponse ici…"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "Merci !",
+          "description": "Nous lisons chaque message."
+        }
+      }
+    }
+  },
+  "picker": {
+    "title": "Nouveau formulaire",
+    "subtitle": "Décrivez-le et l’IA le rédige, ou choisissez un point de départ. Chaque question peut être modifiée ensuite.",
+    "createIn": "Créer dans",
+    "railLabel": "Démarrer",
+    "goalsLabel": "Objectifs",
+    "describeIt": "Le décrire",
+    "groups": {
+      "all": "Tous",
+      "loyalty": "Fidélité",
+      "dropoffs": "Abandons",
+      "product": "Produit",
+      "onboarding": "Prise en main",
+      "blank": "Vierge"
+    },
+    "runs": {
+      "link": "Lien",
+      "embed": "Intégration",
+      "in_app": "Dans l’app"
+    },
+    "minutes_one": "~{{count, number}} min",
+    "minutes_other": "~{{count, number}} min",
+    "moreTypes": "+{{count, number}} de plus",
+    "use": "Utiliser ce modèle",
+    "empty": "Choisissez un modèle ou décrivez votre formulaire pour le voir ici.",
+    "backToList": "Modèles",
+    "preview": {
+      "label": "Aperçu",
+      "questions": "Questions",
+      "rules_one": "{{count, number}} règle",
+      "rules_other": "{{count, number}} règles",
+      "endings_one": "{{count, number}} écran de fin",
+      "endings_other": "{{count, number}} écrans de fin",
+      "restart": "Recommencer",
+      "loading": "Chargement du modèle dans cette langue…",
+      "frameTitle": "Aperçu du formulaire, taille téléphone, {{language}}"
+    }
+  },
+  "describe": {
+    "kicker": "Décrivez votre formulaire",
+    "title": "Décrivez votre formulaire",
+    "nothingSaved": "Rien n’est enregistré tant que vous n’enregistrez pas.",
+    "hint": "Dites à qui il s’adresse, ce que vous voulez apprendre et les réponses que vous voulez proposer.",
+    "count": "{{n, number}} / {{max, number}}",
+    "tooShort": "Décrivez d’abord votre formulaire.",
+    "try": "Essayez",
+    "examples": {
+      "oldUi": {
+        "chip": "Les utilisateurs qui reviennent à l’ancienne interface…",
+        "text": "Demander aux utilisateurs de l’app qui reviennent à l’ancienne interface pourquoi, avec des raisons prédéfinies."
+      },
+      "nps": {
+        "chip": "Un NPS court pour notre app mobile…",
+        "text": "Une courte enquête NPS pour notre app mobile, avec une question de suivi pour les clients mécontents."
+      },
+      "support": {
+        "chip": "Après un ticket de support…",
+        "text": "À la clôture d’un ticket de support, demander au client s’il est satisfait et si le problème a été résolu."
+      },
+      "churn": {
+        "chip": "Les clients qui résilient…",
+        "text": "Demander aux clients qui résilient pourquoi ils partent, et si nous pouvons les contacter."
+      }
+    },
+    "replaceAsk": "Remplacer votre description ?",
+    "replace": "Remplacer",
+    "keepMine": "Garder la mienne",
+    "runs": "Diffusion",
+    "runsHint": {
+      "link": "Peut s’ouvrir sur un écran d’accueil.",
+      "embed": "S’affiche dans votre page ; pas d’écran d’accueil.",
+      "in_app": "Court, sans écran d’accueil, avec des champs masqués pour votre app."
+    },
+    "draft": "Rédiger",
+    "draftingButton": "Rédaction…",
+    "drafting": "Rédaction de votre formulaire… Cela prend généralement 10 à 30 secondes.",
+    "inLanguage": "en {{language}}",
+    "changeLanguage": "modifier",
+    "busyReason": "Vous pourrez le modifier une fois le brouillon prêt.",
+    "waitReason": "Vous pourrez relancer une rédaction dans {{minutes}} min.",
+    "privacy": "La description est envoyée au modèle d’IA de cet espace de travail. N’y collez pas de données personnelles."
+  },
+  "ai": {
+    "refusal": {
+      "role": "Seuls les éditeurs et les administrateurs peuvent rédiger des formulaires avec l’IA.",
+      "aiMode": "Piloté par l’humain : l’IA ne rédige pas les formulaires à votre place. Partez d’un modèle, ou laissez l’assistant vous accompagner.",
+      "coachPrompt": "Accompagnez-moi pendant que je rédige un formulaire de feedback : demandez-moi ce que je veux apprendre, et aidez-moi à formuler les questions et les réponses à proposer.",
+      "coachMe": "M’accompagner",
+      "changeInPeople": "Modifiez-le dans Administration → Confidentialité et accès → Utilisateurs",
+      "askAdminMode": "Un administrateur peut le modifier.",
+      "noModel": "La rédaction par IA n’est pas configurée dans cet espace de travail : aucun modèle d’IA n’est disponible pour cela.",
+      "openAiModels": "Ouvrir Administration → Modèles d'IA",
+      "askAdminModel": "Demandez à un administrateur d’en configurer un.",
+      "spendCap": "Le budget IA mensuel de cet espace de travail est épuisé.",
+      "rateLimited": "Vous avez atteint la limite d’IA pour le moment. Réessayez dans {{minutes}} min.",
+      "rateLimitOver": "La limite d’IA est levée. Vous pouvez relancer une rédaction.",
+      "invalid": "L’IA n’a pas réussi à en faire un formulaire valide.",
+      "invalidHint": "Elle a essayé deux fois. Décrivez les questions et les réponses plus simplement, ou partez d’un modèle.",
+      "details": "Détails",
+      "tryAgain": "Réessayer",
+      "noAnswer": "L’IA n’a pas répondu. Réessayez dans un instant.",
+      "other": "L’IA n’a pas pu rédiger ce formulaire : {{message}}"
+    },
+    "banner": {
+      "label": "Brouillon IA",
+      "draft": "Brouillon IA : vérifiez-le avant de publier. Rien n’est encore enregistré.",
+      "improve": "Modifié avec l’IA : vérifiez avant d’enregistrer.",
+      "notes": "Notes ({{count, number}})",
+      "discard": "Abandonner le brouillon",
+      "undo": "Annuler les modifications de l’IA",
+      "goTo": "Aller à",
+      "discardConfirm": {
+        "title": "Abandonner le brouillon IA ?",
+        "message": "Rien n’a été enregistré.",
+        "confirm": "Abandonner le brouillon"
+      },
+      "addresses": {
+        "label": "Adresses suggérées par l’IA",
+        "suggested": "Suggérée par l’IA",
+        "confirm": "Confirmer l’adresse",
+        "remove": "Retirer"
+      }
+    },
+    "improve": {
+      "title": "Améliorer avec l’IA",
+      "description": "Demandez une modification. Vous vérifiez chaque modification avant qu’elle soit appliquée ; rien n’est enregistré.",
+      "instruction": "Consigne",
+      "try": "Essayez",
+      "examples": {
+        "translations": "Ajouter des traductions en anglais",
+        "shorter": "Raccourcir toutes les questions",
+        "contact": "Ajouter une question de contact à la fin",
+        "hidden": "Ajouter des champs masqués pour une app mobile",
+        "dropdown": "Transformer la question 1 en liste déroulante",
+        "question": "Améliorer la question {{number}}"
+      },
+      "scope": "Modifie : questions, logique, écrans de fin, champs masqués et langues. Les paramètres, le thème et le routage restent tels quels.",
+      "reads": "Elle lit ce formulaire tel qu’il est maintenant, modifications non enregistrées comprises ({{questions}} · {{endings}}).",
+      "questionsCount_one": "{{count, number}} question",
+      "questionsCount_other": "{{count, number}} questions",
+      "endingsCount_one": "{{count, number}} écran de fin",
+      "endingsCount_other": "{{count, number}} écrans de fin",
+      "cancel": "Annuler",
+      "draft": "Rédiger les modifications",
+      "drafting": "Rédaction des modifications… Cela prend généralement 10 à 30 secondes.",
+      "emptyInstruction": "Indiquez d’abord ce qui doit changer.",
+      "nothing": "L’IA n’a rien modifié. Précisez davantage ce qui doit changer.",
+      "back": "Retour",
+      "applied_one": "{{count, number}} modification de l’IA appliquée. Vérifiez-la, puis enregistrez.",
+      "applied_other": "{{count, number}} modifications de l’IA appliquées. Vérifiez-les, puis enregistrez."
+    },
+    "diff": {
+      "title": "Modifications de l’IA",
+      "count_one": "{{count, number}} modification",
+      "count_other": "{{count, number}} modifications",
+      "acceptAll": "Tout accepter",
+      "rejectAll": "Tout refuser",
+      "fromAi": "De l’IA",
+      "ignored": "Ignorée : une modification portant sur {{areas}}.",
+      "ignoredAreas": {
+        "name": "le nom",
+        "theme": "le thème",
+        "routing": "le routage par catégorie",
+        "project": "le projet lié",
+        "test": "les paramètres de test",
+        "tags": "les étiquettes",
+        "dimensions": "les valeurs par défaut des dimensions"
+      },
+      "kinds": {
+        "added": "Ajout",
+        "removed": "Suppression",
+        "changed": "Modification"
+      },
+      "apply": "Appliquer ({{kind}}) : {{what}}",
+      "what": {
+        "question": "question {{number}}",
+        "ending": "écran de fin « {{title}} »",
+        "hidden": "champ masqué {{id}}",
+        "language": "langue {{language}}",
+        "welcome": "carte d’accueil"
+      },
+      "languageTexts_one": "{{count, number}} texte",
+      "languageTexts_other": "{{count, number}} textes",
+      "welcome": "Carte d’accueil",
+      "hidden": "Champ masqué {{id}}",
+      "expand": "Afficher les changements",
+      "collapse": "Masquer les changements",
+      "notApplied": "non appliquée",
+      "notAppliedWith": "Non appliquée avec cette modification : la règle sur {{questions}}.",
+      "keptWith": "Conservées avec cette modification : les règles sur {{questions}} qui y mènent.",
+      "checkAddress": "J’ai vérifié cette adresse",
+      "addressWaits": "Non appliquée tant que vous n’avez pas confirmé l’adresse.",
+      "applyCount_one": "Appliquer {{count, number}} modification",
+      "applyCount_other": "Appliquer {{count, number}} modifications",
+      "invalid": "Ensemble, ces modifications laissent un problème dans le formulaire : {{problem}}",
+      "noneSelected": "Choisissez au moins une modification à appliquer.",
+      "before": "Avant",
+      "after": "Après",
+      "ruleAdded": "Règle ajoutée : {{sentence}}",
+      "ruleRemoved": "Règle supprimée : {{sentence}}",
+      "fields": {
+        "headline": "Question",
+        "subheader": "Description",
+        "required": "Obligatoire",
+        "type": "Type",
+        "options": "Options",
+        "other": "Autre",
+        "none": "Aucune de ces réponses",
+        "shuffle": "Ordre",
+        "display": "Afficher comme",
+        "min": "Au moins",
+        "max": "Au plus",
+        "long": "Longueur",
+        "input_type": "Type de réponse",
+        "placeholder": "Texte indicatif",
+        "max_chars": "Limite",
+        "scale": "Échelle",
+        "range": "Points",
+        "lower_label": "Extrémité basse",
+        "upper_label": "Extrémité haute",
+        "label": "Texte",
+        "cta": "Bouton de lien",
+        "fields": "Champs",
+        "button_label": "Libellé du bouton",
+        "title": "Titre",
+        "description": "Description",
+        "button": "Bouton",
+        "enabled": "Affiché",
+        "logic": "Logique"
+      },
+      "values": {
+        "yes": "Oui",
+        "no": "Non",
+        "empty": "—"
+      }
+    },
+    "stop": {
+      "button": "Arrêter",
+      "title": "Arrêter la rédaction ?",
+      "message": "L’IA arrête de rédiger votre formulaire, et ce qu’elle a déjà écrit est abandonné. Rien n’a été enregistré.",
+      "confirm": "Arrêter la rédaction",
+      "keep": "Continuer la rédaction"
+    }
+  },
+  "questionList": {
+    "title": "Questions ({{count, number}})",
+    "label": "Questions",
+    "improve": "Améliorer avec l’IA",
+    "welcomeName": "Écran d’accueil",
+    "welcomeStateOn": "Activé",
+    "welcomeStateOff": "Désactivé",
+    "add": "Ajouter une question",
+    "addBelow": "Ajouter une question en dessous",
+    "insertAfter": "Ajouter une question après la question {{number}}",
+    "typeMenu": "Types de question",
+    "contactOnce": "Déjà dans ce formulaire",
+    "limit": "Un formulaire peut comporter jusqu’à 30 questions.",
+    "lastQuestion": "Un formulaire doit comporter au moins une question.",
+    "cardName": "Question {{number}} sur {{total, number}}",
+    "cardMenu": "Plus d’actions pour la question {{number}}",
+    "duplicate": "Dupliquer",
+    "moveUp": "Monter",
+    "moveDown": "Descendre",
+    "alreadyFirst": "Elle est déjà en premier.",
+    "alreadyLast": "Elle est déjà en dernier.",
+    "changeType": "Changer le type…",
+    "delete": "Supprimer…",
+    "deleteTitle": "Supprimer cette question ?",
+    "deleteConfirm": "Supprimer",
+    "deleteRules_one": "{{count, number}} règle mène à cette question. Elle sera supprimée, et ces répondants passeront à la question suivante.",
+    "deleteRules_other": "{{count, number}} règles mènent à cette question. Elles seront supprimées, et ces répondants passeront à la question suivante.",
+    "deleteAnswers": "Ses réponses restent dans Résultats, sous « Questions supprimées ».",
+    "deleted": "Question supprimée.",
+    "undo": "Annuler",
+    "moved": "« {{headline}} » déplacée en position {{position}} sur {{total, number}}.",
+    "rules_one": "{{count, number}} règle",
+    "rules_other": "{{count, number}} règles",
+    "languageMissing": "{{language}} manquant",
+    "languagesMissing": "{{count, number}} langues manquantes",
+    "problem": "Problème",
+    "ai": "IA",
+    "gone": "Cette carte ne fait plus partie du formulaire.",
+    "back": "Questions",
+    "position": "{{n}} sur {{total, number}}",
+    "previous": "Question précédente",
+    "next": "Question suivante",
+    "meta": {
+      "options_one": "{{count, number}} option",
+      "options_other": "{{count, number}} options",
+      "other": "Autre",
+      "none": "Aucune",
+      "required": "Obligatoire",
+      "optional": "Facultative",
+      "upTo": "jusqu’à {{count, number}} caractères",
+      "range": "{{min}}–{{max}}",
+      "scale": {
+        "star": "{{range}} étoiles",
+        "number": "{{range}} chiffres",
+        "smiley": "{{range}} émoticônes"
+      },
+      "textOnly": "Texte seul",
+      "linkButton": "Avec un bouton de lien"
+    }
+  },
+  "question": {
+    "headline": "Question",
+    "newQuestion": "Nouvelle question",
+    "description": "Description",
+    "required": "Obligatoire",
+    "requiredScaleHint": "Les répondants ne peuvent pas la passer.",
+    "logic_one": "Logique · {{count, number}} règle",
+    "logic_other": "Logique · {{count, number}} règles",
+    "advanced": "Avancé",
+    "id": "Identifiant de la question",
+    "idLocked": "Les réponses sont stockées sous cet identifiant ; il ne peut donc plus changer dès qu’il y a des réponses.",
+    "buttonLabel": "Libellé du bouton",
+    "buttonLabelPlaceholder": "Suivant",
+    "duplicate": "Dupliquer la question {{number}}",
+    "translationLine_one": "{{language}} : {{count, number}} texte manquant",
+    "translationLine_other": "{{language}} : {{count, number}} textes manquants",
+    "translate": "Traduire",
+    "translateInto": "Traduire : {{language}}"
+  },
+  "typeChange": {
+    "label": "Question {{number}} : type",
+    "none": "Pour changer son type, ajoutez une nouvelle question de ce type et supprimez celle-ci.",
+    "locked": "Les réponses sont enregistrées pour ce type : il ne peut plus changer une fois que le formulaire a des réponses. Pour la poser autrement, ajoutez une nouvelle question et supprimez celle-ci.",
+    "confirmTitle": "Changer le type de la question ?",
+    "confirmMessage": "Ce changement supprime : {{lost}}.",
+    "confirm": "Changer le type",
+    "lost": {
+      "none": "la ligne « Aucune de ces réponses »",
+      "minMax": "Au moins et Au plus",
+      "includesAll": "les règles qui exigent toutes les options",
+      "rulesOutsideScale": "les règles hors de la nouvelle échelle"
+    }
+  },
+  "choice": {
+    "options": "Options",
+    "view": "Affichage des options",
+    "labels": "Libellés",
+    "pasteList": "Coller une liste",
+    "optionN": "Option {{number}}",
+    "optionMenu": "Plus d’actions pour l’option {{number}}",
+    "codeOf": "Code de l’option {{number}}",
+    "codeLocked": "Les réponses sont stockées sous ce code ; il ne peut donc plus changer dès qu’il y a des réponses. Renommez plutôt le libellé.",
+    "goesTo": "Mène à {{target}}",
+    "lastOption": "Une question à choix doit comporter au moins une option.",
+    "addOption": "Ajouter une option",
+    "count": "{{n, number}} sur {{max, number}}",
+    "pasteAsOptions_one": "Coller {{count, number}} ligne comme {{count, number}} option ?",
+    "pasteAsOptions_other": "Coller {{count, number}} lignes comme {{count, number}} options ?",
+    "addAsOptions": "Ajouter comme options",
+    "keepAsOne": "Garder en une seule",
+    "paste": {
+      "label": "Une option par ligne. Chaque ligne devient une option ; les codes sont créés à partir du texte.",
+      "options_one": "{{count, number}} option",
+      "options_other": "{{count, number}} options",
+      "duplicates_one": "{{count, number}} doublon ignoré",
+      "duplicates_other": "{{count, number}} doublons ignorés",
+      "blanks_one": "{{count, number}} ligne vide ignorée",
+      "blanks_other": "{{count, number}} lignes vides ignorées",
+      "add_one": "Ajouter {{count, number}} option",
+      "add_other": "Ajouter {{count, number}} options",
+      "replace": "Tout remplacer…",
+      "cancel": "Annuler",
+      "replaceTitle": "Remplacer toutes les options ?",
+      "replaceMessage": "Ce formulaire a des réponses : les réponses données aux options que vous remplacez restent dans Résultats comme options supprimées.",
+      "replaceConfirm": "Tout remplacer"
+    },
+    "other": "« Autre » avec une zone de texte",
+    "otherLabel": "Libellé",
+    "otherDefault": "Autre",
+    "otherPlaceholder": "Texte indicatif",
+    "otherPlaceholderDefault": "Précisez",
+    "none": "« Aucune de ces réponses »",
+    "noneHint": "Exclusive : la choisir décoche les autres. Choix multiple uniquement.",
+    "noneLabel": "Libellé « Aucune »",
+    "order": "Ordre",
+    "orderHint": "Autre et Aucune restent toujours à la fin.",
+    "shuffle": {
+      "none": "Dans l’ordre de la liste",
+      "all": "Ordre aléatoire",
+      "except_last": "Ordre aléatoire, dernière option fixe"
+    },
+    "showAs": "Afficher comme",
+    "display": {
+      "auto": "Automatique",
+      "list": "Liste",
+      "dropdown": "Liste déroulante",
+      "chips": "Pastilles"
+    },
+    "autoList_one": "Automatique affiche ici une liste : {{count, number}} choix.",
+    "autoList_other": "Automatique affiche ici une liste : {{count, number}} choix.",
+    "autoDropdown_one": "Automatique affiche ici une liste déroulante : {{count, number}} choix.",
+    "autoDropdown_other": "Automatique affiche ici une liste déroulante : {{count, number}} choix.",
+    "answers": "Réponses",
+    "atLeast": "Au moins",
+    "atMost": "Au plus",
+    "minMaxHint": "Si Au moins est vide, il vaut 1 quand la question est obligatoire, 0 quand elle est facultative. Si Au plus est vide, il n’y a pas de limite.",
+    "respondentsSee": "Les répondants voient « Choisissez jusqu’à {{count, number}} ».",
+    "showCodes": "Afficher les codes",
+    "showCodesHint": "Les codes servent à stocker les réponses et à désigner les options dans les règles.",
+    "routing": {
+      "title": "Routage",
+      "option": "Option",
+      "category": "Catégorie",
+      "goTo": "Aller à",
+      "formDefault": "— Valeur par défaut du formulaire",
+      "notConfigured": "{{name}} (n’est plus configurée)",
+      "categoryOf": "Catégorie pour « {{option}} »",
+      "goToOf": "Aller à après « {{option}} »",
+      "otherwise": "Sinon : {{target}}",
+      "otherRow": "{{label}} (Autre)",
+      "setByRule": "Défini par une règle dans Logique",
+      "editInLogic": "Modifier dans Logique",
+      "precedence": "Le feedback de cette question est classé dans la catégorie de la première option associée ; sinon dans celle du formulaire (Paramètres › Routage par catégorie).",
+      "firstRuleWins": "Quand plusieurs options choisies déclenchent un saut, la première règle de Logique l’emporte."
+    }
+  },
+  "scale": {
+    "scale": "Échelle",
+    "scales": {
+      "star": "Étoiles",
+      "number": "Chiffres",
+      "smiley": "Émoticônes"
+    },
+    "points": "Points",
+    "facesRange": "Les émoticônes vont de 3 à 5 points.",
+    "rangeLocked": "Les réponses sont enregistrées sur ces points : ils ne peuvent plus changer une fois que le formulaire a des réponses.",
+    "lowEnd": "Libellé bas",
+    "highEnd": "Libellé haut",
+    "fixed": {
+      "nps": "0–10, fixe.",
+      "csat": "1–5 émoticônes, fixe. 4 et 5 comptent comme satisfait.",
+      "ces": "1–7, fixe. 5 à 7 comptent comme facile."
+    },
+    "npsGroups": "0–6 détracteurs · 7–8 passifs · 9–10 promoteurs",
+    "npsHelper": {
+      "button": "Poser des questions différentes aux détracteurs et aux promoteurs",
+      "detractor": "Quelle est la principale raison de votre note ?",
+      "promoter": "Qu’appréciez-vous le plus ?",
+      "done": "Deux questions de suivi ajoutées : détracteurs et promoteurs ont chacun la leur."
+    }
+  },
+  "text": {
+    "length": "Longueur",
+    "short": "Courte",
+    "long": "Longue",
+    "answerType": "Type de réponse",
+    "inputTypes": {
+      "text": "Texte",
+      "email": "E-mail",
+      "number": "Nombre",
+      "phone": "Téléphone",
+      "url": "Adresse web"
+    },
+    "placeholder": "Texte indicatif",
+    "placeholderHint": "Une indication dans la zone, jamais un libellé : les répondants voient toujours la question au-dessus.",
+    "limit": "Limite (caractères)",
+    "limitHint": "1 à 5 000 ; vide = 5 000."
+  },
+  "statement": {
+    "text": "Texte",
+    "addButton": "Ajouter un bouton de lien",
+    "hint": "Suivant fait toujours avancer ; le lien s’ouvre dans un nouvel onglet.",
+    "buttonLabel": "Libellé du bouton",
+    "buttonLabelPlaceholder": "En savoir plus",
+    "address": "Adresse",
+    "addressHint": "L’adresse doit commencer par https://"
+  },
+  "consent": {
+    "checkboxText": "Texte de la case à cocher",
+    "placeholder": "Oui, vous pouvez me contacter au sujet de mon avis.",
+    "hint": "Un consentement facultatif laissé non coché vaut Non.",
+    "mustTick": "Doit être cochée pour continuer"
+  },
+  "contact": {
+    "field": "Champ",
+    "show": "Afficher",
+    "required": "Obligatoire",
+    "fields": {
+      "name": "Nom",
+      "email": "E-mail",
+      "phone": "Téléphone",
+      "company": "Entreprise"
+    },
+    "showField": "Afficher {{field}}",
+    "requireField": "{{field}} obligatoire",
+    "personalData": "Cette question collecte des données personnelles. Les répondants ne la voient que s’ils l’atteignent, et les données sont stockées avec la réponse."
+  },
+  "welcome": {
+    "show": "Afficher un écran d’accueil",
+    "hint": "Laissez-le désactivé pour les formulaires dans l’app : les gens savent déjà pourquoi il s’est ouvert.",
+    "title": "Titre",
+    "description": "Description",
+    "buttonLabel": "Libellé du bouton",
+    "buttonDefault": "Commencer"
+  },
+  "endings": {
+    "heading": "Écrans de fin",
+    "label": "Écrans de fin",
+    "default": "par défaut",
+    "untitled": "Écran de fin sans titre",
+    "cardMenu": "Plus d’actions pour l’écran de fin « {{title}} »",
+    "add": "Ajouter un écran de fin",
+    "newTitle": "Merci",
+    "limit": "Un formulaire peut comporter jusqu’à 5 écrans de fin.",
+    "lastEnding": "Un formulaire doit comporter au moins un écran de fin.",
+    "deleteTitle": "Supprimer cet écran de fin ?",
+    "deleteRules_one": "{{count, number}} règle mène ici. Elle sera supprimée, et ces répondants verront l’écran de fin par défaut.",
+    "deleteRules_other": "{{count, number}} règles mènent ici. Elles seront supprimées, et ces répondants verront l’écran de fin par défaut.",
+    "nowDefault": "« {{title}} » est désormais l’écran de fin par défaut.",
+    "moved": "« {{title}} » déplacé en position {{position}} sur {{total, number}}.",
+    "title": "Titre",
+    "description": "Description",
+    "addButton": "Ajouter un bouton",
+    "buttonLabel": "Libellé du bouton",
+    "reachedBy": "Atteint par :",
+    "reachedFrom": "{{number}} {{condition}}",
+    "otherwise": "sinon",
+    "endOfQuestions": "la fin des questions (par défaut)",
+    "id": "Identifiant de l’écran de fin",
+    "idLocked": "Les réponses sont stockées avec cet identifiant ; il ne peut donc plus changer dès qu’il y a des réponses."
+  },
+  "preview": {
+    "label": "Aperçu",
+    "device": {
+      "phone": "taille téléphone"
+    },
+    "language": "Langue de l’aperçu",
+    "languageMissing": "{{language}} ({{count, number}} manquants, affichés en {{primary}})",
+    "frameTitle": "Aperçu du formulaire, {{size}}, {{language}}",
+    "restart": "Recommencer",
+    "startHere": "Commencer ici",
+    "show": "Aperçu",
+    "hide": "Masquer l’aperçu",
+    "showPane": "Afficher l’aperçu",
+    "inWindow": "L’aperçu est ouvert dans sa fenêtre.",
+    "size": "Téléphone · {{width}} × {{height}} · {{zoom}} %",
+    "showing": "Affiché : {{scheme}}",
+    "scheme": {
+      "light": "Clair",
+      "dark": "Sombre"
+    },
+    "shuffled": "Mélangé pour chaque répondant",
+    "style": "Style",
+    "openWindow": "Ouvrir dans une fenêtre",
+    "openTab": "Aperçu, s’ouvre dans un nouvel onglet",
+    "blocked": "Votre navigateur a bloqué la fenêtre d’aperçu. Autorisez les fenêtres pop-up pour ce site, puis réessayez.",
+    "stylePanel": {
+      "title": "Style",
+      "back": "Retour à la question"
+    }
+  },
+  "previewWindow": {
+    "title": "Aperçu du formulaire",
+    "region": "Aperçu du formulaire, {{language}}",
+    "size": "Taille de la fenêtre",
+    "language": "Langue de l’aperçu",
+    "restart": "Recommencer",
+    "waiting": "En attente du formulaire. Gardez-le ouvert dans l’éditeur.",
+    "noSession": "Ouvrez cet aperçu depuis l’éditeur de formulaires.",
+    "unavailable": "L’aperçu ne peut pas démarrer : le widget du formulaire ne s’est pas chargé. Rechargez cette fenêtre pour réessayer.",
+    "resizeRefused": "Votre navigateur a conservé la taille de cette fenêtre.",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "Personnalisée · {{width}} × {{height}}",
+    "presets": {
+      "phone": "Téléphone",
+      "rotate": "Téléphone, pivoté",
+      "tablet": "Tablette",
+      "desktop": "Ordinateur",
+      "embedded": "Intégré, 480 px de haut"
+    }
+  },
+  "flow": {
+    "title": "Parcours",
+    "questions_one": "{{count, number}} question",
+    "questions_other": "{{count, number}} questions",
+    "endings_one": "{{count, number}} écran de fin",
+    "endings_other": "{{count, number}} écrans de fin",
+    "paths_one": "{{count, number}} chemin",
+    "paths_other": "{{count, number}} chemins",
+    "lengths": "le plus court : {{min, number}} questions, le plus long : {{max, number}}",
+    "expandAll": "Tout développer",
+    "collapseAll": "Tout réduire",
+    "start": "Début",
+    "end": "Fin",
+    "welcomeOn": "Carte d’accueil activée → 1",
+    "welcomeOff": "Carte d’accueil désactivée → 1",
+    "questionsLabel": "Les questions et leurs règles",
+    "endingsLabel": "Écrans de fin",
+    "default": "par défaut",
+    "reachedBy_one": "atteint par {{count, number}} chemin",
+    "reachedBy_other": "atteint par {{count, number}} chemins",
+    "unreachable": "Aucun chemin n’atteint cette question",
+    "ai": "IA",
+    "noRules": "Tout le monde parcourt les questions dans l’ordre. Ajoutez une règle sur une question pour envoyer certaines personnes ailleurs.",
+    "thenGoTo": "Puis aller à → {{target}}",
+    "meta": {
+      "required": "obligatoire",
+      "optional": "facultative",
+      "options_one": "{{count, number}} option",
+      "options_other": "{{count, number}} options",
+      "other": "Autre"
+    }
+  },
+  "hidden": {
+    "title": "Champs masqués",
+    "intro": "Des valeurs que votre app ou votre lien transmet avec chaque réponse. Les répondants ne les voient jamais.",
+    "addField": "Ajouter un champ",
+    "limit": "Un formulaire peut comporter jusqu’à 20 champs masqués.",
+    "emptyTitle": "Aucun champ masqué",
+    "empty": "Ajoutez-en un pour recevoir de votre app des valeurs comme un identifiant utilisateur ou la version de l’app.",
+    "count": "{{n, number}} sur {{max, number}} · Chaque valeur est un texte de 200 caractères au plus ; les valeurs plus longues sont tronquées.",
+    "columns": {
+      "id": "ID",
+      "label": "Libellé",
+      "filledBy": "Rempli par",
+      "inResults": "Dans les résultats",
+      "actions": "Actions"
+    },
+    "filledBy": "lien · SDK",
+    "inResults": "filtre et colonne",
+    "inResultsDimension": "filtre, colonne et la dimension {{name}}*",
+    "actions": "Plus d’actions pour {{id}}",
+    "rename": "Renommer",
+    "delete": "Supprimer…",
+    "deleteConfirm": "Supprimer",
+    "deleteTitle": "Supprimer « {{id}} » ?",
+    "deleteMessage": "Les valeurs déjà reçues restent dans Résultats.",
+    "locked": "Les réponses sont stockées sous cet identifiant.",
+    "cancel": "Annuler",
+    "add": "Ajouter",
+    "done": "Terminé",
+    "useThem": "Les utiliser",
+    "kindLabel": "Origine des valeurs",
+    "valuesFor": "Valeurs pour",
+    "kinds": {
+      "link": "Lien",
+      "script": "Intégration par script",
+      "sdk": "SDK dans l’app",
+      "webview": "WebView mobile"
+    },
+    "modes": {
+      "live": "En ligne",
+      "test": "Test"
+    },
+    "codeLabel": "Code : {{kind}}",
+    "testShown": "Voici le lien de test : les réponses sont marquées Test et ne sont jamais comptées.",
+    "testOff": "Activez d’abord le lien de test dans Test.",
+    "openTest": "Ouvrir Test",
+    "saveFirst": "Enregistrez le formulaire pour obtenir ses liens.",
+    "save": "Enregistrer",
+    "noEndpoint": "Définissez le point de terminaison API dans Administration → Général pour obtenir les liens de ce formulaire.",
+    "notes": {
+      "replace": "Remplacez chaque {…} par la valeur, encodée pour l’URL. Les paramètres hf_ inconnus sont ignorés.",
+      "sdk": "Appelez-le quand la personne effectue l’action sur laquelle vous l’interrogez (par ex. Revenir à l’ancienne interface).",
+      "webview": "Ouvrez cette adresse dans une WebView. Pour votre version de test, utilisez le lien de test (En ligne | Test ci-dessus).",
+      "ids": "Transmettez des identifiants, pas des données personnelles : user_id doit être votre identifiant interne, pas un e-mail."
+    }
+  },
+  "languages": {
+    "title": "Langues",
+    "add": "Ajouter une langue",
+    "primary": "Langue principale",
+    "primaryHint": "La langue dans laquelle chaque texte est d’abord rédigé.",
+    "change": "Changer…",
+    "changeLabel": "Choisir une autre langue principale",
+    "changeNone": "Ajoutez d’abord une langue.",
+    "makePrimary": "Faire de {{language}} la langue principale",
+    "completeFirst": "Terminez d’abord sa traduction",
+    "listLabel": "Les langues du formulaire",
+    "primaryBadge": "principale",
+    "texts_one": "{{count, number}} texte",
+    "texts_other": "{{count, number}} textes",
+    "complete": "Complète",
+    "missingCount_one": "{{count, number}} manquant",
+    "missingCount_other": "{{count, number}} manquants",
+    "doneOf": "{{done, number}} sur {{total, number}}",
+    "translate": "Traduire",
+    "actions": "Plus d’actions pour {{language}}",
+    "remove": "Retirer la langue…",
+    "removeConfirm": "Retirer",
+    "removeTitle": "Retirer {{language}} ?",
+    "removeMessage_one": "Sa {{count, number}} traduction est supprimée, et les personnes qui lisent en {{language}} verront le texte en {{primary}}.",
+    "removeMessage_other": "Ses {{count, number}} traductions sont supprimées, et les personnes qui lisent en {{language}} verront les textes en {{primary}}.",
+    "filled_one": "{{count, number}} texte rempli à partir du modèle. Vérifiez-le avant de publier.",
+    "filled_other": "{{count, number}} textes remplis à partir du modèle. Vérifiez-les avant de publier.",
+    "emptyTitle": "Une seule langue",
+    "empty": "Ce formulaire n’existe qu’en {{language}}. Ajoutez une langue pour le proposer dans une autre.",
+    "respondents": "Les répondants reçoivent : le lang= du lien ou la langue du SDK ; sinon celle de leur navigateur ; sinon {{primary}}.",
+    "fallback": "Un texte manquant s’affiche en {{primary}}. Les mots propres au widget (Suivant, Retour, Choisissez jusqu’à 3…) sont toujours traduits.",
+    "back": "Langues",
+    "viewTitle": "{{language}} ({{code}}) · {{done, number}} sur {{total, number}}",
+    "onlyMissing": "Manquants uniquement",
+    "search": "Rechercher des textes…",
+    "nothingShown": "Aucun texte ne correspond.",
+    "missing": "Manquant",
+    "fromTemplate": "Du modèle",
+    "targetQuestion": "{{language}} : {{field}} de la question {{number}}",
+    "targetWelcome": "{{language}} : {{field}} de la carte d’accueil",
+    "targetEnding": "{{language}} : {{field}} de l’écran de fin « {{title}} »",
+    "fields": {
+      "headline": "Question",
+      "subheader": "Description",
+      "placeholder": "Texte indicatif",
+      "buttonLabel": "Libellé du bouton",
+      "option": "Option {{number}}",
+      "otherLabel": "Libellé « Autre »",
+      "otherPlaceholder": "Texte indicatif « Autre »",
+      "noneLabel": "Libellé « Aucune »",
+      "lowerLabel": "Libellé bas",
+      "upperLabel": "Libellé haut",
+      "consentLabel": "Texte de la case à cocher",
+      "ctaLabel": "Bouton de lien",
+      "welcomeTitle": "Titre",
+      "welcomeDescription": "Description",
+      "welcomeButton": "Libellé du bouton",
+      "endingTitle": "Titre",
+      "endingDescription": "Description",
+      "endingButton": "Libellé du bouton"
+    },
+    "confirm": {
+      "text": "Ce formulaire a été créé avant que les formulaires aient une langue.",
+      "writtenIn": "Rédigé en",
+      "saving": "L’enregistrement la stocke."
+    }
+  },
+  "test": {
+    "title": "Lien de test",
+    "subtitle": "Un lien de test ouvre ce formulaire même s’il est désactivé. Ses réponses ne comptent jamais.",
+    "linkSwitch": "Lien de test",
+    "linkOnHint": "Activé : le lien ci-dessous fonctionne, même quand le formulaire est désactivé.",
+    "linkOffHint": "Le lien de test cesse de fonctionner. Réactivez-le pour réutiliser le même lien.",
+    "linkOff": "Le lien de test est désactivé. Activez-le pour essayer le formulaire depuis votre app sans que les réponses soient comptées.",
+    "linkLabel": "Lien de test",
+    "linkMenu": "Plus d’actions pour le lien de test",
+    "copyWithHidden": "Copier avec les champs masqués",
+    "reset": "Réinitialiser le lien de test…",
+    "resetTitle": "Réinitialiser le lien de test ?",
+    "resetMessage": "Le lien de test actuel cesse immédiatement de fonctionner, partout où il a été partagé. Un nouveau lien le remplace.",
+    "resetConfirm": "Réinitialiser le lien de test",
+    "resetFailed": "Impossible de réinitialiser le lien de test. Réessayez dans un instant.",
+    "noToken": "Ce formulaire n’a pas encore de lien de test.",
+    "makeLink": "Créer le lien de test",
+    "makeLinkFailed": "Impossible de créer le lien de test. Réessayez dans un instant.",
+    "tokenLoading": "Lecture du lien de test…",
+    "qrTitle": "Code QR du lien de test",
+    "recordTitle": "Ce que deviennent les réponses de test",
+    "keep": "Les conserver, marquées Test",
+    "keepHint": "Stockées comme réponses de test. Affichées ci-dessous et dans Résultats uniquement si vous incluez les réponses de test. Jamais dans les métriques, le NPS, les tableaux de bord, les éléments de Priorisation ni le traitement par l’IA.",
+    "checkOnly": "Les vérifier, ne rien conserver",
+    "checkOnlyHint": "Chaque réponse est vérifiée comme une vraie, puis supprimée. Pour les tests automatisés ou de charge.",
+    "testersSee": "Ce que voient les testeurs :",
+    "bannerKeep": "un bandeau « TEST · Les réponses ne sont pas comptées » sur chaque écran du formulaire.",
+    "bannerDrop": "un bandeau « TEST · Rien n’est enregistré » sur chaque écran du formulaire.",
+    "previewNote": "L’aperçu n’envoie jamais rien ; utilisez le lien de test pour essayer en conditions réelles.",
+    "recentTitle": "Réponses de test récentes",
+    "refreshes": "Actualisé toutes les 10 s",
+    "deleteAll": "Tout supprimer…",
+    "deleteTitle": "Supprimer toutes les réponses de test ?",
+    "deleteMessage": "Toutes les réponses de test de ce formulaire sont supprimées. Les vraies réponses ne sont pas touchées. Cette action est irréversible.",
+    "deleteConfirm": "Supprimer les réponses de test",
+    "deleteFailed": "Impossible de supprimer les réponses de test. Réessayez dans un instant.",
+    "noneYet": "Aucune réponse de test pour l’instant. Ouvrez le lien de test, ou scannez son code QR avec un téléphone, et envoyez-en une.",
+    "checkOnlyEmpty": "« Les vérifier » ne conserve rien, il n’y a donc rien à afficher ici. Passez à « Les conserver » pour voir les réponses de test.",
+    "emptyValue": "vide",
+    "open": "Ouvrir",
+    "openResponse": "Ouvrir la réponse de test de {{time}}",
+    "todayAt": "Aujourd’hui {{time}}",
+    "keptUntilDeleted": "Les réponses de test sont conservées jusqu’à ce qu’un administrateur ou la personne qui a créé le formulaire les supprime."
+  },
+  "share": {
+    "title": "Partager",
+    "mode": "Afficher le lien en ligne ou le lien de test",
+    "live": "En ligne",
+    "test": "Test",
+    "offBanner": "Ce formulaire est désactivé : son lien affiche « Formulaire d'avis indisponible. »",
+    "publish": "Publier",
+    "testWhileOff": "Lien de test affiché : il fonctionne quand le formulaire est désactivé.",
+    "testOff": "Activez d’abord le lien de test dans Test.",
+    "openTest": "Ouvrir Test",
+    "testNotice": "Voici le lien de test : les réponses sont marquées Test et ne sont jamais comptées.",
+    "link": "Lien",
+    "liveHint": "Les réponses de ce lien sont comptées.",
+    "open": "Ouvrir",
+    "newTab": "(s’ouvre dans un nouvel onglet)",
+    "copy": "Copier",
+    "copied": "Copié",
+    "qr": "QR",
+    "qrTitle": "Code QR",
+    "withHidden": "Avec des champs masqués :",
+    "toHidden": "voir Champs masqués",
+    "iframe": "Intégration (iframe)",
+    "script": "Intégration par script",
+    "iframeHint": "Le script après le cadre lui donne la hauteur du formulaire. Sans lui, le cadre garde 480 px de haut et le formulaire défile à l’intérieur.",
+    "scriptHint": "Collez-le là où le formulaire doit apparaître. Le fichier du widget vient de cette app et se met à jour à chaque version. Si votre site définit une Content-Security-Policy, autorisez script-src {{app}} et connect-src {{api}}.",
+    "inApp": "Dans votre app :",
+    "inAppHint": "une app web appelle l’intégration par script avec sa langue et ses champs masqués ; une app mobile ouvre le lien dans une WebView.",
+    "saveFirstTitle": "Pas encore de liens",
+    "saveFirst": "Enregistrez le formulaire pour obtenir ses liens.",
+    "showProblems": "Voir les problèmes",
+    "save": "Enregistrer"
+  },
+  "results": {
+    "summary": "Synthèse",
+    "responsesView": "Réponses",
+    "view": "Vue des résultats",
+    "loading": "Chargement des résultats…",
+    "csv": "Exporter en CSV",
+    "csvFailed": "Impossible d’exporter les réponses.",
+    "includeTest": "Inclure les réponses de test",
+    "including_one": "{{formatted}} réponse de test incluse. Ces chiffres ne sont pas vos vrais résultats.",
+    "including_other": "{{formatted}} réponses de test incluses. Ces chiffres ne sont pas vos vrais résultats.",
+    "onlyTestTitle": "Pas encore de vraies réponses",
+    "onlyTest_one": "{{count, number}} réponse de test est masquée.",
+    "onlyTest_other": "{{count, number}} réponses de test sont masquées.",
+    "noneTitle": "Pas encore de réponses",
+    "none": "Partagez le formulaire, ou essayez-le avec le lien de test.",
+    "openShare": "Ouvrir Partager",
+    "noMatchTitle": "Rien ici",
+    "noMatch": "Aucune réponse ne correspond à ces filtres.",
+    "clearFilters": "Effacer les filtres",
+    "test": "Test",
+    "other": "Autre",
+    "otherAnswer": "{{label}} : « {{text}} »",
+    "accepted": "Accepté",
+    "notAccepted": "Non accepté",
+    "openInFeedback": "Ouvrir l’élément de feedback",
+    "reach": "{{answered}} ont répondu · {{skipped}} l’ont passée · non affichée à {{hidden}} (logique)",
+    "changed": "Modifiée le {{date}} : les réponses antérieures portaient sur d’autres options",
+    "earlierVersion_one": "{{formatted}} réponse à une version antérieure de cette question (autre type ou points) n’est pas comptée ici",
+    "earlierVersion_other": "{{formatted}} réponses à une version antérieure de cette question (autre type ou points) ne sont pas comptées ici",
+    "endings": "Écrans de fin",
+    "defaultEnding": "par défaut",
+    "removedQuestions": "Questions supprimées ({{count, number}})",
+    "removedAnswered_one": "{{formatted}} réponse",
+    "removedAnswered_other": "{{formatted}} réponses",
+    "statementNone": "Aucune réponse à afficher.",
+    "statementShown_one": "Affiché à {{count, number}} personne.",
+    "statementShown_other": "Affiché à {{count, number}} personnes.",
+    "consent": "Accepté par {{accepted}} des {{saw}} personnes qui l’ont vu ({{percent}}).",
+    "contact": "{{left}} ont laissé leurs coordonnées · {{emails}} e-mails · {{phones}} numéros de téléphone",
+    "contactHint": "Les coordonnées elles-mêmes se trouvent dans Réponses.",
+    "figures": {
+      "responses": "Réponses",
+      "completion": "Taux de complétion",
+      "ofOpened": "{{percent}} des ouvertures",
+      "last": "Dernière réponse",
+      "largestDropAt": "plus forte baisse à {{step}}",
+      "questionShort": "Q{{position}}"
+    },
+    "filters": {
+      "range": "Période",
+      "days7": "7 derniers jours",
+      "days30": "30 derniers jours",
+      "days90": "90 derniers jours",
+      "all": "Depuis le début",
+      "language": "Langue",
+      "allLanguages": "Toutes les langues",
+      "ending": "Écran de fin",
+      "allEndings": "Tous les écrans de fin",
+      "add": "Filtre : champ masqué",
+      "addLabel": "Filtrer par un champ masqué",
+      "field": "Champ masqué",
+      "value": "Valeur",
+      "apply": "Ajouter le filtre",
+      "cancel": "Annuler",
+      "remove": "Retirer le filtre {{field}} = {{value}}"
+    },
+    "choice": {
+      "sortByCount": "Trier par nombre",
+      "optionsLabel": "Réponses par option",
+      "removed": "{{label}} (supprimée)",
+      "showOther_one": "Afficher {{count, number}} réponse",
+      "showOther_other": "Afficher {{count, number}} réponses",
+      "hideOther": "Masquer les réponses",
+      "multiNote": "Plusieurs choix étaient possibles : le total des parts dépasse donc 100 %.",
+      "multiNoteMax_one": "On pouvait choisir jusqu’à {{count, number}} option : le total des parts dépasse donc 100 %.",
+      "multiNoteMax_other": "On pouvait choisir jusqu’à {{count, number}} options : le total des parts dépasse donc 100 %."
+    },
+    "scale": {
+      "average": "moyenne",
+      "averageOf": "{{average}} sur {{max}}",
+      "distribution": "Réponses par note",
+      "pointLabel": "{{score}} · {{label}}",
+      "npsScore": "NPS",
+      "groups": "Groupes NPS",
+      "detractors": "Détracteurs (0–6)",
+      "passives": "Passifs (7–8)",
+      "promoters": "Promoteurs (9–10)",
+      "satisfied": "satisfaits (4 ou 5)",
+      "easy": "facile (5 à 7)"
+    },
+    "text": {
+      "latest": "Dernières réponses",
+      "none": "Pas encore de réponses.",
+      "noMatch": "Aucune réponse ne correspond.",
+      "analysing": "Analyse…",
+      "open": "Ouvrir",
+      "search": "Rechercher dans les réponses…",
+      "showAll_one": "Afficher {{count, number}} dans Réponses",
+      "showAll_other": "Afficher les {{count, number}} dans Réponses"
+    },
+    "funnel": {
+      "title": "Abandon",
+      "opened": "Ouverts",
+      "started": "Commencés",
+      "completed": "Terminés",
+      "ofOpened": "{{percent}} des ouvertures",
+      "largestDrop": "plus forte baisse",
+      "somePaths": "sur certains chemins seulement",
+      "somePathsNote": "La logique n’affiche certaines questions que sur certains chemins : elles n’ont pas de baisse, et leur nombre est celui des personnes qui les ont vues."
+    },
+    "reachCard": {
+      "title": "Portée",
+      "answeredBy": "répondue dans {{answered}} des {{total}} réponses terminées",
+      "note": "Savoir combien de personnes s’arrêtent en cours de route nécessite un suivi des vues, pas encore collecté.",
+      "filtered": "L’abandon compte toutes les visites : il n’est pas affiché tant que vous filtrez par langue, fin ou valeur masquée."
+    },
+    "responses": {
+      "title": "Aucune réponse",
+      "none": "Aucune réponse ne correspond à ces filtres.",
+      "caption": "Réponses, des plus récentes aux plus anciennes",
+      "time": "Heure",
+      "answers": "Réponses",
+      "language": "Langue",
+      "ending": "Écran de fin",
+      "hidden": "Masqués",
+      "openColumn": "Ouvrir",
+      "open": "Ouvrir la réponse du {{time}}",
+      "more": "Charger plus"
+    },
+    "sheet": {
+      "title": "Réponse du {{time}}",
+      "answers": "Réponses",
+      "question": "{{number}} · {{headline}}",
+      "notAnswered": "Sans réponse : passée, ou hors du parcours de ce répondant.",
+      "time": "Heure",
+      "language": "Langue",
+      "ending": "Écran de fin",
+      "revisionLabel": "Version du formulaire",
+      "revision": "Répondu sur la version {{number}}",
+      "previous": "Précédente",
+      "next": "Suivante"
+    },
+    "contactLeft_one": "{{count, number}} personne a laissé ses coordonnées",
+    "contactLeft_other": "{{count, number}} personnes ont laissé leurs coordonnées"
+  },
+  "theme": {
+    "presets": {
+      "label": "Préréglage",
+      "vocLight": "VoC clair",
+      "vocDark": "VoC sombre",
+      "highContrast": "Contraste élevé",
+      "brand": "Votre marque",
+      "saveAsBrand": "Enregistrer comme marque…",
+      "notAdmin": "Seuls les administrateurs de cet espace de travail peuvent enregistrer sa marque.",
+      "unreadable": "Rendez le texte lisible (au moins 3:1) avant d’enregistrer ce style comme marque.",
+      "confirmTitle": "Enregistrer ce style comme votre marque ?",
+      "confirmMessage": "Les nouveaux formulaires de cet espace de travail partiront de ce style, et le Style de chaque formulaire le proposera comme Votre marque.",
+      "confirmReplace": "Les nouveaux formulaires de cet espace de travail partiront de ce style, et le Style de chaque formulaire le proposera comme Votre marque. Il remplace la marque enregistrée auparavant.",
+      "confirm": "Enregistrer comme marque",
+      "saved": "Enregistré comme votre marque.",
+      "saveFailed": "Impossible d’enregistrer la marque. Réessayez."
+    },
+    "reset": "Revenir à {{preset}}",
+    "mode": {
+      "label": "Mode",
+      "light": "Clair",
+      "dark": "Sombre",
+      "auto": "Auto",
+      "hint": "Auto suit le réglage de l’appareil de chaque répondant."
+    },
+    "editing": {
+      "label": "En cours de modification"
+    },
+    "palette": {
+      "light": "Palette claire",
+      "dark": "Palette sombre"
+    },
+    "colours": {
+      "legend": "Couleurs",
+      "primary": "Principale",
+      "primaryHint": "Boutons, progression, l’anneau de focus, réponses choisies",
+      "background": "Fond",
+      "text": "Texte",
+      "swatch": "{{label}} : choisir une couleur",
+      "invalid": "Utilisez une couleur hexadécimale comme #8e48ff."
+    },
+    "derived": "Dérivé : bords des options {{ratio}}:1 (la couleur du texte à {{percent}} %).",
+    "corners": {
+      "label": "Angles",
+      "square": "Droits {{px}}",
+      "small": "Petits {{px}}",
+      "medium": "Moyens {{px}}",
+      "large": "Grands {{px}}",
+      "slider": "Arrondi des angles",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "Police",
+      "system": "Système",
+      "inherit": "Comme votre page (intégration par script uniquement)",
+      "serif": "Avec empattements",
+      "rounded": "Arrondie",
+      "mono": "Chasse fixe",
+      "inheritHint": "Seule l’intégration par script reprend la police de votre page ; le lien, l’iframe et l’aperçu affichent Système."
+    },
+    "size": {
+      "label": "Taille",
+      "default": "Par défaut",
+      "large": "Grande",
+      "hint": "Grande : un texte de 18 px pour un public plus âgé."
+    },
+    "contrast": {
+      "title": "Contraste · {{palette}}",
+      "pair": "Paire",
+      "ratio": "Rapport",
+      "result": "Résultat",
+      "text": "Texte sur le fond",
+      "primary": "Principale sur le fond",
+      "label": "Texte du bouton sur la principale",
+      "edge": "Bord des options",
+      "minimum": "(min. {{ratio}}:1)",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "Sous AA",
+      "use": "Utiliser {{colour}} ({{ratio}}:1)",
+      "other": {
+        "light_one": "La palette claire a {{count, number}} problème de contraste.",
+        "light_other": "La palette claire a {{count, number}} problèmes de contraste.",
+        "dark_one": "La palette sombre a {{count, number}} problème de contraste.",
+        "dark_other": "La palette sombre a {{count, number}} problèmes de contraste."
+      },
+      "editOther": {
+        "light": "Modifier la claire",
+        "dark": "Modifier la sombre"
+      }
+    }
+  },
+  "settings": {
+    "sectionsLabel": "Sections des paramètres",
+    "sections": {
+      "general": "Général",
+      "routing": "Routage par catégorie",
+      "project": "Projet lié",
+      "appearance": "Apparence",
+      "danger": "Zone de danger"
+    },
+    "general": {
+      "name": "Nom interne",
+      "nameHint": "Seule votre équipe le voit. Les répondants lisent les questions.",
+      "primary": "Langue principale :",
+      "toLanguages": "Langues",
+      "languageHint": "Les réponses sont stockées avec la langue dans laquelle elles ont été données."
+    },
+    "routing": {
+      "category": "Catégorie du formulaire",
+      "subcategory": "Sous-catégorie (facultatif)",
+      "none": "— Aucune catégorie",
+      "noSubcategory": "— Aucune sous-catégorie",
+      "notConfiguredBadge": "N’est plus configurée",
+      "pickConfigured": "Choisissez une catégorie configurée.",
+      "categoryHint": "Les catégories sont configurées dans Administration → Taxonomie → Catégories.",
+      "taggedAs": "Les réponses de ce formulaire sont classées comme :",
+      "perOption": "Routage par option",
+      "noChoices": "Ce formulaire n’a pas de question à choix : chaque réponse est donc classée dans la catégorie du formulaire.",
+      "mapped_one": "Option associée : {{mapped}} sur {{count, number}}",
+      "mapped_other": "Options associées : {{mapped}} sur {{count, number}}",
+      "edit": "Modifier",
+      "editQuestion": "Modifier le routage de la question {{number}}",
+      "precedence": "Une réponse est classée dans la catégorie de la première option répondue qui en a une ; sinon dans celle du formulaire.",
+      "dimensionsHint": "Chaque réponse porte ces valeurs. Une intégration peut définir les siennes par page avec l’option dimensions."
+    },
+    "danger": {
+      "hint": "Supprimer un formulaire le retire, avec son lien. Ses réponses restent dans le feedback.",
+      "delete": "Supprimer le formulaire…",
+      "confirmTitle": "Supprimer ce formulaire ?",
+      "confirmMessage_one": "Supprimer « {{name}} » ? Il a {{count, number}} réponse. Son lien cessera de fonctionner. Cette action est irréversible.",
+      "confirmMessage_other": "Supprimer « {{name}} » ? Il a {{count, number}} réponses. Son lien cessera de fonctionner. Cette action est irréversible.",
+      "confirm": "Supprimer le formulaire",
+      "failed": "Impossible de supprimer le formulaire. Réessayez dans un instant.",
+      "unnamed": "ce formulaire"
+    }
   }
 }

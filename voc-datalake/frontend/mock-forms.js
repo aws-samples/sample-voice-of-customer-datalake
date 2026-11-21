@@ -9,9 +9,12 @@
 // Deliberately NOT claimed here (they live in mock-server.js):
 // GET /feedback-forms (list) and GET /feedback-forms/{id}/stats.
 //
-// Two mock-only liberties, both called out where they happen:
-// - PUT on an unknown form answers 404 (the real update_item has no condition,
-//   so it would upsert a nameless stub).
+// Forms v2 live in mock-forms-v2.js: one form's GET, the v2 create and save (by body: schema_version 2,
+// or a v2 form's partial save), the test token, test-response deletion, results, responses, CSV, the AI draft, and a
+// v2 form's widget config and submit. A v1 request passes through to the routes below, unchanged.
+//
+// PUT on an unknown form answers 404, as the real update does (a conditional
+// update_item, `attribute_exists(sk)`: never an upsert). One mock-only liberty:
 // - A `pf_<16 hex>` id with no stored record resolves to a synthetic
 //   prototype_pin form, so the prototype pin bridge works against mock
 //   prototypes that carry a pin widget but have no stored form.
@@ -19,10 +22,15 @@
 
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { handleFormV2Routes, handleFormV2Write } from './mock-forms-v2.js';
 
 const FORM_ROUTE = /^\/feedback-forms\/([^/]+)(?:\/(submissions|config|submit|iframe))?$/;
 const PIN_FORM_ID = /^pf_[0-9a-f]{16}$/;
 const LINK_FIELD_MAX_LENGTH = 128;
+// The bounds on a version 1 body's text_question and language ('' = the visitor's browser language). The
+// handler now migrates a version 1 body to version 2 (shared/forms_v2.py migrate_v1, HEADLINE_CHARS, FORM_LOCALES).
+const QUESTION_MAX_CHARS = 500;
+const FORM_LANGUAGES = ['en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko', 'pl'];
 const PIN_MAX_BODY_BYTES = 24_000;
 const DAY_MS = 86_400_000;
 const daysAgo = (n) => new Date(Date.now() - n * DAY_MS).toISOString();
@@ -34,8 +42,8 @@ const DEFAULT_THEME = {
 // DEFAULT_FORM_CONFIG in the handler: also the create allowlist.
 const DEFAULT_FORM_CONFIG = {
   name: 'New Feedback Form', enabled: false, title: 'Share Your Feedback',
-  description: 'We value your opinion.', question: 'How was your experience?',
-  placeholder: 'Tell us about your experience...', rating_enabled: true, rating_type: 'stars',
+  description: 'We value your opinion.', question: 'How was your experience?', text_question: '',
+  placeholder: 'Tell us about your experience...', language: '', rating_enabled: true, rating_type: 'stars',
   rating_max: 5, submit_button_text: 'Submit Feedback', success_message: 'Thank you for your feedback!',
   theme: DEFAULT_THEME, collect_email: false, collect_name: false, custom_fields: [],
   category: '', subcategory: '', project_id: '', document_id: '',
@@ -48,7 +56,7 @@ const UPDATABLE_FIELDS = [
   'rating_enabled', 'rating_type', 'rating_max', 'submit_button_text',
   'success_message', 'theme', 'collect_email', 'collect_name',
   'custom_fields', 'category', 'subcategory', 'project_id', 'document_id',
-  'dimension_defaults', 'tags',
+  'dimension_defaults', 'tags', 'text_question', 'language',
 ];
 
 const fail = (status, error) => [status, { success: false, error }];
@@ -138,7 +146,8 @@ const ratingMaxOf = (item) => Math.trunc(Number(pick(item, 'rating_max', 5))) ||
 const itemToForm = (item) => ({
   form_id: pick(item, 'form_id', ''), name: pick(item, 'name', ''), enabled: pick(item, 'enabled', false),
   title: pick(item, 'title', ''), description: pick(item, 'description', ''),
-  question: pick(item, 'question', ''), placeholder: pick(item, 'placeholder', ''),
+  question: pick(item, 'question', ''), text_question: pick(item, 'text_question', ''),
+  language: pick(item, 'language', ''), placeholder: pick(item, 'placeholder', ''),
   rating_enabled: pick(item, 'rating_enabled', true), rating_type: pick(item, 'rating_type', 'stars'),
   rating_max: ratingMaxOf(item),
   submit_button_text: pick(item, 'submit_button_text', ''), success_message: pick(item, 'success_message', ''),
@@ -155,6 +164,7 @@ const itemToForm = (item) => ({
 const itemToWidgetConfig = (item) => ({
   enabled: pick(item, 'enabled', false), title: pick(item, 'title', ''),
   description: pick(item, 'description', ''), question: pick(item, 'question', ''),
+  text_question: pick(item, 'text_question', ''), language: pick(item, 'language', ''),
   placeholder: pick(item, 'placeholder', ''), rating_enabled: pick(item, 'rating_enabled', true),
   rating_type: pick(item, 'rating_type', 'stars'),
   rating_max: ratingMaxOf(item),
@@ -222,12 +232,26 @@ function themeError(body) {
   return null;
 }
 
+/** A version 1 body's follow-up question is text of at most 500 characters, its language one of nine or ''. */
+function copyError(body) {
+  if (own(body, 'text_question')) {
+    if (typeof body.text_question !== 'string') return 'text_question must be a string';
+    if (body.text_question.length > QUESTION_MAX_CHARS) {
+      return `text_question must be at most ${QUESTION_MAX_CHARS} characters`;
+    }
+  }
+  if (own(body, 'language') && !['', ...FORM_LANGUAGES].includes(body.language)) {
+    return `language must be one of ${FORM_LANGUAGES.join(', ')}, or empty for the visitor's browser language`;
+  }
+  return null;
+}
+
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
 function createForm(shared, body) {
   const input = body ?? {};
   if (!isPlainObject(input)) return fail(400, 'Request body must be a JSON object');
-  const linkError = linkFieldError(input) ?? themeError(input);
+  const linkError = linkFieldError(input) ?? themeError(input) ?? copyError(input);
   if (linkError) return fail(400, linkError);
   const now = new Date().toISOString();
   // str(uuid.uuid4())[:8] in build_form_item.
@@ -243,12 +267,13 @@ function createForm(shared, body) {
 function updateForm(shared, formId, body) {
   const input = body ?? {};
   if (!isPlainObject(input)) return fail(400, 'Request body must be a JSON object');
-  const linkError = linkFieldError(input) ?? themeError(input);
+  const linkError = linkFieldError(input) ?? themeError(input) ?? copyError(input);
   if (linkError) return fail(400, linkError);
   const fields = UPDATABLE_FIELDS.filter((field) => own(input, field));
   if (fields.length === 0) return fail(400, 'No fields to update');
   const form = shared.mockFeedbackForms.find((f) => f.form_id === formId);
-  if (!form) return fail(404, 'Form not found'); // mock-only: the real update upserts
+  // As the real update: a conditional UpdateItem (attribute_exists), so a missing form is a 404, never an upsert.
+  if (!form) return fail(404, 'Form not found');
   for (const field of fields) form[field] = copy(input[field]);
   form.updated_at = new Date().toISOString();
   return [200, { success: true, form: itemToForm(form) }];
@@ -366,8 +391,7 @@ function iframeHtml(req, formId) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Feedback Form</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; min-height: 100vh; }
+    html, body { margin: 0; }
     #voc-feedback-form { min-height: 100vh; }
   </style>
 </head>
@@ -409,9 +433,30 @@ function classify(method, pathname) {
   return op ? { op, formId } : null;
 }
 
-/** Handle the single-form, submissions and public widget routes; true when taken. */
+/** The v1 writes, after the body is read. */
+function v1Write(shared, route, body) {
+  const writers = {
+    create: () => createForm(shared, body),
+    update: () => updateForm(shared, route.formId, body),
+    submit: () => submitFeedback(shared, route.formId, body),
+  };
+  return own(writers, route.op) ? writers[route.op]() : fail(404, 'Form not found');
+}
+
+/** Handle the single-form, submissions and public widget routes (v2 first); true when taken. */
 export function handleFormRoutes(req, res, url, send, shared) {
+  const v2 = handleFormV2Routes(req, res, url, send, shared, itemToForm);
+  if (v2 === true) return true;
   const route = classify(req.method, url.pathname);
+  if (v2 === null) {
+    // A write whose body decides: a v2 one is mock-forms-v2.js's, a v1 one is handled as before.
+    shared.collectJson(req, res, (body) => {
+      const answer = handleFormV2Write(req, url, shared, body, itemToForm);
+      const [status, payload] = answer === false ? v1Write(shared, route ?? { op: 'none' }, body) : answer;
+      send(status, payload);
+    });
+    return true;
+  }
   if (!route) return false;
   const { op, formId } = route;
   if (op === 'iframe') {
@@ -430,13 +475,8 @@ export function handleFormRoutes(req, res, url, send, shared) {
     send(status, payload);
     return true;
   }
-  const writers = {
-    create: (body) => createForm(shared, body),
-    update: (body) => updateForm(shared, formId, body),
-    submit: (body) => submitFeedback(shared, formId, body),
-  };
   shared.collectJson(req, res, (body) => {
-    const [status, payload] = writers[op](body);
+    const [status, payload] = v1Write(shared, route, body);
     send(status, payload);
   });
   return true;

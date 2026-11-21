@@ -18,11 +18,19 @@ class ApiError(Exception):
     Attributes:
         message: Human-readable error message
         status_code: HTTP status code to return
+        code: A machine-readable word the answer's body carries beside ``success`` and ``error``
+            (e.g. ``'revision_conflict'``), so a client tells refusals apart without reading the
+            English ``error``; None (the default) adds nothing
+        details: Further machine-readable fields the body carries beside ``code`` (e.g. a refused answer's
+            ``question_id``, a rate limit's ``retry_after``); never ``success``, ``error``, ``code`` or ``message``
     """
     status_code: int = 500
 
-    def __init__(self, message: str):
+    def __init__(self, message: str, *, code: str | None = None, details: dict[str, object] | None = None):
         self.message = message
+        self.code = code
+        self.details = {key: value for key, value in (details or {}).items()
+                        if key not in {'success', 'error', 'code', 'message'}}
         super().__init__(message)
 
 

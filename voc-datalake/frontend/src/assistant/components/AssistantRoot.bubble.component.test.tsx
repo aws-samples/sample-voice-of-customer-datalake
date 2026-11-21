@@ -11,8 +11,11 @@ import { render } from '@test/test-utils'
 import { useAuthStore } from '../../store/authStore'
 import { useAssistantUiStore } from '../store/assistantStore'
 import { useBubbleStore } from '../bubble/bubbleStore'
-import { ACTION_BAR_GAP, EDGE_MARGIN, KEY_STEP, KEY_STEP_LARGE, LAUNCHER_SIZE } from '../bubble/geometry'
+import { ACTION_BAR_GAP, BESIDE_GAP, EDGE_MARGIN, KEY_STEP, KEY_STEP_LARGE, LAUNCHER_SIZE } from '../bubble/geometry'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
+import { useRegisterKeepClear } from '../../components/StickyActionBar/actionBarRegistry'
+import { useYieldLauncher } from '../bubble/launcherYield'
+import { useRef } from 'react'
 import AssistantRoot from './AssistantRoot'
 import { useThemeStore } from '../../theme/themeStore'
 import { WORKSPACE_THEME_CHOICE } from '../../theme/themeCatalog'
@@ -60,6 +63,24 @@ function renderBesideActionBar(bar: { x: number; y: number; width: number; heigh
     </>,
     { initialEntries: ['/'] },
   )
+}
+
+/** A form's preview pane at the page's end edge (1440×900, as the builder's): a `beside` keep-clear zone. */
+const PANE = { x: 1064, y: 316, width: 352, height: 778 }
+
+/** The pane, rendered only while `shown` (a zone that comes and goes with its component's render). */
+function PreviewPane({ shown }: Readonly<{ shown: boolean }>) {
+  const ref = useRef<HTMLElement>(null)
+  useRegisterKeepClear(ref, { mode: 'beside' })
+  return shown ? <aside ref={ref} data-pane="" aria-label="Preview" /> : null
+}
+
+function renderBesidePane() {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function rect(this: HTMLElement) {
+    return DOMRect.fromRect(this.hasAttribute('data-pane') ? PANE : { x: 0, y: 0, width: 0, height: 0 })
+  })
+  const view = render(<><PreviewPane shown /><AssistantRoot /></>, { initialEntries: ['/'] })
+  return { ...view, hidePane: () => view.rerender(<><PreviewPane shown={false} /><AssistantRoot /></>) }
 }
 
 function drag(dx: number, dy: number) {
@@ -232,10 +253,62 @@ describe('assistant launcher position', () => {
   })
 })
 
+describe('the launcher beside a form\'s preview (7.04.00, forms audit F4)', () => {
+  const besideRight = 1440 - PANE.x + BESIDE_GAP
+
+  it('stands at the pane\'s inline-start side, at its own height, and goes back to its corner once the pane goes', async () => {
+    const view = renderBesidePane()
+    await waitFor(() => expect(offsets()).toStrictEqual({ right: besideRight, bottom: 16 }))
+    // Nothing was stored: the step follows the pane, it is not the person's choice.
+    expect(useBubbleStore.getState().positions).toStrictEqual({})
+    view.hidePane()
+    await waitFor(() => expect(offsets()).toStrictEqual({ right: 16, bottom: 16 }))
+  })
+
+  it('keeps a spot the person dragged it to while it covers nothing, and steps a spot on the pane beside it', async () => {
+    renderBesidePane()
+    await waitFor(() => expect(offsets().right).toBe(besideRight))
+    drag(-200, -100)
+    expect(offsets()).toStrictEqual({ right: besideRight + 200, bottom: 116 })
+    // Dropped on the pane: beside it again, at the height it was dropped at.
+    drag(400, 0)
+    expect(offsets()).toStrictEqual({ right: besideRight, bottom: 116 })
+  })
+})
+
 describe('the launcher under the mobile navigation drawer', () => {
   // 5.35 (E2E 5.34): the launcher floated over the open drawer.
   it('is hidden while the drawer is open', () => {
     render(<AssistantRoot launcherHidden />, { initialEntries: ['/'] })
     expect(launcher()).toHaveClass('hidden')
+  })
+
+  it('is hidden while a page offers the assistant in its own menu, and back once none does (7.04.00)', () => {
+    function Yielding({ active }: Readonly<{ active: boolean }>) {
+      useYieldLauncher(active)
+      return null
+    }
+    const view = render(<><Yielding active /><AssistantRoot /></>, { initialEntries: ['/'] })
+    const hidden = () => launcher().classList.contains('hidden')
+    const seen = [hidden()]
+    view.rerender(<><Yielding active={false} /><AssistantRoot /></>)
+    seen.push(hidden())
+    view.rerender(<><Yielding active /><AssistantRoot /></>)
+    seen.push(hidden())
+    view.rerender(<AssistantRoot />)
+    seen.push(hidden())
+    expect(seen).toStrictEqual([true, false, true, false])
+  })
+
+  it('gives focus back to what opened the panel when it closes while the launcher is hidden (the builder\'s ⋯)', async () => {
+    const user = userEvent.setup()
+    render(<><button type="button">More form actions</button><AssistantRoot launcherHidden /></>, { initialEntries: ['/'] })
+    const opener = screen.getByRole('button', { name: 'More form actions' })
+    opener.focus()
+    act(() => { useAssistantUiStore.getState().setOpen(true) })
+    // The panel is a lazy chunk: wait for it to take focus, then close it from the keyboard.
+    await waitFor(() => expect(opener).not.toHaveFocus())
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(opener).toHaveFocus())
   })
 })

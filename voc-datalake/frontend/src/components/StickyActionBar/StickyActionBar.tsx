@@ -1,7 +1,7 @@
 /**
  * @fileoverview A page's primary-action row (Save / Discard / Submit …), pinned
- * to the bottom of the scrolling content and registered as the bottom safe
- * area, so the floating assistant launcher lifts above it instead of covering
+ * to the bottom of the scrolling content and registered as a `lift` keep-clear
+ * zone (actionBarRegistry), so the floating assistant launcher lifts above it instead of covering
  * Save (E2E F5; 3.00.00 R3). EVERY page or editor whose primary save / submit
  * row ends a form uses it — `actionBars.audit.test.ts` fails on one that does
  * not; dialogs do not need it (ModalShell already paints over the launcher).
@@ -25,8 +25,11 @@ interface StickyActionBarProps {
   readonly variant?: 'bar' | 'inline'
 }
 
+// An opaque card, never a backdrop blur: a backdrop filter makes the bar the containing block of every `fixed`
+// descendant, so a confirmation its buttons open (ConfirmModal, which is not portalled) rendered inside the bar's
+// box instead of over the page (7.04.00: the form builder's Update live form on a phone).
 const VARIANT_CLASSES: Readonly<Record<NonNullable<StickyActionBarProps['variant']>, string>> = {
-  bar: 'flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card/95 px-3 py-2 shadow-sm backdrop-blur',
+  bar: 'flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm',
   inline: 'bg-card',
 }
 

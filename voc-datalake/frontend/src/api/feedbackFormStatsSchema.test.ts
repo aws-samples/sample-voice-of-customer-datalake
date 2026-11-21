@@ -3,7 +3,7 @@
  * boundary: a malformed `stats` reads as null and a malformed row costs only itself.
  */
 import { describe, expect, it } from 'vitest'
-import { parseFormStatsResponse, parseFormSubmissionsResponse } from './feedbackFormStatsSchema'
+import { normalizeFormStatsMap, parseFormStatsResponse } from './feedbackFormStatsSchema'
 
 const stats = { total_submissions: 12, avg_rating: 4.5, rating_count: 10 }
 
@@ -12,30 +12,28 @@ describe('parseFormStatsResponse', () => {
     expect(parseFormStatsResponse({ success: true, form_id: 'f1', stats })).toStrictEqual({ stats })
   })
 
+  it('keeps the card headline figure, and reads a malformed one as no figure without losing the counts', () => {
+    const headline = { question_id: 'q_nps', type: 'nps', value: 32.5, count: 40, scale_max: 10 }
+    expect(parseFormStatsResponse({ stats: { ...stats, headline } }).stats?.headline)
+      .toStrictEqual({ type: 'nps', value: 32.5, count: 40, scale_max: 10 })
+    expect(parseFormStatsResponse({ stats: { ...stats, headline: { type: 'nps', value: 'high' } } }).stats)
+      .toStrictEqual({ ...stats, headline: null })
+    expect(parseFormStatsResponse({ stats: { ...stats, headline: null } }).stats?.headline).toBeNull()
+  })
+
   it('reads a malformed or missing stats object as null', () => {
     expect(parseFormStatsResponse({ stats: { total_submissions: 'many' } })).toStrictEqual({ stats: null })
     expect(parseFormStatsResponse(null)).toStrictEqual({ stats: null })
   })
 })
 
-describe('parseFormSubmissionsResponse', () => {
-  it('keeps valid rows, fills sparse fields and drops rows without an id', () => {
-    const parsed = parseFormSubmissionsResponse({
-      stats,
-      submissions: [
-        { feedback_id: 'fb_1', original_text: 'Great', rating: 5, sentiment_label: 'positive', category: 'delivery', created_at: '2026-01-01T10:00:00Z', persona_name: '' },
-        { feedback_id: 'fb_2', rating: 'five' },
-        { original_text: 'no id' },
-      ],
-    })
-    expect(parsed.stats).toStrictEqual(stats)
-    expect(parsed.submissions.map((row) => row.feedback_id)).toStrictEqual(['fb_1', 'fb_2'])
-    expect(parsed.submissions[1]).toStrictEqual({
-      feedback_id: 'fb_2', original_text: '', rating: null, sentiment_label: '', category: '', created_at: '', persona_name: '',
-    })
+describe('normalizeFormStatsMap', () => {
+  it('keeps the valid entries of the list\'s stats map and drops a malformed one', () => {
+    expect(normalizeFormStatsMap({ form_1: stats, form_2: { total_submissions: -1 } })).toStrictEqual({ form_1: stats })
   })
 
-  it('reads a body that is not an object as no stats and no rows', () => {
-    expect(parseFormSubmissionsResponse('oops')).toStrictEqual({ stats: null, submissions: [] })
+  it('reads a missing or malformed map as null (the cards then ask for their own stats)', () => {
+    expect(normalizeFormStatsMap(undefined)).toBeNull()
+    expect(normalizeFormStatsMap(['form_1'])).toBeNull()
   })
 })

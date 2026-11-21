@@ -5,6 +5,7 @@
  * (api-request-models.ts), attached to exactly:
  *
  *   POST /feedback-forms/{form_id}/submit   the embeddable widget and the prototype pin widget
+ *   POST /feedback-forms/{form_id}/events   the embeddable widget's funnel beacons (a strict model, 7.04.00)
  *   POST /voting-sessions/{session_id}/submit  the ballot page
  *
  * A junk body is refused at the gateway, before it costs a Lambda invocation; the handler still validates

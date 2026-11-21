@@ -149,26 +149,33 @@ class ModuleInfo:
         return '.'.join([*base, *([node.module] if node.module else [])])
 
     def bind_import(self, node: ast.Import | ast.ImportFrom) -> list[Binding]:
-        bound: list[Binding] = []
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.asname:
-                    binding = Binding(alias.name)
-                    self.imports[alias.asname] = binding
-                else:
-                    head = alias.name.split('.')[0]
-                    binding = Binding(alias.name)
-                    self.imports.setdefault(head, Binding(head))
-                    self.dotted.add(alias.name)
-                bound.append(binding)
-            return bound
-        source = self.absolute(node)
+        """A MODULE-LEVEL import (parse time): its names join ``imports`` / ``dotted``, which loading follows."""
+        return bind_into(self, node, self.imports, self.dotted)
+
+
+def bind_into(info: ModuleInfo, node: ast.Import | ast.ImportFrom, imports: dict[str, Binding],
+              dotted: set[str]) -> list[Binding]:
+    """The bindings ``node`` makes, recorded in ``imports`` (name -> binding) and ``dotted`` (plain ``import a.b``)."""
+    bound: list[Binding] = []
+    if isinstance(node, ast.Import):
         for alias in node.names:
-            binding = Binding(source, alias.name)
-            if alias.name != '*':
-                self.imports[alias.asname or alias.name] = binding
+            if alias.asname:
+                binding = Binding(alias.name)
+                imports[alias.asname] = binding
+            else:
+                head = alias.name.split('.')[0]
+                binding = Binding(alias.name)
+                imports.setdefault(head, Binding(head))
+                dotted.add(alias.name)
             bound.append(binding)
         return bound
+    source = info.absolute(node)
+    for alias in node.names:
+        binding = Binding(source, alias.name)
+        if alias.name != '*':
+            imports[alias.asname or alias.name] = binding
+        bound.append(binding)
+    return bound
 
 
 class ParseCache:
@@ -214,6 +221,12 @@ class Graph:
         self.prefixes: set[str] = set()
         self.dynamic: set[str] = set()
         self.dynamic_names: set[str] = set()   # literal module names passed to import_module
+        # The imports inside LIVE functions (a lazy `from shared.cloudfront_signing import sign_url`), per module:
+        # this run's own, never written into the ModuleInfo. A ParseCache is shared by every bundle of an
+        # analysis, and a lazy import recorded there made every LATER bundle that loads the module follow it
+        # as if it ran at import time: the result then depended on the order the functions were analysed.
+        self.lazy_imports: dict[str, dict[str, Binding]] = {}
+        self.lazy_dotted: dict[str, set[str]] = {}
         self.current: Key = ('<entry>', '')
         self.work: list[tuple[ModuleInfo, ast.AST]] = []
 
@@ -266,7 +279,7 @@ class Graph:
                 if '.' in qualname:
                     self.mark(info, qualname.split('.', maxsplit=1)[0], depth + 1)
             return
-        binding = info.imports.get(qualname)
+        binding = self.binding(info, qualname)
         if binding is not None:
             self.reach.bindings.add((info.name, qualname))
         if binding is not None and binding.symbol is not None:
@@ -274,6 +287,11 @@ class Graph:
                 self.load(f'{binding.module}.{binding.symbol}')
             else:
                 self.mark(self.load(binding.module), binding.symbol, depth + 1)
+
+    def binding(self, info: ModuleInfo, name: str) -> Binding | None:
+        """What ``name`` is bound to in ``info``: a module-level import, else one inside its live code (this run)."""
+        found = info.imports.get(name)
+        return found if found is not None else self.lazy_imports.get(info.name, {}).get(name)
 
     # --- visiting --------------------------------------------------------------------------
     def module_of(self, info: ModuleInfo, node: ast.Attribute) -> tuple[str, str] | None:
@@ -286,12 +304,12 @@ class Graph:
         if not isinstance(cursor, ast.Name):
             return None
         chain.reverse()
-        binding = info.imports.get(cursor.id)
+        binding = self.binding(info, cursor.id)
         if binding is None:
             return None
         module = binding.module if binding.symbol is None else f'{binding.module}.{binding.symbol}'
         if binding.symbol is None:
-            for dotted in sorted(info.dotted, key=len, reverse=True):
+            for dotted in sorted(info.dotted | self.lazy_dotted.get(info.name, set()), key=len, reverse=True):
                 parts = dotted.split('.')
                 if parts[0] == cursor.id and chain[:len(parts) - 1] == parts[1:]:
                     module, chain = dotted, chain[len(parts) - 1:]
@@ -328,7 +346,9 @@ class Graph:
         elif isinstance(sub, ast.Constant) and isinstance(sub.value, str):
             self.visit_string(sub.value)
         elif isinstance(sub, ast.Import | ast.ImportFrom):
-            for binding in info.bind_import(sub):
+            # (an import inside live code: this run's binding, never the shared ModuleInfo's)
+            imports = self.lazy_imports.setdefault(info.name, {})
+            for binding in bind_into(info, sub, imports, self.lazy_dotted.setdefault(info.name, set())):
                 self.follow_import(binding, mark_symbol=True)
 
     def visit(self, info: ModuleInfo, node: ast.AST) -> None:

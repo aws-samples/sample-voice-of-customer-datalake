@@ -54,6 +54,7 @@ describe('approval gate', () => {
     ['admin-blocked', { adminBlocked: true }],
     ['disabled', { disabled: true }],
     ['already executing', { phase: 'executing' }],
+    ['held by its preview', { held: true }],
     ['unknown tool', { definition: undefined }],
     ['invalid args', { check: { ok: false, problems: [] } }],
   ])('refuses when %s', (_label, change) => {

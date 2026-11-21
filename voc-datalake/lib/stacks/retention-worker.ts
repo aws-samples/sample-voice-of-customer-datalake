@@ -12,7 +12,8 @@
  *     `raw/<source>/` (the grants below already cover it).
  *
  * Each deleted item gets a tombstone first; its `s3_raw_uri` object goes with it,
- * every version; Radar reviews go the same way; artifacts in voc-projects that
+ * every version; Radar reviews go the same way, and so do a feedback form's test
+ * responses (kept with the form in voc-aggregates); artifacts in voc-projects that
  * cited a deleted item are marked. Least privilege, pinned exactly by
  * processing-stack-retention.test.ts:
  *   - feedback: GetItem / Query / Scan / DeleteItem — no Put, no Update;
@@ -23,7 +24,11 @@
  *     is filed under the one source its upload named, shared/retention.py);
  *   - aggregates: GetItem / PutItem / UpdateItem / Query (source profiles, the
  *     erasure job row, the AUDIT#retention rows, one PutItem per tombstone: no BatchWriteItem, which
- *     would also allow deletes) and BatchGetItem (the lineage pass's tombstone lookups) — no delete;
+ *     would also allow deletes) and BatchGetItem (the lineage pass's tombstone lookups); DeleteItem in the
+ *     `FEEDBACK_FORM_TEST` partition only (`dynamodb:LeadingKeys`): the forms' TEST responses (never feedback
+ *     items) that the feedback_form source's retention window or an erasure reaches
+ *     (lambda/jobs/retention/form_tests.py). They have that partition to themselves so this delete reaches nothing
+ *     else: never a form's definition, revision or funnel row (`FEEDBACK_FORM`), a job, lock, setting or audit row;
  *   - radar: Scan / DeleteItem (a review and its dedupe marker) and the cache-version
  *     bump (UpdateItem on `SETTINGS#radar` only) — no Put, no Query;
  *   - projects: Scan / UpdateItem (mark artifacts, drop erased ids) — no delete, no put;
@@ -53,6 +58,9 @@ import { grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-l
 
 /** The request partitions of voc-feature-requests (`FR#{id}`: META + its +1s), the only rows the worker re-keys. */
 const FEATURE_REQUEST_PARTITIONS = 'FR#*';
+/** The test responses' partition of voc-aggregates (lambda/shared/form_test_responses.py TEST_RESPONSES_PK): the only
+ *  aggregates rows the worker deletes. */
+const FORM_TEST_RESPONSES_PARTITION = 'FEEDBACK_FORM_TEST';
 
 /** Path-style handler: the bundle keeps `jobs/retention/` with `shared/` beside `jobs/`. */
 const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
@@ -110,6 +118,11 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   feedbackTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:DeleteItem');
   aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query',
     'dynamodb:BatchGetItem');
+  // The forms' test responses are not feedback items (voc-aggregates, FEEDBACK_FORM_TEST / {form_id}#…), and
+  // retention and erasure reach them too: the delete is pinned to their own partition, which holds nothing else
+  // (IAM pins a partition, never a sort-key prefix: in the forms partition it would reach every form's definition).
+  // The Query above reads it.
+  grantKeyScopedWrites(aggregatesTable, role, ['DeleteItem'], [FORM_TEST_RESPONSES_PARTITION]);
   radarTable.grant(role, 'dynamodb:Scan', 'dynamodb:DeleteItem');
   grantCacheVersionBump(radarTable, role, RADAR_VERSION_PARTITION);
   projectsTable.grant(role, 'dynamodb:Scan', 'dynamodb:UpdateItem');

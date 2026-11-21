@@ -7,6 +7,7 @@ import { defineConfig } from 'vite'
 import { changelogPlugin } from './changelogPlugin.ts'
 import { streamFsAllow, streamResolve } from './streamSource.ts'
 import { vendorChunkGroups } from './vendorChunkGroups.ts'
+import { widgetAssetPlugin } from './widgetAssetPlugin.ts'
 /**
  * Which vendor packages share a chunk (Rolldown `codeSplitting.groups`, built by `vendorChunkGroups` below).
  * A group also captures its packages' dependencies, so a package the app imports directly that is ALSO a
@@ -136,7 +137,11 @@ function findUp(name: string): string | null {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), changelogPlugin()],
+  plugins: [
+    react(), tailwindcss(), changelogPlugin(),
+    // The public widget as /widget/feedback-widget.js (widgetAssetPlugin.ts): emitted by the build, served in dev.
+    widgetAssetPlugin({ version: platformVersion(), commit: gitShortSha() ?? 'unknown' }),
+  ],
   // The modules shared with the assistant stream Lambda (streamSource.ts).
   resolve: streamResolve,
   define: {
@@ -153,6 +158,12 @@ export default defineConfig({
   },
   build: {
     rolldownOptions: {
+      // Two pages: the app, and the form preview window the builder opens (form-preview.html: the widget and its
+      // own small toolbar, no React and no app CSS). The dev server serves both from the project root as they are.
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        'form-preview': fileURLToPath(new URL('./form-preview.html', import.meta.url)),
+      },
       output: {
         // vendorChunks.json (see its import above): clsx sits beside React, not in the recharts chunk.
         codeSplitting: { groups: vendorChunkGroups(VENDOR_CHUNKS) },

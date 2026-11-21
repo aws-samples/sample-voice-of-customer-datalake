@@ -22,11 +22,15 @@ export class ConfigError extends Error {
 /** Thrown when an API request fails with a non-OK status. */
 export class ApiError extends Error {
   readonly status: number
+  /** The machine-readable `code` the body carried beside its `error` (lambda/shared/exceptions.py
+   *  `ApiError.code`, e.g. `revision_conflict`), when the transport read one: read it, never the sentence. */
+  readonly code: string | undefined
 
-  constructor(status: number, message = `API Error: ${String(status)}`) {
+  constructor(status: number, message = `API Error: ${String(status)}`, code?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
 }
 

@@ -41,7 +41,6 @@ type NoticeCommon = Readonly<{
   text: ReactNode
   action?: NoticeAction
   role?: 'status' | 'alert' | 'note'
-  className?: string
 }>
 
 type EmptyNoticeProps = NoticeCommon & Readonly<{ variant: 'empty'; title: ReactNode }>
@@ -73,9 +72,9 @@ function ActionControl({ action, small }: Readonly<{ action: NoticeAction; small
   )
 }
 
-function EmptyNotice({ icon: Icon, title, text, action, role, className }: EmptyNoticeProps) {
+function EmptyNotice({ icon: Icon, title, text, action, role }: EmptyNoticeProps) {
   return (
-    <div role={role} className={clsx('card py-12 text-center', className)}>
+    <div role={role} className="card py-12 text-center">
       <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-accent-subtle">
         <Icon size={20} className="text-accent-text" aria-hidden="true" />
       </div>
@@ -92,11 +91,11 @@ const BANNER_TONES: Readonly<Record<BannerNoticeProps['tone'], Readonly<{ box: s
   danger: { box: 'border-danger/30 bg-danger-subtle text-danger' },
 }
 
-function BannerNotice({ icon: Icon, text, action, role, className, tone }: BannerNoticeProps) {
+function BannerNotice({ icon: Icon, text, action, role, tone }: BannerNoticeProps) {
   const tones = BANNER_TONES[tone]
   return (
     <div role={role} className={clsx('flex flex-col gap-3 rounded-lg border p-3 text-sm sm:flex-row sm:items-center',
-      tones.box, className)}>
+      tones.box)}>
       <span className="flex flex-1 items-center gap-2">
         <Icon size={16} className={clsx('flex-shrink-0', tones.icon)} aria-hidden="true" />
         <span>{text}</span>

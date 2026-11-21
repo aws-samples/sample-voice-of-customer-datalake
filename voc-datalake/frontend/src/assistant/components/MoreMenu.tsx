@@ -15,8 +15,8 @@
  * absolute menu): it is placed under the trigger, right-aligned, flipped above
  * when there is no room below and kept inside the viewport. An ancestor with a
  * transform or backdrop filter becomes the containing block of a fixed element,
- * so the placement is measured and corrected rather than assumed. Scrolling or
- * resizing closes it.
+ * so the placement is measured and corrected rather than assumed (utils/fixedMenu,
+ * shared with the forms builder's menus). Scrolling or resizing closes it.
  *
  * The open menu is rendered in a PORTAL: into the enclosing dialog (the
  * floating assistant panel, so an `aria-modal` panel still contains it), else
@@ -29,14 +29,15 @@
  *
  * @module assistant/components/MoreMenu
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { Check, MoreHorizontal } from 'lucide-react'
 import { useDisclosurePopover } from '../../hooks/useDismissOnOutside'
+import { useCloseOnViewportChange } from '../../hooks/useCloseOnViewportChange'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
+import { placeFixedMenu, tabTargetFrom } from '../../utils/fixedMenu'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
-import { noCleanup } from '../../hooks/noCleanup'
 
 export interface MoreMenuItem {
   readonly key: string
@@ -57,24 +58,6 @@ interface MoreMenuProps {
   /** Lets a caller send focus back to the trigger later (after an inline rename). */
   readonly triggerRef?: RefObject<HTMLButtonElement | null>
   readonly iconSize?: number
-}
-
-/** Keep the menu this far from the viewport edges. */
-const EDGE = 8
-const GAP = 4
-
-function placeMenu(menu: HTMLElement, trigger: HTMLElement): void {
-  menu.style.top = '0px'
-  menu.style.left = '0px'
-  // Where (0, 0) lands: the containing block's origin in the viewport.
-  const origin = menu.getBoundingClientRect()
-  const anchor = trigger.getBoundingClientRect()
-  const below = anchor.bottom + GAP
-  const fitsBelow = below + origin.height <= window.innerHeight - EDGE
-  const top = fitsBelow ? below : Math.max(EDGE, anchor.top - GAP - origin.height)
-  const left = Math.min(Math.max(EDGE, anchor.right - origin.width), window.innerWidth - EDGE - origin.width)
-  menu.style.top = `${top - origin.top}px`
-  menu.style.left = `${left - origin.left}px`
 }
 
 function enabledItems(menu: HTMLElement | null): HTMLElement[] {
@@ -98,39 +81,10 @@ function moveFocus(event: ReactKeyboardEvent<HTMLDivElement>, menu: HTMLElement 
   items[next]?.focus()
 }
 
-const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-/**
- * Tab / Shift+Tab out of the portaled menu: the next (previous) tabbable control after the trigger
- * in document order, as if the menu were still beside it. The trigger itself when there is none.
- */
-function tabTargetFrom(trigger: HTMLElement, backwards: boolean): HTMLElement {
-  const all = [...document.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => el.closest('[role="menu"]') === null)
-  const index = all.indexOf(trigger)
-  return (backwards ? all[index - 1] : all[index + 1]) ?? trigger
-}
-
 /** Where the open menu renders: the enclosing dialog (an aria-modal panel must contain it), else the body. */
 function portalHost(trigger: HTMLElement): HTMLElement {
   const dialog = trigger.closest('[role="dialog"]')
   return dialog instanceof HTMLElement ? dialog : document.body
-}
-
-function useCloseOnViewportChange(open: boolean, close: () => void, menu: RefObject<HTMLElement | null>): void {
-  useEffect(() => {
-    if (!open) return noCleanup
-    const onScroll = (event: Event) => {
-      // Scrolling inside the menu itself (a long menu) keeps it open.
-      if (event.target instanceof Node && menu.current?.contains(event.target) === true) return
-      close()
-    }
-    window.addEventListener('scroll', onScroll, true)
-    window.addEventListener('resize', close)
-    return () => {
-      window.removeEventListener('scroll', onScroll, true)
-      window.removeEventListener('resize', close)
-    }
-  }, [open, close, menu])
 }
 
 function MenuEntry({ item, onDone }: Readonly<{ item: MoreMenuItem; onDone: () => void }>) {
@@ -169,12 +123,12 @@ export default function MoreMenu({ label, items, className, triggerRef, iconSize
     returnFocusTo: ownTriggerRef,
     initialFocus: '[role^="menuitem"]:not([disabled])',
   })
-  useCloseOnViewportChange(open, close, menuRef)
+  useCloseOnViewportChange(open, close, menuRef, ownTriggerRef)
   useLayoutEffect(() => {
     const menu = menuRef.current
     const button = ownTriggerRef.current
     if (!open || menu === null || button === null) return
-    placeMenu(menu, button)
+    placeFixedMenu(menu, button.getBoundingClientRect(), 'end')
     if (focusLast.current) enabledItems(menu).at(-1)?.focus()
     focusLast.current = false
   }, [open, ownTriggerRef])

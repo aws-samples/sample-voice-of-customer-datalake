@@ -103,6 +103,16 @@ export interface Crumb {
 }
 
 /**
+ * The segments of `pathname` the trail shows: every one, but a form's builder, the picker and the preview
+ * (`/feedback-forms/<id|new>/<tab>/…`) name the form in their own header, with a link back to the list: the trail
+ * ends at Feedback Forms.
+ */
+export function trailSegments(pathname: string): string[] {
+  const segments = pathname.split('/').filter(Boolean)
+  return segments[0] === 'feedback-forms' ? segments.slice(0, 1) : segments
+}
+
+/**
  * The trail for one pathname, Home first.
  *
  * @param pathSegments non-empty path segments of the current location

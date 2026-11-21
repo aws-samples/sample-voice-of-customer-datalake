@@ -1,86 +1,387 @@
 {
+  "newForm": "新建表单",
+  "migration": {
+    "tellUsMore": "请告诉我们更多",
+    "contactHeadline": "我们可以通过什么方式联系您？"
+  },
+  "types": {
+    "single_select": {
+      "name": "单选",
+      "hint": "选择一个选项，例如原因"
+    },
+    "multi_select": {
+      "name": "多选",
+      "hint": "选择多个选项"
+    },
+    "open_text": {
+      "name": "文本",
+      "hint": "简短或较长的输入回答",
+      "short": "短文本",
+      "long": "长文本"
+    },
+    "rating": {
+      "name": "评分",
+      "hint": "星级、数字或表情，3–10 分"
+    },
+    "nps": {
+      "name": "NPS",
+      "hint": "0–10：推荐的可能性"
+    },
+    "csat": {
+      "name": "CSAT",
+      "hint": "1–5 个表情：满意程度"
+    },
+    "ces": {
+      "name": "CES",
+      "hint": "1–7：难易程度"
+    },
+    "statement": {
+      "name": "说明",
+      "hint": "供阅读的文本，可附带链接按钮"
+    },
+    "consent": {
+      "name": "同意",
+      "hint": "受访者勾选的复选框"
+    },
+    "contact_info": {
+      "name": "联系信息",
+      "hint": "姓名、电子邮件、电话、公司"
+    },
+    "groups": {
+      "ask": "提问",
+      "measure": "衡量",
+      "other": "其他"
+    },
+    "ending": "结束页",
+    "welcome": "欢迎卡片"
+  },
+  "problems": {
+    "count_one": "{{count, number}} 个错误",
+    "count_other": "{{count, number}} 个错误",
+    "warnings_one": "{{count, number}} 个警告",
+    "warnings_other": "{{count, number}} 个警告",
+    "goTo": "前往",
+    "listLabel": "此表单中的错误",
+    "where": {
+      "question": "第 {{number}} 题",
+      "ending": "结束页“{{title}}”",
+      "welcome": "欢迎卡片",
+      "hidden": "隐藏字段 {{id}}",
+      "language": "{{language}}",
+      "form": "表单",
+      "themeLight": "样式（浅色）",
+      "themeDark": "样式（深色）"
+    },
+    "otherProblems": "其他错误",
+    "noQuestions": "表单至少需要一个问题。",
+    "tooManyQuestions": "一个表单最多可包含 30 个问题。",
+    "noEndings": "表单至少需要一个结束页。",
+    "tooManyEndings": "一个表单最多可有 5 个结束页。",
+    "tooManyHidden": "一个表单最多可有 20 个隐藏字段。",
+    "headlineEmpty": "请填写问题内容。",
+    "optionEmpty": "选项 {{number}} 没有文本。",
+    "endingTitleEmpty": "请填写结束页的标题。",
+    "welcomeTitleEmpty": "欢迎页需要标题。",
+    "consentLabelEmpty": "请填写复选框文本。",
+    "duplicateQuestionId": "另一个问题的 ID 也是 {{id}}。",
+    "retiredQuestionId": "ID {{id}} 属于之前删除的问题，ID 永不重复使用。请换一个。",
+    "answeredReshaped": "问题 {{number}} 已有回复，类型和分值不能更改。请撤销更改，或为此添加一个新问题。",
+    "invalidQuestionId": "问题 ID 以 q_ 开头，只能使用小写字母、数字和 _。",
+    "duplicateEndingId": "另一个结束页的 ID 也是 {{id}}。",
+    "invalidEndingId": "结束页 ID 以 end_ 开头，只能使用小写字母、数字和 _。",
+    "duplicateHiddenId": "此表单中已使用该 ID。",
+    "invalidHiddenId": "以字母开头；只能使用小写字母、数字和 _。",
+    "reservedHiddenId": "{{id}} 是保留名称；请另选一个。",
+    "duplicateCode": "有两个选项的代码都是 {{code}}。",
+    "reservedCode": "此代码保留给“其他”和“以上都不是”行使用。",
+    "invalidCode": "代码只能使用小写字母、数字和 _，最多 40 个字符。",
+    "noOptions": "请至少添加一个选项。",
+    "tooManyOptions": "一个问题最多可有 50 个选项。",
+    "minOverMax": "“至少”不能大于“至多”。",
+    "maxOverChoices": "“至多”不能超过 {{count, number}} 个选项。",
+    "minOverChoices": "“至少”不能超过 {{count, number}} 个选项。",
+    "buttonUrl": "地址必须以 https:// 开头",
+    "buttonLabelEmpty": "请填写按钮文字。",
+    "ctaUrl": "地址必须以 https:// 开头",
+    "contactNoField": "请至少显示一个字段。",
+    "contactTwice": "一个表单只能有一个联系信息问题。",
+    "maxCharsRange": "字数限制为 1 到 5,000 个字符。",
+    "facesRange": "表情量表为 3 到 5 分。",
+    "aiAddress": "请确认或删除 AI 建议的地址。",
+    "missingTranslations_one": "{{language}} 缺少 {{count, number}} 条文本；使用 {{language}} 的用户将看到 {{primary}} 版本。",
+    "missingTranslations_other": "{{language}} 缺少 {{count, number}} 条文本；使用 {{language}} 的用户将看到 {{primary}} 版本。",
+    "unreachableQuestion": "没有路径能到达此问题：上方的每条规则都跳过了它。",
+    "unreachableEnding": "没有规则在此结束。",
+    "chipsLong": "标签适合简短的文字；过长的文字会换行。",
+    "dropdownFew": "列表会一次显示所有选项；下拉菜单会将其隐藏。",
+    "noCategory": "没有选项将反馈归入某个类别，表单本身也未设置类别：请在“设置 › 类别路由”中设置一个。",
+    "themeUnreadable": "背景上的文字对比度为 {{ratio}}:1，低于 3:1：受访者无法阅读。",
+    "themeUnreadableLive": "此表单的文字难以阅读（{{ratio}}:1，低于 3:1）。请修正其颜色；在此之前，其他更改仍会发布。",
+    "themeTextLow": "背景上的文字对比度为 {{ratio}}:1，低于 4.5:1：许多人无法阅读。",
+    "themePrimaryLow": "背景上的主色对比度为 {{ratio}}:1，低于 3:1：焦点环、进度和所选答案难以看清。",
+    "themeLabelLow": "在此主色上，白色和深色文字都不易阅读：{{ratio}}:1，低于 4.5:1。",
+    "blocksPublishOnly": "修复之前无法发布，但仍可保存。",
+    "targetMissingQuestion": "此规则指向的问题已被删除。请选择它应前往的位置。",
+    "targetMissingEnding": "此规则指向的结束页已被删除。请选择另一个结束页。",
+    "targetBackwards": "只能向前跳转，而问题 {{number}} 现在位于此问题上方。请将其移到下方，或选择其他目标。",
+    "noValueOption": "请选择一个选项。",
+    "noValueNumber": "请选择一个数字。",
+    "optionRemoved": "“{{code}}”已不再是选项。请选择其他选项，或删除此规则。",
+    "outsideScale": "{{value}} 超出了此问题的 {{min}}–{{max}} 量表范围。",
+    "opInvalid": "此问题无法这样比较。请选择其他条件。",
+    "skippedOnRequired": "此问题为必填，永远不会被跳过：此规则永远不会执行。",
+    "ruleNeverRuns": "此规则永远不会执行：规则 {{number}} 已匹配它会匹配的所有回答。",
+    "whereAnyway": "此规则不起作用：到达此规则的所有人本来就会前往问题 {{number}}。",
+    "whereAnywayEnding": "此规则不起作用：到达此规则的所有人本来就会看到结束页“{{title}}”。"
+  },
+  "logic": {
+    "ops": {
+      "equals": "是",
+      "not_equals": "不是",
+      "includesAnySingle": "是以下之一",
+      "includesAnyMulti": "包含以下任一",
+      "includes_all": "包含以下全部",
+      "lt": "小于",
+      "lte": "至多为",
+      "gt": "大于",
+      "gte": "至少为",
+      "submitted": "已填写",
+      "skipped": "被跳过",
+      "accepted": "为同意",
+      "notAccepted": "为不同意"
+    },
+    "values": {
+      "other": "其他（自填回答）",
+      "none": "以上都不是",
+      "quoted": "“{{text}}”",
+      "separator": "、"
+    },
+    "target": {
+      "question": "{{number}} · {{headline}}",
+      "ending": "结束页：{{title}}",
+      "missing": "已删除的问题或结束页",
+      "next": "下一个问题",
+      "nextNumbered": "下一个问题：{{number}} · {{headline}}",
+      "defaultEnding": "结束：{{title}}"
+    },
+    "sentence": {
+      "rule": "如果回答{{condition}} → {{target}}",
+      "otherwise": "否则 → {{target}}"
+    },
+    "ifTheAnswer": "如果回答",
+    "goTo": "→ 前往",
+    "otherwise": "否则",
+    "thenGoTo": "然后前往",
+    "firstWins": "以第一条匹配的规则为准",
+    "rulesLabel": "规则",
+    "addRule": "添加规则",
+    "moved": "已将规则 {{from}} 移至第 {{to}} 位（共 {{total, number}} 条）。",
+    "controls": {
+      "operator": "规则 {{number}}：运算符",
+      "value": "规则 {{number}}：值",
+      "goTo": "规则 {{number}}：前往"
+    },
+    "actions": {
+      "label": "规则 {{number}} 的更多操作",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "duplicate": "复制",
+      "delete": "删除",
+      "first": "已经是第一条规则。",
+      "last": "已经是最后一条规则。"
+    },
+    "chooseNumber": "选择数字…",
+    "chooseOption": "选择选项…",
+    "chooseOptions": "选择选项…",
+    "addOption": "添加选项…",
+    "removedOption": "“{{code}}”（已不再是选项）",
+    "removeValue": "移除 {{option}}",
+    "numberWithLabel": "{{value}} — {{label}}",
+    "groups": {
+      "next": "下一个问题",
+      "later": "后续问题",
+      "endings": "结束页"
+    }
+  },
+  "builder": {
+    "back": "反馈表单",
+    "loading": "正在加载表单…",
+    "loadFailed": "无法加载此表单。",
+    "name": {
+      "label": "表单名称（内部）",
+      "rename": "重命名表单",
+      "untitled": "未命名表单"
+    },
+    "state": {
+      "live": "已上线",
+      "off": "已关闭",
+      "testOn": "测试链接已开启",
+      "notSaved": "尚未保存"
+    },
+    "save": {
+      "unsaved": "有未保存的更改",
+      "saving": "正在保存…",
+      "saved": "已保存",
+      "fixToSave_one": "修复 {{count, number}} 个错误后才能保存。",
+      "fixToSave_other": "修复 {{count, number}} 个错误后才能保存。",
+      "fixToPublish_one": "修复 {{count, number}} 个错误后才能发布。",
+      "fixToPublish_other": "修复 {{count, number}} 个错误后才能发布。",
+      "fixToPublishSaveWorks_one": "修复 {{count, number}} 个错误后才能发布。仍可保存。",
+      "fixToPublishSaveWorks_other": "修复 {{count, number}} 个错误后才能发布。仍可保存。",
+      "themeRefused": "无法保存：已上线的表单需要受访者能读清的文字，与背景的对比度至少为 3:1。请在“样式”中更改颜色。",
+      "questionIdReused": "无法保存：ID {{id}} 属于之前删除的问题，ID 永不重复使用。请在“高级”中为该问题换一个 ID。",
+      "themeHardToRead": "此表单的文字难以阅读。",
+      "themeFix": "修正颜色",
+      "save": "保存",
+      "publish": "发布",
+      "update": "更新已上线的表单",
+      "failed": "无法保存：{{reason}}。",
+      "failedGeneric": "无法保存。请检查网络连接后重试。",
+      "retry": "重试"
+    },
+    "published": "已上线。从现在起，受访者将看到此版本。",
+    "firstSave": "已保存。此表单处于关闭状态：在您发布之前，其链接会显示“反馈表单不可用。”",
+    "aiSaved": "已保存。AI 草稿现已成为您的表单。",
+    "turnedOff": "已关闭。其链接会显示“反馈表单不可用。”；测试链接仍可使用。",
+    "menu": {
+      "label": "更多表单操作",
+      "improve": "用 AI 改进…",
+      "askAssistant": "询问助手",
+      "discard": "放弃更改",
+      "duplicate": "复制表单",
+      "preview": "在窗口中预览",
+      "turnOff": "关闭",
+      "delete": "删除表单…",
+      "saveFirst": "请先保存表单。",
+      "nothingToDiscard": "没有未保存的更改。"
+    },
+    "copyName": "{{name}}（副本）",
+    "confirmRemoval": {
+      "title": "更新已上线的表单？",
+      "message": "已移除：{{list}}。它们的回答仍保留在“结果”中。",
+      "confirm": "更新已上线的表单",
+      "question": "问题“{{text}}”",
+      "option": "选项“{{text}}”",
+      "ending": "结束页“{{text}}”"
+    },
+    "confirmLanguages": {
+      "titlePublish": "在翻译不完整的情况下发布？",
+      "titleUpdate": "在翻译不完整的情况下更新已上线的表单？",
+      "line_one": "使用 {{language}} 的受访者将看到 {{count, number}} 条 {{primary}} 文本。",
+      "line_other": "使用 {{language}} 的受访者将看到 {{count, number}} 条 {{primary}} 文本。",
+      "publishAnyway": "仍然发布",
+      "updateAnyway": "仍然更新",
+      "translate": "翻译 {{language}}"
+    },
+    "confirmAiPublish": {
+      "title": "发布此 AI 草稿？",
+      "message": "受访者将看到它的当前内容。请先检查问题、选项和结束页。",
+      "confirm": "发布"
+    },
+    "confirmDiscard": {
+      "title": "放弃您的更改？",
+      "message": "表单将恢复到上次保存时的状态。",
+      "messageNew": "表单将恢复到打开时的状态。尚未保存任何内容。",
+      "confirm": "放弃更改"
+    },
+    "confirmDelete": {
+      "title": "删除表单？",
+      "message": "删除“{{name}}”？其链接将失效。此操作无法撤销。",
+      "messageResponses_one": "删除“{{name}}”及其 {{count, number}} 条回复？其链接将失效。此操作无法撤销。",
+      "messageResponses_other": "删除“{{name}}”及其 {{count, number}} 条回复？其链接将失效。此操作无法撤销。",
+      "confirm": "删除表单"
+    },
+    "conflict": {
+      "messageAnonymous": "在您编辑期间，其他人保存了此表单。",
+      "explain": "现在保存会覆盖对方的版本。您可以比较两个版本、重新加载对方的版本，或用您的版本覆盖。",
+      "compare": "比较",
+      "reload": "重新加载对方的版本",
+      "saveMine": "保存我的版本",
+      "compareTitle": "对方的版本与您的版本",
+      "compareDescription": "保存您的版本会对对方的版本做出哪些更改。",
+      "noDifferences": "问题、结束页、隐藏字段和语言均无差异。",
+      "readFailed": "无法读取对方的版本。请重试。",
+      "added": "您的版本新增",
+      "removed": "您的版本删除",
+      "changed": "您的版本更改",
+      "close": "关闭",
+      "messageSelf": "您已于 {{time}} 在另一个标签页或窗口中保存了此表单。"
+    },
+    "migrated": "此表单现已使用新版构建器：其评分和文本框分别为问题 1 和问题 2。保存后将以新格式存储；受访者看到的问题不变。",
+    "tabs": {
+      "label": "表单构建器分区",
+      "questions": "问题",
+      "flow": "流程",
+      "languages": "语言",
+      "hidden-fields": "隐藏字段",
+      "test": "测试",
+      "share": "分享",
+      "results": "结果",
+      "settings": "设置",
+      "withProblems_one": "{{count, number}} 个错误",
+      "withProblems_other": "{{count, number}} 个错误",
+      "withMissing_one": "缺少 {{count, number}} 条翻译",
+      "withMissing_other": "缺少 {{count, number}} 条翻译",
+      "scrollStart": "滚动到前面的标签页",
+      "scrollEnd": "滚动到更多标签页"
+    },
+    "shortcut": "按 Ctrl+S 或 ⌘+S 保存。"
+  },
+  "previewFrame": {
+    "loading": "正在加载预览…",
+    "unavailable": "预览无法启动：表单组件未加载。请重新加载页面后重试。"
+  },
   "card": {
-    "avgRating": "平均评分",
-    "category": "类别：",
-    "collects": "收集项",
-    "copy": "复制",
-    "deleteForm": "删除表单",
-    "directLink": "直接链接",
-    "prototypePins": "原型图钉",
-    "editForm": "编辑表单",
-    "hideEmbedCode": "隐藏嵌入代码",
-    "iframeEmbed": "iFrame嵌入",
-    "preview": "预览",
-    "ratingAndText": "评分和文本",
-    "ratingType": "评分类型",
-    "showEmbedCode": "显示嵌入代码",
-    "submissions_one": "提交数",
-    "submissions_other": "提交数",
-    "themeLabel": "主题",
-    "themeDefault": "默认颜色",
-    "themeCustom": "自定义颜色",
-    "viewSubmissions": "查看提交",
-    "collectsName": "姓名",
-    "collectsEmail": "电子邮件",
-    "disabledNotice": "此表单已关闭。在您启用之前，其链接和嵌入内容会显示“Feedback form unavailable.”。",
     "live": "已上线",
     "off": "已关闭",
-    "noSubmissionsYet": "还没有提交——分享表单即可开始收集。",
-    "themeSwatch": "表单颜色"
+    "prototypePins": "原型图钉",
+    "testLinkOn": "测试链接已开启",
+    "summary_one": "{{count, number}} 个问题 · {{languages}}",
+    "summary_other": "{{count, number}} 个问题 · {{languages}}",
+    "responses_one": "{{formatted}} 条回复",
+    "responses_other": "{{formatted}} 条回复",
+    "reading": "正在读取回复…",
+    "lastResponse": "最近回复：{{when}}",
+    "channels": {
+      "label": "回答渠道",
+      "link": "链接",
+      "script": "网站脚本",
+      "iframe": "嵌入"
+    },
+    "average": "{{average}} / {{max}}",
+    "results": "结果",
+    "actions": "{{name}} 的更多操作",
+    "edit": "编辑",
+    "copyLink": "复制链接",
+    "qr": "二维码",
+    "qrTitle": "二维码",
+    "preview": "预览",
+    "duplicate": "复制",
+    "delete": "删除…",
+    "copyName": "{{name}}（副本）",
+    "cannotRead": "无法读取此表单。",
+    "unnamed": "未命名表单",
+    "fixFirst_one": "发布前请修复 {{count, number}} 个错误。",
+    "fixFirst_other": "发布前请修复 {{count, number}} 个错误。",
+    "open": "打开",
+    "figure": {
+      "nps": "NPS",
+      "csat": "CSAT",
+      "rating": "平均评分",
+      "ces": "平均费力度（CES）"
+    },
+    "turnOff": {
+      "title": "要关闭“{{name}}”吗？",
+      "message": "其链接和嵌入将向接下来的答题者显示“反馈表单不可用。”",
+      "confirm": "关闭"
+    }
   },
   "configureApiFirst": "请在“管理 → 常规”中配置API端点以管理反馈表单。",
-  "createForm": "创建表单",
   "deleteConfirmLabel": "删除",
   "deleteConfirmMessage": "确定要删除此表单吗？此操作无法撤销。",
   "deleteConfirmMessageNamed": "要删除表单“{{name}}”吗？此操作无法撤销。",
   "deleteConfirmTitle": "删除表单",
   "editor": {
-    "backgroundColor": "背景色",
-    "borderRadius": "圆角",
-    "cancel": "取消",
-    "categoryHint": "类别在“管理 → 分类体系 → 分类”中配置",
-    "categoryLabel": "类别",
-    "categoryRoutingDescription": "为此表单分配一个类别。通过此表单提交的所有反馈将自动标记为所选类别。",
-    "categoryRoutingTitle": "类别路由",
-    "collectEmail": "收集邮箱",
-    "collectName": "收集姓名",
-    "createForm": "创建表单",
-    "createTitle": "创建新反馈表单",
-    "creating": "创建中...",
-    "description": "描述",
-    "editTitle": "编辑反馈表单",
-    "enableRating": "启用评分",
-    "formName": "表单名称（内部）",
-    "formNamePlaceholder": "例如，网站页脚表单",
-    "formTitle": "表单标题",
-    "placeholderText": "占位符文本",
-    "preview": "预览",
-    "previewLabel": "预览：",
-    "previewTagged": "此表单的反馈将被标记为：",
-    "primaryColor": "主色",
-    "question": "问题",
-    "ratingEmoji": "表情",
-    "ratingNumeric": "数字 (1-10)",
-    "ratingStars": "星星",
-    "saveChanges": "保存更改",
-    "saving": "保存中...",
-    "selectCategory": "-- 选择类别 --",
-    "selectSubcategory": "-- 选择子类别 --",
-    "startButton": "开始 →",
-    "subcategoryLabel": "子类别（可选）",
-    "submitButtonText": "提交按钮文本",
-    "successMessage": "成功消息",
-    "tabs": {
-      "category": "类别",
-      "categoryRouting": "类别路由",
-      "formSettings": "表单设置",
-      "settings": "设置",
-      "theme": "主题",
-      "validates": "关联项目",
-      "validatesShort": "项目",
-      "label": "表单编辑器分区"
-    },
-    "textColor": "文字颜色",
     "validationDescription": "可选择记录此表单收集的反馈针对哪个项目，以及哪个 PRD 或 PR/FAQ。收集到的评分随后会显示在优先级排序页面上该文档的旁边。对于网站调查等独立表单，请将两项留空。",
     "validationDocumentHint": "保留为整个项目，可在文档重新生成后仍保持关联。",
     "validationDocumentLabel": "文档（可选）",
@@ -94,60 +395,1697 @@
     "validationUnknownProject": "已关联的项目（不再可用）",
     "validationUnverifiedDocument": "已关联的文档（无法验证）",
     "validationUnverifiedProject": "已关联的项目（无法验证）",
-    "validationWholeProject": "-- 整个项目 --",
-    "dimensionsHint": "每次提交都带有这些值。嵌入时可用 dimensions 选项按页面设置自己的值,例如",
-    "dimensionsDevHint": "开发者：在嵌入代码中按页面设置"
+    "validationWholeProject": "-- 整个项目 --"
   },
   "empty": {
-    "createButton": "创建第一个表单",
+    "title": "还没有反馈表单",
     "description": "创建您的第一个表单以开始收集客户反馈。",
-    "title": "还没有反馈表单"
+    "startsLabel": "开始方式",
+    "describeHint": "说明您想了解什么，AI 会起草问题。"
   },
   "infoBanner": {
-    "item1": "为不同目的创建多个表单（网站、应用、支持等）",
-    "item2": "每个表单都有自己的URL和嵌入代码",
-    "item3": "分配类别以自动路由反馈",
-    "item4": "所有提交都经过AI增强（情感、角色等）",
-    "title": "反馈表单的工作方式"
+    "title": "反馈表单的工作方式",
+    "item1": "每个表单都有自己的链接、嵌入代码和测试链接。",
+    "item2": "回复会经过 AI 增强处理（情感、角色等）；测试回复则不会。",
+    "dismiss": "隐藏此说明"
   },
-  "submissions": {
-    "avgRating": "平均评分",
-    "close": "关闭",
-    "failedToLoad": "加载提交失败",
-    "noRating": "无评分",
-    "noSubmissions": "还没有提交",
-    "noSubmissionsHint": "用户通过此表单提交反馈后，提交将显示在这里。",
-    "rated": "已评分",
-    "title": "表单提交",
-    "totalSubmissions": "总提交数"
+  "list": {
+    "toolbarLabel": "查找表单",
+    "search": "搜索表单",
+    "searchPlaceholder": "按名称搜索",
+    "stateLabel": "显示",
+    "states": {
+      "all": "全部",
+      "live": "已上线",
+      "off": "已关闭",
+      "test": "测试链接已开启"
+    },
+    "sortLabel": "排序",
+    "sorts": {
+      "newest": "最新",
+      "lastResponse": "最近回复",
+      "name": "名称",
+      "responses": "回复数"
+    },
+    "shown_one": "{{count, number}} 个表单中的 {{shown, number}} 个",
+    "shown_other": "{{count, number}} 个表单中的 {{shown, number}} 个",
+    "noMatchTitle": "没有匹配的表单",
+    "noMatch": "没有表单符合此搜索或筛选条件。",
+    "clear": "显示所有表单"
   },
   "subtitle": "创建可嵌入的表单来收集客户反馈",
   "title": "反馈表单",
-  "wizard": {
-    "anonymous": "匿名",
-    "anonymousDesc": "不收集PII",
-    "cancel": "取消",
-    "contactInfoDescription": "选择从受访者收集哪些个人信息。",
-    "contactInfoTitle": "联系信息收集",
-    "continue": "继续",
-    "emailOnly": "仅邮箱",
-    "emailOnlyDesc": "收集邮箱",
-    "nameAndEmail": "姓名和邮箱",
-    "nameAndEmailDesc": "完整联系信息",
-    "nameOnly": "仅姓名",
-    "nameOnlyDesc": "收集姓名",
-    "selectedTemplate": "已选择：{{name}}",
-    "selectPrompt": "选择模板以继续",
-    "subtitle": "选择模板开始",
-    "title": "创建新表单"
-  },
-  "createdDisabled": {
-    "dismiss": "关闭",
-    "enable": "立即启用",
-    "message": "已创建“{{name}}”，目前处于停用状态：在您启用之前，打开其链接的人会看到“Feedback form unavailable.”。"
-  },
   "systemForms": {
     "title": "系统表单（{{n, number}}）",
     "description": "为您构建的每个原型自动创建，用于收集测试者的标注。无需分享或编辑。"
+  },
+  "templates": {
+    "nps": {
+      "name": "净推荐值（NPS）",
+      "purpose": "用 0–10 分量表衡量忠诚度，再向贬损者和推荐者提出不同的追问。",
+      "q": {
+        "q_nps": {
+          "headline": "您有多大可能向朋友或同事推荐我们？",
+          "lower": "完全不可能",
+          "upper": "非常可能"
+        },
+        "q_passive_improve": {
+          "headline": "怎样做会让您更愿意推荐我们？",
+          "placeholder": "您的回答"
+        },
+        "q_detractor_reason": {
+          "headline": "您给出这个分数的主要原因是什么？",
+          "other": "其他原因",
+          "otherPlaceholder": "请告诉我们具体原因",
+          "options": {
+            "price": "价格太贵",
+            "missing_features": "缺少我需要的功能",
+            "hard_to_use": "不好用",
+            "reliability": "存在故障或服务中断",
+            "support": "客服没有解决我的问题"
+          }
+        },
+        "q_detractor_fix": {
+          "headline": "您认为我们最应该先解决什么？",
+          "placeholder": "您的回答"
+        },
+        "q_promoter_value": {
+          "headline": "您最看重我们的哪一点？",
+          "other": "其他",
+          "options": {
+            "ease": "简单易用",
+            "features": "功能",
+            "reliability": "稳定可靠",
+            "support": "支持团队",
+            "value": "物有所值"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "我们可以就您的回答与您进一步联系吗？",
+          "label": "可以，您可以就我的反馈与我联系。"
+        },
+        "q_contact": {
+          "headline": "我们可以通过什么方式联系您？"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢！",
+          "description": "您的反馈将帮助我们决定下一步改进什么。"
+        },
+        "end_contact": {
+          "title": "谢谢，我们可能会与您联系",
+          "description": "如果我们对您的回答有疑问，团队成员会给您发送电子邮件。"
+        }
+      }
+    },
+    "csat_support": {
+      "name": "客服满意度（CSAT）",
+      "purpose": "在客服对话结束时进行评分，并在评分较低时了解问题所在。",
+      "q": {
+        "q_csat": {
+          "headline": "您对本次获得的帮助满意吗？",
+          "lower": "非常不满意",
+          "upper": "非常满意"
+        },
+        "q_what_wrong": {
+          "headline": "哪里出了问题？",
+          "other": "其他",
+          "options": {
+            "slow": "等待答复的时间太长",
+            "not_solved": "我的问题没有得到解决",
+            "unclear": "答复难以理解",
+            "passed_around": "我被转给了好几个人",
+            "tone": "语气不够友好"
+          }
+        },
+        "q_resolved": {
+          "headline": "您的问题解决了吗？",
+          "options": {
+            "yes": "已解决",
+            "partly": "部分解决",
+            "no": "未解决"
+          }
+        },
+        "q_comment": {
+          "headline": "关于这次对话，您还有其他想告诉我们的吗？",
+          "placeholder": "您的意见"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "感谢您的反馈",
+          "description": "这有助于我们的客服团队更好地为您提供帮助。"
+        }
+      }
+    },
+    "ces": {
+      "name": "客户费力度（CES）",
+      "purpose": "在任务完成后立即询问其难易程度，以及遇到了哪些阻碍。",
+      "q": {
+        "q_ces": {
+          "headline": "今天完成您想做的事情有多容易？",
+          "lower": "非常困难",
+          "upper": "非常容易"
+        },
+        "q_obstacle": {
+          "headline": "是什么让它变得困难？",
+          "other": "其他",
+          "options": {
+            "start": "不知道从哪里开始",
+            "steps": "步骤太多",
+            "labels": "标签或说明不清楚",
+            "errors": "出现错误，或某些功能无法使用",
+            "slow": "等待加载"
+          }
+        },
+        "q_easier": {
+          "headline": "做出哪一项改变能让它更容易？",
+          "placeholder": "您的想法"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢",
+          "description": "我们会认真阅读每一条回答。"
+        }
+      }
+    },
+    "churn": {
+      "name": "取消订阅 / 客户流失",
+      "purpose": "了解客户取消的原因，并针对每个原因提出合适的追问。",
+      "q": {
+        "q_reason": {
+          "headline": "您取消的主要原因是什么？",
+          "other": "其他原因",
+          "otherPlaceholder": "请告诉我们是什么原因",
+          "options": {
+            "too_expensive": "对我来说太贵了",
+            "missing_features": "缺少我需要的功能",
+            "hard_to_use": "不好用",
+            "switching_product": "我要换用其他产品",
+            "not_needed": "我不再需要它了",
+            "technical_issues": "存在故障或性能问题"
+          }
+        },
+        "q_price": {
+          "headline": "怎样才能留住您？",
+          "other": "其他",
+          "otherPlaceholder": "请告诉我们具体内容",
+          "options": {
+            "lower_price": "更低的价格",
+            "smaller_plan": "功能更少、价格更低的套餐",
+            "annual_discount": "按年付费的折扣",
+            "pause": "可以暂停订阅"
+          }
+        },
+        "q_missing_feature": {
+          "headline": "您缺少哪个功能？",
+          "placeholder": "例如：导出到 Excel"
+        },
+        "q_hard_part": {
+          "headline": "哪部分最难用？",
+          "placeholder": "请告诉我们您在哪里遇到了困难"
+        },
+        "q_competitor": {
+          "headline": "您要换用哪款产品？它哪些方面做得更好？"
+        },
+        "q_technical": {
+          "headline": "出了什么问题？您记得的任何细节都能帮助我们找到原因。"
+        },
+        "q_follow_up_ok": {
+          "headline": "我们可以与您进一步联系吗？",
+          "label": "可以，您可以就我的回答与我联系。"
+        },
+        "q_contact": {
+          "headline": "我们可以通过什么方式联系您？"
+        }
+      },
+      "endings": {
+        "end_bye": {
+          "title": "感谢您告诉我们",
+          "description": "很遗憾看到您离开。您的回答会直接转给我们的产品团队。"
+        },
+        "end_contact": {
+          "title": "谢谢，我们会与您联系",
+          "description": "我们的团队成员可能会就您的回答给您发送电子邮件。"
+        }
+      }
+    },
+    "old_ui": {
+      "name": "切换回旧版界面",
+      "purpose": "在用户从新设计切换回旧版的那一刻，询问其原因。",
+      "q": {
+        "q_why": {
+          "headline": "是什么让您切换回旧版界面？",
+          "other": "其他",
+          "otherPlaceholder": "请告诉我们具体原因",
+          "options": {
+            "cant_find": "找不到我需要的内容",
+            "slower_work": "我的工作要花更长时间",
+            "missing_function": "缺少我常用的某项功能",
+            "errors": "某些功能无法使用或显示错误",
+            "slow_loading": "加载太慢",
+            "layout": "屏幕布局难以阅读",
+            "prefer_known": "我更喜欢熟悉的布局，没有时间学习新的"
+          }
+        },
+        "q_missing_function": {
+          "headline": "缺少哪项功能？",
+          "subheader": "您在旧版界面的哪个位置使用它？",
+          "placeholder": "例如：在“销售”中批量过账发票"
+        },
+        "q_task": {
+          "headline": "您现在正在处理什么任务？",
+          "placeholder": "例如：库存报表"
+        },
+        "q_return": {
+          "headline": "您会再次尝试新版界面吗？",
+          "options": {
+            "yes_soon": "会，很快就会",
+            "when_fixed": "会，等我提到的问题修复后",
+            "not_sure": "不确定",
+            "no": "不会，我会继续使用旧版"
+          }
+        },
+        "q_comment": {
+          "headline": "还有什么需要团队了解的吗？",
+          "placeholder": "您的意见"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢",
+          "description": "您的回答会直接转给负责新版界面的团队。"
+        }
+      },
+      "hidden": {
+        "user_id": "用户",
+        "app_version": "应用版本",
+        "screen": "切换时所在的界面"
+      }
+    },
+    "abandonment": {
+      "name": "结账或注册中途放弃",
+      "purpose": "了解用户为何在完成结账或注册前中途放弃。",
+      "q": {
+        "q_stopped": {
+          "headline": "是什么让您没有完成？",
+          "other": "其他",
+          "options": {
+            "price": "总价比我预期的高",
+            "payment": "没有我想用的支付方式",
+            "account": "我不想创建账户",
+            "too_long": "花的时间太长",
+            "trust": "我不确定是否安全",
+            "technical": "某些功能无法使用",
+            "just_looking": "我只是随便看看"
+          }
+        },
+        "q_payment": {
+          "headline": "您原本想使用哪种支付方式？",
+          "other": "其他方式",
+          "options": {
+            "card": "信用卡或借记卡",
+            "bank_transfer": "银行转账",
+            "paypal": "PayPal",
+            "wallet": "Apple Pay 或 Google Pay",
+            "invoice": "稍后凭发票付款"
+          }
+        },
+        "q_technical": {
+          "headline": "发生了什么？",
+          "subheader": "错误信息或您当时所在的步骤都能帮助我们找到原因。"
+        },
+        "q_come_back": {
+          "headline": "您打算回来完成吗？",
+          "options": {
+            "yes": "会",
+            "maybe": "可能会",
+            "no": "不会"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢，这很有帮助",
+          "description": "我们会根据您的回答，让这个过程对每个人都更快捷。"
+        }
+      }
+    },
+    "pmf": {
+      "name": "产品市场契合度",
+      "purpose": "“非常失望”测试：有多少用户会怀念这款产品，以及原因。",
+      "q": {
+        "q_disappointment": {
+          "headline": "如果您无法再使用这款产品，您会有什么感受？",
+          "options": {
+            "very": "非常失望",
+            "somewhat": "有点失望",
+            "not": "不失望"
+          }
+        },
+        "q_main_benefit": {
+          "headline": "您从中获得的主要好处是什么？"
+        },
+        "q_ideal_user": {
+          "headline": "您认为谁最能从中受益？",
+          "placeholder": "例如：中型企业的财务团队"
+        },
+        "q_improve": {
+          "headline": "我们可以如何为您改进它？"
+        },
+        "q_role": {
+          "headline": "哪一项最符合您的角色？",
+          "other": "其他",
+          "options": {
+            "manager": "经理或团队负责人",
+            "specialist": "专业人员",
+            "executive": "企业主或高管",
+            "it": "IT 或管理员",
+            "consultant": "顾问或合作伙伴"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢",
+          "description": "您的回答将帮助我们决定下一步开发什么。"
+        }
+      }
+    },
+    "feature_request": {
+      "name": "功能请求 / 意见箱",
+      "purpose": "随时开放的意见箱：想法、问题和表扬，各有对应的追问。",
+      "q": {
+        "q_kind": {
+          "headline": "您想分享什么？",
+          "options": {
+            "idea": "想法",
+            "problem": "问题",
+            "praise": "表扬",
+            "question": "疑问"
+          }
+        },
+        "q_idea": {
+          "headline": "您希望产品能做什么？",
+          "placeholder": "请描述您想到的功能或改动"
+        },
+        "q_idea_importance": {
+          "headline": "它对您的工作有多重要？",
+          "options": {
+            "nice": "有了更好",
+            "important": "重要",
+            "blocking": "没有它我无法开展工作"
+          }
+        },
+        "q_problem": {
+          "headline": "出了什么问题？",
+          "subheader": "您做了什么、期望发生什么，以及实际发生了什么。"
+        },
+        "q_praise": {
+          "headline": "您喜欢哪些方面？"
+        },
+        "q_question": {
+          "headline": "您有什么疑问？"
+        },
+        "q_follow_up_ok": {
+          "headline": "我们可以与您进一步联系吗？",
+          "label": "可以，您可以就此事与我联系。"
+        },
+        "q_contact": {
+          "headline": "我们可以通过什么方式联系您？"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "感谢您的分享",
+          "description": "您的分享会直接转给产品团队。"
+        },
+        "end_contact": {
+          "title": "谢谢，我们可能会与您联系",
+          "description": "如果我们有问题要问您，或有答复要给您，会给您发送电子邮件。"
+        }
+      }
+    },
+    "feature_satisfaction": {
+      "name": "功能满意度",
+      "purpose": "在用户使用某项功能后对其评分，并了解如何让它变得更好。",
+      "q": {
+        "q_rating": {
+          "headline": "您对这项功能满意吗？",
+          "lower": "完全不满意",
+          "upper": "非常满意"
+        },
+        "q_better": {
+          "headline": "怎样能让它变得更好？",
+          "other": "其他",
+          "options": {
+            "faster": "让它更快",
+            "clearer": "让它更容易理解",
+            "more_options": "提供更多选项",
+            "fewer_steps": "减少步骤",
+            "fix": "修复无法正常使用的地方"
+          }
+        },
+        "q_frequency": {
+          "headline": "您多久使用一次？",
+          "options": {
+            "daily": "每天",
+            "weekly": "每周",
+            "monthly": "每月",
+            "rarely": "更少",
+            "first_time": "这是我第一次使用"
+          }
+        },
+        "q_comment": {
+          "headline": "关于这项功能，您还有其他想说的吗？"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢",
+          "description": "您的评分会转给负责这项功能的团队。"
+        }
+      }
+    },
+    "bug_report": {
+      "name": "故障报告",
+      "purpose": "让用户报告问题，并提供团队重现问题所需的背景信息。",
+      "q": {
+        "q_what_happened": {
+          "headline": "出了什么问题？",
+          "placeholder": "请描述发生的情况"
+        },
+        "q_steps": {
+          "headline": "在此之前您正在做什么？",
+          "placeholder": "1. 我打开了…  2. 我点击了…"
+        },
+        "q_expected": {
+          "headline": "您原本期望发生什么？"
+        },
+        "q_frequency": {
+          "headline": "这种情况多久发生一次？",
+          "options": {
+            "every_time": "每次都会",
+            "sometimes": "有时",
+            "once": "只有一次"
+          }
+        },
+        "q_impact": {
+          "headline": "它对您的工作影响有多大？",
+          "options": {
+            "blocked": "我无法继续工作",
+            "workaround": "我找到了绕过的方法",
+            "minor": "只是有点烦人"
+          }
+        },
+        "q_follow_up_ok": {
+          "headline": "如果需要更多细节，我们可以联系您吗？",
+          "label": "可以，您可以就此报告与我联系。"
+        },
+        "q_contact": {
+          "headline": "我们可以通过什么方式联系您？"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "感谢您的报告",
+          "description": "您的报告会直接转给负责修复问题的团队。"
+        },
+        "end_contact": {
+          "title": "谢谢，我们可能会与您联系",
+          "description": "如果需要更多细节，我们会给您发送电子邮件。"
+        }
+      }
+    },
+    "onboarding": {
+      "name": "新用户引导分群",
+      "purpose": "询问新用户的身份和使用目的，以便为其定制入门步骤。",
+      "welcome": {
+        "title": "欢迎！",
+        "description": "回答四个简单的问题，我们就能先为您展示最合适的内容。",
+        "button": "开始吧"
+      },
+      "q": {
+        "q_role": {
+          "headline": "您的角色是什么？",
+          "other": "其他",
+          "options": {
+            "management": "管理层",
+            "finance": "财务或会计",
+            "sales": "销售",
+            "operations": "运营或物流",
+            "it": "IT 或行政管理"
+          }
+        },
+        "q_company_size": {
+          "headline": "您的公司有多少员工？",
+          "options": {
+            "size_1": "只有我一个人",
+            "size_2_10": "2–10 人",
+            "size_11_50": "11–50 人",
+            "size_51_250": "51–250 人",
+            "size_251_1000": "251–1,000 人",
+            "size_1000_plus": "超过 1,000 人"
+          }
+        },
+        "q_first_goal": {
+          "headline": "您想先做什么？",
+          "none": "还不确定",
+          "options": {
+            "import": "导入我的数据",
+            "invite": "邀请我的团队",
+            "reports": "设置报表",
+            "connect": "连接其他工具",
+            "explore": "随便看看"
+          }
+        },
+        "q_experience": {
+          "headline": "您以前用过类似的产品吗？",
+          "options": {
+            "daily": "用过，每天都用",
+            "some": "用过一点",
+            "no": "没有，这是第一次"
+          }
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "一切就绪",
+          "description": "我们会根据您的回答定制您的入门步骤。"
+        },
+        "end_newcomer": {
+          "title": "欢迎加入",
+          "description": "我们将从基础开始带您上手。"
+        }
+      },
+      "tips": {
+        "end_newcomer": "在您的入门指南中添加一个按钮。"
+      }
+    },
+    "blank": {
+      "name": "空白表单",
+      "purpose": "一个开放式问题。其余部分由您自行构建。",
+      "q": {
+        "q_feedback": {
+          "headline": "您想告诉我们什么？",
+          "placeholder": "请在此输入您的回答…"
+        }
+      },
+      "endings": {
+        "end_thanks": {
+          "title": "谢谢！",
+          "description": "我们会认真阅读每一条留言。"
+        }
+      }
+    }
+  },
+  "picker": {
+    "title": "新建表单",
+    "subtitle": "描述您的表单，由 AI 生成草稿；或选择一个起点。之后每个问题都可以修改。",
+    "createIn": "创建语言",
+    "railLabel": "开始",
+    "goalsLabel": "目标",
+    "describeIt": "描述表单",
+    "groups": {
+      "all": "全部",
+      "loyalty": "忠诚度",
+      "dropoffs": "流失",
+      "product": "产品",
+      "onboarding": "新用户引导",
+      "blank": "空白"
+    },
+    "runs": {
+      "link": "链接",
+      "embed": "嵌入",
+      "in_app": "应用内"
+    },
+    "minutes_one": "约 {{count, number}} 分钟",
+    "minutes_other": "约 {{count, number}} 分钟",
+    "moreTypes": "还有 {{count, number}} 种",
+    "use": "使用此模板",
+    "empty": "选择一个模板或描述您的表单，即可在此查看。",
+    "backToList": "模板",
+    "preview": {
+      "label": "预览",
+      "questions": "问题",
+      "rules_one": "{{count, number}} 条规则",
+      "rules_other": "{{count, number}} 条规则",
+      "endings_one": "{{count, number}} 个结束页",
+      "endings_other": "{{count, number}} 个结束页",
+      "restart": "重新开始",
+      "loading": "正在以此语言加载模板…",
+      "frameTitle": "表单预览，手机尺寸，{{language}}"
+    }
+  },
+  "describe": {
+    "kicker": "描述您的表单",
+    "title": "描述您的表单",
+    "nothingSaved": "在您保存之前，不会保存任何内容。",
+    "hint": "说明表单面向谁、您想了解什么，以及您想提供哪些回答选项。",
+    "count": "{{n, number}} / {{max, number}}",
+    "tooShort": "请先描述您的表单。",
+    "try": "试试",
+    "examples": {
+      "oldUi": {
+        "chip": "切换回旧版界面的用户…",
+        "text": "询问切换回旧版界面的应用用户原因，并提供预设的原因选项。"
+      },
+      "nps": {
+        "chip": "为我们的移动应用做一个简短的 NPS…",
+        "text": "为我们的移动应用做一个简短的 NPS 调查，并向不满意的客户追问。"
+      },
+      "support": {
+        "chip": "支持工单关闭后…",
+        "text": "支持工单关闭后，询问客户的满意程度以及问题是否已解决。"
+      },
+      "churn": {
+        "chip": "取消订阅的客户…",
+        "text": "询问取消订阅的客户离开的原因，以及我们是否可以联系他们。"
+      }
+    },
+    "replaceAsk": "替换您的描述？",
+    "replace": "替换",
+    "keepMine": "保留我的",
+    "runs": "投放方式",
+    "runsHint": {
+      "link": "可以从欢迎页开始。",
+      "embed": "嵌在您的页面中；没有欢迎页。",
+      "in_app": "简短，没有欢迎页，带有供您的应用使用的隐藏字段。"
+    },
+    "draft": "生成草稿",
+    "draftingButton": "正在生成…",
+    "drafting": "正在生成您的表单草稿… 通常需要 10 到 30 秒。",
+    "inLanguage": "使用{{language}}",
+    "changeLanguage": "更改",
+    "busyReason": "草稿完成后即可更改。",
+    "waitReason": "您可以在 {{minutes}} 分钟后再次生成草稿。",
+    "privacy": "描述会发送到此工作区的 AI 模型。请勿粘贴个人数据。"
+  },
+  "ai": {
+    "refusal": {
+      "role": "只有编辑者和管理员才能用 AI 生成表单草稿。",
+      "aiMode": "人工主导：AI 不会替您撰写表单。请从模板开始，或让助手指导您。",
+      "coachPrompt": "在我编写反馈表单时指导我：问我想了解什么，并帮我斟酌问题的措辞和要提供的回答选项。",
+      "coachMe": "指导我",
+      "changeInPeople": "在“管理 → 隐私与访问 → 用户”中更改",
+      "askAdminMode": "管理员可以更改此设置。",
+      "noModel": "此工作区尚未设置 AI 草稿功能：没有可用的 AI 模型。",
+      "openAiModels": "打开“管理 → AI 模型”",
+      "askAdminModel": "请让管理员设置一个。",
+      "spendCap": "此工作区本月的 AI 预算已用完。",
+      "rateLimited": "您暂时已达到 AI 使用上限。请在 {{minutes}} 分钟后重试。",
+      "rateLimitOver": "AI 使用上限已解除。您可以再次生成草稿。",
+      "invalid": "AI 无法据此生成有效的表单。",
+      "invalidHint": "已尝试两次。请更直白地描述问题和回答，或从模板开始。",
+      "details": "详细信息",
+      "tryAgain": "重试",
+      "noAnswer": "AI 没有响应。请稍后重试。",
+      "other": "AI 无法生成此表单的草稿：{{message}}"
+    },
+    "banner": {
+      "label": "AI 草稿",
+      "draft": "AI 草稿：发布前请检查。尚未保存任何内容。",
+      "improve": "已用 AI 修改：保存前请检查。",
+      "notes": "备注（{{count, number}}）",
+      "discard": "放弃草稿",
+      "undo": "撤销 AI 更改",
+      "goTo": "前往",
+      "discardConfirm": {
+        "title": "放弃 AI 草稿？",
+        "message": "尚未保存任何内容。",
+        "confirm": "放弃草稿"
+      },
+      "addresses": {
+        "label": "AI 建议的地址",
+        "suggested": "由 AI 建议",
+        "confirm": "确认地址",
+        "remove": "移除"
+      }
+    },
+    "improve": {
+      "title": "用 AI 改进",
+      "description": "提出修改要求。每项更改在应用前都需要您审阅；不会保存任何内容。",
+      "instruction": "指令",
+      "try": "试试",
+      "examples": {
+        "translations": "添加英文翻译",
+        "shorter": "让每个问题更简短",
+        "contact": "在末尾添加联系信息问题",
+        "hidden": "为移动应用添加隐藏字段",
+        "dropdown": "将问题 1 改为下拉菜单",
+        "question": "改进问题 {{number}}"
+      },
+      "scope": "可更改：问题、逻辑、结束页、隐藏字段和语言。设置、主题和路由保持不变。",
+      "reads": "它会读取此表单的当前状态，包括未保存的编辑（{{questions}} · {{endings}}）。",
+      "questionsCount_one": "{{count, number}} 个问题",
+      "questionsCount_other": "{{count, number}} 个问题",
+      "endingsCount_one": "{{count, number}} 个结束页",
+      "endingsCount_other": "{{count, number}} 个结束页",
+      "cancel": "取消",
+      "draft": "生成更改",
+      "drafting": "正在生成更改… 通常需要 10 到 30 秒。",
+      "emptyInstruction": "请先说明要更改的内容。",
+      "nothing": "AI 没有做任何更改。请更详细地说明要更改的内容。",
+      "back": "返回",
+      "applied_one": "已应用 AI 的 {{count, number}} 项更改。请检查后保存。",
+      "applied_other": "已应用 AI 的 {{count, number}} 项更改。请检查后保存。"
+    },
+    "diff": {
+      "title": "AI 提出的更改",
+      "count_one": "{{count, number}} 项更改",
+      "count_other": "{{count, number}} 项更改",
+      "acceptAll": "全部接受",
+      "rejectAll": "全部拒绝",
+      "fromAi": "来自 AI",
+      "ignored": "已忽略：对{{areas}}的更改。",
+      "ignoredAreas": {
+        "name": "名称",
+        "theme": "主题",
+        "routing": "类别路由",
+        "project": "关联项目",
+        "test": "测试设置",
+        "tags": "标签",
+        "dimensions": "维度默认值"
+      },
+      "kinds": {
+        "added": "新增",
+        "removed": "删除",
+        "changed": "更改"
+      },
+      "apply": "应用：{{kind}}{{what}}",
+      "what": {
+        "question": "问题 {{number}}",
+        "ending": "结束页“{{title}}”",
+        "hidden": "隐藏字段 {{id}}",
+        "language": "语言 {{language}}",
+        "welcome": "欢迎卡片"
+      },
+      "languageTexts_one": "{{count, number}} 条文本",
+      "languageTexts_other": "{{count, number}} 条文本",
+      "welcome": "欢迎卡片",
+      "hidden": "隐藏字段 {{id}}",
+      "expand": "显示更改内容",
+      "collapse": "隐藏更改内容",
+      "notApplied": "未应用",
+      "notAppliedWith": "一并未应用：{{questions}} 上的规则。",
+      "keptWith": "一并保留：{{questions}} 上指向它的规则。",
+      "checkAddress": "我已检查此地址",
+      "addressWaits": "确认地址后才会应用。",
+      "applyCount_one": "应用 {{count, number}} 项更改",
+      "applyCount_other": "应用 {{count, number}} 项更改",
+      "invalid": "这些更改合在一起会让表单出现错误：{{problem}}",
+      "noneSelected": "请至少选择一项要应用的更改。",
+      "before": "之前",
+      "after": "之后",
+      "ruleAdded": "已添加规则：{{sentence}}",
+      "ruleRemoved": "已删除规则：{{sentence}}",
+      "fields": {
+        "headline": "问题",
+        "subheader": "描述",
+        "required": "必填",
+        "type": "类型",
+        "options": "选项",
+        "other": "其他",
+        "none": "以上都不是",
+        "shuffle": "顺序",
+        "display": "显示为",
+        "min": "至少",
+        "max": "至多",
+        "long": "长度",
+        "input_type": "回答类型",
+        "placeholder": "占位符",
+        "max_chars": "字数限制",
+        "scale": "量表",
+        "range": "分值",
+        "lower_label": "低端",
+        "upper_label": "高端",
+        "label": "文本",
+        "cta": "链接按钮",
+        "fields": "字段",
+        "button_label": "按钮文字",
+        "title": "标题",
+        "description": "描述",
+        "button": "按钮",
+        "enabled": "显示",
+        "logic": "逻辑"
+      },
+      "values": {
+        "yes": "是",
+        "no": "否",
+        "empty": "—"
+      }
+    },
+    "stop": {
+      "button": "停止",
+      "title": "停止生成草稿？",
+      "message": "AI 将停止生成表单草稿，已写的内容会被丢弃。尚未保存任何内容。",
+      "confirm": "停止生成",
+      "keep": "继续生成"
+    }
+  },
+  "questionList": {
+    "title": "问题（{{count, number}}）",
+    "label": "问题",
+    "improve": "用 AI 改进",
+    "welcomeName": "欢迎页",
+    "welcomeStateOn": "开启",
+    "welcomeStateOff": "关闭",
+    "add": "添加问题",
+    "addBelow": "在下方添加问题",
+    "insertAfter": "在问题 {{number}} 后添加问题",
+    "typeMenu": "问题类型",
+    "contactOnce": "此表单中已有",
+    "limit": "一个表单最多可包含 30 个问题。",
+    "lastQuestion": "表单至少需要一个问题。",
+    "cardName": "第 {{number}} 个问题，共 {{total, number}} 个",
+    "cardMenu": "问题 {{number}} 的更多操作",
+    "duplicate": "复制",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "alreadyFirst": "已经是第一个。",
+    "alreadyLast": "已经是最后一个。",
+    "changeType": "更改类型…",
+    "delete": "删除…",
+    "deleteTitle": "删除此问题？",
+    "deleteConfirm": "删除",
+    "deleteRules_one": "有 {{count, number}} 条规则指向此问题。这些规则将被删除，相应的受访者将前往下一个问题。",
+    "deleteRules_other": "有 {{count, number}} 条规则指向此问题。这些规则将被删除，相应的受访者将前往下一个问题。",
+    "deleteAnswers": "其回答将保留在“结果”的“已删除的问题”下。",
+    "deleted": "问题已删除。",
+    "undo": "撤销",
+    "moved": "已将“{{headline}}”移至第 {{position}} 位（共 {{total, number}} 个）。",
+    "rules_one": "{{count, number}} 条规则",
+    "rules_other": "{{count, number}} 条规则",
+    "languageMissing": "缺少 {{language}}",
+    "languagesMissing": "缺少 {{count, number}} 种语言",
+    "problem": "错误",
+    "ai": "AI",
+    "gone": "此卡片已不在表单中。",
+    "back": "问题",
+    "position": "{{n}} / {{total, number}}",
+    "previous": "上一个问题",
+    "next": "下一个问题",
+    "meta": {
+      "options_one": "{{count, number}} 个选项",
+      "options_other": "{{count, number}} 个选项",
+      "other": "其他",
+      "none": "以上都不是",
+      "required": "必填",
+      "optional": "选填",
+      "upTo": "最多 {{count, number}} 个字符",
+      "range": "{{min}}–{{max}}",
+      "scale": {
+        "star": "{{range}} 星级",
+        "number": "{{range}} 数字",
+        "smiley": "{{range}} 表情"
+      },
+      "textOnly": "仅文本",
+      "linkButton": "带链接按钮"
+    }
+  },
+  "question": {
+    "headline": "问题",
+    "newQuestion": "新问题",
+    "description": "描述",
+    "required": "必填",
+    "requiredScaleHint": "受访者无法跳过此问题。",
+    "logic_one": "逻辑 · {{count, number}} 条规则",
+    "logic_other": "逻辑 · {{count, number}} 条规则",
+    "advanced": "高级",
+    "id": "问题 ID",
+    "idLocked": "回答以此 ID 存储，因此一旦有回复就无法更改。",
+    "buttonLabel": "按钮文字",
+    "buttonLabelPlaceholder": "下一步",
+    "duplicate": "复制问题 {{number}}",
+    "translationLine_one": "{{language}}：缺少 {{count, number}} 条文本",
+    "translationLine_other": "{{language}}：缺少 {{count, number}} 条文本",
+    "translate": "翻译",
+    "translateInto": "翻译（{{language}}）"
+  },
+  "typeChange": {
+    "label": "问题 {{number}}：类型",
+    "none": "要更改类型，请添加一个该类型的新问题，然后删除此问题。",
+    "locked": "答案按此类型保存，表单有回复后就不能更改类型。要换一种问法，请添加一个新问题并删除这个问题。",
+    "confirmTitle": "更改问题类型？",
+    "confirmMessage": "此更改将丢弃：{{lost}}。",
+    "confirm": "更改类型",
+    "lost": {
+      "none": "“以上都不是”行",
+      "minMax": "“至少”和“至多”",
+      "includesAll": "需要全部选项的规则",
+      "rulesOutsideScale": "超出新量表范围的规则"
+    }
+  },
+  "choice": {
+    "options": "选项",
+    "view": "选项视图",
+    "labels": "选项文字",
+    "pasteList": "粘贴列表",
+    "optionN": "选项 {{number}}",
+    "optionMenu": "选项 {{number}} 的更多操作",
+    "codeOf": "选项 {{number}} 的代码",
+    "codeLocked": "回答以此代码存储，因此一旦有回复就无法更改。请改为修改选项文字。",
+    "goesTo": "前往 {{target}}",
+    "lastOption": "选择题至少需要一个选项。",
+    "addOption": "添加选项",
+    "count": "{{n, number}} / {{max, number}}",
+    "pasteAsOptions_one": "将 {{count, number}} 行粘贴为 {{count, number}} 个选项？",
+    "pasteAsOptions_other": "将 {{count, number}} 行粘贴为 {{count, number}} 个选项？",
+    "addAsOptions": "添加为选项",
+    "keepAsOne": "保留为一项",
+    "paste": {
+      "label": "每行一个选项。每行会成为一个选项；代码根据文本生成。",
+      "options_one": "{{count, number}} 个选项",
+      "options_other": "{{count, number}} 个选项",
+      "duplicates_one": "已跳过 {{count, number}} 个重复项",
+      "duplicates_other": "已跳过 {{count, number}} 个重复项",
+      "blanks_one": "已忽略 {{count, number}} 个空行",
+      "blanks_other": "已忽略 {{count, number}} 个空行",
+      "add_one": "添加 {{count, number}} 个选项",
+      "add_other": "添加 {{count, number}} 个选项",
+      "replace": "全部替换…",
+      "cancel": "取消",
+      "replaceTitle": "替换所有选项？",
+      "replaceMessage": "此表单已有回复：针对被替换选项的回答会作为已删除的选项保留在“结果”中。",
+      "replaceConfirm": "全部替换"
+    },
+    "other": "带文本框的“其他”",
+    "otherLabel": "显示文字",
+    "otherDefault": "其他",
+    "otherPlaceholder": "占位符",
+    "otherPlaceholderDefault": "请注明",
+    "none": "“以上都不是”",
+    "noneHint": "互斥：选中后会清除其他选项。仅限多选题。",
+    "noneLabel": "“以上都不是”文字",
+    "order": "顺序",
+    "orderHint": "“其他”和“以上都不是”始终排在最后。",
+    "shuffle": {
+      "none": "按列出顺序",
+      "all": "随机排序",
+      "except_last": "随机排序，最后一个选项位置不变"
+    },
+    "showAs": "显示为",
+    "display": {
+      "auto": "自动",
+      "list": "列表",
+      "dropdown": "下拉菜单",
+      "chips": "标签"
+    },
+    "autoList_one": "此处“自动”显示为列表：{{count, number}} 个选项。",
+    "autoList_other": "此处“自动”显示为列表：{{count, number}} 个选项。",
+    "autoDropdown_one": "此处“自动”显示为下拉菜单：{{count, number}} 个选项。",
+    "autoDropdown_other": "此处“自动”显示为下拉菜单：{{count, number}} 个选项。",
+    "answers": "可选数量",
+    "atLeast": "至少",
+    "atMost": "至多",
+    "minMaxHint": "“至少”留空时：必填问题为 1，选填问题为 0。“至多”留空表示不限。",
+    "respondentsSee": "受访者会看到“最多选择 {{count, number}} 项”。",
+    "showCodes": "显示代码",
+    "showCodesHint": "代码用于存储回答，也是规则引用选项的方式。",
+    "routing": {
+      "title": "路由",
+      "option": "选项",
+      "category": "类别",
+      "goTo": "前往",
+      "formDefault": "— 表单默认值",
+      "notConfigured": "{{name}}（已不再配置）",
+      "categoryOf": "“{{option}}”的类别",
+      "goToOf": "选择“{{option}}”后前往",
+      "otherwise": "否则：{{target}}",
+      "otherRow": "{{label}}（其他）",
+      "setByRule": "由“逻辑”中的规则设置",
+      "editInLogic": "在“逻辑”中编辑",
+      "precedence": "此问题的反馈会归入第一个已映射选项的类别；否则归入表单的类别（设置 › 类别路由）。",
+      "firstRuleWins": "当所选的多个选项都会跳转时，以“逻辑”中的第一条规则为准。"
+    }
+  },
+  "scale": {
+    "scale": "量表",
+    "scales": {
+      "star": "星级",
+      "number": "数字",
+      "smiley": "表情"
+    },
+    "points": "分值",
+    "facesRange": "表情量表为 3 到 5 分。",
+    "rangeLocked": "答案按这些分值保存，表单有回复后就不能更改。",
+    "lowEnd": "低端标签",
+    "highEnd": "高端标签",
+    "fixed": {
+      "nps": "0–10，固定。",
+      "csat": "1–5 个表情，固定。4 和 5 计为满意。",
+      "ces": "1–7，固定。5 到 7 计为容易。"
+    },
+    "npsGroups": "0–6 贬损者 · 7–8 被动者 · 9–10 推荐者",
+    "npsHelper": {
+      "button": "向贬损者和推荐者提出不同的问题",
+      "detractor": "您给出这个分数的主要原因是什么？",
+      "promoter": "您最看重我们的哪一点？",
+      "done": "已添加两个追问：贬损者和推荐者各有自己的问题。"
+    }
+  },
+  "text": {
+    "length": "长度",
+    "short": "短",
+    "long": "长",
+    "answerType": "回答类型",
+    "inputTypes": {
+      "text": "文本",
+      "email": "电子邮件",
+      "number": "数字",
+      "phone": "电话",
+      "url": "网址"
+    },
+    "placeholder": "占位符",
+    "placeholderHint": "框内的提示，而不是标签：受访者始终会看到上方的问题。",
+    "limit": "字数限制（字符）",
+    "limitHint": "1 到 5,000；留空即为 5,000。"
+  },
+  "statement": {
+    "text": "文本",
+    "addButton": "添加链接按钮",
+    "hint": "“下一步”仍会继续；链接会在新标签页中打开。",
+    "buttonLabel": "按钮文字",
+    "buttonLabelPlaceholder": "了解更多",
+    "address": "地址",
+    "addressHint": "地址必须以 https:// 开头"
+  },
+  "consent": {
+    "checkboxText": "复选框文本",
+    "placeholder": "可以，您可以就我的反馈与我联系。",
+    "hint": "选填的同意项若未勾选，则回答为“否”。",
+    "mustTick": "必须勾选才能继续"
+  },
+  "contact": {
+    "field": "字段",
+    "show": "显示",
+    "required": "必填",
+    "fields": {
+      "name": "姓名",
+      "email": "电子邮件",
+      "phone": "电话",
+      "company": "公司"
+    },
+    "showField": "显示{{field}}",
+    "requireField": "{{field}}必填",
+    "personalData": "此问题会收集个人数据。受访者只有到达此问题时才会看到它，数据会与回复一起存储。"
+  },
+  "welcome": {
+    "show": "显示欢迎页",
+    "hint": "应用内表单请保持关闭：用户已经知道它为何打开。",
+    "title": "标题",
+    "description": "描述",
+    "buttonLabel": "按钮文字",
+    "buttonDefault": "开始"
+  },
+  "endings": {
+    "heading": "结束页",
+    "label": "结束页",
+    "default": "默认",
+    "untitled": "未命名结束页",
+    "cardMenu": "结束页“{{title}}”的更多操作",
+    "add": "添加结束页",
+    "newTitle": "谢谢",
+    "limit": "一个表单最多可有 5 个结束页。",
+    "lastEnding": "表单至少需要一个结束页。",
+    "deleteTitle": "删除此结束页？",
+    "deleteRules_one": "有 {{count, number}} 条规则在此结束。这些规则将被删除，相应的受访者将看到默认结束页。",
+    "deleteRules_other": "有 {{count, number}} 条规则在此结束。这些规则将被删除，相应的受访者将看到默认结束页。",
+    "nowDefault": "“{{title}}”现在是默认结束页。",
+    "moved": "已将“{{title}}”移至第 {{position}} 位（共 {{total, number}} 个）。",
+    "title": "标题",
+    "description": "描述",
+    "addButton": "添加按钮",
+    "buttonLabel": "按钮文字",
+    "reachedBy": "到达方式：",
+    "reachedFrom": "{{number}} {{condition}}",
+    "otherwise": "否则",
+    "endOfQuestions": "问题结束时（默认）",
+    "id": "结束页 ID",
+    "idLocked": "回复以此 ID 存储，因此一旦有回复就无法更改。"
+  },
+  "preview": {
+    "label": "预览",
+    "device": {
+      "phone": "手机尺寸"
+    },
+    "language": "预览语言",
+    "languageMissing": "{{language}}（缺少 {{count, number}} 条，以 {{primary}} 显示）",
+    "frameTitle": "表单预览，{{size}}，{{language}}",
+    "restart": "重新开始",
+    "startHere": "从此处开始",
+    "show": "预览",
+    "hide": "隐藏预览",
+    "showPane": "显示预览",
+    "inWindow": "预览已在单独的窗口中打开。",
+    "size": "手机 · {{width}} × {{height}} · {{zoom}}%",
+    "showing": "显示：{{scheme}}",
+    "scheme": {
+      "light": "浅色",
+      "dark": "深色"
+    },
+    "shuffled": "为每位答题者打乱顺序",
+    "style": "样式",
+    "openWindow": "在窗口中打开",
+    "openTab": "预览（在新标签页中打开）",
+    "blocked": "浏览器阻止了预览窗口。请允许此网站的弹出窗口，然后重试。",
+    "stylePanel": {
+      "title": "样式",
+      "back": "返回问题"
+    }
+  },
+  "previewWindow": {
+    "title": "表单预览",
+    "region": "表单预览，{{language}}",
+    "size": "窗口尺寸",
+    "language": "预览语言",
+    "restart": "重新开始",
+    "waiting": "正在等待表单。请在构建器中保持表单打开。",
+    "noSession": "请从表单构建器中打开此预览。",
+    "unavailable": "预览无法启动：表单组件未加载。请重新加载此窗口后重试。",
+    "resizeRefused": "浏览器保留了此窗口的尺寸。",
+    "sizeOption": "{{name}} · {{width}} × {{height}}",
+    "custom": "自定义 · {{width}} × {{height}}",
+    "presets": {
+      "phone": "手机",
+      "rotate": "手机（横屏）",
+      "tablet": "平板",
+      "desktop": "桌面",
+      "embedded": "嵌入，高 480 px"
+    }
+  },
+  "flow": {
+    "title": "流程",
+    "questions_one": "{{count, number}} 个问题",
+    "questions_other": "{{count, number}} 个问题",
+    "endings_one": "{{count, number}} 个结束页",
+    "endings_other": "{{count, number}} 个结束页",
+    "paths_one": "{{count, number}} 条路径",
+    "paths_other": "{{count, number}} 条路径",
+    "lengths": "最短 {{min, number}} 个问题，最长 {{max, number}} 个问题",
+    "expandAll": "全部展开",
+    "collapseAll": "全部收起",
+    "start": "开始",
+    "end": "结束",
+    "welcomeOn": "欢迎卡片开启 → 1",
+    "welcomeOff": "欢迎卡片关闭 → 1",
+    "questionsLabel": "问题及其规则",
+    "endingsLabel": "结束页",
+    "default": "默认",
+    "reachedBy_one": "有 {{count, number}} 条路径到达",
+    "reachedBy_other": "有 {{count, number}} 条路径到达",
+    "unreachable": "没有路径能到达此问题",
+    "ai": "AI",
+    "noRules": "所有人都按顺序回答问题。在问题上添加规则，可将部分受访者引导到其他位置。",
+    "thenGoTo": "然后前往 → {{target}}",
+    "meta": {
+      "required": "必填",
+      "optional": "选填",
+      "options_one": "{{count, number}} 个选项",
+      "options_other": "{{count, number}} 个选项",
+      "other": "其他"
+    }
+  },
+  "hidden": {
+    "title": "隐藏字段",
+    "intro": "您的应用或链接随每条回复传入的值。受访者永远看不到它们。",
+    "addField": "添加字段",
+    "limit": "一个表单最多可有 20 个隐藏字段。",
+    "emptyTitle": "没有隐藏字段",
+    "empty": "添加一个隐藏字段，即可从您的应用接收用户 ID 或应用版本等值。",
+    "count": "{{n, number}} / {{max, number}} · 每个值均为文本，最多 200 个字符；超出部分会被截断。",
+    "columns": {
+      "id": "ID",
+      "label": "标签",
+      "filledBy": "填充方式",
+      "inResults": "在结果中",
+      "actions": "操作"
+    },
+    "filledBy": "链接 · SDK",
+    "inResults": "筛选条件和列",
+    "inResultsDimension": "筛选条件、列和维度 {{name}}*",
+    "actions": "{{id}} 的更多操作",
+    "rename": "重命名",
+    "delete": "删除…",
+    "deleteConfirm": "删除",
+    "deleteTitle": "删除“{{id}}”？",
+    "deleteMessage": "已接收的值仍保留在“结果”中。",
+    "locked": "回复以此 ID 存储。",
+    "cancel": "取消",
+    "add": "添加",
+    "done": "完成",
+    "useThem": "使用方式",
+    "kindLabel": "值的来源",
+    "valuesFor": "适用链接",
+    "kinds": {
+      "link": "链接",
+      "script": "脚本嵌入",
+      "sdk": "应用内 SDK",
+      "webview": "移动端 WebView"
+    },
+    "modes": {
+      "live": "正式",
+      "test": "测试"
+    },
+    "codeLabel": "{{kind}}代码",
+    "testShown": "这是测试链接：回复会标记为“测试”，且永远不计入统计。",
+    "testOff": "请先在“测试”中开启测试链接。",
+    "openTest": "打开“测试”",
+    "saveFirst": "保存表单即可获取其链接。",
+    "save": "保存",
+    "noEndpoint": "请在“管理 → 常规”中设置 API 端点，以获取此表单的链接。",
+    "notes": {
+      "replace": "将每个 {…} 替换为对应的值（需 URL 编码）。未知的 hf_ 参数会被忽略。",
+      "sdk": "在用户执行您所询问的操作时调用它（例如“切换回旧版界面”）。",
+      "webview": "在 WebView 中打开此地址。测试版本请使用测试链接（上方的“正式 | 测试”）。",
+      "ids": "请传入 ID，而不是个人数据：user_id 应为您的内部 ID，而不是电子邮件地址。"
+    }
+  },
+  "languages": {
+    "title": "语言",
+    "add": "添加语言",
+    "primary": "主要语言",
+    "primaryHint": "所有文本最先使用的语言。",
+    "change": "更改…",
+    "changeLabel": "将另一种语言设为主要语言",
+    "changeNone": "请先添加一种语言。",
+    "makePrimary": "将 {{language}} 设为主要语言",
+    "completeFirst": "请先完成其翻译",
+    "listLabel": "表单的语言",
+    "primaryBadge": "主要",
+    "texts_one": "{{count, number}} 条文本",
+    "texts_other": "{{count, number}} 条文本",
+    "complete": "已完成",
+    "missingCount_one": "缺少 {{count, number}} 条",
+    "missingCount_other": "缺少 {{count, number}} 条",
+    "doneOf": "{{done, number}} / {{total, number}}",
+    "translate": "翻译",
+    "actions": "{{language}} 的更多操作",
+    "remove": "移除语言…",
+    "removeConfirm": "移除",
+    "removeTitle": "移除 {{language}}？",
+    "removeMessage_one": "其 {{count, number}} 条翻译将被删除，使用 {{language}} 的用户将看到 {{primary}} 版本。",
+    "removeMessage_other": "其 {{count, number}} 条翻译将被删除，使用 {{language}} 的用户将看到 {{primary}} 版本。",
+    "filled_one": "已从模板填入 {{count, number}} 条文本。发布前请检查。",
+    "filled_other": "已从模板填入 {{count, number}} 条文本。发布前请检查。",
+    "emptyTitle": "单一语言",
+    "empty": "此表单仅提供 {{language}} 版本。添加一种语言即可提供其他语言版本。",
+    "respondents": "受访者看到的语言依次为：链接中的 lang= 或 SDK 指定的语言；其次是浏览器语言；最后是 {{primary}}。",
+    "fallback": "缺失的文本会以 {{primary}} 显示。组件自带的文字（下一步、返回、最多选择 3 项…）始终会翻译。",
+    "back": "语言",
+    "viewTitle": "{{language}}（{{code}}）· {{done, number}} / {{total, number}}",
+    "onlyMissing": "仅显示缺失项",
+    "search": "搜索文本…",
+    "nothingShown": "没有匹配的文本。",
+    "missing": "缺失",
+    "fromTemplate": "来自模板",
+    "targetQuestion": "{{language}}：问题 {{number}} 的{{field}}",
+    "targetWelcome": "{{language}}：欢迎卡片的{{field}}",
+    "targetEnding": "{{language}}：结束页“{{title}}”的{{field}}",
+    "fields": {
+      "headline": "问题",
+      "subheader": "描述",
+      "placeholder": "占位符",
+      "buttonLabel": "按钮文字",
+      "option": "选项 {{number}}",
+      "otherLabel": "“其他”文字",
+      "otherPlaceholder": "“其他”占位符",
+      "noneLabel": "“以上都不是”文字",
+      "lowerLabel": "低端标签",
+      "upperLabel": "高端标签",
+      "consentLabel": "复选框文本",
+      "ctaLabel": "链接按钮",
+      "welcomeTitle": "标题",
+      "welcomeDescription": "描述",
+      "welcomeButton": "按钮文字",
+      "endingTitle": "标题",
+      "endingDescription": "描述",
+      "endingButton": "按钮文字"
+    },
+    "confirm": {
+      "text": "此表单创建于表单支持语言设置之前。",
+      "writtenIn": "使用语言",
+      "saving": "保存后即会存储。"
+    }
+  },
+  "test": {
+    "title": "测试链接",
+    "subtitle": "即使表单处于关闭状态，测试链接也能打开它。其回复永远不计入统计。",
+    "linkSwitch": "测试链接",
+    "linkOnHint": "开启：下方的链接可以使用，表单关闭时也可以。",
+    "linkOffHint": "测试链接将失效。再次开启即可重新使用同一链接。",
+    "linkOff": "测试链接已关闭。开启后即可从您的应用试用此表单，且回复不会计入统计。",
+    "linkLabel": "测试链接",
+    "linkMenu": "测试链接的更多操作",
+    "copyWithHidden": "连同隐藏字段一起复制",
+    "reset": "重置测试链接…",
+    "resetTitle": "重置测试链接？",
+    "resetMessage": "当前的测试链接会立即失效，无论它被分享到了哪里。新链接将取而代之。",
+    "resetConfirm": "重置测试链接",
+    "resetFailed": "无法重置测试链接。请稍后重试。",
+    "noToken": "此表单还没有测试链接。",
+    "makeLink": "创建测试链接",
+    "makeLinkFailed": "无法创建测试链接。请稍后再试。",
+    "tokenLoading": "正在读取测试链接…",
+    "qrTitle": "测试链接二维码",
+    "recordTitle": "测试回复如何处理",
+    "keep": "保留，并标记为“测试”",
+    "keepHint": "存储为测试回复。仅在您选择包含测试回复时，才会显示在下方和“结果”中。永远不会计入指标、NPS、仪表板、优先级排序证据或 AI 处理。",
+    "checkOnly": "仅检查，不保留",
+    "checkOnlyHint": "每条回答都会像真实回答一样接受检查，然后被丢弃。适用于自动化测试或负载测试。",
+    "testersSee": "测试者会看到：",
+    "bannerKeep": "表单的每个页面上都有一条“测试 · 回复不计入统计”横条。",
+    "bannerDrop": "表单的每个页面上都有一条“测试 · 不会保存任何内容”横条。",
+    "previewNote": "预览永远不会发送任何内容；要试用真实表单，请使用测试链接。",
+    "recentTitle": "最近的测试回复",
+    "refreshes": "每 10 秒刷新一次",
+    "deleteAll": "全部删除…",
+    "deleteTitle": "删除所有测试回复？",
+    "deleteMessage": "此表单的所有测试回复都将被删除。真实回复不受影响。此操作无法撤销。",
+    "deleteConfirm": "删除测试回复",
+    "deleteFailed": "无法删除测试回复。请稍后再试。",
+    "noneYet": "还没有测试回复。打开测试链接，或用手机扫描其二维码，然后提交一条。",
+    "checkOnlyEmpty": "“仅检查”不会保留任何内容，因此这里没有可显示的内容。切换到“保留”即可查看测试回复。",
+    "emptyValue": "空",
+    "open": "打开",
+    "openResponse": "打开 {{time}} 的测试回复",
+    "todayAt": "今天 {{time}}",
+    "keptUntilDeleted": "测试回答会一直保留，直到管理员或表单创建者将其删除。"
+  },
+  "share": {
+    "title": "分享",
+    "mode": "显示正式链接或测试链接",
+    "live": "正式",
+    "test": "测试",
+    "offBanner": "此表单已关闭：其链接会显示“反馈表单不可用。”",
+    "publish": "发布",
+    "testWhileOff": "正在显示测试链接：表单关闭时也可以使用。",
+    "testOff": "请先在“测试”中开启测试链接。",
+    "openTest": "打开“测试”",
+    "testNotice": "这是测试链接：回复会标记为“测试”，且永远不计入统计。",
+    "link": "链接",
+    "liveHint": "来自此链接的回复会计入统计。",
+    "open": "打开",
+    "newTab": "（在新标签页中打开）",
+    "copy": "复制",
+    "copied": "已复制",
+    "qr": "二维码",
+    "qrTitle": "二维码",
+    "withHidden": "带隐藏字段：",
+    "toHidden": "参见“隐藏字段”",
+    "iframe": "嵌入（iframe）",
+    "script": "脚本嵌入",
+    "iframeHint": "框架后的脚本会把框架高度设为表单的高度。没有该脚本时，框架保持 480 px 高，表单在其中滚动。",
+    "scriptHint": "将其粘贴到表单应出现的位置。表单组件文件由此应用提供，并随每个版本更新。如果您的网站设置了 Content-Security-Policy，请允许 script-src {{app}} 和 connect-src {{api}}。",
+    "inApp": "在您的应用中：",
+    "inAppHint": "网页应用通过脚本嵌入调用，并传入语言和隐藏字段；移动应用在 WebView 中打开链接。",
+    "saveFirstTitle": "还没有链接",
+    "saveFirst": "保存表单即可获取其链接。",
+    "showProblems": "查看问题",
+    "save": "保存"
+  },
+  "results": {
+    "summary": "摘要",
+    "responsesView": "回复",
+    "view": "结果视图",
+    "loading": "正在加载结果…",
+    "csv": "导出 CSV",
+    "csvFailed": "无法导出回复。",
+    "includeTest": "包含测试回复",
+    "including_one": "包含 {{formatted}} 条测试回复。这些数字并非您的真实结果。",
+    "including_other": "包含 {{formatted}} 条测试回复。这些数字并非您的真实结果。",
+    "onlyTestTitle": "还没有真实回复",
+    "onlyTest_one": "已隐藏 {{count, number}} 条测试回复。",
+    "onlyTest_other": "已隐藏 {{count, number}} 条测试回复。",
+    "noneTitle": "还没有回复",
+    "none": "分享表单，或用测试链接试用。",
+    "openShare": "打开“分享”",
+    "noMatchTitle": "这里没有内容",
+    "noMatch": "没有符合这些筛选条件的回复。",
+    "clearFilters": "清除筛选条件",
+    "test": "测试",
+    "other": "其他",
+    "otherAnswer": "{{label}}：“{{text}}”",
+    "accepted": "已同意",
+    "notAccepted": "未同意",
+    "openInFeedback": "在“反馈”中打开",
+    "reach": "已作答 {{answered}} · 已跳过 {{skipped}} · 未显示 {{hidden}}（逻辑）",
+    "changed": "{{date}} 已更改：在此之前的回答使用的是其他选项",
+    "earlierVersion_one": "对此问题早先版本（其他类型或分值）的 {{formatted}} 个回答不计入此处",
+    "earlierVersion_other": "对此问题早先版本（其他类型或分值）的 {{formatted}} 个回答不计入此处",
+    "endings": "结束页",
+    "defaultEnding": "默认",
+    "removedQuestions": "已删除的问题（{{count, number}}）",
+    "removedAnswered_one": "{{formatted}} 条回答",
+    "removedAnswered_other": "{{formatted}} 条回答",
+    "statementNone": "没有可显示的回答。",
+    "statementShown_one": "已向 {{count, number}} 人显示。",
+    "statementShown_other": "已向 {{count, number}} 人显示。",
+    "consent": "看到此项的 {{saw}} 人中有 {{accepted}} 人同意（{{percent}}）。",
+    "contact": "{{left}} 人留下了联系方式 · {{emails}} 个电子邮件地址 · {{phones}} 个电话号码",
+    "contactHint": "具体联系方式请在“回复”中查看。",
+    "figures": {
+      "responses": "回复",
+      "completion": "完成率",
+      "ofOpened": "占打开数的 {{percent}}",
+      "last": "最近回复",
+      "largestDropAt": "流失最多：{{step}}",
+      "questionShort": "Q{{position}}"
+    },
+    "filters": {
+      "range": "时间范围",
+      "days7": "最近 7 天",
+      "days30": "最近 30 天",
+      "days90": "最近 90 天",
+      "all": "全部时间",
+      "language": "语言",
+      "allLanguages": "所有语言",
+      "ending": "结束页",
+      "allEndings": "所有结束页",
+      "add": "筛选：隐藏字段",
+      "addLabel": "按隐藏字段筛选",
+      "field": "隐藏字段",
+      "value": "值",
+      "apply": "添加筛选条件",
+      "cancel": "取消",
+      "remove": "移除筛选条件 {{field}} = {{value}}"
+    },
+    "choice": {
+      "sortByCount": "按数量排序",
+      "optionsLabel": "按选项统计的回答",
+      "removed": "{{label}}（已删除）",
+      "showOther_one": "显示 {{count, number}} 条回答",
+      "showOther_other": "显示 {{count, number}} 条回答",
+      "hideOther": "隐藏回答",
+      "multiNote": "受访者可以选择多项，因此各项占比之和超过 100%。",
+      "multiNoteMax_one": "受访者最多可以选择 {{count, number}} 项，因此各项占比之和超过 100%。",
+      "multiNoteMax_other": "受访者最多可以选择 {{count, number}} 项，因此各项占比之和超过 100%。"
+    },
+    "scale": {
+      "average": "平均值",
+      "averageOf": "{{average}}（满分 {{max}}）",
+      "distribution": "按分数统计的回答",
+      "pointLabel": "{{score}} · {{label}}",
+      "npsScore": "NPS",
+      "groups": "NPS 分组",
+      "detractors": "贬损者（0–6）",
+      "passives": "被动者（7–8）",
+      "promoters": "推荐者（9–10）",
+      "satisfied": "满意（4 或 5）",
+      "easy": "容易（5 到 7）"
+    },
+    "text": {
+      "latest": "最新回答",
+      "none": "还没有回答。",
+      "noMatch": "没有匹配的回答。",
+      "analysing": "正在分析…",
+      "open": "打开",
+      "search": "搜索回答…",
+      "showAll_one": "在“回复”中查看全部 {{count, number}} 条",
+      "showAll_other": "在“回复”中查看全部 {{count, number}} 条"
+    },
+    "funnel": {
+      "title": "流失情况",
+      "opened": "已打开",
+      "started": "已开始",
+      "completed": "已完成",
+      "ofOpened": "占打开数的 {{percent}}",
+      "largestDrop": "流失最多",
+      "somePaths": "仅部分路径",
+      "somePathsNote": "逻辑只在部分路径上显示某些问题：这些问题不计流失，其数字是看到它们的人数。"
+    },
+    "reachCard": {
+      "title": "到达情况",
+      "answeredBy": "{{total}} 条已完成回复中有 {{answered}} 条作答",
+      "note": "统计中途退出的人数需要浏览跟踪，目前尚未收集。",
+      "filtered": "流失统计的是所有访问，因此按语言、结束页或隐藏值筛选时不显示。"
+    },
+    "responses": {
+      "title": "没有回复",
+      "none": "没有符合这些筛选条件的回复。",
+      "caption": "回复，最新的在前",
+      "time": "时间",
+      "answers": "回答",
+      "language": "语言",
+      "ending": "结束页",
+      "hidden": "隐藏字段",
+      "openColumn": "打开",
+      "open": "打开 {{time}} 的回复",
+      "more": "加载更多"
+    },
+    "sheet": {
+      "title": "{{time}} 的回复",
+      "answers": "回答",
+      "question": "{{number}} · {{headline}}",
+      "notAnswered": "未作答：已跳过，或不在此受访者的路径上。",
+      "time": "时间",
+      "language": "语言",
+      "ending": "结束页",
+      "revisionLabel": "表单版本",
+      "revision": "基于版本 {{number}} 作答",
+      "previous": "上一条",
+      "next": "下一条"
+    },
+    "contactLeft_one": "{{count, number}} 人留下了联系方式",
+    "contactLeft_other": "{{count, number}} 人留下了联系方式"
+  },
+  "theme": {
+    "presets": {
+      "label": "预设",
+      "vocLight": "VoC 浅色",
+      "vocDark": "VoC 深色",
+      "highContrast": "高对比度",
+      "brand": "您的品牌",
+      "saveAsBrand": "保存为品牌…",
+      "notAdmin": "只有此工作区的管理员才能保存其品牌。",
+      "unreadable": "将此样式保存为品牌之前，请先让文字清晰可读（至少 3:1）。",
+      "confirmTitle": "将此样式保存为您的品牌？",
+      "confirmMessage": "此工作区的新表单将以它为起点，每个表单的“样式”都会把它作为“您的品牌”提供。",
+      "confirmReplace": "此工作区的新表单将以它为起点，每个表单的“样式”都会把它作为“您的品牌”提供。它会替换之前保存的品牌。",
+      "confirm": "保存为品牌",
+      "saved": "已保存为您的品牌。",
+      "saveFailed": "无法保存品牌。请重试。"
+    },
+    "reset": "重置为 {{preset}}",
+    "mode": {
+      "label": "模式",
+      "light": "浅色",
+      "dark": "深色",
+      "auto": "自动",
+      "hint": "“自动”会跟随每位受访者的设备设置。"
+    },
+    "editing": {
+      "label": "正在编辑"
+    },
+    "palette": {
+      "light": "浅色配色",
+      "dark": "深色配色"
+    },
+    "colours": {
+      "legend": "颜色",
+      "primary": "主色",
+      "primaryHint": "按钮、进度、焦点环、所选答案",
+      "background": "背景",
+      "text": "文字",
+      "swatch": "{{label}}：选择颜色",
+      "invalid": "请使用 #8e48ff 这样的十六进制颜色。"
+    },
+    "derived": "派生：选项边框 {{ratio}}:1（文字颜色的 {{percent}} %）。",
+    "corners": {
+      "label": "圆角",
+      "square": "直角 {{px}}",
+      "small": "小 {{px}}",
+      "medium": "中 {{px}}",
+      "large": "大 {{px}}",
+      "slider": "圆角半径",
+      "value": "{{px}} px"
+    },
+    "font": {
+      "label": "字体",
+      "system": "系统",
+      "inherit": "与您的页面相同（仅限脚本嵌入）",
+      "serif": "衬线",
+      "rounded": "圆体",
+      "mono": "等宽",
+      "inheritHint": "只有脚本嵌入会使用您页面的字体；链接、iframe 和预览都显示系统字体。"
+    },
+    "size": {
+      "label": "大小",
+      "default": "默认",
+      "large": "大",
+      "hint": "大：正文 18 px，适合年长的受众。"
+    },
+    "contrast": {
+      "title": "对比度 · {{palette}}",
+      "pair": "组合",
+      "ratio": "比值",
+      "result": "结果",
+      "text": "背景上的文字",
+      "primary": "背景上的主色",
+      "label": "主色上的按钮文字",
+      "edge": "选项边框",
+      "minimum": "（最低 {{ratio}}:1）",
+      "value": "{{ratio}}:1",
+      "aa": "AA",
+      "belowAa": "低于 AA",
+      "use": "使用 {{colour}}（{{ratio}}:1）",
+      "other": {
+        "light_one": "浅色配色有 {{count, number}} 个对比度问题。",
+        "light_other": "浅色配色有 {{count, number}} 个对比度问题。",
+        "dark_one": "深色配色有 {{count, number}} 个对比度问题。",
+        "dark_other": "深色配色有 {{count, number}} 个对比度问题。"
+      },
+      "editOther": {
+        "light": "编辑浅色",
+        "dark": "编辑深色"
+      }
+    }
+  },
+  "settings": {
+    "sectionsLabel": "设置分区",
+    "sections": {
+      "general": "常规",
+      "routing": "类别路由",
+      "project": "关联项目",
+      "appearance": "外观",
+      "danger": "危险操作"
+    },
+    "general": {
+      "name": "内部名称",
+      "nameHint": "只有您的团队能看到。受访者看到的是问题。",
+      "primary": "主要语言：",
+      "toLanguages": "语言",
+      "languageHint": "回复会连同作答时所用的语言一起存储。"
+    },
+    "routing": {
+      "category": "表单的类别",
+      "subcategory": "子类别（可选）",
+      "none": "— 无类别",
+      "noSubcategory": "— 无子类别",
+      "notConfiguredBadge": "已不再配置",
+      "pickConfigured": "请选择已配置的类别。",
+      "categoryHint": "类别在“管理 → 分类体系 → 分类”中配置。",
+      "taggedAs": "此表单的回复将归入：",
+      "perOption": "按选项路由",
+      "noChoices": "此表单没有选择题，因此所有回复都归入表单的类别。",
+      "mapped_one": "{{count, number}} 个选项中已映射 {{mapped}} 个",
+      "mapped_other": "{{count, number}} 个选项中已映射 {{mapped}} 个",
+      "edit": "编辑",
+      "editQuestion": "编辑问题 {{number}} 的路由",
+      "precedence": "回复会归入第一个已作答且设置了类别的选项所对应的类别；否则归入表单的类别。",
+      "dimensionsHint": "每条回复都带有这些值。嵌入时可以通过 dimensions 选项按页面设置自己的值。"
+    },
+    "danger": {
+      "hint": "删除表单会移除表单及其链接。其回复仍保留在“反馈”中。",
+      "delete": "删除表单…",
+      "confirmTitle": "删除此表单？",
+      "confirmMessage_one": "删除“{{name}}”？它有 {{count, number}} 条回复。其链接将失效。此操作无法撤销。",
+      "confirmMessage_other": "删除“{{name}}”？它有 {{count, number}} 条回复。其链接将失效。此操作无法撤销。",
+      "confirm": "删除表单",
+      "failed": "无法删除表单。请稍后重试。",
+      "unnamed": "此表单"
+    }
   }
 }

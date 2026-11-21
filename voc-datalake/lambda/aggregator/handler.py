@@ -2266,13 +2266,17 @@ def record_handler(record: DynamoDBRecord) -> dict:
     if event_name not in ('INSERT', 'REMOVE', 'MODIFY'):
         logger.info(f"Skipping unrecognized event: {event_name}")
         return {"status": "skipped", "reason": "unrecognized event"}
-    # Every recognized record is a feedback-table write the read routes can see (a list
-    # shows text a counter never moves on), so the batch bumps data_version once.
-    data_changed.mark()
-
     stream = record.dynamodb
     new_image = stream.new_image if stream else None
     old_image = stream.old_image if stream else None
+    # A form's test response (``is_test``) never reaches voc-feedback (docs/feedback-forms.md "Test mode"); one that
+    # did would still count towards no metric, NPS or dashboard: its INSERT, MODIFY and REMOVE all move nothing.
+    if any(isinstance(image, Mapping) and image.get('is_test') is True for image in (new_image, old_image)):
+        logger.warning("Skipping a test response's stream record: test responses are never counted")
+        return {"status": "skipped", "reason": "test response"}
+    # Every recognized record is a feedback-table write the read routes can see (a list
+    # shows text a counter never moves on), so the batch bumps data_version once.
+    data_changed.mark()
 
     if event_name == 'REMOVE':
         return _handle_remove(record, old_image)

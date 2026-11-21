@@ -1,0 +1,118 @@
+/*
+ * The preview window's toolbar (form-preview.html): the Kiro light recipe (docs/kiro-design-system.md, the
+ * `kiro-light` values of src/index.css) without the app's CSS, which must never reach the form. The form itself is
+ * the widget's, in its own shadow root.
+ */
+:root {
+  color-scheme: light;
+  --pw-bg: #ffffff;
+  --pw-bar: #f5f5f5;
+  --pw-border: #e4e4e7;
+  --pw-control-border: #86818e;
+  --pw-control-border-hover: #5e5966;
+  --pw-hover: #f0f0f0;
+  --pw-text: #19161d;
+  --pw-muted: #5e5966;
+  --pw-ring: #8e48ff;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  background: var(--pw-bg);
+  color: var(--pw-text);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* 40 px: the WINDOW_TOOLBAR_PX the builder adds to a preset's height when it opens the window. */
+.pw-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--pw-border);
+  background: var(--pw-bar);
+  white-space: nowrap;
+}
+
+/* The size keeps the width of "Phone · 390 × 844"; the language takes what is left (a select is as wide as its
+   longest option otherwise, "English (5 missing, shown in Polski)"). */
+.pw-group { display: inline-flex; flex: 0 0 10.5rem; min-width: 0; }
+.pw-group + .pw-group { flex: 1 1 auto; }
+.pw-group[hidden] { display: none; }
+
+.pw-select, .pw-button {
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--pw-control-border);
+  border-radius: 6px;
+  background-color: var(--pw-bg);
+  color: var(--pw-text);
+  font: inherit;
+  font-weight: 500;
+}
+
+/* The design system's select: its own chevron (two gradients, no image), the text cut where it must be. */
+.pw-select {
+  width: 100%;
+  padding-right: 24px;
+  overflow: hidden;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--pw-muted) 50%),
+    linear-gradient(135deg, var(--pw-muted) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pw-button { flex: none; cursor: pointer; }
+.pw-select:hover, .pw-button:hover { border-color: var(--pw-control-border-hover); }
+.pw-button:hover { background: var(--pw-hover); }
+.pw-button:active { transform: scale(0.97); }
+
+:focus-visible { outline: 2px solid var(--pw-ring); outline-offset: 2px; }
+
+.pw-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pw-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+/* The form's viewport: the rest of the window, scrolling on its own like the iframe a site embeds. */
+.pw-stage {
+  position: relative;
+  height: calc(100vh - 40px);
+  height: calc(100dvh - 40px);
+  overflow: auto;
+}
+
+.pw-message {
+  margin: 0;
+  padding: 24px 16px;
+  color: var(--pw-muted);
+  text-align: center;
+}
+
+.pw-message[hidden] { display: none; }
+
+.pw-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-button:active { transform: none; }
+}

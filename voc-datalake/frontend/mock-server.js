@@ -15,6 +15,8 @@ import {
 import { handleSourceRoutes } from './mock-sources.js';
 import { handleImportHistoryRoutes } from './mock-import-history.js';
 import { handleFormRoutes } from './mock-forms.js';
+import { SEED_FORMS as FORMS_V2_SEEDS, seedStats as formsV2SeedStats } from './mock-forms-seeds.js';
+import { brandFormTheme, listedForm, listedStats } from './mock-forms-v2.js';
 import { handleOnboardingRoutes } from './mock-onboarding.js';
 import { handleAppearanceRoutes } from './mock-appearance.js';
 import { handleBriefingRoutes } from './mock-briefing.js';
@@ -393,8 +395,12 @@ const mockFeedbackForms = [
     created_at: new Date().toISOString(),
     project_id: 'proj_1', document_id: 'prfaq_1',
   },
+  // Forms v2 (7.04.00, mock-forms-seeds.js): a Live Polish form with test responses, an Off NPS form, and a v1 form
+  // whose language is '' (the builder migrates it). Copied, so the routes' edits never touch the seed module.
+  ...JSON.parse(JSON.stringify(FORMS_V2_SEEDS)),
 ];
 const mockFormStats = {
+  ...formsV2SeedStats(),
   form_1: { total_submissions: 234, avg_rating: 4.2, rating_count: 180 },
   form_2: { total_submissions: 567, avg_rating: 3.8, rating_count: 512 },
   form_3: { total_submissions: 89, avg_rating: null, rating_count: 0 },
@@ -506,11 +512,13 @@ const mockScraperRuns = {
 const handlers = {
   // Feedback Forms list
   // `?include=stats` adds every form's card stats (handler list_forms, E2E F11).
+  // A v2 form is listed as the handler's item_to_form lists it (never its test token: mock-forms-v2.js listedForm).
   'GET /feedback-forms': (body, query) => {
-    if (!(query instanceof URLSearchParams) || query.get('include') !== 'stats') return { forms: mockFeedbackForms };
+    const forms = mockFeedbackForms.map(listedForm);
+    if (!(query instanceof URLSearchParams) || query.get('include') !== 'stats') return { forms };
     const zero = { total_submissions: 0, avg_rating: null, rating_count: 0 };
-    const stats = Object.fromEntries(mockFeedbackForms.map((form) => [form.form_id, mockFormStats[form.form_id] ?? zero]));
-    return { success: true, forms: mockFeedbackForms, stats };
+    const stats = Object.fromEntries(mockFeedbackForms.map((form) => [form.form_id, listedStats(form, mockFormStats[form.form_id] ?? zero)]));
+    return { success: true, forms, stats };
   },
 
   // Sources status. With ?run_status=<source> returns the persisted last-run
@@ -872,8 +880,16 @@ const handlers = {
 
   // Brand settings (settings_handler.py) — stateful so Settings round-trips.
   // PUT is admin-only on the real API (#242); the mock caller is always admin-demo, so it never 403s here.
+  // `form_theme` is the form brand (the forms builder's "Your brand"): a PUT of only it sets only it, a full brand
+  // PUT keeps it unless it names one.
   'GET /settings/brand': () => ({ ...mockBrandSettings }),
   'PUT /settings/brand': (body) => {
+    const named = brandFormTheme(body);
+    if (named?.error) return { __status: 400, body: { success: false, error: named.error } };
+    if (named !== undefined) mockBrandSettings.form_theme = named.theme;
+    if (named !== undefined && Object.keys(body).length === 1) {
+      return { success: true, message: 'Brand settings saved', settings: { form_theme: named.theme } };
+    }
     const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === 'string') : []);
     mockBrandSettings.brand_name = typeof body?.brand_name === 'string' ? body.brand_name : '';
     mockBrandSettings.brand_handles = strings(body?.brand_handles);
@@ -894,6 +910,7 @@ const mockBrandSettings = {
   brand_handles: ['@acmeoutfitters', '@acme_help'],
   hashtags: ['#acmeoutfitters'],
   urls_to_track: ['https://example.com/reviews'],
+  form_theme: null,
 };
 
 // ── App-review configs (integrations_handler.py, APP_CONFIG_PLUGINS) ──────
@@ -3870,8 +3887,9 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url.pathname.match(/^\/feedback-forms\/[^/]+\/stats$/)) {
     const formId = url.pathname.split('/')[2];
     const stats = mockFormStats[formId];
+    const form = mockFeedbackForms.find((item) => item.form_id === formId);
     if (stats) {
-      sendJson(res, 200, { success: true, form_id: formId, stats });
+      sendJson(res, 200, { success: true, form_id: formId, stats: form === undefined ? stats : listedStats(form, stats) });
     } else {
       // Honest 404 for unknown forms so dev doesn't mask client bugs.
       sendJson(res, 404, { success: false, error: 'Form not found' });

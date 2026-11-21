@@ -58,11 +58,11 @@ describe('Notice (banner)', () => {
 
   it('shows standing advice as a note in the warn tone, with the action that resolves it', async () => {
     const onClick = vi.fn()
-    render(<Notice variant="banner" tone="warn" role="note" className="mb-4" icon={TriangleAlert}
+    render(<Notice variant="banner" tone="warn" role="note" icon={TriangleAlert}
       text="This form is disabled." action={{ label: 'Enable', onClick }} />)
 
     const note = screen.getByRole('note')
-    expect(note).toHaveClass('bg-warn-subtle', 'mb-4')
+    expect(note).toHaveClass('bg-warn-subtle')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Enable' }))
     expect(onClick).toHaveBeenCalledExactlyOnceWith()
   })

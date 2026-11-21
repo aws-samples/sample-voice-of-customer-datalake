@@ -17,6 +17,9 @@ what and how), and only for a legal obligation (TENETS.md D5). Two modes:
 A run walks its PHASES in order, each paged and time-budgeted:
 
 1. ``items`` — voc-feedback;
+   then ``form_tests`` — a feedback form's test responses (voc-aggregates, ``pk FEEDBACK_FORM_TEST``), when the run
+   reaches the ``feedback_form`` source: its retention window, an erasure by email or name, or its whole-source
+   erasure (``form_tests.py``);
 2. ``radar`` — voc-radar (other brands' reviews), when ``RADAR_TABLE`` is set;
    then ``boards`` — an erasure by email only, when ``FEATURE_REQUESTS_TABLE`` is set:
    the person's board requests and +1s are de-identified and their raw copies deleted
@@ -49,17 +52,17 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
-from jobs.retention import boards, lineage
+from jobs.retention import boards, form_tests, lineage
 from jobs.retention.copies import ItemDeleter, write_tombstones
 from jobs.retention.runs import (
     BOARD_COUNTER,
     MODE_ERASE,
     MODE_RETENTION,
-    board_count,
     carried_state,
     claim_erasure_job,
     finish_erasure_job,
     new_run,
+    optional_counts,
     record_progress,
     write_audit,
 )
@@ -86,6 +89,7 @@ JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
 STATUS_COMPLETED: Final = 'completed'
 STATUS_FAILED: Final = 'failed'
 PHASE_ITEMS: Final = 'items'
+PHASE_FORM_TESTS: Final = 'form_tests'
 PHASE_RADAR: Final = 'radar'
 PHASE_BOARDS: Final = 'boards'
 PHASE_RAW: Final = 'raw'
@@ -310,6 +314,16 @@ def _erase_from_boards(walk: Walk, cursor: dict | None) -> dict | None:
                         eraser.tombstones, eraser.erase)
 
 
+def _erase_form_tests(walk: Walk, cursor: dict | None) -> dict | None:
+    """Tombstone, then delete, every test response of a feedback form the run matches (``form_tests.py``); nothing,
+    not even a read, for a run that reaches none."""
+    matches = form_tests.row_matcher(walk.run, str(walk.event.get('value') or ''))
+    if matches is None:
+        return None
+    eraser = form_tests.FormTestEraser(walk.run, walk.aggregates, matches)
+    return _erase_pages(walk, PHASE_FORM_TESTS, cursor, eraser.page, eraser.tombstones, eraser.erase)
+
+
 def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
     """Mark the workspace artifacts that cited a deleted item (``lineage.py``), page by page."""
     projects = walk.tables['projects']
@@ -323,7 +337,8 @@ def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
 
 def _phases(walk: Walk) -> list[str]:
     """The phases this run walks, in order (the lineage one is decided when it is reached)."""
-    phases = [PHASE_ITEMS]
+    # (A form's test responses: decided by their phase, which ends at once for a run that reaches none of them.)
+    phases = [PHASE_ITEMS, PHASE_FORM_TESTS]
     if STORE_RADAR in walk.tables:
         phases.append(PHASE_RADAR)
     if boards.STORE_BOARDS in walk.tables and boards.applies(walk.run):
@@ -336,6 +351,8 @@ def _phases(walk: Walk) -> list[str]:
 
 
 def _deleted_anything(run: dict[str, Any]) -> bool:
+    """Whether the lineage pass has anything to look for: a deleted item or an erased board request (a form's test
+    responses are never cited, so they never count here)."""
     return run['deleted_items'] + run['deleted_radar_items'] + int(run.get(BOARD_COUNTER) or 0) > 0
 
 
@@ -361,6 +378,7 @@ def _walk_phases(walk: Walk) -> dict | None:
 
 _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
     PHASE_ITEMS: lambda walk, cursor: _walk_store(walk, PHASE_ITEMS, cursor),
+    PHASE_FORM_TESTS: _erase_form_tests,
     PHASE_RADAR: lambda walk, cursor: _walk_store(walk, PHASE_RADAR, cursor),
     PHASE_BOARDS: _erase_from_boards,
     PHASE_RAW: _sweep_raw,
@@ -383,7 +401,7 @@ def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str 
                        value=run['deleted_items'] + run['deleted_radar_items'])
     return {'status': status, 'run_id': run['run_id'], 'deleted_items': run['deleted_items'],
             'deleted_radar_items': run['deleted_radar_items'], 'deleted_objects': run['deleted_objects'],
-            'artifacts_marked': run['artifacts_marked'], **board_count(run)}
+            'artifacts_marked': run['artifacts_marked'], **optional_counts(run)}
 
 
 def handle_event(event: dict[str, Any], context: Any) -> dict:

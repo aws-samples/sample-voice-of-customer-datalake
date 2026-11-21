@@ -37,11 +37,14 @@ _COLLECTED_FIELDS: Final = (('email', 'collect_email'), ('name', 'collect_name')
 
 
 def submitted_content(form: Mapping[str, Any], body: Mapping[str, Any], text: str,
-                      dimensions: Mapping[str, str]) -> dict[str, Any]:
+                      dimensions: Mapping[str, str], response: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """What the copy holds: the route's VALIDATED values (``text`` stripped and length-checked,
-    ``dimensions`` after ``clean_dimensions``), the bounded optional fields present in ``body``, and
-    email / name only when ``form`` collects them. Never a value the validators did not bound."""
+    ``dimensions`` after ``clean_dimensions``; a schema version 2 response as checked against its revision,
+    ``response``), the bounded optional fields present in ``body``, and email / name only when ``form``
+    collects them. Never a value the validators did not bound."""
     content: dict[str, Any] = {'text': text}
+    if response is not None:
+        content['response'] = dict(response)
     content.update({field: body[field] for field in SUBMITTED_FIELDS if field in body})
     if dimensions:
         content['dimensions'] = dict(dimensions)
@@ -53,7 +56,7 @@ def submitted_content(form: Mapping[str, Any], body: Mapping[str, Any], text: st
 
 def archive_submission(form_id: str, form: Mapping[str, Any], feedback_id: str, body: Mapping[str, Any],
                        validated: tuple[str, Mapping[str, str]], profile: Mapping[str, Any],
-                       now: datetime) -> str | None:
+                       now: datetime, *, response: Mapping[str, Any] | None = None) -> str | None:
     """The ``s3://`` URI of the submission's raw copy; None when the policy forbids one or the write failed.
 
     OPT-IN like the board copies: written only once an admin has saved a ``feedback_form`` source
@@ -66,5 +69,5 @@ def archive_submission(form_id: str, form: Mapping[str, Any], feedback_id: str, 
         return None
     text, dimensions = validated
     return app_json_copy(FEEDBACK_FORM_SOURCE, now.date(), archive_key_stem(feedback_id),
-                         {'form_id': form_id, 'submission': submitted_content(form, body, text, dimensions)},
+                         {'form_id': form_id, 'submission': submitted_content(form, body, text, dimensions, response)},
                          FEEDBACK_FORM_SOURCE)

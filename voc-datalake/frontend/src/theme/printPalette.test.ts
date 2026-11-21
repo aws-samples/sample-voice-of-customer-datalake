@@ -18,12 +18,8 @@ function lightToken(name: string): string | undefined {
 
 const TOKEN_OF: Record<keyof typeof KIRO_LIGHT_HEX, string> = {
   accent: 'accent',
-  aim: 'aim',
   textStrong: 'text-strong',
   bg: 'bg',
-  ok: 'ok',
-  warn: 'warn',
-  info: 'info',
 }
 
 /**

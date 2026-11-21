@@ -8,6 +8,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -18,9 +19,7 @@ import {
 } from './feedback-forms-fixtures'
 
 const {
-  getFeedbackForms: mockGetFeedbackForms,
   updateFeedbackForm: mockUpdateFeedbackForm,
-  createFeedbackForm: mockCreateFeedbackForm,
 } = feedbackFormsApiMocks
 const mockGetProjects = vi.fn<(...args: unknown[]) => unknown>()
 const mockGetProject = vi.fn<(...args: unknown[]) => unknown>()
@@ -36,23 +35,8 @@ vi.mock('../../api/projectsApi', () => ({
 
 vi.mock('../../store/configStore', () => configStoreModule())
 
-vi.mock('./TemplateWizard', () => ({
-  default: () => <div data-testid="template-wizard" />,
-}))
-
-vi.mock('./FormCard', () => ({
-  default: ({ form, onEdit }: {
-    form: { form_id: string; name: string }
-    onEdit: (f: unknown) => void
-  }) => (
-    <div data-testid={`form-card-${form.form_id}`}>
-      <button onClick={() => onEdit(form)}>Edit {form.name}</button>
-    </div>
-  ),
-}))
-
-import FeedbackForms from './FeedbackForms'
-import { at } from '@test/defined'
+import ValidationLinkPicker from './ValidationLinkPicker'
+import type { ValidationLink } from './ValidationLinkPicker'
 
 const { t } = i18n
 
@@ -74,24 +58,36 @@ const unlinkedForm = {
   updated_at: '2026-01-01T00:00:00Z',
 }
 
-/** Open the editor for one form and switch to the validation tab. */
+type StoredForm = Readonly<{ form_id: string; name: string; project_id?: string; document_id?: string }>
+
+/** The forms the spec serves: the picker edits the link of the one it opens (Settings › Linked project, 7.04.00). */
+const served: { forms: readonly StoredForm[] } = { forms: [] }
+
+/** The picker as the builder's Settings tab holds it: the form's link, and what it is now (`link-value`). */
+function LinkHarness({ initial }: Readonly<{ initial: ValidationLink }>) {
+  const [value, setValue] = useState(initial)
+  return (
+    <>
+      <ValidationLinkPicker value={value} onChange={setValue} enabled />
+      <output data-testid="link-value">{JSON.stringify(value)}</output>
+    </>
+  )
+}
+
+/** Open the Linked project section of one served form. */
 async function openValidationTab(formName: string) {
   const user = userEvent.setup()
-  render(<FeedbackForms />, { wrapper: createFormsWrapper() })
-
+  const form = served.forms.find((candidate) => candidate.name === formName)
+  render(<LinkHarness initial={{ project_id: form?.project_id ?? '', document_id: form?.document_id ?? '' }} />, { wrapper: createFormsWrapper() })
   await waitFor(() => {
-    expect(screen.getByText(`Edit ${formName}`)).toBeInTheDocument()
+    expect(screen.getByLabelText(t('feedbackForms:editor.validationProjectLabel'))).toBeInTheDocument()
   })
-  await user.click(screen.getByText(`Edit ${formName}`))
-  await user.click(at(screen.getAllByText(t('feedbackForms:editor.tabs.validates')), 0))
   return user
 }
 
 /** Serve a single linked form with `overrides` applied, then open its validation tab. */
 function openLinkedFormVariant(overrides: Partial<typeof linkedForm>) {
-  mockGetFeedbackForms.mockResolvedValue({
-    forms: [{ ...linkedForm, ...overrides }],
-  })
+  served.forms = [{ ...linkedForm, ...overrides }]
   return openValidationTab('PR/FAQ concept test')
 }
 
@@ -112,12 +108,11 @@ async function expectDocumentValue(value: string) {
   })
 }
 
-/** Press Save and assert the PUT body carried exactly these link fields. */
-async function expectSavedLink(user: User, link: Record<string, string>) {
-  await user.click(screen.getByText('Save Changes'))
-
+/** The link the form's draft holds now (what its Save writes) carries exactly these fields. */
+async function expectSavedLink(_user: User, link: Record<string, string>) {
   await waitFor(() => {
-    expect(mockUpdateFeedbackForm).toHaveBeenNthCalledWith(1, expect.any(String), expect.objectContaining(link))
+    const shown: unknown = JSON.parse(screen.getByTestId('link-value').textContent)
+    expect(shown).toStrictEqual(expect.objectContaining(link))
   })
 }
 
@@ -130,12 +125,11 @@ async function expectSavedLink(user: User, link: Record<string, string>) {
  */
 const PRFAQ_OPTION_LABEL = 'Feature A PR/FAQ (PR/FAQ)'
 
-describe('validation link in the form editor', () => {
+describe('validation link in the form builder (Settings › Linked project)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetFeedbackForms.mockResolvedValue({ forms: [linkedForm, unlinkedForm] })
+    served.forms = [linkedForm, unlinkedForm]
     mockUpdateFeedbackForm.mockResolvedValue({ success: true })
-    mockCreateFeedbackForm.mockResolvedValue({ success: true })
     // These two were fixed responses in this spec's own api mock before the
     // mock surface moved to the shared fixtures; keep them resolving the same.
     feedbackFormsApiMocks.deleteFeedbackForm.mockResolvedValue({ success: true })

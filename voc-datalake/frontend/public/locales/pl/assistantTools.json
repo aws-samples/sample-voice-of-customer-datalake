@@ -39,7 +39,9 @@
     "confirmChange": "Poproś o zmiany",
     "openFeedback": "Otwórz listę opinii",
     "openRadar": "Otwórz Radar",
-    "openRadarSettings": "Otwórz Administracja → Źródła → Radar"
+    "openRadarSettings": "Otwórz Administracja → Źródła → Radar",
+    "approveCreate": "Zatwierdź i utwórz",
+    "openForm": "Otwórz formularz w kreatorze"
   },
   "preview": {
     "participants": {
@@ -352,7 +354,56 @@
     "unknownCategory": "Kategoria „{{category}}” nie jest dostępna dla Ciebie — zmiana zostanie odrzucona.",
     "brandMerged": "Ustawienia po zapisaniu (pola, których nie wymieniono, zachowają bieżącą wartość):",
     "agent": "Agent",
-    "run": "Uruchomienie"
+    "run": "Uruchomienie",
+    "feedbackFormDraft": {
+      "label": "Przygotowany formularz opinii",
+      "name": "Nazwa",
+      "nameMissing": "Nadaj formularzowi nazwę.",
+      "channel": {
+        "link": "Link",
+        "embed": "Osadzenie",
+        "in_app": "W aplikacji"
+      },
+      "questions": "Pytania",
+      "leaveOut": "Pomiń pytanie {{number}}",
+      "lastQuestion": "Formularz musi mieć co najmniej jedno pytanie, więc ostatniego nie można pominąć.",
+      "leftOut": "Pytanie {{number}} zostanie pominięte.",
+      "endings": "Zakończenia",
+      "hiddenFields": "Pola ukryte",
+      "fromAi": "Od AI",
+      "warning": "Ostrzeżenie",
+      "addresses": "Adresy zaproponowane przez AI",
+      "checkedAddress": "Ten adres jest sprawdzony",
+      "remove": "Usuń",
+      "removeAddress": "Usuń adres {{url}}",
+      "createsOff": "Zatwierdzenie utworzy formularz wyłączony: nic nie będzie publiczne, dopóki go nie opublikujesz.",
+      "openInBuilder": "Otwórz w kreatorze",
+      "notAForm": "Ten szkic nie jest formularzem, który ta aplikacja potrafi odczytać.",
+      "questionCount_one": "{{count, number}} pytanie",
+      "questionCount_few": "{{count, number}} pytania",
+      "questionCount_many": "{{count, number}} pytań",
+      "questionCount_other": "{{count, number}} pytania",
+      "endingCount_one": "{{count, number}} zakończenie",
+      "endingCount_few": "{{count, number}} zakończenia",
+      "endingCount_many": "{{count, number}} zakończeń",
+      "endingCount_other": "{{count, number}} zakończenia",
+      "hiddenCount_one": "{{count, number}} pole ukryte",
+      "hiddenCount_few": "{{count, number}} pola ukryte",
+      "hiddenCount_many": "{{count, number}} pól ukrytych",
+      "hiddenCount_other": "{{count, number}} pola ukrytego",
+      "options_one": "{{count, number}} opcja",
+      "options_few": "{{count, number}} opcje",
+      "options_many": "{{count, number}} opcji",
+      "options_other": "{{count, number}} opcji",
+      "rules_one": "{{count, number}} reguła",
+      "rules_few": "{{count, number}} reguły",
+      "rules_many": "{{count, number}} reguł",
+      "rules_other": "{{count, number}} reguły",
+      "rulesDropped_one": "Reguła z pytania {{questions}}, która do niego prowadziła, też zostanie usunięta.",
+      "rulesDropped_few": "{{count, number}} reguły z pytań {{questions}}, które do niego prowadziły, też zostaną usunięte.",
+      "rulesDropped_many": "{{count, number}} reguł z pytań {{questions}}, które do niego prowadziły, też zostanie usuniętych.",
+      "rulesDropped_other": "{{count, number}} reguły z pytań {{questions}}, które do niego prowadziły, też zostaną usunięte."
+    }
   },
   "tools": {
     "create_participant_list": {
@@ -547,6 +598,10 @@
       "titleWith_other": "Utwórz {{count, number}} użytkowników",
       "titleWith_few": "Utwórz {{count, number}} użytkowników",
       "titleWith_many": "Utwórz {{count, number}} użytkowników"
+    },
+    "draft_feedback_form": {
+      "title": "Utwórz formularz opinii",
+      "titleWith": "Utwórz formularz opinii „{{name}}”"
     }
   }
 }

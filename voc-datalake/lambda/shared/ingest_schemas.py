@@ -24,6 +24,7 @@ producer's shape is pinned by a test in ``plugins/_shared/test/test_schemas.py``
 import re
 import unicodedata
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
@@ -57,6 +58,13 @@ MAX_CUSTOM_FIELD_KEY_LENGTH = 64
 # The numeric feedback-form rating renders buttons 1..10 whatever `rating_max`
 # says (static/feedback-widget.js), so ratings above 5 are real submissions.
 MAX_RATING = 10
+# A version 2 feedback-form response (shared/forms_v2_responses.py checked it at submit): at most 30 answers
+# (question id -> value), 20 hidden values of 200 characters, an open text of 5000.
+MAX_FORM_ANSWERS = 30
+MAX_FORM_ANSWER_CHARS = 5000
+MAX_FORM_HIDDEN = 20
+MAX_FORM_HIDDEN_CHARS = 200
+MAX_FORM_ID_CHARS = 44
 # Producer-supplied dimensions (shared.dimension_config bounds the configured ones the same way).
 MAX_MESSAGE_DIMENSIONS = 10
 MAX_DIMENSION_KEY_LENGTH = 32
@@ -134,7 +142,7 @@ class MessageValidationError(Exception):
 
 # Keys whose values are declared, typed containers below and are therefore
 # exempt from the flat-primitive rule.
-_STRUCTURED_METADATA_KEYS = frozenset({"custom_fields", "participant"})
+_STRUCTURED_METADATA_KEYS = frozenset({"custom_fields", "participant", "form_answers", "form_hidden", "form_path"})
 
 
 class ParticipantRef(BaseModel):
@@ -184,6 +192,18 @@ class MessageMetadata(BaseModel):
         None, max_length=MAX_CUSTOM_FIELDS,
     )
     participant: ParticipantRef | None = None
+    # A version 2 form response (docs/feedback-forms.md "Ingest"): its answers by question id (a text, a whole number,
+    # a consent, a choice {code} / {other} / {codes, other?}, contact details), its hidden values, the questions its
+    # logic path showed and the revision it answered.
+    form_answers: dict[str, bool | int | str | dict[str, str | list[str]]] | None = Field(
+        None, max_length=MAX_FORM_ANSWERS)
+    form_hidden: dict[str, str] | None = Field(None, max_length=MAX_FORM_HIDDEN)
+    form_path: list[str] | None = Field(None, max_length=MAX_FORM_ANSWERS)
+    form_revision: int | None = Field(None, ge=1)
+    # The widget's random id of the visit (no person's data): the funnel's dedupe of `left` beacons.
+    form_session: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{8,64}$")
+    # How the widget that sent it runs (shared/forms_v2_responses.py CHANNELS): the forms list's channels.
+    form_channel: Literal['link', 'iframe', 'script'] | None = None
 
     # Validators take `cls` without `@classmethod`: pydantic wraps a `cls`-first
     # validator in `classmethod` itself (ensure_classmethod_based_on_signature),
@@ -212,6 +232,32 @@ class MessageMetadata(BaseModel):
             raise ValueError("; ".join(errors))
 
         return values
+
+    @field_validator("form_answers")
+    def bound_form_answers(cls, v: dict | None) -> dict | None:
+        if v is None:
+            return v
+        for key, value in v.items():
+            if not key or len(key) > MAX_FORM_ID_CHARS:
+                raise ValueError(f"form_answers keys must be 1-{MAX_FORM_ID_CHARS} characters")
+            parts = value.values() if isinstance(value, dict) else [value]
+            texts = [text for part in parts for text in (part if isinstance(part, list) else [part])]
+            if any(isinstance(text, str) and len(text) > MAX_FORM_ANSWER_CHARS for text in texts):
+                raise ValueError(f"form_answers value for '{key[:20]}' exceeds max length")
+        return v
+
+    @field_validator("form_hidden")
+    def bound_form_hidden(cls, v: dict | None) -> dict | None:
+        if v is not None and any(not key or len(key) > MAX_FORM_ID_CHARS or len(value) > MAX_FORM_HIDDEN_CHARS
+                                 for key, value in v.items()):
+            raise ValueError(f"form_hidden holds ids of 1-{MAX_FORM_ID_CHARS} and values of {MAX_FORM_HIDDEN_CHARS}")
+        return v
+
+    @field_validator("form_path")
+    def bound_form_path(cls, v: list | None) -> list | None:
+        if v is not None and any(not qid or len(qid) > MAX_FORM_ID_CHARS for qid in v):
+            raise ValueError(f"form_path entries must be 1-{MAX_FORM_ID_CHARS} characters")
+        return v
 
     @field_validator("custom_fields")
     def bound_custom_fields(cls, v: dict | None) -> dict | None:

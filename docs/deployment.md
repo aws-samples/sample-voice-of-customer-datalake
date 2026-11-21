@@ -1136,12 +1136,12 @@ unauthenticated route, so the full CRS applies there. The exceptions a legitimat
 
 | Public route (with or without the `/v1` stage prefix) | Still counted there | Why |
 |---|---|---|
-| `POST /feedback-forms/{id}/submit` | the five body rules | feedback text up to 10,000 characters plus custom fields, or a prototype pin up to 24,000 bytes; and a customer's own words (`<div>`, `src/../lib`, a pasted stack trace, a link to an IPv4 host) are feedback, stored as data |
+| `POST /feedback-forms/{id}/submit` | the five body rules | feedback text up to 10,000 characters plus custom fields (a schema version 2 response: up to 30 answers, an open text up to 5,000 characters each), or a prototype pin up to 24,000 bytes; and a customer's own words (`<div>`, `src/../lib`, a pasted stack trace, a link to an IPv4 host) are feedback, stored as data |
 | `POST /voting-sessions/{id}/submit` | the five body rules | a ballot's `notes`, up to 2,000 characters of free text (2,000 characters outside the BMP are 8,000 bytes of UTF-8, over the size rule's 8 KB) |
 | `POST /webhooks/{plugin}` | the five body rules | a GitHub issue payload is over 8 KB and carries HTML, paths and URLs; the handler checks the HMAC signature first |
 | `GET /oauth/authorize` | `GenericRFI_QUERYARGUMENTS` | the loopback `redirect_uri` |
 | `POST /oauth/register`, `POST /oauth/token` | `GenericRFI_BODY` | the loopback `redirect_uris` / `redirect_uri` in the body |
-| every other public route (`/feedback-forms/{id}/config` and `/iframe`, `/voting-sessions/{id}/config`, `POST /unsubscribe`, `/.well-known/*`, `GET /oauth/callback`, `POST /oauth/revoke`) | nothing | small bodies and short queries only |
+| every other public route (`/feedback-forms/{id}/config`, `/iframe` and `POST …/events`, `/voting-sessions/{id}/config`, `POST /unsubscribe`, `/.well-known/*`, `GET /oauth/callback`, `POST /oauth/revoke`) | nothing | small bodies and short queries only |
 
 Cognito- and MCP-token-authorized routes keep all seven exceptions. The route list is
 `PUBLIC_API_ROUTES` in `voc-datalake/lib/utils/waf-crs-scope.ts`; `lib/waf-public-routes.test.ts` fails when an
@@ -1763,18 +1763,20 @@ long. Schedule it accordingly if forms are live.
 
 ### An old feedback widget snippet stopped working
 
-The only supported embed is the iframe page `/feedback-forms/{form_id}/iframe`, which the feedback-form Lambda
-renders with the widget script inlined (`lambda/api/static/feedback-widget.js`). See
-[Feedback Forms](feedback-forms.md) for the snippet. No standalone `feedback-widget.js` is served from any URL.
+Two embeds are supported: the iframe page `/feedback-forms/{form_id}/iframe`, which the feedback-form Lambda
+renders with the widget script inlined (`lambda/api/static/feedback-widget.js`), and, since 7.04.00, the script
+embed, which loads the same file from the app's own CloudFront at `https://<distribution>/widget/feedback-widget.js`
+(the `/widget/*` behavior, `lib/stacks/core-cdn.ts`; deploy VocCoreStack with the frontend). See
+[Feedback Forms](feedback-forms.md) for both snippets. The API serves no widget file.
 
-Older releases also published a copy at `https://<distribution>/feedback-widget.js` that called retired
-`/feedback-form/*` (singular) routes. If an integration still points there, repoint it at the iframe embed. The
-failure does not look like a missing file:
+Older releases also published a copy at `https://<distribution>/feedback-widget.js` (the site's root, not
+`/widget/`) that called retired `/feedback-form/*` (singular) routes. If an integration still points there,
+repoint it at the iframe embed or at the Share tab's script embed. The failure does not look like a missing file:
 
 | Old snippet points at | Response | Why |
 |---|---|---|
-| the website (`https://<distribution>/feedback-widget.js`) | **`200` + `index.html`** | the distribution answers every missing path with `index.html` so app deep links work; a `<script src>` then fails with `Uncaught SyntaxError: Unexpected token '<'` |
-| an API path (`/feedback-forms/{form_id}/widget.js`) | **`403 Missing Authentication Token`** | API Gateway's answer for a route that does not exist, not an authorization problem |
+| the website's root (`https://<distribution>/feedback-widget.js`) | **`200` + `index.html`** | the distribution answers every missing path with `index.html` so app deep links work; a `<script src>` then fails with `Uncaught SyntaxError: Unexpected token '<'` (the `/widget/*` policy's `nosniff` makes a mistyped `/widget/…` address fail the same way) |
+| an API path (`/feedback-forms/{form_id}/widget.js`) | **`401 Unauthorized`** | a Cognito `{proxy+}` under `{form_id}` serves signed-in GETs since 7.04.00, so the authorizer refuses an anonymous request before any code runs; another missing API path answers `403 Missing Authentication Token` |
 
 Shortly after the deploy that removed the copy, the CDN may still serve the old script for a while. It then shows
 `Failed to load form.` inside the embed, because its configuration request goes to a retired route.

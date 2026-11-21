@@ -19,7 +19,7 @@ There are three layers:
 | Row | Covers | Bumped by (once per batch or request, never per record) |
 |---|---|---|
 | `voc-aggregates` `METRIC#meta / data_version` | feedback data | the aggregator, once per DynamoDB Streams batch that carried a feedback write; the category-reprocess worker at each page checkpoint and when an invocation ends (completion, hand-over, cancel, failure); `voc-retention` after a run that deleted something; `PUT /feedback/{id}/category`, `PUT /feedback/{id}/dimensions` and `PUT /data-explorer/feedback`, so a person sees their own correction straight away instead of after the stream catches up |
-| `voc-aggregates` `METRIC#meta / config_version` | settings that change what reads return | `PUT /settings/categories`, `/settings/brand`, `/settings/sources`, `/settings/dimensions` (also the inbox's "add feedback type" dimension), `/settings/model`, `PUT /users/{u}/category-access` |
+| `voc-aggregates` `METRIC#meta / config_version` | settings that change what reads return | `PUT /settings/categories`, `/settings/brand` (not a PUT of only its `form_theme`, which no cached read uses), `/settings/sources`, `/settings/dimensions` (also the inbox's "add feedback type" dimension), `/settings/model`, `PUT /users/{u}/category-access` |
 | `voc-radar` `SETTINGS#radar / version` | Radar data | the processor, once per SQS batch that stored a Radar review; the Radar scan when it records its outcome (after it has filed the releases); `PUT /radar/brands`, `PUT /radar/settings` |
 
 Each row holds `v` (incremented with `ADD`) and `updated_at`. A bump never fails the

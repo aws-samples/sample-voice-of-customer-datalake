@@ -56,6 +56,7 @@ describe('the public feedback-form routes', () => {
     '/feedback-forms/{form_id}/config/GET': { rate: 100, burst: 200 },
     '/feedback-forms/{form_id}/submit/POST': { rate: 20, burst: 40 },
     '/feedback-forms/{form_id}/iframe/GET': { rate: 100, burst: 200 },
+    '/feedback-forms/{form_id}/events/POST': { rate: 100, burst: 200 },
   } satisfies Record<string, { rate: number; burst: number }>;
 
   /** DERIVED from the record, not maintained beside it. Two hand-kept lists of
@@ -97,6 +98,7 @@ describe('the public feedback-form routes', () => {
     '/config': '/feedback-forms/{form_id}/config/GET',
     '/iframe': '/feedback-forms/{form_id}/iframe/GET',
     '/submit': '/feedback-forms/{form_id}/submit/POST',
+    '/events': '/feedback-forms/{form_id}/events/POST',
     '/voting-sessions/{session_id}/config': '/voting-sessions/{session_id}/config/GET',
     '/voting-sessions/{session_id}/submit': '/voting-sessions/{session_id}/submit/POST',
   } satisfies Record<string, string>;
@@ -118,9 +120,9 @@ describe('the public feedback-form routes', () => {
    *  Typed against `DOCUMENTED_ROUTE_KEYS`, so a route name that no longer exists
    *  fails to compile instead of quietly asserting nothing for it. */
   const PINNED_DOCS = {
-    'docs/feedback-forms.md': ['/config', '/iframe', '/submit'],
+    'docs/feedback-forms.md': ['/config', '/iframe', '/submit', '/events'],
     '.kiro/steering/structure.md': [
-      '/config', '/iframe', '/submit',
+      '/config', '/iframe', '/submit', '/events',
       '/voting-sessions/{session_id}/config', '/voting-sessions/{session_id}/submit',
     ],
   } satisfies Record<string, (keyof typeof DOCUMENTED_ROUTE_KEYS)[]>;
@@ -251,7 +253,8 @@ describe('the public feedback-form routes', () => {
     const settings = new Map(methodSettings(apiTemplate()).map((s) => [s.key, s]));
     const submit = settings.get('/feedback-forms/{form_id}/submit/POST');
 
-    for (const read of ['/feedback-forms/{form_id}/config/GET', '/feedback-forms/{form_id}/iframe/GET']) {
+    for (const read of ['/feedback-forms/{form_id}/config/GET', '/feedback-forms/{form_id}/iframe/GET',
+      '/feedback-forms/{form_id}/events/POST']) {
       expect(submit?.rate, `submit should be tighter than ${read}`)
         .toBeLessThan(settings.get(read)?.rate ?? 0);
     }

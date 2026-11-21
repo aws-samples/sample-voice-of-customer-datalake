@@ -51,12 +51,13 @@ const COGNITO = { authorizationType: 'COGNITO_USER_POOLS', hasAuthorizerId: true
 describe('VocApiStack authorization invariant', () => {
   it('leaves only the allowlisted widget and ballot routes unauthenticated', () => {
     // The COUNT as well as the contents, and here rather than in one of the
-    // per-feature describes below: six is the number a change to either public
+    // per-feature describes below: seven is the number a change to either public
     // set has to argue past, so it belongs with the invariant itself instead of
     // being restated once per feature that touches those routes. A throttle, a
     // CORS value or a rewired resource tree is not an authorization change — this
     // is the single guard that says so for all of them.
-    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(6);
+    // Seven since 7.04.00: the widget's funnel beacons got their own route (POST …/events, its own throttle).
+    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(7);
     // Nine: the MCP OAuth discovery documents (4) and facade (5), INTENTIONALLY_PUBLIC_OAUTH_ROUTES.
     expect(INTENTIONALLY_PUBLIC_OAUTH_ROUTES).toHaveLength(9);
     expect(unauthenticatedRoutes(apiTemplate())).toStrictEqual(EVERY_PUBLIC_ROUTE);
@@ -277,9 +278,11 @@ describe('stack and callers stay in step', () => {
   // `/iframe` is recovered only from that module's DOCBLOCK, which names the literal
   // path. Deleting a comment line there reduced this to checking
   // `/feedback-forms/{form_id}` while staying green.
+  // The API client's entry was `/{form_id}/submissions` until 7.04.00 removed the SPA's submissions call (the
+  // builder's results replace it); `/{form_id}/stats` is the template-literal path it still builds.
   it.each([
     ['the API client', join('frontend', 'src', 'api', 'client.ts'),
-      '/feedback-forms/{form_id}/submissions'],
+      '/feedback-forms/{form_id}/stats'],
     ['the embeddable widget', join('lambda', 'api', 'static', 'feedback-widget.js'),
       '/feedback-forms/{form_id}/config'],
     ['the embed URL builder', join('frontend', 'src', 'api', 'feedbackFormUrls.ts'),

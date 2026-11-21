@@ -10,7 +10,7 @@
     {"key": "frontend:src/api/types.ts#DocTypeField*", "reason": "Compile-time pins: test_doc_type_lockstep.py pins their exact text; they exist to fail tsc on drift."},
     {"key": "frontend:src/api/types.ts#MustBeTrue", "reason": "Helper of the DocTypeField* compile-time pins."},
     {"key": "frontend:src/api/types.ts#BothWays", "reason": "Helper of the DocTypeField* compile-time pins."},
-    {"key": "frontend:src/api/types.ts#FeedbackFormConfig", "reason": "Public widget wire shape pinned by test_widget_config_type_lockstep.py."},
+    {"key": "frontend:src/api/feedbackFormsV2Types.ts#*", "reason": "Public widget wire shape (FeedbackFormConfig, schema version 2 since 7.04.00, and the file-local types it is made of) pinned by test_widget_config_type_lockstep.py and feedbackFormTypes.test.ts, which read it as text."},
     {"key": "frontend:src/api/projectsApi.ts#GenerateDocument*", "reason": "Compile-time signature pins (fail tsc when generateDocument drifts from the shared body)."},
     {"key": "frontend:src/api/projectsApi.ts#SignatureMustMatch", "reason": "Helper of the GenerateDocument* compile-time pins."},
     {"key": "frontend:src/assistant/bubble/geometry.ts#PanelAnchor.--ap-*", "reason": "CSS custom properties: passed as `style`, read by the browser through the Tailwind arbitrary values `var(--ap-*)` in AssistantPanel.tsx (ANCHORED), invisible to the type system."},
@@ -24,6 +24,11 @@
     {"key": "frontend:src/api/projectsApi.ts#projectsApi.createProject.success", "reason": "Envelope member of the create answer (fetchApi<{success; project}> wire type)."},
     {"key": "frontend:vendorChunkGroups.ts#vendorChunkGroups", "reason": "Build helper at voc-datalake/frontend/vendorChunkGroups.ts (beside vite.config.ts, not under src/), read by vite.config.ts; the frontend program is tsconfig.test.json, which covers src/ only, so only vendorChunkGroups.test.ts shows."},
     {"key": "frontend:vendorChunkGroups.ts#isInPackage", "reason": "Module-private helper of vendorChunkGroups (same file, same reason)."},
-    {"key": "frontend:vendorChunkGroups.ts#VendorChunkGroup", "reason": "Return type of vendorChunkGroups (same file, same reason)."}
+    {"key": "frontend:vendorChunkGroups.ts#VendorChunkGroup", "reason": "Return type of vendorChunkGroups (same file, same reason)."},
+    {"key": "frontend:src?pages?FeedbackForms?preview?window?previewWindow.ts#*", "reason": "The pop-out preview window's own code (7.04.00): frontend/form-preview.html, the build's second Vite HTML entry, loads src/pages/FeedbackForms/preview/window/main.ts, which runs it; the detector's frontend entries are src/main.tsx alone, so everything only that page reaches reads as test-only. (The key's ? stands for each /.)"},
+    {"key": "frontend:src?pages?FeedbackForms?preview?window?windowWords.ts#*", "reason": "The pop-out preview window's own code (7.04.00): frontend/form-preview.html, the build's second Vite HTML entry, loads src/pages/FeedbackForms/preview/window/main.ts, which runs it; the detector's frontend entries are src/main.tsx alone, so everything only that page reaches reads as test-only. (The key's ? stands for each /.)"},
+    {"key": "frontend:src?pages?FeedbackForms?preview?previewChannel.ts#readWindowAddress", "reason": "Read by the pop-out preview window (preview/window/previewWindow.ts, form-preview.html's entry, outside the detector's src/main.tsx) to learn its session from its address; it sits beside windowAddress, the builder's writer of the same address, so the two cannot drift. (The key's ? stands for each /.)"},
+    {"key": "frontend:src?pages?FeedbackForms?preview?previewChannel.ts#isPreset", "reason": "readWindowAddress's check of the size preset in the window's address (see that entry). (The key's ? stands for each /.)"},
+    {"key": "frontend:widgetAssetPlugin.ts#*", "reason": "Build-only (7.04.00): vite.config.ts, which the detector's entries do not include, loads this Vite plugin; it writes lambda/api/static/feedback-widget.js into frontend/dist/widget/ for the app's CloudFront and serves it at /widget/feedback-widget.js on the dev server (src/build/widgetAssetPlugin.test.ts)."}
   ]
 }
