@@ -420,7 +420,9 @@
       "title": "Wyłączyć „{{name}}”?",
       "message": "Jego link i osadzenia pokażą kolejnym respondentom komunikat „Formularz jest niedostępny.”",
       "confirm": "Wyłącz"
-    }
+    },
+    "imported": "Zaimportowany",
+    "importedFrom": "Zaimportowano z {{filename}}: pozostaje wyłączony, bez publicznego linku"
   },
   "configureApiFirst": "Skonfiguruj punkt końcowy API w sekcji Administracja → Ogólne, aby zarządzać formularzami opinii.",
   "deleteConfirmLabel": "Usuń",

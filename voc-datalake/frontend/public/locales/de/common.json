@@ -47,7 +47,8 @@
     "githubAppCreated": "App erstellt",
     "githubAppInstalled": "App installiert",
     "setupGuide": "Einrichtungsassistent",
-    "runs": "Läufe"
+    "runs": "Läufe",
+    "importWizard": "Datei importieren"
   },
   "cancel": "Abbrechen",
   "configureBrand": "Marke konfigurieren",

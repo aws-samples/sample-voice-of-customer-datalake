@@ -11,6 +11,7 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.f
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import CsvUploadModal from './CsvUploadModal'
 import { parseCsvDatasetPreview } from '../../api/csvDatasetSchema'
+import { pageFileInput, textFile } from '@test/textFiles'
 
 const mockUpload = vi.fn<(...args: unknown[]) => unknown>()
 const mockPreview = vi.fn<(...args: unknown[]) => unknown>()
@@ -26,17 +27,8 @@ vi.mock('../../api/invalidateFeedbackData', () => ({ useInvalidateFeedbackData: 
 const CSV = 'id,text\n1,"Great app"\n2,"Login fails"\n'
 const MAPPING = { id: 'id', text: 'text' }
 
-function csvFile(content: string = CSV): File {
-  const file = new File([content], 'feedback.csv', { type: 'text/csv' })
-  Object.defineProperty(file, 'text', { value: () => Promise.resolve(content) })
-  return file
-}
-
-function fileInput(): HTMLInputElement {
-  const input = document.querySelector('input[type="file"]')
-  if (!(input instanceof HTMLInputElement)) throw new Error('file input not found')
-  return input
-}
+const csvFile = (content: string = CSV): File => textFile(content, 'feedback.csv')
+const fileInput = pageFileInput
 
 const PREVIEW = parseCsvDatasetPreview({
   total_rows: 3,

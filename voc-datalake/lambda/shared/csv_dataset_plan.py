@@ -14,6 +14,10 @@ they cannot be updated by a later upload and are queued exactly as before.
 A read that DynamoDB leaves unprocessed after the retries raises: a changed row misread as
 new would be queued without ``csv_replace`` and skipped as a duplicate, so the update the
 preview promised would silently never happen.
+
+An upload in a workspace (``scope``, 7.67.00) reads that workspace's items only: their keys
+``WS#{ws}#SOURCE#…`` (shared/feedback_partitions.py ``item_key``), read through the workspace
+layer (shared/ws_repo.py ``WorkspaceTable.batch_get_item``, every key checked in the scope).
 """
 from __future__ import annotations
 
@@ -23,7 +27,9 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from shared.concurrency import ordered_map
-from shared.feedback_keys import feedback_item_key
+from shared.feedback_keys import feedback_item_id, feedback_item_key
+from shared.feedback_partitions import item_key
+from shared.ws_repo import UnprocessedKeysError, WorkspaceScope, ws_table
 
 __all__ = [
     'CsvDatasetPlan',
@@ -89,19 +95,41 @@ def _read_chunk(table: Any, keys: list[dict[str, str]], fields: Sequence[str]) -
     raise StoredRowsUnreadable('Stored rows could not be read; try the upload again')
 
 
-def _read_stored(table: Any, keys: list[dict[str, str]], fields: Sequence[str]) -> dict[tuple[Any, Any], dict[str, Any]]:
+def _read_scoped(table: Any, keys: list[dict[str, str]], fields: Sequence[str],
+                 scope: WorkspaceScope) -> list[dict[str, Any]]:
+    names = {f'#f{i}': name for i, name in enumerate(fields)}
+    try:
+        return ws_table(scope, table).batch_get_item(keys, ProjectionExpression=', '.join(names),
+                                                     ExpressionAttributeNames=names)
+    except UnprocessedKeysError as e:
+        raise StoredRowsUnreadable('Stored rows could not be read; try the upload again') from e
+
+
+def _read_stored(table: Any, keys: list[dict[str, str]], fields: Sequence[str],
+                 scope: WorkspaceScope | None = None) -> dict[tuple[Any, Any], dict[str, Any]]:
     """The stored items at ``keys`` (only ``fields``), by ``(pk, sk)``; absent keys are simply missing."""
+    if scope is not None:
+        return {_key_tuple(item): item for item in _read_scoped(table, keys, fields, scope)}
     chunks = [keys[start:start + _BATCH_GET_MAX_KEYS] for start in range(0, len(keys), _BATCH_GET_MAX_KEYS)]
     results = ordered_map(lambda chunk: _read_chunk(table, chunk, fields), chunks, max_workers=_READ_WORKERS)
     return {_key_tuple(item): item for chunk in results for item in chunk}
 
 
-def plan_dataset_rows(table: Any, source_platform: str, items: list[dict[str, Any]]) -> CsvDatasetPlan:
-    """Sort parsed CSV rows (``manual_import_handler._parse_csv_to_items``) into a ``CsvDatasetPlan``."""
+def _stored_key(scope: WorkspaceScope | None, source_platform: str, row_id: str) -> dict[str, str]:
+    """Where the processor stores the row's item: the deployment's ``SOURCE#…`` key, or the workspace's."""
+    if scope is None:
+        return feedback_item_key(source_platform, row_id)
+    return item_key(scope, source_platform, feedback_item_id(source_platform, row_id))
+
+
+def plan_dataset_rows(table: Any, source_platform: str, items: list[dict[str, Any]],
+                      scope: WorkspaceScope | None = None) -> CsvDatasetPlan:
+    """Sort parsed CSV rows (``manual_import_handler._parse_csv_to_items``) into a ``CsvDatasetPlan`` (the stored
+    items of ``scope``'s workspace in one)."""
     plan = CsvDatasetPlan()
-    keyed = [(item, feedback_item_key(source_platform, item['id'])) for item in items if item.get('content_hash')]
+    keyed = [(item, _stored_key(scope, source_platform, item['id'])) for item in items if item.get('content_hash')]
     plan.v1_rows = [item for item in items if not item.get('content_hash')]
-    stored = _read_stored(table, [key for _, key in keyed], _PLAN_FIELDS) if keyed else {}
+    stored = _read_stored(table, [key for _, key in keyed], _PLAN_FIELDS, scope) if keyed else {}
     for item, key in keyed:
         existing = stored.get(_key_tuple(key))
         if existing is None:
@@ -118,10 +146,11 @@ def _snippet(value: object) -> str:
     return text if len(text) <= SNIPPET_LENGTH else f'{text[:SNIPPET_LENGTH - 1]}…'
 
 
-def preview_view(table: Any, plan: CsvDatasetPlan) -> dict[str, Any]:
+def preview_view(table: Any, plan: CsvDatasetPlan, scope: WorkspaceScope | None = None) -> dict[str, Any]:
     """``{counts, changed_rows, changed_rows_truncated}``: the first ``CHANGED_ROWS_LIMIT`` changed rows, before / after."""
     shown = plan.changed[:CHANGED_ROWS_LIMIT]
-    texts = _read_stored(table, [{'pk': s['pk'], 'sk': s['sk']} for _, s in shown], _SNIPPET_FIELDS) if shown else {}
+    texts = _read_stored(table, [{'pk': s['pk'], 'sk': s['sk']} for _, s in shown], _SNIPPET_FIELDS,
+                         scope) if shown else {}
     rows = [{
         'row': item.get('row'),
         'csv_row_id': item.get('csv_row_id') or None,

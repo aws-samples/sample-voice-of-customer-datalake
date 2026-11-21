@@ -394,7 +394,9 @@
       "title": "'{{name}}'을(를) 끄시겠습니까?",
       "message": "링크와 임베드에서 다음 응답자에게 '피드백 양식을 사용할 수 없습니다.'가 표시됩니다.",
       "confirm": "끄기"
-    }
+    },
+    "imported": "가져옴",
+    "importedFrom": "{{filename}}에서 가져옴: 공개 링크 없이 꺼진 상태로 유지됩니다"
   },
   "configureApiFirst": "피드백 양식을 관리하려면 관리 → 일반에서 API 엔드포인트를 구성하세요.",
   "deleteConfirmLabel": "삭제",

@@ -18,6 +18,7 @@ ingestor again, see [data-lake-structure.md → Reprocessing a file](data-lake-s
 | `POST /scrapers/manual/json-upload` | `json` | the source profile id (`manual_import` by default) | the caller |
 | The AI assistant's `import_reviews` (it calls json-upload with `import_origin: 'assistant'`) | `assistant` | the source name the user gave (`source_label`, at most 120 characters, control characters removed; the profile id when blank) | the approving user |
 | A file dropped in the S3 import bucket (`plugins/s3_import`), one record per file | `s3` | `S3 - <folder>` | `s3-upload` (the bucket trigger does not know who uploaded the file) |
+| `POST /feedback-forms/{id}/import` (a survey export's rows, the import wizard, 7.67.00), one record per call | `form` | the imported form's name | the caller (an admin acting as themselves) |
 
 On json-upload the `assistant` method and its label are **client-reported**: the route records
 what the request says (`import_origin`, `source_label`) and cannot verify that the AI assistant sent
@@ -78,8 +79,9 @@ which both have read/write access to `voc-aggregates`.
 
 ## API
 
-Both routes are on the manual-import Lambda and admin-only (its module middleware, like every
-`/scrapers/manual/*` route).
+Both routes are on the manual-import Lambda and admin-only, like every `/scrapers/manual/*` route. Since 7.67.00 a
+request that sends `X-Workspace-Id` lists that workspace's runs (`WS#{ws}#IMPORT_RUN`, its admins only); one that
+sends none, the deployment's as before ([import-wizard.md](import-wizard.md)).
 
 | Method | Path | Answer |
 |---|---|---|

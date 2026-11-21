@@ -224,11 +224,14 @@ function Identity({ record, form, name, titleId }: Readonly<{ record: FeedbackFo
             className="link-quiet after:absolute after:inset-0 after:rounded-lg">{name}</Link>
         </h3>
         {record.form_type === 'prototype_pin' && <span className="badge badge-muted">{t('card.prototypePins')}</span>}
+        {record.imported !== undefined && <span className="badge badge-muted">{t('card.imported')}</span>}
         {form?.settings.test.link_enabled === true && (
           <span className="badge badge-info inline-flex items-center gap-1"><FlaskConical size={12} aria-hidden="true" />{t('card.testLinkOn')}</span>
         )}
       </div>
       <Summary form={form} />
+      {/* Why its switch is off for good (7.67.00): an imported form has no public link. */}
+      {record.imported !== undefined && <p className="text-xs text-muted">{t('card.importedFrom', { filename: record.imported.filename })}</p>}
     </div>
   )
 }
@@ -256,7 +259,7 @@ export default function FormCard({ form: record, onDelete, onToggle, apiEndpoint
       </div>
       <div className="relative flex flex-wrap items-center gap-2 sm:justify-end lg:flex-nowrap">
         <Switch label={record.enabled ? t('card.live') : t('card.off')} widthOf={[t('card.live'), t('card.off')]}
-          checked={record.enabled} onChange={live.toggle} disabled={false} />
+          checked={record.enabled} onChange={live.toggle} disabled={record.imported !== undefined} />
         <Link to={builderPath(record.form_id, 'results')} className="btn btn-secondary btn-sm">
           <BarChart3 size={14} aria-hidden="true" />{t('card.results')}
         </Link>

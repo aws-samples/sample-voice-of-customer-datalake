@@ -394,7 +394,9 @@
       "title": "Désactiver « {{name}} » ?",
       "message": "Son lien et ses intégrations afficheront « Formulaire d'avis indisponible. » aux prochains répondants.",
       "confirm": "Désactiver"
-    }
+    },
+    "imported": "Importé",
+    "importedFrom": "Importé depuis {{filename}} : il reste désactivé, sans lien public"
   },
   "configureApiFirst": "Configurez le point de terminaison API dans Administration → Général pour gérer les formulaires de feedback.",
   "deleteConfirmLabel": "Supprimer",

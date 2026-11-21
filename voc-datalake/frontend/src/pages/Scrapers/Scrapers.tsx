@@ -7,10 +7,11 @@ import {
   useQuery, useMutation, useQueryClient,
 } from '@tanstack/react-query'
 import {
-  Plus, Globe, AlertCircle, Loader2, RefreshCw,
+  Plus, Globe, AlertCircle, Loader2, RefreshCw, FileUp,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { accountTabPath } from '../Account/accountSections'
 import { api } from '../../api/client'
 import { scrapersApi } from '../../api/scrapersApi'
@@ -38,6 +39,7 @@ import SyntheticSourceCard from './SyntheticSourceCard'
 import TemplateSelector from './TemplateSelector'
 import { useScrollToHash } from './scraperAnchor'
 import { useRadarBrandLabeler } from './useRadarBrands'
+import { useCanImport } from './ImportWizard/useCanImport'
 import { appCopy } from './appCopy'
 import type {
   ScraperConfig, ScraperTemplate,
@@ -124,6 +126,7 @@ function ScrapersContent({
 }) {
   const { t } = useTranslation('scrapers')
   const radarLabel = useRadarBrandLabeler()
+  const canImport = useCanImport()
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
@@ -136,6 +139,12 @@ function ScrapersContent({
           {/* Open to everyone, unlike the empty-state button: New Source is the entrance to the app-source
               tiles too, and those stay usable for a non-admin (reading an app's configs is not gated). The
               admin-only tiles inside the selector are disabled with their reason. */}
+          {/* The import wizard (7.67.00): importing is admin-only, like every import route (in a workspace, its admins). */}
+          {canImport && (
+            <Link to="/scrapers/import" className="btn btn-secondary justify-center flex-1 sm:flex-none">
+              <FileUp size={16} aria-hidden="true" /> {t('importWizard.open')}
+            </Link>
+          )}
           <button onClick={onShowTemplates} className="btn btn-primary justify-center flex-1 sm:flex-none">
             <Plus size={16} /> {t('newSource')}
           </button>

@@ -47,7 +47,8 @@
     "githubAppCreated": "App 생성됨",
     "githubAppInstalled": "App 설치됨",
     "setupGuide": "구성 가이드",
-    "runs": "실행"
+    "runs": "실행",
+    "importWizard": "파일 가져오기"
   },
   "cancel": "취소",
   "configureBrand": "브랜드 설정",

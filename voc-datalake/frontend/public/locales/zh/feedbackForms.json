@@ -394,7 +394,9 @@
       "title": "要关闭“{{name}}”吗？",
       "message": "其链接和嵌入将向接下来的答题者显示“反馈表单不可用。”",
       "confirm": "关闭"
-    }
+    },
+    "imported": "已导入",
+    "importedFrom": "从 {{filename}} 导入：保持关闭，没有公开链接"
   },
   "configureApiFirst": "请在“管理 → 常规”中配置API端点以管理反馈表单。",
   "deleteConfirmLabel": "删除",

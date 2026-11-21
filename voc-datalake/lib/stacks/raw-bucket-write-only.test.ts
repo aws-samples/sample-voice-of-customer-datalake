@@ -3,11 +3,12 @@
  *
  * Every ingestor role only ever `put_object`s under `raw/` for a deployment-wide run (an event that names no
  * workspace) or under its run's workspace's `ws/{ws}/raw/` (plugins/_shared/raw_archive.py, raw_original.py), and the
- * manual-import role under `raw/` (shared/ingest_archive.py, manual_import_handler.py).
+ * manual-import role under `raw/` or, for an import in a workspace (7.67.00), that workspace's `ws/{ws}/raw/`
+ * (shared/ingest_archive.py, manual_import_handler.py).
  * They once held `grantReadWrite` on the whole bucket, which includes `s3:DeleteObject*`: on a versioned bucket that
  * is permanent deletion of every version of every object, `raw/csv_upload/*` included, from code that parses
  * untrusted internet content. Only voc-retention may delete customer data (docs/source-policies.md), so these roles
- * get PutObject on `raw/*` and `ws/ws_{26 x ?}/raw/*` (the ingestors) or `raw/*` (manual import) and nothing else.
+ * get PutObject on `raw/*` and `ws/ws_{26 x ?}/raw/*` and nothing else.
  *
  * The S3 import ingestor only reads its staged file, so it gets read-only access to the import bucket (IAM-13).
  */
@@ -84,10 +85,16 @@ describe('ingestor roles write the raw lake, never read or delete it', () => {
 }, SYNTH_TIMEOUT_MS);
 
 describe('manual import writes the raw lake, never reads or deletes it', () => {
-  it('grants only PutObject under raw/*', () => {
+  it('grants only PutObject under raw/* and each workspace\'s raw layer, ws/ws_{26 x ?}/raw/*', () => {
     const template = apiTemplateAllPlugins();
     const roleIds = roleIdsStartingWith(template, 'ManualImportLambdaRole');
     expect(roleIds).toHaveLength(1);
-    for (const roleId of roleIds) expectWriteOnlyUnderRaw(roleId, roleStatements(template, roleId));
+    for (const roleId of roleIds) {
+      const statements = roleStatements(template, roleId);
+      expectWriteOnlyUnderRaw(roleId, statements);
+      const raw = statements.filter((s) => s.resource.includes(RAW_BUCKET)).map((s) => s.resource).join(' ');
+      expect(raw, roleId).toContain(WORKSPACE_RAW);
+      expect(raw.replaceAll(WORKSPACE_RAW, ''), roleId).toContain('/raw/*');
+    }
   });
 }, SYNTH_TIMEOUT_MS);

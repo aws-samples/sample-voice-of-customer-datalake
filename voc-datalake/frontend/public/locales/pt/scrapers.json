@@ -570,5 +570,181 @@
       "loading": "Carregando os detalhes da importação…"
     },
     "loading": "Carregando o histórico de importações…"
+  },
+  "importWizard": {
+    "title": "Importar um arquivo",
+    "subtitle": "Traga seus próprios sinais: avaliações de lojas de apps, chamados de suporte ou resultados de outra ferramenta de pesquisa. O assistente lê as colunas, você as confirma e as primeiras análises chegam em poucos minutos.",
+    "open": "Importar um arquivo",
+    "adminOnly": "Importar um arquivo é para administradores (em um espaço de trabalho, seus administradores).",
+    "backToSources": "Fontes de dados",
+    "stepOf": "Etapa {{current}} de {{total}}",
+    "back": "Voltar",
+    "continue": "Continuar",
+    "steps": {
+      "upload": "Envio",
+      "map": "Mapeamento",
+      "confirm": "Confirmação",
+      "insights": "Primeiras análises"
+    },
+    "upload": {
+      "drop": "Solte aqui um arquivo CSV, TSV, JSON ou Excel",
+      "choose": "Escolher um arquivo",
+      "formats": "CSV, TSV e JSON de até 10 MB, Excel (.xlsx) de até 256 KB. Uma exportação de pesquisa é mantida inteira, então pode ter até 2 MB.",
+      "reading": "Lendo as colunas…",
+      "preview_one": "A primeira linha",
+      "preview_many": "As primeiras {{count}} linhas",
+      "preview_other": "As primeiras {{count}} linhas",
+      "rows_one": "{{count}} linha, {{columns}} colunas",
+      "rows_many": "{{count}} linhas, {{columns}} colunas",
+      "rows_other": "{{count}} linhas, {{columns}} colunas",
+      "problems": {
+        "format": "Este tipo de arquivo não pode ser importado. Escolha um arquivo CSV, TSV, JSON ou Excel (.xlsx).",
+        "tooLarge": "Este arquivo tem mais de 10 MB. Divida-o e importe as partes uma a uma.",
+        "workbookTooLarge": "Esta pasta de trabalho tem mais de 256 KB. Salve-a como CSV e importe esse arquivo.",
+        "empty": "Este arquivo está vazio.",
+        "unreadable": "Não foi possível ler este arquivo."
+      }
+    },
+    "map": {
+      "target": "O que é este arquivo?",
+      "targets": {
+        "reviews": {
+          "title": "Avaliações ou chamados",
+          "description": "Cada linha é um feedback: o texto e, talvez, uma nota, uma data e um id."
+        },
+        "survey": {
+          "title": "Uma exportação de pesquisa",
+          "description": "Cada linha traz as respostas de uma pessoa. A exportação vira um formulário importado, para que Resultados, Relatório e Comparar funcionem com ele."
+        }
+      },
+      "dateOrder": "As datas estão escritas",
+      "dateOrders": {
+        "dmy": "Dia primeiro (31/12/2026)",
+        "mdy": "Mês primeiro (12/31/2026)",
+        "ymd": "Ano primeiro (2026/12/31)"
+      },
+      "columns": "Colunas",
+      "kind": "Contém",
+      "confidence": {
+        "high": "Certo",
+        "medium": "Provável",
+        "low": "Um palpite"
+      },
+      "examples": "Por exemplo: {{values}}",
+      "personal": "Dados pessoais: ficam de fora, a menos que você escolha outro tipo.",
+      "problems": {
+        "noText": "Escolha pelo menos uma coluna de texto livre: é o texto do feedback.",
+        "noQuestion": "Escolha pelo menos uma coluna que seja uma pergunta: texto livre, uma pontuação ou uma escolha."
+      }
+    },
+    "kinds": {
+      "id": "Um id",
+      "date": "Uma data",
+      "rating_1_5": "Uma nota de 1 a 5",
+      "rating_1_10": "Uma nota de 1 a 10",
+      "nps_0_10": "NPS (0 a 10)",
+      "csat": "CSAT (1 a 5)",
+      "choice": "Uma escolha",
+      "multi_choice": "Várias escolhas",
+      "matrix_cell": "Uma grade (linha -- resposta)",
+      "open_text": "Texto livre",
+      "email": "Um endereço de e-mail",
+      "name": "O nome de uma pessoa",
+      "url": "Um endereço web",
+      "channel": "Um canal",
+      "ignore": "Deixar de fora"
+    },
+    "reasons": {
+      "header_says": "o cabeçalho diz “{{word}}”",
+      "values_range": "valores de {{min}} a {{max}}",
+      "zero_present": "aparece um 0, que nenhuma nota tem",
+      "distinct_values": "{{count}} valores diferentes",
+      "separator": "respostas separadas por “{{separator}}”",
+      "matrix_pairs": "todo valor é formado por pares “linha -- resposta”",
+      "emails": "os valores são endereços de e-mail",
+      "urls": "os valores são endereços web",
+      "dates": "os valores são datas",
+      "excel_serial": "os valores são números de data do Excel",
+      "long_text": "texto livre de {{average}} caracteres em média",
+      "unique_values": "todo valor é diferente",
+      "numbers": "números de {{min}} a {{max}}",
+      "personal_data": "dados pessoais",
+      "empty": "a coluna está vazia",
+      "chosen": "sua escolha"
+    },
+    "confirm": {
+      "formName": "Nome do formulário importado",
+      "questions": "As perguntas que ele terá",
+      "options_one": "{{count}} opção",
+      "options_many": "{{count}} opções",
+      "options_other": "{{count}} opções",
+      "matrixRows_one": "{{count}} linha, {{columns}} colunas",
+      "matrixRows_many": "{{count}} linhas, {{columns}} colunas",
+      "matrixRows_other": "{{count}} linhas, {{columns}} colunas",
+      "leftOut": "Deixadas de fora: {{headers}}",
+      "off": "O formulário fica desligado, sem link público: as respostas dele são as linhas deste arquivo.",
+      "reviews": "O que vai para onde",
+      "otherColumns": "As colunas de escolha, múltipla escolha, grade e pontuação são mantidas com cada avaliação; uma coluna de escolha com o nome de uma das suas dimensões preenche essa dimensão.",
+      "rowsToImport_one": "{{count}} linha será importada.",
+      "rowsToImport_many": "{{count}} linhas serão importadas.",
+      "rowsToImport_other": "{{count}} linhas serão importadas.",
+      "importing": "Importando: {{done}} de {{total}} linhas…",
+      "start": "Importar",
+      "problems": {
+        "surveyTooLarge": "Uma exportação de pesquisa é mantida inteira, então pode ter até 2 MB. Divida-a e importe as partes.",
+        "noForm": "Nenhuma destas colunas pode ser uma pergunta. Volte e escolha um tipo para uma delas."
+      },
+      "formProblems": {
+        "too_many_options": "“{{header}}” tem mais de 50 respostas diferentes: fica de fora. Transforme-a em texto livre para mantê-la.",
+        "matrix_too_large": "“{{header}}” é uma grade com mais de 20 linhas ou 10 respostas: fica de fora.",
+        "no_values": "“{{header}}” não tem respostas para gerar opções: fica de fora.",
+        "too_many_questions": "“{{header}}” fica de fora: um formulário tem no máximo 30 perguntas."
+      }
+    },
+    "insights": {
+      "queued_one": "{{count}} linha importada.",
+      "queued_many": "{{count}} linhas importadas.",
+      "queued_other": "{{count}} linhas importadas.",
+      "refused_one": "{{count}} linha não foi importada:",
+      "refused_many": "{{count}} linhas não foram importadas:",
+      "refused_other": "{{count}} linhas não foram importadas:",
+      "refusedRow": "Linha {{row}}: {{reason}}",
+      "processing": "Analisando: {{done}} de {{total}}…",
+      "slow": "Ainda analisando. Um arquivo grande pode levar alguns minutos.",
+      "ready_one": "{{count}} analisado. Veja o que ele diz:",
+      "ready_many": "{{count}} analisados. Veja o que eles dizem:",
+      "ready_other": "{{count}} analisados. Veja o que eles dizem:",
+      "sentiment": "Sentimento",
+      "sentiments": {
+        "positive": "Positivo",
+        "neutral": "Neutro",
+        "negative": "Negativo",
+        "mixed": "Misto"
+      },
+      "topCategories": "Principais categorias",
+      "nps": "NPS",
+      "quotes": "Nas palavras deles",
+      "openDashboard": "Abrir o painel",
+      "openResults": "Abrir os resultados do formulário",
+      "importAnother": "Importar outro arquivo"
+    },
+    "refusals": {
+      "answer_invalid": "uma resposta não é aceita pela pergunta",
+      "date_invalid": "a data não pode ser lida",
+      "empty_response": "não responde a nenhuma pergunta",
+      "duplicate_row": "a mesma linha repetida",
+      "response_too_long": "texto demais",
+      "hidden_invalid": "um valor é longo demais",
+      "selection_count": "escolhas demais ou de menos",
+      "other": "não aceita"
+    },
+    "errors": {
+      "detect": "Não foi possível ler o arquivo. Verifique-o e tente novamente.",
+      "import": "A importação parou. As linhas já enviadas continuam importadas; tente novamente para enviar o restante."
+    },
+    "prompt": {
+      "title": "Traga seus próprios sinais em minutos",
+      "body": "Ainda não há feedback aqui. Importe um CSV de avaliações de lojas de apps, chamados de suporte ou resultados de outra ferramenta de pesquisa e veja sentimento, temas e NPS em poucos minutos."
+    }
   }
 }

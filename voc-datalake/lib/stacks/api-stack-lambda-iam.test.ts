@@ -199,6 +199,8 @@ const PLUGIN_KEY_READ = [{
 describe.each([
   ['MetricsLambdaRole', []], ['FeedbackEditLambdaRole', []],
   ['IntegrationsLambdaRole', PLUGIN_KEY_READ], ['ScrapersLambdaRole', PLUGIN_KEY_READ],
+  // The manual import (7.67.00, the import wizard): an import in a workspace.
+  ['ManualImportLambdaRole', []],
 ])('%s resolves X-Workspace-Id', (role, own) => {
   it('attaches the one workspace-resolution policy and writes nothing in voc-workspaces from its own', () => {
     const policies = Object.keys(apiTemplate().findResources('AWS::IAM::ManagedPolicy'))
@@ -221,6 +223,7 @@ describe.each([
   ['IntegrationsLambdaRole', 'integrations_handler.lambda_handler'],
   ['ScrapersLambdaRole', 'scrapers_handler.lambda_handler'],
   ['FeedbackFormLambdaRole', 'feedback_form_handler.lambda_handler'],
+  ['ManualImportLambdaRole', 'manual_import_handler.lambda_handler'],
 ])('%s runs the live platform-admin check', (role, handler) => {
   it('may run the live platform-admin check and nothing else in Cognito', () => {
     expect(actionsWithPrefix(roleStatements(apiTemplate(), role), 'cognito-idp:').sort(byCodeUnit))

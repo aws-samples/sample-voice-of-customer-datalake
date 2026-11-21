@@ -540,5 +540,173 @@
       "loading": "Loading import details…"
     },
     "loading": "Loading import history…"
+  },
+  "importWizard": {
+    "title": "Import a file",
+    "subtitle": "Bring your own signals: app store reviews, support tickets or another survey tool's results. The wizard reads the columns, you confirm them, and the first insights follow in a few minutes.",
+    "open": "Import a file",
+    "adminOnly": "Importing a file is for admins (in a workspace, its admins).",
+    "backToSources": "Data sources",
+    "stepOf": "Step {{current}} of {{total}}",
+    "back": "Back",
+    "continue": "Continue",
+    "steps": {
+      "upload": "Upload",
+      "map": "Map",
+      "confirm": "Confirm",
+      "insights": "First insights"
+    },
+    "upload": {
+      "drop": "Drop a CSV, TSV, JSON or Excel file here",
+      "choose": "Choose a file",
+      "formats": "CSV, TSV and JSON up to 10 MB, Excel (.xlsx) up to 256 KB. A survey export is kept whole, so it can be up to 2 MB.",
+      "reading": "Reading the columns…",
+      "preview_one": "The first row",
+      "preview_other": "The first {{count}} rows",
+      "rows_one": "{{count}} row, {{columns}} columns",
+      "rows_other": "{{count}} rows, {{columns}} columns",
+      "problems": {
+        "format": "This file type cannot be imported. Choose a CSV, TSV, JSON or Excel (.xlsx) file.",
+        "tooLarge": "This file is larger than 10 MB. Split it and import the parts one by one.",
+        "workbookTooLarge": "This workbook is larger than 256 KB. Save it as CSV and import that.",
+        "empty": "This file is empty.",
+        "unreadable": "This file could not be read."
+      }
+    },
+    "map": {
+      "target": "What is this file?",
+      "targets": {
+        "reviews": {
+          "title": "Reviews or tickets",
+          "description": "Each row is one piece of feedback: its text, and maybe a rating, a date and an id."
+        },
+        "survey": {
+          "title": "A survey export",
+          "description": "Each row is one person's answers. It becomes an imported form, so Results, Report and Compare work on it."
+        }
+      },
+      "dateOrder": "Dates are written",
+      "dateOrders": {
+        "dmy": "Day first (31/12/2026)",
+        "mdy": "Month first (12/31/2026)",
+        "ymd": "Year first (2026/12/31)"
+      },
+      "columns": "Columns",
+      "kind": "Holds",
+      "confidence": {
+        "high": "Sure",
+        "medium": "Likely",
+        "low": "A guess"
+      },
+      "examples": "For example: {{values}}",
+      "personal": "Personal data: left out unless you choose another kind.",
+      "problems": {
+        "noText": "Choose at least one open-text column: it is the feedback's text.",
+        "noQuestion": "Choose at least one column that is a question: open text, a score or a choice."
+      }
+    },
+    "kinds": {
+      "id": "An id",
+      "date": "A date",
+      "rating_1_5": "A rating from 1 to 5",
+      "rating_1_10": "A rating from 1 to 10",
+      "nps_0_10": "NPS (0 to 10)",
+      "csat": "CSAT (1 to 5)",
+      "choice": "One choice",
+      "multi_choice": "Several choices",
+      "matrix_cell": "A grid (row -- answer)",
+      "open_text": "Open text",
+      "email": "An email address",
+      "name": "A person's name",
+      "url": "A web address",
+      "channel": "A channel",
+      "ignore": "Leave out"
+    },
+    "reasons": {
+      "header_says": "the header says “{{word}}”",
+      "values_range": "values from {{min}} to {{max}}",
+      "zero_present": "a 0 appears, which no rating has",
+      "distinct_values": "{{count}} different values",
+      "separator": "answers separated by “{{separator}}”",
+      "matrix_pairs": "every value is “row -- answer” pairs",
+      "emails": "the values are email addresses",
+      "urls": "the values are web addresses",
+      "dates": "the values are dates",
+      "excel_serial": "the values are Excel date numbers",
+      "long_text": "free text of {{average}} characters on average",
+      "unique_values": "every value is different",
+      "numbers": "numbers from {{min}} to {{max}}",
+      "personal_data": "personal data",
+      "empty": "the column is empty",
+      "chosen": "your choice"
+    },
+    "confirm": {
+      "formName": "The imported form's name",
+      "questions": "The questions it becomes",
+      "options_one": "{{count}} option",
+      "options_other": "{{count}} options",
+      "matrixRows_one": "{{count}} row, {{columns}} columns",
+      "matrixRows_other": "{{count}} rows, {{columns}} columns",
+      "leftOut": "Left out: {{headers}}",
+      "off": "The form stays off, with no public link: its responses are this file's rows.",
+      "reviews": "What goes where",
+      "otherColumns": "Choice, multiple-choice, grid and score columns are kept with each review; a choice column named like one of your dimensions fills that dimension.",
+      "rowsToImport_one": "{{count}} row will be imported.",
+      "rowsToImport_other": "{{count}} rows will be imported.",
+      "importing": "Importing: {{done}} of {{total}} rows…",
+      "start": "Import",
+      "problems": {
+        "surveyTooLarge": "A survey export is kept whole, so it can be up to 2 MB. Split it and import the parts.",
+        "noForm": "None of these columns can be a question. Go back and choose a kind for one."
+      },
+      "formProblems": {
+        "too_many_options": "“{{header}}” has more than 50 different answers: it is left out. Make it open text to keep it.",
+        "matrix_too_large": "“{{header}}” is a grid of more than 20 rows or 10 answers: it is left out.",
+        "no_values": "“{{header}}” has no answers to make options from: it is left out.",
+        "too_many_questions": "“{{header}}” is left out: a form has at most 30 questions."
+      }
+    },
+    "insights": {
+      "queued_one": "{{count}} row imported.",
+      "queued_other": "{{count}} rows imported.",
+      "refused_one": "{{count}} row was not imported:",
+      "refused_other": "{{count}} rows were not imported:",
+      "refusedRow": "Row {{row}}: {{reason}}",
+      "processing": "Analysing: {{done}} of {{total}}…",
+      "slow": "Still analysing. A large file can take a few minutes.",
+      "ready_one": "{{count}} analysed. Here is what it says:",
+      "ready_other": "{{count}} analysed. Here is what they say:",
+      "sentiment": "Sentiment",
+      "sentiments": {
+        "positive": "Positive",
+        "neutral": "Neutral",
+        "negative": "Negative",
+        "mixed": "Mixed"
+      },
+      "topCategories": "Top categories",
+      "nps": "NPS",
+      "quotes": "In their words",
+      "openDashboard": "Open the dashboard",
+      "openResults": "Open the form's results",
+      "importAnother": "Import another file"
+    },
+    "refusals": {
+      "answer_invalid": "an answer is not one the question takes",
+      "date_invalid": "its date cannot be read",
+      "empty_response": "it answers no question",
+      "duplicate_row": "the same row again",
+      "response_too_long": "too much text",
+      "hidden_invalid": "a value is too long",
+      "selection_count": "too many or too few choices",
+      "other": "not accepted"
+    },
+    "errors": {
+      "detect": "The file could not be read. Check it and try again.",
+      "import": "The import stopped. Rows sent before stay imported; try again to send the rest."
+    },
+    "prompt": {
+      "title": "Bring your own signals in minutes",
+      "body": "No feedback here yet. Import a CSV of app store reviews, support tickets or another survey tool's results, and see sentiment, themes and NPS in a few minutes."
+    }
   }
 }

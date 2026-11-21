@@ -540,5 +540,173 @@
       "loading": "가져오기 세부 정보를 불러오는 중…"
     },
     "loading": "가져오기 기록을 불러오는 중…"
+  },
+  "importWizard": {
+    "title": "파일 가져오기",
+    "subtitle": "앱 스토어 리뷰, 지원 티켓, 다른 설문 도구의 결과 등 보유한 신호를 가져오세요. 마법사가 열을 읽고 직접 확인하면 몇 분 안에 첫 인사이트가 나옵니다.",
+    "open": "파일 가져오기",
+    "adminOnly": "파일 가져오기는 관리자만 할 수 있습니다(워크스페이스에서는 해당 워크스페이스의 관리자).",
+    "backToSources": "데이터 소스",
+    "stepOf": "{{total}}단계 중 {{current}}단계",
+    "back": "뒤로",
+    "continue": "계속",
+    "steps": {
+      "upload": "업로드",
+      "map": "매핑",
+      "confirm": "확인",
+      "insights": "첫 인사이트"
+    },
+    "upload": {
+      "drop": "CSV, TSV, JSON 또는 Excel 파일을 여기에 놓으세요",
+      "choose": "파일 선택",
+      "formats": "CSV, TSV, JSON은 최대 10 MB, Excel (.xlsx)은 최대 256 KB입니다. 설문 내보내기는 통째로 보관되므로 최대 2 MB까지 가능합니다.",
+      "reading": "열을 읽는 중…",
+      "preview_one": "첫 번째 행",
+      "preview_other": "처음 {{count}}개 행",
+      "rows_one": "{{count}}행, {{columns}}열",
+      "rows_other": "{{count}}행, {{columns}}열",
+      "problems": {
+        "format": "이 파일 형식은 가져올 수 없습니다. CSV, TSV, JSON 또는 Excel (.xlsx) 파일을 선택하세요.",
+        "tooLarge": "이 파일은 10 MB보다 큽니다. 파일을 나눠 하나씩 가져오세요.",
+        "workbookTooLarge": "이 통합 문서는 256 KB보다 큽니다. CSV로 저장한 뒤 그 파일을 가져오세요.",
+        "empty": "이 파일은 비어 있습니다.",
+        "unreadable": "이 파일을 읽을 수 없습니다."
+      }
+    },
+    "map": {
+      "target": "어떤 파일인가요?",
+      "targets": {
+        "reviews": {
+          "title": "리뷰 또는 티켓",
+          "description": "각 행은 하나의 피드백입니다. 텍스트와 함께 평점, 날짜, ID가 있을 수 있습니다."
+        },
+        "survey": {
+          "title": "설문 내보내기",
+          "description": "각 행은 한 사람의 응답입니다. 가져온 양식이 되므로 결과, 보고서, 비교를 사용할 수 있습니다."
+        }
+      },
+      "dateOrder": "날짜 표기 순서",
+      "dateOrders": {
+        "dmy": "일 먼저 (31/12/2026)",
+        "mdy": "월 먼저 (12/31/2026)",
+        "ymd": "연도 먼저 (2026/12/31)"
+      },
+      "columns": "열",
+      "kind": "내용",
+      "confidence": {
+        "high": "확실",
+        "medium": "가능성 높음",
+        "low": "추측"
+      },
+      "examples": "예: {{values}}",
+      "personal": "개인 정보: 다른 유형을 선택하지 않으면 제외됩니다.",
+      "problems": {
+        "noText": "자유 텍스트 열을 하나 이상 선택하세요. 피드백의 텍스트가 됩니다.",
+        "noQuestion": "질문이 될 열을 하나 이상 선택하세요: 자유 텍스트, 점수 또는 선택형."
+      }
+    },
+    "kinds": {
+      "id": "ID",
+      "date": "날짜",
+      "rating_1_5": "1~5 평점",
+      "rating_1_10": "1~10 평점",
+      "nps_0_10": "NPS (0~10)",
+      "csat": "CSAT (1~5)",
+      "choice": "단일 선택",
+      "multi_choice": "다중 선택",
+      "matrix_cell": "매트릭스 (행 -- 답변)",
+      "open_text": "자유 텍스트",
+      "email": "이메일 주소",
+      "name": "사람 이름",
+      "url": "웹 주소",
+      "channel": "채널",
+      "ignore": "제외"
+    },
+    "reasons": {
+      "header_says": "헤더에 “{{word}}” 포함",
+      "values_range": "{{min}}~{{max}} 범위의 값",
+      "zero_present": "평점에는 없는 0이 있음",
+      "distinct_values": "서로 다른 값 {{count}}개",
+      "separator": "답변이 “{{separator}}”(으)로 구분됨",
+      "matrix_pairs": "모든 값이 “행 -- 답변” 쌍임",
+      "emails": "값이 이메일 주소임",
+      "urls": "값이 웹 주소임",
+      "dates": "값이 날짜임",
+      "excel_serial": "값이 Excel 날짜 일련번호임",
+      "long_text": "평균 {{average}}자의 자유 텍스트",
+      "unique_values": "모든 값이 서로 다름",
+      "numbers": "{{min}}~{{max}} 범위의 숫자",
+      "personal_data": "개인 정보",
+      "empty": "열이 비어 있음",
+      "chosen": "직접 선택함"
+    },
+    "confirm": {
+      "formName": "가져온 양식의 이름",
+      "questions": "만들어질 질문",
+      "options_one": "선택지 {{count}}개",
+      "options_other": "선택지 {{count}}개",
+      "matrixRows_one": "{{count}}행, {{columns}}열",
+      "matrixRows_other": "{{count}}행, {{columns}}열",
+      "leftOut": "제외됨: {{headers}}",
+      "off": "양식은 공개 링크 없이 꺼진 상태로 유지됩니다. 응답은 이 파일의 행입니다.",
+      "reviews": "각 열이 들어갈 곳",
+      "otherColumns": "선택형, 다중 선택, 매트릭스, 점수 열은 각 리뷰와 함께 보관됩니다. 차원 이름과 같은 이름의 선택형 열은 해당 차원을 채웁니다.",
+      "rowsToImport_one": "{{count}}행을 가져옵니다.",
+      "rowsToImport_other": "{{count}}행을 가져옵니다.",
+      "importing": "가져오는 중: {{total}}행 중 {{done}}행…",
+      "start": "가져오기",
+      "problems": {
+        "surveyTooLarge": "설문 내보내기는 통째로 보관되므로 최대 2 MB까지 가능합니다. 파일을 나눠서 가져오세요.",
+        "noForm": "이 열 중 질문이 될 수 있는 열이 없습니다. 뒤로 돌아가 한 열의 유형을 선택하세요."
+      },
+      "formProblems": {
+        "too_many_options": "“{{header}}”에는 서로 다른 답변이 50개를 넘어 제외됩니다. 유지하려면 자유 텍스트로 바꾸세요.",
+        "matrix_too_large": "“{{header}}”은(는) 20행 또는 답변 10개를 넘는 매트릭스라 제외됩니다.",
+        "no_values": "“{{header}}”에는 선택지로 만들 답변이 없어 제외됩니다.",
+        "too_many_questions": "“{{header}}”은(는) 제외됩니다. 양식의 질문은 최대 30개입니다."
+      }
+    },
+    "insights": {
+      "queued_one": "{{count}}행을 가져왔습니다.",
+      "queued_other": "{{count}}행을 가져왔습니다.",
+      "refused_one": "{{count}}행을 가져오지 못했습니다:",
+      "refused_other": "{{count}}행을 가져오지 못했습니다:",
+      "refusedRow": "{{row}}행: {{reason}}",
+      "processing": "분석 중: {{total}}개 중 {{done}}개…",
+      "slow": "아직 분석 중입니다. 큰 파일은 몇 분 걸릴 수 있습니다.",
+      "ready_one": "{{count}}개를 분석했습니다. 결과는 다음과 같습니다:",
+      "ready_other": "{{count}}개를 분석했습니다. 결과는 다음과 같습니다:",
+      "sentiment": "감정",
+      "sentiments": {
+        "positive": "긍정",
+        "neutral": "중립",
+        "negative": "부정",
+        "mixed": "혼합"
+      },
+      "topCategories": "주요 카테고리",
+      "nps": "NPS",
+      "quotes": "원문 인용",
+      "openDashboard": "대시보드 열기",
+      "openResults": "양식 결과 열기",
+      "importAnother": "다른 파일 가져오기"
+    },
+    "refusals": {
+      "answer_invalid": "질문에서 받지 않는 답변이 있음",
+      "date_invalid": "날짜를 읽을 수 없음",
+      "empty_response": "답변한 질문이 없음",
+      "duplicate_row": "중복된 행",
+      "response_too_long": "텍스트가 너무 김",
+      "hidden_invalid": "값이 너무 김",
+      "selection_count": "선택 수가 너무 많거나 적음",
+      "other": "허용되지 않음"
+    },
+    "errors": {
+      "detect": "파일을 읽을 수 없습니다. 파일을 확인한 뒤 다시 시도하세요.",
+      "import": "가져오기가 중지되었습니다. 이미 보낸 행은 그대로 가져온 상태입니다. 나머지를 보내려면 다시 시도하세요."
+    },
+    "prompt": {
+      "title": "몇 분 만에 보유한 신호 가져오기",
+      "body": "아직 피드백이 없습니다. 앱 스토어 리뷰, 지원 티켓 또는 다른 설문 도구 결과가 담긴 CSV를 가져오면 몇 분 안에 감정, 주제, NPS를 확인할 수 있습니다."
+    }
   }
 }

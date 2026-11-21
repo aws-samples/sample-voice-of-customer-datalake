@@ -1,9 +1,11 @@
 """Import history: one run record per import, in voc-aggregates (docs/import-history.md).
 
 Written by every import entry point: the manual-import routes (paste confirm, CSV
-upload, JSON upload, which also serves the assistant's ``import_reviews``) and the
-S3 import ingestor, once per file. Read by ``GET /scrapers/manual/history`` and
-``GET /scrapers/manual/history/{run_id}`` (admin-only, the manual-import Lambda).
+upload, JSON upload, which also serves the assistant's ``import_reviews``), the
+S3 import ingestor, once per file, and a survey export's rows imported into a form
+(``form``, 7.67.00: ``POST /feedback-forms/{id}/import``). Read by ``GET /scrapers/manual/history`` and
+``GET /scrapers/manual/history/{run_id}`` (admin-only, the manual-import Lambda): in a workspace (since 7.67.00)
+its own ``WS#{ws}#IMPORT_RUN`` partitions only.
 
 Two rows per run, kept for good (an audit trail does not expire; a row written
 by an earlier release still carries the 90-day ``ttl`` it was written with, and expires on it):
@@ -36,6 +38,8 @@ from shared.dynamo_values import string_list as _messages
 from shared.feedback_cursor import TABLE_KEY_FIELDS, decode_key_cursor, encode_key_cursor
 from shared.ingest_tables import DeploymentTable
 from shared.logging import logger
+from shared.scoped_query import query_partition
+from shared.workspace_config import get_scoped_item
 from shared.ws_repo import WorkspaceScope, WorkspaceTable
 
 __all__ = [
@@ -55,7 +59,7 @@ MAX_MESSAGES: Final = 200
 MAX_MESSAGE_CHARS: Final = 300
 MAX_LIST_LIMIT: Final = 100
 DEFAULT_LIST_LIMIT: Final = 25
-METHODS: Final = frozenset({'paste', 'csv', 'json', 's3', 'assistant'})
+METHODS: Final = frozenset({'paste', 'csv', 'json', 's3', 'assistant', 'form'})
 IMPORT_COMPLETED: Final = 'completed'
 IMPORT_PARTIAL: Final = 'partial'
 IMPORT_FAILED: Final = 'failed'
@@ -262,42 +266,49 @@ def parse_limit(raw: object) -> int:
     return max(1, min(MAX_LIST_LIMIT, limit))
 
 
-def list_import_runs(table: Any, *, limit: int, cursor: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
-    """One newest-first page of run summaries and the cursor of the next (None at the end).
+def _list_page(table: Any, scope: WorkspaceScope | None, partition: str, options: dict[str, Any]) -> Any:
+    """One page of the listing: the deployment's request as it always was, or the workspace's through its view."""
+    if scope is None:
+        return table.query(KeyConditionExpression='#pk = :pk', ExpressionAttributeNames={'#pk': 'pk'},
+                           ExpressionAttributeValues={':pk': partition}, **options)
+    return query_partition(scope, table, 'pk', partition, **options)
+
+
+def list_import_runs(table: Any, *, limit: int, cursor: str | None = None,
+                     scope: WorkspaceScope | None = None) -> tuple[list[dict[str, Any]], str | None]:
+    """One newest-first page of run summaries (``scope``'s workspace's, else the deployment's) and the cursor of the
+    next (None at the end).
 
     ``ValueError`` for a cursor that did not come from this listing.
     """
-    request: dict[str, Any] = {
-        'KeyConditionExpression': '#pk = :pk',
-        'ExpressionAttributeNames': {'#pk': 'pk'},
-        'ExpressionAttributeValues': {':pk': LIST_PK},
-        'ScanIndexForward': False,
-        'Limit': limit,
-    }
+    partition = LIST_PK if scope is None else scope.key(LIST_PK)
+    options: dict[str, Any] = {'ScanIndexForward': False, 'Limit': limit}
     if cursor:
-        request['ExclusiveStartKey'] = decode_key_cursor(cursor, TABLE_KEY_FIELDS, ('pk', LIST_PK))
-    response = table.query(**request)
+        options['ExclusiveStartKey'] = decode_key_cursor(cursor, TABLE_KEY_FIELDS, ('pk', partition))
+    response = _list_page(table, scope, partition, options)
     now_epoch = int(time.time())
     items = response.get('Items') if isinstance(response, Mapping) else None
     runs = [run_view(item) for item in items or [] if isinstance(item, Mapping) and _live(item, now_epoch)]
     last = response.get('LastEvaluatedKey') if isinstance(response, Mapping) else None
-    return runs, _next_cursor(last)
+    return runs, _next_cursor(last, partition)
 
 
-def _next_cursor(last_key: object) -> str | None:
+def _next_cursor(last_key: object, partition: str = LIST_PK) -> str | None:
     """The opaque cursor of a page's ``LastEvaluatedKey``; None at the end of the listing."""
     if not isinstance(last_key, Mapping) or not isinstance(last_key.get('sk'), str) or not last_key['sk']:
         return None
-    return encode_key_cursor({'pk': LIST_PK, 'sk': last_key['sk']})
+    return encode_key_cursor({'pk': partition, 'sk': last_key['sk']})
 
 
-def get_import_run(table: Any, run_id: str) -> dict[str, Any] | None:
-    """The detail view of one run, or None when there is no such (live) run."""
+def get_import_run(table: Any, run_id: str, scope: WorkspaceScope | None = None) -> dict[str, Any] | None:
+    """The detail view of one run (``scope``'s workspace's), or None when there is no such (live) run."""
     try:
         uuid.UUID(run_id)
     except ValueError:
         return None
-    item = table.get_item(Key={'pk': f'{LIST_PK}#{run_id}', 'sk': DETAIL_SK}).get('Item')
-    if not isinstance(item, Mapping) or not _live(item, int(time.time())):
+    pk = f'{LIST_PK}#{run_id}' if scope is None else scope.key(LIST_PK, run_id)
+    item = get_scoped_item(table, {'pk': pk, 'sk': DETAIL_SK}, scope) if scope is not None else table.get_item(
+        Key={'pk': pk, 'sk': DETAIL_SK}).get('Item')
+    if not isinstance(item, Mapping) or not item or not _live(item, int(time.time())):
         return None
     return run_view(item, detail=True)

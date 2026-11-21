@@ -52,6 +52,8 @@ PHASE_2: dict[str, frozenset[str]] = {
         # 7.63.00: the report and the comparison (`_request_scope`, as the results; every compared form the scope's).
         'GET /feedback-forms/<form_id>/compare',
         'GET /feedback-forms/<form_id>/report',
+        # 7.67.00: an imported form's rows (`_request_scope(write=True)`, its admins; the messages name its workspace).
+        'POST /feedback-forms/<form_id>/import',
     }),
     # Credentials move to the workspace secret.
     'integrations_handler.py': frozenset({
@@ -69,7 +71,9 @@ PHASE_2: dict[str, frozenset[str]] = {
         'PUT /sources/<source>/disable',
         'PUT /sources/<source>/enable',
     }),
+    # Resolves X-Workspace-Id since 7.67.00 (ResolvedRoutes, as the scrapers API): its two-workspace cases are owed.
     'manual_import_handler.py': frozenset({
+        'POST /scrapers/manual/detect',
         'GET /scrapers/manual/history',
         'GET /scrapers/manual/history/<run_id>',
         'GET /scrapers/manual/parse/<job_id>',

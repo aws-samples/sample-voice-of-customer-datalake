@@ -34,6 +34,7 @@ __all__ = [
     'SCHEMA_VERSION',
     'answer_shape',
     'definition_of',
+    'imported_of',
     'is_v2',
     'language_assumed',
     'migrate_v1',
@@ -45,6 +46,7 @@ __all__ = [
     'template_of',
     'test_settings_of',
     'validate_definition',
+    'validate_imported',
     'validate_placeholders',
     'validate_publishable',
     'validate_template',
@@ -96,6 +98,10 @@ ENDING_ID: Final = re.compile(r'end_[a-z0-9_]{1,40}')
 #: A template's id (7.63.00: the app's templates, ``workshop``, ``nps``…) and the highest version a form may name.
 TEMPLATE_ID: Final = re.compile(r'[a-z][a-z0-9_]{0,39}')
 MAX_TEMPLATE_VERSION: Final = 1000
+#: An imported form's provenance (7.67.00, the import wizard): the tool its export came from, when, and the file.
+MAX_IMPORTED_FROM_CHARS: Final = 80
+MAX_IMPORTED_FILENAME_CHARS: Final = 255
+_IMPORTED_AT: Final = re.compile(r'\d{4}-\d{2}-\d{2}(T[0-9:.]{2,15}(Z|[+-]\d{2}:\d{2})?)?')
 #: Names no hidden field may take: in the widget's script objects they are the object's own machinery (its
 #: prototype), so the widget never fills them. A form stored before 7.58.00 with one reads as it is; only a save of
 #: its definition refuses it.
@@ -241,6 +247,38 @@ def validate_template(value: object) -> dict[str, Any]:
     if not isinstance(template_id, str) or not TEMPLATE_ID.fullmatch(template_id):
         raise _fail('template.id must be a template id (lower-case letters, digits and _, at most 40)')
     return {'id': template_id, 'version': _int(source.get('version', 1), 'template.version', 1, MAX_TEMPLATE_VERSION)}
+
+
+def _imported_text(source: Mapping[str, Any], key: str, limit: int, *, required: bool) -> str:
+    value = source.get(key, '')
+    if not isinstance(value, str) or len(value.strip()) > limit or any(ord(ch) < 32 for ch in value):
+        raise _fail(f'imported.{key} must be a text of at most {limit} characters')
+    if required and not value.strip():
+        raise _fail(f'imported.{key} is required')
+    return value.strip()
+
+
+def validate_imported(value: object) -> dict[str, str]:
+    """A create's ``imported`` (7.67.00): ``{from, at, filename}``, the survey export the form was made from (the
+    import wizard, docs/import-wizard.md). Such a form is Off for good and has no public link: its responses are the
+    export's rows. ``from``: the tool, ``at``: when it was imported (an ISO 8601 date or time), ``filename``: the
+    file's name without any folder. A 400 naming the field otherwise."""
+    source = _object(value, 'imported')
+    _closed(source, {'from', 'at', 'filename'}, 'imported')
+    at = source.get('at')
+    if not isinstance(at, str) or not _IMPORTED_AT.fullmatch(at):
+        raise _fail('imported.at must be an ISO 8601 date or time')
+    filename = _imported_text(source, 'filename', MAX_IMPORTED_FILENAME_CHARS, required=True)
+    return {'from': _imported_text(source, 'from', MAX_IMPORTED_FROM_CHARS, required=False) or 'file', 'at': at,
+            'filename': re.split(r'[/\\]', filename)[-1] or filename}
+
+
+def imported_of(item: Mapping[str, Any]) -> dict[str, str] | None:
+    """The provenance of an imported form (``{from, at, filename}``), None for every other form."""
+    stored = plain(item.get('imported'))
+    if not isinstance(stored, Mapping) or not isinstance(stored.get('filename'), str):
+        return None
+    return {key: str(stored.get(key) or '') for key in ('from', 'at', 'filename')}
 
 
 def template_of(item: Mapping[str, Any]) -> dict[str, Any] | None:

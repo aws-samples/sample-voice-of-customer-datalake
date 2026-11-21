@@ -32,7 +32,7 @@ from typing import Final, override
 
 __all__ = [
     'FORMATS', 'MAX_NATIVE_IMAGE_BYTES', 'MAX_UPLOAD_BYTES', 'PAGE_BREAK', 'Chunk', 'ExtractionError', 'Reading',
-    'chunk_pages', 'extract', 'format_of', 'is_native',
+    'chunk_pages', 'extract', 'format_of', 'is_native', 'xlsx_rows',
 ]
 
 #: 25 MB per file (the owner's decision).
@@ -321,6 +321,48 @@ def _xlsx_text(data: bytes) -> str:
         if rows:
             blocks.append('\n'.join([f'## {name}' if name else '##', *rows]))
     return '\n\n'.join(blocks)
+
+
+_CELL_COLUMN: Final = re.compile(r'([A-Z]{1,3})\d*')
+#: The columns of a sheet ``xlsx_rows`` reads (a cell further right is left out: a reference like ``XFD1`` must not
+#: make every row 16,384 cells long).
+MAX_SHEET_COLUMNS: Final = 256
+
+
+def _column_index(reference: str | None, fallback: int) -> int:
+    """The 0-based column of a cell reference (``C7`` -> 2); ``fallback`` when the cell names none."""
+    match = _CELL_COLUMN.match(reference or '')
+    if not match:
+        return fallback
+    index = 0
+    for letter in match.group(1):
+        index = index * 26 + (ord(letter) - ord('A') + 1)
+    return index - 1
+
+
+def xlsx_rows(data: bytes, max_rows: int) -> list[list[str]]:
+    """The first sheet of an Excel workbook as rows of cell texts, each cell in its own column (a blank cell, which
+    the file leaves out, stays an empty one; at most ``MAX_SHEET_COLUMNS``), at most ``max_rows`` rows: the import wizard's table (7.67.00,
+    shared/import_detect.py). A date cell reads as its serial number, as the sheet stores it. ``ExtractionError`` for
+    a file that is not a workbook."""
+    archive = _open_zip(data, 'Excel')
+    strings = _shared_strings(archive)
+    for _name, part in _sheet_targets(archive):
+        root = _part(archive, part)
+        if root is None:
+            continue
+        rows: list[list[str]] = []
+        for row in root.iter(f'{_S}row'):
+            cells: dict[int, str] = {}
+            for position, cell in enumerate(row.iter(f'{_S}c')):
+                index = _column_index(cell.get('r'), position)
+                if index < MAX_SHEET_COLUMNS:
+                    cells[index] = _cell_value(cell, strings).strip()
+            rows.append([cells.get(index, '') for index in range(max(cells) + 1)] if cells else [])
+            if len(rows) >= max_rows:
+                break
+        return rows
+    raise ExtractionError('This Excel file has no sheet in it.')
 
 
 # ── PDF ─────────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -12,6 +12,10 @@ message, then archive only what ``archive_mode`` allows:
   worker deletes with the item through its ``s3_raw_uri``.
 - ``file``  (allow, keep forever): the caller may keep its whole-request
   archive (``raw/csv_upload/...``) as before.
+
+An upload in a workspace (``scope``, the request's resolved membership: the manual import and the form import of
+the import wizard, 7.67.00) reads that workspace's own profiles (a source it saved none for redacts, shared/
+source_profiles.py ``profile_for``) and archives under its own bronze layer, ``ws/{ws}/raw/…``.
 """
 
 from __future__ import annotations
@@ -28,7 +32,6 @@ from shared.concurrency import ordered_map
 from shared.exceptions import ValidationError
 from shared.logging import logger
 from shared.raw_versions import (
-    RAW_PREFIX,
     Connector,
     app_connector,
     content_digest,
@@ -36,10 +39,12 @@ from shared.raw_versions import (
     item_folder,
     item_stem,
     put_raw_version,
+    raw_root,
     version_key,
 )
 from shared.source_policy import ARCHIVE_FILE, ARCHIVE_ITEM, apply_source_policy, archive_mode
 from shared.source_profiles import SOURCE_ID_RE, SourceProfilesUnavailable, load_source_profiles, profile_for
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'DEFAULT_UPLOAD_SOURCE',
@@ -53,8 +58,9 @@ _ARCHIVE_WORKERS: Final = 16
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
 
-def upload_profile(table: Any, raw_source_id: object) -> dict[str, Any]:
-    """The profile an upload is filed under: a configured profile id, or ``manual_import``.
+def upload_profile(table: Any, raw_source_id: object, scope: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The profile an upload is filed under: a configured profile id, or ``manual_import``; in ``scope``'s workspace,
+    one of that workspace's own.
 
     ``ValidationError`` for anything else (an unknown id would create a source
     nobody configured). ``SourceProfilesUnavailable`` (503, retryable) when the
@@ -65,13 +71,13 @@ def upload_profile(table: Any, raw_source_id: object) -> dict[str, Any]:
         raise ValidationError('source_id must be a configured source id')
     source_id = source_id.strip()
     try:
-        profiles = load_source_profiles(table) if table is not None else []
+        profiles = load_source_profiles(table, scope) if table is not None else []
     except (*_AWS_ERRORS, ValueError) as e:
         logger.exception('Source profiles could not be read for an upload')
         raise SourceProfilesUnavailable from e
     if source_id != DEFAULT_UPLOAD_SOURCE and source_id not in {profile['id'] for profile in profiles}:
         raise ValidationError(f'Unknown source_id "{source_id}": configure it in Administration → Privacy & access → Source policies first')
-    return profile_for(profiles, source_id)
+    return profile_for(profiles, source_id, workspace=scope is not None)
 
 
 def policy_applied(messages: list[dict[str, Any]], profile: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -84,8 +90,9 @@ def policy_applied(messages: list[dict[str, Any]], profile: Mapping[str, Any]) -
     return out
 
 
-def _stored_folder(bucket: str, source_id: str, uri: object) -> str | None:
-    """The item folder of ``uri`` when it is a per-item archive of ``source_id`` in ``bucket``; else None.
+def _stored_folder(bucket: str, source_id: str, uri: object, scope: WorkspaceScope | None = None) -> str | None:
+    """The item folder of ``uri`` when it is a per-item archive of ``source_id`` in ``bucket`` (under ``scope``'s
+    bronze root); else None.
 
     Either layout: a legacy ``.../{stem}.json`` maps to ``.../{stem}/``, a versioned
     ``.../{stem}/{sha16}.json`` to its own folder (``shared.raw_versions.folder_of``).
@@ -93,16 +100,17 @@ def _stored_folder(bucket: str, source_id: str, uri: object) -> str | None:
     if not isinstance(uri, str):
         return None
     key = uri.removeprefix(f's3://{bucket}/')
-    in_source = key != uri and key.startswith(f'{RAW_PREFIX}{source_id}/')
+    in_source = key != uri and key.startswith(f'{raw_root(scope)}{source_id}/')
     return folder_of(key) if in_source else None
 
 
 def _archive_one(s3: Any, bucket: str, source_id: str, now: datetime, message: dict[str, Any],
-                 rewrite_uris: Mapping[str, str], connector: Connector) -> str | None:
+                 rewrite_uris: Mapping[str, str], connector: Connector,
+                 scope: WorkspaceScope | None = None) -> str | None:
     body = {k: v for k, v in message.items() if k != 's3_raw_uri'}
     digest = content_digest(body, default=decimal_default)
-    folder = _stored_folder(bucket, source_id, rewrite_uris.get(str(message.get('id')))) or item_folder(
-        source_id, now, item_stem(message.get('id'), digest))
+    folder = _stored_folder(bucket, source_id, rewrite_uris.get(str(message.get('id'))), scope) or item_folder(
+        source_id, now, item_stem(message.get('id'), digest), scope)
     key = version_key(folder, digest)
     try:
         put_raw_version(s3, bucket, key, json.dumps(body, default=decimal_default), connector)
@@ -115,6 +123,7 @@ def _archive_one(s3: Any, bucket: str, source_id: str, now: datetime, message: d
 def archive_per_item(
     s3: Any, bucket: str, source_id: str, messages: list[dict[str, Any]], now: datetime,
     rewrite_uris: Mapping[str, str] | None = None, *, connector_id: str = DEFAULT_UPLOAD_SOURCE,
+    scope: WorkspaceScope | None = None,
 ) -> None:
     """Write one JSON per message and point its ``s3_raw_uri`` at it (None where a write failed).
 
@@ -130,7 +139,7 @@ def archive_per_item(
         return
     rewrites = rewrite_uris or {}
     connector = app_connector(connector_id)
-    uris = ordered_map(lambda message: _archive_one(s3, bucket, source_id, now, message, rewrites, connector),
+    uris = ordered_map(lambda message: _archive_one(s3, bucket, source_id, now, message, rewrites, connector, scope),
                        messages, max_workers=_ARCHIVE_WORKERS)
     for message, uri in zip(messages, uris, strict=True):  # pragma: no mutate  ordered_map returns one result per input
         message['s3_raw_uri'] = uri
@@ -152,18 +161,20 @@ def stamp_file_archive(
 def prepare_messages(
     s3: Any, bucket: str, messages: list[dict[str, Any]], profile: Mapping[str, Any], now: datetime,
     rewrite_uris: Mapping[str, str] | None = None, *, connector_id: str = DEFAULT_UPLOAD_SOURCE,
+    scope: WorkspaceScope | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Apply the policy, archive per item when the profile asks for it; ``(messages, archive mode)``.
 
     With mode ``file`` nothing is archived here: the caller keeps (or writes)
     its whole-request archive and stamps its URI itself. With ``none`` every
-    ``s3_raw_uri`` is cleared. ``connector_id`` is the writer recorded on each archive.
+    ``s3_raw_uri`` is cleared. ``connector_id`` is the writer recorded on each archive. ``scope``: the workspace an
+    upload acts in (its archives under ``ws/{ws}/raw/``).
     """
     mode = archive_mode(profile)
     out = policy_applied(messages, profile)
     if mode == ARCHIVE_ITEM:
         archive_per_item(s3, bucket, str(profile.get('id') or DEFAULT_UPLOAD_SOURCE), out, now, rewrite_uris,
-                         connector_id=connector_id)
+                         connector_id=connector_id, scope=scope)
     elif mode != ARCHIVE_FILE:
         for message in out:
             message['s3_raw_uri'] = None

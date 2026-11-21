@@ -394,7 +394,9 @@
       "title": "¿Desactivar «{{name}}»?",
       "message": "Su enlace y sus inserciones mostrarán «Formulario de opinión no disponible.» a las próximas personas que respondan.",
       "confirm": "Desactivar"
-    }
+    },
+    "imported": "Importado",
+    "importedFrom": "Importado desde {{filename}}: queda desactivado, sin enlace público"
   },
   "configureApiFirst": "Configure el endpoint de la API en Administración → Configuración general para gestionar formularios de feedback.",
   "deleteConfirmLabel": "Eliminar",

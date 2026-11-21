@@ -37,7 +37,7 @@ import NotFound from './components/RouteErrorBoundary/NotFound'
 import Login from './pages/Login/Login'
 import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
-  Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
+  Scrapers, ImportWizard, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
   DataExplorer, Vote, Memory, Company, Library, Agents, AgentsAutomations, AgentsRuns, AgentsSpend, AgentsFlows, AgentsConnections,
   AgentDetail, SetupGuide,
   WorkflowPage, WorkflowTemplatePage, RunWorkspace, GitHubAppCreated, GitHubAppInstalled, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
@@ -154,6 +154,10 @@ export const routes: RouteObject[] = [
       // Its tab: /data-explorer/raw (/data-explorer too) or /data-explorer/processed (DataExplorer/dataExplorerPaths.ts).
       { path: 'data-explorer/*', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },
+      // The import wizard (7.67.00, docs/import-wizard.md): a file's columns detected, confirmed, imported. Admins only,
+      // in a workspace its admins: the page asks itself (ImportWizard/useCanImport.ts), as AdminRoute reads the
+      // deployment's group alone.
+      { path: 'scrapers/import', ...page(<ImportWizard />) },
       // The list, the picker (/feedback-forms/new), a form's builder and its full-screen preview are paths the page
       // reads itself (FeedbackForms/builder/builderPaths.ts): /feedback-forms/<id|new>/<tab>[/…], /<id>/preview.
       { path: 'feedback-forms/*', ...page(<FeedbackForms />) },

@@ -394,7 +394,9 @@
       "title": "Desligar “{{name}}”?",
       "message": "O link e as incorporações vão mostrar “Formulário de feedback indisponível.” às próximas pessoas que responderem.",
       "confirm": "Desligar"
-    }
+    },
+    "imported": "Importado",
+    "importedFrom": "Importado de {{filename}}: fica desligado, sem link público"
   },
   "configureApiFirst": "Configure o endpoint da API em Administração → Geral para gerenciar formulários de feedback.",
   "deleteConfirmLabel": "Excluir",

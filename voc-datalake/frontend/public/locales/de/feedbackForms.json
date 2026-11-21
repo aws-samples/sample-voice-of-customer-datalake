@@ -394,7 +394,9 @@
       "title": "„{{name}}“ ausschalten?",
       "message": "Sein Link und seine Einbettungen zeigen den nächsten Befragten „Feedback-Formular nicht verfügbar.“",
       "confirm": "Ausschalten"
-    }
+    },
+    "imported": "Importiert",
+    "importedFrom": "Importiert aus {{filename}}: bleibt ausgeschaltet, ohne öffentlichen Link"
   },
   "configureApiFirst": "Konfigurieren Sie den API-Endpunkt unter Administration → Allgemein, um Feedback-Formulare zu verwalten.",
   "deleteConfirmLabel": "Löschen",

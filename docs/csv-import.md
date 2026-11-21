@@ -1,7 +1,9 @@
 # CSV import: row identity and correcting a re-upload
 
 An administrator imports feedback from a spreadsheet on **Data sources → New source →
-Spreadsheet (CSV)** (`POST /scrapers/manual/csv-upload`, admin-only, `manual_import_handler.py`).
+Spreadsheet (CSV)** (`POST /scrapers/manual/csv-upload`, admin-only, `manual_import_handler.py`), or through the
+import wizard (**Data sources → Import a file**, 7.67.00), which sends its own `mapping` of each column's kind instead
+of `column_map` ([import-wizard.md](import-wizard.md)). In a workspace, the upload is that workspace's.
 This page covers how each row is identified, and how a corrected file updates the rows it
 imported before instead of adding them a second time. Column mapping and
 dimension columns are in [dimensions.md](dimensions.md); the source profile and its PII

@@ -12,6 +12,12 @@ Two paths (docs/multi-workspace.md, "Public and non-user entry points"; docs/fee
   in ``WS#{ws}#FEEDBACK_FORM`` / ``FORM#{id}`` (through ``ws_table``), each with a lookup row ``FORM#{id}`` / ``META``
   in voc-workspaces naming the workspace (shared/workspace_routing.py), and their stats read the workspace's
   feedback partition. Without the header, everything is deployment-wide, as before;
+* an imported form (7.67.00, the import wizard: ``imported`` on create, docs/import-wizard.md) is Off for good and has
+  no public link: every public route answers it as an unknown id, a save cannot turn it on and it takes no test link.
+  Its responses are the survey export it was made from, ``POST /feedback-forms/{id}/import`` (admins, acting as
+  themselves), each row checked for its types and ranges (never the logic path), queued as a response with its own
+  date, the original file kept write-once under ``raw/feedback_form/import/{form_id}/`` (a workspace's:
+  ``ws/{ws}/raw/…``) and the run in the import history;
 * the public widget routes (config, iframe, submit, events) never read the header: they look the form id up
   (``_public_form``). A form with a lookup row is its workspace's (the row's workspace, which must be ``active``):
   its config is served from the workspace's form, and a submission is queued with that ``workspace_id``
@@ -45,11 +51,12 @@ from shared import category_access, feedback_category, form_theme, null_origin_c
 from shared import forms_recall as recall
 from shared import forms_v2 as fv2
 from shared import forms_v2_csv as fcsv
+from shared import forms_v2_import as fimp
 from shared import forms_v2_responses as fresp
 from shared.api import api_handler, create_api_resolver, get_caller_subject, get_raw_categories_config, validate_limit
 from shared.app_feedback_tag import APP_FEEDBACK_TEMPLATE_ID, RESERVED_MESSAGE, names_app_feedback
 from shared.audit_rows import put_new_audit_row
-from shared.aws import get_dynamodb_resource, get_sqs_client
+from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client
 from shared.category_gate import scope_for_event
 from shared.delete_audit import actor_from_event, record_delete_first, record_delete_once
 from shared.dynamo_paging import iter_query
@@ -87,14 +94,19 @@ from shared.forms_v2_segments import (
     parse_group_by,
     segment_results,
 )
+from shared.import_runs import ImportCounts, ImportRun, record_import_run
+from shared.import_runs import actor_from_event as run_actor
+from shared.import_survey import check_mapping
+from shared.ingest_archive import prepare_messages, stamp_file_archive
 from shared.ingest_tables import table_view
 from shared.onboarding import forms_partition as _forms_partition
 from shared.project_gate import caller_from_event
+from shared.raw_versions import app_connector, put_raw_version, raw_root
 from shared.request_workspace import require_settings_admin
 from shared.scoped_query import SortRange, iter_partition, query_partition
 from shared.source_profiles import PII_ALLOW
 from shared.tables import configured_table, get_workspaces_table
-from shared.workspace import EDITING_ROLES, audit_key, audit_sort_key
+from shared.workspace import EDITING_ROLES, WorkspaceContext, audit_key, audit_sort_key
 from shared.workspace_request import RequestWorkspace
 from shared.workspace_routing import (
     RoutedWorkspace,
@@ -116,16 +128,20 @@ from shared.request_body import json_body_value, json_object_body, optional_fiel
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
 from shared.source_policy import apply_source_policy
 from shared.source_profiles import cached_source_profile_strict
+from shared.sqs_batches import send_batches
 from shared.timestamps import now_iso
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
 sqs = get_sqs_client()
+# The original file of an import (write-once, shared/raw_versions.py) and its responses' raw copies.
+s3 = get_s3_client()
 
 # Configuration
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 PROCESSING_QUEUE_URL = os.environ.get('PROCESSING_QUEUE_URL', '')
+RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 BRAND_NAME = os.environ.get('BRAND_NAME', '')
 
 #: The primary language a version 1 form that names none is migrated to (the deployment's processing language,
@@ -174,6 +190,8 @@ def _forms(scope: WorkspaceScope | None) -> Any:
 # The workspace a signed-in request acts in (shared/workspace_request.py): its warm container's memberships (30 s).
 # Create, update and delete are writes: EDITING_ROLES (shared/workspace.py, docs/multi-workspace.md "Roles").
 _workspace = RequestWorkspace()
+#: Where ``_request_scope`` keeps the request's resolved membership (Powertools clears it after each request).
+_CONTEXT_KEY = 'form_workspace'
 
 
 def _request_scope(*, write: bool = False) -> WorkspaceScope | None:
@@ -181,11 +199,20 @@ def _request_scope(*, write: bool = False) -> WorkspaceScope | None:
     body is read. A write (``write``) needs the editor or admin role there (403), read from the table (``fresh``),
     never the 30 s cache, so a member demoted a moment ago cannot write."""
     context = _workspace.context(app.current_event.raw_event, fresh=write)
+    app.append_context(**{_CONTEXT_KEY: context})
     if context is None:
         return None
     if write and context.role not in EDITING_ROLES:
         raise AuthorizationError('Managing feedback forms needs the editor or admin role in this workspace')
     return scope_of(context)
+
+
+def _resolved_context() -> WorkspaceContext | None:
+    """The membership ``_request_scope`` resolved for THIS request (the import's queue messages name its workspace
+    through ``workspace_payload``). Fails closed when it did not run: never resolves the header again."""
+    if _CONTEXT_KEY not in app.context:
+        raise ServiceError('The workspace of this request was not resolved')
+    return app.context[_CONTEXT_KEY]
 
 
 # ============================================
@@ -364,7 +391,10 @@ def _public_form(raw_id: Any, failure_message: str) -> tuple[str, dict, RoutedWo
     a deployment form) and the stored form there (404 when absent)."""
     form_id = _public_form_id(raw_id)
     routed = _route_form(form_id, failure_message)
-    return form_id, _read_form(form_id, failure_message, routed.scope if routed else None), routed
+    form = _read_form(form_id, failure_message, routed.scope if routed else None)
+    if fv2.imported_of(form) is not None:
+        raise NotFoundError('Form not found')  # an imported form has no public link (7.67.00)
+    return form_id, form, routed
 
 
 # ============================================
@@ -656,6 +686,10 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
         test = fv2.validate_test_settings(body['settings'], test)
     # The app template it was made from (7.63.00): set once, here, so Compare can match the forms one template made.
     template = fv2.validate_template(body['template']) if body.get('template') is not None else None
+    # The survey export it was made from (7.67.00): set once, here; such a form is Off for good.
+    imported = fv2.validate_imported(body['imported']) if body.get('imported') is not None else None
+    if imported is not None and body.get('enabled') is True:
+        raise ValidationError(_IMPORTED_STAYS_OFF, code='imported_form')
     now = now_iso()
     fid = form_id or new_form_id(scope)
 
@@ -678,6 +712,8 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
         item['created_by'] = item['updated_by'] = actor
     if template is not None:
         item['template'] = template
+    if imported is not None:
+        item['imported'] = imported
 
     # Apply defaults, then override with provided values
     for name, default in DEFAULT_FORM_CONFIG.items():
@@ -809,6 +845,8 @@ def item_to_form(item: dict) -> dict:
         'form_type': item.get('form_type') or 'standard',
         # The app template it was made from (7.63.00), never changed by a save; absent for any other form.
         **({'template': template} if (template := fv2.template_of(item)) is not None else {}),
+        # The survey export it was made from (7.67.00): Off for good, no public link; absent for any other form.
+        **({'imported': imported} if (imported := fv2.imported_of(item)) is not None else {}),
         'brand_name': item.get('brand_name', ''),
         'created_at': item.get('created_at', ''),
         'updated_at': item.get('updated_at', ''),
@@ -1099,6 +1137,8 @@ def _create_workspace_form(item: dict, scope: WorkspaceScope) -> None:
 # workspace's ``WS#{ws}#FEEDBACK_FORM_TEST``; shared/form_test_responses.py), the only one voc-retention may delete in.
 
 _REVISION_PREFIX = 'FORMREV#'
+_IMPORTED_STAYS_OFF = ('An imported form stays off: it has no public link, and its responses are the file it was '
+                       'made from')
 _FORM_PREFIX = 'FORM#'
 #: The v1 fields a version 2 form still maps from a version 1 patch (the assistant's update tool sends them).
 _MAPPED_V1_FIELDS = frozenset({'title', 'description', 'success_message', 'submit_button_text'})
@@ -1339,6 +1379,8 @@ def update_form(form_id: str):
     stored = _read_form(form_id, 'Failed to update form', scope)
     if names_app_feedback(body.get('tags')) and not _made_for_app_feedback(stored):
         raise ValidationError(RESERVED_MESSAGE)
+    if fv2.imported_of(stored) is not None and body.get('enabled') is True:
+        raise ConflictError(_IMPORTED_STAYS_OFF, code='imported_form')
     plan = _plan_update(stored, body, get_caller_subject(app.current_event.raw_event),
                         answered=lambda: _answered_before(form_id, stored, scope))
     try:
@@ -2328,6 +2370,8 @@ def issue_test_link(form_id: str):
     if scope is None:
         _refuse_a_workspaces_id(form_id, 'Failed to issue the test link')
     stored = _read_form(form_id, 'Failed to issue the test link', scope)
+    if fv2.imported_of(stored) is not None:
+        raise ConflictError(_IMPORTED_STAYS_OFF, code='imported_form')
     current = fv2.test_settings_of(stored)
     asked = {key: body[key] for key in ('link_enabled', 'record') if key in body}
     test = fv2.validate_test_settings({'test': {'link_enabled': True, **asked}}, current)
@@ -2352,6 +2396,128 @@ def issue_test_link(form_id: str):
     view = {key: test[key] for key in ('link_enabled', 'record', 'token', 'token_issued_at') if key in test}
     return {'success': True, 'form_id': form_id, 'test': view, 'test_query': query,
             'test_link': f'{iframe}?{query}' if iframe else ''}
+
+
+# ============================================
+# Imported responses (7.67.00, the import wizard: docs/import-wizard.md)
+# ============================================
+
+def _require_import_admin() -> None:
+    """403 unless an admin acting as themselves imports (#242: importing writes customer data into the pipeline): of
+    the workspace the request names, else of the deployment (``_require_test_link_admin``), never a delegated caller
+    (an MCP token, an agent or a plan step acting for a person)."""
+    _require_test_link_admin()
+    if caller_from_event(app.current_event.raw_event).delegated:
+        raise AuthorizationError('Importing responses needs an admin acting as themselves')
+
+
+def _kept_file(form_id: str, scope: WorkspaceScope | None, run_id: str,
+               request: fimp.ImportRequest) -> Callable[[], str | None]:
+    """The whole-file archive of an import, run only under the source's ``file`` mode (allow, kept for good): the
+    original file written once on the first call (``If-None-Match: *``; a failed write is logged and the rows are
+    still queued), the first call's object on the next ones, nothing without either."""
+    def keep() -> str | None:
+        if not RAW_DATA_BUCKET:
+            return None
+        if request.file_key is not None:
+            return f's3://{RAW_DATA_BUCKET}/{request.file_key}'
+        if request.file is None:
+            return None
+        key = fimp.file_key_of(raw_root(scope), form_id, run_id, request.file.fmt)
+        try:
+            put_raw_version(s3, RAW_DATA_BUCKET, key, request.file.content, app_connector(fimp.IMPORT_WRITER),
+                            content_type=request.file.content_type, metadata={'form_id': form_id})
+        except (ClientError, BotoCoreError) as e:
+            logger.warning(f"The original file of form {form_id}'s import was not kept: {type(e).__name__}")
+            return None
+        return f's3://{RAW_DATA_BUCKET}/{key}'
+    return keep
+
+
+def _queue_batches(messages: list[dict[str, Any]], context: WorkspaceContext | None) -> tuple[int, list[str]]:
+    """Send ``messages`` to the processing queue ten a call (shared/sqs_batches.py), each naming the request's
+    workspace (set last); ``(sent, the failures by row)``."""
+    if not PROCESSING_QUEUE_URL:
+        return len(messages), []
+    return send_batches(sqs, PROCESSING_QUEUE_URL,
+                        [json.dumps(workspace_payload(message, context), default=str) for message in messages], first=1)
+
+
+def _import_context(form_id: str, stored: Mapping[str, Any], scope: WorkspaceScope | None, run_id: str,
+                    now: datetime) -> fimp.FormContext:
+    """What every message of the import shares: the form's own routing and labels and its brand's partition (the one
+    the form's Results read, ``_form_source_pk``)."""
+    return fimp.FormContext(
+        form_id, str(stored.get('name') or ''), _definition(stored), fv2.revision_of(stored),
+        str(stored.get('brand_name') or BRAND_NAME), _preset_routing(
+            {'category': stored.get('category'), 'subcategory': stored.get('subcategory')}, scope),
+        message_labels(stored.get('dimension_defaults') or {}, stored.get('tags')), run_id, now.isoformat())
+
+
+def _row_routing(form: fimp.FormContext, imported: Any, scope: WorkspaceScope | None) -> tuple[str, str] | None:
+    routing = fresp.answer_category(form.definition, imported.response)
+    return _preset_routing(routing, scope) if routing else None
+
+
+@app.post("/feedback-forms/<form_id>/import")
+@tracer.capture_method
+def import_form_responses(form_id: str):
+    """Import a survey export's rows into an imported form as its responses (admins, acting as themselves).
+
+    Body: ``{rows (1-5,000 a call), mapping, date_order?, offset?, dry_run?, file | file_key}``
+    (shared/forms_v2_import.py ``import_request``). Each row is checked for its types and ranges, never the form's
+    logic (owner decision: it followed the other tool's), and queued as a response dated with its own date, under
+    the form's brand partition, so Results, Report and Compare read it. NPS stays in ``form_answers``, never the
+    rating. Answers ``{accepted, refused: [{row, code, question_id?}] (the first 200), refused_count, run_id,
+    raw_s3_key}``; a dry run checks the rows and writes nothing. A form that was not imported is a 409.
+    """
+    scope = _request_scope(write=True)
+    _require_import_admin()
+    request = fimp.import_request(json_object_body(app))
+    if scope is None:
+        _refuse_a_workspaces_id(form_id, 'Failed to import responses')
+    if request.file_key is not None:
+        fimp.checked_file_key(request.file_key, raw_root(scope), form_id)
+    stored = _read_form(form_id, 'Failed to import responses', scope)
+    if fv2.imported_of(stored) is None:
+        raise ConflictError('Only a form made by the import wizard takes imported responses', code='not_imported')
+    now, run_id = datetime.now(UTC), str(uuid.uuid4())
+    form = _import_context(form_id, stored, scope, run_id, now)
+    read = fimp.read_rows(form.definition, check_mapping(form.definition, request.mapping), request,
+                          default_at=now.replace(microsecond=0).isoformat(), form_id=form_id)
+    answer: dict[str, Any] = {'success': True, 'dry_run': request.dry_run, 'accepted': len(read.accepted),
+                              'refused': read.refused[:fimp.MAX_REFUSALS], 'refused_count': len(read.refused)}
+    if request.dry_run or not read.accepted:
+        return answer
+    profile = cached_source_profile_strict(FEEDBACK_FORM_SOURCE, scope)
+    messages, mode = prepare_messages(
+        s3, RAW_DATA_BUCKET, [fimp.response_message(form, number, row, _row_routing(form, row, scope))
+                              for number, row in read.accepted], profile, now,
+        connector_id=fimp.IMPORT_WRITER, scope=scope)
+    uri = stamp_file_archive(messages, mode, _kept_file(form_id, scope, run_id, request))
+    sent, errors = _queue_batches(messages, _resolved_context())
+    if sent:
+        _mark_answered(form_id, stored, scope)
+    _record_form_import(stored, form_id, scope, now, read, (len(messages), sent, errors, uri), run_id)
+    return {**answer, 'accepted': sent, 'run_id': run_id, 'raw_s3_key': uri,
+            **({'errors': errors[:20]} if errors else {})}
+
+
+def _record_form_import(stored: Mapping[str, Any], form_id: str, scope: WorkspaceScope | None, now: datetime,
+                        read: fimp.ReadRows, outcome: tuple[int, int, list[str], str | None], run_id: str) -> None:
+    """The import's run in the import history (docs/import-history.md): in the workspace's ``WS#{ws}#IMPORT_RUN``
+    partitions in one; never fails the import."""
+    queued, sent, errors, uri = outcome
+    duplicates = sum(1 for entry in read.refused if entry['code'] == fimp.DUPLICATE_ROW)
+    actor, actor_email = run_actor(app.current_event.raw_event)
+    table = ws_table(scope, _forms_table()) if scope is not None else _forms_table()
+    record_import_run(table, ImportRun(
+        method='form', source=str(stored.get('name') or form_id), actor=actor, actor_email=actor_email,
+        started_at=now.isoformat(), source_id=FEEDBACK_FORM_SOURCE, run_id=run_id, raw_s3_key=uri,
+        counts=ImportCounts(received=len(read.accepted) + len(read.refused), imported=sent,
+                            skipped=len(read.refused) - duplicates + len(read.accepted) - queued,
+                            duplicate=duplicates, failed=queued - sent),
+        warnings=fimp.refusal_lines(read.refused), errors=errors))
 
 
 def _result_row(item: Mapping[str, Any], definition: Mapping[str, Any]) -> ResultRow | None:

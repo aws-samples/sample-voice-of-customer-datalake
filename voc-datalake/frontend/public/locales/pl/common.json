@@ -45,7 +45,8 @@
     "githubAppCreated": "App utworzona",
     "githubAppInstalled": "App zainstalowana",
     "setupGuide": "Przewodnik konfiguracji",
-    "runs": "Przebiegi"
+    "runs": "Przebiegi",
+    "importWizard": "Importuj plik"
   },
   "filters": {
     "allCategories": "Wszystkie kategorie",

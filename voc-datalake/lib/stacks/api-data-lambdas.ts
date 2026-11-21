@@ -30,6 +30,7 @@ import {
 import { WORKSPACE_PARAMETER_BASE_PATH, grantWorkspaceParametersReadWrite } from '../utils/workspace-secrets';
 import { CIRCUIT_ROW_PARTITIONS, WEB_REVIEW_METHOD_PARTITIONS } from './ingestion-roles';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
+import { WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
 import {
   grantRequestWorkspace, grantWorkspaceAttributeRead, grantWorkspaceResolution, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS,
@@ -316,7 +317,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   // Manual Import API
   const manualImportRole = ctx.role('ManualImportLambdaRole');
-  // MANUAL_IMPORT#<job> rows and import runs (shared/import_runs.py): Put + Update, no delete.
+  // MANUAL_IMPORT#<job> rows and import runs (shared/import_runs.py): Put + Update, no delete. In a workspace (7.67.00)
+  // its runs are its WS#{ws}#IMPORT_RUN rows and its source profiles its own settings row, in the same grants.
   grantReadAndWrites(aggregatesTable, manualImportRole, ['PutItem', 'UpdateItem']);
   kmsKey.grantEncryptDecrypt(manualImportRole);
   // A CSV dataset upload (issue #411, docs/csv-import.md) reads the rows it names to tell new,
@@ -329,6 +331,12 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // Write-only under raw/ (IAM-1): archives go to raw/<source>/, raw/manual_import/, raw/csv_upload/ and
   // raw/json_upload/ (shared/ingest_archive.py, this handler). No read and no delete: only voc-retention deletes.
   rawDataBucket.grantPut(manualImportRole, 'raw/*');
+  // An import in a workspace (7.67.00, docs/import-wizard.md) keeps the same archives under that workspace's own bronze
+  // layer, ws/{one workspace id}/raw/ (shared/raw_versions.py raw_root), write-once by the bucket's policy.
+  rawDataBucket.grantPut(manualImportRole, `${WORKSPACE_RAW_LAYER_PREFIX}*`);
+  // X-Workspace-Id (7.67.00) as the scrapers API resolves it: the stack's one workspace-resolution policy (membership
+  // reads, a platform admin's entry audited) and the live platform-admin check in Cognito.
+  const manualImportWorkspaceEnv = grantRequestWorkspace(workspacesTable, manualImportRole, userPool);
   // CSV/JSON/confirm apply the source's PII policy before archive + queue.
   manualImportRole.addToPolicy(piiDetectionStatement());
 
@@ -350,6 +358,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       // The connector-version on every raw object this Lambda writes (shared/raw_versions.py).
       APP_VERSION: appVersion(),
       ...PII_REDACTION_ENV,
+      ...manualImportWorkspaceEnv,
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: 'voc-manual-import-api',
       LOG_LEVEL: 'INFO',

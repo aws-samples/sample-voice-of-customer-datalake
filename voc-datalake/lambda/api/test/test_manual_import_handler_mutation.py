@@ -240,7 +240,7 @@ class TestTheCallerIdentityStampedOnTheArchive:
         # The gate itself is asserted in test_import_admin_gates.py.
         s3 = MagicMock()
         with patch.object(h, 'PROCESSING_QUEUE_URL', ''), patch.object(h, 'RAW_DATA_BUCKET', BUCKET), \
-                patch.object(h, 's3', s3), patch('shared.api.require_admin'):
+                patch.object(h, 's3', s3), patch('shared.workspace_request.require_admin'):
             response = h.lambda_handler(event, lambda_context)
         assert response['statusCode'] == 200
         return s3.put_object.call_args.kwargs['Metadata']['uploaded_by']

@@ -56,6 +56,7 @@ __all__ = [
     'item_rating',
     'matrix_label',
     'response_text',
+    'validate_imported',
     'validate_response',
 ]
 
@@ -445,6 +446,11 @@ def _check_path(definition: Mapping[str, Any], answers: Mapping[str, Any], path:
     missing = [qid for qid in path if questions[qid].get('required') and qid not in answers]
     if missing:
         raise _fail(f'answers.{missing[0]} is required', ANSWER_REQUIRED, missing[0])
+    _check_amount(questions, answers)
+
+
+def _check_amount(questions: Mapping[str, Mapping[str, Any]], answers: Mapping[str, Any]) -> None:
+    """At least one answer, and at most ``MAX_RESPONSE_TEXT_CHARS`` of free text together."""
     if not answers:
         raise _fail('Answer at least one question', EMPTY_RESPONSE)
     total = sum(len(text) for qid, answer in answers.items() if (text := _free_text(questions[qid], answer)))
@@ -481,6 +487,22 @@ def validate_response(definition: Mapping[str, Any], body: Mapping[str, Any]) ->
     if body.get('ending_id') is not None and body['ending_id'] != ending:
         raise _fail("ending_id is not the ending the form's logic reaches for these answers", ENDING_MISMATCH)
     return Response(answers, _hidden(definition, body.get('hidden')), path, ending, str(language))
+
+
+def validate_imported(definition: Mapping[str, Any], answers: Mapping[str, Any], hidden: Mapping[str, Any]
+                      ) -> Response:
+    """A row of another tool's export imported into ``definition`` (7.67.00, docs/import-wizard.md): each answer
+    checked for its type and range as any response's (option codes, scales, matrix rows and columns, the character
+    limits) and the hidden values as declared, with at least one answer and the text bound. The logic path is NOT
+    enforced and no answer is required: the row followed the other tool's logic, not this form's (owner decision).
+    Its path is the answered questions in the form's order, its ending the form's first, its language the form's."""
+    normalized = _answers(definition, answers)
+    questions = {question['id']: question for question in definition.get('questions') or []}
+    _check_amount(questions, normalized)
+    path = [question['id'] for question in definition.get('questions') or [] if question['id'] in normalized]
+    endings = [str(ending['id']) for ending in definition.get('endings') or []]
+    return Response(normalized, _hidden(definition, hidden), path, endings[0] if endings else '',
+                    str(definition.get('language')))
 
 
 # ── The feedback item ───────────────────────────────────────────────────────────────────────────────────────────

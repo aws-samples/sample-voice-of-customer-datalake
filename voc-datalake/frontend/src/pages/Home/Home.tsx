@@ -7,7 +7,7 @@
  * waits for a person); while the reader is not subscribed, the compact
  * "Subscribe to the morning brief" call to action (hour + Subscribe); three
  * metric tiles; the brief's cards; "Things to do"; the setup checklist (first
- * on a fresh install with no feedback yet); and "How it works". The brief is
+ * on a fresh install with no feedback yet, under the import wizard's call to action); and "How it works". The brief is
  * the reader's own (`/settings/my-briefing/*`, docs/briefing.md): nothing is
  * built until they subscribe or press Refresh.
  *
@@ -52,6 +52,7 @@ import { BriefSubscribe } from './brief/BriefSettings'
 import MorningBrief from './brief/MorningBrief'
 import { useBrief } from './brief/useBrief'
 import { useBriefPreferences } from './brief/useBriefPreferences'
+import ImportWizardPrompt from '../Scrapers/ImportWizard/ImportWizardPrompt'
 import HowItWorks from './HowItWorks'
 import OnboardingBuddy from './onboarding/OnboardingBuddy'
 import { useOnboardingPreference } from './onboarding/useOnboardingPreference'
@@ -162,6 +163,9 @@ export default function Home() {
 
       <AgentDecisionCards agents={openDecisions(decisions, preference.dismissed_decision_runs)}
         onClose={onboarding.dismissDecisionRun} />
+
+      {/* No feedback yet: bring your own in minutes (the import wizard, 7.67.00). */}
+      <ImportWizardPrompt empty={!preference.signals.feedback_present} resolving={isResolving} />
 
       {/* Nothing in this slot until the server (or the cache) answers: no flash of a buddy the user turned off. */}
       {showBuddy && fresh && <Checklist onboarding={onboarding} />}

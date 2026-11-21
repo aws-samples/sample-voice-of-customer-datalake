@@ -747,6 +747,8 @@ export interface FeedbackForm extends FeedbackFormFields {
   tags?: string[]
   /** The app template it was made from (7.63.00), when it was made from one: Compare puts its siblings first. */
   template?: { id: string; version: number }
+  /** The survey export it was made from (7.67.00, the import wizard): such a form stays off, with no public link. */
+  imported?: { from: string; at: string; filename: string }
   created_at: string
   updated_at: string
 }

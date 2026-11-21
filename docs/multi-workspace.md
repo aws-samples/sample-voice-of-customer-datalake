@@ -1664,7 +1664,10 @@ audit writer names it in the guard.
    `ws/{ws}/raw/`, and is aggregated, read, erased and replayed in its workspace. **Still deployment-wide after
    7.14.00**, each a later phase's: of phase 2's entry points, email intake (the inbox, its dedupe state and caps)
    and voting sessions (`VOTE#{id}`, which score a Prioritization row), the S3 import API, its bucket and its trigger
-   (a request with `X-Workspace-Id` gets one 400) and the manual import; and phase 3 (below): Radar's writers (its
+   (a request with `X-Workspace-Id` gets one 400), and the manual import until 7.67.00 (since then it imports into the
+   workspace `X-Workspace-Id` names, its admins only, with its own source profiles, raw copies under `ws/{ws}/raw/`,
+   messages stamped with its `workspace_id` and runs in `WS#{ws}#IMPORT_RUN`: [import-wizard.md](import-wizard.md));
+   and phase 3 (below): Radar's writers (its
    scans and brand claims; its readers take a workspace since 7.10.00, no caller passes one yet), projects and their
    Step Functions, the assistant and its stream Lambda, memory, agents, workflows and plans, the briefing, the Data
    Explorer, `GET /logs/*` and alerts, participants' asks, and the read caching's `config_version` (one counter every

@@ -211,7 +211,7 @@ class TestHistoryRoutes:
                                         query_params={'limit': '10', 'cursor': 'abc'})
         assert response['statusCode'] == 200
         assert body == {'runs': [{'run_id': RUN_ID}], 'next_cursor': 'next'}
-        assert listing.call_args.kwargs == {'limit': 10, 'cursor': 'abc'}
+        assert listing.call_args.kwargs == {'limit': 10, 'cursor': 'abc', 'scope': None}
 
     def test_a_bad_cursor_or_limit_is_a_400(self, api_gateway_event, lambda_context):
         for params in ({'limit': 'ten'}, {'cursor': 'not-a-cursor'}):

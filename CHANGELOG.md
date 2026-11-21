@@ -17,6 +17,76 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.67.00] - 2026-11-21
+
+**The import wizard: bring your own signals in minutes** ([import-wizard.md](docs/import-wizard.md)). Data sources →
+**Import a file** takes a CSV, TSV, JSON or Excel file (app store reviews, support tickets, or another survey tool's
+results), says what each column holds with a confidence and a reason, lets a person confirm or change every column,
+imports it, and shows the first insights as the rows are analysed. A survey export becomes an imported Feedback Form
+v2, so Results, Report and Compare work on it. The manual import now works inside a workspace. No new route resource
+and no fixed cost: the existing manual-import and forms proxies carry it, and detection calls no model.
+
+### Added
+
+- **The import wizard** (`/scrapers/import`, for admins; in a workspace, its admins), from Data sources → Import a
+  file and from a new workspace's Home while it has no feedback. It has four steps:
+  - **Upload.** CSV, TSV and JSON up to 10 MB (a survey export up to 2 MB, as it is kept whole), an `.xlsx` workbook
+    up to 256 KB. A byte-order mark is fine, the separator (`,`, `;`, tab or `|`) is found, and the first 20 rows are
+    previewed.
+  - **Map.** Reviews or tickets, or a survey export. Each column has a kind (id, date, rating 1-5 or 1-10, NPS 0-10,
+    CSAT, one choice, several choices, a grid of `row -- answer` pairs, open text, email, name, link, channel, or left
+    out), shown with its confidence and its reasons in nine languages. Every kind can be changed. Personal data
+    (email, name) is flagged and left out by default. Dates may be day-first, month-first or year-first, and Excel
+    date numbers are read.
+  - **Confirm.** A survey's inferred questions are shown with the builder's type chips; for reviews, what goes where.
+  - **First insights.** The import's progress, then the sentiment split, the top categories, a survey's NPS, three
+    quotes, and links to the filtered dashboard and to the form's Results.
+- `POST /scrapers/manual/detect` (admin): `{format, sample ≤ 256 KB, …}` answers each column's kind, confidence and
+  reasons, the suggested target and mapping, and for a survey the imported form inferred from it (a workbook's rows
+  too). It is deterministic and free, and stores nothing.
+- `POST /scrapers/manual/csv-upload` takes the wizard's `mapping` (`{header: kind | dimension:<key>}`) with `delimiter`,
+  `date_order` and `import_tag`, instead of `column_map`:
+  - the open-text columns are the text;
+  - a 1-10 rating is halved up to 1-5;
+  - an NPS stays a metadata value, never the rating;
+  - a choice column named like a configured dimension fills it;
+  - personal data is dropped;
+  - every row carries the import's tag.
+- **Imported forms**: `POST /feedback-forms` takes `imported: {from, at, filename}`. Such a form is a real v2 form,
+  validated as any other, and stays Off for good with no public link: its public routes answer 404, turning it on is
+  a 409 `imported_form`, and it takes no test link. The forms list marks it **Imported**.
+- `POST /feedback-forms/{form_id}/import` (admins acting as themselves, never a delegated caller; #242):
+  - **Body.** `{rows (≤ 5,000 a call), mapping, date_order?, offset?, dry_run?, file | file_key}`; the answer is
+    `{accepted, refused: [{row, code, question_id?}], refused_count, run_id, raw_s3_key}`.
+  - **Checks.** Each row is checked for its types and ranges, never the logic path (owner decision: it followed the
+    other tool's logic).
+  - **Queued.** Each row is queued as a response with its own date, revision and `form_answers`. NPS is never the
+    rating, and the text falls back to `headline: answer` lines.
+  - **Idempotent.** Importing the same file into the same form again names the same items.
+  - **Kept.** The original file is kept write-once at `raw/feedback_form/import/{form_id}/{run}.{ext}`, and each call
+    is an import-history run (`form`).
+
+### Changed
+
+- **The manual import works in a workspace** (`X-Workspace-Id`, every `/scrapers/manual/*` route, closing a D8 gap):
+  - **Who.** The workspace's admins only; the deployment's `admins` group grants nothing there.
+  - **What it uses and writes.** Its own source profiles (a source it saved none for redacts), its raw copies under
+    `ws/{ws}/raw/manual_import/`, `csv_upload/` and `json_upload/`, each queued message stamped with its
+    `workspace_id`, its dataset rows read in its own partitions, and its runs in `WS#{ws}#IMPORT_RUN`, which its
+    history lists.
+  - **Refused.** A Radar brand.
+  - **The parse job.** A paste's parse job answers only where it was started.
+  - **Without the header.** Everything is the deployment's as before.
+
+### Upgrade notes
+
+- **IAM.** VocApiStack's manual-import role gains write-once puts under `ws/ws_{one id}/raw/*` and the stack's
+  workspace-resolution policy, with Cognito's two reads for the live platform-admin check (`WORKSPACES_TABLE` and
+  `USER_POOL_ID` in its environment). These are statements and an attachment on the existing role: no new resource,
+  and VocApiStack stays at 425. The forms role's existing `raw/feedback_form/*` puts already cover the imported files.
+- **Throughput.** "First insights in about two minutes" depends on the processor's concurrency. 1,000 rows cost the
+  usual enrichment, about $1. Both are to be measured on a test deployment.
+
 ## [7.66.00] - 2026-11-21
 
 **Adoption**: role playbooks on Home for Product, Scrum master, QA and Engineering ([playbooks.md](docs/playbooks.md)),

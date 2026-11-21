@@ -540,5 +540,173 @@
       "loading": "インポートの詳細を読み込んでいます…"
     },
     "loading": "インポート履歴を読み込んでいます…"
+  },
+  "importWizard": {
+    "title": "ファイルをインポート",
+    "subtitle": "アプリストアのレビュー、サポートチケット、他のアンケートツールの結果など、お手持ちのシグナルを取り込めます。ウィザードが列を読み取り、内容を確認すると、数分で最初のインサイトが表示されます。",
+    "open": "ファイルをインポート",
+    "adminOnly": "ファイルのインポートは管理者のみが行えます（ワークスペースではその管理者）。",
+    "backToSources": "データソース",
+    "stepOf": "ステップ {{current}} / {{total}}",
+    "back": "戻る",
+    "continue": "次へ",
+    "steps": {
+      "upload": "アップロード",
+      "map": "割り当て",
+      "confirm": "確認",
+      "insights": "最初のインサイト"
+    },
+    "upload": {
+      "drop": "CSV、TSV、JSON、Excel ファイルをここにドロップ",
+      "choose": "ファイルを選択",
+      "formats": "CSV、TSV、JSON は 10 MB まで、Excel (.xlsx) は 256 KB までです。アンケートのエクスポートは分割せずに保持されるため、2 MB までです。",
+      "reading": "列を読み取っています…",
+      "preview_one": "最初の行",
+      "preview_other": "最初の {{count}} 行",
+      "rows_one": "{{count}} 行、{{columns}} 列",
+      "rows_other": "{{count}} 行、{{columns}} 列",
+      "problems": {
+        "format": "この種類のファイルはインポートできません。CSV、TSV、JSON、Excel (.xlsx) のいずれかのファイルを選んでください。",
+        "tooLarge": "このファイルは 10 MB を超えています。分割して、1 つずつインポートしてください。",
+        "workbookTooLarge": "このブックは 256 KB を超えています。CSV として保存し、そのファイルをインポートしてください。",
+        "empty": "このファイルは空です。",
+        "unreadable": "このファイルを読み取れませんでした。"
+      }
+    },
+    "map": {
+      "target": "このファイルの内容は？",
+      "targets": {
+        "reviews": {
+          "title": "レビューまたはチケット",
+          "description": "1 行が 1 件のフィードバックです。本文と、場合によっては評価、日付、ID を含みます。"
+        },
+        "survey": {
+          "title": "アンケートのエクスポート",
+          "description": "1 行が 1 人分の回答です。インポートされたフォームになるため、結果、レポート、比較を利用できます。"
+        }
+      },
+      "dateOrder": "日付の書式",
+      "dateOrders": {
+        "dmy": "日が先（31/12/2026）",
+        "mdy": "月が先（12/31/2026）",
+        "ymd": "年が先（2026/12/31）"
+      },
+      "columns": "列",
+      "kind": "内容",
+      "confidence": {
+        "high": "確実",
+        "medium": "おそらく",
+        "low": "推測"
+      },
+      "examples": "例: {{values}}",
+      "personal": "個人データ: 別の種類を選ばない限り除外されます。",
+      "problems": {
+        "noText": "自由記述の列を 1 つ以上選んでください。これがフィードバックの本文になります。",
+        "noQuestion": "質問にする列を 1 つ以上選んでください（自由記述、スコア、選択肢のいずれか）。"
+      }
+    },
+    "kinds": {
+      "id": "ID",
+      "date": "日付",
+      "rating_1_5": "1〜5 の評価",
+      "rating_1_10": "1〜10 の評価",
+      "nps_0_10": "NPS（0〜10）",
+      "csat": "CSAT（1〜5）",
+      "choice": "単一選択",
+      "multi_choice": "複数選択",
+      "matrix_cell": "マトリックス（行 -- 回答）",
+      "open_text": "自由記述",
+      "email": "メールアドレス",
+      "name": "人名",
+      "url": "Web アドレス",
+      "channel": "チャネル",
+      "ignore": "除外"
+    },
+    "reasons": {
+      "header_says": "ヘッダーが「{{word}}」",
+      "values_range": "値が {{min}}〜{{max}}",
+      "zero_present": "評価にはない 0 が含まれる",
+      "distinct_values": "{{count}} 種類の値",
+      "separator": "回答が「{{separator}}」で区切られている",
+      "matrix_pairs": "すべての値が「行 -- 回答」のペア",
+      "emails": "値がメールアドレス",
+      "urls": "値が Web アドレス",
+      "dates": "値が日付",
+      "excel_serial": "値が Excel の日付シリアル値",
+      "long_text": "平均 {{average}} 文字の自由記述",
+      "unique_values": "すべての値が異なる",
+      "numbers": "{{min}}〜{{max}} の数値",
+      "personal_data": "個人データ",
+      "empty": "列が空",
+      "chosen": "あなたが選択"
+    },
+    "confirm": {
+      "formName": "インポートするフォームの名前",
+      "questions": "作成される質問",
+      "options_one": "{{count}} 個の選択肢",
+      "options_other": "{{count}} 個の選択肢",
+      "matrixRows_one": "{{count}} 行、{{columns}} 列",
+      "matrixRows_other": "{{count}} 行、{{columns}} 列",
+      "leftOut": "除外: {{headers}}",
+      "off": "フォームはオフのままで、公開リンクはありません。回答はこのファイルの各行です。",
+      "reviews": "各列の取り込み先",
+      "otherColumns": "選択、複数選択、マトリックス、スコアの列は各レビューと一緒に保持されます。ディメンションと同じ名前の選択列は、そのディメンションに入ります。",
+      "rowsToImport_one": "{{count}} 行をインポートします。",
+      "rowsToImport_other": "{{count}} 行をインポートします。",
+      "importing": "インポート中: {{done}} / {{total}} 行…",
+      "start": "インポート",
+      "problems": {
+        "surveyTooLarge": "アンケートのエクスポートは分割せずに保持されるため、2 MB までです。分割してインポートしてください。",
+        "noForm": "どの列も質問にできません。前に戻り、いずれかの列の種類を選んでください。"
+      },
+      "formProblems": {
+        "too_many_options": "「{{header}}」には 50 を超える異なる回答があるため、除外されます。残すには自由記述にしてください。",
+        "matrix_too_large": "「{{header}}」は 20 行または 10 回答を超えるマトリックスのため、除外されます。",
+        "no_values": "「{{header}}」には選択肢にできる回答がないため、除外されます。",
+        "too_many_questions": "「{{header}}」は除外されます。フォームの質問は 30 個までです。"
+      }
+    },
+    "insights": {
+      "queued_one": "{{count}} 行をインポートしました。",
+      "queued_other": "{{count}} 行をインポートしました。",
+      "refused_one": "{{count}} 行はインポートされませんでした:",
+      "refused_other": "{{count}} 行はインポートされませんでした:",
+      "refusedRow": "{{row}} 行目: {{reason}}",
+      "processing": "分析中: {{done}} / {{total}}…",
+      "slow": "まだ分析中です。大きなファイルは数分かかることがあります。",
+      "ready_one": "{{count}} 件を分析しました。わかったことは次のとおりです:",
+      "ready_other": "{{count}} 件を分析しました。わかったことは次のとおりです:",
+      "sentiment": "感情",
+      "sentiments": {
+        "positive": "ポジティブ",
+        "neutral": "ニュートラル",
+        "negative": "ネガティブ",
+        "mixed": "混合"
+      },
+      "topCategories": "上位カテゴリ",
+      "nps": "NPS",
+      "quotes": "生の声",
+      "openDashboard": "ダッシュボードを開く",
+      "openResults": "フォームの結果を開く",
+      "importAnother": "別のファイルをインポート"
+    },
+    "refusals": {
+      "answer_invalid": "質問が受け付けない回答がある",
+      "date_invalid": "日付を読み取れない",
+      "empty_response": "どの質問にも回答していない",
+      "duplicate_row": "同じ行の重複",
+      "response_too_long": "テキストが長すぎる",
+      "hidden_invalid": "値が長すぎる",
+      "selection_count": "選択数が多すぎるか少なすぎる",
+      "other": "受け付けられない"
+    },
+    "errors": {
+      "detect": "ファイルを読み取れませんでした。内容を確認して、もう一度お試しください。",
+      "import": "インポートが停止しました。送信済みの行はインポートされたままです。もう一度実行すると残りを送信します。"
+    },
+    "prompt": {
+      "title": "お手持ちのシグナルを数分で取り込む",
+      "body": "まだフィードバックがありません。アプリストアのレビュー、サポートチケット、他のアンケートツールの結果の CSV をインポートすると、数分で感情、テーマ、NPS を確認できます。"
+    }
   }
 }

@@ -52,12 +52,13 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { seedResponses } from './mock-forms-seeds.js';
+import { importRows } from './mock-import-wizard.js';
 import { formResults, filteredResponses, headlineOf, responseView, responsesCsv } from './mock-forms-results.js';
 import { draftAnswer, draftJob } from './mock-forms-draft.js';
 import { familiarCsv, familiarFilename } from './mock-forms-csv.js';
 import { formCompare, formReport, startSummary, summaryJob } from './mock-forms-report.js';
 
-const ROUTE = /^\/feedback-forms\/([^/]+)(?:\/(test-link|responses|results|report|compare|config|submit|events))?$/;
+const ROUTE = /^\/feedback-forms\/([^/]+)(?:\/(test-link|responses|results|report|compare|config|submit|events|import))?$/;
 /** A beacon's visit id and question id (lambda/shared/forms_v2_responses.py SESSION_ID, forms_v2.py QUESTION_ID). */
 const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const QUESTION_ID = /^q_[a-z0-9_]{1,40}$/;
@@ -311,6 +312,8 @@ function createV2(shared, body, projectV1) {
   for (const field of V2_FIELDS) if (body[field] !== undefined) item[field] = copy(body[field]);
   item.settings = savedSettings(item, body.settings);
   item.enabled = false; // a create is always Off
+  // The survey export it was made from (7.67.00, the import wizard): kept once; the form stays off, with no public link.
+  if (isPlainObject(body.imported)) item.imported = copy(body.imported);
   shared.mockFeedbackForms.unshift(item);
   shared.mockFormStats[item.form_id] = { total_submissions: 0, avg_rating: null, rating_count: 0 };
   return [200, { success: true, form: formRecord(item, shared, projectV1, false) }];
@@ -624,10 +627,12 @@ function classify(method, pathname, shared) {
   const ops = {
     '': { GET: 'get', PUT: 'update' }, 'test-link': { POST: 'testLink' }, responses: { DELETE: 'deleteTest', GET: 'responses' },
     results: { GET: 'results' }, report: { GET: 'report' }, compare: { GET: 'compare' }, config: { GET: 'config' },
-    submit: { POST: 'submit' }, events: { POST: 'event' },
+    submit: { POST: 'submit' }, events: { POST: 'event' }, import: { POST: 'importRows' },
   };
   const op = ops[match[2] ?? '']?.[method];
   if (op === undefined) return null;
+  // An imported form has no public link: its public routes answer as for an unknown id.
+  if ((op === 'config' || op === 'submit' || op === 'event') && item?.imported) return { op, item: null, formId: match[1] };
   // The widget's config and submit stay v1's for a v1 form (whose widget sends no beacon).
   if ((op === 'config' || op === 'submit' || op === 'event') && !isV2(item)) return null;
   return { op, item, formId: match[1] };
@@ -658,7 +663,13 @@ function writeRoute(shared, route, url, body, projectV1) {
   if (route.op === 'draft') return draftAnswer(input);
   if (route.op === 'summary') return startSummary(shared.mockFeedbackForms, input);
   if (route.op === 'create') return createV2(shared, input, projectV1);
+  if (route.op === 'update' && route.item.imported && input.enabled === true) {
+    return fail(409, 'An imported form stays off: it has no public link', { code: 'imported_form' });
+  }
   if (route.op === 'update') return updateV2(shared, route.item, input, projectV1);
+  if (route.op === 'importRows') {
+    return importRows(route.item, input, (rows) => responsesByForm.set(route.item.form_id, [...rows, ...responsesOf(route.item.form_id)]));
+  }
   if (route.op === 'submit') return v2Submit(route.item, input);
   if (route.op === 'event') return v2Event(route.item, input);
   if (route.op === 'testLink') return testLink(route.item, input);
@@ -707,6 +718,7 @@ export function handleFormV2Write(req, url, shared, body, projectV1) {
   if (route === null) return false;
   const v2Body = isPlainObject(body) && body.schema_version === 2;
   if (route.op === 'create' && !v2Body) return false;
+  if (route.op === 'importRows') return writeRoute(shared, route, url, body, projectV1);
   if (route.op === 'update' && !v2Body && !isV2(route.item)) return false;
   return writeRoute(shared, route, url, body, projectV1);
 }

@@ -169,6 +169,17 @@ def rest_event(method, path, *, claims, body=None, path_params=None):
     }
 
 
+def workspace_route_call(handler: Any, lambda_context: Any, method: str, path: str, *, claims: dict, ws: str | None,
+                         body: Any = None, path_params: dict | None = None) -> tuple[int, Any]:
+    """``method path`` through ``handler.lambda_handler`` as ``claims``, in workspace ``ws`` when given (its
+    ``X-Workspace-Id``); ``(status, decoded body)``."""
+    event = rest_event(method, path, claims=claims, body=body, path_params=path_params)
+    if ws is not None:
+        event['headers']['X-Workspace-Id'] = ws
+    response = handler.lambda_handler(event, lambda_context)
+    return response['statusCode'], json.loads(response['body'])
+
+
 def object_text(s3, bucket: str, key: str) -> str:
     """The text of one stored object (a prototype's HTML)."""
     return s3.get_object(Bucket=bucket, Key=key)['Body'].read().decode()

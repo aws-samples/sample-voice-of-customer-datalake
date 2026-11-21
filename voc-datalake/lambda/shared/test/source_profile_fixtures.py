@@ -58,9 +58,10 @@ def unreadable_source_profiles() -> Generator[None, None, None]:
         yield
 
 
-def unconfigured_upload_profile(_table: object, source_id: object = None) -> dict:
-    """Stand-in for ``shared.ingest_archive.upload_profile`` with no profiles stored."""
-    return source_profiles.profile_for([], source_id if isinstance(source_id, str) and source_id else 'manual_import')
+def unconfigured_upload_profile(_table: object, source_id: object = None, scope: object = None) -> dict:
+    """Stand-in for ``shared.ingest_archive.upload_profile`` with no profiles stored (a workspace's: its default)."""
+    return source_profiles.profile_for([], source_id if isinstance(source_id, str) and source_id else 'manual_import',
+                                       workspace=scope is not None)
 
 
 def no_source_profiles() -> Iterator[None]:

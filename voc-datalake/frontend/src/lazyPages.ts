@@ -16,6 +16,8 @@ export const Categories = lazy(() => import('./pages/Categories/Categories'))
 export const ProblemAnalysis = lazy(() => import('./pages/ProblemAnalysis/ProblemAnalysis'))
 export const Settings = lazy(() => import('./pages/Settings/Settings'))
 export const Scrapers = lazy(() => import('./pages/Scrapers/Scrapers'))
+// The import wizard (7.67.00, docs/import-wizard.md): Data sources → Import a file.
+export const ImportWizard = lazy(() => import('./pages/Scrapers/ImportWizard/ImportWizard'))
 export const Chat = lazy(() => import('./pages/Chat/Chat'))
 export const Projects = lazy(() => import('./pages/Projects/Projects'))
 export const ProjectDetail = lazy(() => import('./pages/ProjectDetail/ProjectDetail'))

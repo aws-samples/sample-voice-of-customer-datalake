@@ -394,7 +394,9 @@
       "title": "Turn off “{{name}}”?",
       "message": "Its link and embeds will show “Feedback form unavailable.” to the next respondents.",
       "confirm": "Turn off"
-    }
+    },
+    "imported": "Imported",
+    "importedFrom": "Imported from {{filename}}: it stays off, with no public link"
   },
   "configureApiFirst": "Configure the API endpoint in Administration → General to manage feedback forms.",
   "deleteConfirmLabel": "Delete",

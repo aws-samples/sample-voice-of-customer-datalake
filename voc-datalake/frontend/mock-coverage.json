@@ -6291,6 +6291,131 @@
     ]
   },
   {
+    "file": "api/importWizardApi.ts",
+    "method": "POST",
+    "call": "'/scrapers/manual/detect'",
+    "probes": [
+      {
+        "path": "/scrapers/manual/detect",
+        "body": {
+          "format": "csv",
+          "sample": "Comment;Stars\nGreat app;5\nLogin fails;1\n",
+          "truncated": false,
+          "language": "en"
+        }
+      },
+      {
+        "path": "/scrapers/manual/detect",
+        "body": {
+          "format": "csv",
+          "sample": "Recommend us?,Plan\n9,Pro\n6,Free\n",
+          "truncated": false,
+          "mapping": {
+            "Recommend us?": "nps_0_10",
+            "Plan": "choice"
+          },
+          "values": {
+            "Plan": [
+              "Pro",
+              "Free"
+            ]
+          },
+          "target": "survey",
+          "date_order": "dmy"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/importWizardApi.ts",
+    "method": "POST",
+    "call": "'/scrapers/manual/csv-upload'",
+    "probes": [
+      {
+        "path": "/scrapers/manual/csv-upload",
+        "body": {
+          "csv_text": "Comment;Stars;Email\nGreat app;5;ana@example.com\n",
+          "delimiter": ";",
+          "mapping": {
+            "Comment": "open_text",
+            "Stars": "rating_1_5",
+            "Email": "email"
+          },
+          "date_order": "dmy",
+          "import_tag": "import-2026-11-21-abcd"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/importWizardApi.ts",
+    "method": "POST",
+    "call": "'/feedback-forms'",
+    "probes": [
+      {
+        "path": "/feedback-forms",
+        "body": {
+          "schema_version": 2,
+          "name": "Workshop results",
+          "language": "en",
+          "languages": [
+            "en"
+          ],
+          "welcome": {
+            "enabled": false
+          },
+          "hidden_fields": [],
+          "endings": [
+            {
+              "id": "end_thanks",
+              "title": {
+                "en": "Thank you!"
+              }
+            }
+          ],
+          "questions": [
+            {
+              "id": "q_recommend_us",
+              "type": "nps",
+              "headline": {
+                "en": "Recommend us?"
+              },
+              "required": false
+            }
+          ],
+          "imported": {
+            "from": "file",
+            "at": "2026-11-21T09:00:00Z",
+            "filename": "workshop-results.csv"
+          },
+          "enabled": false
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/importWizardApi.ts",
+    "method": "POST",
+    "call": "`/feedback-forms/${encodeURIComponent(formId)}/import`",
+    "probes": [
+      {
+        "path": "/feedback-forms/fv2_nps/import",
+        "body": {
+          "rows": [
+            {
+              "Recommend us?": "9"
+            }
+          ],
+          "mapping": {
+            "Recommend us?": "q_nps"
+          },
+          "date_order": "dmy",
+          "offset": 0
+        }
+      }
+    ]
+  },
+  {
     "file": "api/libraryApi.ts",
     "method": "GET",
     "call": "`/projects/library${listQuery(query)}`",

@@ -226,7 +226,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # scope by `table_view`).
     'lambda/api/integrations_handler.py': (2, {'get_aggregates_table': 1}),
     'lambda/api/logs_handler.py': (3, {'batch': 1, 'get_aggregates_table': 1}),
-    'lambda/api/manual_import_handler.py': (2, {'Table': 2, 'raw/': 3}),
+    # Its three raw/ keys moved to shared/raw_versions.py `raw_root` in 7.67.00 (the workspace's ws/{ws}/raw/ too).
+    'lambda/api/manual_import_handler.py': (2, {'Table': 2}),
     'lambda/api/manual_import_processor.py': (2, {'Table': 1}),
     'lambda/api/mcp_tokens_handler.py': (3, {'get_jobs_table': 3, 'get_projects_table': 3, 'meta.client': 1, 'transact': 1}),
     'lambda/api/memory_handler.py': (3, {'Table': 1, 'get_aggregates_table': 11, 'put_object': 1}),

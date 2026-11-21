@@ -6,6 +6,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { renderWithQueryClient } from '@test/query-client'
+import { pageFileInput, textFile } from '@test/textFiles'
 import { dimensionsWire, sourcesWire } from '@test/dimensionFixtures'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -26,18 +27,8 @@ vi.mock('../../api/invalidateFeedbackData', () => ({ useInvalidateFeedbackData: 
 
 const CSV = 'id,text,rating\n1,"Great app",5\n2,"Login fails",1\n'
 
-function makeCsvFile(content: string = CSV, name = 'feedback.csv'): File {
-  const file = new File([content], name, { type: 'text/csv' })
-  // jsdom's File lacks .text(); the modal reads the file with it.
-  Object.defineProperty(file, 'text', { value: () => Promise.resolve(content) })
-  return file
-}
-
-function getFileInput(): HTMLInputElement {
-  const input = document.querySelector('input[type="file"]')
-  if (!(input instanceof HTMLInputElement)) throw new Error('file input not found')
-  return input
-}
+const makeCsvFile = (content: string = CSV, name = 'feedback.csv'): File => textFile(content, name)
+const getFileInput = pageFileInput
 
 /** Render the open modal with `uploadCsvFeedback` resolving to `result`; returns a user. */
 function renderOpenWithUploadResult(result: Record<string, unknown>, onClose: () => void = () => {}) {

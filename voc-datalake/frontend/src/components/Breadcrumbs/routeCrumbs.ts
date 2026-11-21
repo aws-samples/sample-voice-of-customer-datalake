@@ -55,6 +55,8 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'prioritization': { labelKey: 'common:breadcrumbs.prioritization' },
   'data-explorer': { labelKey: 'common:breadcrumbs.dataExplorer' },
   'scrapers': { labelKey: 'common:breadcrumbs.scrapers' },
+  // `/scrapers/import`, the import wizard (7.67.00).
+  'import': { labelKey: 'common:breadcrumbs.importWizard' },
   'feedback-forms': { labelKey: 'common:breadcrumbs.feedbackForms' },
   'participants': { labelKey: 'common:breadcrumbs.participants' },
   'feature-requests': { labelKey: 'common:breadcrumbs.featureRequests' },

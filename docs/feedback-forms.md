@@ -806,12 +806,19 @@ button per language.
 | GET | `/feedback-forms/{id}/responses` | The responses, paged, or as CSV (`format=csv`, `layout=familiar\|detailed`, `ids=true`; [below](#results-and-responses)) |
 | DELETE | `/feedback-forms/{id}/responses?test=true` | Delete the form's test responses (an admin or the form's creator); recorded first ([Test mode](#test-mode)) |
 | POST | `/feedback-forms/{id}/test-link` | Issue or rotate the test link (admins) |
+| POST | `/feedback-forms/{id}/import` | An imported form's rows, a survey export's (admins acting as themselves; 7.67.00, [import-wizard.md](import-wizard.md)) |
 | POST | `/settings/form-drafts` | Start an AI draft of a form ([AI drafts](#ai-drafts)); the settings API's |
 | GET | `/settings/form-drafts/{job_id}` | One of the caller's AI drafts; the settings API's |
 | POST | `/settings/form-reports` | Start a report's AI summary ([Report](#the-ai-summary)); the settings API's |
 | GET | `/settings/form-reports/{job_id}` | One of the caller's AI summaries; the settings API's |
 
-The signed-in routes since 7.55.00 (`results`, `responses`, `test-link`; since 7.63.00 `report` and `compare`) ride one Cognito-authorized proxy under
+**Imported forms (7.67.00).** A create with `imported: {from, at, filename}` is a form made by the import wizard from
+another survey tool's export ([import-wizard.md](import-wizard.md)). It stays Off for good, with no public link: its
+config, iframe, submit and events routes answer the unknown id's 404, a save that turns it on is a 409
+`imported_form`, and it takes no test link. Its responses are the export's rows, imported by `POST …/import`: each is
+checked for its types and ranges, never for the logic path, and is dated with its own date.
+
+The signed-in routes since 7.55.00 (`results`, `responses`, `test-link`; since 7.63.00 `report` and `compare`; since 7.67.00 `import`) ride one Cognito-authorized proxy under
 `/feedback-forms/{id}/` serving GET, POST and DELETE only. The AI draft's two routes are the settings API's, on its own
 `/settings/{proxy+}` (Cognito-authorized too), served by its Lambda (`lambda/shared/forms_v2_draft_routes.py`), not
 the forms Lambda: that one also serves the four public routes, so its role holds no worker invoke and no jobs-table

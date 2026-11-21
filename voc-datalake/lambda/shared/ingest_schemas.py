@@ -384,10 +384,12 @@ class IngestMessage(BaseModel):
 
     # The workspace the message belongs to (docs/multi-workspace.md): set by the plugin ingestors from their verified
     # scope, after every field of the item (plugins/_shared/base_ingestor.py send_to_queue), so a source payload
-    # cannot choose it. Only the ingestors set it: the request-facing producers (forms, the Data Explorer, email,
-    # manual import) send none, and the source policy they apply drops one their content carries
-    # (shared/source_policy.py apply_source_policy). The processor stores the message in that workspace
-    # (shared/ws_repo.py message_scope); a message without it is stored deployment-wide.
+    # cannot choose it. The request-facing producers that act in a workspace (a workspace form's submission, its
+    # webhooks, and since 7.67.00 the manual import and an imported form's rows) set it only through
+    # shared/workspace_routing.py workspace_payload, from a resolved membership or a stored routing row, after the
+    # source policy, which drops one their content carries (shared/source_policy.py apply_source_policy). The
+    # processor stores the message in that workspace (shared/ws_repo.py message_scope); a message without it is stored
+    # deployment-wide.
     workspace_id: str | None = None
 
     # Internal fields (set by platform)

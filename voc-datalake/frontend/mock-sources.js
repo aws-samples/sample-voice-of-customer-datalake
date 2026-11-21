@@ -20,6 +20,7 @@ import {
 import { cursorPage } from './mock-feedback-cursor.js';
 import { REASON_DATA_EXPLORER_EDIT, stampManualEdit } from './mock-edit-stamp.js';
 import { csvUploadCounts, recordImportRun } from './mock-import-history.js';
+import { detectColumns, wizardCsvBody } from './mock-import-wizard.js';
 import { effectiveBrands, radarBrandError } from './mock-radar-brands.js';
 import { SYSTEM_LOG_ROUTES } from './mock-system-logs.js';
 
@@ -1364,7 +1365,9 @@ const ROUTES = [
   ['GET', /^\/scrapers\/manual\/parse\/([^/]+)$/, 'none', parseStatus],
   ['POST', /^\/scrapers\/manual\/confirm$/, 'json', confirmImport],
   ['POST', /^\/scrapers\/manual\/json-upload$/, 'json', jsonUpload],
-  ['POST', /^\/scrapers\/manual\/csv-upload$/, 'json', csvUpload],
+  // The import wizard (7.67.00) sends its `mapping`: served as the `column_map` upload it stands for.
+  ['POST', /^\/scrapers\/manual\/csv-upload$/, 'json', (c, body) => csvUpload(c, wizardCsvBody(body))],
+  ['POST', /^\/scrapers\/manual\/detect$/, 'json', detectColumns],
   ['POST', /^\/scrapers\/([^/]+)\/run$/, 'none', runScraper],
   ['DELETE', /^\/scrapers\/([^/]+)$/, 'none', deleteScraper],
   ['GET', /^\/s3-import\/sources$/, 'none', listImportSources],

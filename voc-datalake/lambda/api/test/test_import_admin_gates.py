@@ -1,12 +1,13 @@
 """S3 import and manual import are admin-only, every route (#242): importing writes customer data.
 
-Both modules gate through one resolver middleware (`shared.api.admins_only`), so the refusal
-must come BEFORE the route touches anything: a non-admin gets 403 and the S3, SQS,
-DynamoDB and Lambda-invoke clients (the parse job's invoke is what reaches Bedrock)
-see no call at all. An admin still reaches each route.
+The S3 import gates through one resolver middleware (`shared.api.admins_only`); the manual import, which acts in
+a workspace since 7.67.00, through its two-path gate as each route's first statement
+(`_request.require_request_admin()`, shared/workspace_request.py). Either way the refusal must come BEFORE the route
+touches anything: a non-admin gets 403 and the S3, SQS, DynamoDB and Lambda-invoke clients (the parse job's invoke is
+what reaches Bedrock) see no call at all. An admin still reaches each route.
 
-Reverting either module's `app.use(middlewares=[admins_only])` fails every
-non-admin case here.
+Reverting the S3 import's `app.use(middlewares=[admins_only])`, or dropping a manual-import route's gate, fails
+every non-admin case here.
 """
 import json
 from collections.abc import Iterator
@@ -34,6 +35,7 @@ MANUAL_IMPORT_ROUTES = [
     ('POST', '/scrapers/manual/confirm', {'body': {'job_id': 'job-1', 'reviews': []}}),
     ('POST', '/scrapers/manual/csv-upload', {'body': {'csv': 'text\nhello\n'}}),
     ('POST', '/scrapers/manual/json-upload', {'body': {'items': [{'text': 'hello'}]}}),
+    ('POST', '/scrapers/manual/detect', {'body': {'format': 'csv', 'sample': 'text\nhello\n'}}),
     ('GET', '/scrapers/manual/history', {}),
     ('GET', '/scrapers/manual/history/0b1f3c4e-7a2d-4f6b-9c8e-1d2a3b4c5d6e',
      {'path_params': {'run_id': '0b1f3c4e-7a2d-4f6b-9c8e-1d2a3b4c5d6e'}}),

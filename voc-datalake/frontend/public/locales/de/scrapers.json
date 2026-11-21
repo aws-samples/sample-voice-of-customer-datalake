@@ -540,5 +540,173 @@
       "loading": "Importdetails werden geladen…"
     },
     "loading": "Importverlauf wird geladen…"
+  },
+  "importWizard": {
+    "title": "Datei importieren",
+    "subtitle": "Bringen Sie Ihre eigenen Signale ein: App-Store-Bewertungen, Support-Tickets oder die Ergebnisse eines anderen Umfragetools. Der Assistent liest die Spalten, Sie bestätigen sie, und die ersten Erkenntnisse folgen in wenigen Minuten.",
+    "open": "Datei importieren",
+    "adminOnly": "Das Importieren einer Datei ist Administratoren vorbehalten (in einem Arbeitsbereich dessen Administratoren).",
+    "backToSources": "Datenquellen",
+    "stepOf": "Schritt {{current}} von {{total}}",
+    "back": "Zurück",
+    "continue": "Weiter",
+    "steps": {
+      "upload": "Hochladen",
+      "map": "Zuordnen",
+      "confirm": "Bestätigen",
+      "insights": "Erste Erkenntnisse"
+    },
+    "upload": {
+      "drop": "CSV-, TSV-, JSON- oder Excel-Datei hier ablegen",
+      "choose": "Datei auswählen",
+      "formats": "CSV, TSV und JSON bis 10 MB, Excel (.xlsx) bis 256 KB. Ein Umfrageexport wird vollständig übernommen und darf daher bis zu 2 MB groß sein.",
+      "reading": "Spalten werden gelesen…",
+      "preview_one": "Die erste Zeile",
+      "preview_other": "Die ersten {{count}} Zeilen",
+      "rows_one": "{{count}} Zeile, {{columns}} Spalten",
+      "rows_other": "{{count}} Zeilen, {{columns}} Spalten",
+      "problems": {
+        "format": "Dieser Dateityp kann nicht importiert werden. Wählen Sie eine Datei im Format CSV, TSV, JSON oder Excel (.xlsx).",
+        "tooLarge": "Diese Datei ist größer als 10 MB. Teilen Sie sie auf und importieren Sie die Teile nacheinander.",
+        "workbookTooLarge": "Diese Arbeitsmappe ist größer als 256 KB. Speichern Sie sie als CSV und importieren Sie diese Datei.",
+        "empty": "Diese Datei ist leer.",
+        "unreadable": "Diese Datei konnte nicht gelesen werden."
+      }
+    },
+    "map": {
+      "target": "Was enthält diese Datei?",
+      "targets": {
+        "reviews": {
+          "title": "Bewertungen oder Tickets",
+          "description": "Jede Zeile ist ein Feedback: sein Text und vielleicht eine Bewertung, ein Datum und eine ID."
+        },
+        "survey": {
+          "title": "Ein Umfrageexport",
+          "description": "Jede Zeile enthält die Antworten einer Person. Daraus wird ein importiertes Formular, sodass Ergebnisse, Bericht und Vergleichen damit funktionieren."
+        }
+      },
+      "dateOrder": "Datumsformat",
+      "dateOrders": {
+        "dmy": "Tag zuerst (31/12/2026)",
+        "mdy": "Monat zuerst (12/31/2026)",
+        "ymd": "Jahr zuerst (2026/12/31)"
+      },
+      "columns": "Spalten",
+      "kind": "Enthält",
+      "confidence": {
+        "high": "Sicher",
+        "medium": "Wahrscheinlich",
+        "low": "Vermutung"
+      },
+      "examples": "Zum Beispiel: {{values}}",
+      "personal": "Personenbezogene Daten: werden weggelassen, sofern Sie keine andere Art wählen.",
+      "problems": {
+        "noText": "Wählen Sie mindestens eine Freitextspalte: Sie enthält den Text des Feedbacks.",
+        "noQuestion": "Wählen Sie mindestens eine Spalte, die eine Frage ist: Freitext, eine Punktzahl oder eine Auswahl."
+      }
+    },
+    "kinds": {
+      "id": "Eine ID",
+      "date": "Ein Datum",
+      "rating_1_5": "Eine Bewertung von 1 bis 5",
+      "rating_1_10": "Eine Bewertung von 1 bis 10",
+      "nps_0_10": "NPS (0 bis 10)",
+      "csat": "CSAT (1 bis 5)",
+      "choice": "Einfachauswahl",
+      "multi_choice": "Mehrfachauswahl",
+      "matrix_cell": "Eine Matrix (Zeile -- Antwort)",
+      "open_text": "Freitext",
+      "email": "Eine E-Mail-Adresse",
+      "name": "Name einer Person",
+      "url": "Eine Webadresse",
+      "channel": "Ein Kanal",
+      "ignore": "Weglassen"
+    },
+    "reasons": {
+      "header_says": "die Überschrift lautet „{{word}}“",
+      "values_range": "Werte von {{min}} bis {{max}}",
+      "zero_present": "eine 0 kommt vor, die keine Bewertung hat",
+      "distinct_values": "{{count}} verschiedene Werte",
+      "separator": "Antworten getrennt durch „{{separator}}“",
+      "matrix_pairs": "jeder Wert besteht aus Paaren „Zeile -- Antwort“",
+      "emails": "die Werte sind E-Mail-Adressen",
+      "urls": "die Werte sind Webadressen",
+      "dates": "die Werte sind Datumsangaben",
+      "excel_serial": "die Werte sind Excel-Datumszahlen",
+      "long_text": "Freitext mit durchschnittlich {{average}} Zeichen",
+      "unique_values": "jeder Wert ist anders",
+      "numbers": "Zahlen von {{min}} bis {{max}}",
+      "personal_data": "personenbezogene Daten",
+      "empty": "die Spalte ist leer",
+      "chosen": "Ihre Wahl"
+    },
+    "confirm": {
+      "formName": "Name des importierten Formulars",
+      "questions": "Die daraus entstehenden Fragen",
+      "options_one": "{{count}} Option",
+      "options_other": "{{count}} Optionen",
+      "matrixRows_one": "{{count}} Zeile, {{columns}} Spalten",
+      "matrixRows_other": "{{count}} Zeilen, {{columns}} Spalten",
+      "leftOut": "Weggelassen: {{headers}}",
+      "off": "Das Formular bleibt ausgeschaltet, ohne öffentlichen Link: Seine Einsendungen sind die Zeilen dieser Datei.",
+      "reviews": "Was wohin kommt",
+      "otherColumns": "Auswahl-, Mehrfachauswahl-, Matrix- und Punktzahlspalten werden mit jeder Bewertung gespeichert; eine Auswahlspalte, die wie eine Ihrer Dimensionen heißt, füllt diese Dimension.",
+      "rowsToImport_one": "{{count}} Zeile wird importiert.",
+      "rowsToImport_other": "{{count}} Zeilen werden importiert.",
+      "importing": "Import läuft: {{done}} von {{total}} Zeilen…",
+      "start": "Importieren",
+      "problems": {
+        "surveyTooLarge": "Ein Umfrageexport wird vollständig übernommen und darf daher höchstens 2 MB groß sein. Teilen Sie ihn auf und importieren Sie die Teile.",
+        "noForm": "Keine dieser Spalten kann eine Frage sein. Gehen Sie zurück und wählen Sie für eine davon eine Art."
+      },
+      "formProblems": {
+        "too_many_options": "„{{header}}“ hat mehr als 50 verschiedene Antworten: Die Spalte wird weggelassen. Machen Sie sie zu Freitext, um sie zu behalten.",
+        "matrix_too_large": "„{{header}}“ ist eine Matrix mit mehr als 20 Zeilen oder 10 Antworten: Die Spalte wird weggelassen.",
+        "no_values": "„{{header}}“ hat keine Antworten, aus denen Optionen werden können: Die Spalte wird weggelassen.",
+        "too_many_questions": "„{{header}}“ wird weggelassen: Ein Formular hat höchstens 30 Fragen."
+      }
+    },
+    "insights": {
+      "queued_one": "{{count}} Zeile importiert.",
+      "queued_other": "{{count}} Zeilen importiert.",
+      "refused_one": "{{count}} Zeile wurde nicht importiert:",
+      "refused_other": "{{count}} Zeilen wurden nicht importiert:",
+      "refusedRow": "Zeile {{row}}: {{reason}}",
+      "processing": "Wird analysiert: {{done}} von {{total}}…",
+      "slow": "Die Analyse läuft noch. Eine große Datei kann einige Minuten dauern.",
+      "ready_one": "{{count}} Feedback analysiert. Das sagt es:",
+      "ready_other": "{{count}} Feedbacks analysiert. Das sagen sie:",
+      "sentiment": "Stimmung",
+      "sentiments": {
+        "positive": "Positiv",
+        "neutral": "Neutral",
+        "negative": "Negativ",
+        "mixed": "Gemischt"
+      },
+      "topCategories": "Top-Kategorien",
+      "nps": "NPS",
+      "quotes": "In ihren Worten",
+      "openDashboard": "Dashboard öffnen",
+      "openResults": "Ergebnisse des Formulars öffnen",
+      "importAnother": "Weitere Datei importieren"
+    },
+    "refusals": {
+      "answer_invalid": "eine Antwort passt nicht zur Frage",
+      "date_invalid": "das Datum ist nicht lesbar",
+      "empty_response": "beantwortet keine Frage",
+      "duplicate_row": "dieselbe Zeile noch einmal",
+      "response_too_long": "zu viel Text",
+      "hidden_invalid": "ein Wert ist zu lang",
+      "selection_count": "zu viele oder zu wenige Auswahlen",
+      "other": "nicht angenommen"
+    },
+    "errors": {
+      "detect": "Die Datei konnte nicht gelesen werden. Prüfen Sie sie und versuchen Sie es erneut.",
+      "import": "Der Import wurde angehalten. Bereits gesendete Zeilen bleiben importiert; versuchen Sie es erneut, um den Rest zu senden."
+    },
+    "prompt": {
+      "title": "Eigene Signale in wenigen Minuten einbringen",
+      "body": "Hier gibt es noch kein Feedback. Importieren Sie eine CSV-Datei mit App-Store-Bewertungen, Support-Tickets oder den Ergebnissen eines anderen Umfragetools und sehen Sie Stimmung, Themen und NPS in wenigen Minuten."
+    }
   }
 }

@@ -600,5 +600,189 @@
       "loading": "Wczytywanie szczegółów importu…"
     },
     "loading": "Wczytywanie historii importów…"
+  },
+  "importWizard": {
+    "title": "Importuj plik",
+    "subtitle": "Wnieś własne sygnały: recenzje ze sklepów z aplikacjami, zgłoszenia do wsparcia lub wyniki z innego narzędzia ankietowego. Kreator odczytuje kolumny, a po Twoim potwierdzeniu pierwsze wnioski pojawiają się w ciągu kilku minut.",
+    "open": "Importuj plik",
+    "adminOnly": "Import pliku jest dostępny tylko dla administratorów (w obszarze roboczym: jego administratorów).",
+    "backToSources": "Źródła danych",
+    "stepOf": "Krok {{current}} z {{total}}",
+    "back": "Wstecz",
+    "continue": "Dalej",
+    "steps": {
+      "upload": "Przesyłanie",
+      "map": "Przypisanie",
+      "confirm": "Potwierdzenie",
+      "insights": "Pierwsze wnioski"
+    },
+    "upload": {
+      "drop": "Upuść tutaj plik CSV, TSV, JSON lub Excel",
+      "choose": "Wybierz plik",
+      "formats": "CSV, TSV i JSON do 10 MB, Excel (.xlsx) do 256 KB. Eksport ankiety jest zachowywany w całości, więc może mieć do 2 MB.",
+      "reading": "Odczytywanie kolumn…",
+      "preview_one": "Pierwszy wiersz",
+      "preview_few": "Pierwsze {{count}} wiersze",
+      "preview_many": "Pierwszych {{count}} wierszy",
+      "preview_other": "Pierwsze {{count}} wiersza",
+      "rows_one": "{{count}} wiersz, kolumny: {{columns}}",
+      "rows_few": "{{count}} wiersze, kolumny: {{columns}}",
+      "rows_many": "{{count}} wierszy, kolumny: {{columns}}",
+      "rows_other": "{{count}} wiersza, kolumny: {{columns}}",
+      "problems": {
+        "format": "Tego typu pliku nie można zaimportować. Wybierz plik CSV, TSV, JSON lub Excel (.xlsx).",
+        "tooLarge": "Ten plik ma ponad 10 MB. Podziel go i importuj części po kolei.",
+        "workbookTooLarge": "Ten skoroszyt ma ponad 256 KB. Zapisz go jako CSV i zaimportuj ten plik.",
+        "empty": "Ten plik jest pusty.",
+        "unreadable": "Nie udało się odczytać tego pliku."
+      }
+    },
+    "map": {
+      "target": "Co to za plik?",
+      "targets": {
+        "reviews": {
+          "title": "Recenzje lub zgłoszenia",
+          "description": "Każdy wiersz to jedna opinia: jej treść i ewentualnie ocena, data oraz identyfikator."
+        },
+        "survey": {
+          "title": "Eksport ankiety",
+          "description": "Każdy wiersz to odpowiedzi jednej osoby. Plik staje się zaimportowanym formularzem, więc działają na nim Wyniki, Raport i Porównaj."
+        }
+      },
+      "dateOrder": "Format dat",
+      "dateOrders": {
+        "dmy": "Najpierw dzień (31/12/2026)",
+        "mdy": "Najpierw miesiąc (12/31/2026)",
+        "ymd": "Najpierw rok (2026/12/31)"
+      },
+      "columns": "Kolumny",
+      "kind": "Zawiera",
+      "confidence": {
+        "high": "Pewne",
+        "medium": "Prawdopodobne",
+        "low": "Przypuszczenie"
+      },
+      "examples": "Na przykład: {{values}}",
+      "personal": "Dane osobowe: pomijane, chyba że wybierzesz inny rodzaj.",
+      "problems": {
+        "noText": "Wybierz co najmniej jedną kolumnę z tekstem otwartym: to treść opinii.",
+        "noQuestion": "Wybierz co najmniej jedną kolumnę, która jest pytaniem: tekst otwarty, wynik lub wybór."
+      }
+    },
+    "kinds": {
+      "id": "Identyfikator",
+      "date": "Data",
+      "rating_1_5": "Ocena od 1 do 5",
+      "rating_1_10": "Ocena od 1 do 10",
+      "nps_0_10": "NPS (od 0 do 10)",
+      "csat": "CSAT (od 1 do 5)",
+      "choice": "Jednokrotny wybór",
+      "multi_choice": "Wielokrotny wybór",
+      "matrix_cell": "Siatka (wiersz -- odpowiedź)",
+      "open_text": "Tekst otwarty",
+      "email": "Adres e-mail",
+      "name": "Imię i nazwisko osoby",
+      "url": "Adres internetowy",
+      "channel": "Kanał",
+      "ignore": "Pomiń"
+    },
+    "reasons": {
+      "header_says": "nagłówek brzmi „{{word}}”",
+      "values_range": "wartości od {{min}} do {{max}}",
+      "zero_present": "występuje 0, którego nie ma żadna ocena",
+      "distinct_values": "różne wartości: {{count}}",
+      "separator": "odpowiedzi rozdzielone znakiem „{{separator}}”",
+      "matrix_pairs": "każda wartość to pary „wiersz -- odpowiedź”",
+      "emails": "wartości to adresy e-mail",
+      "urls": "wartości to adresy internetowe",
+      "dates": "wartości to daty",
+      "excel_serial": "wartości to liczby dat Excela",
+      "long_text": "tekst otwarty, średnia liczba znaków: {{average}}",
+      "unique_values": "każda wartość jest inna",
+      "numbers": "liczby od {{min}} do {{max}}",
+      "personal_data": "dane osobowe",
+      "empty": "kolumna jest pusta",
+      "chosen": "Twój wybór"
+    },
+    "confirm": {
+      "formName": "Nazwa importowanego formularza",
+      "questions": "Pytania, które powstaną",
+      "options_one": "{{count}} opcja",
+      "options_few": "{{count}} opcje",
+      "options_many": "{{count}} opcji",
+      "options_other": "{{count}} opcji",
+      "matrixRows_one": "{{count}} wiersz, kolumny: {{columns}}",
+      "matrixRows_few": "{{count}} wiersze, kolumny: {{columns}}",
+      "matrixRows_many": "{{count}} wierszy, kolumny: {{columns}}",
+      "matrixRows_other": "{{count}} wiersza, kolumny: {{columns}}",
+      "leftOut": "Pominięte: {{headers}}",
+      "off": "Formularz pozostaje wyłączony, bez publicznego linku: jego odpowiedzi to wiersze tego pliku.",
+      "reviews": "Co trafia gdzie",
+      "otherColumns": "Kolumny wyboru, wielokrotnego wyboru, siatki i wyniku są zachowywane przy każdej recenzji; kolumna wyboru nazwana tak jak jeden z Twoich wymiarów wypełnia ten wymiar.",
+      "rowsToImport_one": "Zostanie zaimportowany {{count}} wiersz.",
+      "rowsToImport_few": "Zostaną zaimportowane {{count}} wiersze.",
+      "rowsToImport_many": "Zostanie zaimportowanych {{count}} wierszy.",
+      "rowsToImport_other": "Zostanie zaimportowane {{count}} wiersza.",
+      "importing": "Importowanie: {{done}} z {{total}} wierszy…",
+      "start": "Importuj",
+      "problems": {
+        "surveyTooLarge": "Eksport ankiety jest zachowywany w całości, więc może mieć do 2 MB. Podziel go i zaimportuj części.",
+        "noForm": "Żadna z tych kolumn nie może być pytaniem. Wróć i wybierz rodzaj dla jednej z nich."
+      },
+      "formProblems": {
+        "too_many_options": "„{{header}}” ma ponad 50 różnych odpowiedzi: kolumna zostaje pominięta. Zmień ją na tekst otwarty, aby ją zachować.",
+        "matrix_too_large": "„{{header}}” to siatka z ponad 20 wierszami lub 10 odpowiedziami: kolumna zostaje pominięta.",
+        "no_values": "„{{header}}” nie ma odpowiedzi, z których można utworzyć opcje: kolumna zostaje pominięta.",
+        "too_many_questions": "Kolumna „{{header}}” zostaje pominięta: formularz może mieć najwyżej 30 pytań."
+      }
+    },
+    "insights": {
+      "queued_one": "Zaimportowano {{count}} wiersz.",
+      "queued_few": "Zaimportowano {{count}} wiersze.",
+      "queued_many": "Zaimportowano {{count}} wierszy.",
+      "queued_other": "Zaimportowano {{count}} wiersza.",
+      "refused_one": "Nie zaimportowano {{count}} wiersza:",
+      "refused_few": "Nie zaimportowano {{count}} wierszy:",
+      "refused_many": "Nie zaimportowano {{count}} wierszy:",
+      "refused_other": "Nie zaimportowano {{count}} wiersza:",
+      "refusedRow": "Wiersz {{row}}: {{reason}}",
+      "processing": "Analizowanie: {{done}} z {{total}}…",
+      "slow": "Analiza wciąż trwa. Duży plik może zająć kilka minut.",
+      "ready_one": "Przeanalizowano {{count}} opinię. Oto co mówi:",
+      "ready_few": "Przeanalizowano {{count}} opinie. Oto co mówią:",
+      "ready_many": "Przeanalizowano {{count}} opinii. Oto co mówią:",
+      "ready_other": "Przeanalizowano {{count}} opinii. Oto co mówią:",
+      "sentiment": "Sentyment",
+      "sentiments": {
+        "positive": "Pozytywny",
+        "neutral": "Neutralny",
+        "negative": "Negatywny",
+        "mixed": "Mieszany"
+      },
+      "topCategories": "Najczęstsze kategorie",
+      "nps": "NPS",
+      "quotes": "Ich słowami",
+      "openDashboard": "Otwórz pulpit",
+      "openResults": "Otwórz wyniki formularza",
+      "importAnother": "Importuj kolejny plik"
+    },
+    "refusals": {
+      "answer_invalid": "odpowiedź nie pasuje do pytania",
+      "date_invalid": "nie można odczytać daty",
+      "empty_response": "nie odpowiada na żadne pytanie",
+      "duplicate_row": "ten sam wiersz ponownie",
+      "response_too_long": "za dużo tekstu",
+      "hidden_invalid": "wartość jest za długa",
+      "selection_count": "za dużo lub za mało wyborów",
+      "other": "nie przyjęto"
+    },
+    "errors": {
+      "detect": "Nie udało się odczytać pliku. Sprawdź go i spróbuj ponownie.",
+      "import": "Import został przerwany. Wysłane wcześniej wiersze pozostają zaimportowane; spróbuj ponownie, aby wysłać resztę."
+    },
+    "prompt": {
+      "title": "Wnieś własne sygnały w kilka minut",
+      "body": "Nie ma tu jeszcze opinii. Zaimportuj plik CSV z recenzjami ze sklepów z aplikacjami, zgłoszeniami do wsparcia lub wynikami z innego narzędzia ankietowego i zobacz sentyment, tematy i NPS w kilka minut."
+    }
   }
 }

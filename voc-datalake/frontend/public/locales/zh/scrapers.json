@@ -540,5 +540,173 @@
       "loading": "正在加载导入详情…"
     },
     "loading": "正在加载导入历史…"
+  },
+  "importWizard": {
+    "title": "导入文件",
+    "subtitle": "带入您自己的信号：应用商店评价、支持工单或其他调查工具的结果。向导会读取各列，您确认后，几分钟内即可看到初步洞察。",
+    "open": "导入文件",
+    "adminOnly": "只有管理员可以导入文件（在工作区中，为该工作区的管理员）。",
+    "backToSources": "数据源",
+    "stepOf": "第 {{current}} 步，共 {{total}} 步",
+    "back": "返回",
+    "continue": "继续",
+    "steps": {
+      "upload": "上传",
+      "map": "映射",
+      "confirm": "确认",
+      "insights": "初步洞察"
+    },
+    "upload": {
+      "drop": "将 CSV、TSV、JSON 或 Excel 文件拖放到此处",
+      "choose": "选择文件",
+      "formats": "CSV、TSV 和 JSON 最大 10 MB，Excel (.xlsx) 最大 256 KB。调查导出文件会完整保留，因此最大可为 2 MB。",
+      "reading": "正在读取各列…",
+      "preview_one": "第一行",
+      "preview_other": "前 {{count}} 行",
+      "rows_one": "{{count}} 行，{{columns}} 列",
+      "rows_other": "{{count}} 行，{{columns}} 列",
+      "problems": {
+        "format": "无法导入此文件类型。请选择 CSV、TSV、JSON 或 Excel (.xlsx) 文件。",
+        "tooLarge": "此文件超过 10 MB。请将其拆分，然后逐一导入各部分。",
+        "workbookTooLarge": "此工作簿超过 256 KB。请将其另存为 CSV 并导入该文件。",
+        "empty": "此文件为空。",
+        "unreadable": "无法读取此文件。"
+      }
+    },
+    "map": {
+      "target": "这是什么文件？",
+      "targets": {
+        "reviews": {
+          "title": "评价或工单",
+          "description": "每行是一条反馈：包含其文本，可能还有评分、日期和 ID。"
+        },
+        "survey": {
+          "title": "调查导出",
+          "description": "每行是一个人的回答。它会成为一个导入的表单，因此可以使用“结果”“报告”和“比较”。"
+        }
+      },
+      "dateOrder": "日期写法",
+      "dateOrders": {
+        "dmy": "日在前（31/12/2026）",
+        "mdy": "月在前（12/31/2026）",
+        "ymd": "年在前（2026/12/31）"
+      },
+      "columns": "列",
+      "kind": "内容",
+      "confidence": {
+        "high": "确定",
+        "medium": "可能",
+        "low": "猜测"
+      },
+      "examples": "例如：{{values}}",
+      "personal": "个人数据：除非您选择其他类型，否则会被排除。",
+      "problems": {
+        "noText": "请至少选择一个开放文本列：它是反馈的文本。",
+        "noQuestion": "请至少选择一个作为问题的列：开放文本、分数或选项。"
+      }
+    },
+    "kinds": {
+      "id": "ID",
+      "date": "日期",
+      "rating_1_5": "1 到 5 的评分",
+      "rating_1_10": "1 到 10 的评分",
+      "nps_0_10": "NPS（0 到 10）",
+      "csat": "CSAT（1 到 5）",
+      "choice": "单选",
+      "multi_choice": "多选",
+      "matrix_cell": "矩阵（行 -- 答案）",
+      "open_text": "开放文本",
+      "email": "电子邮件地址",
+      "name": "人名",
+      "url": "网址",
+      "channel": "渠道",
+      "ignore": "排除"
+    },
+    "reasons": {
+      "header_says": "表头为“{{word}}”",
+      "values_range": "值介于 {{min}} 到 {{max}}",
+      "zero_present": "出现了 0，而评分不会有 0",
+      "distinct_values": "{{count}} 个不同的值",
+      "separator": "答案以“{{separator}}”分隔",
+      "matrix_pairs": "每个值都是“行 -- 答案”对",
+      "emails": "值为电子邮件地址",
+      "urls": "值为网址",
+      "dates": "值为日期",
+      "excel_serial": "值为 Excel 日期序列号",
+      "long_text": "平均 {{average}} 个字符的自由文本",
+      "unique_values": "每个值都不同",
+      "numbers": "{{min}} 到 {{max}} 的数字",
+      "personal_data": "个人数据",
+      "empty": "该列为空",
+      "chosen": "您的选择"
+    },
+    "confirm": {
+      "formName": "导入表单的名称",
+      "questions": "生成的问题",
+      "options_one": "{{count}} 个选项",
+      "options_other": "{{count}} 个选项",
+      "matrixRows_one": "{{count}} 行，{{columns}} 列",
+      "matrixRows_other": "{{count}} 行，{{columns}} 列",
+      "leftOut": "已排除：{{headers}}",
+      "off": "表单保持关闭，没有公开链接：其回复就是此文件的各行。",
+      "reviews": "各列的去向",
+      "otherColumns": "单选、多选、矩阵和分数列会随每条评价保留；名称与您某个维度相同的单选列会填入该维度。",
+      "rowsToImport_one": "将导入 {{count}} 行。",
+      "rowsToImport_other": "将导入 {{count}} 行。",
+      "importing": "正在导入：{{done}} / {{total}} 行…",
+      "start": "导入",
+      "problems": {
+        "surveyTooLarge": "调查导出文件会完整保留，因此最大为 2 MB。请将其拆分后导入各部分。",
+        "noForm": "这些列都不能作为问题。请返回并为其中一列选择类型。"
+      },
+      "formProblems": {
+        "too_many_options": "“{{header}}”有超过 50 个不同的答案：已排除。将其设为开放文本即可保留。",
+        "matrix_too_large": "“{{header}}”是超过 20 行或 10 个答案的矩阵：已排除。",
+        "no_values": "“{{header}}”没有可生成选项的答案：已排除。",
+        "too_many_questions": "“{{header}}”已排除：一个表单最多 30 个问题。"
+      }
+    },
+    "insights": {
+      "queued_one": "已导入 {{count}} 行。",
+      "queued_other": "已导入 {{count}} 行。",
+      "refused_one": "{{count}} 行未导入：",
+      "refused_other": "{{count}} 行未导入：",
+      "refusedRow": "第 {{row}} 行：{{reason}}",
+      "processing": "正在分析：{{done}} / {{total}}…",
+      "slow": "仍在分析。大文件可能需要几分钟。",
+      "ready_one": "已分析 {{count}} 条。结果如下：",
+      "ready_other": "已分析 {{count}} 条。结果如下：",
+      "sentiment": "情感",
+      "sentiments": {
+        "positive": "积极",
+        "neutral": "中性",
+        "negative": "消极",
+        "mixed": "混合"
+      },
+      "topCategories": "主要类别",
+      "nps": "NPS",
+      "quotes": "原话摘录",
+      "openDashboard": "打开仪表板",
+      "openResults": "打开表单结果",
+      "importAnother": "导入其他文件"
+    },
+    "refusals": {
+      "answer_invalid": "某个答案不是该问题接受的答案",
+      "date_invalid": "无法读取其日期",
+      "empty_response": "未回答任何问题",
+      "duplicate_row": "重复的行",
+      "response_too_long": "文本过长",
+      "hidden_invalid": "某个值过长",
+      "selection_count": "选择过多或过少",
+      "other": "未被接受"
+    },
+    "errors": {
+      "detect": "无法读取文件。请检查后重试。",
+      "import": "导入已停止。已发送的行仍保持导入；请重试以发送其余行。"
+    },
+    "prompt": {
+      "title": "几分钟内带入您自己的信号",
+      "body": "这里还没有反馈。导入包含应用商店评价、支持工单或其他调查工具结果的 CSV，几分钟内即可看到情感、主题和 NPS。"
+    }
   }
 }

@@ -19,6 +19,7 @@ const NOT_GROUPED: Readonly<Record<string, string>> = {
   'tests/s2-agents.spec.ts': 'QA track s2: runs alone with --project=admin --no-deps',
   'tests/s2-workflow-rebuild.spec.ts': 'QA track s2: runs alone with --project=admin --no-deps',
   'tests/csv-dataset-update.spec.ts': 'dev mock only (writes feedback)',
+  'tests/import-wizard.spec.ts': 'dev mock only (writes feedback and an imported form)',
   'tests/workspaces.spec.ts': 'dev mock only (it needs the mock\'s two fictional workspaces)',
   'tests/workspace-admin.spec.ts': 'dev mock only (creates a workspace and changes memberships, which a deployment cannot undo yet)',
   'tests/cross-workspace.spec.ts': 'dev mock only (it needs the mock\'s two fictional workspaces)',

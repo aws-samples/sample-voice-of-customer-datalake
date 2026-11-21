@@ -165,7 +165,10 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     # admin of the workspace (acting as themselves), else of the deployment (`_require_test_link_admin` ->
     # require_settings_admin), after the workspace write check. (Its test responses' delete is OPEN_BY_DECISION below:
     # an admin or the form's creator.)
-    'feedback_form_handler.py': frozenset({'POST /feedback-forms/<form_id>/test-link'}),
+    # An imported form's rows (7.67.00, the import wizard, #242: importing writes customer data): an admin acting as
+    # themselves (`_require_import_admin` -> `_require_test_link_admin`, and no delegated caller).
+    'feedback_form_handler.py': frozenset({'POST /feedback-forms/<form_id>/test-link',
+                                           'POST /feedback-forms/<form_id>/import'}),
     # Company personas (since 5.60.00): only admins write the shared library; promote copies into it.
     'company_personas_routes.py': frozenset({
         'POST /company-personas/generate', 'POST /company-personas/import',
@@ -198,10 +201,12 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         # Alerting (Settings → Logs → Alerts): creates/deletes billed CloudWatch alarms and SNS recipients.
         'PUT /logs/alerts', 'POST /logs/alerts/recipients', 'POST /logs/alerts/recipients/remove',
     }),
-    # #242: importing data is admin-only (module middleware).
+    # #242: importing data is admin-only: each route's first statement is the two-path gate (since 7.67.00, when the
+    # module learned workspaces: in one, the caller's admin role there). The import wizard's detect reads a sample of
+    # the file the admin is about to import.
     'manual_import_handler.py': frozenset({
         'POST /scrapers/manual/parse', 'POST /scrapers/manual/confirm',
-        'POST /scrapers/manual/csv-upload', 'POST /scrapers/manual/json-upload',
+        'POST /scrapers/manual/csv-upload', 'POST /scrapers/manual/json-upload', 'POST /scrapers/manual/detect',
     }),
     # Participants (docs/participants.md): engagement settings, deleting a list, erasing a person.
     'participants_routes.py': frozenset({
@@ -820,6 +825,16 @@ WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
         # 7.63.00: the report and the comparison, gated as the results (and the report's AI summary, on the settings
         # API: shared/forms_report_routes.py).
         'GET /feedback-forms/<form_id>/report', 'GET /feedback-forms/<form_id>/compare',
+        # 7.67.00: an imported form's rows, its admins (ADMIN_ONLY).
+        'POST /feedback-forms/<form_id>/import',
+    }),
+    # The manual import (7.67.00): every route imports into the request's workspace, its admins only (ADMIN_ONLY and
+    # ADMIN_ONLY_READS, the two-path gate first), raw copies under the workspace's bronze root, each queued message
+    # stamped with its workspace, its runs in the workspace's import-run partitions.
+    'manual_import_handler.py': frozenset({
+        'POST /scrapers/manual/parse', 'GET /scrapers/manual/parse/<job_id>', 'POST /scrapers/manual/confirm',
+        'POST /scrapers/manual/csv-upload', 'POST /scrapers/manual/json-upload', 'POST /scrapers/manual/detect',
+        'GET /scrapers/manual/history', 'GET /scrapers/manual/history/<run_id>',
     }),
 }
 #: How each module resolves the workspace before a route reads: a middleware (module-wide: its name and the call
@@ -843,7 +858,7 @@ WORKSPACE_WRITE_CALL = {'feedback_form_handler.py': "_request_scope(write=True)"
 #: `_request = ResolvedRoutes(app)` and `app.use(middlewares=[_request.middleware])`; its admin gate is
 #: `_request.require_request_admin()`.
 SHARED_RESOLVER = 'ResolvedRoutes'
-TWO_PATH_MODULES = frozenset({'integrations_handler.py', 'scrapers_handler.py'})
+TWO_PATH_MODULES = frozenset({'integrations_handler.py', 'scrapers_handler.py', 'manual_import_handler.py'})
 #: Routes of a two-path module that a request in a workspace may not use: each calls the module's refusal as an
 #: unconditional top-level statement, right after its admin gate.
 WORKSPACE_REFUSAL = 'refuse_in_workspace'

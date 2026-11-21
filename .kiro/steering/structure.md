@@ -89,7 +89,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── feedback_form_handler.py  # /feedback-forms/* (embeddable forms)
     │   │   ├── data_explorer_handler.py  # /data-explorer/* (admin-only S3 raw data & DynamoDB browser, no deletes)
     │   │   ├── logs_handler.py           # /logs/* (system logs)
-    │   │   ├── manual_import_handler.py  # /scrapers/manual/* (admin-only paste/CSV/JSON import)
+    │   │   ├── manual_import_handler.py  # /scrapers/manual/* (admin-only paste/CSV/JSON import, the import wizard's detect; both paths since 7.67.00)
     │   │   ├── s3_import_handler.py      # /s3-import/* (admin-only S3 import bucket explorer)
     │   │   ├── engagement_handler.py     # /participants/*, /feature-requests/* (feedback boards), POST /unsubscribe (routers in shared/*_routes.py)
     │   │   ├── ballots_handler.py        # /voting-sessions/* (room votes on a Prioritization row; config + submit are public)
@@ -468,7 +468,7 @@ embeddable widget calls from the customer's own site.
 |--------|------|------|-------------|
 | GET | `/feedback-forms` | Cognito | List all forms |
 | GET | `/feedback-forms/{id}` | Cognito | One form, as the list shows it, with its `response_count` and `can_delete_test_responses` (7.55.00) |
-| POST | `/feedback-forms` | Cognito | Create form |
+| POST | `/feedback-forms` | Cognito | Create form (`imported: {from, at, filename}`, 7.67.00: an imported form, Off for good, no public link) |
 | PUT | `/feedback-forms/{id}` | Cognito | Update form (`expected_write_count`; `removes` on an answered form; an old client's `expected_revision` ignored, 7.58.01) |
 | DELETE | `/feedback-forms/{id}` | Cognito | Delete form |
 | GET | `/feedback-forms/{id}/submissions` | Cognito | Read submitted feedback |
@@ -477,6 +477,7 @@ embeddable widget calls from the customer's own site.
 | GET | `/feedback-forms/{id}/responses` | Cognito | The responses, paged, or as CSV (`format=csv`; `include_test=only` for the Test tab) (7.55.00) |
 | DELETE | `/feedback-forms/{id}/responses?test=true` | Cognito | Delete the form's test responses (an admin or the form's creator; recorded first) (7.55.00) |
 | POST | `/feedback-forms/{id}/test-link` | Cognito | Issue or rotate the test link and set its `link_enabled` / `record` (admins; the only answer with the token) (7.55.00) |
+| POST | `/feedback-forms/{id}/import` | Cognito | An imported form's rows `{rows (≤ 5,000), mapping, date_order?, offset?, dry_run?, file \| file_key}` → `{accepted, refused, refused_count, run_id, raw_s3_key}`: types and ranges checked, never the logic path; queued as responses with their own dates; the file kept write-once (admins acting as themselves; 7.67.00, docs/import-wizard.md) |
 | GET | `/feedback-forms/{id}/report` | Cognito | The form's report: KPIs, heatmaps, segments, themes with real quotes, the AI summary (7.63.00; editors and admins, as Results) |
 | GET | `/feedback-forms/{id}/compare` | Cognito | The form beside up to 10 of the scope's forms (`with`), each split by `by=hidden.<id>` when asked (7.63.00; as Results; `by` without `with` is a 400) |
 | GET | `/feedback-forms/{id}/config` | **public** | Form config for the widget |
@@ -714,13 +715,18 @@ the app pool). Assistant tools on `/participants` (pack `participants`, card-onl
 | POST | `/logs/alerts/recipients` | Add an SNS email recipient (platform admins only, checked live; pending until confirmed) |
 | POST | `/logs/alerts/recipients/remove` | Remove an email recipient (platform admins only, checked live) |
 
-### Manual Import (manual_import_handler.py) — ADMIN ONLY, every route (module middleware, #242: importing writes customer data)
+### Manual Import (manual_import_handler.py) — ADMIN ONLY, every route (#242: importing writes customer data)
+Since 7.67.00 every route acts in the workspace `X-Workspace-Id` names (its admins; raw copies under `ws/{ws}/raw/`, messages
+stamped with its `workspace_id`, runs in `WS#{ws}#IMPORT_RUN`, a Radar brand refused), else deployment-wide as before
+(docs/import-wizard.md, docs/multi-workspace.md).
+
 | Method | Path | Description |
 |--------|------|-------------|
+| POST | `/scrapers/manual/detect` | The import wizard (7.67.00): `{format, sample ≤ 256 KB, delimiter?, truncated?, mapping?, values?, language?, target?, date_order?}` → each column's kind, confidence and reasons, `suggested: {target, mapping, date_order, form}` (an XLSX's rows too); deterministic, nothing stored (admin; docs/import-wizard.md) |
 | POST | `/scrapers/manual/parse` | Start an LLM parse of pasted review text (admin) |
 | GET | `/scrapers/manual/parse/{job_id}` | Poll a parse job (admin) |
 | POST | `/scrapers/manual/confirm` | Import the parsed reviews (admin) |
-| POST | `/scrapers/manual/csv-upload` | Import CSV rows (admin); optional `dataset_name` keys rows with an id as `csv-row-v2` (dataset + id): `dry_run` answers `{counts: {new, changed, unchanged, v1_rows}, changed_rows (≤ 50), changed_rows_truncated}`, a real upload that changes stored rows is 409 without `apply_updates`; confirmed rows are queued with `csv_replace` and updated in place by the processor (`shared/csv_updates.py`, docs/csv-import.md) |
+| POST | `/scrapers/manual/csv-upload` | Import CSV rows (admin); the import wizard's `mapping` (`{header: kind \| dimension:<key>}`) with `delimiter`, `date_order`, `import_tag` instead of `column_map` (7.67.00); optional `dataset_name` keys rows with an id as `csv-row-v2` (dataset + id): `dry_run` answers `{counts: {new, changed, unchanged, v1_rows}, changed_rows (≤ 50), changed_rows_truncated}`, a real upload that changes stored rows is 409 without `apply_updates`; confirmed rows are queued with `csv_replace` and updated in place by the processor (`shared/csv_updates.py`, docs/csv-import.md) |
 | POST | `/scrapers/manual/json-upload` | Import JSON items (admin) |
 | GET | `/scrapers/manual/history` | Import runs, newest first, `?limit=` (1-100) `&cursor=` (admin; docs/import-history.md) |
 | GET | `/scrapers/manual/history/{run_id}` | One import run with its warnings and errors (admin; 404 unknown/expired) |
