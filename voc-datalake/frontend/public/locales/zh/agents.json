@@ -2505,6 +2505,10 @@
       "already": "此运行已获批准。",
       "refused": "只有令牌的所有者能批准此运行。",
       "failed": "无法批准：请重试。"
+    },
+    "startWarnings": {
+      "title": "运行已启动，但有一条警告",
+      "dismiss": "关闭"
     }
   },
   "canvas": {

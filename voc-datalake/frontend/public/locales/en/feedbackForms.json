@@ -257,8 +257,7 @@
       "failed": "Couldn't save: {{reason}}.",
       "failedGeneric": "Couldn't save. Check your connection and try again.",
       "retry": "Try again",
-      "placeholderRefused": "Couldn't save: a live form can't show a {…} placeholder as written. Fix the texts listed in Problems, or save it Off.",
-      "recallRefused": "Couldn't save: a text recalls a value it can't show where it stands. Fix it in Problems."
+      "placeholderRefused": "Couldn't save: a live form can't show a {…} placeholder as written. Fix the texts listed in Problems, or save it Off."
     },
     "published": "Live. Respondents see this version from now on.",
     "firstSave": "Saved. This form is Off: its link shows “Feedback form unavailable.” until you publish it.",
@@ -2353,9 +2352,7 @@
     "questionItem": "Q{{number}} · {{headline}}",
     "nothing": "Nothing to insert here",
     "nothingHint": "Add a hidden field, or a score or single-choice question before this text.",
-    "preview": "Respondents see: {{text}}",
-    "previewMissing": "Without a value: {{text}}",
-    "previewEmpty": "(nothing)"
+    "preview": "Respondents see: {{text}}"
   },
   "report": {
     "loading": "Loading the report…",
@@ -2368,7 +2365,7 @@
     "empty": "Once responses come in under these filters, the report shows their scores, segments and themes.",
     "segments": {
       "title": "By {{segment}}",
-      "hint": "Segments of fewer than {{minimum}} responses are grouped together, so no one can be picked out.",
+      "hint": "Segments of fewer than {{minimum}} responses are grouped together, so no one can be picked out. While that group is too small to show, the smallest segment's scores are hidden too.",
       "caption": "Scores by segment",
       "segment": "Segment",
       "responses": "Responses",
@@ -2377,6 +2374,7 @@
       "merged_one": "Other ({{count, number}} segment of fewer than {{minimum}})",
       "merged_other": "Other ({{count, number}} segments of fewer than {{minimum}})",
       "withheld": "Too few responses to show their scores",
+      "complement": "Hidden with the small group, so its scores can't be worked out",
       "none": "No responses to segment."
     },
     "heatmap": {
@@ -2405,12 +2403,15 @@
       "stale": "Newer responses since",
       "start": "Summarize with AI",
       "again": "Summarize again",
+      "thisView": "Summarize this view",
       "working": "Summarizing…",
       "intro": "The AI reads up to 300 of the open answers shown here, with your access, names their themes and picks quotes. The quotes are always real responses.",
       "nothing": "There are no open answers to summarize.",
       "withheld": "This summary read responses you can't see, so it isn't shown to you. Summarize again to make your own.",
+      "otherView": "Made for another view: {{view}}",
       "made_one": "Made {{date}} from {{formatted}} response",
       "made_other": "Made {{date}} from {{formatted}} responses",
+      "since": "Since {{date}}",
       "rateLimited": "That's 20 AI summaries this hour. Try again later.",
       "noModel": "No AI model is available in this deployment.",
       "noSummary": "The AI found no themes in these answers.",
@@ -2429,7 +2430,7 @@
     },
     "compare": {
       "title": "Compare",
-      "intro": "Put this form beside up to {{max, number}} others, or split it by a hidden field to see its trend. Questions are matched by id and type; a point of fewer than 5 responses shows no scores.",
+      "intro": "Put this form beside up to {{max, number}} others, each split by a hidden field if you like. Questions are matched by id and what their scores mean; a point of fewer than 5 responses shows no scores.",
       "forms": "Forms",
       "noForms": "No other form to compare with.",
       "sameTemplate": "Same template",

@@ -257,8 +257,7 @@
       "failed": "Impossible d’enregistrer : {{reason}}.",
       "failedGeneric": "Impossible d’enregistrer. Vérifiez votre connexion et réessayez.",
       "retry": "Réessayer",
-      "placeholderRefused": "Enregistrement impossible : un formulaire en ligne ne peut pas afficher un espace réservé {…} tel quel. Corrigez les textes listés dans Problèmes, ou enregistrez-le désactivé.",
-      "recallRefused": "Enregistrement impossible : un texte rappelle une valeur qu’il ne peut pas afficher à cet endroit. Corrigez-le dans Problèmes."
+      "placeholderRefused": "Enregistrement impossible : un formulaire en ligne ne peut pas afficher un espace réservé {…} tel quel. Corrigez les textes listés dans Problèmes, ou enregistrez-le désactivé."
     },
     "published": "En ligne. Les répondants voient désormais cette version.",
     "firstSave": "Enregistré. Ce formulaire est désactivé : son lien affiche « Formulaire d'avis indisponible. » jusqu’à ce que vous le publiiez.",
@@ -2353,9 +2352,7 @@
     "questionItem": "Q{{number}} · {{headline}}",
     "nothing": "Rien à insérer ici",
     "nothingHint": "Ajoutez un champ masqué, ou une question de score ou à choix unique avant ce texte.",
-    "preview": "Les répondants voient : {{text}}",
-    "previewMissing": "Sans valeur : {{text}}",
-    "previewEmpty": "(rien)"
+    "preview": "Les répondants voient : {{text}}"
   },
   "report": {
     "loading": "Chargement du rapport…",
@@ -2368,7 +2365,7 @@
     "empty": "Dès que des réponses arrivent avec ces filtres, le rapport affiche leurs notes, segments et thèmes.",
     "segments": {
       "title": "Par {{segment}}",
-      "hint": "Les segments de moins de {{minimum}} réponses sont regroupés, pour que personne ne puisse être identifié.",
+      "hint": "Les segments de moins de {{minimum}} réponses sont regroupés, pour que personne ne puisse être identifié. Tant que ce groupe est trop petit, les notes du plus petit segment sont masquées aussi.",
       "caption": "Notes par segment",
       "segment": "Segment",
       "responses": "Réponses",
@@ -2377,6 +2374,7 @@
       "merged_one": "Autre ({{count, number}} segment de moins de {{minimum}})",
       "merged_other": "Autre ({{count, number}} segments de moins de {{minimum}})",
       "withheld": "Trop peu de réponses pour afficher leurs notes",
+      "complement": "Masqué avec le petit groupe, pour que ses notes ne puissent pas être déduites",
       "none": "Aucune réponse à segmenter."
     },
     "heatmap": {
@@ -2405,12 +2403,15 @@
       "stale": "Nouvelles réponses depuis",
       "start": "Synthétiser avec l’IA",
       "again": "Synthétiser à nouveau",
+      "thisView": "Synthétiser cette vue",
       "working": "Synthèse en cours…",
       "intro": "L’IA lit jusqu’à 300 des réponses ouvertes affichées ici, avec vos droits d’accès, nomme leurs thèmes et choisit des citations. Les citations sont toujours de vraies réponses.",
       "nothing": "Il n’y a aucune réponse ouverte à synthétiser.",
       "withheld": "Cette synthèse a lu des réponses que vous ne pouvez pas voir : elle ne vous est donc pas affichée. Synthétisez à nouveau pour créer la vôtre.",
+      "otherView": "Faite pour une autre vue : {{view}}",
       "made_one": "Créée le {{date}} à partir de {{formatted}} réponse",
       "made_other": "Créée le {{date}} à partir de {{formatted}} réponses",
+      "since": "Depuis le {{date}}",
       "rateLimited": "Cela fait 20 synthèses IA cette heure-ci. Réessayez plus tard.",
       "noModel": "Aucun modèle d’IA n’est disponible dans ce déploiement.",
       "noSummary": "L’IA n’a trouvé aucun thème dans ces réponses.",
@@ -2429,7 +2430,7 @@
     },
     "compare": {
       "title": "Comparer",
-      "intro": "Placez ce formulaire à côté de {{max, number}} autres au maximum, ou divisez-le selon un champ masqué pour voir son évolution. Les questions sont associées par identifiant et par type ; un point de moins de 5 réponses n’affiche aucune note.",
+      "intro": "Placez ce formulaire à côté de {{max, number}} autres au maximum, chacun divisé selon un champ masqué si vous le souhaitez. Les questions sont associées par identifiant et par ce que signifient leurs notes ; un point de moins de 5 réponses n’affiche aucune note.",
       "forms": "Formulaires",
       "noForms": "Aucun autre formulaire à comparer.",
       "sameTemplate": "Même modèle",

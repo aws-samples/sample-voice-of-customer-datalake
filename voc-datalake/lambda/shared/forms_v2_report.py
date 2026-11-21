@@ -12,10 +12,12 @@ already applied by the handler):
   an open text that asks for an email or a phone number is contact detail and never shown here;
 - the latest AI summary, when someone asked for one (``POST /settings/form-reports``, shared/forms_v2_report_ai.py):
   stored as a ``FORMREPORT#{form_id}#{report_id}`` row in the form's forms partition, it keeps the model's theme labels
-  and the response ids it picked, never a respondent's text. Its quotes are joined against the reader's own rows when
-  the report is read, an id the reader has no row for dropped; a summary that read any response the reader cannot see
-  is withheld from them (``withheld: 'access'``: its labels could describe it). It is ``stale`` once a response newer
-  than the newest it read exists.
+  and the response ids it picked, never a respondent's text, and the filters of the view it was made under. Its quotes
+  are joined against the reader's own rows under the summary's own filters when the report is read (whatever the
+  view's: a summary made for ``hidden.customer=A`` quotes A's responses only), an id the reader has no row for
+  dropped; a summary that read any response the reader cannot see is withheld from them (``withheld: 'access'``: its
+  labels could describe it). It is ``stale`` once a response newer than the newest it read exists under its filters.
+  The app shows (and prints) it only on the view it was made for, and names its filters on any other.
 
 Pure, but for ``latest_report`` (one Query of the form's own rows). The row is deleted with the form, is in the
 workspace's export (the forms partition) and is swept with it.
@@ -27,7 +29,7 @@ from typing import Any, Final
 
 from shared.forms_v2 import CES, CSAT, MATRIX, NPS, OPEN_TEXT, RATING, plain
 from shared.forms_v2_responses import headline_of
-from shared.forms_v2_results import ResultRow, questions_where
+from shared.forms_v2_results import ResultRow, filter_rows, questions_where
 from shared.item_facets import SENTIMENT_VALUES
 from shared.scoped_query import SortRange, query_partition
 
@@ -153,21 +155,39 @@ def _quote_text(definition: Mapping[str, Any], row: ResultRow) -> str:
     return ' · '.join(text for text in texts if text)[:MAX_QUOTE_CHARS]
 
 
+def _text_filters(stored: Mapping[str, Any]) -> dict[str, str]:
+    """A stored summary's ``filters`` (the query's own names, shared/forms_v2_report_ai.py), text values only."""
+    raw = stored.get('filters')
+    return {str(key): value for key, value in raw.items() if isinstance(value, str)} if isinstance(raw, Mapping) else {}
+
+
+def _under(filters: Mapping[str, str], rows: Sequence[ResultRow]) -> list[ResultRow]:
+    """``rows`` under a summary's filters (``from``, ``to``, ``language``, ``ending``, ``hidden.<id>``; any other name,
+    like the app's ``days``, only describes the view)."""
+    hidden = {key.removeprefix('hidden.'): value for key, value in filters.items() if key.startswith('hidden.')}
+    return filter_rows(rows, date_from=filters.get('from', ''), date_to=filters.get('to', ''),
+                       language=filters.get('language', ''), ending=filters.get('ending', ''), hidden=hidden)
+
+
 def ai_view(stored: Mapping[str, Any] | None, definition: Mapping[str, Any],
             visible: Sequence[ResultRow]) -> dict[str, Any] | None:
-    """The stored report as this reader may see it: its themes' quotes joined against ``visible`` (every real
-    response the reader's access admits, whatever the view's filters), an unknown id dropped; ``stale`` when a
-    visible response is newer than the newest it read. Withheld (``{report_id, created_at, withheld: 'access'}``)
-    when it read a response the reader cannot see. None when the form has no stored report."""
+    """The stored report as this reader may see it, under the filters it was made with (``filters``, whatever the
+    view's): its themes' quotes joined against ``visible`` (every real response the reader's access admits) under
+    those filters, an unknown id dropped; ``stale`` when a visible response under them is newer than the newest it
+    read. Withheld (``{report_id, created_at, withheld: 'access'}``) when it read a response the reader cannot see.
+    None when the form has no stored report."""
     if not stored:
         return None
+    filters = _text_filters(stored)
     rows = {row.response_id: row for row in visible if row.response_id}
     read = [str(rid) for rid in stored.get('response_ids') or []]
     base = {'report_id': stored.get('report_id'), 'created_at': stored.get('created_at'),
             'created_by': stored.get('created_by')}
     if any(rid not in rows for rid in read):
         return {**base, 'withheld': 'access'}
-    newest = max((row.created_at for row in visible), default='')
+    scoped = _under(filters, list(rows.values()))
+    rows = {row.response_id: row for row in scoped}
+    newest = max((row.created_at for row in scoped), default='')
     last = str(stored.get('last_response_at') or '')
     stored_ai = stored.get('ai')
     ai: Mapping[str, Any] = stored_ai if isinstance(stored_ai, Mapping) else {}
@@ -180,5 +200,5 @@ def ai_view(stored: Mapping[str, Any] | None, definition: Mapping[str, Any],
         joined.append({'label': theme.get('label'), 'count': theme.get('count'), 'sentiment': theme.get('sentiment'),
                        'quotes': [quote for quote in quotes if quote['text']]})
     return {**base, 'responses_counted': stored.get('responses_counted'), 'last_response_at': last or None,
-            'filters': stored.get('filters') or {}, 'model': ai.get('model'), 'prompt_version': ai.get('prompt_version'),
+            'filters': filters, 'model': ai.get('model'), 'prompt_version': ai.get('prompt_version'),
             'summary': ai.get('summary') or '', 'themes': joined, 'stale': bool(newest) and newest > last}

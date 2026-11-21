@@ -343,10 +343,18 @@ export interface StartRunRequest {
   model?: string
 }
 
-/** The run the server started: the monitor opens it. */
-const StartedRunSchema = z.object({ run: z.object({ run_id: z.string().min(1) }) })
+/**
+ * The run the server started: the monitor opens it. (7.63.00) `warnings`: what the start said beside the run, which
+ * started all the same (a fine-grained token's expiry within 3 days; none when the answer has none, an entry that is
+ * not a text dropped).
+ */
+const StartedRunSchema = z.object({
+  run: z.object({ run_id: z.string().min(1) }),
+  warnings: lenientList((item: unknown): item is string => typeof item === 'string' && item.trim() !== '').optional(),
+})
 export interface StartedRun {
   runId: string
+  warnings: readonly string[]
 }
 
 export const engineeringRunsApi = {
@@ -354,7 +362,7 @@ export const engineeringRunsApi = {
   start: async (request: StartRunRequest): Promise<StartedRun> => {
     const parsed = StartedRunSchema.safeParse(await fetchApi<unknown>('/agents/engineering/runs', post(request)))
     if (!parsed.success) throw new Error('The start answer was unreadable')
-    return { runId: parsed.data.run.run_id }
+    return { runId: parsed.data.run.run_id, warnings: parsed.data.warnings ?? [] }
   },
   overview: async (runId: string): Promise<EngineeringOverview> => parseOverview(await fetchApi<unknown>(engineeringRunPath(runId))),
   board: async (runId: string): Promise<EngineeringTask[]> => {

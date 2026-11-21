@@ -258,7 +258,7 @@ What ships (`lib/utils/dependency-layers.ts`, Docker builds, arm64):
 |---|---|---|---|
 | `ApiDepsLayer`, `ProcessingDepsLayer` (`processing-deps`) | Api, Processing | 29 + 14 | 20.5 / 7.3 MB |
 | `IngestionDepsLayer` (`ingestion-deps`) | Ingestion | 9 | 22.2 / 7.9 MB |
-| `SigningDepsLayer` (`signing-deps`) | Api | 3: projects API + its assist worker (they sign CDN URLs), the MCP endpoint (it verifies OAuth tokens) | 16.8 / 5.6 MB |
+| `SigningDepsLayer` (`signing-deps`) | Api | 3: projects API + its assist worker (they sign CDN URLs; since 7.62.00 the layer also carries `pypdf`, the Documents Library's PDF text layer, read on the assist twin), the MCP endpoint (it verifies OAuth tokens) | 16.8 / 5.6 MB |
 | `EngineeringBrokerCiDepsLayer` (`engineering-ci-deps`) | Processing, only with `-c engineeringAgents=true` | 1: the engineering broker (PyYAML, its reader of GitLab CI files) | one distribution, not yet measured |
 | `EmailIntakeDepsLayer` (`email-intake-deps`) | Ingestion, only with `-c inboundEmailDomain` | 1: the email intake | 12.4 / 5.2 MB |
 

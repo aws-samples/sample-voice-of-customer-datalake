@@ -21,7 +21,13 @@ from engineering.connectors.broker import (
     token_disclosure,
 )
 from engineering.connectors.fine_grained import WriteToken
-from engineering.connectors.github import NO_APP_WRITES, NOT_ITS_CREDENTIAL, GitHubHost, TokenCannotWrite
+from engineering.connectors.github import (
+    NO_APP_WRITES,
+    NOT_ITS_CREDENTIAL,
+    GitHubHost,
+    TokenCannotWrite,
+    TokenNotAccepted,
+)
 from engineering.connectors.hosts import FINE_GRAINED, WRITE_DONE, WRITE_REFUSED, NoConnection
 from engineering.connectors.identity import LABEL_ISSUE, OPEN_UPSTREAM_PR, POST_COMMENT, PUSH_APPROVED_DOCS, Caller
 from engineering.connectors.test.app_keys import credential
@@ -196,6 +202,30 @@ def test_github_s_403_to_the_token_s_write_stops_the_step_and_moves_nothing() ->
     assert [claim.state for claim in claims.claims.values()] == [WRITE_REFUSED]
     answered = handler._refusal(caught.value)
     assert (answered['statusCode'], json.loads(answered['body'])['code']) == (409, 'token_cannot_write')
+
+
+@pytest.mark.parametrize(('status', 'write'), [(401, ('POST', f'{REPO}/git/trees')),
+                                               (404, ('POST', f'{REPO}/git/refs'))],
+                         ids=['401-revoked', '404-no-longer-reaches-it'])
+def test_github_s_401_or_404_to_the_token_s_write_says_to_replace_it_and_the_attempt_can_push_again(
+        status: int, write: tuple[str, str]) -> None:
+    """(7.63.00) A token GitHub no longer takes (revoked, expired, regenerated) or that no longer reaches the repository:
+    nothing was written, so the claim is refused, never an unknown outcome, and the same attempt pushes once the
+    token is replaced (before, a 502 whose write "is not known", the attempt locked)."""
+    api = ruled(pushable(FakeGitHub(), head=None)).on(*write, answer(status, {}))
+    claims = FakeWrites()
+    broker = fine_grained_broker(api, writes=claims)
+    with pytest.raises(TokenNotAccepted) as caught:
+        push(broker)
+    assert caught.value.code == 'token_not_accepted'
+    assert f'({status}:' in caught.value.reason
+    assert 'Replace the token under Agents → Connections' in caught.value.reason
+    assert [claim.state for claim in claims.claims.values()] == [WRITE_REFUSED]
+    answered = handler._refusal(caught.value)
+    assert (answered['statusCode'], json.loads(answered['body'])['code']) == (409, 'token_not_accepted')
+    pushable(api.on(*write, answer(201, {'sha': TREE} if write[1].endswith('trees') else {})), head=None)
+    assert push(broker) == TREE
+    assert [claim.state for claim in claims.claims.values()] == [WRITE_DONE]
 
 
 # --- what the token never does ---------------------------------------------------------------------------------------

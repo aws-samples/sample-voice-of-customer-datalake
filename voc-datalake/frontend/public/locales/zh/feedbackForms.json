@@ -257,8 +257,7 @@
       "failed": "无法保存：{{reason}}。",
       "failedGeneric": "无法保存。请检查网络连接后重试。",
       "retry": "重试",
-      "placeholderRefused": "无法保存：已上线的表单不能按原样显示 {…} 占位符。请修正“问题”中列出的文本，或关闭后保存。",
-      "recallRefused": "无法保存：某个文本引用了在该位置无法显示的值。请在“问题”中修正。"
+      "placeholderRefused": "无法保存：已上线的表单不能按原样显示 {…} 占位符。请修正“问题”中列出的文本，或关闭后保存。"
     },
     "published": "已上线。从现在起，受访者将看到此版本。",
     "firstSave": "已保存。此表单处于关闭状态：在您发布之前，其链接会显示“反馈表单不可用。”",
@@ -2353,9 +2352,7 @@
     "questionItem": "Q{{number}} · {{headline}}",
     "nothing": "此处没有可插入的值",
     "nothingHint": "请添加隐藏字段，或在此文本之前添加评分题或单选题。",
-    "preview": "受访者看到：{{text}}",
-    "previewMissing": "没有值时：{{text}}",
-    "previewEmpty": "（无）"
+    "preview": "受访者看到：{{text}}"
   },
   "report": {
     "loading": "正在加载报告…",
@@ -2368,7 +2365,7 @@
     "empty": "一旦有符合这些筛选条件的回复，报告就会显示其分数、细分和主题。",
     "segments": {
       "title": "按{{segment}}",
-      "hint": "回复少于 {{minimum}} 条的细分会合并在一起，因此无法识别出任何人。",
+      "hint": "回复少于 {{minimum}} 条的细分会合并在一起，因此无法识别出任何人。在该合并组过小而无法显示时，最小细分的分数也会隐藏。",
       "caption": "按细分统计的分数",
       "segment": "细分",
       "responses": "回复",
@@ -2377,6 +2374,7 @@
       "merged_one": "其他（{{count, number}} 个少于 {{minimum}} 条的细分）",
       "merged_other": "其他（{{count, number}} 个少于 {{minimum}} 条的细分）",
       "withheld": "回复太少，无法显示分数",
+      "complement": "与小组一起隐藏，以免推算出其分数",
       "none": "没有可细分的回复。"
     },
     "heatmap": {
@@ -2405,12 +2403,15 @@
       "stale": "此后有新回复",
       "start": "用 AI 总结",
       "again": "重新总结",
+      "thisView": "总结此视图",
       "working": "正在总结…",
       "intro": "AI 会以您的访问权限读取此处显示的最多 300 条开放式回答，为其主题命名并挑选引述。引述始终是真实的回复。",
       "nothing": "没有可总结的开放式回答。",
       "withheld": "此摘要读取了您无权查看的回复，因此不会向您显示。重新总结即可生成您自己的摘要。",
+      "otherView": "为另一个视图生成：{{view}}",
       "made_one": "{{date}} 基于 {{formatted}} 条回复生成",
       "made_other": "{{date}} 基于 {{formatted}} 条回复生成",
+      "since": "自 {{date}} 起",
       "rateLimited": "本小时已生成 20 份 AI 摘要。请稍后重试。",
       "noModel": "此部署中没有可用的 AI 模型。",
       "noSummary": "AI 未在这些回答中发现主题。",
@@ -2429,7 +2430,7 @@
     },
     "compare": {
       "title": "比较",
-      "intro": "将此表单与最多 {{max, number}} 个其他表单并列比较，或按隐藏字段拆分以查看趋势。问题按 ID 和类型匹配；回复少于 5 条的数据点不显示分数。",
+      "intro": "将此表单与最多 {{max, number}} 个其他表单并列比较，如有需要，可按隐藏字段分别拆分。问题按 ID 和分数含义匹配；回复少于 5 条的数据点不显示分数。",
       "forms": "表单",
       "noForms": "没有可比较的其他表单。",
       "sameTemplate": "相同模板",

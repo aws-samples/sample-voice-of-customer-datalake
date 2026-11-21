@@ -65,20 +65,20 @@ def test_a_connection_row_is_read_as_stored_and_a_removed_one_is_none() -> None:
     with agents_env() as env:
         assert eng_runs.connection_row(env.agents, 'shop') is None
         env.agents.put_item(Item={**eng_runs.connection_key('shop'), **ROW, 'version': 1})
-        assert eng_runs.run_connection(eng_runs.connection_row(env.agents, 'shop'), 42) == {
+        assert eng_runs.run_connection(eng_runs.connection_row(env.agents, 'shop'), 42, pushes=True) == {
             'repo': 'example-org/shop', 'default_branch': 'main', 'issue': 42, 'host': 'github'}
         env.agents.put_item(Item={**eng_runs.connection_key('shop'), **ROW, 'removed': True})
         assert eng_runs.connection_row(env.agents, 'shop') is None
     with pytest.raises(ValidationError, match='no stored repository connection'):
-        eng_runs.run_connection(None)
+        eng_runs.run_connection(None, pushes=True)
 
 
 def test_a_forks_issue_is_its_upstreams() -> None:
     # (7.57.00: the issue a fork's run starts from is the upstream's, which the start's issue link names)
     fork = {**ROW, 'connection_kind': 'fork', 'upstream': 'upstream-org/shop'}
-    assert eng_runs.run_connection(fork, 42) == {'repo': 'example-org/shop', 'default_branch': 'main', 'issue': 42,
+    assert eng_runs.run_connection(fork, 42, pushes=True) == {'repo': 'example-org/shop', 'default_branch': 'main', 'issue': 42,
                                                  'host': 'github', 'issue_repo': 'upstream-org/shop'}
-    assert 'issue_repo' not in eng_runs.run_connection(fork)
+    assert 'issue_repo' not in eng_runs.run_connection(fork, pushes=True)
 
 
 def test_a_connection_is_public_unless_its_row_says_private() -> None:

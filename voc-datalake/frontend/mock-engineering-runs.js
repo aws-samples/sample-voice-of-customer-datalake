@@ -19,7 +19,8 @@
 //   GET  …/reports    the run's reports, each with its latest version
 //   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
 //   POST /agents/engineering/runs   {workflow_id, connection, commit, language, goal, issue?, model?}: admin; a run's start, answered
-//                     202 with the sample run (written, its coordinator's launch under way) (400 for a field off the server's rules)
+//                     202 with the sample run (written, its coordinator's launch under way) (400 for a field off the server's rules);
+//                     with `warnings` on a fine-grained token's connection that expires within 3 days (7.63.00)
 //   GET|PUT /agents/engineering/settings   the administrators' hard cap {hard_cap, updated_at, updated_by}
 //   GET  /agents/engineering/connections   the repository connections {connections, limit} (admin; never a secret)
 //   PUT|DELETE /agents/engineering/connections/<id>   store one with its GitHub App credential, or keep the stored one
@@ -764,8 +765,19 @@ function startRun(body) {
   if (!modelOk) return [400, { message: 'a model is auto, opus, sonnet or haiku, or a model id (letters, digits and ._:/-, at most 128 characters, no spaces, no URL)' }];
   const failed = START_CHECKS.find(([passes]) => !passes(fields));
   if (failed) return [400, { message: failed[1] }];
-  // 202, as the server: the run is written and its coordinator's launch is under way.
-  return [202, { run: { run_id: SAMPLE_RUN_ID, status: 'active', workflow_id: fields.workflow_id, started_by: 'sub-admin-demo' } }];
+  // 202, as the server: the run is written and its coordinator's launch under way; (7.63.00) with `warnings` when the
+  // connection is a fine-grained token's that expires within 3 days (the server's token_warning).
+  const warning = tokenWarning(connections.get(fields.connection.trim()));
+  return [202, { run: { run_id: SAMPLE_RUN_ID, status: 'active', workflow_id: fields.workflow_id, started_by: 'sub-admin-demo' },
+    ...(warning === null ? {} : { warnings: [warning] }) }];
+}
+
+/** What a start says beside a run on a fine-grained connection whose token expires in 1 to 3 days, else null. */
+function tokenWarning(connection) {
+  const left = connection?.kind === 'fine_grained' ? connection.credential?.expires_in_days : undefined;
+  if (typeof left !== 'number' || left <= 0 || left > 3) return null;
+  return `The connection's fine-grained token expires in ${left} day${left === 1 ? '' : 's'}: its owner replaces it `
+    + "under Agents → Connections before then, or the run's push is refused.";
 }
 
 function startRoute(req, res, send, shared, url) {

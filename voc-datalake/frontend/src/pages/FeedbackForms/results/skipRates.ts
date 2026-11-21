@@ -15,14 +15,16 @@ export function skipRate(aggregate: QuestionAggregate): number | null {
 
 export type CardOrder = 'form' | 'skipped'
 
-/** The question cards with their numbers: in form order, or the most skipped first (form order on a tie, a question
- * nobody was asked last). */
+/** The question cards with their numbers: in form order, or the most skipped first (form order on a tie; a question
+ * nobody was asked, and a statement, which takes no answer to skip, last). */
 export function orderedCards(form: FormV2, results: FormResults, order: CardOrder): { question: Question; number: number }[] {
   const cards = form.questions.map((question, index) => ({ question, number: index + 1 }))
   if (order === 'form') return cards
-  const rate = (id: string) => {
-    const aggregate = results.questions[id]
-    return aggregate === undefined ? -1 : skipRate(aggregate) ?? -1
+  const rate = (question: Question) => {
+    const aggregate = results.questions[question.id]
+    // (a statement is shown, never answered: the server counts every showing as a skip)
+    if (question.type === 'statement' || aggregate === undefined) return -1
+    return skipRate(aggregate) ?? -1
   }
-  return [...cards].sort((a, b) => rate(b.question.id) - rate(a.question.id) || a.number - b.number)
+  return [...cards].sort((a, b) => rate(b.question) - rate(a.question) || a.number - b.number)
 }

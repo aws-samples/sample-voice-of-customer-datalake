@@ -1026,9 +1026,10 @@ ASSIST_WORK: Final = {  # job_type → the work the settings worker (ASSIST_WORK
     # in a workspace too.
     forms_v2_draft.DRAFT_JOB: assist_jobs.Work(forms_v2_draft.run_job, forms_v2_draft.DRAFT_FAILURE, per_workspace=True),
     # A form report's AI summary (7.63.00): started by POST /settings/form-reports (shared/forms_report_routes.py), run
-    # here on the answers its request carries, its report row written in the job's own scope's forms partition.
+    # here on the answers its request carries, its report row written in the job's own scope's forms partition; the
+    # job row's config (the respondents' answers) is removed once the job ends.
     forms_v2_report_ai.REPORT_JOB: assist_jobs.Work(forms_report_routes.run_job, forms_v2_report_ai.REPORT_FAILURE,
-                                                    per_workspace=True, in_scope=True),
+                                                    per_workspace=True, in_scope=True, forget_config=True),
 }
 
 

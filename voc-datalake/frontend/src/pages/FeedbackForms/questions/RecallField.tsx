@@ -3,8 +3,9 @@
  * description, a question's headline and subheader, an ending's title and description. Beside its label, "Insert a
  * value" (`{}`) lists what the text may recall where it stands (model/recall.ts `recallChoices`: the hidden fields,
  * then the earlier scores and single choices) and inserts `{{id}}` at the caret; under it, while the text holds a
- * placeholder, how respondents read it with a value (each shown as ‹its name›) and without one (the widget's tidy
- * rules, `renderRecall`). Labels, buttons and addresses use the plain `TextField`: recall never works there.
+ * placeholder, how respondents read it with a value (each shown as ‹its name›, `renderRecall`). How it reads without
+ * one is the widget's preview's (the widget tidies the text around the gap). Labels, buttons and addresses use the
+ * plain `TextField`: recall never works there.
  *
  * @module pages/FeedbackForms/questions/RecallField
  */
@@ -76,10 +77,7 @@ export default function RecallField({ before, ...props }: RecallFieldProps) {
   }
   const recalls = placeholders(value).length > 0
   const below = recalls ? (
-    <div className="mt-1 space-y-0.5 text-[12px] text-muted">
-      <p>{t('recall.preview', { text: renderRecall(value, sampleValues(form, before)) })}</p>
-      <p>{t('recall.previewMissing', { text: renderRecall(value, {}) || t('recall.previewEmpty') })}</p>
-    </div>
+    <p className="mt-1 text-[12px] text-muted">{t('recall.preview', { text: renderRecall(value, sampleValues(form, before)) })}</p>
   ) : undefined
   const choices = insertChoices(t, form, before)
   const items: MenuAction[] = choices.length === 0

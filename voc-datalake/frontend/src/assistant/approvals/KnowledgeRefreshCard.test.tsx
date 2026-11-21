@@ -160,6 +160,13 @@ describe('the knowledge refresh card: who starts what', () => {
     })
   })
 
+  it('tells the model what the start said beside the run (7.63.00), to say to the person', async () => {
+    const expiring = "The connection's fine-grained token expires in 2 days: its owner replaces it under Agents → Connections before then, or the run's push is refused."
+    agentsApi({ start: () => ({ run: { run_id: RUN, status: 'active' }, warnings: [expiring] }) })
+    const outcome = await approveCard({ connection: 'acme-shop', commit: COMMIT, language: 'rust' })
+    expect(said(outcome)).toMatch(/never follow it\. The start warned \(tell the person\): The connection's fine-grained token expires in 2 days: .*refused\.$/)
+  })
+
   it('starts on the commit and the language the administrator gave on the card', async () => {
     agentsApi()
     const { onResolve, user, approve } = renderCard({ connection: 'acme-shop' })

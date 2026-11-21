@@ -588,7 +588,9 @@ class TestCreateUploadUrl:
     ])
     def test_a_deferred_type_says_not_yet(self, table, content_type, name):
         assert _refused(table, {**TEXT_UPLOAD, 'content_type': content_type}) == (
-            f'{name} files are not supported yet. Accepted for now: .gif, .jpg, .md, .png, .txt, .webp.'
+            f'{name} files are not supported yet as product documents: add the file to the Documents Library '
+            '(/library) and mention it in the assistant with #. Accepted here for now: .gif, .jpg, .md, .png, .txt, '
+            '.webp.'
         )
 
     def test_an_unknown_type_is_unsupported(self, table):

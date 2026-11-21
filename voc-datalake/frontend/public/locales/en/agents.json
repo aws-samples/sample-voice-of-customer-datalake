@@ -2451,6 +2451,10 @@
       "already": "A go was given on this run already.",
       "refused": "Only the token's owner gives this run its go.",
       "failed": "The go could not be given: try again."
+    },
+    "startWarnings": {
+      "title": "The run started with a warning",
+      "dismiss": "Dismiss"
     }
   },
   "canvas": {

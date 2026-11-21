@@ -17,7 +17,7 @@ from test_settings_form_drafts import EDITOR, USER, VIEWER, WS, _call, _job_rows
 from test_settings_form_drafts import world as drafts_world
 
 import settings_handler
-from shared import forms_report_routes, forms_v2_report_ai
+from shared import assist_jobs, forms_report_routes, forms_v2_report_ai
 from shared.ws_repo import WorkspaceScope
 
 #: test_settings_form_drafts.py's moto tables and wired settings handler.
@@ -26,7 +26,7 @@ world = drafts_world
 FORM_ID = 'fd_0000000000000000000000000000a1b2'
 WS_FORM_ID = 'ff_0000000000000000000000000000c3d4'
 ANSWERS = [{'response_id': 'fb_1', 'text': 'The labs ran long'}, {'response_id': 'fb_2', 'text': 'Great demo'}]
-BODY = {'form_id': FORM_ID, 'answers': ANSWERS, 'filters': {'from': '2026-11-01'}, 'responses': 2,
+BODY = {'form_id': FORM_ID, 'answers': ANSWERS, 'filters': {'from': '2026-11-01'},
         'last_response_at': '2026-11-12T10:00:00'}
 MODEL_ANSWER = json.dumps({'themes': [{'label': 'Labs ran long', 'sentiment': 'negative',
                                        'response_ids': ['fb_1', 'fb_unknown']}], 'summary': 'Shorten the labs.'})
@@ -95,7 +95,8 @@ def _config(world: dict, lambda_context: Any, **kwargs: Any) -> dict:
 class TestTheWorkersJob:
     def test_it_is_registered_per_workspace_in_the_jobs_own_scope(self):
         work = settings_handler.ASSIST_WORK[forms_v2_report_ai.REPORT_JOB]
-        assert (work.run, work.per_workspace, work.in_scope) == (forms_report_routes.run_job, True, True)
+        assert (work.run, work.per_workspace, work.in_scope, work.forget_config) == (forms_report_routes.run_job, True,
+                                                                                     True, True)
 
     def test_it_writes_labels_and_ids_in_the_deployments_forms_partition(self, world, lambda_context):
         config = _config(world, lambda_context, body=BODY)
@@ -107,9 +108,24 @@ class TestTheWorkersJob:
         assert (row['themes'], row['response_ids'], row['ai']['summary'], row['ai']['model']) == (
             [{'label': 'Labs ran long', 'count': 1, 'sentiment': 'negative', 'quote_ids': ['fb_1']}],
             ['fb_1', 'fb_2'], 'Shorten the labs.', 'model-x')
-        assert (row['created_by'], row['reason'], row['filters'], 'ttl' in row) == (
-            {'sub': 'sub-us', 'kind': 'user'}, 'ai_summary', {'from': '2026-11-01'}, False)
+        assert (row['created_by'], row['reason'], row['filters'], row['responses_counted'], 'ttl' in row) == (
+            {'sub': 'sub-us', 'kind': 'user'}, 'ai_summary', {'from': '2026-11-01'}, 2, False)
         assert 'The labs ran long' not in json.dumps(row, default=str)
+
+    @pytest.mark.parametrize(('model_answer', 'status'), [(MODEL_ANSWER, 'completed'), ('{}', 'completed'),
+                                                          (None, 'failed')], ids=['summary', 'no-summary', 'failed'])
+    def test_the_job_row_keeps_no_answer_once_the_job_ends(self, world, lambda_context, model_answer, status):
+        # (F5: the answers ride the job's config to the worker, and are removed from its row when it ends)
+        _status, started = _call(lambda_context, 'POST', '/settings/form-reports', body=BODY)
+        [row] = _job_rows(world, 'ASSIST#sub-us')
+        assert row['config']['answers'] == ANSWERS
+        event = {'action': 'assist_job', 'pk': row['pk'], 'job_id': started['job_id']}
+        effect = RuntimeError('model down') if model_answer is None else None
+        with patch('shared.forms_v2_report_ai._converse', side_effect=effect, return_value=(model_answer, 'model-x')):
+            assert assist_jobs.run(event, settings_handler.ASSIST_WORK)['status'] == status
+        [ended] = _job_rows(world, 'ASSIST#sub-us')
+        assert (ended['status'], 'config' in ended) == (status, False)
+        assert 'The labs ran long' not in json.dumps(ended, default=str)
 
     def test_in_a_workspace_it_writes_the_workspaces_row_only(self, world, lambda_context):
         config = _config(world, lambda_context, body={**BODY, 'form_id': WS_FORM_ID}, ws=WS, claims=EDITOR)

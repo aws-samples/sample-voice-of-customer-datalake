@@ -8,10 +8,11 @@ Two pieces (the AI assistant fills the context through its
                        S3-triggered extractor at lambda/product_doc_extractor/.
                        WHAT IS PROCESSED: images (png/jpeg/gif/webp) and text
                        (.md/.txt). WHAT IS NOT: PDF and .docx are refused at upload
-                       with an explicit "not yet" — no extractor handles them, and
-                       accepting them only produced records stuck at status=pending
-                       forever, with the UI badge reading "Extracting…" indefinitely.
-                       See DEFERRED_CONTENT_TYPES.
+                       with an explicit "not yet" that points to the Documents Library
+                       (7.62.00, shared/library_extract.py reads both there): this
+                       extractor does not, and accepting them here only produced
+                       records stuck at status=pending forever, with the UI badge
+                       reading "Extracting…" indefinitely. See DEFERRED_CONTENT_TYPES.
 
 `build_product_context_block(project_id) -> str` is consumed by
 lambda/jobs/document_generator/handler.py (PRD / PR-FAQ generation) and
@@ -185,7 +186,9 @@ DOCX_CONTENT_TYPE = (
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 )
 
-# Types we intend to support but cannot yet: no extractor handles them. Kept
+# Types we intend to support but cannot yet: the product-doc extractor does not read them (the Documents Library
+# does since 7.62.00, so the refusal sends the person there: a library item is mentioned in the assistant with
+# #slug, though not yet an input of PRD / PR/FAQ generation). Kept
 # separate from "unsupported" on purpose. These used to be ACCEPTED, and the
 # upload appeared to work while the record sat at status=pending forever, so a
 # user who previously uploaded a PDF needs to be told it is deferred rather than
@@ -683,8 +686,9 @@ def create_upload_url(project_id: str, body: dict) -> dict:
         raise ValidationError('filename is required')
     if content_type in DEFERRED_CONTENT_TYPES:
         raise ValidationError(
-            f'{DEFERRED_CONTENT_TYPES[content_type]} files are not supported yet. '
-            f'Accepted for now: {_ACCEPTED_EXTENSIONS_LABEL}.'
+            f'{DEFERRED_CONTENT_TYPES[content_type]} files are not supported yet as product documents: add the '
+            f'file to the Documents Library (/library) and mention it in the assistant with #. '
+            f'Accepted here for now: {_ACCEPTED_EXTENSIONS_LABEL}.'
         )
     if content_type not in ALLOWED_CONTENT_TYPES:
         raise ValidationError(

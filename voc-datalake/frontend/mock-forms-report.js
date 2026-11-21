@@ -1,9 +1,12 @@
 // The Report (7.63.00) for the dev mock, in the shapes lambda/api/feedback_form_handler.py answers
 // (docs/feedback-forms.md "Report" and "Compare"; lambda/shared/forms_v2_report.py and forms_v2_segments.py):
 //
-//   GET  /feedback-forms/{id}/report?…[&group_by=]   KPIs, heatmaps, segments (at least 5 responses each), the themes
-//                                                    of the open answers with real quotes, the newest AI summary
-//   GET  /feedback-forms/{id}/compare?with=&by=       the form beside others, questions matched by id and type
+//   GET  /feedback-forms/{id}/report?…[&group_by=]   KPIs, heatmaps, segments (at least 5 responses each, the smallest
+//                                                    withheld beside a withheld merged group), the themes of the open
+//                                                    answers with real quotes, the newest AI summary under its own
+//                                                    filters
+//   GET  /feedback-forms/{id}/compare?with=&by=       the form beside others, questions matched by id and what their
+//                                                    figures mean; `by` only with another form
 //   POST /settings/form-reports                       an AI summary: 202 {job_id}; the job labels the answers it was
 //                                                    sent and stores the report (no model: the mock's own labels)
 //   GET  /settings/form-reports/{job_id}              the job: {status, result: {success, form_id, report_id}}
@@ -61,12 +64,20 @@ function split(groupBy, rows) {
   return { named: ordered.filter(([, members]) => members.length >= MIN_SEGMENT), small: ordered.filter(([, members]) => members.length < MIN_SEGMENT) };
 }
 
+/** The named segment withheld with a withheld merged group (forms_v2_segments.py `_complement`): the smallest. */
+function complement(named, small) {
+  const merged = small.reduce((sum, [, members]) => sum + members.length, 0);
+  return named.length > 0 && merged > 0 && merged < MIN_SEGMENT ? named.at(-1)[0] : null;
+}
+
 function segments(item, rows, groupBy) {
   const { named, small } = split(groupBy, rows);
   const merged = small.flatMap(([, members]) => members);
+  const withheld = complement(named, small);
   return {
     by: groupBy, min_size: MIN_SEGMENT,
-    groups: named.map(([value, members]) => ({ value, responses: members.length, scores: scoresOf(item, members) })),
+    groups: named.map(([value, members]) => (value === withheld ? { value, responses: members.length, scores: null, withheld: 'complement' }
+      : { value, responses: members.length, scores: scoresOf(item, members) })),
     merged: small.length === 0 ? null : { segments: small.length, responses: merged.length, scores: merged.length >= MIN_SEGMENT ? scoresOf(item, merged) : null },
   };
 }
@@ -99,11 +110,19 @@ function themes(item, rows) {
   });
 }
 
-/** The stored summary as this reader sees it: quotes joined against the rows, stale once a newer response came in. */
+/** `rows` under a summary's own filters (`from`, `to`, `language`, `ending`, `hidden.<id>`; `days` only describes them). */
+function underFilters(filters, rows) {
+  return rows.filter((row) => (!filters.from || row.submitted_at >= filters.from) && (!filters.to || row.submitted_at.slice(0, filters.to.length) <= filters.to)
+    && (!filters.language || row.language === filters.language) && (!filters.ending || row.ending_id === filters.ending)
+    && Object.entries(filters).every(([key, value]) => !key.startsWith('hidden.') || String(row.hidden?.[key.slice(7)] ?? '') === value));
+}
+
+/** The stored summary as this reader sees it: quotes joined against the rows under its own filters, stale once a newer
+ * response came in under them. */
 function aiView(item, allRows) {
   const report = stored.get(item.form_id);
   if (report === undefined) return null;
-  const byId = new Map(allRows.filter((row) => !row.is_test).map((row) => [row.feedback_id ?? row.response_id, row]));
+  const byId = new Map(underFilters(report.filters, allRows.filter((row) => !row.is_test)).map((row) => [row.feedback_id ?? row.response_id, row]));
   const quoteText = (row) => freeText(item).map((q) => row.answers[q.id]).filter((v) => typeof v === 'string' && v !== '').join(' · ');
   const newest = [...byId.values()].reduce((max, row) => (row.submitted_at > max ? row.submitted_at : max), '');
   return {
@@ -138,22 +157,25 @@ function measured(item) {
   return (item.questions ?? []).filter((q) => SCALES.includes(q.type) || q.type === 'matrix');
 }
 
-const shapeOf = (q) => `${q.type}:${q.type === 'rating' ? q.range : ''}`;
+/** What a question's figures mean (forms_v2_segments.py `_measure_shape`): its type, a rating's points, a matrix's scores. */
+const shapeOf = (q) => `${q.type}:${q.type === 'rating' ? q.range : ''}:${q.type === 'matrix' ? (q.columns ?? []).map((column) => column.score).filter(Number.isInteger).sort((a, b) => a - b).join(',') : ''}`;
 
 /** GET …/compare: `with` (up to 10 form ids of the mock's forms) and `by` (hidden.<id>). */
 export function formCompare(item, forms, rowsOf, params) {
   const ids = (params.get('with') ?? '').split(',').map((id) => id.trim()).filter((id) => id !== '' && id !== item.form_id);
   if (ids.length > MAX_COMPARED) return fail(400, `with names at most ${MAX_COMPARED} forms`);
   const by = params.get('by');
+  if (by && ids.length === 0) return fail(400, 'by splits the forms compared: name at least one other form in with', { code: 'group_by_invalid' });
   if (by && !(item.hidden_fields ?? []).some((field) => `hidden.${field.id}` === by)) return fail(400, 'by must be hidden.<id>, a hidden field of this form', { code: 'group_by_invalid' });
   const others = ids.map((id) => forms.find((form) => form.form_id === id));
   if (others.includes(undefined)) return fail(404, 'Form not found');
   const base = measured(item);
   const sides = [item, ...others];
-  const point = (side, rows, matched, value, merged = false) => {
+  const point = (side, rows, matched, value, merged = false, withheld = false) => {
     const times = rows.map((row) => row.submitted_at).sort();
     return { form_id: side.form_id, value, responses: rows.length, first_response_at: times[0] ?? null, last_response_at: times.at(-1) ?? null,
-      scores: rows.length >= MIN_SEGMENT ? scoresOf(side, rows, matched) : null, ...(merged ? { merged: true } : {}) };
+      scores: rows.length >= MIN_SEGMENT && !withheld ? scoresOf(side, rows, matched) : null, ...(merged ? { merged: true } : {}),
+      ...(withheld ? { withheld: 'complement' } : {}) };
   };
   const formsOut = [];
   const points = [];
@@ -169,7 +191,8 @@ export function formCompare(item, forms, rowsOf, params) {
       continue;
     }
     const { named, small } = split(by, rows);
-    for (const [value, members] of named.sort((a, b) => a[0].localeCompare(b[0]))) points.push(point(side, members, matched, value));
+    const withheld = complement(named, small);
+    for (const [value, members] of [...named].sort((a, b) => a[0].localeCompare(b[0]))) points.push(point(side, members, matched, value, false, value === withheld));
     if (small.length > 0) points.push(point(side, small.flatMap(([, members]) => members), matched, null, true));
   }
   return [200, { success: true, form_id: item.form_id, include_test: false, by: by || null, min_size: MIN_SEGMENT,
@@ -184,7 +207,7 @@ export function startSummary(forms, body) {
   const ids = body.answers.map((answer) => answer.response_id);
   const reportId = `rpt_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}${randomBytes(4).toString('hex')}`;
   stored.set(form.form_id, {
-    report_id: reportId, created_at: new Date().toISOString(), created_by: { sub: 'mock-user', kind: 'user' }, responses_counted: body.responses ?? ids.length,
+    report_id: reportId, created_at: new Date().toISOString(), created_by: { sub: 'mock-user', kind: 'user' }, responses_counted: ids.length,
     last_response_at: body.last_response_at ?? null, filters: body.filters ?? {}, response_ids: ids,
     summary: `People valued the hands-on parts most; ${ids.length} answers mention the pace or the setup.`,
     themes: [{ label: 'Hands-on parts', count: Math.ceil(ids.length / 2), sentiment: 'positive', quote_ids: ids.slice(0, MAX_QUOTES) },

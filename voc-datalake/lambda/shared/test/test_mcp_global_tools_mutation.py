@@ -111,6 +111,17 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
          'circuit breaker.'),
         _object({'sources': BOOL}),
         False, False, False),
+    # A form's Results, read only (7.63.00, docs/mcp.md): the forms Lambda's route, as the minter.
+    'forms_get_results': (
+        'Get form results',
+        ("Read a feedback form's Results by `form_id`: responses, per question counts, NPS, CSAT, CES, latest open "
+         'answers, endings and link checks. Narrow with `from`/`to` (YYYY-MM-DD) and `hidden` ({field: value}); '
+         '`include_test` adds test responses.'),
+        _object({'form_id': ID, 'from': {'type': 'string', 'format': 'date'},
+                 'to': {'type': 'string', 'format': 'date'}, 'include_test': BOOL,
+                 'hidden': {'type': 'object', 'maxProperties': 5,
+                            'additionalProperties': {'type': 'string', 'maxLength': 200}}}, 'form_id'),
+        False, False, False),
     'memory_search': (
         'Search memory',
         ('Semantic search over the company and personal memory you can see: decisions, facts, preferences and '
@@ -256,19 +267,14 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
          'Saved versions are untouched.'),
         _object({'project_id': ID, 'document_id': ID, 'draft_id': ID}, 'document_id', 'draft_id'),
         True, False, True),
-    # The Documents Library (7.62.00, docs/documents-library.md): its passages and one item's text, as the minter.
+    # The Documents Library (7.62.00, docs/documents-library.md): its passages, as the minter (7.63.00: no library_get;
+    # the web app's /text route reads an item page by page).
     'library_search': (
         'Search the library',
         ('Search the Documents Library (uploaded reports, transcripts, decks; not feedback) for passages answering '
          '`query`, in `items` (up to 3 ids or slugs) or the items whose title or tags match. Cite [#slug p.N].'),
         _object({'query': {'type': 'string', 'maxLength': 500},
                  'items': {'type': 'array', 'maxItems': 3, 'items': {'type': 'string'}}}, 'query'),
-        False, False, False),
-    'library_get': (
-        'Read a library item',
-        ("Read a library item's text by `item_id`, one `page` at a time (a PDF page, a slide or 20,000 "
-         'characters).'),
-        _object({'item_id': ID, 'page': {'type': 'integer', 'minimum': 1, 'maximum': 500}}, 'item_id'),
         False, False, False),
     'agents_list': (
         'List agents',
@@ -414,7 +420,7 @@ class TestThePublishedCatalogue:
             'metrics': 'METRICS_FUNCTION', 'settings': 'SETTINGS_FUNCTION', 'memory': 'MEMORY_FUNCTION',
             'projects': 'PROJECTS_FUNCTION', 'agents': 'AGENTS_FUNCTION', 'engagement': 'ENGAGEMENT_FUNCTION',
             'radar': 'RADAR_FUNCTION', 'feedback_edit': 'FEEDBACK_EDIT_FUNCTION',
-            'integrations': 'INTEGRATIONS_FUNCTION'}
+            'integrations': 'INTEGRATIONS_FUNCTION', 'forms': 'FORMS_FUNCTION'}
 
 
 _ROOT = Path(__file__).resolve().parents[4]
@@ -454,8 +460,8 @@ class TestTheOldNames:
                           # (7.53.00, MCP for runs)
                           'engineering_runs_list', 'engineering_run_get', 'engineering_run_analysis',
                           'engineering_run_steer', 'engineering_run_request',
-                          # (7.62.00, the Documents Library)
-                          'library_search', 'library_get'}
+                          # (7.62.00, the Documents Library; 7.63.00, a form's Results)
+                          'library_search', 'forms_get_results'}
         assert set(tools.RENAMED.values()) == listed - new_since_6_10
 
     @pytest.mark.parametrize(('old', 'new'), list(RENAMED_IN_6_10.items()))
@@ -906,7 +912,7 @@ class TestProjections:
 
 
 class TestTheLibraryTools:
-    """``library_search`` and ``library_get`` (7.62.00): the projects API's library routes, read as the minter."""
+    """``library_search`` (7.62.00): the projects API's library context route, read as the minter."""
 
     def test_search_sends_ids_and_slugs_apart_and_never_asks_for_a_file(self):
         request = _build('library_search', {'query': ' growth ', 'items': ['lib_20261101000000_0000a001', '#Q3-Market']})
@@ -920,8 +926,40 @@ class TestTheLibraryTools:
         with pytest.raises(tools.InvalidToolArgument, match='items must list'):
             _build('library_search', {'query': 'q', 'items': items})
 
-    def test_get_reads_one_page_of_the_text(self):
-        request = _build('library_get', {'item_id': 'lib_20261101000000_0000a001', 'page': 3})
-        assert (request.method, request.path, request.query) == (
-            'GET', '/projects/library/lib_20261101000000_0000a001/text', {'page': 3})
-        assert _build('library_get', {'item_id': 'lib_20261101000000_0000a001'}).query == {'page': 1}
+    def test_library_get_is_gone(self):
+        """Round 1 F1: one item's text, page by page, is the web app's (``GET …/text``), never an MCP tool."""
+        assert tools.resolve_tool('library_get', {'item_id': 'lib_20261101000000_0000a001'}) is None
+
+
+class TestTheFormsResultsTool:
+    """``forms_get_results`` (7.63.00, round 1 F1): ``GET /feedback-forms/{id}/results`` on the forms Lambda, read as
+    the minter (the route's category and source access and workspace rule), JSON only: never the CSV or a write."""
+
+    def test_it_reads_the_results_route_with_the_views_filters(self):
+        request = _build('forms_get_results', {'form_id': 'ff_abc123', 'from': '2026-11-01', 'to': '2026-11-20',
+                                               'include_test': True, 'hidden': {'customer': 'B', 'event': 'Kickoff'}})
+        assert (request.domain, request.method, request.path) == ('forms', 'GET', '/feedback-forms/ff_abc123/results')
+        assert request.query == {'from': '2026-11-01', 'to': '2026-11-20', 'include_test': 'true',
+                                 'hidden.customer': 'B', 'hidden.event': 'Kickoff'}
+        assert _build('forms_get_results', {'form_id': 'ff_abc123'}).query == {'from': None, 'to': None,
+                                                                               'include_test': None}
+        assert tools.DOMAIN_FUNCTION_ENV['forms'] == 'FORMS_FUNCTION'
+
+    @pytest.mark.parametrize(('args', 'message'), [
+        ({}, 'form_id is required'),
+        ({'form_id': '../x'}, 'form_id is required'),
+        ({'form_id': 'ff_1', 'from': '20 November'}, 'from must be a date'),
+        ({'form_id': 'ff_1', 'to': '2026-11-20T10:00'}, 'to must be a date'),
+        ({'form_id': 'ff_1', 'hidden': {'Customer': 'B'}}, 'hidden must map'),
+        ({'form_id': 'ff_1', 'hidden': {'customer': ''}}, 'hidden must map'),
+        ({'form_id': 'ff_1', 'hidden': {'customer': 'x' * 201}}, 'hidden must map'),
+        ({'form_id': 'ff_1', 'hidden': {f'h{n}': 'v' for n in range(6)}}, 'hidden must map'),
+        ({'form_id': 'ff_1', 'hidden': ['customer']}, 'hidden must map'),
+        ({'form_id': 'ff_1', 'include_test': 'yes'}, 'include_test must be'),
+    ])
+    def test_it_refuses_what_it_cannot_send(self, args, message):
+        assert message in _refusal('forms_get_results', args)
+
+    def test_it_is_the_only_forms_tool_and_a_read(self):
+        forms = [tool for tool in tools.TOOLS if tool.name.startswith('forms_')]
+        assert [(tool.name, tool.write, tool.admin_only) for tool in forms] == [('forms_get_results', False, False)]

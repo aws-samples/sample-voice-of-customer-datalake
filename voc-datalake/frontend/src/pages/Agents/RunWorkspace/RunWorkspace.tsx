@@ -21,6 +21,7 @@
  * the top, for an admin, the banner of a run that waits for a person, failed or was stopped (RunEndBanner.tsx): what
  * happened, which agent and step, why, the cost so far, and what to do next with the control bar it links to.
  * (7.60.00) Beside the control bar, on a run of a fine-grained token connection, its token owner's go (RunTokenGo.tsx).
+ * (7.63.00) Above it all, once, what the run's start said beside it (StartWarnings.tsx).
  *
  * @module pages/Agents/RunWorkspace/RunWorkspace
  */
@@ -44,6 +45,8 @@ import { FlowPane } from './FlowPane'
 import { SessionsPane } from './SessionsPane'
 import { Inspector } from './Inspector'
 import { RunEndBanner } from './RunEndBanner'
+import { StartWarnings } from './StartWarnings'
+import { startWarningsOf } from '../startRunRules'
 import { orchestratorOf } from './agentStatus'
 import type { EngineeringOverview } from '../../../api/engineeringRunsApi'
 import type { SessionActions } from './SessionThread'
@@ -118,13 +121,16 @@ function NotRead({ error, retry, retrying }: Readonly<{ error: unknown; retry: (
 
 export default function RunWorkspace() {
   const { runId = '' } = useParams()
+  const location = useLocation()
   // The agent open in it is the path's own place after the run (`/a/<agent>`); a path off that form is replaced.
-  const read = readRunAddress(useLocation())
+  const read = readRunAddress(location)
   useReplaceAddress(read?.replaceWith ?? null)
   const { data, dataUpdatedAt, error, isError, isLoading, refetch, isFetching, live, refreshFailed } = useEngineeringOverview(runId)
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0">
       <BackToAgents />
+      {/* (7.63.00: what the start said beside the run, from the Start dialog that opened it) */}
+      <StartWarnings key={runId} warnings={startWarningsOf(location.state)} />
       {isLoading && <div className="skeleton h-40" />}
       {isError && data === undefined && <NotRead error={error} retry={() => { void refetch() }} retrying={isFetching} />}
       {data !== undefined && (

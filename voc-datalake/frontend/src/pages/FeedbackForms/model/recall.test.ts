@@ -15,10 +15,6 @@ const pick: Question = {
 }
 const text: Question = { id: 'q_text', type: 'open_text', headline: en('Why {{q_nps}}?'), required: false, long: true, input_type: 'text' }
 
-/** A case's values as `renderRecall` takes them (the JSON's cases infer the keys the others have as optional). */
-const valuesOf = (values: Readonly<Record<string, string | undefined>>): Record<string, string> =>
-  Object.fromEntries(Object.entries(values).flatMap(([key, value]) => (value === undefined ? [] : [[key, value]])))
-
 function formWith(questions: readonly Question[], extra: Partial<FormV2> = {}): FormV2 {
   return { ...blankForm('en'), questions, hidden_fields: [{ id: 'event' }, { id: 'unused' }], ...extra }
 }
@@ -28,17 +24,20 @@ describe('recall (schemas/form-recall-cases.json: one grammar with the server an
     expect(placeholders(written)).toStrictEqual(expected)
   })
 
-  it.each(recallCases.render)('shows "$text" with $values as "$output"', ({ text: written, values, output }) => {
-    expect(renderRecall(written, valuesOf(values))).toBe(output)
+  it('fills the builder\'s preview by plain substitution: a value, else the fallback, else nothing (the widget tidies)', () => {
+    expect(renderRecall('How was {{ event }}?', { event: '‹Event›' })).toBe('How was ‹Event›?')
+    expect(renderRecall('How was {{event|the event}}?', {})).toBe('How was the event?')
+    // (never tidied here: the widget's preview shows how respondents read a text without the value)
+    expect(renderRecall('Thanks {{name}}, {{company}}!', {})).toBe('Thanks , !')
+    expect(renderRecall('No placeholder, two  spaces', {})).toBe('No placeholder, two  spaces')
   })
 
   it('shows a text to a reader of results with each placeholder as its id', () => {
     expect(shownAsIds('How was {{ event | the event }} after {{q_nps}}?')).toBe('How was [event] after [q_nps]?')
   })
 
-  it('never reads a value off an object\'s own machinery, nor lets a value bring in the gap marker', () => {
-    expect(renderRecall('A {{constructor}} B {{toString|x}}', {})).toBe('A B x')
-    expect(renderRecall('A {{a}}.', { a: '\uffff' })).toBe('A.')
+  it('never reads a value off an object\'s own machinery', () => {
+    expect(renderRecall('A {{constructor}} B {{toString|x}}', {})).toBe('A  B x')
   })
 })
 

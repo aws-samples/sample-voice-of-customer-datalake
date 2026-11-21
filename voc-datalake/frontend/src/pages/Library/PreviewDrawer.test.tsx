@@ -1,11 +1,12 @@
 /**
  * @fileoverview The preview drawer of one library item: its details and the 5-minute download link, the text page by
- * page (Markdown through the light reader, any other format as written), Retry, the metadata editor (only what
+ * page (Markdown through the light reader, any other format as written), Retry (a failed item's, a stale extraction's,
+ * which is no longer polled), the metadata editor (only what
  * changed, with `expected_version`; 409 `stale` said and reloaded; a taken short name beside its field), and what a
  * viewer, a pending item and a missing one show.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { fetchApi, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
@@ -150,6 +151,32 @@ describe('retry', () => {
     await user.click(within(await drawer()).getByRole('button', { name: 'Read it again' }))
     expect(await screen.findByText('Its text is being read. This page updates when it is ready.')).toBeInTheDocument()
     expect(fetchApi).toHaveBeenCalledWith(`${ITEM}/retry`, { method: 'POST' })
+  })
+
+  it('offers a stale extraction a retry, and no longer reads the item again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    onTestFinished(() => { vi.useRealTimers() })
+    route({
+      [`GET ${ITEM}`]: () => detailOf(libraryItem({ status: 'extracting', stale: true })),
+      [`POST ${ITEM}/retry`]: () => ({ item: libraryItem({ status: 'extracting' }) }),
+    })
+    const { user } = renderDrawer()
+    const sheet = await drawer()
+    expect(sheet).toHaveTextContent('Its text has not been read after 16 minutes: the reading stopped. Read it again.')
+    const reads = () => vi.mocked(fetchApi).mock.calls.filter(([path]) => path === ITEM).length
+    const before = reads()
+    await act(async () => { await vi.advanceTimersByTimeAsync(8200) })
+    expect(reads()).toBe(before)
+    await user.click(within(sheet).getByRole('button', { name: 'Read it again' }))
+    expect(fetchApi).toHaveBeenCalledWith(`${ITEM}/retry`, { method: 'POST' })
+  })
+
+  it('offers no retry while an extraction is still in time', async () => {
+    route({ [`GET ${ITEM}`]: () => detailOf(libraryItem({ status: 'extracting' })) })
+    renderDrawer()
+    const sheet = await drawer()
+    expect(sheet).toHaveTextContent('Its text is being read.')
+    expect(within(sheet).queryByRole('button', { name: 'Read it again' })).not.toBeInTheDocument()
   })
 
   it('says why a retry was refused', async () => {

@@ -836,8 +836,8 @@ FG_PAT = 'github_pat_11ABCDEFG0' + 'm' * 40
 
 
 def token_request(**change: Any) -> ConnectionRequest:
-    facts = FineGrainedFacts(repository='open-tools/lint-kit', default_branch='main', owner_type='User',
-                             login='casey-dev', expires_at='2026-12-31')
+    facts = FineGrainedFacts(repository='open-tools/lint-kit', default_branch='main', login='casey-dev',
+                             expires_at='2026-12-31')
     return ConnectionRequest(host='github', repository=facts.repository, default_branch='main', repository_private=False,
                              credential=FineGrainedToken(APP_ID, INSTALLATION_ID, facts, 'a' * 64, FG_PAT),
                              kind=KIND_FINE_GRAINED, facts={'token_login': 'casey-dev', 'token_owner': 'a' * 64,

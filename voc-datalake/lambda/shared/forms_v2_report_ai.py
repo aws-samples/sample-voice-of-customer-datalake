@@ -44,7 +44,7 @@ MAX_QUOTE_IDS: Final = 3
 #: A feedback item's id, or a test response's.
 RESPONSE_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.:#-]{0,127}')
 FORM_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}')
-_REQUEST_KEYS: Final = frozenset({'form_id', 'answers', 'filters', 'responses', 'last_response_at'})
+_REQUEST_KEYS: Final = frozenset({'form_id', 'answers', 'filters', 'last_response_at'})
 
 
 def _answers(value: object) -> list[dict[str, str]]:
@@ -82,9 +82,9 @@ def _filters(value: object) -> dict[str, str]:
 
 
 def validate_request(body: Mapping[str, Any]) -> dict[str, Any]:
-    """``{form_id, answers, filters?, responses?, last_response_at?}`` checked: the form, the answers to summarize, and
-    the view they were read under (recorded with the report: its filters, how many responses it counted and the
-    newest one's time, so the report can say when it is stale)."""
+    """``{form_id, answers, filters?, last_response_at?}`` checked: the form, the answers to summarize, and the view
+    they were read under (recorded with the report: its filters and the newest response read, so the report can say
+    when it is stale; how many it read is the answers' count)."""
     unknown = sorted(str(key)[:40] for key in body if key not in _REQUEST_KEYS)
     if unknown:
         raise ValidationError(f'the report request has unknown fields: {", ".join(unknown[:5])}')
@@ -92,14 +92,10 @@ def validate_request(body: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(form_id, str) or not FORM_ID.fullmatch(form_id):
         raise ValidationError('form_id must be the form being reported on')
     answers = _answers(body.get('answers'))
-    responses = body.get('responses', len(answers))
-    if isinstance(responses, bool) or not isinstance(responses, int) or responses < 0:
-        raise ValidationError('responses must be a whole number')
     last = body.get('last_response_at')
     if last is not None and (not isinstance(last, str) or len(last) > 40):
         raise ValidationError('last_response_at must be a time')
-    return {'form_id': form_id, 'answers': answers, 'filters': _filters(body.get('filters')),
-            'responses': responses, 'last_response_at': last}
+    return {'form_id': form_id, 'answers': answers, 'filters': _filters(body.get('filters')), 'last_response_at': last}
 
 
 SYSTEM_PROMPT: Final = (

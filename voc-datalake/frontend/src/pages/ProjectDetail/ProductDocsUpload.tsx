@@ -345,7 +345,8 @@ export function DocsUpload({ projectId, canEdit }: { readonly projectId: string;
 
       {/* PDF/DOCX are named explicitly rather than just omitted: they used to be
           accepted here, so a user who uploaded one before needs to read "not
-          yet". Full width, unlike the header hint, which has a narrow slot. */}
+          yet", and where they are read (the Documents Library, 7.62.00). Full
+          width, unlike the header hint, which has a narrow slot. */}
       <p className="mt-2 text-xs text-muted">
         {t('product.upload.accepted')}
         {' · '}

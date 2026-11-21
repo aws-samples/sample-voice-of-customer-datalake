@@ -2524,6 +2524,10 @@
       "already": "Cette exécution a déjà reçu un feu vert.",
       "refused": "Seul le propriétaire du jeton donne son feu vert à cette exécution.",
       "failed": "Le feu vert n’a pas pu être donné : réessayez."
+    },
+    "startWarnings": {
+      "title": "L’exécution a démarré avec un avertissement",
+      "dismiss": "Masquer"
     }
   },
   "canvas": {

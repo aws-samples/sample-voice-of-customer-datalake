@@ -2524,6 +2524,10 @@
       "already": "Esta ejecución ya tiene un visto bueno.",
       "refused": "Solo el dueño del token da el visto bueno a esta ejecución.",
       "failed": "No se pudo dar el visto bueno: inténtalo de nuevo."
+    },
+    "startWarnings": {
+      "title": "La ejecución empezó con un aviso",
+      "dismiss": "Descartar"
     }
   },
   "canvas": {

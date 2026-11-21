@@ -15,7 +15,7 @@ from shared.exceptions import ValidationError
 
 REQUEST = {'form_id': 'ff_0123', 'answers': [{'response_id': 'r1', 'text': 'Labs ran long'},
                                              {'response_id': 'r2', 'text': 'Great presenter'}],
-           'filters': {'from': '2026-11-01'}, 'responses': 9, 'last_response_at': '2026-11-12T10:00:00'}
+           'filters': {'from': '2026-11-01'}, 'last_response_at': '2026-11-12T10:00:00'}
 
 #: version -> sha256 of the system prompt and a rendered user prompt. Append only.
 PINNED = {'1.0.0': '5e3804d337a6c63202ad494e58ee27aaec657765be713c813fd47c8cb848d541'}
@@ -34,8 +34,10 @@ class TestTheRequest:
     def test_a_valid_request_is_kept_as_sent(self):
         assert ai.validate_request(REQUEST) == REQUEST
 
-    def test_responses_default_to_the_answers_sent(self):
-        assert ai.validate_request({'form_id': 'ff_1', 'answers': REQUEST['answers']})['responses'] == 2
+    def test_how_many_it_read_is_the_answers_never_a_count_sent_beside_them(self):
+        # (7.63.00: the summary records the answers it read; a view's own count is no field of the request)
+        with pytest.raises(ValidationError, match='responses'):
+            ai.validate_request({**REQUEST, 'responses': 9})
 
     @pytest.mark.parametrize(('body', 'code'), [
         ({**REQUEST, 'answers': []}, 'answers_invalid'),
@@ -51,7 +53,7 @@ class TestTheRequest:
         assert refused.value.code == code
 
     @pytest.mark.parametrize('body', [{**REQUEST, 'extra': 1}, {**REQUEST, 'form_id': '../x'},
-                                      {**REQUEST, 'responses': True}, {**REQUEST, 'last_response_at': 5},
+                                      {**REQUEST, 'last_response_at': 5},
                                       {**REQUEST, 'filters': {'from': 'x' * 201}}, {**REQUEST, 'filters': []}])
     def test_anything_else_malformed_is_a_400(self, body):
         with pytest.raises(ValidationError):

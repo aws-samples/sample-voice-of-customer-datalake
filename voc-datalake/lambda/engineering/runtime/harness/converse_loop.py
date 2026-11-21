@@ -71,6 +71,11 @@ class OutputCut(RuntimeError):
     """The model's reply stopped at the output cap twice in a row."""
 
 
+class ModelTimedOut(RuntimeError):
+    """A model request outlasted the harness's read timeout (``main.BEDROCK_READ_TIMEOUT``): a crash, as
+    ``OutputCut``, never the request sent again (7.63.00: ``main.no_resend_after_a_read_timeout``)."""
+
+
 def model_request_fields(model_id: str) -> dict[str, Any]:
     """The Converse call's extra fields for ``model_id``: Claude's visible thinking for a model that thinks adaptively
     (``ADAPTIVE_THINKING``) and its effort for a model that has one (``effort.py``); nothing for any other model."""

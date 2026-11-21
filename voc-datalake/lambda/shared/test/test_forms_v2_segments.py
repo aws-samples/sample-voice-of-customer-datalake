@@ -10,7 +10,7 @@ import pytest
 
 from shared.exceptions import ValidationError
 from shared.forms_v2_results import ResultRow, ask_why_pairs, score_summary, tally_results
-from shared.forms_v2_segments import MIN_SEGMENT, FormSide, compare, parse_group_by, segment_results
+from shared.forms_v2_segments import COMPLEMENT, MIN_SEGMENT, FormSide, compare, parse_group_by, segment_results
 
 WORKSHOP: dict[str, Any] = {
     'language': 'en', 'languages': ['en'], 'welcome': {'enabled': False},
@@ -70,15 +70,30 @@ class TestWhatAViewGroupsBy:
 
 class TestTheMinimumSegmentSize:
     def test_segments_under_five_merge_and_a_merged_group_under_five_keeps_its_figures(self):
-        rows = [_row(n, customer='Example Ltd', value=5) for n in range(6)] + \
+        rows = [_row(n, customer='Example Ltd', value=5) for n in range(7)] + \
+               [_row(30 + n, customer='Demo Org', value=4) for n in range(6)] + \
                [_row(10 + n, customer='Sample Co', value=1) for n in range(3)] + [_row(20, value=2)]
         segments = segment_results(WORKSHOP, rows, parse_group_by(WORKSHOP, 'hidden.customer'))
         assert segments['min_size'] == MIN_SEGMENT == 5
-        [example] = segments['groups']
-        assert (example['value'], example['responses'], example['scores']['q_value']['average']) == ('Example Ltd', 6,
+        example, demo = segments['groups']
+        assert (example['value'], example['responses'], example['scores']['q_value']['average']) == ('Example Ltd', 7,
                                                                                                       5.0)
-        # Sample Co (3) and the responses with no customer (1) are not answered on their own, nor together (4 < 5).
+        # Sample Co (3) and the responses with no customer (1) are not answered on their own, nor together (4 < 5),
+        # and the smallest named segment is withheld with them: the totals less Example Ltd are 10 responses, never 4.
         assert segments['merged'] == {'segments': 2, 'responses': 4, 'scores': None}
+        assert demo == {'value': 'Demo Org', 'responses': 6, 'scores': None, 'withheld': COMPLEMENT}
+
+    def test_ten_and_one_withholds_both_so_the_one_is_never_the_totals_less_the_ten(self):
+        rows = [_row(n, customer='Example Ltd', nps=10) for n in range(10)] + [_row(10, customer='Sample Co', nps=0)]
+        segments = segment_results(WORKSHOP, rows, parse_group_by(WORKSHOP, 'hidden.customer'))
+        assert segments['groups'] == [{'value': 'Example Ltd', 'responses': 10, 'scores': None, 'withheld': COMPLEMENT}]
+        assert segments['merged'] == {'segments': 1, 'responses': 1, 'scores': None}
+        # (the comparison's points follow the same rule)
+        out = compare(_side('fa', rows), [_side('fb', [])], parse_group_by(WORKSHOP, 'hidden.customer',
+                                                                            hidden_only=True))
+        assert [(p['form_id'], p['value'], p['responses'], p['scores'], p.get('withheld'), p.get('merged'))
+                for p in out['points']] == [('fa', 'Example Ltd', 10, None, COMPLEMENT, None),
+                                            ('fa', None, 1, None, None, True)]
 
     def test_a_merged_group_of_five_or_more_is_scored(self):
         rows = [_row(n, customer=f'c{n % 3}') for n in range(6)]
@@ -138,11 +153,26 @@ class TestComparingForms:
         assert b_point['scores']['q_nps']['nps'] == -100.0
         assert (c_point['responses'], c_point['scores']) == (1, None)
 
-    def test_by_a_hidden_field_gives_the_trend_within_a_form(self):
-        rows = [_row(n, date='2026-10-01', nps=0) for n in range(5)] + \
+    def test_by_a_hidden_field_splits_each_compared_form(self):
+        rows = [_row(n, date='2026-10-01', nps=0) for n in range(6)] + \
                [_row(10 + n, date='2026-11-01') for n in range(5)] + [_row(30, date='2026-12-01')]
-        out = compare(_side('fa', rows), [], parse_group_by(WORKSHOP, 'hidden.event_date', hidden_only=True))
+        out = compare(_side('fa', rows), [_side('fb', [_row(40 + n, date='2026-10-01') for n in range(5)])],
+                      parse_group_by(WORKSHOP, 'hidden.event_date', hidden_only=True))
         assert out['by'] == 'hidden.event_date'
-        assert [(p['value'], p['responses'], p.get('merged', False)) for p in out['points']] == [
-            ('2026-10-01', 5, False), ('2026-11-01', 5, False), (None, 1, True)]
-        assert [p['scores'] and p['scores']['q_nps']['nps'] for p in out['points']] == [-100.0, 100.0, None]
+        assert [(p['form_id'], p['value'], p['responses'], p.get('merged', False)) for p in out['points']] == [
+            ('fa', '2026-10-01', 6, False), ('fa', '2026-11-01', 5, False), ('fa', None, 1, True),
+            ('fb', '2026-10-01', 5, False)]
+        # (2026-11-01, the smallest named point, is withheld with the merged one; fb has nothing merged)
+        assert [p['scores'] and p['scores']['q_nps']['nps'] for p in out['points']] == [-100.0, None, None, 100.0]
+        assert out['points'][1]['withheld'] == COMPLEMENT
+
+    def test_matrices_scored_on_different_scales_are_never_lined_up(self):
+        phases = WORKSHOP['questions'][4]
+        rescored = {**phases, 'columns': [{**phases['columns'][0], 'score': 0}, {**phases['columns'][1], 'score': 3}]}
+        relabelled = {**phases, 'columns': [{**phases['columns'][0], 'code': 'low'}, phases['columns'][1]]}
+        out = compare(_side('fa', [_row(n) for n in range(5)]),
+                      [_side('fb', [], definition={**WORKSHOP, 'questions': [rescored]}),
+                       _side('fc', [], definition={**WORKSHOP, 'questions': [relabelled]})], None)
+        assert out['forms'][1]['unmatched']['q_phases'] == 'different'
+        # (the same scores under other codes measure alike)
+        assert 'q_phases' in out['forms'][2]['matched']

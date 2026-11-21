@@ -131,6 +131,17 @@ describe('the list', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(4100) })
     expect(listCalls().length).toBeGreaterThan(before)
   })
+
+  it('stops reading the list again once the server says an extraction is stale', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    onTestFinished(() => { vi.useRealTimers() })
+    route({ 'GET /projects/library': () => libraryPage([libraryItem({ status: 'extracting', stale: true })]) })
+    renderPage()
+    await screen.findByRole('button', { name: /Q3 market report/ })
+    const before = listCalls().length
+    await act(async () => { await vi.advanceTimersByTimeAsync(8200) })
+    expect(listCalls()).toHaveLength(before)
+  })
 })
 
 describe('in a workspace', () => {

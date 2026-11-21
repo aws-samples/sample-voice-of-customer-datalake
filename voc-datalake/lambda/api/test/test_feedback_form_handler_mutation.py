@@ -754,8 +754,8 @@ class TestAnUpdateSetsOnlyWhatWasSent:
         feedback.query.return_value = {'Items': []}
         _, payload = self._put(api_gateway_event, lambda_context, {'title': 'T'})
         assert payload == {'success': True, 'form': EMPTY_FORM}
-        # A definition change of a form never marked answered reads whether it has a response (none here).
-        assert feedback.query.call_args.kwargs['ExpressionAttributeValues'] == {':sc': f'form_{FORM_ID}'}
+        # (7.63.00) A definition change the lock has nothing to refuse reads no response, marked or not.
+        feedback.query.assert_not_called()
 
     @pytest.mark.parametrize('body', [None, {'brand_name': 'x'}, {'revision': 3}])
     def test_nothing_updatable_is_refused_by_name(self, table, api_gateway_event, lambda_context, body):

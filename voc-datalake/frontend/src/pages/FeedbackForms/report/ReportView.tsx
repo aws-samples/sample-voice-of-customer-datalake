@@ -69,7 +69,7 @@ export default function ReportView({ formId, view }: Readonly<{ formId: string; 
   }
   const print = () => {
     const frame = openPrintWindow({ title: t('report.pdf.title', { name: report.name || form.name }),
-      content: <FormReportPDF form={form} report={report} /> })
+      content: <FormReportPDF form={form} report={report} view={view} /> })
     setPrintFailed(frame === null)
   }
   const segmentName = segmentChoices(form).find((choice) => choice.value === groupBy)?.label ?? ''

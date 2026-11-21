@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseFormResults } from '../../../api/feedbackFormsV2Results'
 import { orderedCards, skipRate } from './skipRates'
 import { blankForm } from '../test/blankForm'
+import { newQuestion } from '../model/defaults'
 import type { FormV2 } from '../model/formsV2'
 
 const open = (id: string) => ({ id, type: 'open_text' as const, headline: { en: id }, required: false, long: true, input_type: 'text' as const })
@@ -22,5 +23,14 @@ describe('skip rates', () => {
       ['q_b', 2], ['q_a', 1], ['q_d', 4], ['q_c', 3],
     ])
     expect(orderedCards(FORM, results, 'form').map((card) => card.question.id)).toStrictEqual(['q_a', 'q_b', 'q_c', 'q_d'])
+  })
+
+  it('rank a statement last: shown to all, answered by none, it is no skip', () => {
+    const form: FormV2 = { ...FORM, questions: [newQuestion('statement', 'q_note'), open('q_a'), open('q_b')] }
+    const results = parseFormResults({ questions: {
+      q_note: { answered: 0, skipped: 10, not_shown: 0 }, q_a: { answered: 9, skipped: 1, not_shown: 0 },
+      q_b: { answered: 0, skipped: 0, not_shown: 10 },
+    } })
+    expect(orderedCards(form, results, 'skipped').map((card) => card.question.id)).toStrictEqual(['q_a', 'q_note', 'q_b'])
   })
 })

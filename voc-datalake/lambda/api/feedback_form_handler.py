@@ -1223,12 +1223,12 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
     turned Off turned on again); the revision moves only with the definition, which only a save changes, so the count
     implies it (7.58.01: an old client's ``expected_revision`` is ignored, never a 400). Both are read-only (the form
     API returns them) and ignored as fields. On a form with a real response
-    (``has_responses``, else ``answered()``: one answered only before 7.55.00) a definition change that drops a
-    question id or an option code without naming it in ``removes``, or gives a question it keeps another type or
-    range, is a 409 ``answers_locked`` (shared/forms_v2.py ``unnamed_removals``, ``reshaped_questions``). ``answered``
-    is asked only of a form with no ``has_responses`` at all (7.58.01: one created before, which a submit may never
-    have marked); a form created since says False until its first real response marks it. A write that leaves the
-    form live while a text shows a placeholder as written is a 409 ``unresolved_placeholder``."""
+    (``has_responses``, else ``answered()``) a definition change that drops a question id or an option code without
+    naming it in ``removes``, or gives a question it keeps another type or range, is a 409 ``answers_locked``
+    (shared/forms_v2.py ``unnamed_removals``, ``reshaped_questions``). ``answered`` is asked only of such a change on a
+    form whose flag is not True (``_answered_before``: one created before 7.58.01 with no flag, which a submit may
+    never have marked, or one whose first response's mark failed), never of a save the lock has nothing to refuse. A
+    write that leaves the form live while a text shows a placeholder as written is a 409 ``unresolved_placeholder``."""
     _require_update_fields(body)
     revision = fv2.revision_of(stored)
     expected_writes, writes = body.get('expected_write_count'), _write_count(stored)
@@ -1249,12 +1249,13 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
     warnings = fv2.validate_publishable(theme, live=bool(live), was_live=stored.get('enabled') is True,
                                         theme_changed='theme' in body and not fv2.same_theme(theme, stored.get('theme')))
     removes = fv2.validate_removes(body.get('removes'))
-    if changed and (stored['has_responses'] is True if 'has_responses' in stored else answered()):
+    if changed:
         # The lock of an answered form (shared/forms_v2.py): a dropped question id or option code is named, or refused;
-        # a question kept with another type or range is refused (its answers would be read on the new scale).
+        # a question kept with another type or range is refused (its answers would be read on the new scale). Whether
+        # the form is answered is asked only when there is something to refuse.
         unnamed = fv2.unnamed_removals(current, definition, removes)
         reshaped = fv2.reshaped_questions(current, definition)
-        if unnamed or reshaped:
+        if (unnamed or reshaped) and (stored.get('has_responses') is True or answered()):
             raise ConflictError(_ANSWERS_LOCKED, code='answers_locked',
                                 details={**unnamed, **({'changed': reshaped} if reshaped else {})})
     # A form put (or kept) live shows no placeholder as written (7.61.00): a form saved earlier with one keeps serving,
@@ -1342,27 +1343,48 @@ def update_form(form_id: str):
     return saved
 
 
+def _really_opened(form_id: str, scope: WorkspaceScope | None) -> bool:
+    """Whether a real visitor ever opened the form: a real day's ``opened`` counter among its own funnel rows (one row
+    per day, so a cheap read of the form's own rows, never of the brand's feedback). A failed read refuses the save
+    (the lock never guesses)."""
+    try:
+        rows = _funnel_rows(form_id, scope, {})
+    except Exception as e:
+        logger.exception(f"Error reading the funnel of form {form_id}: {type(e).__name__}")
+        raise ServiceError('Failed to update form') from e
+    return any(not row.get('is_test') and isinstance(row.get('opened'), int) and row['opened'] > 0 for row in rows)
+
+
 def _answered_before(form_id: str, stored: Mapping[str, Any], scope: WorkspaceScope | None) -> bool:
-    """Whether a form with no ``has_responses`` (one created before 7.58.01) has a real response stored anyway: one
-    answered only before 7.55.00, whose submits never marked it. Read when a save changes its definition (as ``GET
-    /feedback-forms/{id}`` counts them, but every real response, whoever saves: the lock never depends on what the saver
-    may read), and marked once found (``_mark_answered``), so the next save reads the flag. A test response is never a
-    feedback item. (A form created since 7.58.01 says ``has_responses: false`` until its first real response, and is
-    never read here: before, every definition save of an unanswered form read the brand's partition.)"""
+    """Whether a form whose ``has_responses`` is not True has a real response stored anyway, asked only by a save the
+    lock would refuse on an answered form (``_plan_update``): one with no flag (created before 7.58.01) answered only
+    before 7.55.00, whose submits never marked it; or one created since whose first response's mark failed
+    (``_mark_answered``'s metric). Marked once found, so the next save reads the flag. A form that says
+    ``has_responses: false`` is read only when a real visitor ever opened it (``_really_opened``, cheap): a form being
+    built is never read for its responses."""
+    if stored.get('has_responses') is False and not _really_opened(form_id, scope):
+        return False
+    found = _real_response_stored(form_id, stored, scope)
+    if found:
+        _mark_answered(form_id, stored, scope)
+    return found
+
+
+def _real_response_stored(form_id: str, stored: Mapping[str, Any], scope: WorkspaceScope | None) -> bool:
+    """Whether the form's brand partition holds a real response of it: read as ``GET /feedback-forms/{id}`` counts
+    them, but every real response, whoever saves (the lock never depends on what the saver may read). A test response
+    is never a feedback item."""
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
     query_kwargs: dict[str, Any] = {'FilterExpression': 'source_channel = :sc',
                                     'ExpressionAttributeValues': {':sc': f'form_{form_id}'},
                                     'ProjectionExpression': 'feedback_id, is_test'}
     try:
-        found = any(not row.get('is_test') for row in
-                    _partition_rows(feedback_table, scope, _form_source_pk(dict(stored), scope), query_kwargs))
+        return any(not row.get('is_test') for row in
+                   _partition_rows(feedback_table, scope, _form_source_pk(dict(stored), scope), query_kwargs))
     except Exception as e:
         logger.exception(f"Error reading the responses of form {form_id}: {type(e).__name__}")
         raise ServiceError('Failed to update form') from e
-    if found:
-        _mark_answered(form_id, stored, scope)
-    return found
 
 
 FORM_DELETED = 'form_deleted'
@@ -1893,6 +1915,8 @@ def _mark_answered(form_id: str, form: Mapping[str, Any], scope: WorkspaceScope 
                                   ConditionExpression='attribute_exists(sk)', ExpressionAttributeValues={':yes': True})
     except Exception as e:  # noqa: BLE001 - the response is queued already: its mark never fails it
         if not _is_conditional_check_failure(e):  # a failed condition: the form was deleted meanwhile
+            # (counted: a form left unmarked is read for its responses by a save that would drop or reshape one)
+            metrics.add_metric(name='FeedbackFormMarkAnsweredFailed', unit='Count', value=1)
             logger.warning(f"Could not mark form {form_id} answered: {type(e).__name__}")
 
 
@@ -2495,23 +2519,20 @@ def get_form_results(form_id: str):
     only, so a language, ending or hidden-value filter answers ``funnel: null`` (its counters know none of them).
     Counts per option code, rating histograms, NPS / CSAT / CES, the open-text count with the latest answers, the
     reach of each question, the endings, and the widget's open and step counts (shared/forms_v2_results.py), each
-    response scored against the revision it answered (the form's snapshots).
-
-    ``group_by`` (7.63.00: ``hidden.<id>``, a single choice ``q_<id>`` or a matrix row ``q_<id>.<row>``) adds
-    ``segments``: the same responses per value, each segment of at least 5 (shared/forms_v2_segments.py).
+    response scored against the revision it answered (the form's snapshots). (Segments are the report's:
+    ``GET …/report?group_by=``.)
     """
     workspace = _request_scope(write=True)
     view = _results_view(workspace, form_id, 'Failed to fetch form results')
     return {'success': True, 'form_id': form_id, 'revision': fv2.revision_of(view.form),
-            'include_test': view.include_test, **view.results(),
-            **({'segments': view.segments()} if view.group_by is not None else {})}
+            'include_test': view.include_test, **view.results()}
 
 
 @dataclass(frozen=True)
 class _ResultsView:
-    """One Results-shaped read of a form (its results, segments, report): the form, its definition and revisions,
-    the caller's real rows (every one their access admits, whatever the filters), the view's rows (filtered, with the
-    test ones when asked) and the test rows the view admits."""
+    """One Results-shaped read of a form (its results, its report and the report's segments): the form, its definition
+    and revisions, the caller's real rows (every one their access admits, whatever the filters), the view's rows
+    (filtered, with the test ones when asked) and the test rows the view admits."""
 
     workspace: WorkspaceScope | None
     form: Mapping[str, Any]
@@ -2534,20 +2555,21 @@ class _ResultsView:
 
 
 def _results_view(workspace: WorkspaceScope | None, form_id: str, failure_message: str, *,
-                  funnel: bool = True) -> _ResultsView:
+                  report: bool = False) -> _ResultsView:
     """The view a Results-shaped GET asks for in ``workspace`` (the route's ``_request_scope(write=True)``: a
-    workspace's editors and admins, a viewer 403): its filters, ``include_test`` and ``group_by`` checked before
-    anything is read. ``funnel`` False: the daily counters are not read (the report shows no funnel)."""
+    workspace's editors and admins, a viewer 403): its filters and ``include_test`` checked before anything is read.
+    ``report``: the report's read, whose ``group_by`` is checked too, and which reads no daily counters (the report
+    shows no funnel)."""
     params = app.current_event.query_string_parameters or {}
     include_test = _include_test(params) == 'true'
     filters = _view_filters(params)
     form = _load_form_for_query(form_id, failure_message, workspace)
     definition = _definition(form)
-    group_by = parse_group_by(definition, params['group_by']) if params.get('group_by') else None
+    group_by = parse_group_by(definition, params['group_by']) if report and params.get('group_by') else None
     reals, tests = _read_view_rows(form, form_id, workspace, definition, real=True, test=True)
     tests = filter_rows(tests, **filters)
     rows = filter_rows(reals, **filters) + (tests if include_test else [])
-    counted = None if not funnel or _funnel_hidden(filters) else funnel_counts(
+    counted = None if report or _funnel_hidden(filters) else funnel_counts(
         _funnel_rows(form_id, workspace, filters), include_test=include_test)
     return _ResultsView(workspace, form, definition, _revisions(form_id, workspace, form), reals, rows, tests, counted,
                         include_test, group_by)
@@ -2559,10 +2581,10 @@ def get_form_report(form_id: str):
     """The form's report (7.63.00, docs/feedback-forms.md "Report"), with the access, filters and ``include_test`` of
     the results: ``{responses, first_response_at, last_response_at, kpis, matrices, segments (with ``group_by``),
     themes, ai, min_segment}`` (shared/forms_v2_report.py). ``ai`` is the newest stored AI summary as this reader may
-    see it (its quotes joined against their own rows, withheld when it read one they cannot see), None without one.
-    Never a contact detail."""
+    see it (its quotes joined against their own rows under the summary's own filters, whatever the view's, and stale
+    under them; withheld when it read one they cannot see), None without one. Never a contact detail."""
     workspace = _request_scope(write=True)
-    view = _results_view(workspace, form_id, 'Failed to fetch the form report', funnel=False)
+    view = _results_view(workspace, form_id, 'Failed to fetch the form report', report=True)
     results = view.results()
     times = [row.created_at for row in view.rows if row.created_at]
     try:
@@ -2611,14 +2633,18 @@ def _form_side(form_id: str, workspace: WorkspaceScope | None, filters: Mapping[
 def compare_forms(form_id: str):
     """The form beside up to 10 others (7.63.00, docs/feedback-forms.md "Compare"): ``with=<form ids,
     comma-separated>`` (each one of the same scope's forms: another workspace's is the 404) and ``by=hidden.<id>``
-    (each form's responses split by the value, which also gives the trend within one form). Its measured questions are
-    matched in each other form by id and answer shape, every point of at least 5 responses
-    (shared/forms_v2_segments.py ``compare``), with the access, filters and ``include_test`` of the results."""
+    (each compared form's responses split by the value; a 400 without ``with``: one form's split is its report's
+    segments). Its measured questions are matched in each other form by id and what their figures mean, every point of
+    at least 5 responses (shared/forms_v2_segments.py ``compare``), with the access, filters and ``include_test`` of
+    the results."""
     workspace = _request_scope(write=True)
     params = app.current_event.query_string_parameters or {}
     include_test = _include_test(params) == 'true'
     filters = _view_filters(params)
     others = _compared_ids(form_id, params.get('with'))
+    if params.get('by') and not others:
+        raise ValidationError('by splits the forms compared: name at least one other form in with (a form split on its '
+                              'own is its report\'s segments)', code='group_by_invalid')
     base = _form_side(form_id, workspace, filters, include_test)
     by = parse_group_by(base.definition, params['by'], hidden_only=True) if params.get('by') else None
     sides = [_form_side(other, workspace, filters, include_test) for other in others]

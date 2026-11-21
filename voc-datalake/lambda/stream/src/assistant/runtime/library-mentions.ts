@@ -8,7 +8,8 @@
  * its size, and attached to THIS message as a document or image block named neutrally ("Library document N"): only
  * while the chat model reads document blocks (`supportsDocumentBlocks`) and the message's documents stay within
  * Converse's 5 (the person's own attachments counted first). Every other item, and a native one whose fetch failed,
- * is searched: its passages go in the `<library>` DATA block with their `[#slug p.N]` markers. Later turns carry
+ * is searched: its passages go in the `<library>` DATA block with their `[#slug p.N]` markers, 12,000 characters
+ * together at most (the re-search of a failed fetch gets only what the first answer's passages left of it). Later turns carry
  * no bytes: the person's `#slug` stays in their text, and the model can call `library_search` with it.
  *
  * Fails open: an unreadable library, a failed fetch or a missing item never fails the run; the block says what
@@ -19,7 +20,8 @@ import type { Mentions } from '../contract.js';
 import type { CallerClaims, LibrarySourceRef } from '../types.js';
 import type { ApiInvoker } from '../tools/internal-api.js';
 import {
-  citationMarker, librarySources, loadLibraryContext, type LibraryContext, type LibraryItem, type LibraryNative,
+  citationMarker, librarySources, loadLibraryContext, MAX_PASSAGE_CHARS, type LibraryContext, type LibraryItem,
+  type LibraryNative, type LibraryPassage,
 } from '../tools/server/library.js';
 import { neutralise, oneLine } from './page-context.js';
 
@@ -159,6 +161,11 @@ function renderBlock(context: LibraryContext, attached: readonly Attached[]): st
   ].join('\n');
 }
 
+/** What a failed fetch's re-search may still add: the message's passage budget less what the first answer used. */
+function budgetLeft(passages: readonly LibraryPassage[]): number {
+  return Math.max(0, MAX_PASSAGE_CHARS - passages.reduce((used, passage) => used + passage.text.length, 0));
+}
+
 /** Resolve the message's library mentions (the module docstring). */
 export async function resolveLibraryMentions(input: LibraryMentionsInput): Promise<LibraryMentions> {
   const ids = input.mentions?.library?.map((mention) => mention.item_id) ?? [];
@@ -168,9 +175,11 @@ export async function resolveLibraryMentions(input: LibraryMentionsInput): Promi
     const first = await loadLibraryContext(input.invoke, { itemIds: ids, query: input.question, nativeSlots: slots },
       input.claims);
     const { attached, failed } = await attach(first, input.fetcher);
-    // A native file that could not be fetched is searched instead.
-    const retried = failed.length > 0
-      ? await loadLibraryContext(input.invoke, { itemIds: failed, query: input.question, nativeSlots: 0 }, input.claims)
+    // A native file that could not be fetched is searched instead, within what is left of the passages' budget.
+    const budget = budgetLeft(first.passages);
+    const retried = failed.length > 0 && budget > 0
+      ? await loadLibraryContext(input.invoke, { itemIds: failed, query: input.question, nativeSlots: 0, budget },
+        input.claims)
       : undefined;
     const context: LibraryContext = { ...first, passages: [...first.passages, ...(retried?.passages ?? [])] };
     return {

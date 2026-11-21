@@ -286,7 +286,9 @@ def _matrix(question: Mapping[str, Any], value: object) -> dict[str, Any] | None
     unknown = sorted(str(key)[:40] for key in given if key not in rows)
     if unknown:
         raise _bad(question, f'.rows.{unknown[0]} is not a row of this question')
-    stray = [str(row) for row, column in given.items() if column is not None and column not in columns]
+    # (a column checked as text first: a list or an object is never a column, and never hashed against the set)
+    stray = [str(row) for row, column in given.items()
+             if column is not None and (not isinstance(column, str) or column not in columns)]
     if stray:
         raise _bad(question, f'.rows.{stray[0]} must name a column of this question')
     answered = {row: given[row] for row in rows if given.get(row) is not None}

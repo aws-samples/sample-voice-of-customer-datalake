@@ -124,16 +124,17 @@ never to a project-pinned one, and the minter is re-checked in `admins` on every
 
 ## Tools
 
-**Names and descriptions.** Every tool's name starts with its area: `feedback_`, `memory_`, `company_`,
-`projects_`, `documents_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_` (`AREAS` in
+**Names and descriptions.** Every tool's name starts with its area: `feedback_`, `forms_`, `memory_`, `company_`,
+`projects_`, `documents_`, `library_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_` (`AREAS` in
 `lambda/shared/mcp_global_tools.py`), and `tools/list` lists them grouped by area, so a client that lists or
 searches tools by name finds an area's tools together. Each description is written for a model choosing a tool:
 what it does, its main nouns and verbs (and the words a person might use for them: review, vote, upvote,
 roadmap), when to use it, its key arguments and, for a write, that it needs a write token and the user's
 confirmation. The names changed in 6.10.00 ([Renamed in 6.10.00](#renamed-in-61000)).
 
-**Budget.** The whole list (what an administrator's write token is shown: 40 tools) stays under an estimated
-10,000 tokens (`test_mcp_global_tools_budget.py`). Clients cache it: a 2026-07-28 client is
+**Budget.** The whole list (what an administrator's write token is shown: 42 tools) stays under an estimated
+10,000 tokens (`test_mcp_global_tools_budget.py`; about 9,840 since 7.63.00, when `forms_get_results` took the room
+`library_get` freed). Clients cache it: a 2026-07-28 client is
 told so by `tools/list` itself (`ttlMs` 5 minutes, `cacheScope: "private"`, [Protocol](#protocol)), a legacy
 client keeps it for the session, and a client that caches its prompt prefix pays for the list once per
 conversation, not on every turn. Past about 10,000 tokens a client is better served by searching tools on demand,
@@ -190,7 +191,7 @@ MCP call never sees an archived board.
 | `documents_apply_prototype_draft` | write, project | `POST /projects/{id}/prototypes/{doc}/drafts/{draft_id}/apply` (projects): the draft as the next version (`edit_kind: revise`, `revised_from_id` the base, `revision_feedback` the instruction, `edited_by` the token, `llm_metadata`), answering `success` and the version without storage keys or its signed `prototype_url`. A feedback draft's version says "Incorporated N pins (k done)", and the answer adds `incorporation: {marked, replied, not_written: [{pin_id, reason}]}` (its Done pins marked addressed, its Not done pins given an AI-marked reply with `approved_by` the token, `{sub: 'mcp:<token id>', kind: 'mcp'}`, on every call). Applying again gives the same version; a version saved since the draft's base is the route's 409 (ask again on the newest version) |
 | `documents_discard_prototype_draft` | write, project | `DELETE /projects/{id}/prototypes/{doc}/drafts/{draft_id}` (projects; `document_id` and `draft_id` required): the draft's job deleted, so the draft is gone at once for everyone (its GET and Apply are 404). The route deletes only a draft job of `document_id`'s series, in any state; any other job is a 404, so the tool cannot delete another job. Saved versions are untouched |
 | `library_search` | read | `POST /projects/library/context` (projects; 7.62.00, [documents-library.md](documents-library.md)) with `{query, item_ids?, slugs?, native_slots: 0}`: the best passages (at most 8, 12,000 characters) of the named items (up to 3 ids or slugs) or, without them, of the ready items whose title, slug, tags or source share the query's words; each passage with its item, page and chunk, cited `[#slug p.N]`. Never a file. Library items are not feedback |
-| `library_get` | read | `GET /projects/library/{id}/text?page=` (projects): one page of an item's extracted text (a PDF page, a slide, or a part of 20,000 characters), with `parts` and `paged` |
+| `forms_get_results` | read | the forms API's Results route, `GET …/{id}/results` (7.63.00, [feedback-forms.md](feedback-forms.md)) with `from` / `to` (YYYY-MM-DD), `include_test=true` and up to 5 `hidden.<id>=<value>`: the form's Results as the page reads them (responses, per question counts, NPS / CSAT / CES, the latest open answers, endings, the funnel when no hidden value narrows it, link checks), never a contact detail. The route's rules apply as for the minter: its category and source access (a caller denied the `feedback_form` source counts no response) and, in a workspace, the editor or admin role (a viewer's token is refused, 403). Never the responses' CSV, the report, its AI summary or a write: no other forms route is a tool |
 | `feedback_get_catalogue` | read | `GET /feedback/catalogue` (metrics): every stored attribute of a feedback item, with type, meaning, setting step, PII class, `redact` / `summary_only` effect and allowed values ([data-catalogue.md](data-catalogue.md)). `sources: true` reads `GET /sources/status` (integrations) instead: each source's schedule (`enabled`, `schedule`) and circuit breaker, never its last error (admins only). Enabling, disabling, resetting and running a source are admin-only routes: no tool |
 | `prioritization_get` | read, project | `GET /projects/prioritization` (projects): the rows whose project the minter can view, the minter's own `scores`, the team `aggregates`, the scoring `axes` and `config_version`. With a project (the argument or the pin) only that project's rows, scores and aggregates |
 | `feedback_edit` | write | `PUT /feedback/{id}/category` (`category` + optional `subcategory`) or `PUT /feedback/{id}/dimensions` (`dimensions` key → value or null, `tags`), never both in one call (feedback edit); the route's category and source access apply |
@@ -588,8 +589,9 @@ test user who is NOT an administrator, then once with an administrator for `agen
 - `/connect/tokens` routes sit behind one Cognito proxy, `/connect/{proxy+}` (the handler routes by path);
 - least-privilege roles, pinned by `lib/stacks/api-stack-mcp-global.test.ts`: the MCP
   role reads/updates only the `MCPGTOKEN` partition, appends only `MCPAUDIT#…` rows,
-  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the nine domain
-  Lambdas (metrics, settings, memory, projects, agents, engagement, radar, feedback edit, integrations); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
+  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the ten domain
+  Lambdas (metrics, settings, memory, projects, agents, engagement, radar, feedback edit, integrations, and since
+  7.63.00 the feedback forms for `forms_get_results`); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
   check and queries `MCPAUDIT#…`;
 - each function has ONE API-scoped invoke permission (not two per method) because
   `VocApiStack` is close to CloudFormation's 500-resource limit.

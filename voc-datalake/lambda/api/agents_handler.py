@@ -2465,11 +2465,11 @@ _START_OPTIONAL = frozenset({'issue', 'model'})
 _RUN_COMMIT = re.compile(r'[0-9a-f]{40}\Z')
 
 
-def _run_connection(connection: str, issue: int | None = None) -> dict[str, Any]:
+def _run_connection(connection: str, issue: int | None = None, *, pushes: bool) -> dict[str, Any]:
     """The run's ``repo`` and ``default_branch`` (and, with an ``issue``, it and the connection's ``host``): the stored
     connection's (``eng_runs.run_connection``); 400 for a connection that is not stored: its broker would refuse every
-    operation."""
-    return eng_runs.run_connection(eng_runs.connection_row(_agents_table(), connection), issue)
+    operation; 409 on an expired or unset fine-grained token when the flow ``pushes``."""
+    return eng_runs.run_connection(eng_runs.connection_row(_agents_table(), connection), issue, pushes=pushes)
 
 
 def _start_issue(body: Mapping[str, Any]) -> int | None:
@@ -2578,7 +2578,8 @@ def start_engineering_run():
         'flow_definition': flow.definition, 'flow_revision': flow.revision,
         'connection': fields['connection'], 'commit': fields['commit'], 'language': fields['language'],
         # (with an issue, it and the stored connection's host: the start records it with its address)
-        'goal': fields['goal'], 'actor': caller.subject, **_run_connection(fields['connection'], issue),
+        'goal': fields['goal'], 'actor': caller.subject,
+        **_run_connection(fields['connection'], issue, pushes=flow.pushes),
         **eng_runs.run_caps(),
     }
     if flow.budget_usd is not None:
@@ -2592,8 +2593,9 @@ def start_engineering_run():
         return _json(503, {'error': unsure.message, 'run_id': unsure.run_id})
     logger.info('Engineering run started', extra={'run_id': request['run_id'], 'workflow_id': fields['workflow_id'],
                                                   'started_by': caller.subject})
-    # (7.60.00: a fine-grained token that expires within days: said beside the run, which started)
-    warning = eng_runs.token_warning(eng_runs.connection_row(_agents_table(), fields['connection']))
+    # (7.60.00: a fine-grained token that expires within days: said beside the run, which started, when it pushes)
+    warning = eng_runs.token_warning(eng_runs.connection_row(_agents_table(), fields['connection']),
+                                     pushes=flow.pushes)
     return _json(202, {'run': {'run_id': request['run_id'], 'status': str(answer.get('status', 'active')),
                                'workflow_id': fields['workflow_id'], 'started_by': caller.subject,
                                'expansion': list(flow.expansion)}, **({'warnings': [warning]} if warning else {})})

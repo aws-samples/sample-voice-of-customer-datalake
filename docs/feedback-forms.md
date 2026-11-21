@@ -161,12 +161,16 @@ builder:
   for a writer that has no builder: a direct REST caller, such as a script's `PUT` of a version 1 field
   (`rating_enabled: false` drops `q_rating`). (7.58.00 named the assistant's `update_feedback_form` here, wrongly: it
   sends none of the fields that change a definition's questions, [Migration from version 1](#migration-from-version-1).)
-- The server's lock reads the stored `has_responses`. A form created since 7.58.01 has it from its creation (`false`
-  until its first real response marks it), so a save never reads its responses. One created before has no such field
-  until a response marks it, and one answered only before 7.55.00 was never marked, so a save that changes the
-  definition of a form with no `has_responses` at all reads first whether it has a real response stored (every one,
-  not only those the saver may see, and failing closed: a read that fails refuses the save) and marks the form when
-  it has. (Before 7.58.01 every definition save of an unanswered form read the brand's responses so.) The builder
+- The server's lock reads the stored `has_responses`, and asks no more of a save it has nothing to refuse (one that
+  drops no id or code unnamed and reshapes no question; since 7.63.00). A form created since 7.58.01 has the flag from
+  its creation (`false` until its first real response marks it). One created before has no such field until a
+  response marks it, and one answered only before 7.55.00 was never marked, so a save of a form with no
+  `has_responses` at all that would be refused on an answered form reads first whether it has a real response stored
+  (every one, not only those the saver may see, and failing closed: a read that fails refuses the save) and marks the
+  form when it has. A form whose flag is `false` is read so only when a real visitor ever opened it (its own daily
+  funnel rows, a cheap read): that covers a first response whose mark failed (a best-effort write after the response
+  is queued, counted as the `FeedbackFormMarkAnsweredFailed` metric), and a form being built is never read for its
+  responses. (Before 7.58.01 every definition save of an unanswered form read the brand's responses so.) The builder
   locks such a form at once, because it reads `has_responses` from the response count.
 
 ### Questions
@@ -255,9 +259,10 @@ still opens and is served as it is; the next save that changes its definition as
 A text can show a hidden field's value, or an earlier answer, where it stands (7.61.00): **`{{id}}`**, or
 **`{{id|fallback}}`** to show `fallback` when there is no value ("How was {{event|the event}}?"). A placeholder is
 `{{` and `}}` around a text with no brace in it; the text before its first `|` is the id, the rest the fallback (both
-trimmed). One grammar, three implementations pinned by `schemas/form-recall-cases.json`:
-`lambda/shared/forms_recall.py` (the server's checks), `frontend/src/pages/FeedbackForms/model/recall.ts` (the builder)
-and the widget.
+trimmed). One grammar, three implementations pinned by `schemas/form-recall-cases.json` (`parse`):
+`lambda/shared/forms_recall.py` (the publish guard), `frontend/src/pages/FeedbackForms/model/recall.ts` (the builder)
+and the widget. How a text reads with a value missing (the cases' `render`) is the widget's alone, and the builder
+shows it through the widget's own preview (since 7.63.00: no second copy of the rules).
 
 - **Where.** The welcome's title and description, every question's headline and subheader (a statement's included),
   and every ending's title and description. Never an option, row or column label, a button, a placeholder, an end
@@ -269,25 +274,25 @@ and the widget.
   them all. An answer counts only when its question is on the respondent's path.
 - **A missing value** (no hidden value from the link, a question skipped or not shown) renders the fallback, or
   nothing: the widget then tidies the text around the gap (no doubled space, no space or comma left before `?`, `!`,
-  `.`, no empty brackets, no separator at either end), so "How was {{event}}?" reads "How was?" and "Thanks,
-  {{name}}!" reads "Thanks!".
+  `.`, no empty brackets, no separator at either end; gaps side by side or split only by a separator are one gap), so
+  "How was {{event}}?" reads "How was?", "Thanks, {{name}}!" reads "Thanks!" and "Thanks {{name}}, {{company}}!"
+  reads "Thanks!".
 - **Safe.** Values go in as text, never as markup, and an id is looked up only among the form's own fields (`{{constructor}}`
   is an unknown id: nothing). `__proto__`, `constructor` and `prototype` stay reserved for hidden fields.
-- **A save refuses** (`400`, with `where`, `placeholder` and `id`) a recall text whose placeholder names no hidden
-  field and no question (`recall_unknown`), a question at or after the text (`recall_not_before`), or a question whose
-  answer is never recalled (`recall_type`). A form saved before 7.61.00 whose text happens to hold `{{…}}` still reads
-  and is served (the widget shows an unknown placeholder as nothing); its next save that changes its definition asks
-  for a fix, the 7.58.00 reserved-name precedent.
-- **Publishing.** A write that leaves a form live (a `PUT` or `POST` with `enabled: true`, or any save of a live form)
-  answers **`409` `unresolved_placeholder`** `{texts: [{where, placeholder}]}` (at most 20) when any text respondents
-  can be shown holds a `{{…}}` they would see as written: one recall cannot fill there, or any placeholder where recall
-  never works. Turning a form Off always works. So a live form saved before 7.61.00 with such a text keeps serving
-  but cannot be re-enabled, or saved live, until it is fixed. The builder's Problems list shows the same texts and
-  Publish waits for them.
+- **Publishing is the one rule** (since 7.63.00: a draft's save is never refused for a placeholder, so it keeps one
+  while it is fixed). A write that leaves a form live (a `PUT` or `POST` with `enabled: true`, or any save of a live
+  form) answers **`409` `unresolved_placeholder`** `{texts: [{where, placeholder}]}` (at most 20) when any text
+  respondents can be shown holds a `{{…}}` they would see as written: a recall text's placeholder that names no hidden
+  field and no question, a question at or after the text, or a question whose answer is never recalled; or any
+  placeholder where recall never works. Turning a form Off always works. So a live form saved before 7.61.00 with such
+  a text keeps serving (the widget shows an unknown placeholder as nothing) but cannot be re-enabled, or saved live,
+  until it is fixed. The builder's Problems list shows the same texts and Publish (and Update live form) waits for
+  them; Save never does.
 - **Results and exports** show a text with placeholders as `[id]` (a CSV header, a question's headline in Results,
   the item's text for the processor), never a respondent's value.
 - **The builder** offers "Insert a value" in each recall text (the hidden fields, then the earlier questions it may
-  recall) and previews the text with and without the value.
+  recall) and previews the text with each value named ("Respondents see: How was ‹Event›?"); the widget preview beside
+  it shows the text as respondents read it without the value.
 
 ### Languages
 
@@ -780,9 +785,9 @@ button per language.
 | POST | `/feedback-forms/{id}/submit` | Submit a response (or the version 1 widget's body); responses only |
 | POST | `/feedback-forms/{id}/events` | **Unauthenticated**, like `submit`: the widget's funnel beacons (`opened`, `left`), on their own throttle ([The funnel](#the-funnel)) |
 | GET | `/feedback-forms/{id}/iframe` | Embeddable HTML page |
-| GET | `/feedback-forms/{id}/results` | Per-question results ([Results](#results-and-responses)); `group_by` adds the segments ([Report](#report)) |
-| GET | `/feedback-forms/{id}/report` | The form's report: KPIs, heatmaps, segments, themes and the AI summary ([Report](#report)) |
-| GET | `/feedback-forms/{id}/compare` | The form beside up to 10 others, or split by a hidden field ([Compare](#compare)) |
+| GET | `/feedback-forms/{id}/results` | Per-question results ([Results](#results-and-responses)) |
+| GET | `/feedback-forms/{id}/report` | The form's report: KPIs, heatmaps, segments (`group_by`), themes and the AI summary ([Report](#report)) |
+| GET | `/feedback-forms/{id}/compare` | The form beside up to 10 others, each split by a hidden field if asked ([Compare](#compare)) |
 | GET | `/feedback-forms/{id}/responses` | The responses, paged, or as CSV (`format=csv`, `layout=familiar\|detailed`, `ids=true`; [below](#results-and-responses)) |
 | DELETE | `/feedback-forms/{id}/responses?test=true` | Delete the form's test responses (an admin or the form's creator); recorded first ([Test mode](#test-mode)) |
 | POST | `/feedback-forms/{id}/test-link` | Issue or rotate the test link (admins) |
@@ -1032,13 +1037,15 @@ Each question's `headline` is its primary-language text with any placeholder sho
 **Skip rates (7.63.00).** Every card that was asked says its skip rate, skipped of those asked (`skipped / shown`, the
 `drop_off_rate`), and an Ask why follow-up says it is one ("Follow-up to question 3") and how many of those asked
 answered it. The summary can put the most skipped first (Order: Form order or Most skipped; each card keeps its number,
-a question nobody was asked comes last).
+a question nobody was asked comes last, and so does a statement, which takes no answer to skip).
 
 **Link checks** (`link_health`, 7.61.00): whether the links that bring respondents fill the form's hidden fields.
 `{responses, hidden: {id: {filled, missing}}, by_channel: {link | iframe | script | unknown: {responses, hidden}},
 warnings: [{id, kind, filled, total}]}` over the view's responses (its filters, and test responses only with
-`include_test=true`), per declared hidden field. A warning is `never_filled` once at least 5 responses came in and none
-had the field, and `mostly_missing` once at least 10 came in and 80 % or more lacked it ("0 of 26 responses had
+`include_test=true`), per declared hidden field. A response counts towards a field only when the revision it answered
+declared it (the form's snapshots, since 7.63.00), so a field added later is never "missing" from the responses sent
+before it existed; a warning's `total` is those responses. A warning is `never_filled` once at least 5 of them came in
+and none had the field, and `mostly_missing` once at least 10 came in and 80 % or more lacked it ("0 of 26 responses had
 `customer`: check your link"). Results and the Share tab show them with the link's `hf_<id>=` parameter; the Share
 tab's link builder also warns about a hidden field the form recalls that the copied link leaves empty. A hidden value
 is never part of the funnel's beacons.
@@ -1176,66 +1183,86 @@ segments, themes, ai, min_segment}`:
   subcategory, count, sentiment: {label: n}, quotes}]}`, each with two or three real quotes (`{response_id, text,
   created_at, sentiment}`, newest first, the theme's dominant sentiment first), linked to the response. A response not
   processed yet is the `''` category. The processed items carry no key phrases, so none are grouped by.
-- `ai`: the newest stored [AI summary](#the-ai-summary) as this reader may see it, or `null`.
+- `ai`: the newest stored [AI summary](#the-ai-summary) as this reader may see it, under the filters it was made with
+  (`filters`), or `null`.
 
 Contact details are never in the report. The page shows the KPIs, the segment table, the heatmaps, the AI summary
-(labelled AI), the themes with their quotes (each opens its response) and [Compare](#compare); **Download PDF** prints
-one page through the browser's own print dialog (`utils/printUtils.ts` `openPrintWindow`, as a document's PDF is:
-no PDF library), with the KPIs, the segment table, the heatmaps, the themes and quotes (the AI's labelled), how many
-responses it covers and their dates, in the reader's language and the Kiro Light colours, and never a contact detail.
+(labelled AI; only on the view it was made for, below), the themes with their quotes (each opens its response) and
+[Compare](#compare); **Download PDF** prints one page through the browser's own print dialog (`utils/printUtils.ts`
+`openPrintWindow`, as a document's PDF is: no PDF library), with the KPIs, the segment table, the heatmaps, the themes
+and quotes (the AI's labelled, by the same rule as the page), how many responses it covers and their dates, in the
+reader's language and the Kiro Light colours, and never a contact detail.
 
 ### Segments
 
-`group_by` on `GET …/results` (which then adds `segments`) or `…/report`: `hidden.<id>` (a hidden field of the form),
-`q_<id>` (a single choice: its option code, `other` for an Other answer) or `q_<id>.<row code>` (a matrix row: the
-column it was given). Anything else is a `400` `group_by_invalid`. `segments` is `{by, min_size: 5, groups: [{value,
+`group_by` on `GET …/report` (`GET …/results` takes none since 7.63.00's review: nothing read it there):
+`hidden.<id>` (a hidden field of the form), `q_<id>` (a single choice: its option code, `other` for an Other answer)
+or `q_<id>.<row code>` (a matrix row: the column it was given). Anything else is a `400` `group_by_invalid`. `segments` is `{by, min_size: 5, groups: [{value,
 responses, scores}], merged}`: each value with **at least 5 responses**, the largest first (at most 50; responses
 without a value are the `''` segment), and `merged`, `{segments, responses, scores}`, every smaller segment together as
 "Other (fewer than 5)", so no one can be picked out; its `scores` are `null` (withheld) while it is under 5 responses
-too. `scores` is per measured question its compact figure (`{type, answered, average, scale_max, nps | csat | ces}`; a
-matrix `{type, answered, rows: {code: average}}`), each response scored against its own revision as on Results.
+too. Then the view's own figures (the KPIs) less the named segments' would be that group's, so the **smallest named
+segment is withheld with it** (`scores: null`, `withheld: 'complement'`: "Hidden with the small group, so its scores
+can't be worked out"; secondary suppression), and what is left over is always at least 6 responses. With 10 responses
+from one customer and 1 from another, neither segment shows scores. `scores` is per measured question its compact
+figure (`{type, answered, average, scale_max, nps | csat | ces}`; a matrix `{type, answered, rows: {code: average}}`),
+each response scored against its own revision as on Results.
 
 ### Compare
 
-`GET /feedback-forms/{id}/compare?with=<form ids, comma-separated>&by=hidden.<id>` puts the form beside up to 10 others
-(`with`; each one of the request's own scope: another workspace's form, or an unknown id, is the `404`), or splits its
-responses by a hidden field's value (`by`, e.g. `hidden.event_date`, the trend within one form; with `with`, each
-form's), with the filters, access and `include_test` of Results. It answers `{by, min_size, questions, forms,
-points}`: `questions` are the base form's measured questions; `forms` say for each form (the base first, then in the
-order asked) its `name`, `template`, `same_template` (made from the base's template) and which questions it asks alike
-(`matched`: the same id and answer shape, type and range: a 5-point rating is never compared with a 10-point one) or
-not (`unmatched: {id: 'missing' | 'different'}`); `points` are `{form_id, value, responses, first_response_at,
-last_response_at, scores, merged?}`, one per form (or per value of `by`, ascending, the smaller ones merged), each
-scored against its own form's revisions and `null` under 5 responses. The page lists the workspace's forms with the
-template's siblings first. Comparisons across workspaces, emailed schedules and significance tests are out of scope.
+`GET /feedback-forms/{id}/compare?with=<form ids, comma-separated>[&by=hidden.<id>]` puts the form beside up to 10
+others (`with`; each one of the request's own scope: another workspace's form, or an unknown id, is the `404`), each
+form's responses split by a hidden field's value when `by` names one (e.g. `hidden.event_date`), with the filters,
+access and `include_test` of Results. `by` without `with` is a `400` `group_by_invalid`: one form split on its own is
+its report's [segments](#segments) (7.63.00's review). It answers `{by, min_size, questions, forms, points}`:
+`questions` are the base form's measured questions; `forms` say for each form (the base first, then in the order
+asked) its `name`, `template`, `same_template` (made from the base's template) and which questions it asks alike
+(`matched`: the same id and what its figures mean: type and range, and a matrix's column scores, so a 5-point rating is
+never compared with a 10-point one, nor a matrix scored 1–4 with one scored 0–3) or not (`unmatched: {id: 'missing' |
+'different'}`); `points` are `{form_id, value, responses, first_response_at, last_response_at, scores, merged?,
+withheld?}`, one per form (or per value of `by`, ascending, the smaller ones merged, and the smallest named one withheld
+with a withheld merged one, as [segments](#segments) are), each scored against its own form's revisions and `null`
+under 5 responses. The page lists the workspace's forms with the template's siblings first, and its Split by waits
+for one. Comparisons across workspaces, emailed schedules and significance tests are out of scope.
 
 ### The AI summary
 
 Optional, one model call when someone asks (**Summarize with AI**; about 1–3 cents; nothing without it).
-`POST /settings/form-reports` `{form_id, answers: [{response_id, text}], filters?, responses?, last_response_at?}` takes
-the open answers the browser already read with the person's own access (`GET …/responses`, the newest 300 of the view:
-each response's free-text answers joined, never a contact detail; at most 300 answers and 60,000 characters), so the
-settings API needs no read of the feedback table. Gated as Results (a workspace's editors and admins, a viewer `403`;
+`POST /settings/form-reports` `{form_id, answers: [{response_id, text}], filters?, last_response_at?}` takes the open
+answers the browser already read with the person's own access (`GET …/responses`, the newest 300 of the view: each
+response's free-text answers joined, never a contact detail; at most 300 answers and 60,000 characters), so the
+settings API needs no read of the feedback table. `filters` is the view's, by the query's own names plus the app's
+`days` (the range: `all` or its days; `from` is the time the range was measured from), and `last_response_at` the
+newest response read. Gated as Results (a workspace's editors and admins, a viewer `403`;
 deployment-wide any signed-in user), only for a form of the request's own scope (`404` otherwise), 20 per person per
 hour (`429` `rate_limited`, `retry_after`; `FORMREPORTRATE#{sub}#{hour}` beside the drafts' counters, two days' TTL),
 it answers `202 {job_id, status}` and runs as an assist job on the settings API's worker, like a draft. The model (the
 deployment's `utility` one, the answers in a `form_answers` DATA block, never as instructions) only labels themes and
 picks which responses belong to each; the worker keeps only ids it was sent, and stores the report in the form's forms
 partition, `FORMREPORT#{form_id}#{report_id}` (`WS#{ws}#FEEDBACK_FORM` in a workspace): `{form_id, report_id,
-created_at, created_by: {sub, kind}, reason: 'ai_summary', responses_counted, last_response_at, filters, response_ids,
-themes: [{label, count, sentiment, quote_ids}], ai: {model, prompt_version, summary}}`, labels and ids only, never a
-respondent's text, and no `ttl`. A form deleted while it ran gets none. `GET /settings/form-reports/{job_id}` polls
+created_at, created_by: {sub, kind}, reason: 'ai_summary', responses_counted (the answers it read), last_response_at,
+filters, response_ids, themes: [{label, count, sentiment, quote_ids}], ai: {model, prompt_version, summary}}`, labels
+and ids only, never a respondent's text, and no `ttl`. A form deleted while it ran gets none. **The job row keeps no
+respondent's text either** (7.63.00's review): its `config` carries the answers to the worker and is removed from the
+row when the job ends, completed or failed (`assist_jobs.Work.forget_config`); a job whose worker never ran keeps it
+until the row's one-day TTL. The worker does not read the answers itself: the settings role holds no read of the
+feedback table, and the access the answers were read with is the person's own. `GET /settings/form-reports/{job_id}` polls
 the caller's own job (`{success, form_id, report_id}`, or `{success: false, code: 'no_summary' | 'no_model' |
 'form_deleted'}`); the job's `job` notice wakes the page.
 
-When the report is read, its quote ids are joined against the reader's own rows (an unknown one is dropped), it is
-`stale` once a response newer than the newest it read exists ("Newer responses since"), and it is withheld
-(`{report_id, created_at, created_by, withheld: 'access'}`) from a reader who cannot see a response it read, since its
-labels could describe it. The stored reports are deleted with their form, are in the workspace's export (the forms
+When the report is read, its quote ids are joined against the reader's own rows **under the summary's own filters**,
+whatever the view's (a summary made for `hidden.customer=A` quotes A's responses only; an unknown id is dropped), it is
+`stale` once a response newer than the newest it read exists under those filters ("Newer responses since"), and it is
+withheld (`{report_id, created_at, created_by, withheld: 'access'}`) from a reader who cannot see a response it read,
+since its labels could describe it. The page and the PDF show it only on the view it was made for (the same range,
+language, ending and hidden values); on any other they say "Made for another view: ‹its filters›", with no summary and
+no quote, and the button is **Summarize this view**. The stored reports are deleted with their form, are in the workspace's export (the forms
 partition, `feedback_forms`) and are swept with it by a workspace's hard delete.
 
-The global MCP server has no forms tools yet (TENETS.md tenet 4): `forms_get_results` and `forms_get_report` are
-deferred until they fit the `tools/list` token budget (`lambda/shared/test/test_mcp_global_tools_budget.py`).
+The global MCP server reads a form's Results through `forms_get_results` (7.63.00, [mcp.md](mcp.md#tools): the
+results route as the token's minter, with `from`, `to`, `include_test` and up to 5 `hidden` values; never the CSV or a
+write). The report, Compare, the AI summary and the drafts have no tool (TENETS.md tenet 4): `forms_get_report` waits
+for room in the `tools/list` token budget (`lambda/shared/test/test_mcp_global_tools_budget.py`).
 
 ## AI drafts
 

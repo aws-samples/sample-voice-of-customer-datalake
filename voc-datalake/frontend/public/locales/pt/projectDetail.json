@@ -562,7 +562,7 @@
       "heading": "Documentos internos",
       "hint": "Imagens e texto — máx. 20",
       "loading": "Carregando…",
-      "notYet": "PDF e Word (.docx) ainda não são suportados.",
+      "notYet": "PDF e Word (.docx) ainda não são lidos aqui: adicione-os à Biblioteca e mencione-os no assistente com #.",
       "statusExtracting": "Extraindo…",
       "statusFailed": "Falhou",
       "statusReady": "Pronto",

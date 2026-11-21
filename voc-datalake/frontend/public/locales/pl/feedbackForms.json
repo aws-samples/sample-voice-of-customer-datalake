@@ -269,8 +269,7 @@
       "failed": "Nie udało się zapisać: {{reason}}.",
       "failedGeneric": "Nie udało się zapisać. Sprawdź połączenie i spróbuj ponownie.",
       "retry": "Spróbuj ponownie",
-      "placeholderRefused": "Nie udało się zapisać: aktywny formularz nie może pokazywać symbolu {…} dosłownie. Popraw teksty wymienione w Problemach albo zapisz go jako wyłączony.",
-      "recallRefused": "Nie udało się zapisać: tekst przywołuje wartość, której w tym miejscu nie da się pokazać. Popraw to w Problemach."
+      "placeholderRefused": "Nie udało się zapisać: aktywny formularz nie może pokazywać symbolu {…} dosłownie. Popraw teksty wymienione w Problemach albo zapisz go jako wyłączony."
     },
     "published": "Aktywny. Od teraz respondenci widzą tę wersję.",
     "firstSave": "Zapisano. Ten formularz jest wyłączony: jego link wyświetla „Formularz jest niedostępny.”, dopóki go nie opublikujesz.",
@@ -2479,9 +2478,7 @@
     "questionItem": "P{{number}} · {{headline}}",
     "nothing": "Nie ma tu czego wstawić",
     "nothingHint": "Dodaj pole ukryte albo pytanie z oceną lub jednokrotnym wyborem przed tym tekstem.",
-    "preview": "Respondenci widzą: {{text}}",
-    "previewMissing": "Bez wartości: {{text}}",
-    "previewEmpty": "(nic)"
+    "preview": "Respondenci widzą: {{text}}"
   },
   "report": {
     "loading": "Wczytywanie raportu…",
@@ -2496,7 +2493,7 @@
     "empty": "Gdy pojawią się odpowiedzi spełniające te filtry, raport pokaże ich wyniki, segmenty i tematy.",
     "segments": {
       "title": "Według: {{segment}}",
-      "hint": "Segmenty liczące mniej niż {{minimum}} odpowiedzi są łączone, aby nikogo nie dało się rozpoznać.",
+      "hint": "Segmenty liczące mniej niż {{minimum}} odpowiedzi są łączone, aby nikogo nie dało się rozpoznać. Dopóki ta grupa jest za mała, ukrywane są też wyniki najmniejszego segmentu.",
       "caption": "Wyniki według segmentów",
       "segment": "Segment",
       "responses": "Odpowiedzi",
@@ -2507,6 +2504,7 @@
       "merged_many": "Inne ({{count, number}} segmentów poniżej {{minimum}})",
       "merged_other": "Inne ({{count, number}} segmentu poniżej {{minimum}})",
       "withheld": "Za mało odpowiedzi, aby pokazać ich wyniki",
+      "complement": "Ukryte razem z małą grupą, aby nie dało się wyliczyć jej wyników",
       "none": "Brak odpowiedzi do podziału na segmenty."
     },
     "heatmap": {
@@ -2537,14 +2535,17 @@
       "stale": "Są nowsze odpowiedzi",
       "start": "Podsumuj z AI",
       "again": "Podsumuj ponownie",
+      "thisView": "Podsumuj ten widok",
       "working": "Podsumowywanie…",
       "intro": "AI czyta do 300 otwartych odpowiedzi widocznych tutaj, z Twoimi uprawnieniami, nazywa ich tematy i wybiera cytaty. Cytaty to zawsze prawdziwe odpowiedzi.",
       "nothing": "Brak otwartych odpowiedzi do podsumowania.",
       "withheld": "To podsumowanie objęło odpowiedzi, których nie widzisz, więc nie jest Ci pokazywane. Podsumuj ponownie, aby utworzyć własne.",
+      "otherView": "Przygotowane dla innego widoku: {{view}}",
       "made_one": "Utworzono {{date}} na podstawie {{formatted}} odpowiedzi",
       "made_few": "Utworzono {{date}} na podstawie {{formatted}} odpowiedzi",
       "made_many": "Utworzono {{date}} na podstawie {{formatted}} odpowiedzi",
       "made_other": "Utworzono {{date}} na podstawie {{formatted}} odpowiedzi",
+      "since": "Od {{date}}",
       "rateLimited": "To już 20 podsumowań AI w tej godzinie. Spróbuj ponownie później.",
       "noModel": "W tym wdrożeniu nie ma dostępnego modelu AI.",
       "noSummary": "AI nie znalazła tematów w tych odpowiedziach.",
@@ -2565,7 +2566,7 @@
     },
     "compare": {
       "title": "Porównaj",
-      "intro": "Zestaw ten formularz z maksymalnie {{max, number}} innymi lub podziel go według pola ukrytego, aby zobaczyć trend. Pytania są dopasowywane według identyfikatora i typu; punkt z mniej niż 5 odpowiedziami nie pokazuje wyników.",
+      "intro": "Zestaw ten formularz z maksymalnie {{max, number}} innymi, każdy w razie potrzeby podzielony według pola ukrytego. Pytania są dopasowywane według identyfikatora i znaczenia ich wyników; punkt z mniej niż 5 odpowiedziami nie pokazuje wyników.",
       "forms": "Formularze",
       "noForms": "Brak innego formularza do porównania.",
       "sameTemplate": "Ten sam szablon",

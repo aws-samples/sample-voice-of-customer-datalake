@@ -1,6 +1,6 @@
 """Recall in a form's texts (shared/forms_recall.py; docs/feedback-forms.md "Recall"): the grammar the builder and the
-widget share (schemas/form-recall-cases.json), the save's 400s, and the publish guard's list of texts that would show
-a placeholder as written.
+widget share (schemas/form-recall-cases.json), and the publish guard's list of texts that would show a placeholder as
+written (since 7.63.00 the one rule: a definition save is never refused for one).
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 
 from shared import forms_recall as recall
 from shared import forms_v2 as fv2
-from shared.exceptions import ConflictError, ValidationError
+from shared.exceptions import ConflictError
 
 CASES = json.loads((Path(__file__).resolve().parents[3] / 'schemas' / 'form-recall-cases.json').read_text('utf-8'))
 
@@ -50,51 +50,48 @@ def test_the_recallable_types_are_question_types_of_the_schema():
     assert fv2.OPEN_TEXT not in recall.RECALL_TYPES
 
 
-def test_the_module_imports_only_the_exceptions_of_shared():
+def test_the_module_imports_nothing_of_shared():
     source = Path(recall.__file__).read_text(encoding='utf-8')
-    assert [line for line in source.splitlines() if line.startswith('from shared')] == [
-        'from shared.exceptions import ValidationError']
+    assert [line for line in source.splitlines() if line.startswith('from shared')] == []
 
 
-class TestTheSavesChecks:
+class TestWhatCanBeFilled:
     def test_a_hidden_field_and_an_earlier_score_or_single_choice_are_recalled(self):
         definition = _form(_q('q_a', 'nps', 'How likely at {{event}}?'), PICK,
                            _q('q_b', 'open_text', 'Why {{q_a|that score}} and {{ q_pick }}?'),
                            welcome={'enabled': True, 'title': {'en': 'Hi {{event}}'}},
                            endings=[{'id': 'end_a', 'title': {'en': 'Thanks for {{q_a}}'},
                                      'description': {'en': '{{q_pick}}'}}])
-        recall.check_recall(definition)
         assert recall.unresolved_placeholders(definition) == []
 
-    @pytest.mark.parametrize(('definition', 'code', 'where'), [
-        (_form(_q('q_a', 'nps', 'How was {{nobody}}?')), 'recall_unknown', 'questions[0].headline.en'),
-        (_form(_q('q_a', 'nps', 'How was {{constructor}}?')), 'recall_unknown', 'questions[0].headline.en'),
-        (_form(_q('q_a', 'nps', 'How was {{}}?')), 'recall_unknown', 'questions[0].headline.en'),
-        (_form(_q('q_a', 'nps', 'Again {{q_a}}?')), 'recall_not_before', 'questions[0].headline.en'),
+    @pytest.mark.parametrize(('definition', 'where', 'placeholder'), [
+        (_form(_q('q_a', 'nps', 'How was {{nobody}}?')), 'questions[0].headline.en', '{{nobody}}'),
+        (_form(_q('q_a', 'nps', 'How was {{constructor}}?')), 'questions[0].headline.en', '{{constructor}}'),
+        (_form(_q('q_a', 'nps', 'How was {{}}?')), 'questions[0].headline.en', '{{}}'),
+        (_form(_q('q_a', 'nps', 'Again {{q_a}}?')), 'questions[0].headline.en', '{{q_a}}'),
         (_form(_q('q_a', 'nps', 'A', subheader={'en': 'x', 'pl': 'Po {{q_b}}'}), _q('q_b', 'nps', 'B')),
-         'recall_not_before', 'questions[0].subheader.pl'),
-        (_form(_q('q_a', 'nps', 'A'), welcome={'enabled': True, 'title': {'en': 'Hi {{q_a}}'}}), 'recall_not_before',
-         'welcome.title.en'),
-        (_form(_q('q_t', 'open_text', 'A'), _q('q_b', 'nps', 'You said {{q_t}}')), 'recall_type',
-         'questions[1].headline.en'),
-        (_form(_q('q_m', 'multi_select', 'A'), endings=[{'id': 'end_a', 'title': {'en': '{{q_m}}'}}]), 'recall_type',
-         'endings[0].title.en'),
+         'questions[0].subheader.pl', '{{q_b}}'),
+        (_form(_q('q_a', 'nps', 'A'), welcome={'enabled': True, 'title': {'en': 'Hi {{q_a}}'}}), 'welcome.title.en',
+         '{{q_a}}'),
+        (_form(_q('q_t', 'open_text', 'A'), _q('q_b', 'nps', 'You said {{q_t}}')), 'questions[1].headline.en',
+         '{{q_t}}'),
+        (_form(_q('q_m', 'multi_select', 'A'), endings=[{'id': 'end_a', 'title': {'en': '{{q_m}}'}}]),
+         'endings[0].title.en', '{{q_m}}'),
     ], ids=['unknown', 'reserved', 'empty', 'itself', 'later', 'welcome', 'open-text', 'multi'])
-    def test_a_placeholder_recall_cannot_fill_is_a_400_naming_it(self, definition, code, where):
-        with pytest.raises(ValidationError) as refused:
-            recall.check_recall(definition)
-        assert (refused.value.code, refused.value.details['where']) == (code, where)
-        assert str(refused.value.details['placeholder']) in refused.value.message
+    def test_a_placeholder_recall_cannot_fill_is_listed_for_the_publish_guard(self, definition, where, placeholder):
+        assert recall.unresolved_placeholders(definition) == [{'where': where, 'placeholder': placeholder}]
 
     def test_a_hidden_field_is_looked_up_before_a_question_of_the_same_id(self):
         definition = _form(_q('q_a', 'nps', 'A {{q_a}}'), hidden_fields=[{'id': 'q_a'}])
-        recall.check_recall(definition)
         assert recall.unresolved_placeholders(definition) == []
 
-    def test_every_save_checks_it(self):
-        with pytest.raises(ValidationError) as refused:
-            fv2.validate_definition(_form(_q('q_a', 'nps', 'How was {{nobody}}?')))
-        assert refused.value.code == 'recall_unknown'
+    def test_a_definition_save_keeps_it_and_only_going_live_refuses_it(self):
+        definition = fv2.validate_definition(_form(_q('q_a', 'nps', 'How was {{nobody}}?')))
+        assert definition['questions'][0]['headline'] == {'en': 'How was {{nobody}}?'}
+        fv2.validate_placeholders(definition, live=False)
+        with pytest.raises(ConflictError) as refused:
+            fv2.validate_placeholders(definition, live=True)
+        assert refused.value.code == 'unresolved_placeholder'
 
 
 class TestThePublishGuard:

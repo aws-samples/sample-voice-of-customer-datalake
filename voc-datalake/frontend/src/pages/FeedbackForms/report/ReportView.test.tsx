@@ -42,7 +42,7 @@ describe('the Report', () => {
     compareForms.mockResolvedValue(parseFormComparison({ by: null, min_size: 5, questions: [{ id: 'q_nps', type: 'nps', headline: 'Recommend it?' }],
       forms: [{ form_id: 'f_test', name: 'Example Ltd workshop', matched: ['q_nps'] }, { form_id: 'f_other', name: 'Other workshop', unmatched: { q_nps: 'different' } }],
       points: [{ form_id: 'f_test', value: null, responses: 9, scores: { q_nps: { type: 'nps', answered: 9, nps: 33.3 } } },
-        { form_id: 'f_other', value: null, responses: 3, scores: null }] }))
+        { form_id: 'f_other', value: null, responses: 3, scores: null }, { form_id: 'f_test', value: 'Sample Co', responses: 6, scores: null, withheld: 'complement' }] }))
     getResponses.mockResolvedValue(parseResponsesPage({ responses: [
       { response_id: 'fb_3', submitted_at: '2026-11-18', answers: { q_takeaway: 'Loved the labs', q_contact: { email: 'p@example.com' } } },
       { response_id: 'fb_4', submitted_at: '2026-11-17', answers: { q_contact: { email: 'q@example.com' } } },
@@ -74,6 +74,7 @@ describe('the Report', () => {
     const table = await screen.findByRole('table', { name: 'Scores by segment' })
     expect(within(table).getByRole('row', { name: /^QA/ })).toHaveTextContent('43')
     expect(within(table).getByRole('row', { name: /Other \(1 segment of fewer than 5\)/ })).toHaveTextContent('Too few responses to show their scores')
+    expect(within(table).getByRole('row', { name: /^Design/ })).toHaveTextContent("Hidden with the small group, so its scores can't be worked out")
   })
 
   it('asks the AI with the open answers only, never a contact detail', async () => {
@@ -84,8 +85,21 @@ describe('the Report', () => {
     const [, request] = summarizeReport.mock.calls[0] ?? []
     // (real responses only, whatever the view includes)
     expect(getResponses).toHaveBeenCalledWith('f_test', expect.objectContaining({ includeTest: false }), expect.anything())
-    expect(request).toMatchObject({ answers: [{ response_id: 'fb_3', text: 'Loved the labs' }], responses: 9, lastResponseAt: '2026-11-18T10:00:00' })
-    expect(JSON.stringify(request)).not.toContain('example.com')
+    // (the newest response it read, and no count of the view: the server counts the answers it reads)
+    expect(request).toMatchObject({ answers: [{ response_id: 'fb_3', text: 'Loved the labs' }], lastResponseAt: '2026-11-18' })
+    const sent = JSON.stringify(request)
+    // (no contact address, the fixtures' p@ and q@, and no count of the view)
+    expect([/[pq]@/.test(sent), sent.includes('"responses"')]).toStrictEqual([false, false])
+  })
+
+  it('splits only the forms compared: one form split on its own is the Report\'s segments', async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<ResultsTab />, REPORT_FORM, { rest: ['report'] })
+    const compare = await screen.findByRole('region', { name: 'Compare' })
+    expect(within(compare).getByLabelText('Split by')).toBeDisabled()
+    await user.click(await within(compare).findByRole('checkbox', { name: /Other workshop/ }))
+    expect(within(compare).getByLabelText('Split by')).toBeEnabled()
+    expect(compareForms).toHaveBeenCalledTimes(1)
   })
 
   it('prints the one-page PDF', async () => {
@@ -105,5 +119,7 @@ describe('the Report', () => {
     await waitFor(() => expect(compareForms).toHaveBeenLastCalledWith('f_test', expect.anything(), ['f_other'], null))
     const table = await within(compare).findByRole('table', { name: 'Scores by form' })
     expect(within(table).getByRole('row', { name: /^Other workshop/ })).toHaveTextContent('Asked differently')
+    // (a point withheld with a small merged one says why)
+    expect(within(table).getByRole('row', { name: /Sample Co/ })).toHaveTextContent("Hidden with the small group, so its scores can't be worked out")
   })
 })

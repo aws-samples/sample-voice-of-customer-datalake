@@ -1,8 +1,9 @@
 """7.63.00's event feedback through the form API (lambda/api/feedback_form_handler.py; docs/feedback-forms.md
-"Report" and "Compare"): the template a form is made from (set on create, kept by every save, read back), Results by
-segment (``group_by``, at least 5 responses each), the report (KPIs, heatmaps, themes with real quotes, the stored AI
-summary joined against the reader's own rows), the comparison of forms (another workspace's form is the 404), their
-gates (a viewer 403), and a form's delete taking its stored reports with it.
+"Report" and "Compare"): the template a form is made from (set on create, kept by every save, read back), the report
+by segment (``group_by``, at least 5 responses each, the smallest withheld with a withheld merged group), the report
+(KPIs, heatmaps, themes with real quotes, the stored AI summary joined against the reader's own rows under its own
+filters), the comparison of forms (another workspace's form is the 404, ``by`` only with another form), their gates (a
+viewer 403), and a form's delete taking its stored reports with it.
 
 Against moto tables, with the fixtures and helpers of test_feedback_form_v2.py.
 """
@@ -85,22 +86,25 @@ class TestTheTemplateAFormIsMadeFrom:
 
 
 @pytest.mark.usefixtures('world')
-class TestResultsBySegment:
-    def test_group_by_a_hidden_field_answers_segments_of_five_or_more(self, seeded, lambda_context):
+class TestTheReportBySegment:
+    def test_group_by_a_hidden_field_withholds_the_smallest_segment_with_the_merged_one(self, seeded, lambda_context):
+        status, report = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/report',
+                               query={'group_by': 'hidden.customer'})
+        assert status == 200, report
+        assert report['responses'] == 9
+        # (Sample Co's 2 are merged and withheld; the report's KPIs less Example Ltd's 7 would be theirs, so Example
+        # Ltd's figures are withheld with them)
+        assert report['segments']['groups'] == [{'value': 'Example Ltd', 'responses': 7, 'scores': None,
+                                                 'withheld': 'complement'}]
+        assert report['segments']['merged'] == {'segments': 1, 'responses': 2, 'scores': None}
+
+    def test_results_carry_no_segments_and_an_unknown_group_by_is_a_400_on_the_report(self, seeded, lambda_context):
         status, results = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/results',
                                 query={'group_by': 'hidden.customer'})
-        assert status == 200, results
-        assert results['responses'] == 9
-        [example] = results['segments']['groups']
-        assert (example['value'], example['responses'], example['scores']['q_value']['average']) == ('Example Ltd', 7,
-                                                                                                      5.0)
-        assert results['segments']['merged'] == {'segments': 1, 'responses': 2, 'scores': None}
+        assert (status, 'segments' in results) == (200, False)
         by_id = {q['id']: q for q in results['questions']}
         assert by_id['q_value_why']['follow_up_of'] == 'q_value'
-
-    def test_without_group_by_no_segments_and_an_unknown_one_is_a_400(self, seeded, lambda_context):
-        assert 'segments' not in _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/results')[1]
-        status, answer = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/results',
+        status, answer = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/report',
                                query={'group_by': 'hidden.plan'})
         assert (status, answer['code']) == (400, 'group_by_invalid')
 
@@ -116,7 +120,8 @@ class TestTheReport:
         assert report['first_response_at'] == '2026-11-10T10:00:00'
         [value] = report['kpis']
         assert (value['id'], value['average']) == ('q_value', round((7 * 5 + 2) / 9, 2))
-        assert [g['value'] for g in report['segments']['groups']] == ['qa']
+        assert [(g['value'], g['scores'], g.get('withheld')) for g in report['segments']['groups']] == [
+            ('qa', None, 'complement')]
         takeaway = next(entry for entry in report['themes'] if entry['question_id'] == 'q_takeaway')
         [labs] = takeaway['themes']
         assert (labs['count'], len(labs['quotes']), labs['quotes'][0]['text']) == (3, 3, 'Loved the labs')
@@ -135,6 +140,24 @@ class TestTheReport:
         ai = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/report')[1]['ai']
         assert (ai['report_id'], ai['summary'], ai['stale']) == ('rpt_20261115000000bbbbbbbb', 'Labs summary', True)
         assert ai['themes'][0]['quotes'] == [{'response_id': f'{seeded}-1', 'text': 'Loved the labs'}]
+
+    def test_a_summary_made_for_one_customer_quotes_that_customer_only_under_any_view(self, world, seeded,
+                                                                                   lambda_context):
+        world['feedback'].put_item(Item=_feedback(seeded, 9, customer='Sample Co', value=2, text='Sample Co text'))
+        world['aggregates'].put_item(Item={
+            'pk': 'FEEDBACK_FORM', 'sk': f'FORMREPORT#{seeded}#rpt_20261115000000cccccccc', 'form_id': seeded,
+            'report_id': 'rpt_20261115000000cccccccc', 'created_at': '2026-11-15T00:00:00+00:00',
+            'responses_counted': 7, 'last_response_at': '2026-11-16T10:00:00',
+            'filters': {'hidden.customer': 'Example Ltd', 'days': 'all'},
+            'response_ids': [f'{seeded}-0', f'{seeded}-1', f'{seeded}-2'],
+            'themes': [{'label': 'Labs', 'count': 2, 'sentiment': 'positive',
+                        'quote_ids': [f'{seeded}-9', f'{seeded}-2']}],
+            'ai': {'model': 'm', 'prompt_version': '1.0.0', 'summary': 'Example Ltd liked the labs'}})
+        for query in ({'hidden.customer': 'Sample Co'}, {}):
+            ai = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/report', query=query)[1]['ai']
+            # (Sample Co's newer response is neither quoted nor makes it stale: it was made for Example Ltd)
+            assert (ai['filters'], ai['stale']) == ({'hidden.customer': 'Example Ltd', 'days': 'all'}, False)
+            assert ai['themes'][0]['quotes'] == [{'response_id': f'{seeded}-2', 'text': 'Loved the labs'}]
 
     def test_a_viewer_is_refused_the_report_and_the_comparison(self, lambda_context):
         ws_form = _create(lambda_context, WORKSHOP, claims=EDITOR, ws=WS)['form_id']
@@ -158,12 +181,22 @@ class TestComparingForms:
         status, answer = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare', query={'with': ws_form})
         assert (status, answer['error']) == (404, 'Form not found')
 
-    def test_by_a_hidden_field_and_the_limits(self, seeded, lambda_context):
-        _, out = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare', query={'by': 'hidden.event_date'})
-        assert [(p['value'], p['responses']) for p in out['points']] == [('2026-11-01', 9)]
+    def test_by_a_hidden_field_and_the_limits(self, world, seeded, lambda_context):
+        other = _create(lambda_context, {**WORKSHOP, 'name': 'Sample Co workshop'})['form_id']
+        for n in range(5):
+            world['feedback'].put_item(Item=_feedback(other, n, customer='Sample Co', value=3))
+        _, out = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare',
+                       query={'with': other, 'by': 'hidden.event_date'})
+        assert [(p['form_id'], p['value'], p['responses']) for p in out['points']] == [
+            (seeded, '2026-11-01', 9), (other, '2026-11-01', 5)]
+        # (one form split on its own is its report's segments: no trend without another form)
+        status, answer = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare',
+                               query={'by': 'hidden.event_date'})
+        assert (status, answer['code']) == (400, 'group_by_invalid')
         too_many = ','.join(f'fd_{n:032x}' for n in range(11))
         assert _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare', query={'with': too_many})[0] == 400
-        assert _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare', query={'by': 'q_role'})[0] == 400
+        assert _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/compare',
+                     query={'with': other, 'by': 'q_role'})[0] == 400
 
 
 @pytest.mark.usefixtures('world')

@@ -69,6 +69,23 @@ describe('the Start a run dialog', () => {
     }]])
   })
 
+  it('hands what the start said beside the run to the run monitor it opens (7.63.00)', async () => {
+    const expiring = "The connection's fine-grained token expires in 2 days: its owner replaces it under Agents → Connections before then, or the run's push is refused."
+    const warned = renderDialog(() => ({ run: { run_id: RUN_ID, status: 'active' }, warnings: [expiring] }))
+    await fill(warned.dialog, {})
+    await submit(warned.dialog)
+    await waitFor(() => expect(warned.router.state.location.pathname).toBe(`/agents/engineering/${RUN_ID}`))
+    expect(warned.router.state.location.state).toStrictEqual({ startWarnings: [expiring] })
+  })
+
+  it('opens the run monitor with nothing to show when the start said nothing beside the run', async () => {
+    const quiet = renderDialog(() => ({ run: { run_id: RUN_ID, status: 'active' }, warnings: [] }))
+    await fill(quiet.dialog, {})
+    await submit(quiet.dialog)
+    await waitFor(() => expect(quiet.router.state.location.pathname).toBe(`/agents/engineering/${RUN_ID}`))
+    expect(quiet.router.state.location.state).toBeNull()
+  })
+
   it('says what is wrong with each field before anything is sent, and focuses the first', async () => {
     const { dialog } = renderDialog()
     await fill(dialog, { connection: 'conn/1', commit: COMMIT.slice(1), goal: '' })

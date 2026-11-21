@@ -20,13 +20,15 @@ describe('recall in the form\'s problems', () => {
     expect(recallCodes(form([nps, pick]))).toStrictEqual([])
   })
 
-  it('blocks Save for a recall text that names nothing, a later question or an answer never shown', () => {
+  it('blocks only Publish for a recall text that names nothing, a later question or an answer never shown (7.63.00)', () => {
     const text: Question = { id: 'q_text', type: 'open_text', headline: en('Tell us'), required: false, long: true, input_type: 'text' }
     const draft = form([{ ...nps, headline: en('{{nobody}} and {{q_pick}}') }, pick, text], {
       endings: [{ id: 'end_thanks', title: en('Thanks for {{q_text}}') }],
     })
     expect(recallCodes(draft)).toStrictEqual(['recallUnknown', 'recallNotBefore', 'recallType'])
-    expect(blockingProblems(validateForm(draft)).filter((p) => p.code.startsWith('recall'))).toHaveLength(3)
+    // (a draft saves with them, as the server keeps it: its 409 when the form would go live is the one rule)
+    const found = validateForm(draft).filter((p) => p.code.startsWith('recall'))
+    expect([blockingProblems(found).length, publishBlockingProblems(found).length]).toStrictEqual([0, 3])
   })
 
   it('blocks only Publish for a placeholder where recall never works, at that option', () => {

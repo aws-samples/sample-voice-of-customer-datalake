@@ -25,7 +25,8 @@ used for exactly two things, a run's final push and its pull request, after ever
 
 Write access cannot be proven without writing (no write probe, the owner's decision: it would be a write, and could
 start CI), so readiness says the first push confirms it, and a 403 at the push stops the step for a person
-(``CANNOT_WRITE``, code ``token_cannot_write``). A token pending its organization's approval reads only public resources (GitHub's docs,
+(``CANNOT_WRITE``, code ``token_cannot_write``); a 401 or a 404 (7.63.00: the token revoked, regenerated or no longer
+reaching the repository) too, saying to replace the token (``NOT_ACCEPTED``, code ``token_not_accepted``). A token pending its organization's approval reads only public resources (GitHub's docs,
 "Creating a fine-grained personal access token"), so its 403 may come only at the push: the same refusal says so.
 
 The token is never logged, put in a message or answered: every refusal here names what to change, never the value.
@@ -74,6 +75,11 @@ CANNOT_WRITE: Final = ("GitHub refused the connection's fine-grained token for t
                              'and Pull requests read and write on the repository, or, when its organization approves '
                              'fine-grained tokens, ask an owner to approve it; then replace the token under Agents → '
                              'Connections.')
+#: (7.63.00) A push or a pull request the host answered 401 (the token revoked, expired or regenerated) or 404 (it no
+#: longer reaches the repository): nothing was written, and only a new token goes on (code ``token_not_accepted``).
+NOT_ACCEPTED: Final = ("GitHub did not accept the connection's fine-grained token for this write ({status}: it was "
+                       'revoked, expired or regenerated, or no longer reaches the repository); nothing was written. '
+                       'Replace the token under Agents → Connections.')
 
 
 class TokenRefused(Exception):
@@ -87,12 +93,11 @@ class TokenRefused(Exception):
 
 @dataclass(frozen=True)
 class TokenFacts:
-    """What GitHub says of a token that passed: the repository as GitHub spells it, its default branch, the owner's
-    kind (``User`` or ``Organization``), the token's login and when it expires (``YYYY-MM-DD``)."""
+    """What GitHub says of a token that passed: the repository as GitHub spells it, its default branch, the token's
+    login and when it expires (``YYYY-MM-DD``)."""
 
     repository: str
     default_branch: str
-    owner_type: str
     login: str
     expires_at: str
 
@@ -256,7 +261,7 @@ def _require_expiry(response: Response, today: date) -> str:
     return expiry.isoformat()
 
 
-def _repository_facts(response: Response, repository: str) -> tuple[str, str, str]:
+def _repository_facts(response: Response, repository: str) -> tuple[str, str]:
     owner = repository.split('/', 1)[0]
     if response.status == 403:
         raise TokenRefused('org_pending_approval', f'token: GitHub refused it for {repository} (403): when {owner} '
@@ -279,8 +284,8 @@ def _repository_facts(response: Response, repository: str) -> tuple[str, str, st
     if dig(data, 'permissions', 'push') is not True:
         raise TokenRefused('no_push', f'token: it cannot push to {spelled}: give it Contents and Pull requests read and '
                                       'write (and ask for push access to the repository if you have none)')
-    branch, kind = dig(data, 'default_branch'), dig(data, 'owner', 'type')
-    return spelled, branch if isinstance(branch, str) else '', kind if isinstance(kind, str) else ''
+    branch = dig(data, 'default_branch')
+    return spelled, branch if isinstance(branch, str) else ''
 
 
 def _login(transport: Transport, token: str) -> str:
@@ -309,8 +314,7 @@ def check_token(token: str, repository: str, today: date, transport: Transport |
     via = transport or HttpsTransport(CHECK_TIMEOUT_SECONDS, host=API_HOST)
     response = _get(via, f'/repos/{quote(repository, safe="/")}', token)
     expires_at = _require_expiry(response, today) if response.status == 200 else ''
-    spelled, branch, owner_type = _repository_facts(response, repository)
+    spelled, branch = _repository_facts(response, repository)
     login = _login(via, token)
     _require_this_repository_only(via, token, spelled)
-    return TokenFacts(repository=spelled, default_branch=branch, owner_type=owner_type, login=login,
-                      expires_at=expires_at)
+    return TokenFacts(repository=spelled, default_branch=branch, login=login, expires_at=expires_at)

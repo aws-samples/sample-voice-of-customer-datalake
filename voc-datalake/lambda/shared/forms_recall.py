@@ -12,10 +12,11 @@ first) or a question of a recallable type (a score: rating, NPS, CSAT, CES; or a
 BEFORE the text (the welcome has none before it; an ending has every question). Never an open text, a contact, a
 multiple choice, a consent or a matrix answer, and never in an option label, a button, a placeholder or an address.
 
-On a save, ``check_recall`` refuses (400) a recall text whose placeholder names nothing (``recall_unknown``), a
-question at or after the text (``recall_not_before``) or one whose answer is never recalled (``recall_type``). Before a
-form goes (or stays) live, ``unresolved_placeholders`` lists every ``{{…}}`` respondents would see as it is written:
-those, and any placeholder in a text where recall never works (the handler's 409 ``unresolved_placeholder``).
+Before a form goes (or stays) live, ``unresolved_placeholders`` lists every ``{{…}}`` respondents would see as it is
+written (the handler's 409 ``unresolved_placeholder``, the one rule since 7.63.00: a draft's save is never refused for
+one): a recall text's placeholder that names nothing (``recall_unknown``), a question at or after the text
+(``recall_not_before``) or one whose answer is never recalled (``recall_type``), and any placeholder in a text where
+recall never works.
 ``shown_as_ids`` is how the server shows a text with placeholders to a reader of its results (a CSV header, an item's
 text): ``[id]``, never a respondent's value.
 
@@ -28,9 +29,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from shared.exceptions import ValidationError
-
-__all__ = ['PLACEHOLDER', 'check_recall', 'shown_as_ids', 'unresolved_placeholders']
+__all__ = ['PLACEHOLDER', 'shown_as_ids', 'unresolved_placeholders']
 
 #: ``{{`` and ``}}`` around a text without braces: one placeholder (``{{{x}}}`` holds ``{{x}}`` and two loose braces).
 PLACEHOLDER: Final = re.compile(r'\{\{([^{}]*)\}\}')
@@ -149,26 +148,6 @@ def _problem(definition: Mapping[str, Any], before: int, key: str) -> str | None
     if position >= before:
         return RECALL_NOT_BEFORE
     return None if questions[position].get('type') in RECALL_TYPES else RECALL_TYPE
-
-
-_MESSAGES: Final = {
-    RECALL_UNKNOWN: 'names no hidden field and no question of this form',
-    RECALL_NOT_BEFORE: 'names a question that comes later; recall only an earlier question\'s answer',
-    RECALL_TYPE: 'names a question whose answer is never recalled (only a score or a single choice is)',
-}
-
-
-def check_recall(definition: Mapping[str, Any]) -> None:
-    """A 400 for the first recall text whose placeholder cannot be filled there (``recall_unknown``,
-    ``recall_not_before``, ``recall_type``), naming where it is and the placeholder."""
-    for where, before, value in recall_texts(definition):
-        for locale, text in _texts(value):
-            for placeholder in placeholders(text):
-                code = _problem(definition, before, placeholder.id)
-                if code is not None:
-                    raise ValidationError(f'{where}.{locale}: {placeholder.raw[:60]} {_MESSAGES[code]}', code=code,
-                                          details={'where': f'{where}.{locale}', 'placeholder': placeholder.raw[:60],
-                                                   'id': placeholder.id[:60]})
 
 
 def _unfilled(definition: Mapping[str, Any]) -> Iterator[dict[str, str]]:

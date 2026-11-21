@@ -12,7 +12,9 @@ layer (scanned pages), a legacy ``.doc`` / ``.xls`` and an image, each sent once
 (``describe``, the caller's model call). Nothing here calls AWS itself.
 
 A document's pages (a PDF's, a presentation's slides) are joined with a form feed (``PAGE_BREAK``), so a passage knows
-its page (``chunk_pages``). Every bound below is a refusal or a cut that is recorded, never a silent truncation: a PDF
+its page (``chunk_pages``). A scanned PDF the model transcribed keeps its pages only when its text separates exactly
+the PDF's pages with ``PAGE_BREAK``, as the prompt asks; otherwise it is one text without pages, so no citation claims
+page 1 for all of it. A model reading that stopped at its token cap (``max_tokens``) is recorded as cut. Every bound below is a refusal or a cut that is recorded, never a silent truncation: a PDF
 reads at most ``MAX_PAGES`` pages, a zip part at most ``MAX_ZIP_PART_BYTES``, the whole text at most
 ``MAX_TEXT_CHARS`` (``Extraction.truncated``).
 """
@@ -29,8 +31,8 @@ from html.parser import HTMLParser
 from typing import Final, override
 
 __all__ = [
-    'FORMATS', 'MAX_NATIVE_IMAGE_BYTES', 'MAX_UPLOAD_BYTES', 'PAGE_BREAK', 'Chunk', 'ExtractionError', 'chunk_pages',
-    'extract', 'format_of', 'is_native',
+    'FORMATS', 'MAX_NATIVE_IMAGE_BYTES', 'MAX_UPLOAD_BYTES', 'PAGE_BREAK', 'Chunk', 'ExtractionError', 'Reading',
+    'chunk_pages', 'extract', 'format_of', 'is_native',
 ]
 
 #: 25 MB per file (the owner's decision).
@@ -113,8 +115,17 @@ class Extraction:
     method: str = 'text'
 
 
-#: The caller's model call: ``(format, data, kind)`` → the text Bedrock read (``kind`` is ``document`` or ``image``).
-Describe = Callable[[str, bytes, str], str]
+@dataclass(frozen=True)
+class Reading:
+    """What the model read of a file: its text and why it stopped (Converse's ``stopReason``; ``max_tokens`` means
+    the text was cut at the reply's cap)."""
+
+    text: str
+    stop_reason: str = 'end_turn'
+
+
+#: The caller's model call: ``(format, data, kind)`` → what Bedrock read (``kind`` is ``document`` or ``image``).
+Describe = Callable[[str, bytes, str], Reading]
 
 
 # ── Plain text and HTML ──────────────────────────────────────────────────────────────────────────────────────────
@@ -353,6 +364,16 @@ def _capped(text: str, pages: int | None, method: str, *, cut: bool = False) -> 
     return Extraction(text, pages, cut, method)
 
 
+def _model_read(reading: Reading, *, pages: int | None = None, cut: bool = False) -> Extraction:
+    """The model's reading as the item's text: paged only when it separates exactly ``pages`` pages with
+    ``PAGE_BREAK`` (else one text without pages, its form feeds made line breaks), and cut when the model stopped at
+    its token cap."""
+    text = reading.text
+    if pages is None or text.count(PAGE_BREAK) != pages - 1:
+        text, pages = text.replace(PAGE_BREAK, '\n'), None
+    return _capped(text, pages, 'model', cut=cut or reading.stop_reason == 'max_tokens')
+
+
 def _read_pdf(data: bytes, describe: Describe) -> Extraction:
     pages, total = _pdf_pages(data)
     if not _looks_scanned(pages):
@@ -360,7 +381,7 @@ def _read_pdf(data: bytes, describe: Describe) -> Extraction:
     if len(data) > MAX_NATIVE_DOCUMENT_BYTES:
         raise ExtractionError('This PDF has no text layer (scanned pages), and the AI model reads such a PDF only '
                               'up to 4.5 MB. Upload a smaller copy, or one with its text.')
-    return _capped(describe('pdf', data, 'document'), total or None, 'model', cut=total > MAX_PAGES)
+    return _model_read(describe('pdf', data, 'document'), pages=total or None, cut=total > MAX_PAGES)
 
 
 def extract(fmt: Format, data: bytes, describe: Describe) -> Extraction:
@@ -376,12 +397,12 @@ def extract(fmt: Format, data: bytes, describe: Describe) -> Extraction:
     if fmt.kind == 'image':
         if len(data) > MAX_NATIVE_IMAGE_BYTES:
             raise ExtractionError('Images are described by the AI model, which takes at most 3.75 MB.')
-        return _capped(describe(fmt.name, data, 'image'), None, 'model')
+        return _model_read(describe(fmt.name, data, 'image'))
     if fmt.name in _MODEL_READ_DOCUMENTS:
         if len(data) > MAX_NATIVE_DOCUMENT_BYTES:
             suggestion = '.docx' if fmt.name == 'doc' else '.xlsx'
             raise ExtractionError(MODEL_READ_LIMIT_MESSAGE.format(suggestion=suggestion))
-        return _capped(describe(fmt.name, data, 'document'), None, 'model')
+        return _model_read(describe(fmt.name, data, 'document'))
     raise ExtractionError('This file type is not supported.')
 
 

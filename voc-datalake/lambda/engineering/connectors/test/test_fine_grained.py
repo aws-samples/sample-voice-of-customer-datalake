@@ -80,8 +80,8 @@ def refused(api: FakeGitHub, today: date = TODAY) -> TokenRefused:
 def test_a_token_that_passes_answers_its_repository_login_and_expiry_after_four_reads() -> None:
     api = github()
     facts = check_token(PAT, REPOSITORY, TODAY, api)
-    assert facts == TokenFacts(repository=REPOSITORY, default_branch='main', owner_type='Organization',
-                               login='casey-dev', expires_at='2027-02-17')
+    assert facts == TokenFacts(repository=REPOSITORY, default_branch='main', login='casey-dev',
+                               expires_at='2027-02-17')
     assert [path for _, path, _ in api.sent] == [f'/repos/{REPOSITORY}', '/user',
                                                  '/user/repos?visibility=private&per_page=1']
     assert {headers['Authorization'] for _, _, headers in api.sent} == {f'Bearer {PAT}'}
@@ -230,8 +230,7 @@ def test_a_token_s_state_on_a_day(expires: str | None, state: str, left: int | N
 
 
 def test_the_parameter_round_trips_and_its_repr_leaves_the_token_out() -> None:
-    facts = TokenFacts(repository=REPOSITORY, default_branch='main', owner_type='User', login='casey-dev',
-                       expires_at='2027-02-17')
+    facts = TokenFacts(repository=REPOSITORY, default_branch='main', login='casey-dev', expires_at='2027-02-17')
     stored = parse_value(parameter_value(facts, OWNER, PAT))
     assert stored == WriteToken(repository=REPOSITORY, login='casey-dev', expires_at='2027-02-17', owner=OWNER,
                                 token=PAT)

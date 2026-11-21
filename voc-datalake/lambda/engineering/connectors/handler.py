@@ -37,7 +37,8 @@ requests' records written with the claims' attributes (``upstream_records.Upstre
 Since 7.60.00 a fine-grained connection's write token is read from its own path (``ENGINEERING_TOKEN_PARAMETER_PREFIX``,
 ``/[<prefix>-]voc/engineering-token/``: ``credentials.WriteTokens``), which only this function is told and granted; a
 deployment that names none refuses every push and pull request on such a connection (503). A write the token was
-refused (403) answers 409 with ``code: token_cannot_write``.
+refused (403) answers 409 with ``code: token_cannot_write``, one it was not accepted for (7.63.00: 401 or 404, the token to
+replace) 409 with ``code: token_not_accepted``.
 """
 from __future__ import annotations
 

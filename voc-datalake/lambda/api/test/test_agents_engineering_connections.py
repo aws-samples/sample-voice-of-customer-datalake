@@ -313,7 +313,7 @@ def test_the_broker_serves_a_run_on_its_connections_stored_default_branch_only_w
         .on('GET', f'{REPO}/contents/README.md?ref=develop', Response(status=200, headers={}, body=b'# On develop\n'))
     assert _call(lambda_context, 'PUT', connection_path(), body=body(default_branch='develop'))[0] == 200
     # The start copies the stored branch onto the run (as it does the repository); the broker confirms it on the host.
-    env.start_run(**agents_handler._run_connection('refunds'))
+    env.start_run(**agents_handler._run_connection('refunds', pushes=True))
     # The file is read on the run's stored default branch, not the repository's own (7.04.00).
     assert broker_read(api) == (200, {'result': {'content': '# On develop\n', 'next_cursor': None}})
     assert ('GET', f'{REPO}/git/ref/heads/develop') in api.calls()
@@ -328,9 +328,9 @@ def test_the_broker_serves_a_run_on_its_connections_stored_default_branch_only_w
 @pytest.mark.usefixtures('env')
 def test_a_runs_repository_and_default_branch_are_its_stored_connections(lambda_context: Any) -> None:
     with pytest.raises(agents_handler.ValidationError, match='no stored repository connection'):
-        agents_handler._run_connection('refunds')
+        agents_handler._run_connection('refunds', pushes=True)
     assert _call(lambda_context, 'PUT', connection_path(), body=body(default_branch='trunk'))[0] == 200
-    assert agents_handler._run_connection('refunds') == {'repo': f'{OWNER}/{REPOSITORY}', 'default_branch': 'trunk'}
+    assert agents_handler._run_connection('refunds', pushes=True) == {'repo': f'{OWNER}/{REPOSITORY}', 'default_branch': 'trunk'}
 
 
 def test_a_change_and_a_removal_record_the_administrators_reason(lambda_context: Any, env: Env) -> None:

@@ -68,21 +68,22 @@ describe('Insert a value', () => {
 })
 
 describe('the recall preview', () => {
-  it('shows the text with each value named, and without one as the widget tidies it', () => {
+  it('shows the text with each value named, and leaves the text without one to the widget preview', () => {
     renderWithDraft(<LiveQuestionEditor id="q_pick" />, recallForm([nps, reason, { ...pick, headline: en('Thanks, {{event}}! You gave {{q_nps}}.') }]))
     expect(screen.getByText('Respondents see: Thanks, ‹Event›! You gave ‹How likely are you to recommend us?›.')).toBeInTheDocument()
-    expect(screen.getByText('Without a value: Thanks! You gave.')).toBeInTheDocument()
+    // (the widget alone tidies a text around a missing value: no second copy of its rules here)
+    expect(screen.queryByText(/^Without a value/)).not.toBeInTheDocument()
   })
 
-  it('previews an ending, which may recall every question, and says when nothing is left', () => {
+  it('previews an ending, which may recall every question', () => {
     renderWithDraft(<EndingEditor ending={{ id: 'end_thanks', title: en('{{q_pick}}') }} />, recallForm())
     expect(screen.getByText('Respondents see: ‹Pick one›')).toBeInTheDocument()
-    expect(screen.getByText('Without a value: (nothing)')).toBeInTheDocument()
   })
 
   it('previews only a text with a placeholder, and says when one names nothing', () => {
     renderWithDraft(<LiveQuestionEditor id="q_nps" />, recallForm([{ ...nps, subheader: en('About {{nobody}}') }, reason, pick]))
-    expect(screen.getAllByText(/^Respondents see/).map((node) => node.textContent)).toStrictEqual(['Respondents see: About'])
+    // (plain substitution: the placeholder that names nothing shows nothing, the text around it as written)
+    expect(screen.getAllByText(/^Respondents see/).map((node) => node.textContent)).toStrictEqual(['Respondents see: About '])
     expect(screen.getByText('{{nobody}} names no hidden field and no question of this form (English).')).toBeInTheDocument()
   })
 })

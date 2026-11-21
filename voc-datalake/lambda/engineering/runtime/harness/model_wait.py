@@ -7,11 +7,17 @@ reply cut at the cap is asked for again, so the native harness's model calls can
 minutes on end: before 7.58.01 such a call could get its task stopped mid-call, and the paid call was lost.
 
 The Converse loop holds ``ModelWait.calling`` around each call, and botocore says each request it sends for it
-(``sent``, on ``before-send``: the call's first, or the same request sent again after a read timeout, each a request
-of its own). The harness's heartbeat (``main._heartbeat``, once a minute) reports ``WAITING_ON_THE_MODEL`` for a
-request still in flight ``after`` seconds after it was sent: one line per request, so a short call reports nothing and
-a long one one line, never one a minute. The harness's Bedrock timeouts bound how long a request can run after its
-line (``main.BEDROCK_READ_TIMEOUT``: a test holds them inside the stall rule's window).
+(``sent``, on ``before-send``: the call's first, or the same request sent again after a throttle or a server error,
+each a request of its own; 7.63.00: never after a read timeout, ``main.bedrock_client``). The harness's heartbeat
+(``main._heartbeat``, once a minute) reports ``WAITING_ON_THE_MODEL`` for a request still in flight ``after`` seconds
+after it was sent: one line per request, so a short call reports nothing and a long one one line, never one a minute.
+The harness's Bedrock timeouts bound how long a request can run after its line (``main.BEDROCK_READ_TIMEOUT``: a test
+holds them inside the stall rule's window).
+
+A report is one step from the call's end (``report``, 7.63.00): the line it sends has no ``waiting``, and a report
+without it closes the wait on the lease, so a line sent after its call returned would close the wait the coordinator's
+``wait_for_agents`` opens right after that call. The call's end waits for a report under way, and a report never
+starts once the call has ended.
 """
 from __future__ import annotations
 
@@ -33,6 +39,9 @@ class ModelWait:
         self._after = after
         self._clock = clock
         self._lock = threading.Lock()
+        #: Held across a report (``report``: the request due, its line sent, marked reported) and by the call's end
+        #: (``calling``), so no line of a call reaches the board after the call returned.
+        self._reporting = threading.Lock()
         self._calling = False
         #: The requests sent so far; the one in flight's number and when it was sent (``clock``), None for none; and
         #: the last one whose line was reported.
@@ -49,7 +58,8 @@ class ModelWait:
         try:
             yield
         finally:
-            with self._lock:
+            # (after a report under way, never between its look and its line: ``report``)
+            with self._reporting, self._lock:
                 self._calling, self._sent = False, None
 
     def sent(self, **_: Any) -> None:
@@ -72,3 +82,13 @@ class ModelWait:
         """Request ``request`` (``due``'s) was reported: it is not again (one that failed is, at the next look)."""
         with self._lock:
             self._reported = max(self._reported, request)
+
+    def report(self, send: Callable[[], None]) -> None:
+        """Report the request in flight that is due (``due``) with ``send`` (the board's line), then mark it reported,
+        all while its call cannot end (``calling`` waits for it). ``send``'s error is raised, and the request is
+        reported at the next look."""
+        with self._reporting:
+            request = self.due()
+            if request is not None:
+                send()
+                self.reported(request)

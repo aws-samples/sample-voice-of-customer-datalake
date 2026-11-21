@@ -121,14 +121,15 @@ describe('voc-retention worker', () => {
     // The deployment's: its own partitions and its registries, each read only for the attributes the erasure and
     // the lineage marks read (7.48.00).
     expect(json).toContain(JSON.stringify({
-      // And (7.62.00) the Documents Library's items, for the address in their metadata (title, source, tags).
+      // And (7.62.00) the Documents Library's items, for the address in their metadata (title, source, tags, and the
+      // names of who made and changed it).
       'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*', 'PROJECT_IDS',
         'DOCSHARE_IDS', 'COMMENT_SERIES_IDS', 'LIBRARY'] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'author', 'replies', 'status_by', 'audience',
         'created_by_name', 'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes',
         's3_raw_key', 'content_type', 'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at',
         'completed_at', 'release', 'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
-        'input_feature_request_ids', 'erased_evidence', 'title', 'source', 'tags'] },
+        'input_feature_request_ids', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'] },
       // A Query naming no attribute would pass ForAllValues and read whole rows: SPECIFIC_ATTRIBUTES is required.
       StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
     }));

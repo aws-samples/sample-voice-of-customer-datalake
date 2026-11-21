@@ -112,7 +112,8 @@ that row), so no step outlasts the hand-over reserve by more than one row's writ
 
 The Documents Library (7.62.00, docs/documents-library.md): after the persona library, each scope's library items
 (``LIBRARY`` / ``WS#{ws}#LIBRARY``, ``ITEM#`` rows, ``DOCS_PAGE`` a step) are judged as product documents are: an
-item whose title, file name, source or tags hold the address, or whose extracted text (``library/{item}/extracted``)
+item whose title, file name, source, tags or ``created_by`` / ``updated_by`` name hold the address (an item stored
+before 7.63.00 could name its uploader by address), or whose extracted text (``library/{item}/extracted``)
 does, is listed in ``files_needing_review`` by its original's key (and closes the workspace's exports); one not
 extracted yet, or whose text cannot be read, in ``files_not_checked``. Never changed: the file is the team's.
 """
@@ -211,7 +212,10 @@ ERASED_FIELDS: Final = {
 }
 #: The fields of a product document's record that can hold an address: never rewritten (the record names a file the
 #: team uploaded), but a record whose field holds it is listed for review (``_product_doc``).
-LISTED_FIELDS: Final = {'product_doc': ('filename',), 'library_item': ('title', 'filename', 'source', 'tags')}
+#: A library item's ``created_by`` / ``updated_by`` are ``{sub, name}``: their ``name`` is judged (an item stored before
+#: 7.63.00 could hold the uploader's address there, see library_routes.py ``_actor``).
+LISTED_FIELDS: Final = {'product_doc': ('filename',),
+                        'library_item': ('title', 'filename', 'source', 'tags', 'created_by', 'updated_by')}
 #: The product document records one docs step reads (each may be one or two object reads).
 DOCS_PAGE: Final = 5
 #: The attributes each kind's write reads and conditions on (its projection), and the attributes any write of this
@@ -866,8 +870,10 @@ class ProjectPeopleEraser:
 
 
 def _texts_of(value: object) -> list[str]:
-    """The text values of one attribute: itself when it is text, its text members when it is a list (tags)."""
-    values: list[object] = list(value) if isinstance(value, list) else [value]
+    """The text values of one attribute: itself when it is text, its text members when it is a list (tags), its
+    ``name`` when it is a map (a library item's ``created_by`` / ``updated_by``, ``{sub, name}``)."""
+    values: list[object] = list(value) if isinstance(value, list) else (
+        [value.get('name')] if isinstance(value, Mapping) else [value])
     return [entry for entry in values if isinstance(entry, str)]
 
 
@@ -888,11 +894,12 @@ _DOC_PROJECTION: Final = {
                                  '#status': 'status', '#text': 's3_extracted_key', '#file': 'filename'},
 }
 #: What the documents library step reads of an item (lib/stacks/retention-worker.ts holds the deployment's Query to
-#: these among DEPLOYMENT_QUERY_ATTRIBUTES): its key, status and the metadata a person typed.
+#: these among DEPLOYMENT_QUERY_ATTRIBUTES): its key, status, the metadata a person typed and who made and changed it.
 _LIBRARY_PROJECTION: Final = {
-    'ProjectionExpression': '#pk, #sk, #status, #title, #file, #source, #tags',
+    'ProjectionExpression': '#pk, #sk, #status, #title, #file, #source, #tags, #cb, #ub',
     'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', '#status': 'status', '#title': 'title',
-                                 '#file': 'filename', '#source': 'source', '#tags': 'tags'},
+                                 '#file': 'filename', '#source': 'source', '#tags': 'tags', '#cb': 'created_by',
+                                 '#ub': 'updated_by'},
 }
 #: The per-project part of a workspace's cursor, as a project starts.
 _PROJECT_START: Final = {'part': _META, 'docs_from': None, 'personas_from': None, 'series': [], 'series_from': None,

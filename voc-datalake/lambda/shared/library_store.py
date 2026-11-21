@@ -22,7 +22,7 @@ import re
 import string
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any, Final
 
 from botocore.exceptions import ClientError
@@ -42,7 +42,7 @@ from shared.library_keys import (
 )
 from shared.participants_tables import cancellation_codes, transact
 from shared.request_body import validated_text
-from shared.timestamps import now_iso
+from shared.timestamps import now_iso, parse_iso
 
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
@@ -66,6 +66,9 @@ PUBLIC_FIELDS: Final = (
     'bytes', 'sha256', 'status', 'error', 'extracted_chars', 'pages', 'chunks', 'native', 'truncated', 'method',
     'created_by', 'created_at', 'updated_by', 'updated_at', 'version',
 )
+#: An extraction this old (the twin's 15 minutes and a margin) is over, whatever its row still says: the item reads
+#: ``stale`` and can be retried (library_routes.py ``retry_library_item``; the SPA stops polling it then).
+STALE_EXTRACTION_SECONDS: Final = 16 * 60
 _COUNT_SK: Final = 'META'
 _SLUG_ATTEMPTS: Final = 5
 _PROJECT_ID: Final = re.compile(r'[A-Za-z0-9_-]{1,128}')
@@ -203,8 +206,15 @@ def validate_new_item(body: Mapping[str, Any]) -> NewItem:
 # ── Reads ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
+def extraction_is_over(item: Mapping[str, Any]) -> bool:
+    """Whether the item is ``extracting`` since ``STALE_EXTRACTION_SECONDS`` or more (its worker cannot be running)."""
+    started = parse_iso(item.get('extract_started_at'))
+    return item.get('status') == 'extracting' and started is not None and (
+        datetime.now(UTC) - started).total_seconds() >= STALE_EXTRACTION_SECONDS
+
+
 def public_view(item: Mapping[str, Any]) -> dict[str, Any]:
-    """An item as a client sees it (numbers as ints)."""
+    """An item as a client sees it (numbers as ints; ``stale`` when its extraction is over: ``extraction_is_over``)."""
     view: dict[str, Any] = {}
     for field in PUBLIC_FIELDS:
         value = item.get(field)
@@ -213,6 +223,8 @@ def public_view(item: Mapping[str, Any]) -> dict[str, Any]:
         view[field] = int(value) if hasattr(value, 'as_integer_ratio') and not isinstance(value, bool | float) \
             else value
     view.setdefault('tags', [])
+    if extraction_is_over(item):
+        view['stale'] = True
     return view
 
 
@@ -381,6 +393,19 @@ def delete_item_rows(table: Any, scope: WorkspaceScope | None, item: Mapping[str
         transact(table, scope, entries)
     except ClientError as exc:
         if cancellation_codes(exc)[:1] == ['ConditionalCheckFailed']:
+            raise NotFoundError('Library item not found') from exc
+        raise
+
+
+def revoke_claim(table: Any, scope: WorkspaceScope | None, item_id: str) -> None:
+    """Remove the item's extraction claim (a delete's first step): a run still in flight then finds its claim gone and
+    drops what it wrote (library_worker.py). 404 when the item is gone."""
+    try:
+        table_view(scope, table).update_item(item_key(item_id, workspace=scope), UpdateExpression='REMOVE #tok',
+                                             ConditionExpression='attribute_exists(pk)',
+                                             ExpressionAttributeNames={'#tok': 'extract_token'})
+    except ClientError as exc:
+        if exc.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
             raise NotFoundError('Library item not found') from exc
         raise
 

@@ -1,7 +1,8 @@
 /**
  * @fileoverview The preview drawer of one library item (opened by a row, and by `?item=<id>&page=<n>`, the
  * assistant's citation chips): its status, its details or their editor, a 5-minute link to download the original,
- * Retry for a failed item, Delete behind a confirmation, and its extracted text, page by page.
+ * Retry for a failed item or one whose extraction outlived the worker (`stale`, 16 minutes or more: no longer
+ * polled), Delete behind a confirmation, and its extracted text, page by page.
  *
  * Who may do what, as the server decides it (lambda/shared/library_routes.py): every member reads; an editor or an
  * admin edits, retries and uploads; an admin or the person who uploaded it deletes. The drawer offers the writes to
@@ -25,14 +26,14 @@ import ItemEditor from './ItemEditor'
 import ItemText from './ItemText'
 import StatusBadge from './StatusBadge'
 import type { ProjectOption } from './libraryFilters'
-import { IN_FLIGHT_REFETCH_MS, isItemInFlight } from './useLibraryList'
+import { IN_FLIGHT_REFETCH_MS, isItemInFlight, isItemRetryable } from './useLibraryList'
 
 function StatusLine({ item }: Readonly<{ item: LibraryItem }>) {
   const { t } = useTranslation('library')
   const note = (() => {
     switch (item.status) {
       case 'pending': return t('preview.pending')
-      case 'extracting': return t('preview.extracting')
+      case 'extracting': return item.stale === true ? t('preview.stale') : t('preview.extracting')
       case 'failed': return item.error ?? t('preview.failed')
       case 'ready': return null
     }
@@ -77,7 +78,7 @@ function Actions({ detail, canWrite, onEdit, onRetry, retrying, onDelete }: Read
           <Download size={14} aria-hidden="true" />{t('preview.download')}
         </NewTabLink>
       )}
-      {canWrite && item.status === 'failed' ? (
+      {canWrite && isItemRetryable(item) ? (
         <button type="button" className="btn btn-secondary btn-sm" onClick={onRetry} disabled={retrying}>
           {retrying ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <RotateCcw size={14} aria-hidden="true" />}
           {t('preview.retry')}

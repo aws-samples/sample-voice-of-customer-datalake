@@ -108,7 +108,7 @@ voice-of-customer-datalake/       # Root repository
     │   └── layers/
     │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4, app-review scrapers
     │       ├── processing-deps/      # Layer (ApiDepsLayer + ProcessingDepsLayer): aws-lambda-powertools, pydantic, requests
-    │       ├── signing-deps/         # Layer: cryptography, only for ProjectsApi + ProjectsAssistWorker (they sign CloudFront URLs) and the MCP endpoint (it verifies OAuth tokens)
+    │       ├── signing-deps/         # Layer: cryptography, only for ProjectsApi + ProjectsAssistWorker (they sign CloudFront URLs) and the MCP endpoint (it verifies OAuth tokens); since 7.62.00 also pypdf, for the Documents Library's PDF text layer (the projects API's assist twin extracts it)
     │       └── email-intake-deps/    # Layer: lxml, only for the (opt-in) inbound-email intake
     ├── plugins/                      # Data source plugins
     │   ├── _shared/                  # Shared plugin utilities
@@ -124,7 +124,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── projectsApi.ts    # Projects API (lazy-loaded)
     │   │   │   └── projectQueryKeys.ts # Query keys shared across features
     │   │   ├── assistant/            # Unified AI assistant (AG-UI client, thread reducer, sessions, approvals, panel UI)
-    │   │   ├── workspace/            # Multi-workspace (docs/multi-workspace.md): /w/{slug} base path, current workspace + X-Workspace-Id, the gate (picker, not-found, a platform admin's entry from the console), the header menu (Members), the refusals of the members and platform writes
+    │   │   ├── workspace/            # Multi-workspace (docs/multi-workspace.md): /workspace/{slug} base path, current workspace + X-Workspace-Id, the gate (picker, not-found, a platform admin's entry from the console), the header menu (Members), the refusals of the members and platform writes
     │   │   ├── services/auth.ts      # Cognito authentication service
     │   │   ├── realtime/             # Push notices (AppSync Events via aws-amplify events): connection, hub, Zod notices, jobRefresh (job views; docs/realtime.md)
     │   │   ├── components/           # Each component in its own folder (77 folders; a selection below)
@@ -156,8 +156,8 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── FeedbackDetail/   # Single feedback item view
     │   │   │   ├── FeedbackForms/    # Feedback form management
     │   │   │   ├── Login/            # Cognito login page
-    │   │   │   ├── Members/          # The current workspace's members (/w/{slug}/members; docs/multi-workspace.md)
-    │   │   │   ├── WorkspaceSettings/ # The current workspace's brand, plugins, categories, dimensions and source policies (/w/{slug}/workspace-settings)
+    │   │   │   ├── Members/          # The current workspace's members (/workspace/{slug}/members; docs/multi-workspace.md)
+    │   │   │   ├── WorkspaceSettings/ # The current workspace's brand, plugins, categories, dimensions and source policies (/workspace/{slug}/workspace-settings)
     │   │   │   ├── Prioritization/   # Issue prioritization
     │   │   │   ├── ProblemAnalysis/  # Problem analysis dashboard
     │   │   │   ├── ProjectDetail/    # Single project view
@@ -468,12 +468,12 @@ embeddable widget calls from the customer's own site.
 | DELETE | `/feedback-forms/{id}` | Cognito | Delete form |
 | GET | `/feedback-forms/{id}/submissions` | Cognito | Read submitted feedback |
 | GET | `/feedback-forms/{id}/stats` | Cognito | Submission count + average rating |
-| GET | `/feedback-forms/{id}/results` | Cognito | Per-question results and the drop-off funnel, with the Results filters (7.55.00); `group_by=hidden.<id>\|q_<id>\|q_<id>.<row>` adds segments of at least 5 (7.63.00) |
+| GET | `/feedback-forms/{id}/results` | Cognito | Per-question results and the drop-off funnel, with the Results filters (7.55.00); no segments (the report's `group_by`, 7.63.00); also the MCP tool `forms_get_results` (7.63.00) |
 | GET | `/feedback-forms/{id}/responses` | Cognito | The responses, paged, or as CSV (`format=csv`; `include_test=only` for the Test tab) (7.55.00) |
 | DELETE | `/feedback-forms/{id}/responses?test=true` | Cognito | Delete the form's test responses (an admin or the form's creator; recorded first) (7.55.00) |
 | POST | `/feedback-forms/{id}/test-link` | Cognito | Issue or rotate the test link and set its `link_enabled` / `record` (admins; the only answer with the token) (7.55.00) |
 | GET | `/feedback-forms/{id}/report` | Cognito | The form's report: KPIs, heatmaps, segments, themes with real quotes, the AI summary (7.63.00; editors and admins, as Results) |
-| GET | `/feedback-forms/{id}/compare` | Cognito | The form beside up to 10 of the scope's forms (`with`), or split by `by=hidden.<id>` (7.63.00; as Results) |
+| GET | `/feedback-forms/{id}/compare` | Cognito | The form beside up to 10 of the scope's forms (`with`), each split by `by=hidden.<id>` when asked (7.63.00; as Results; `by` without `with` is a 400) |
 | GET | `/feedback-forms/{id}/config` | **public** | Form config for the widget |
 | POST | `/feedback-forms/{id}/submit` | **public** | Submit feedback |
 | POST | `/feedback-forms/{id}/events` | **public** | The widget's funnel beacons (`opened`, `left`), apart from submit |

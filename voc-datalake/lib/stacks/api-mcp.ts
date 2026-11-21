@@ -26,6 +26,8 @@ export interface McpDelegates {
   feedbackEditLambda: lambda.Function;
   /** voc-integrations-api: `feedback_get_catalogue sources: true` reads GET /sources/status (docs/mcp.md). */
   integrationsLambda: lambda.Function;
+  /** voc-feedback-form-api: `forms_get_results` reads GET /feedback-forms/{id}/results (7.63.00, docs/mcp.md). */
+  feedbackFormLambda: lambda.Function;
 }
 
 /** Must equal MCP_UNAUTHORIZED / the 401 message in lambda/api/mcp_global_handler.py (pinned by a test). */
@@ -90,7 +92,7 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
   const { api, authMethodOptions } = gateway;
   const {
     metricsLambda, projectsLambda, settingsLambda, memoryLambda, agentsLambda, engagementLambda, radarLambda, feedbackEditLambda,
-    integrationsLambda,
+    integrationsLambda, feedbackFormLambda,
   } = delegates;
   const { projectsTable, jobsTable, kmsKey, userPool } = ctx.props;
 
@@ -113,6 +115,7 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
       METRICS_FUNCTION: metricsLambda, SETTINGS_FUNCTION: settingsLambda, MEMORY_FUNCTION: memoryLambda,
       PROJECTS_FUNCTION: projectsLambda, AGENTS_FUNCTION: agentsLambda, ENGAGEMENT_FUNCTION: engagementLambda,
       RADAR_FUNCTION: radarLambda, FEEDBACK_EDIT_FUNCTION: feedbackEditLambda, INTEGRATIONS_FUNCTION: integrationsLambda,
+      FORMS_FUNCTION: feedbackFormLambda,
     },
   });
   // OAuth sign-in for the same endpoint (api-mcp-oauth.ts, docs/mcp.md "OAuth sign-in").

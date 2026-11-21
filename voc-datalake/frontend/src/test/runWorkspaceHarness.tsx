@@ -59,11 +59,11 @@ export function workspaceRoutes(extra: Record<string, RouteHandler> = {}): void 
 }
 
 /** The workspace at `path`; the router says where it moved to. */
-export function renderWorkspace(path: string) {
+export function renderWorkspace(path: string, state?: unknown) {
   const router = createMemoryRouter([
     { path: '/agents/engineering/:runId/*', element: <RunWorkspace /> },
     { path: '/agents/runs', element: <p>Runs</p> },
-  ], { initialEntries: [path] })
+  ], { initialEntries: [state === undefined ? path : { pathname: path, state }] })
   renderWithQueryClient(<RouterProvider router={router} />)
   return router
 }

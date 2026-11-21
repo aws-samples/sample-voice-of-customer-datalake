@@ -28,6 +28,8 @@ const MAX_IMAGE_BYTES = 3_750_000;
 const PAGE_SIZE = 50;
 const MAX_SUGGESTIONS = 8;
 const READING_MS = 2500;
+// = lambda/shared/library_store.py STALE_EXTRACTION_SECONDS: an extraction this old reads `stale` and can be retried.
+const STALE_EXTRACTION_MS = 16 * 60 * 1000;
 const PAGE_BREAK = '\f';
 const PART_CHARS = 20_000;
 const SORTS = ['newest', 'oldest', 'title', 'doc_date'];
@@ -65,9 +67,12 @@ const PUBLIC_FIELDS = [
   'status', 'error', 'extracted_chars', 'pages', 'chunks', 'native', 'truncated', 'method', 'created_by', 'created_at',
   'updated_by', 'updated_at', 'version',
 ];
+/** library_store.py extraction_is_over: extracting since 16 minutes or more. */
+const isStale = (item) => item.status === 'extracting' && item.extract_started_at !== undefined
+  && Date.now() - Date.parse(item.extract_started_at) >= STALE_EXTRACTION_MS;
 function publicView(item) {
   const view = Object.fromEntries(PUBLIC_FIELDS.filter((field) => item[field] !== undefined).map((field) => [field, item[field]]));
-  return { ...view, tags: [...item.tags] };
+  return { ...view, tags: [...item.tags], ...(isStale(item) ? { stale: true } : {}) };
 }
 
 const pagesOf = (item) => (item.pages ? item.text.split(PAGE_BREAK) : partsOf(item.text));
@@ -219,6 +224,7 @@ function createRoute(req, body) {
 function startReading(item) {
   item.status = 'extracting';
   item.updated_at = nowIso();
+  item.extract_started_at = item.updated_at;
   delete item.error;
   setTimeout(() => {
     if (items.get(item.item_id) !== item || item.status !== 'extracting') return;
@@ -254,7 +260,7 @@ const ITEM_ACTIONS = {
     if (item.status !== 'pending') return [202, { item: publicView(item) }];
     return item.uploaded ? startReading(item) : bad(409, 'The file has not arrived yet. Upload it again.', 'not_uploaded');
   },
-  'POST retry': (item) => (item.status === 'failed'
+  'POST retry': (item) => (item.status === 'failed' || isStale(item)
     ? startReading(item) : bad(409, 'Only a failed item can be extracted again.', 'not_failed')),
   'GET text': (item, { url }) => textRoute(item, url),
   'GET ': (item, { req }) => detailRoute(req, item),

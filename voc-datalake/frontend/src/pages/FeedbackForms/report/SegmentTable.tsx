@@ -1,7 +1,8 @@
 /**
  * @fileoverview The Report's segments (7.63.00): one row per segment of at least 5 responses, then "Other (fewer than
  * 5)" for the smaller ones together, whose figures stay withheld while they are fewer than 5 too, so no one can be
- * picked out. A column per measured question: its NPS, CSAT %, CES % or average, a matrix's row averages.
+ * picked out; then the smallest named segment's are withheld with them (the totals less the others would be theirs).
+ * A column per measured question: its NPS, CSAT %, CES % or average, a matrix's row averages.
  *
  * @module pages/FeedbackForms/report/SegmentTable
  */
@@ -11,9 +12,11 @@ import { formatCount } from '../../../utils/numberFormat'
 import type { FormV2 } from '../model/formsV2'
 import { figureText, measuredIds, questionHeadline, rowAveragesText, segmentValueLabel } from './reportLabels'
 
-function Cells({ form, ids, scores }: Readonly<{ form: FormV2; ids: readonly string[]; scores: Scores }>) {
+function Cells({ form, ids, scores, complement = false }: Readonly<{ form: FormV2; ids: readonly string[]; scores: Scores; complement?: boolean }>) {
   const { t, i18n } = useTranslation('feedbackForms')
-  if (scores === null) return <td colSpan={ids.length} className="px-3 py-2 text-[12px] text-muted">{t('report.segments.withheld')}</td>
+  if (scores === null) {
+    return <td colSpan={ids.length} className="px-3 py-2 text-[12px] text-muted">{t(complement ? 'report.segments.complement' : 'report.segments.withheld')}</td>
+  }
   return (
     <>
       {ids.map((id) => (
@@ -46,7 +49,7 @@ export default function SegmentTable({ form, segments }: Readonly<{ form: FormV2
             <tr key={group.value}>
               <th scope="row" className="px-3 py-2 font-medium text-text-strong">{label(group.value)}</th>
               <td className="px-3 py-2 tabular-nums">{formatCount(group.responses, i18n.language)}</td>
-              <Cells form={form} ids={ids} scores={group.scores} />
+              <Cells form={form} ids={ids} scores={group.scores} complement={group.withheld === 'complement'} />
             </tr>
           ))}
           {segments.merged !== null && (

@@ -128,8 +128,8 @@ const RETENTION_DEPLOYMENT_PARTITIONS = ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*
  * What the worker's Queries of those partitions may read (`dynamodb:Attributes`, 7.48.00): the keys, what the erasure
  * by email judges of each kind of row (a thread's authors, replies and resolver; a link's audience, names, revocation
  * and project; a META's owner, members and delete state; a persona's research notes; a product document's upload, type, status,
- * extracted text and filename), a registry row's `deleted_at`, the backfill marker's time, release and counts, and the
- * lineage marks' id lists and mark. The statement also requires `dynamodb:Select` `SPECIFIC_ATTRIBUTES`, so a Query
+ * extracted text and filename; a library item's title, source, tags and who made and changed it), a registry row's
+ * `deleted_at`, the backfill marker's time, release and counts, and the lineage marks' id lists and mark. The statement also requires `dynamodb:Select` `SPECIFIC_ATTRIBUTES`, so a Query
  * that names no attribute (which `ForAllValues` alone would let through, reading whole rows) is refused; every
  * deployment Query of the code names its attributes and says so (lambda/shared/project_walk.py `query_page`;
  * lambda/jobs/retention/test/test_deployment_project_erasure.py records each one against this list). The workspace
@@ -139,7 +139,7 @@ const DEPLOYMENT_QUERY_ATTRIBUTES = ['pk', 'sk', 'author', 'replies', 'status_by
   'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes', 's3_raw_key', 'content_type',
   'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at', 'completed_at', 'release',
   'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
-  'input_feature_request_ids', 'erased_evidence', 'title', 'source', 'tags'];
+  'input_feature_request_ids', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'];
 /**
  * What the worker's Scan of voc-projects may read (7.48.00; lambda/shared/review_registries.py `SCAN_ATTRIBUTES`, which
  * a test holds to this list): a row's key, a routing row's workspace, a link's project and series, and a link's or a

@@ -5,10 +5,12 @@
  * - `GET /feedback-forms/{id}/report?…[&group_by=]` (the Results filters) → `{name, template, responses,
  *   first_response_at, last_response_at, kpis, matrices, segments, themes, ai, min_segment}`: the KPIs of each rating,
  *   NPS, CSAT and CES question, each matrix as a heatmap, the segments (each of at least 5 responses; the smaller ones
- *   merged into "Other (fewer than 5)", whose figures stay withheld under 5), the deterministic themes per open-text
- *   question with real quotes, and the newest AI summary as this reader may see it (or `withheld: 'access'`).
- * - `GET /feedback-forms/{id}/compare?with=<ids>&by=hidden.<id>` → `{by, min_size, questions, forms, points}`.
- * - `POST /settings/form-reports` `{form_id, answers: [{response_id, text}], filters, responses, last_response_at}` →
+ *   merged into "Other (fewer than 5)", whose figures stay withheld under 5, and then the smallest named one withheld
+ *   with them, `withheld: 'complement'`), the deterministic themes per open-text question with real quotes, and the
+ *   newest AI summary as this reader may see it under the filters it was made with (`filters`), or
+ *   `withheld: 'access'`.
+ * - `GET /feedback-forms/{id}/compare?with=<ids>[&by=hidden.<id>]` → `{by, min_size, questions, forms, points}`.
+ * - `POST /settings/form-reports` `{form_id, answers: [{response_id, text}], filters, last_response_at}` →
  *   202 `{job_id}`, polled at `GET /settings/form-reports/{job_id}` until `{success, form_id, report_id}` (or a refusal:
  *   `no_summary`, `no_model`, `form_deleted`); the report then carries it.
  *
@@ -41,10 +43,13 @@ const scores = z.record(z.string(), z.unknown()).nullable().catch(null).transfor
   }))))
 export type Scores = z.infer<typeof scores>
 
+/** Why a segment of the minimum size or more shows no figures: it is withheld with the withheld merged group. */
+const withheld = z.literal('complement').optional().catch(undefined)
+
 const segments = z.object({
   by: z.string().catch(''),
   min_size: count,
-  groups: listOf(z.object({ value: z.string(), responses: count, scores })),
+  groups: listOf(z.object({ value: z.string(), responses: count, scores, withheld })),
   merged: z.object({ segments: count, responses: count, scores }).nullable().catch(null),
 })
 export type ReportSegments = z.infer<typeof segments>
@@ -103,6 +108,8 @@ const ai = z.object({
   model: z.string().nullable().optional().catch(null),
   stale: z.boolean().catch(false),
   responses_counted: z.number().int().nonnegative().nullable().optional().catch(null),
+  /** The view it was made under, as the query names it (`days`, `from`, `language`, `ending`, `hidden.<id>`). */
+  filters: z.record(z.string(), z.string()).catch({}),
   themes: listOf(aiTheme),
 })
 export type ReportAi = z.infer<typeof ai>
@@ -145,6 +152,7 @@ const comparison = z.object({
     last_response_at: z.string().nullable().catch(null),
     scores,
     merged: z.boolean().optional().catch(undefined),
+    withheld,
   })),
 })
 export type FormComparison = z.infer<typeof comparison>

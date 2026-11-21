@@ -6,6 +6,7 @@
  *
  * @module pages/Agents/startRunRules
  */
+import { z } from 'zod'
 import { ApiError, AuthError, ConfigError, serverReason } from '../../lib/errors'
 import type { StartRunRequest } from '../../api/engineeringRunsApi'
 
@@ -99,4 +100,21 @@ export function startRunRequest(workflowId: string, form: StartRunForm, model: s
     language: form.language, goal: oneLine(form.goal), ...(issue === null ? {} : { issue }),
     ...(model === null || model === '' ? {} : { model }),
   }
+}
+
+/**
+ * (7.63.00) What the start said beside the run (`warnings`: a fine-grained token's expiry within 3 days), handed to the
+ * run workspace it opens in the address's state (`startedState`), which shows it once (`startWarningsOf`).
+ */
+const StartedStateSchema = z.object({ startWarnings: z.array(z.string().min(1)).min(1) })
+
+/** The run workspace's address state after a start that said `warnings`; undefined when it said none. */
+export function startedState(warnings: readonly string[]): { startWarnings: readonly string[] } | undefined {
+  return warnings.length > 0 ? { startWarnings: warnings } : undefined
+}
+
+/** The warnings a start handed to the address's state (`startedState`), [] for none or a state off its shape. */
+export function startWarningsOf(state: unknown): readonly string[] {
+  const parsed = StartedStateSchema.safeParse(state)
+  return parsed.success ? parsed.data.startWarnings : []
 }

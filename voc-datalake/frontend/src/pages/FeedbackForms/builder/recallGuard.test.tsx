@@ -1,8 +1,8 @@
 /**
  * Idea 10's publish guard and the matrix lock in the builder (7.61.00): a placeholder respondents would see as written
- * (an option's label) blocks Publish and Update live form, never Save; the server's 409 `unresolved_placeholder` and
- * its 400 `recall_*` are refusals worded in the header, never the stale-save banner; an answered matrix's removed rows
- * and columns are named in `removes`.
+ * (an option's label, or a recall that names what it cannot recall, 7.63.00) blocks Publish and Update live form, never
+ * Save; the server's 409 `unresolved_placeholder` is a refusal worded in the header, never the stale-save banner; an
+ * answered matrix's removed rows and columns are named in `removes`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
@@ -49,11 +49,16 @@ beforeEach(() => {
 })
 
 describe('the publish guard in the builder', () => {
-  it('blocks Publish for a placeholder in an option label, and still saves the draft', async () => {
-    const harness = renderHeader(sampleForm({ questions: [pick], hidden_fields: [{ id: 'event' }] }))
+  // (a recall that names what it cannot recall blocks Publish only since 7.63.00, as the server's one rule does)
+  const later: Question = { ...pick, options: [{ code: 'a', label: en('A') }], headline: en('After {{q_late}}?') }
+  it.each([
+    ['a placeholder in an option label', sampleForm({ questions: [pick], hidden_fields: [{ id: 'event' }] }), 'recallNotHere'],
+    ['a recall of a later question', sampleForm({ questions: [later, { id: 'q_late', type: 'nps', headline: en('How likely?'), required: true }] }), 'recallNotBefore'],
+  ])('blocks Publish for %s, and still saves the draft', async (_what, form, code) => {
+    const harness = renderHeader(form)
     await renameDraft(harness)
     expect(await headerButton('Publish')).toHaveAttribute('aria-disabled', 'true')
-    expect(harness.probe.current?.publishErrors.map((problem) => problem.code)).toStrictEqual(['recallNotHere'])
+    expect(harness.probe.current?.publishErrors.map((problem) => problem.code)).toStrictEqual([code])
     await harness.user.click(await headerButton('Save'))
     await waitFor(() => { expect(formsApi.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ name: 'Renamed' }), 5, null) })
   })
@@ -65,14 +70,6 @@ describe('the publish guard in the builder', () => {
     await harness.user.click(await headerButton('Update live form'))
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save: a live form can't show a {…} placeholder as written.")
     expect(screen.queryByText('Someone else saved this form while you were editing it.')).toBeNull()
-  })
-
-  it.each(['recall_unknown', 'recall_not_before', 'recall_type'])('words the server\'s 400 %s as one recall refusal', async (code) => {
-    formsApi.saveForm.mockRejectedValueOnce(refusal(400, code))
-    const harness = renderHeader(sampleForm())
-    await renameDraft(harness)
-    await harness.user.click(await headerButton('Save'))
-    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save: a text recalls a value it can't show where it stands.")
   })
 })
 

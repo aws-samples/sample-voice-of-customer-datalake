@@ -937,10 +937,11 @@
 
   // ── Recall (7.61.00): {{id}} or {{id|fallback}} in a form's texts ───────────────────────────────────────────
   //
-  // ONE grammar and one way to show a text with a missing value, pinned by schemas/form-recall-cases.json with
-  // lambda/shared/forms_recall.py (the server's checks) and frontend/src/pages/FeedbackForms/model/recall.ts (the
-  // builder's preview), whose rules these are, one for one. A placeholder is {{ and }} around a text with no brace in
-  // it; the text before its first | is the id, the rest the fallback (both trimmed).
+  // ONE grammar, pinned by schemas/form-recall-cases.json (`parse`) with lambda/shared/forms_recall.py (the server's
+  // checks) and frontend/src/pages/FeedbackForms/model/recall.ts (the builder's), and one way to show a text with a
+  // missing value: these rules, the widget's alone (the cases' `render`; the builder's preview is this widget). A
+  // placeholder is {{ and }} around a text with no brace in it; the text before its first | is the id, the rest the
+  // fallback (both trimmed).
 
   var PLACEHOLDER = /\{\{([^{}]*)\}\}/g;
   // The questions whose answer is recalled: a score (its number) or a single choice (its label).
@@ -968,7 +969,8 @@
     [gapRule('[ \\u00a0]+G[ \\u00a0]*|[ \\u00a0]*G[ \\u00a0]+'), ' '],
     [gapRule('G'), '']
   ];
-  var RECALL_RUNS = gapRule('G(?:' + R_SPACE + 'G)+');
+  // Gaps side by side, or split only by a separator ("Thanks {{name}}, {{company}}!"), are one gap.
+  var RECALL_RUNS = gapRule('G(?:' + R_SPACE + R_SEPARATORS + '?' + R_SPACE + 'G)+');
   var RECALL_BRACKETS = gapRule('[([]' + R_SPACE + 'G' + R_SPACE + '[)\\]]');
   var RECALL_START = gapRule('^' + R_SPACE + 'G' + R_SPACE + '(' + R_SEPARATORS + R_SPACE + ')?', '');
 

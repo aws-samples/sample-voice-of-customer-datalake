@@ -21,7 +21,7 @@ import { FORMS_LIST_PATH } from './builderPaths'
 import { useBuilderUi } from './builderUi'
 import { goToProblem } from './problemText'
 import type { FormProblem } from '../model/validateForm'
-import { QUESTION_ID_REUSED, RECALL_REFUSED, THEME_UNREADABLE, UNRESOLVED_PLACEHOLDER } from './useFormDraft'
+import { QUESTION_ID_REUSED, THEME_UNREADABLE, UNRESOLVED_PLACEHOLDER } from './useFormDraft'
 import ProblemsPopover from './ProblemsPopover'
 import SaveButtons from './SaveButtons'
 import FormMenu from './FormMenu'
@@ -92,7 +92,6 @@ function failedText(t: TFunction<'feedbackForms'>, failed: Extract<FormDraft['st
   if (reason === THEME_UNREADABLE) return t('builder.save.themeRefused')
   if (reason === QUESTION_ID_REUSED) return t('builder.save.questionIdReused', { id: failed.questionId ?? '' })
   if (reason === UNRESOLVED_PLACEHOLDER) return t('builder.save.placeholderRefused')
-  if (reason === RECALL_REFUSED) return t('builder.save.recallRefused')
   return t('builder.save.failed', { reason })
 }
 

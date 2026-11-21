@@ -336,17 +336,27 @@ export interface SummaryRequest {
   readonly answers: readonly SummaryAnswer[]
   /** The view's filters as the query string names them (recorded with the summary). */
   readonly filters: Readonly<Record<string, string>>
-  readonly responses: number
+  /** The newest response read (the summary is stale once a newer one comes in under its filters). */
   readonly lastResponseAt: string | null
 }
 
 const summaryDone = z.object({ report_id: z.string().min(1) })
 
-/** The Results filters as a summary records them: the query's own names, without `include_test`. */
+/** The Results filters as a summary records them: the query's own names, without `include_test`, and `days` (the
+ * range: `all`, or its days), which the server keeps as it is: `from` is a time measured from the range. */
 export function summaryFilters(filters: ResultsFilters): Record<string, string> {
   const params = new URLSearchParams(filterQuery(filters))
   params.delete('include_test')
+  params.set('days', filters.days === null ? 'all' : String(filters.days))
   return Object.fromEntries(params.entries())
+}
+
+/** Whether a stored summary was made for this view: the same range, language, ending and hidden values (its `from`,
+ * the time its range was measured from, aside). */
+export function isSummaryOfView(stored: Readonly<Record<string, string>>, filters: ResultsFilters): boolean {
+  const comparable = (record: Readonly<Record<string, string>>) => Object.entries(record).filter(([key]) => key !== 'from')
+    .sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join('&')
+  return comparable(stored) === comparable(summaryFilters(filters))
 }
 
 function parseDraft(raw: unknown): DraftAnswer {
@@ -442,8 +452,7 @@ export const feedbackFormsV2Api = {
    */
   summarizeReport: (formId: string, request: SummaryRequest, signal?: AbortSignal): Promise<string> =>
     fetchApi<unknown>('/settings/form-reports', {
-      ...post({ form_id: formId, answers: request.answers, filters: request.filters, responses: request.responses,
-        last_response_at: request.lastResponseAt }),
+      ...post({ form_id: formId, answers: request.answers, filters: request.filters, last_response_at: request.lastResponseAt }),
       // (spelled out as well: the mock-coverage gate reads a request's method from its options' text)
       method: 'POST',
       signal,

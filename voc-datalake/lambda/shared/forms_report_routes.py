@@ -1,7 +1,7 @@
 """A feedback form's AI report summary (7.63.00, docs/feedback-forms.md "Report"), included by
 ``api/settings_handler.py``.
 
-    POST /settings/form-reports {form_id, answers: [{response_id, text}], filters?, responses?, last_response_at?}
+    POST /settings/form-reports {form_id, answers: [{response_id, text}], filters?, last_response_at?}
                                                                                     -> 202 {job_id, status}
     GET  /settings/form-reports/{job_id}                                            -> the job's poll answer
 
@@ -16,10 +16,15 @@ needs no read of the feedback table.
 The settings assist twin runs ``run_job`` (settings_handler ``ASSIST_WORK``: per workspace, in the job's own scope):
 the one model call (shared/forms_v2_report_ai.py), then, when it found themes, the report row
 ``FORMREPORT#{form_id}#{report_id}`` in that scope's forms partition: ``{form_id, report_id, created_at, created_by:
-{sub, kind}, reason, responses_counted, last_response_at, filters, response_ids, themes: [{label, count, sentiment,
-quote_ids}], ai: {model, prompt_version, summary}}``, no ``ttl``. Labels and ids only, never a respondent's text; the
-report route (``GET /feedback-forms/{id}/report``, shared/forms_v2_report.py) reads the newest and joins its quotes.
-A form deleted while its job ran gets no row.
+{sub, kind}, reason, responses_counted (the answers it read), last_response_at, filters, response_ids, themes: [{label,
+count, sentiment, quote_ids}], ai: {model, prompt_version, summary}}``, no ``ttl``. Labels and ids only, never a
+respondent's text; the report route (``GET /feedback-forms/{id}/report``, shared/forms_v2_report.py) reads the newest
+and joins its quotes. A form deleted while its job ran gets no row.
+
+The job row's ``config`` holds the answers only while the job runs: the worker removes it when the job ends
+(``assist_jobs.Work.forget_config``), so no respondent's text stays in voc-jobs after the summary (a job whose worker
+never ran keeps it until the row's TTL, a day). The worker reads no answer itself: the settings role holds no read
+of the feedback table, and the access the browser read them with (category, source) is the person's own.
 """
 from __future__ import annotations
 
@@ -106,8 +111,7 @@ def run_job(config: dict, scope: WorkspaceScope | None) -> dict:
     summarized, and the report row written when the model found anything (and the form is still there)."""
     stored = plain(config)  # (as the job row holds it: DynamoDB's numbers are Decimals)
     request = forms_v2_report_ai.validate_request({key: stored[key] for key in ('form_id', 'answers', 'filters',
-                                                                                 'responses', 'last_response_at')
-                                                   if key in stored})
+                                                                                 'last_response_at') if key in stored})
     report_id = str(config.get('report_id') or '')
     if not REPORT_ID.fullmatch(report_id):
         raise ValueError('a report job needs its report_id')
@@ -121,7 +125,7 @@ def run_job(config: dict, scope: WorkspaceScope | None) -> dict:
     view.put_item({
         **report_key(partition, request['form_id'], report_id), 'form_id': request['form_id'], 'report_id': report_id,
         'created_at': now_iso(), 'created_by': created_by, 'reason': REPORT_REASON,
-        'responses_counted': request['responses'], 'last_response_at': request['last_response_at'],
+        'responses_counted': len(request['answers']), 'last_response_at': request['last_response_at'],
         'filters': request['filters'], 'response_ids': [answer['response_id'] for answer in request['answers']],
         'themes': result['themes'],
         'ai': {'model': result['model'], 'prompt_version': result['prompt_version'], 'summary': result['summary']},

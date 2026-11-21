@@ -113,6 +113,7 @@
     "notFound": "Este item da biblioteca não existe ou foi excluído.",
     "pending": "Aguardando o arquivo. Se o envio não terminou, exclua este item e envie o arquivo novamente.",
     "extracting": "O texto está sendo lido. Esta página é atualizada quando estiver pronto.",
+    "stale": "O texto não foi lido após 16 minutos: a leitura parou. Leia-o novamente.",
     "failed": "Não foi possível ler o texto.",
     "download": "Baixar o original",
     "newTab": "(abre em uma nova aba)",

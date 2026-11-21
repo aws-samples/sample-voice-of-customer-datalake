@@ -522,8 +522,8 @@ def test_a_token_connection_reading_through_the_app_keeps_it_and_is_never_missin
     and a check never reports its repository as left (it is in no installation)."""
     installed(env, created(env))
     env.connections().remove('refund-service', ADMIN)
-    facts = TokenFacts(repository='open-tools/lint-kit', default_branch='main', owner_type='Organization',
-                       login='casey-dev', expires_at='2027-01-31')
+    facts = TokenFacts(repository='open-tools/lint-kit', default_branch='main', login='casey-dev',
+                       expires_at='2027-01-31')
     store = ConnectionStore(env.table, lambda: env.ssm, PREFIX, env.key_id, lambda _: [], clock=env.clock,
                             token_prefix='/voc/engineering-token/')
     store.save('lint-kit', ConnectionRequest(

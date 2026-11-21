@@ -42,3 +42,22 @@ def test_items_that_hold_the_address_are_listed_and_nothing_changes(aws, worker_
     library_rows = sorted(str(row) for row in aws['projects'].scan()['Items'] if 'item_id' in row)
     assert library_rows == sorted(row for row in before if "'item_id'" in row)
 
+
+
+def test_an_item_whose_maker_or_editor_is_named_by_the_address_is_listed(aws, worker_context):
+    """Before 7.63.00 the Library stored an invited member's address as ``created_by`` / ``updated_by``'s name
+    (library_routes.py ``_actor``): an erasure by email lists such an item for review, and changes nothing."""
+    _list_workspace(aws, WS, 'Alpha')
+    _item(aws, HOLDS, None, text='Nothing here', created_by={'sub': 'u-1', 'name': REVIEWER.upper()})
+    _item(aws, NAMED, A, text='Nothing here', created_by={'sub': 'u-2', 'name': 'Ana'},
+          updated_by={'sub': 'u-1', 'name': REVIEWER})
+    _item(aws, SAYS_NOTHING, A, text='Nothing here', created_by={'sub': 'u-2', 'name': 'Ana'},
+          updated_by={'sub': 'u-2', 'name': 'Ana'})
+    before = sorted(str(row) for row in aws['projects'].scan()['Items'])
+
+    _erase_by_email(aws, worker_context)
+
+    job, _audit = erasure_rows(aws, JOB_ID)
+    assert sorted(job['files_needing_review']['keys']) == sorted([original_key(HOLDS),
+                                                                  original_key(NAMED, workspace=A)])
+    assert sorted(str(row) for row in aws['projects'].scan()['Items']) == before

@@ -47,7 +47,9 @@ Since 7.60.00 (a fine-grained token, ``FINE_GRAINED``): the connection is read a
 is ever minted for it; its run's push and pull request are ``push_bundle_as`` and ``open_or_update_pr_as``, whose writes
 alone carry the token the broker hands them (``_token_writer``), each request held to the repository's Git Data and
 pull request paths (``fine_grained.token_request_allowed``), every read with the App's read-only token. A 403 to a write
-with the token is ``TokenCannotWrite`` (nothing moved: the step waits for a person).
+with the token is ``TokenCannotWrite`` (nothing moved: the step waits for a person); a 401 or a 404 (7.63.00: the token
+revoked or regenerated, or no longer reaching the repository) ``TokenNotAccepted``, which says to replace the token,
+nothing written either.
 
 The client has no method for a merge, an approval, settings, a change of branch protection, members, webhooks or
 secrets.
@@ -73,7 +75,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from engineering.connectors import github_reactions
 from engineering.connectors.credentials import GitHubAppCredential
-from engineering.connectors.fine_grained import CANNOT_WRITE, token_request_allowed
+from engineering.connectors.fine_grained import CANNOT_WRITE, NOT_ACCEPTED, token_request_allowed
 from engineering.connectors.hosts import (
     FILE_MODES,
     FINE_GRAINED,
@@ -311,6 +313,15 @@ class TokenCannotWrite(NotNow):
     waits for a person (the token's permissions, or its organization's approval); ``code`` beside the reason."""
 
     code = 'token_cannot_write'
+
+
+class TokenNotAccepted(NotNow):
+    """GitHub did not take a fine-grained connection's token for a write (7.63.00: 401, the token revoked, expired or
+    regenerated; 404, it no longer reaches the repository): nothing was written, so the write is a refusal, never an
+    unknown outcome (the broker's claim is closed as refused, and the attempt may write again once the token is
+    replaced); the step waits for a person, who replaces the token."""
+
+    code = 'token_not_accepted'
 
 
 #: A write's request (``method``, the path after ``/repos/<owner>/<name>``, what it is, its body and the statuses it
@@ -673,7 +684,8 @@ class GitHubHost:
     def _token_writer(self, connection_id: str, permissions: Permissions, write_token: str) -> Writer:
         """How a write's request is sent: with the App's token for ``permissions`` (``_api``), or on a fine-grained
         connection with ``write_token``, held to ``token_request_allowed`` (``WriteRefused`` off it, before any
-        request) and its 403 ``TokenCannotWrite``. A token write elsewhere, or none on a fine-grained connection, is
+        request), its 403 ``TokenCannotWrite`` and its 401 or 404 ``TokenNotAccepted`` (7.63.00: nothing written). A
+        token write elsewhere, or none on a fine-grained connection, is
         refused before any request."""
         credential = self._credentials(connection_id)
         if credential.kind != FINE_GRAINED:
@@ -696,6 +708,8 @@ class GitHubHost:
             except HostError as refused:
                 if refused.status == 403:
                     raise TokenCannotWrite(CANNOT_WRITE) from None
+                if refused.status in (401, 404):
+                    raise TokenNotAccepted(NOT_ACCEPTED.format(status=refused.status)) from None
                 raise
 
         return send

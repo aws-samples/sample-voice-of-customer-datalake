@@ -880,8 +880,8 @@ def validate_definition(definition: Mapping[str, Any], *, retired: Sequence[str]
     out = {'language': loc.primary, 'languages': list(loc.languages), 'welcome': _welcome(definition.get('welcome'), loc),
            'questions': questions, 'hidden_fields': _hidden_fields(definition.get('hidden_fields')),
            'endings': endings}
-    # Each placeholder of a recall text names a hidden field or an earlier recallable question (shared/forms_recall.py).
-    forms_recall.check_recall(out)
+    # (7.63.00) A recall that cannot be filled is no refusal of a save: a draft keeps it while it is fixed, and the 409
+    # ``unresolved_placeholder`` when the form would go live (``validate_placeholders``) is the one rule.
     if len(json.dumps(out, ensure_ascii=False).encode()) > MAX_DEFINITION_BYTES:
         raise _fail(f'the form definition must be at most {MAX_DEFINITION_BYTES // 1000} KB')
     return out

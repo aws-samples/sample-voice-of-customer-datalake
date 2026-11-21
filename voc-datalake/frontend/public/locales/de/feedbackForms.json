@@ -257,8 +257,7 @@
       "failed": "Speichern fehlgeschlagen: {{reason}}.",
       "failedGeneric": "Speichern fehlgeschlagen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
       "retry": "Erneut versuchen",
-      "placeholderRefused": "Speichern nicht möglich: Ein aktives Formular darf keinen Platzhalter {…} so anzeigen, wie er geschrieben ist. Korrigieren Sie die Texte unter Probleme oder speichern Sie es deaktiviert.",
-      "recallRefused": "Speichern nicht möglich: Ein Text fügt einen Wert ein, den er an dieser Stelle nicht zeigen kann. Korrigieren Sie ihn unter Probleme."
+      "placeholderRefused": "Speichern nicht möglich: Ein aktives Formular darf keinen Platzhalter {…} so anzeigen, wie er geschrieben ist. Korrigieren Sie die Texte unter Probleme oder speichern Sie es deaktiviert."
     },
     "published": "Live. Befragte sehen ab jetzt diese Version.",
     "firstSave": "Gespeichert. Dieses Formular ist aus: Sein Link zeigt „Feedback-Formular nicht verfügbar.“, bis Sie es veröffentlichen.",
@@ -2353,9 +2352,7 @@
     "questionItem": "F{{number}} · {{headline}}",
     "nothing": "Hier gibt es nichts einzufügen",
     "nothingHint": "Fügen Sie ein verstecktes Feld hinzu, oder vor diesem Text eine Bewertungs- oder Einfachauswahlfrage.",
-    "preview": "Befragte sehen: {{text}}",
-    "previewMissing": "Ohne Wert: {{text}}",
-    "previewEmpty": "(nichts)"
+    "preview": "Befragte sehen: {{text}}"
   },
   "report": {
     "loading": "Bericht wird geladen…",
@@ -2368,7 +2365,7 @@
     "empty": "Sobald Einsendungen zu diesen Filtern eingehen, zeigt der Bericht ihre Werte, Segmente und Themen.",
     "segments": {
       "title": "Nach {{segment}}",
-      "hint": "Segmente mit weniger als {{minimum}} Einsendungen werden zusammengefasst, damit niemand herauszulesen ist.",
+      "hint": "Segmente mit weniger als {{minimum}} Einsendungen werden zusammengefasst, damit niemand herauszulesen ist. Solange diese Gruppe zu klein ist, werden auch die Werte des kleinsten Segments ausgeblendet.",
       "caption": "Werte nach Segment",
       "segment": "Segment",
       "responses": "Einsendungen",
@@ -2377,6 +2374,7 @@
       "merged_one": "Sonstiges ({{count, number}} Segment mit weniger als {{minimum}})",
       "merged_other": "Sonstiges ({{count, number}} Segmente mit weniger als {{minimum}})",
       "withheld": "Zu wenige Einsendungen, um ihre Werte anzuzeigen",
+      "complement": "Mit der kleinen Gruppe ausgeblendet, damit sich ihre Werte nicht errechnen lassen",
       "none": "Keine Einsendungen zum Segmentieren."
     },
     "heatmap": {
@@ -2405,12 +2403,15 @@
       "stale": "Seitdem neue Einsendungen",
       "start": "Mit KI zusammenfassen",
       "again": "Erneut zusammenfassen",
+      "thisView": "Diese Ansicht zusammenfassen",
       "working": "Wird zusammengefasst…",
       "intro": "Die KI liest bis zu 300 der hier angezeigten offenen Antworten mit Ihren Zugriffsrechten, benennt ihre Themen und wählt Zitate aus. Die Zitate sind immer echte Einsendungen.",
       "nothing": "Es gibt keine offenen Antworten zum Zusammenfassen.",
       "withheld": "Diese Zusammenfassung hat Einsendungen gelesen, die Sie nicht sehen können, daher wird sie Ihnen nicht angezeigt. Fassen Sie erneut zusammen, um Ihre eigene zu erstellen.",
+      "otherView": "Für eine andere Ansicht erstellt: {{view}}",
       "made_one": "Erstellt am {{date}} aus {{formatted}} Einsendung",
       "made_other": "Erstellt am {{date}} aus {{formatted}} Einsendungen",
+      "since": "Seit {{date}}",
       "rateLimited": "Das waren 20 KI-Zusammenfassungen in dieser Stunde. Versuchen Sie es später erneut.",
       "noModel": "In dieser Bereitstellung ist kein KI-Modell verfügbar.",
       "noSummary": "Die KI hat in diesen Antworten keine Themen gefunden.",
@@ -2429,7 +2430,7 @@
     },
     "compare": {
       "title": "Vergleichen",
-      "intro": "Stellen Sie dieses Formular bis zu {{max, number}} anderen gegenüber, oder teilen Sie es nach einem versteckten Feld auf, um seinen Verlauf zu sehen. Fragen werden nach ID und Typ zugeordnet; ein Punkt mit weniger als 5 Einsendungen zeigt keine Werte.",
+      "intro": "Stellen Sie dieses Formular bis zu {{max, number}} anderen gegenüber, auf Wunsch jeweils nach einem versteckten Feld aufgeteilt. Fragen werden nach ID und der Bedeutung ihrer Werte zugeordnet; ein Punkt mit weniger als 5 Einsendungen zeigt keine Werte.",
       "forms": "Formulare",
       "noForms": "Kein anderes Formular zum Vergleichen.",
       "sameTemplate": "Gleiche Vorlage",

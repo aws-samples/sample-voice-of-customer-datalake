@@ -582,7 +582,7 @@
       "heading": "Dokumenty wewnętrzne",
       "hint": "Obrazy i tekst — maks. 20",
       "loading": "Ładowanie…",
-      "notYet": "Formaty PDF i Word (.docx) nie są jeszcze obsługiwane.",
+      "notYet": "PDF i Word (.docx) nie są tu jeszcze odczytywane: dodaj je do Biblioteki i wspomnij o nich w asystencie za pomocą #.",
       "statusExtracting": "Wyodrębnianie…",
       "statusFailed": "Błąd",
       "statusReady": "Gotowe",

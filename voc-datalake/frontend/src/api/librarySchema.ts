@@ -30,6 +30,8 @@ const libraryItemSchema = z.looseObject({
   format: z.string().catch(''),
   bytes: z.number().catch(0),
   status: z.enum(LIBRARY_STATUSES).catch('failed'),
+  /** An extraction 16 minutes or more old (its worker cannot be running): offered for a retry, no longer polled. */
+  stale: z.boolean().optional().catch(undefined),
   error: optionalString,
   extracted_chars: z.number().catch(0),
   pages: optionalNumber,

@@ -1,7 +1,7 @@
 /** The Report's reads and its AI summary (7.63.00): the shapes read leniently, the requests' addresses, and what a
  * summary sends (free-text answers only, never a contact detail, within the route's limits). */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { feedbackFormsV2Api, summaryFilters } from './feedbackFormsV2Api'
+import { feedbackFormsV2Api, isSummaryOfView, summaryFilters } from './feedbackFormsV2Api'
 import type { ResultsFilters } from './feedbackFormsV2Api'
 import { SUMMARY_LIMITS, parseFormComparison, parseFormReport, summaryAnswers } from './feedbackFormsReport'
 import { parseResponsesPage } from './feedbackFormsV2Results'
@@ -59,8 +59,18 @@ describe('what a summary reads', () => {
     expect(sent.reduce((sum, answer) => sum + answer.text.length, 0)).toBeLessThanOrEqual(SUMMARY_LIMITS.chars)
   })
 
-  it('records the view’s filters by their query names', () => {
-    expect(summaryFilters(FILTERS)).toStrictEqual({ language: 'en', 'hidden.customer': 'Example Ltd' })
+  it('records the view’s filters by their query names, and its range', () => {
+    expect(summaryFilters(FILTERS)).toStrictEqual({ language: 'en', 'hidden.customer': 'Example Ltd', days: 'all' })
+    const lastMonth = summaryFilters({ ...FILTERS, days: 30 })
+    expect([lastMonth['days'], typeof lastMonth['from']]).toStrictEqual(['30', 'string'])
+  })
+
+  it('knows a summary of this view by its range, language, ending and hidden values, never by its from', () => {
+    const stored = { from: '2026-10-01T00:00:00.000Z', days: '30', language: 'en', 'hidden.customer': 'Example Ltd' }
+    expect(isSummaryOfView(stored, { ...FILTERS, days: 30 })).toBe(true)
+    expect(isSummaryOfView(stored, { ...FILTERS, days: 30, hidden: { customer: 'Sample Co' } })).toBe(false)
+    expect(isSummaryOfView(stored, { ...FILTERS, days: 30, hidden: {} })).toBe(false)
+    expect(isSummaryOfView(stored, FILTERS)).toBe(false)
   })
 })
 
@@ -88,11 +98,12 @@ describe('the report requests', () => {
     fetchMock.mockResolvedValueOnce(json(202, { success: true, job_id: 'job_1' }))
       .mockResolvedValueOnce(json(200, { status: 'completed', result: { success: true, form_id: 'f_1', report_id: 'rpt_9' } }))
     const id = await feedbackFormsV2Api.summarizeReport('f_1', { answers: [{ response_id: 'fb_1', text: 'Labs' }],
-      filters: { language: 'en' }, responses: 9, lastResponseAt: '2026-11-12T10:00:00Z' })
+      filters: { language: 'en' }, lastResponseAt: '2026-11-12T10:00:00Z' })
     expect(id).toBe('rpt_9')
     const sent = fetchMock.mock.calls[0]?.[1]?.body
     const body: unknown = typeof sent === 'string' ? JSON.parse(sent) : null
-    expect(body).toStrictEqual({ form_id: 'f_1', answers: [{ response_id: 'fb_1', text: 'Labs' }], filters: { language: 'en' }, responses: 9,
+    // (how many it read is the answers' count, recorded by the server: no count of the view is sent)
+    expect(body).toStrictEqual({ form_id: 'f_1', answers: [{ response_id: 'fb_1', text: 'Labs' }], filters: { language: 'en' },
       last_response_at: '2026-11-12T10:00:00Z' })
     expect(fetchMock.mock.calls[1]?.[0]).toBe('https://api.example.com/settings/form-reports/job_1')
   })
@@ -100,7 +111,7 @@ describe('the report requests', () => {
   it('words a summary that found nothing as a 422', async () => {
     fetchMock.mockResolvedValueOnce(json(202, { success: true, job_id: 'job_1' }))
       .mockResolvedValueOnce(json(200, { status: 'completed', result: { success: false, code: 'no_summary', error: 'none' } }))
-    const error: unknown = await feedbackFormsV2Api.summarizeReport('f_1', { answers: [], filters: {}, responses: 0, lastResponseAt: null })
+    const error: unknown = await feedbackFormsV2Api.summarizeReport('f_1', { answers: [], filters: {}, lastResponseAt: null })
       .catch((caught: unknown) => caught)
     expect(error).toMatchObject({ status: 422, code: 'no_summary' })
   })

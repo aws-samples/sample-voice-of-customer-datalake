@@ -908,13 +908,56 @@ class TestTheLockOfAnAnsweredForm:
         key = {'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{fid}'}
         assert world['aggregates'].get_item(Key=key)['Item']['has_responses'] is False
         reads: list[str] = []
-        monkeypatch.setattr(h, '_answered_before', lambda form_id, *_: reads.append(form_id) or True)
+        monkeypatch.setattr(h, '_real_response_stored', lambda form_id, *_: reads.append(form_id) or True)
         assert self._put(lambda_context, fid, questions=self._renamed())[0] == 200
         assert _submit(lambda_context, fid, {'answers': {'q_reason': {'code': 'too_slow'}}})[0] == 200
         assert world['aggregates'].get_item(Key=key)['Item']['has_responses'] is True
         status, answer = self._put(lambda_context, fid, questions=V2_FORM['questions'])
         assert (status, answer['code']) == (409, 'answers_locked')
         assert reads == []
+
+    def test_a_failed_mark_is_counted_and_a_save_that_would_drop_an_answer_reads_the_responses(self, world,
+                                                                                                lambda_context,
+                                                                                                monkeypatch):
+        """Q22 (7.63.00): a first response whose mark failed leaves ``has_responses: false``; the failure is a metric,
+        and a save that drops an option unnamed reads the responses (the form was really opened: its own funnel row,
+        a cheap read) and is refused, the form marked. A save the lock has nothing to refuse reads nothing."""
+        fid = _create(lambda_context)['form_id']
+        key = {'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{fid}'}
+        counted: list[str] = []
+        monkeypatch.setattr(h.metrics, 'add_metric', lambda name, **_: counted.append(name))
+        forms = h._forms
+
+        class _Throttled:
+            def __init__(self, table: Any) -> None:
+                self.table = table
+
+            def update_item(self, *args: Any, **kwargs: Any) -> Any:
+                if 'has_responses' in str(kwargs.get('UpdateExpression')):
+                    raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'UpdateItem')
+                return self.table.update_item(*args, **kwargs)
+
+            def __getattr__(self, name: str) -> Any:
+                return getattr(self.table, name)
+        monkeypatch.setattr(h, '_forms', lambda scope: _Throttled(forms(scope)))
+        assert _event(lambda_context, fid, {'event': {'kind': 'opened', 'session': '0123456789abcdef'}})[0] == 200
+        assert _submit(lambda_context, fid, {'answers': {'q_reason': {'code': 'slow'}}})[0] == 200
+        monkeypatch.setattr(h, '_forms', forms)
+        assert 'FeedbackFormMarkAnsweredFailed' in counted
+        # (the processor stored it)
+        world['feedback'].put_item(Item={'pk': 'SOURCE#Acme', 'sk': 'FEEDBACK#fresh', 'feedback_id': 'fresh',
+                                         'source_platform': 'feedback_form', 'source_channel': f'form_{fid}',
+                                         'source_created_at': '2026-11-20T10:00:00', 'original_text': 'ok'})
+        assert world['aggregates'].get_item(Key=key)['Item']['has_responses'] is False
+        reads: list[str] = []
+        real = h._real_response_stored
+        monkeypatch.setattr(h, '_real_response_stored', lambda *args: reads.append(args[0]) or real(*args))
+        reworded = [{**V2_FORM['questions'][0], 'headline': {'pl': 'Czemu?'}}, *V2_FORM['questions'][1:]]
+        assert self._put(lambda_context, fid, questions=reworded)[0] == 200
+        assert reads == []
+        status, answer = self._put(lambda_context, fid, questions=self._renamed())
+        assert (status, answer['code'], reads) == (409, 'answers_locked', [fid])
+        assert world['aggregates'].get_item(Key=key)['Item']['has_responses'] is True
 
     def test_an_unanswered_v1_form_still_changes_freely(self, world, lambda_context):
         status, answer = _call(lambda_context, 'PUT', '/feedback-forms/deadbeef', body={'rating_enabled': False})

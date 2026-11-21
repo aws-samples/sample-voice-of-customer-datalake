@@ -3,8 +3,9 @@
  * (the welcome's title and description, a question's headline and subheader, an ending's title and description) shows
  * a declared hidden field's value, or an earlier question's answer on the respondent's path (a score's number, a
  * single choice's label in their language), else the fallback, else nothing with the text tidied around the gap: the
- * `render` cases of schemas/form-recall-cases.json, which the builder's model/recall.ts follows too. Values are text,
- * never markup, and only the form's own fields are looked up.
+ * `render` cases of schemas/form-recall-cases.json, pinned here only (the tidy rules are the widget's alone since
+ * 7.63.00; the builder's preview of a missing value is this widget). Values are text, never markup, and only the
+ * form's own fields are looked up.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import recallCases from '../../../../schemas/form-recall-cases.json'

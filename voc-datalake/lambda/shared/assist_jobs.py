@@ -130,12 +130,17 @@ class Work:
 
     ``in_scope``: the work also writes its outcome in the job's own scope, which it is handed with its config
     (``run(config, scope)``, the scope None for the deployment's job; since 7.63.00: a form report's summary,
-    shared/forms_report_routes.py, written to that scope's forms partition only)."""
+    shared/forms_report_routes.py, written to that scope's forms partition only).
+
+    ``forget_config``: the row's ``config`` is removed when the job ends, completed or failed, so what the request
+    carried is kept no longer than the work needs it (since 7.63.00: a form report's summary, whose config holds the
+    respondents' answers; a job that never ran keeps it until the row's TTL, a day)."""
 
     run: Callable[..., dict]
     failure_message: str
     per_workspace: bool = False
     in_scope: bool = False
+    forget_config: bool = False
 
 
 def _now() -> datetime:
@@ -247,7 +252,7 @@ def _claim(pk: str, job_id: str, *, workspace: WorkspaceScope | None) -> dict[st
 
 
 def _finish(pk: str, job_id: str, status: str, *, workspace: WorkspaceScope | None, result: dict | None = None,
-            error: str | None = None) -> None:
+            error: str | None = None, forget_config: bool = False) -> None:
     now = _now().isoformat()
     names = {'#s': 'status'}
     values: dict[str, Any] = {':status': status, ':gsi': job_status_pk(status, workspace=workspace), ':now': now,
@@ -261,7 +266,11 @@ def _finish(pk: str, job_id: str, status: str, *, workspace: WorkspaceScope | No
         names['#e'] = 'error'
         values[':error'] = error[:MAX_ERROR_CHARS]
         sets.append('#e = :error')
-    table_view(workspace, _table()).update_item(_key(pk, job_id), UpdateExpression='SET ' + ', '.join(sets),
+    update = 'SET ' + ', '.join(sets)
+    if forget_config:
+        names['#c'] = 'config'
+        update += ' REMOVE #c'
+    table_view(workspace, _table()).update_item(_key(pk, job_id), UpdateExpression=update,
                                                 ExpressionAttributeNames=names, ExpressionAttributeValues=values)
 
 
@@ -356,10 +365,11 @@ def run(event: Mapping[str, Any], registry: Mapping[str, Work]) -> dict[str, Any
     try:
         result = _run_work(work, row, event, workspace=workspace)
     except Exception as exc:  # noqa: BLE001 - the worker never raises; _failure_text logs the traceback
-        _finish(pk, job_id, FAILED, error=_failure_text(exc, job_type, work), workspace=workspace)
+        _finish(pk, job_id, FAILED, error=_failure_text(exc, job_type, work), workspace=workspace,
+                forget_config=work.forget_config)
         _notify(pk, row, FAILED, workspace=workspace)
         return {'status': FAILED}
-    _finish(pk, job_id, COMPLETED, result=_storable(result), workspace=workspace)
+    _finish(pk, job_id, COMPLETED, result=_storable(result), workspace=workspace, forget_config=work.forget_config)
     logger.info('Assist completed', extra={'job_type': job_type})
     _notify(pk, row, COMPLETED, workspace=workspace)
     return {'status': COMPLETED}

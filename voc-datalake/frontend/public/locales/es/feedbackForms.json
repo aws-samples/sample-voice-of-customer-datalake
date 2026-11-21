@@ -257,8 +257,7 @@
       "failed": "No se pudo guardar: {{reason}}.",
       "failedGeneric": "No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo.",
       "retry": "Reintentar",
-      "placeholderRefused": "No se pudo guardar: un formulario activo no puede mostrar un marcador {…} tal cual. Corrija los textos de Problemas o guárdelo desactivado.",
-      "recallRefused": "No se pudo guardar: un texto muestra un valor que no puede mostrar en ese lugar. Corríjalo en Problemas."
+      "placeholderRefused": "No se pudo guardar: un formulario activo no puede mostrar un marcador {…} tal cual. Corrija los textos de Problemas o guárdelo desactivado."
     },
     "published": "Activo. Los encuestados ven esta versión a partir de ahora.",
     "firstSave": "Guardado. Este formulario está desactivado: su enlace muestra «Formulario de opinión no disponible.» hasta que lo publiques.",
@@ -2353,9 +2352,7 @@
     "questionItem": "P{{number}} · {{headline}}",
     "nothing": "No hay nada que insertar aquí",
     "nothingHint": "Añada un campo oculto, o una pregunta de puntuación o de opción única antes de este texto.",
-    "preview": "Lo que ven las personas: {{text}}",
-    "previewMissing": "Sin valor: {{text}}",
-    "previewEmpty": "(nada)"
+    "preview": "Lo que ven las personas: {{text}}"
   },
   "report": {
     "loading": "Cargando el informe…",
@@ -2368,7 +2365,7 @@
     "empty": "Cuando lleguen respuestas con estos filtros, el informe mostrará sus puntuaciones, segmentos y temas.",
     "segments": {
       "title": "Por {{segment}}",
-      "hint": "Los segmentos con menos de {{minimum}} respuestas se agrupan, para que no se pueda identificar a nadie.",
+      "hint": "Los segmentos con menos de {{minimum}} respuestas se agrupan, para que no se pueda identificar a nadie. Mientras ese grupo sea demasiado pequeño, también se ocultan las puntuaciones del segmento más pequeño.",
       "caption": "Puntuaciones por segmento",
       "segment": "Segmento",
       "responses": "Respuestas",
@@ -2377,6 +2374,7 @@
       "merged_one": "Otros ({{count, number}} segmento con menos de {{minimum}})",
       "merged_other": "Otros ({{count, number}} segmentos con menos de {{minimum}})",
       "withheld": "Muy pocas respuestas para mostrar sus puntuaciones",
+      "complement": "Oculto junto con el grupo pequeño, para que no se puedan deducir sus puntuaciones",
       "none": "No hay respuestas que segmentar."
     },
     "heatmap": {
@@ -2405,12 +2403,15 @@
       "stale": "Hay respuestas más recientes",
       "start": "Resumir con IA",
       "again": "Volver a resumir",
+      "thisView": "Resumir esta vista",
       "working": "Resumiendo…",
       "intro": "La IA lee hasta 300 de las respuestas abiertas que se muestran aquí, con tu acceso, nombra sus temas y elige citas. Las citas son siempre respuestas reales.",
       "nothing": "No hay respuestas abiertas que resumir.",
       "withheld": "Este resumen leyó respuestas que no puedes ver, así que no se te muestra. Vuelve a resumir para crear el tuyo.",
+      "otherView": "Hecho para otra vista: {{view}}",
       "made_one": "Creado el {{date}} a partir de {{formatted}} respuesta",
       "made_other": "Creado el {{date}} a partir de {{formatted}} respuestas",
+      "since": "Desde el {{date}}",
       "rateLimited": "Ya van 20 resúmenes con IA en esta hora. Inténtalo de nuevo más tarde.",
       "noModel": "No hay ningún modelo de IA disponible en esta implementación.",
       "noSummary": "La IA no encontró temas en estas respuestas.",
@@ -2429,7 +2430,7 @@
     },
     "compare": {
       "title": "Comparar",
-      "intro": "Coloca este formulario junto a hasta {{max, number}} más, o divídelo por un campo oculto para ver su tendencia. Las preguntas se emparejan por id y tipo; un punto con menos de 5 respuestas no muestra puntuaciones.",
+      "intro": "Coloca este formulario junto a hasta {{max, number}} más, cada uno dividido por un campo oculto si quieres. Las preguntas se emparejan por id y por lo que significan sus puntuaciones; un punto con menos de 5 respuestas no muestra puntuaciones.",
       "forms": "Formularios",
       "noForms": "No hay otro formulario con el que comparar.",
       "sameTemplate": "Misma plantilla",

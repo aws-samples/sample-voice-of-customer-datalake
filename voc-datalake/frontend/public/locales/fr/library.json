@@ -113,6 +113,7 @@
     "notFound": "Cet élément de la bibliothèque n'existe pas ou a été supprimé.",
     "pending": "En attente de son fichier. Si l'import n'a pas abouti, supprimez cet élément et importez à nouveau le fichier.",
     "extracting": "Son texte est en cours de lecture. Cette page se met à jour quand il est prêt.",
+    "stale": "Son texte n'a pas été lu au bout de 16 minutes : la lecture s'est arrêtée. Relisez-le.",
     "failed": "Son texte n'a pas pu être lu.",
     "download": "Télécharger l'original",
     "newTab": "(s'ouvre dans un nouvel onglet)",

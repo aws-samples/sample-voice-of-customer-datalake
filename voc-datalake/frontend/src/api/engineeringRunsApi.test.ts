@@ -134,11 +134,20 @@ describe('a run\'s start', () => {
   it('posts the request and reads the run it started; an answer naming no run is an error', async () => {
     const request = { workflow_id: 'wf_1', connection: 'conn-1', commit: 'a'.repeat(40), language: 'python', goal: 'Fix it' }
     fetchApi.mockResolvedValueOnce({ run: { run_id: 'RUN1', status: 'active', workflow_id: 'wf_1' } })
-    expect(await engineeringRunsApi.start(request)).toStrictEqual({ runId: 'RUN1' })
+    expect(await engineeringRunsApi.start(request)).toStrictEqual({ runId: 'RUN1', warnings: [] })
     expect(fetchApi).toHaveBeenLastCalledWith('/agents/engineering/runs',
       expect.objectContaining({ method: 'POST', body: JSON.stringify(request) }))
     fetchApi.mockResolvedValueOnce({ run: {} })
     await expect(engineeringRunsApi.start(request)).rejects.toThrow('unreadable')
+  })
+
+  it('reads the warnings the start said beside the run (7.63.00), each a text', async () => {
+    const request = { workflow_id: 'wf_1', connection: 'conn-1', commit: 'a'.repeat(40), language: 'python', goal: 'Fix it' }
+    const expiring = "The connection's fine-grained token expires in 2 days: its owner replaces it under Agents → Connections before then, or the run's push is refused."
+    fetchApi.mockResolvedValueOnce({ run: { run_id: 'RUN1' }, warnings: [expiring, 7, ' '] })
+    expect(await engineeringRunsApi.start(request)).toStrictEqual({ runId: 'RUN1', warnings: [expiring] })
+    fetchApi.mockResolvedValueOnce({ run: { run_id: 'RUN2' }, warnings: 'not a list' })
+    expect(await engineeringRunsApi.start(request)).toStrictEqual({ runId: 'RUN2', warnings: [] })
   })
 })
 

@@ -39,7 +39,14 @@ from engineering.runtime.harness.kiro_pin import kiro_model
 from engineering.runtime.harness.model_choice import bedrock_model, not_enabled
 from shared.ai_mode import MODE_AI_ASSISTED, MODE_AI_DRIVEN, MODE_HUMAN_DRIVEN, MODES
 from shared.dynamo_values import string_list as _texts
-from shared.workflow_engineering import PUSHING_ROLES
+from shared.workflow_engineering import (
+    declared_requires,
+    flow_pushes,
+    start_params,
+    step_nodes,
+    step_params,
+    step_roles,
+)
 
 Status = Literal['pass', 'fail', 'warn', 'unknown']
 DOCS: Final = 'docs/autonomous-engineering.md'
@@ -301,46 +308,23 @@ class Report:
 # ── the flow's roles and models ─────────────────────────────────────────────────────────────────────────────────
 
 
-def _params(node: Mapping[str, Any]) -> Mapping[str, Any]:
-    data = node.get('data')
-    params = data.get('params') if isinstance(data, Mapping) else None
-    return params if isinstance(params, Mapping) else {}
-
-
-def _nodes(definition: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    nodes = definition.get('nodes')
-    return [node for node in nodes if isinstance(node, Mapping)] if isinstance(nodes, list) else []
-
-
-def start_params(definition: Mapping[str, Any]) -> Mapping[str, Any]:
-    """The flow's own settings: its start step's ``params`` (``memory``, ``learn``, ``pr``: plan §2, as compiled)."""
-    return next((_params(node) for node in _nodes(definition) if node.get('type') == 'start'), {})
-
-
 def flow_roles(definition: Mapping[str, Any]) -> frozenset[str]:
-    """Every role a run of the flow launches: its agent steps', its boards' posters and claimers, a quality gate's
-    runner and final go, and its coordinator."""
-    found = set(ALWAYS)
-    for node in _nodes(definition):
-        params, kind = _params(node), node.get('type')
-        if kind == 'agent' and isinstance(params.get('role'), str):
-            found.add(str(params['role']))
-        elif kind == 'board':
-            found |= {*_texts(params.get('posters')), *_texts(params.get('claimers'))}
-        elif kind == 'quality_gate':
-            found |= set(GATE_ROLES)
-    return frozenset(found)
+    """Every role a run of the flow launches: its agent steps', its boards' posters and claimers
+    (``workflow_engineering.step_roles``), a quality gate's runner and final go, and its coordinator."""
+    gate = any(node.get('type') == 'quality_gate' for node in step_nodes(definition))
+    return frozenset({*ALWAYS, *step_roles(definition), *(GATE_ROLES if gate else ())})
 
 
 def flow_requires(definition: Mapping[str, Any], declared: object = None) -> dict[str, Any]:
     """What a run of the flow needs (plan §2 ``requires``: ``dial``, the modes it runs in; ``ci_attestation``,
     ``image``, ``issues_source``, ``knowledge_pack``): ``declared`` (its template's), else what its start step or
-    its definition says, else what its roles need: a flow that pushes (a committer or a PR author) needs a pushing
-    way of working and the CI attestation; any flow, an image."""
-    for found in (declared, start_params(definition).get('requires'), definition.get('requires')):
-        if isinstance(found, Mapping):
-            return dict(found)
-    pushes = bool(flow_roles(definition) & PUSHING_ROLES)
+    its definition says (``workflow_engineering.declared_requires``), else what its roles need: a flow that pushes (a
+    committer or a PR author: ``workflow_engineering.flow_pushes``, which a run's start reads too) needs a pushing way
+    of working and the CI attestation; any flow, an image."""
+    found = declared_requires(definition, declared)
+    if found is not None:
+        return found
+    pushes = flow_pushes(definition)
     return {'dial': sorted(PUSHING_MODES) if pushes else list(MODES), 'ci_attestation': pushes, 'image': True}
 
 
@@ -359,8 +343,8 @@ def flow_models(definition: Mapping[str, Any], card_models: Mapping[str, str]) -
 
     for role in ALWAYS:
         add(role)
-    for node in _nodes(definition):
-        params, kind = _params(node), node.get('type')
+    for node in step_nodes(definition):
+        params, kind = step_params(node), node.get('type')
         if kind == 'agent' and isinstance(params.get('role'), str):
             add(str(params['role']), params.get('model'))
         elif kind == 'board':

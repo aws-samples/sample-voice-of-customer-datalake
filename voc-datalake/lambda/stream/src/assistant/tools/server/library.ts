@@ -84,7 +84,12 @@ export interface LibraryContextRequest {
   slugs?: readonly string[];
   query: string;
   nativeSlots: number;
+  /** The passages' characters together, at most (the route's own cap, `MAX_PASSAGE_CHARS`, when absent). */
+  budget?: number;
 }
+
+/** = lambda/shared/library_index.py MAX_PASSAGE_CHARS: a message's library passages, together, at most. */
+export const MAX_PASSAGE_CHARS = 12_000;
 
 function pendingIds(rows: unknown[]): string[] {
   return rows.flatMap((row) => {
@@ -104,6 +109,7 @@ export async function loadLibraryContext(
     body: {
       query: request.query.slice(0, 2000),
       native_slots: request.nativeSlots,
+      ...(request.budget === undefined ? {} : { budget: request.budget }),
       ...(request.itemIds && request.itemIds.length > 0 ? { item_ids: [...request.itemIds] } : {}),
       ...(request.slugs && request.slugs.length > 0 ? { slugs: [...request.slugs] } : {}),
     },

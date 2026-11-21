@@ -543,7 +543,7 @@
       "heading": "社内ドキュメント",
       "hint": "画像とテキスト — 最大 20 件",
       "loading": "読み込み中…",
-      "notYet": "PDF と Word（.docx）はまだ対応していません。",
+      "notYet": "PDF と Word (.docx) はまだここでは読み取れません。ライブラリに追加し、アシスタントで # を付けて言及してください。",
       "statusExtracting": "抽出中…",
       "statusFailed": "失敗",
       "statusReady": "準備完了",

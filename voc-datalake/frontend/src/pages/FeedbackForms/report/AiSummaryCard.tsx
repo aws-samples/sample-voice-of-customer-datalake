@@ -1,8 +1,10 @@
 /**
  * @fileoverview The Report's AI summary (7.63.00), always labelled AI: optional, one model call when asked for. It
  * reads the view's open-text answers with the person's own access, labels themes and picks quotes; the quotes shown
- * are always real responses (joined when the report is read). "Newer responses" once a response came in after it;
- * withheld from someone who can't see a response it read.
+ * are always real responses (joined when the report is read, under the summary's own filters). It is shown only on
+ * the view it was made for; on any other it says which ("Made for another view: …"), with no quotes, and offers
+ * "Summarize this view". "Newer responses" once a response came in after it; withheld from someone who can't see a
+ * response it read.
  *
  * @module pages/FeedbackForms/report/AiSummaryCard
  */
@@ -14,6 +16,7 @@ import { FormsApiError } from '../../../api/feedbackFormsV2Api'
 import { formatCount } from '../../../utils/numberFormat'
 import { formatDate } from '../../../utils/dateUtils'
 import type { FormV2 } from '../model/formsV2'
+import { summaryOfView, summaryViewText } from './reportLabels'
 import { useSummarizeReport } from './useFormReport'
 
 function failureText(t: (key: string, options?: Record<string, unknown>) => string, error: unknown): string {
@@ -46,6 +49,17 @@ function StoredSummary({ ai }: Readonly<{ ai: ReportAi }>) {
   )
 }
 
+/** What the card shows under its title: the intro, the stored summary, or that it was made for another view. */
+function CardBody({ form, report, filters, answered }: Readonly<{ form: FormV2; report: FormReport; filters: ResultsFilters; answered: number }>) {
+  const { t, i18n } = useTranslation('feedbackForms')
+  const ai = report.ai
+  if (ai === null) return <p className="text-sm text-muted">{answered === 0 ? t('report.ai.nothing') : t('report.ai.intro')}</p>
+  if (summaryOfView(report, filters) === null) {
+    return <p className="text-sm text-muted">{t('report.ai.otherView', { view: summaryViewText(form, ai.filters, t, i18n.language) })}</p>
+  }
+  return <StoredSummary ai={ai} />
+}
+
 export default function AiSummaryCard({ form, formId, filters, report }: Readonly<{
   form: FormV2
   formId: string
@@ -56,15 +70,17 @@ export default function AiSummaryCard({ form, formId, filters, report }: Readonl
   const summarize = useSummarizeReport(formId, form, filters)
   const answered = report.themes.reduce((sum, entry) => sum + entry.answered, 0)
   const ai = report.ai
-  const start = () => summarize.mutate({ responses: report.responses, lastResponseAt: report.last_response_at })
-  const label = ai === null ? t('report.ai.start') : t('report.ai.again')
+  const mine = summaryOfView(report, filters)
+  const start = () => summarize.mutate()
+  const again = mine === null ? t('report.ai.thisView') : t('report.ai.again')
+  const label = ai === null ? t('report.ai.start') : again
   return (
     <section className="card space-y-3" aria-labelledby="report-ai">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id="report-ai" className="flex items-center gap-2 text-sm font-semibold tracking-tight text-text-strong">
           <Sparkles size={14} className="text-aim" aria-hidden="true" />{t('report.ai.title')}
           <span className="badge badge-info">{t('report.ai.badge')}</span>
-          {ai?.stale === true && <span className="badge badge-warn">{t('report.ai.stale')}</span>}
+          {mine?.stale === true && <span className="badge badge-warn">{t('report.ai.stale')}</span>}
         </h3>
         <button type="button" className="btn btn-secondary btn-sm" disabled={answered === 0 || summarize.isPending} onClick={start}>
           {ai === null ? <Sparkles size={14} aria-hidden="true" /> : <RefreshCw size={14} aria-hidden="true" />}
@@ -72,9 +88,7 @@ export default function AiSummaryCard({ form, formId, filters, report }: Readonl
         </button>
       </div>
       {summarize.isError && <p role="alert" className="text-sm text-danger">{failureText(t, summarize.error)}</p>}
-      {ai === null
-        ? <p className="text-sm text-muted">{answered === 0 ? t('report.ai.nothing') : t('report.ai.intro')}</p>
-        : <StoredSummary ai={ai} />}
+      <CardBody form={form} report={report} filters={filters} answered={answered} />
     </section>
   )
 }

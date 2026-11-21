@@ -2592,6 +2592,10 @@
       "already": "Ten przebieg ma już zgodę.",
       "refused": "Tylko właściciel tokenu daje zgodę na ten przebieg.",
       "failed": "Nie udało się dać zgody: spróbuj ponownie."
+    },
+    "startWarnings": {
+      "title": "Przebieg rozpoczął się z ostrzeżeniem",
+      "dismiss": "Zamknij"
     }
   },
   "canvas": {

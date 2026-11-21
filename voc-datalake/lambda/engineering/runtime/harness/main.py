@@ -60,7 +60,7 @@ from engineering.runtime.harness.board_client import (
 )
 from engineering.runtime.harness.broker_client import BrokerHttp, SignedBroker
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
-from engineering.runtime.harness.converse_loop import ConverseAdapter
+from engineering.runtime.harness.converse_loop import ConverseAdapter, ModelTimedOut
 from engineering.runtime.harness.gate_tools import configured_gates_dir
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
 from engineering.runtime.harness.kiro import KEY_ENV, KIRO_BINARY, KiroAcp, ssm_key
@@ -387,31 +387,45 @@ def _heartbeat(board: Board, ids: Mapping[str, str], stop: threading.Event, wait
 
 def beat(board: Board, ids: Mapping[str, str], wait: ModelWait | None) -> None:
     """One heartbeat: the lease renewed, and (7.58.01) a model request in flight for a minute reported once
-    (``model_wait.py``: the stall rule reads only progress, and the session is busy, not stalled). A failed report, as a
-    failed renewal, is said on stderr, and the next heartbeat tries it again."""
+    (``model_wait.py``: the stall rule reads only progress, and the session is busy, not stalled). The line goes while
+    its call cannot end (``ModelWait.report``, 7.63.00), so it never closes a wait the session opened after the call. A
+    failed report, as a failed renewal, is said on stderr, and the next heartbeat tries it again."""
     _renew(board, ids)
-    request = wait.due() if wait is not None else None
-    if request is None or wait is None:
+    if wait is None:
         return
     try:
-        board.progress(ids['VOC_RUN_ID'], ids['VOC_TASK_ID'], ids['VOC_AGENT_ID'], progress_line(WAITING_ON_THE_MODEL))
+        wait.report(lambda: board.progress(ids['VOC_RUN_ID'], ids['VOC_TASK_ID'], ids['VOC_AGENT_ID'],
+                                           progress_line(WAITING_ON_THE_MODEL)))
     except Exception as error:  # noqa: BLE001 - a failed report must not end the heartbeat
         sys.stderr.write(f'harness: the model wait was not reported ({type(error).__name__}); trying again\n')
-        return
-    wait.reported(request)
 
 
 def bedrock_client(region: str | None, wait: ModelWait) -> Any:
     """The Converse loop's Bedrock client: throttling and transient errors retried by botocore itself, backing off,
-    and each request it sends (a resend after a read timeout too) handed to ``wait`` (``before-send``), so the
-    heartbeat reports each one that runs long."""
+    and each request it sends (a resend after a throttle or a server error too) handed to ``wait`` (``before-send``),
+    so the heartbeat reports each one that runs long. A read timeout is never sent again (7.63.00,
+    ``no_resend_after_a_read_timeout``): it ends the session as ``ModelTimedOut``."""
     import boto3
     from botocore.config import Config
     client = boto3.client('bedrock-runtime', region_name=region,
                           config=Config(retries={'mode': 'adaptive', 'max_attempts': 8},
                                         connect_timeout=BEDROCK_CONNECT_TIMEOUT, read_timeout=BEDROCK_READ_TIMEOUT))
     client.meta.events.register('before-send.bedrock-runtime.Converse', wait.sent)
+    # (first: botocore's own retry handler, which would send it again, answers after)
+    client.meta.events.register_first('needs-retry.bedrock-runtime.Converse', no_resend_after_a_read_timeout)
     return client
+
+
+def no_resend_after_a_read_timeout(caught_exception: BaseException | None = None, **_: Any) -> None:
+    """botocore's ``needs-retry`` for Converse: a request that outlasted the read timeout (``BEDROCK_READ_TIMEOUT``)
+    is ``ModelTimedOut``, never sent again. botocore would send it up to 8 times, each one reported as the session's
+    liveness (``model_wait.py``), for more than 80 minutes before the session crashed all the same; one timed-out
+    request is already as long as a reply of ``converse_loop.MAX_TOKENS`` takes. Anything else: botocore's own
+    retries."""
+    from botocore.exceptions import ReadTimeoutError
+    if isinstance(caught_exception, ReadTimeoutError):
+        raise ModelTimedOut(f'the model did not answer within {BEDROCK_READ_TIMEOUT} s, the client\'s read timeout: '
+                            'the request was not sent again') from caught_exception
 
 
 #: How often the transcript's clock looks for events held ``FLUSH_SECONDS`` (so a live thread lags by at most both).
@@ -465,7 +479,8 @@ TOOL_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC
 #: reply of ``converse_loop.MAX_TOKENS`` tokens, thinking included, at 54 tokens a second or more), and for its
 #: connection. 7.58.01: 600 s (900 in 7.58.00, which outlasted the stall rule), so that a request outlives the line the
 #: heartbeat reports for it (``model_wait.py``) by less than the supervisor's ``stall_after``, and the lines of two
-#: requests in a row (botocore's resend after a read timeout) come within its ``stall_after`` and answer window. A test
+#: requests in a row (a cut reply's call again, botocore's resend after a throttle or a server error; 7.63.00: never
+#: after a read timeout, ``no_resend_after_a_read_timeout``) come within its ``stall_after`` and answer window. A test
 #: holds both at the supervisor's default timings, the ones the stack runs (its ``ENGINEERING_TIMINGS`` is ``{}``): a
 #: ``stall_after`` of 9 minutes or less could ask a long request for its state, one of 8½ or less stop it.
 BEDROCK_READ_TIMEOUT: Final = 600

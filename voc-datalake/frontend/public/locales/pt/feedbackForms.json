@@ -257,8 +257,7 @@
       "failed": "Não foi possível salvar: {{reason}}.",
       "failedGeneric": "Não foi possível salvar. Verifique sua conexão e tente novamente.",
       "retry": "Tentar novamente",
-      "placeholderRefused": "Não foi possível guardar: um formulário ativo não pode mostrar um marcador {…} tal como está escrito. Corrija os textos indicados em Problemas ou guarde-o desativado.",
-      "recallRefused": "Não foi possível guardar: um texto mostra um valor que não pode mostrar nesse lugar. Corrija-o em Problemas."
+      "placeholderRefused": "Não foi possível guardar: um formulário ativo não pode mostrar um marcador {…} tal como está escrito. Corrija os textos indicados em Problemas ou guarde-o desativado."
     },
     "published": "Ativo. Os respondentes veem esta versão a partir de agora.",
     "firstSave": "Salvo. Este formulário está Desligado: o link mostra “Formulário de feedback indisponível.” até você publicá-lo.",
@@ -2353,9 +2352,7 @@
     "questionItem": "P{{number}} · {{headline}}",
     "nothing": "Nada para inserir aqui",
     "nothingHint": "Adicione um campo oculto, ou uma pergunta de pontuação ou de escolha única antes deste texto.",
-    "preview": "As pessoas veem: {{text}}",
-    "previewMissing": "Sem valor: {{text}}",
-    "previewEmpty": "(nada)"
+    "preview": "As pessoas veem: {{text}}"
   },
   "report": {
     "loading": "Carregando o relatório…",
@@ -2368,7 +2365,7 @@
     "empty": "Quando chegarem respostas com estes filtros, o relatório mostrará as notas, os segmentos e os temas delas.",
     "segments": {
       "title": "Por {{segment}}",
-      "hint": "Segmentos com menos de {{minimum}} respostas são agrupados, para que ninguém possa ser identificado.",
+      "hint": "Segmentos com menos de {{minimum}} respostas são agrupados, para que ninguém possa ser identificado. Enquanto esse grupo for pequeno demais, as notas do menor segmento também ficam ocultas.",
       "caption": "Notas por segmento",
       "segment": "Segmento",
       "responses": "Respostas",
@@ -2377,6 +2374,7 @@
       "merged_one": "Outros ({{count, number}} segmento com menos de {{minimum}})",
       "merged_other": "Outros ({{count, number}} segmentos com menos de {{minimum}})",
       "withheld": "Poucas respostas para mostrar as notas",
+      "complement": "Oculto junto com o grupo pequeno, para que suas notas não possam ser deduzidas",
       "none": "Nenhuma resposta para segmentar."
     },
     "heatmap": {
@@ -2405,12 +2403,15 @@
       "stale": "Há respostas mais recentes",
       "start": "Resumir com IA",
       "again": "Resumir de novo",
+      "thisView": "Resumir esta visualização",
       "working": "Resumindo…",
       "intro": "A IA lê até 300 das respostas abertas mostradas aqui, com o seu acesso, dá nome aos temas e escolhe citações. As citações são sempre respostas reais.",
       "nothing": "Não há respostas abertas para resumir.",
       "withheld": "Este resumo leu respostas que você não pode ver, por isso não é mostrado a você. Resuma de novo para criar o seu.",
+      "otherView": "Feito para outra visualização: {{view}}",
       "made_one": "Criado em {{date}} a partir de {{formatted}} resposta",
       "made_other": "Criado em {{date}} a partir de {{formatted}} respostas",
+      "since": "Desde {{date}}",
       "rateLimited": "Já foram 20 resumos de IA nesta hora. Tente novamente mais tarde.",
       "noModel": "Nenhum modelo de IA está disponível nesta implantação.",
       "noSummary": "A IA não encontrou temas nestas respostas.",
@@ -2429,7 +2430,7 @@
     },
     "compare": {
       "title": "Comparar",
-      "intro": "Coloque este formulário ao lado de até {{max, number}} outros, ou divida-o por um campo oculto para ver a tendência. As perguntas são pareadas por id e tipo; um ponto com menos de 5 respostas não mostra notas.",
+      "intro": "Coloque este formulário ao lado de até {{max, number}} outros, cada um dividido por um campo oculto se quiser. As perguntas são pareadas por id e pelo que suas notas significam; um ponto com menos de 5 respostas não mostra notas.",
       "forms": "Formulários",
       "noForms": "Nenhum outro formulário para comparar.",
       "sameTemplate": "Mesmo modelo",

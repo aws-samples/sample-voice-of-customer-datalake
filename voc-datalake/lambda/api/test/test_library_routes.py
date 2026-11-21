@@ -6,8 +6,9 @@ every route is test_cross_workspace_routes.py's (cross_workspace_worlds.py ``lib
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import ExitStack
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -16,7 +17,7 @@ import pytest
 from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
-from shared import library_index, library_objects, library_routes, library_worker
+from shared import library_index, library_objects, library_routes, library_store, library_worker
 from shared.library_keys import chunks_pk, item_key, slug_key
 from shared.test.library_fixtures import docx, pdf
 from shared.test.memory_fixtures import fake_vector
@@ -102,6 +103,19 @@ def test_an_upload_is_presigned_bound_to_its_length_type_and_a_single_write(libr
     assert f"library/{item['item_id']}/original" in upload['url']
 
 
+def test_an_invited_member_without_a_name_is_stored_by_username_never_by_address(library):
+    """An invited member's token has an email but no ``name`` claim: the stored created_by / updated_by name is the
+    username (as document_review_routes._member_author), never the address an erasure would have to find."""
+    invited = {**BEN, 'email': 'ben@example.com'}
+    item = library.upload(REPORT, caller=invited, extract=False)
+    assert item['created_by'] == item['updated_by'] == {'sub': 'sub-ben', 'name': 'ben'}
+    status, body = library.call('PUT', f"/projects/library/{item['item_id']}", caller=invited,
+                                body={'expected_version': 1, 'title': 'Renamed', 'slug': 'renamed', 'tags': []})
+    assert status == 200, body
+    assert library.item(item['item_id'])['updated_by'] == {'sub': 'sub-ben', 'name': 'ben'}
+    assert 'ben@example.com' not in str(library.item(item['item_id']))
+
+
 @pytest.mark.parametrize(('body', 'code'), [
     ({'filename': 'a.zip', 'content_type': 'application/zip', 'bytes': 10}, 'unsupported_type'),
     ({'filename': 'a.pdf', 'content_type': 'application/pdf', 'bytes': 25 * 1024 * 1024 + 1}, 'too_large'),
@@ -163,6 +177,36 @@ def test_a_file_that_cannot_be_read_fails_with_its_reason_and_can_be_retried(lib
     assert library.call('POST', f"/projects/library/{ready['item_id']}/retry")[1]['code'] == 'not_failed'
 
 
+def _started(library: Library, item_id: str, minutes_ago: int) -> None:
+    """The item's extraction as if it had started ``minutes_ago`` (its worker never finished)."""
+    started = (datetime.now(UTC) - timedelta(minutes=minutes_ago)).isoformat()
+    library.table.update_item(Key=item_key(item_id), UpdateExpression='SET extract_started_at = :at',
+                              ExpressionAttributeValues={':at': started})
+
+
+def test_an_extraction_that_outlived_its_worker_reads_stale_and_can_be_retried(library):
+    """Round 1 Q16: 16 minutes or more since an extraction started, the item reads ``stale`` and a retry claims it
+    again (202, a new token); a minute in, the retry is refused (409 ``not_failed``) and the item is not stale."""
+    item = library.upload(REPORT, extract=False)
+    item_id, path = item['item_id'], f"/projects/library/{item['item_id']}"
+    first_token = library.item(item_id)['extract_token']
+    _started(library, item_id, 1)
+    assert 'stale' not in library.call('GET', path)[1]['item']
+    assert library.call('POST', f'{path}/retry') == (409, {'success': False, 'code': 'not_failed',
+                                                           'error': 'Only a failed item can be extracted again.'})
+    _started(library, item_id, 17)
+    assert library.call('GET', path)[1]['item']['stale'] is True
+    library.invoke_async.reset_mock()
+    status, body = library.call('POST', f'{path}/retry')
+    assert (status, body['item']['status']) == (202, 'extracting')
+    assert 'stale' not in body['item']
+    new_token = library.item(item_id)['extract_token']
+    assert new_token != first_token
+    assert library.invoke_async.call_args.args[1]['token'] == new_token
+    assert library.run_worker() == [{'status': 'done'}]
+    assert library.item(item_id)['status'] == 'ready'
+
+
 def test_a_sha256_that_does_not_match_fails_the_item(library):
     item = library.upload(REPORT, sha256='0' * 64)
     assert item['status'] == 'failed'
@@ -173,13 +217,26 @@ def test_a_scanned_pdf_is_transcribed_by_bedrock_once(library):
     reply = {'output': {'message': {'content': [{'citationsContent': {'content': [{'text': 'Scanned invoice'}]}},
                                                  {'text': ' total 40'}]}}}
     with patch.object(library_worker, 'converse_blocks', return_value=reply) as converse:
-        item = library.upload(pdf(''), content_type='application/pdf', filename='scan.pdf')
+        item = library.upload(pdf('', ''), content_type='application/pdf', filename='scan.pdf')
     assert item['status'] == 'ready'
     assert item['method'] == 'model'
     block = converse.call_args.args[1][0]['document']
     assert block['format'] == 'pdf'
     assert block['citations'] == {'enabled': True}
     assert converse.call_args.kwargs['surface'] == 'documents'
+    assert 'form feed' in converse.call_args.args[1][1]['text']
+    # Round 1 Q12: the two-page scan's transcription has no page break, so the item has no pages (never p.1 for all).
+    assert 'pages' not in item
+    assert library.call('GET', f"/projects/library/{item['item_id']}/text")[1]['paged'] is False
+
+
+def test_a_transcription_cut_at_the_models_cap_is_marked_truncated(library):
+    """Round 1 Q13: Bedrock's ``stopReason`` reaches the item: ``max_tokens`` marks it truncated."""
+    reply = {'output': {'message': {'content': [{'text': 'The first page of a long scan'}]}},
+             'stopReason': 'max_tokens'}
+    with patch.object(library_worker, 'converse_blocks', return_value=reply):
+        item = library.upload(pdf(''), content_type='application/pdf', filename='scan.pdf')
+    assert (item['status'], item['truncated']) == ('ready', True)
 
 
 def test_the_list_filters_sorts_and_pages(library):
@@ -278,22 +335,73 @@ def test_the_uploader_deletes_their_own(library):
     assert library.call('DELETE', f"/projects/library/{item['item_id']}")[0] == 200
 
 
-def test_a_delete_during_extraction_leaves_nothing_behind(library):
-    item = library.upload(REPORT, extract=False)
+def _extract_and_meanwhile(library: Any, meanwhile: Callable[[str], object]) -> str:
+    """Upload the report unextracted and run its extraction, ``meanwhile(item_id)`` right after the passages are
+    written (a delete, a retry's claim, a revoked claim): the item's id."""
+    item_id = library.upload(REPORT, extract=False)['item_id']
     events = [call.args[1] for call in library.invoke_async.call_args_list]
     real_write = library_index.write_chunks
 
-    def write_then_delete(*args: Any, **kwargs: Any) -> int:
+    def write_then(*args: Any, **kwargs: Any) -> int:
         written = real_write(*args, **kwargs)
-        assert library.call('DELETE', f"/projects/library/{item['item_id']}")[0] == 200
+        meanwhile(item_id)
         return written
 
-    with patch.object(library_worker, 'write_chunks', side_effect=write_then_delete):
+    with patch.object(library_worker, 'write_chunks', side_effect=write_then):
         assert library_worker.run(events[0], library.table) == {'status': 'done'}
+    return item_id
+
+
+def test_a_delete_during_extraction_leaves_nothing_behind(library):
+    def delete(item_id: str) -> None:
+        assert library.call('DELETE', f'/projects/library/{item_id}')[0] == 200
+
+    item_id = _extract_and_meanwhile(library, delete)
     assert library.table.query(KeyConditionExpression='pk = :p',
-                               ExpressionAttributeValues={':p': chunks_pk(item['item_id'])})['Items'] == []
-    listed = library.s3.list_object_versions(Bucket=BUCKET, Prefix=f"library/{item['item_id']}/")
+                               ExpressionAttributeValues={':p': chunks_pk(item_id)})['Items'] == []
+    listed = library.s3.list_object_versions(Bucket=BUCKET, Prefix=f'library/{item_id}/')
     assert listed.get('Versions', []) == []
+
+
+def test_a_run_whose_item_was_claimed_again_stops_without_deleting(library):
+    """Round 1 Q18: a retry that claimed the item meanwhile owns the passages and the text (they share their
+    keys): the earlier run stops and deletes nothing."""
+    def claim_again(item_id: str) -> None:
+        library.table.update_item(Key=item_key(item_id), UpdateExpression='SET extract_token = :t',
+                                  ExpressionAttributeValues={':t': 'f' * 16})
+
+    item_id = _extract_and_meanwhile(library, claim_again)
+    row = library.item(item_id)
+    assert (row['status'], row['extract_token']) == ('extracting', 'f' * 16)
+    assert library.table.query(KeyConditionExpression='pk = :p',
+                               ExpressionAttributeValues={':p': chunks_pk(item_id)})['Items'] != []
+    assert library.s3.get_object(Bucket=BUCKET, Key=f'library/{item_id}/extracted')['Body'].read()
+
+
+def test_a_run_whose_claim_a_delete_revoked_drops_what_it_wrote(library):
+    """A delete revokes the claim before it sweeps the passages and the files: a run that writes meanwhile, while the
+    row is still there, finds no claim of its own and drops its passages and its text."""
+    item_id = _extract_and_meanwhile(library, lambda item_id: library_store.revoke_claim(library.table, None, item_id))
+    assert 'extract_token' not in library.item(item_id)
+    assert library.table.query(KeyConditionExpression='pk = :p',
+                               ExpressionAttributeValues={':p': chunks_pk(item_id)})['Items'] == []
+    listed = library.s3.list_object_versions(Bucket=BUCKET, Prefix=f'library/{item_id}/extracted')
+    assert listed.get('Versions', []) == []
+
+
+def test_a_delete_that_fails_part_way_leaves_the_item_to_delete_again(library):
+    """Round 1 Q17: the passages and the objects go first, the rows last, so a failure part way leaves the item
+    (and its slug) to delete again, never passages or files that no item names."""
+    item = library.upload(REPORT)
+    item_id, path = item['item_id'], f"/projects/library/{item['item_id']}"
+    with patch.object(library_routes, 'delete_chunks', side_effect=RuntimeError('DynamoDB is unavailable')):
+        assert library.call('DELETE', path)[0] == 500
+    assert 'Item' in library.table.get_item(Key=item_key(item_id))
+    assert 'Item' in library.table.get_item(Key=slug_key(item['slug']))
+    assert library.call('DELETE', path) == (200, {'success': True, 'deleted': item_id})
+    assert 'Item' not in library.table.get_item(Key=item_key(item_id))
+    assert library.table.query(KeyConditionExpression='pk = :p',
+                               ExpressionAttributeValues={':p': chunks_pk(item_id)})['Items'] == []
 
 
 def test_the_context_signs_native_items_and_searches_the_others(library):

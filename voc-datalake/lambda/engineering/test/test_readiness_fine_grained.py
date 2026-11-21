@@ -11,7 +11,11 @@ from datetime import date
 import pytest
 
 from engineering.readiness import CHECK_IDS, REQUIRED, Check, ReadFailed, Settings, Subject, evaluate, flow_requires
-from engineering.test.test_readiness import ROW, SETTINGS, SUBJECT, TRIAGE_FLOW, Ports
+from engineering.readiness_aws import agent_subject
+from engineering.test.test_readiness import BUG_FLOW, ROW, SETTINGS, SUBJECT, TRIAGE_FLOW, Ports, node
+from shared import engineering_agent_runs as eng_runs
+from shared import workflow_schema
+from shared.exceptions import ConflictError
 
 TODAY = date(2026, 11, 20)
 ON_TODAY: Settings = replace(SETTINGS, today=TODAY)
@@ -70,6 +74,39 @@ def test_an_expired_or_unset_token_fails_the_connection_of_a_flow_that_pushes_an
 def test_a_flow_that_pushes_nothing_needs_no_live_token() -> None:
     triage = replace(SUBJECT, definition=TRIAGE_FLOW, requires=flow_requires(TRIAGE_FLOW))
     assert report(token_row('2026-11-01'), subject=triage)['connection'].status == 'pass'
+
+
+#: (7.63.00) A flow whose start step declares it pushes, with no pushing step, and one that declares it does not.
+DECLARED_PUSH = {'schema': 'voc-workflow/2', 'nodes': [node('start', requires={'ci_attestation': True}),
+                                                       node('agent', role='understander')]}
+DECLARED_NO_PUSH = {'schema': 'voc-workflow/2', 'nodes': [node('start', requires={'ci_attestation': False}),
+                                                          node('agent', role='committer')]}
+
+
+@pytest.mark.parametrize(('definition', 'row', 'refused'), [
+    (BUG_FLOW, token_row('2026-11-01'), True), (BUG_FLOW, token_row(credential_set=False), True),
+    (BUG_FLOW, token_row(), False), (TRIAGE_FLOW, token_row('2026-11-01'), False),
+    (TRIAGE_FLOW, token_row(credential_set=False), False), (DECLARED_PUSH, token_row('2026-11-01'), True),
+    (DECLARED_NO_PUSH, token_row('2026-11-01'), False),
+], ids=['pushes-expired', 'pushes-unset', 'pushes-live', 'triage-expired', 'triage-unset', 'declared-push-expired',
+        'declared-no-push-expired'])
+def test_a_start_is_refused_on_the_token_exactly_when_readiness_fails_the_connection(
+        definition: Mapping[str, object], row: Mapping[str, object], refused: bool) -> None:
+    """(7.63.00) Readiness and the start read one rule (``workflow_engineering.flow_pushes``) off the same stored
+    flow: a flow that pushes nothing starts on an expired or unset token (before, every start was refused), and no
+    warning is said beside it."""
+    stored = {'workflow_id': 'wf_1', 'revision': 1, 'definition': workflow_schema.encode_definition(definition)}
+    agent = {'agent_id': 'agent_1', 'name': 'Agent', 'engineering': {'connection': 'shop', 'language': 'python'}}
+    readiness_fails = report(row, subject=agent_subject(agent, stored, 'admin-sub'))['connection'].status == 'fail'
+    flow = eng_runs.stored_flow(stored)
+    assert readiness_fails is refused
+    if refused:
+        with pytest.raises(ConflictError, match='replaces it'):
+            eng_runs.run_connection(row, today=TODAY, pushes=flow.pushes)
+    else:
+        assert eng_runs.run_connection(row, today=TODAY, pushes=flow.pushes)['repo'] == ROW['repository']
+    soon = {**row, 'token_expires_at': '2026-11-22', 'credential_set': True}
+    assert (eng_runs.token_warning(soon, TODAY, pushes=flow.pushes) is not None) is flow.pushes
 
 
 def test_a_token_warning_never_blocks_enable() -> None:

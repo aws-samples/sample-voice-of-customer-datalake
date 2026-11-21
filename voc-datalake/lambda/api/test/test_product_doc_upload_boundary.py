@@ -95,6 +95,8 @@ class TestDeferredTypesAreRefusedWithoutLeavingARecord:
                             'size_bytes': 1000})
         assert 'PDF' in error.message
         assert 'not supported yet' in error.message
+        # (7.63.00: the Documents Library reads a PDF, so the refusal sends the person there)
+        assert 'Documents Library (/library)' in error.message
         assert '.png' in error.message
         assert '.txt' in error.message
 

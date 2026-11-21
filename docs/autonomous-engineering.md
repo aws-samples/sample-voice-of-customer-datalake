@@ -962,7 +962,10 @@ each sent once with a 6 s timeout, no write):
 Write access is never probed (the owner's decision: a probe is a write, and could start CI): readiness says the first
 push confirms it, and a 403 to the push or the pull request stops the step for a person (`token_cannot_write`, 409,
 nothing moved). A token pending its organization's approval reads only public resources (GitHub's docs), so its 403
-may come only then; the refusal says so.
+may come only then; the refusal says so. A 401 or a 404 to one of the token's writes (7.63.00: the token revoked,
+expired or regenerated, or no longer reaching the repository) is `token_not_accepted` (409), "nothing was written.
+Replace the token under Agents → Connections": a refusal, so the write's claim is closed as refused and the attempt
+pushes again once the token is replaced, never a 502 whose write "is not known" that locks the attempt.
 
 **Where it is kept.** The connection's read parameter is a public repository's, its kind its own, no token:
 `/[<prefix>-]voc/engineering/<id>` = `{"kind": "fine_grained", "app_id", "installation_id", "repository", "key":
@@ -996,9 +999,12 @@ claim (`with: {credential: fine_grained_token, login, expires_at}`).
 
 **The go and the start.** `POST /agents/engineering/<run_id>/go` on a run of this kind takes the token owner's go
 alone (403 `token_owner_go` for any other administrator, before anything is written; the run page's button reads
-"Push with ‹login›'s token"). A run's start (`POST /agents/engineering/runs`, an agent's Run now and its triggers) is
-refused on an expired or unset token (409 "replace it"), and the 202 answer carries `warnings` when 3 days or fewer
-remain. Readiness: `connection` says "‹repo›, pushed with ‹login›'s fine-grained token: a branch and a pull request
+"Push with ‹login›'s token"). A run's start (`POST /agents/engineering/runs`, an agent's Run now and its triggers) of a
+flow that pushes is refused on an expired or unset token (409 "replace it"), and the 202 answer carries `warnings` when
+3 days or fewer remain, which the flow's page shows after the start (7.63.00). A flow that pushes nothing (a triage)
+starts on any token, with no warning: the start and readiness's `connection` check read one rule off the stored flow
+(7.63.00, `workflow_engineering.flow_pushes`: its declared `requires.ci_attestation`, else a committer or a PR
+author among its steps; before, every start on such a token was refused). Readiness: `connection` says "‹repo›, pushed with ‹login›'s fine-grained token: a branch and a pull request
 after your go" (and fails a flow that pushes on an expired or unset token); `app_installation` says it is not needed
 (it fails if the deployment's App installation that reads it is gone); `write_token` passes with the days left, warns
 at 14 or fewer, and fails once expired or unset; `dial` says every push waits for ‹login›'s go.
@@ -4272,12 +4278,19 @@ only progress reports (no report for 10 minutes and the agent is asked its state
 stopped), and a call of minutes, or a cut reply and its retry, could get a busy agent's task stopped mid-call, the
 paid call lost. The harness's heartbeat now reports "waiting on the model" once for each request to Bedrock still in
 flight a minute after it was sent: a short call reports nothing, a long one one line, never a line a minute; a request
-botocore sends again after a read timeout is a request of its own. The timeouts keep a request's end within the
-stall rule after its line (connection and read, 610 seconds, less the minute, under the 10 minutes), and two requests'
-lines in a row within its 13 minutes (610 seconds, botocore's longest backoff of 25 and the heartbeat's minute): a
-test holds both at the supervisor's default timings, the only ones the stack runs (`ENGINEERING_TIMINGS` is `{}`). A
-`stall_after` of 9 minutes or less, which no deployment sets today, could ask a long request for its state, and one of
-8½ or less stop it.
+botocore sends again after a throttle or a server error is a request of its own. **A read timeout is never sent
+again** (7.63.00, `main.no_resend_after_a_read_timeout`): botocore would have sent it up to 8 times, each one reported,
+for more than 80 minutes before the session crashed all the same; the session now ends at once as a crash,
+`ModelTimedOut` ("the model did not answer within 600 s, the client's read timeout: the request was not sent again"),
+its work checkpointed first and continued by the supervisor like any crash. The line goes while its call cannot end
+(`ModelWait.report`, 7.63.00): the line has no `waiting`, and a report without it closes a wait, so a line sent after
+its call returned could close the wait the coordinator's `wait_for_agents` had just opened. The timeouts keep a
+request's end within the stall rule after its line (connection and read, 610 seconds, less the minute, under the 10
+minutes), and two requests' lines in a row within its 13 minutes (610 seconds, botocore's longest backoff of 25 and the
+heartbeat's minute): a test holds both at the supervisor's default timings, the only ones the stack runs
+(`ENGINEERING_TIMINGS` is `{}`), and one on the real client runs a cut reply and its call again whose request times
+out (two requests, 20 minutes, never stopped, never sent a third time). A `stall_after` of 9 minutes or less, which no
+deployment sets today, could ask a long request for its state, and one of 8½ or less stop it.
 
 ## Trust and safety
 

@@ -1,8 +1,9 @@
 /**
  * @fileoverview Compare (7.63.00): this form beside up to 10 others of the workspace (the forms made from the same
- * template first: their question ids are the template's), or its own trend split by a hidden field (the event date,
- * the customer). Each question is matched by id and answer shape; a point under 5 responses keeps its figures to
- * itself, and a form that asks a question differently, or not at all, says so.
+ * template first: their question ids are the template's), each split by a hidden field if asked (the event date, the
+ * customer; one form split on its own is the Report's segments). Each question is matched by id and what its figures
+ * mean; a point under 5 responses keeps its figures to itself (and the smallest named point beside it, so the totals
+ * cannot give it away), and a form that asks a question differently, or not at all, says so.
  *
  * @module pages/FeedbackForms/report/ComparePanel
  */
@@ -66,7 +67,10 @@ function ComparisonTable({ form, comparison }: Readonly<{ form: FormV2; comparis
                 {comparison.questions.map((question) => {
                   const why = unmatched[question.id]
                   if (why !== undefined) return <td key={question.id} className="px-3 py-2 text-[12px] text-muted">{t(`report.compare.${why}`)}</td>
-                  if (point.scores === null) return <td key={question.id} className="px-3 py-2 text-[12px] text-muted">{t('report.compare.few', { minimum: comparison.min_size })}</td>
+                  if (point.scores === null) {
+                    const hidden = point.withheld === 'complement' ? t('report.segments.complement') : t('report.compare.few', { minimum: comparison.min_size })
+                    return <td key={question.id} className="px-3 py-2 text-[12px] text-muted">{hidden}</td>
+                  }
                   const figure = point.scores[question.id]
                   return (
                     <td key={question.id} className="px-3 py-2 tabular-nums">
@@ -119,7 +123,8 @@ export default function ComparePanel({ form, formId, filters }: Readonly<{ form:
   const [by, setBy] = useState('')
   const list = useQuery({ queryKey: feedbackFormsKey(), queryFn: () => api.getFeedbackForms() })
   const forms = candidates(list.data?.forms ?? [], formId, form.template?.id)
-  const asked = chosen.length > 0 || by !== ''
+  // (a split needs another form: one form split on its own is the Report's segments)
+  const asked = chosen.length > 0
   const comparison = useFormComparison(formId, filters, chosen, by === '' ? null : by, asked)
   const toggle = (other: string) => setChosen((current) => (current.includes(other) ? current.filter((entry) => entry !== other)
     : [...current, other].slice(0, MAX_COMPARED)))
@@ -131,7 +136,7 @@ export default function ComparePanel({ form, formId, filters }: Readonly<{ form:
         <FormChooser form={form} forms={forms} chosen={chosen} onToggle={toggle} />
         <div className="space-y-1">
           <label htmlFor={`${id}-by`} className="text-[12px] font-medium text-muted">{t('report.compare.by')}</label>
-          <select id={`${id}-by`} className="select select-sm w-full" value={by} onChange={(event) => setBy(event.target.value)}>
+          <select id={`${id}-by`} className="select select-sm w-full" value={by} onChange={(event) => setBy(event.target.value)} disabled={!asked}>
             <option value="">{t('report.compare.byNone')}</option>
             {form.hidden_fields.map((field) => <option key={field.id} value={`hidden.${field.id}`}>{field.label === undefined || field.label === '' ? field.id : field.label}</option>)}
           </select>

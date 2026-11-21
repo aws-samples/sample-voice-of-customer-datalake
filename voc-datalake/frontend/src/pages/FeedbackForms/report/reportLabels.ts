@@ -1,16 +1,21 @@
 /**
  * @fileoverview What the Report (7.63.00) names, in the form's own words: the segments a view may group by (each hidden
  * field, each single choice, each row of a matrix: the server's `group_by`), a segment's value (an option's or a
- * column's label, never a code where the form has a label), and one figure of a question (its NPS, CSAT %, CES % or
- * average out of its points).
+ * column's label, never a code where the form has a label), one figure of a question (its NPS, CSAT %, CES % or
+ * average out of its points), and the view an AI summary was made for.
  *
  * @module pages/FeedbackForms/report/reportLabels
  */
-import type { ReportKpi, ScoreFigure } from '../../../api/feedbackFormsReport'
+import type { FormReport, ReportAi, ReportKpi, ScoreFigure } from '../../../api/feedbackFormsReport'
+import { isSummaryOfView } from '../../../api/feedbackFormsV2Api'
+import type { ResultsFilters } from '../../../api/feedbackFormsV2Api'
+import { isSupportedLanguage, languageNames } from '../../../i18n/languages'
+import { formatDate } from '../../../utils/dateUtils'
 import { formatDecimal, formatPercent } from '../../../utils/numberFormat'
 import type { FormV2 } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
 import { shownAsIds } from '../model/recall'
+import { endingTitle } from '../results/answers'
 
 export interface SegmentChoice {
   /** As the server's `group_by` names it. */
@@ -111,4 +116,40 @@ export function matrixLabels(form: FormV2, questionId: string): { readonly row: 
     row: (code) => textIn(matrix?.rows.find((entry) => entry.code === code)?.label, form.language) || code,
     column: (code) => textIn(matrix?.columns.find((entry) => entry.code === code)?.label, form.language) || code,
   }
+}
+
+type Translate = (key: string, options?: Record<string, unknown>) => string
+
+const RANGE_KEYS: Readonly<Record<string, string>> = {
+  all: 'results.filters.all', '7': 'results.filters.days7', '30': 'results.filters.days30', '90': 'results.filters.days90',
+}
+
+/** The view an AI summary was made for, in the form's words: "Last 30 days · Polski · customer: Example Ltd" (its
+ * stored filters, as feedbackFormsV2Api.ts `summaryFilters` records them). */
+export function summaryViewText(form: FormV2, filters: Readonly<Record<string, string>>, t: Translate, language: string): string {
+  const days = filters['days']
+  const from = filters['from']
+  const range = days === undefined ? undefined : RANGE_KEYS[days]
+  const parts: string[] = []
+  if (range !== undefined) parts.push(t(range))
+  else if (from !== undefined) parts.push(t('feedbackForms:report.ai.since', { date: formatDate(from, language) }))
+  const chosen = filters['language']
+  if (chosen !== undefined) parts.push(isSupportedLanguage(chosen) ? languageNames[chosen] : chosen)
+  const ending = filters['ending']
+  if (ending !== undefined) parts.push(endingTitle(form, ending))
+  for (const [key, value] of Object.entries(filters)) {
+    if (!key.startsWith('hidden.')) continue
+    const id = key.slice('hidden.'.length)
+    const field = form.hidden_fields.find((candidate) => candidate.id === id)
+    parts.push(`${field?.label === undefined || field.label === '' ? id : field.label}: ${value}`)
+  }
+  return parts.join(' · ')
+}
+
+/** The report's stored AI summary for this view, or null: none, or one made for another view (shown and printed only on
+ * its own; a summary withheld from this reader is its own case). */
+export function summaryOfView(report: FormReport, filters: ResultsFilters): ReportAi | null {
+  const ai = report.ai
+  if (ai === null) return null
+  return ai.withheld !== undefined || isSummaryOfView(ai.filters, filters) ? ai : null
 }

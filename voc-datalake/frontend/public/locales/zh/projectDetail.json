@@ -543,7 +543,7 @@
       "heading": "内部文档",
       "hint": "图片和文本 — 最多 20 个",
       "loading": "加载中…",
-      "notYet": "暂不支持 PDF 和 Word (.docx)。",
+      "notYet": "此处尚不读取 PDF 和 Word (.docx)：请将它们添加到资料库，并在助手中用 # 提及。",
       "statusExtracting": "提取中…",
       "statusFailed": "失败",
       "statusReady": "就绪",

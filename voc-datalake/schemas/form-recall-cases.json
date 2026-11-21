@@ -1,5 +1,5 @@
 {
-  "description": "Recall in a feedback form's texts (docs/feedback-forms.md, 'Recall'): {{id}} or {{id|fallback}}. ONE grammar and ONE way to show a text with a missing value, three implementations pinned by these cases: lambda/shared/forms_recall.py (the server's checks: `parse` only), frontend/src/pages/FeedbackForms/model/recall.ts (the builder: `parse` and `render`) and lambda/api/static/feedback-widget.js (respondents: `render`, through a form whose hidden fields are the values' keys). `render`'s values are the filled ones; an id without a value renders its fallback, or nothing, and the text is tidied around the gap (no doubled space, no space or separator before closing punctuation, no empty brackets, no separator left at either end; a text that then starts with a separator removed starts with a capital).",
+  "description": "Recall in a feedback form's texts (docs/feedback-forms.md, 'Recall'): {{id}} or {{id|fallback}}. ONE grammar and ONE way to show a text with a missing value, three implementations pinned by these cases: lambda/shared/forms_recall.py (the server's checks: `parse` only), frontend/src/pages/FeedbackForms/model/recall.ts (the builder: `parse` only; its preview with sample values is plain substitution, and how a text reads without one is the widget's own preview) and lambda/api/static/feedback-widget.js (respondents: `render`, through a form whose hidden fields are the values' keys). `render`'s values are the filled ones; an id without a value renders its fallback, or nothing, and the text is tidied around the gap (no doubled space, no space or separator before closing punctuation, no empty brackets, no separator left at either end, gaps side by side or split only by a separator taken as one; a text that then starts with a separator removed starts with a capital).",
   "parse": [
     { "text": "How was it?", "placeholders": [] },
     { "text": "How was {{event}}?", "placeholders": [{ "raw": "{{event}}", "id": "event", "fallback": "" }] },
@@ -28,6 +28,10 @@
     { "text": "Event [{{event}}]", "values": {}, "output": "Event" },
     { "text": "Hi {{a}} {{b}}!", "values": {}, "output": "Hi!" },
     { "text": "Hi {{a}} {{b}}!", "values": { "b": "Bo" }, "output": "Hi Bo!" },
+    { "text": "Thanks {{name}}, {{company}}!", "values": {}, "output": "Thanks!" },
+    { "text": "Thanks {{name}}, {{company}}!", "values": { "company": "Example Ltd" }, "output": "Thanks, Example Ltd!" },
+    { "text": "Hi {{a}}, {{b}}, how are you?", "values": {}, "output": "Hi, how are you?" },
+    { "text": "{{a}}; {{b}} was here", "values": {}, "output": "was here" },
     { "text": "Thanks {{name}} — see you", "values": {}, "output": "Thanks — see you" },
     { "text": "foo{{a}}bar", "values": {}, "output": "foobar" },
     { "text": "{{event}}はいかがでしたか？", "values": {}, "output": "はいかがでしたか？" },

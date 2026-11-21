@@ -606,14 +606,14 @@ class TestToolGating:
         names = [tool['name'] for tool in _body(response)['result']['tools']]
         # Grouped by area (shared/mcp_global_tools.AREAS); no name renamed in 6.10.00 is listed.
         assert names == ['feedback_search', 'feedback_get', 'feedback_get_metrics', 'feedback_list_categories',
-                         'feedback_list_dimensions', 'feedback_get_catalogue', 'memory_search',
+                         'feedback_list_dimensions', 'feedback_get_catalogue', 'forms_get_results', 'memory_search',
                          'company_get_context', 'projects_list', 'projects_get', 'projects_get_job', 'documents_get',
                          'documents_list_prototype_feedback', 'documents_get_prototype_outline',
                          'documents_get_prototype_walkthrough', 'documents_get_prototype_draft', 'library_search',
-                         'library_get', 'agents_list',
+                         'agents_list',
                          'agents_get_run', 'feature_requests_search', 'radar_read',
                          'prioritization_get']
-        assert _body(response)['result']['tools'][8] == LIST.declaration()
+        assert _body(response)['result']['tools'][9] == LIST.declaration()
 
     @pytest.mark.parametrize(('tool', 'arguments', 'pin', 'expected'), [
         (LIST, {'project_id': 'proj_a'}, 'proj_b', None),

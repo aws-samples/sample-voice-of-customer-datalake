@@ -2,14 +2,16 @@
  * @fileoverview The Report's one-page PDF (7.63.00): printed by the browser (utils/printUtils.ts `openPrintWindow`, the
  * DocumentExportMenu pattern: no PDF library), with inline Kiro Light colours only (theme/printPalette.test.ts). It
  * holds the KPIs, the segment table (when the Report is grouped), each matrix's heatmap, the themes with their quotes,
- * how many responses it covers and their dates, and never a contact detail (the report holds none). Its words are the
- * reader's language, as the Report's are (rendered off-screen, it reads the app's i18n instance).
+ * the AI summary only when it was made for the view printed (else the view it was made for, with no quote), how many
+ * responses it covers and their dates, and never a contact detail (the report holds none). Its words are the reader's
+ * language, as the Report's are (rendered off-screen, it reads the app's i18n instance).
  *
  * @module pages/FeedbackForms/report/FormReportPDF
  */
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { FormReport, ReportHeatmap, ReportSegments, Scores } from '../../../api/feedbackFormsReport'
+import type { ResultsFilters } from '../../../api/feedbackFormsV2Api'
 import { PdfReport, PdfReportHeader, PdfSectionHeading } from '../../../components/PdfParts/pdfParts'
 import type { PdfStat } from '../../../components/PdfParts/pdfParts'
 import { pdfZebraRow } from '../../../components/PdfParts/pdfTones'
@@ -17,7 +19,8 @@ import { formatCount, formatPercent } from '../../../utils/numberFormat'
 import { formatDate } from '../../../utils/dateUtils'
 import type { FormV2 } from '../model/formsV2'
 import { percentOf } from '../results/scoreMath'
-import { figureText, kpiValue, matrixLabels, measuredIds, questionHeadline, rowAveragesText, segmentValueLabel, shadeStep } from './reportLabels'
+import { figureText, kpiValue, matrixLabels, measuredIds, questionHeadline, rowAveragesText, segmentValueLabel, shadeStep, summaryOfView,
+  summaryViewText } from './reportLabels'
 
 const STRONG = '#19161d'
 const MUTED = '#5e5966'
@@ -34,14 +37,16 @@ const SECTION: CSSProperties = { marginBottom: '20px' }
 interface PdfProps {
   readonly form: FormV2
   readonly report: FormReport
+  /** The view printed: the AI summary is printed only when it was made for it. */
+  readonly view: ResultsFilters
 }
 
 function SegmentRows({ form, segments }: Readonly<{ form: FormV2; segments: ReportSegments }>) {
   const { t, i18n } = useTranslation('feedbackForms')
   const language = i18n.language
   const ids = measuredIds(form)
-  const cells = (scores: Scores) => (scores === null
-    ? <td colSpan={ids.length} style={{ ...CELL, color: MUTED }}>{t('report.segments.withheld')}</td>
+  const cells = (scores: Scores, complement = false) => (scores === null
+    ? <td colSpan={ids.length} style={{ ...CELL, color: MUTED }}>{t(complement ? 'report.segments.complement' : 'report.segments.withheld')}</td>
     : ids.map((id) => (
       <td key={id} style={CELL}>{scores[id]?.type === 'matrix' ? rowAveragesText(form, id, scores[id], language) : figureText(scores[id], language)}</td>
     )))
@@ -62,7 +67,7 @@ function SegmentRows({ form, segments }: Readonly<{ form: FormV2; segments: Repo
             <tr key={group.value} style={pdfZebraRow(i)}>
               <td style={CELL}>{label(group.value)}</td>
               <td style={CELL}>{formatCount(group.responses, language)}</td>
-              {cells(group.scores)}
+              {cells(group.scores, group.withheld === 'complement')}
             </tr>
           ))}
           {segments.merged !== null && (
@@ -105,15 +110,21 @@ function Heatmap({ form, heatmap }: Readonly<{ form: FormV2; heatmap: ReportHeat
   )
 }
 
-function Themes({ form, report }: PdfProps) {
+function Themes({ form, report, view }: PdfProps) {
   const { t, i18n } = useTranslation('feedbackForms')
   const language = i18n.language
   const entries = report.themes.filter((entry) => entry.answered > 0)
-  const ai = report.ai !== null && report.ai.withheld === undefined ? report.ai : null
-  if (entries.length === 0 && ai === null) return null
+  const mine = summaryOfView(report, view)
+  const ai = mine !== null && mine.withheld === undefined ? mine : null
+  // (a summary made for another view: which one, never its text or quotes)
+  const other = report.ai !== null && mine === null ? report.ai : null
+  if (entries.length === 0 && ai === null && other === null) return null
   return (
     <div data-pdf-section style={SECTION}>
       <PdfSectionHeading>{t('report.pdf.themes')}</PdfSectionHeading>
+      {other !== null && (
+        <p style={{ fontSize: '11px', color: MUTED, margin: '0 0 8px 0' }}><strong>{t('report.ai.badge')}</strong> · {t('report.ai.otherView', { view: summaryViewText(form, other.filters, t, language) })}</p>
+      )}
       {ai !== null && ai.summary !== '' && (
         <p style={{ fontSize: '12px', color: STRONG, margin: '0 0 8px 0' }}><strong>{t('report.ai.badge')}</strong> · {ai.summary}</p>
       )}
@@ -147,7 +158,7 @@ function span(report: FormReport, language: string): string {
   return first === last ? first : `${first} – ${last}`
 }
 
-export default function FormReportPDF({ form, report }: PdfProps) {
+export default function FormReportPDF({ form, report, view }: PdfProps) {
   const { t, i18n } = useTranslation('feedbackForms')
   const language = i18n.language
   const stats: PdfStat[] = [
@@ -161,7 +172,7 @@ export default function FormReportPDF({ form, report }: PdfProps) {
       footer={t('report.pdf.footer', { date: formatDate(new Date().toISOString(), language) })}>
       {report.segments !== null && <SegmentRows form={form} segments={report.segments} />}
       {report.matrices.map((heatmap) => <Heatmap key={heatmap.id} form={form} heatmap={heatmap} />)}
-      <Themes form={form} report={report} />
+      <Themes form={form} report={report} view={view} />
     </PdfReport>
   )
 }

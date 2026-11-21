@@ -65,6 +65,8 @@ from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final
 
+from shared.dynamo_values import string_list
+
 SCHEMA_V2: Final = 'voc-workflow/2'
 NODE_STOP_AT_PR: Final = 'stop_at_pr'
 #: Another saved flow, run in a step's place (7.52.00): expanded before the run starts (shared/flow_expand.py).
@@ -543,6 +545,56 @@ def _pushes(node: Mapping[str, Any]) -> bool:
     if node['type'] == 'agent':
         return params.get('role') in PUSHING_ROLES
     return node['type'] == 'board' and bool(PUSHING_ROLES & set(params.get('claimers') or ()))
+
+
+def step_params(node: Mapping[str, Any]) -> Mapping[str, Any]:
+    """A stored flow's step's ``data.params`` ({} for none)."""
+    data = node.get('data')
+    params = data.get('params') if isinstance(data, Mapping) else None
+    return params if isinstance(params, Mapping) else {}
+
+
+def step_nodes(definition: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """A stored flow's steps, each a mapping ([] for none)."""
+    nodes = definition.get('nodes')
+    return [node for node in nodes if isinstance(node, Mapping)] if isinstance(nodes, list) else []
+
+
+def step_roles(definition: Mapping[str, Any]) -> frozenset[str]:
+    """The roles a stored flow's steps name: its agent steps' roles and its boards' posters and claimers (readiness's
+    ``flow_roles`` adds the coordinator and a quality gate's runner and final go)."""
+    found: set[str] = set()
+    for node in step_nodes(definition):
+        params, kind = step_params(node), node.get('type')
+        if kind == 'agent' and isinstance(params.get('role'), str):
+            found.add(str(params['role']))
+        elif kind == 'board':
+            found |= {*string_list(params.get('posters')), *string_list(params.get('claimers'))}
+    return frozenset(found)
+
+
+def start_params(definition: Mapping[str, Any]) -> Mapping[str, Any]:
+    """The flow's own settings: its start step's ``params`` (``memory``, ``learn``, ``pr``: plan §2, as compiled)."""
+    return next((step_params(node) for node in step_nodes(definition) if node.get('type') == 'start'), {})
+
+
+def declared_requires(definition: Mapping[str, Any], declared: object = None) -> dict[str, Any] | None:
+    """What a run of the flow needs as declared (plan §2 ``requires``): ``declared`` (its template's), else its start
+    step's, else its definition's; None when none declares it."""
+    for found in (declared, start_params(definition).get('requires'), definition.get('requires')):
+        if isinstance(found, Mapping):
+            return dict(found)
+    return None
+
+
+def flow_pushes(definition: Mapping[str, Any]) -> bool:
+    """Whether a run of the stored flow pushes (a branch and a pull request), the one rule readiness's ``connection``
+    check and a run's start read alike (7.63.00: an expired or unset fine-grained token fails the one and refuses the
+    other only then): its declared ``requires.ci_attestation``, else whether a step names a ``PUSHING_ROLES`` role."""
+    found = declared_requires(definition)
+    if found is not None:
+        return found.get('ci_attestation') is True
+    return bool(step_roles(definition) & PUSHING_ROLES)
 
 
 def _stop_at_pr_issues(nodes: Mapping[str, Mapping[str, Any]], reach: Reach) -> Issues:

@@ -2505,6 +2505,10 @@
       "already": "Dieser Lauf hat bereits eine Freigabe.",
       "refused": "Nur der Inhaber des Tokens gibt diesem Lauf die Freigabe.",
       "failed": "Die Freigabe konnte nicht erteilt werden: Versuchen Sie es erneut."
+    },
+    "startWarnings": {
+      "title": "Der Lauf wurde mit einer Warnung gestartet",
+      "dismiss": "Ausblenden"
     }
   },
   "canvas": {

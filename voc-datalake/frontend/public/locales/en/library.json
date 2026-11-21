@@ -113,6 +113,7 @@
     "notFound": "This library item does not exist, or it was deleted.",
     "pending": "Waiting for its file. If the upload did not finish, delete this item and upload the file again.",
     "extracting": "Its text is being read. This page updates when it is ready.",
+    "stale": "Its text has not been read after 16 minutes: the reading stopped. Read it again.",
     "failed": "Its text could not be read.",
     "download": "Download the original",
     "newTab": "(opens in a new tab)",

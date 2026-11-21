@@ -1,11 +1,13 @@
 /**
- * @fileoverview A workshop form and its report (7.63.00), for the Report's specs: two customers, one segment of 7 and
- * the rest merged and withheld, a matrix, themes with real quotes, and an AI summary.
+ * @fileoverview A workshop form and its report (7.63.00), for the Report's specs: segments of 7 and 5 and the rest
+ * merged and withheld (the 5 withheld with them), a matrix, themes with real quotes, and an AI summary made for the
+ * Results' default view (the last 30 days, `VIEW`).
  *
  * @module pages/FeedbackForms/report/report-fixtures
  */
 import { parseFormReport } from '../../../api/feedbackFormsReport'
 import type { FormReport } from '../../../api/feedbackFormsReport'
+import type { ResultsFilters } from '../../../api/feedbackFormsV2Api'
 import type { FormV2 } from '../model/formsV2'
 import { blankForm } from '../test/blankForm'
 
@@ -34,12 +36,17 @@ export const REPORT: FormReport = parseFormReport({
   themes: [{ question_id: 'q_takeaway', answered: 4, themes: [{ category: 'content', subcategory: 'labs', count: 4, sentiment: { positive: 3, negative: 1 },
     quotes: [{ response_id: 'fb_3', text: 'Loved the labs', created_at: '2026-11-18T10:00:00', sentiment: 'positive' }] }] }],
   ai: { report_id: 'rpt_1', created_at: '2026-11-18T12:00:00Z', summary: 'Keep the labs, shorten the intro.', model: 'm', stale: true, responses_counted: 8,
+    filters: { from: '2026-10-19T12:00:00.000Z', days: '30' },
     themes: [{ label: 'Labs are the highlight', count: 3, sentiment: 'positive', quotes: [{ response_id: 'fb_3', text: 'Loved the labs' }] }] },
   min_segment: 5,
 })
 
+/** The view the AI summary was made for: the Results' default (the last 30 days, nothing else narrowed). */
+export const VIEW: ResultsFilters = { days: 30, language: '', ending: '', hidden: {}, includeTest: false }
+
 export const SEGMENTED: FormReport = {
   ...REPORT,
-  segments: { by: 'q_role', min_size: 5, groups: [{ value: 'qa', responses: 7, scores: { q_nps: { type: 'nps', answered: 7, nps: 42.9 } } }],
-    merged: { segments: 1, responses: 2, scores: null } },
+  segments: { by: 'q_role', min_size: 5, groups: [{ value: 'qa', responses: 7, scores: { q_nps: { type: 'nps', answered: 7, nps: 42.9 } } },
+    { value: 'design', responses: 5, scores: null, withheld: 'complement' }],
+  merged: { segments: 1, responses: 2, scores: null } },
 }

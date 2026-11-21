@@ -543,7 +543,7 @@
       "heading": "Internal documents",
       "hint": "Images and text — 20 max",
       "loading": "Loading…",
-      "notYet": "PDF and Word (.docx) are not supported yet.",
+      "notYet": "PDF and Word (.docx) are not read here yet: add them to the Library and mention them in the assistant with #.",
       "statusExtracting": "Extracting…",
       "statusFailed": "Failed",
       "statusReady": "Ready",

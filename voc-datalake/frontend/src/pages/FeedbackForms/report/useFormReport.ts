@@ -41,24 +41,24 @@ async function newestResponses(formId: string, filters: ResultsFilters, read: re
   return page.next_cursor === null || rows.length >= SUMMARY_LIMITS.answers ? rows : newestResponses(formId, filters, rows, page.next_cursor)
 }
 
-export interface SummaryView {
-  readonly responses: number
-  readonly lastResponseAt: string | null
-}
+/** The newest of the responses read (they come newest first, but a page is never trusted to be sorted). */
+const newestTime = (responses: readonly FormResponse[]): string | null =>
+  responses.reduce<string | null>((newest, response) => (response.submitted_at !== '' && (newest === null || response.submitted_at > newest) ? response.submitted_at : newest), null)
 
 /**
- * "Summarize with AI": resolves to the stored report's id; the report is read again. It reads real responses only,
- * whatever the view includes: a test response is no feedback item, so a summary that read one could never be shown
- * (the report withholds a summary that read a response its reader cannot see).
+ * "Summarize with AI" (or "Summarize this view"): resolves to the stored report's id; the report is read again. It
+ * reads real responses only, whatever the view includes: a test response is no feedback item, so a summary that read
+ * one could never be shown (the report withholds a summary that read a response its reader cannot see). The summary
+ * records the view's filters and the newest response it read; how many it read is the answers it was sent.
  */
 export function useSummarizeReport(formId: string, form: FormV2, filters: ResultsFilters) {
   const client = useQueryClient()
   const real: ResultsFilters = { ...filters, includeTest: false }
   return useMutation({
-    mutationFn: async (view: SummaryView) => {
-      const answers = summaryAnswers(form, await newestResponses(formId, real))
-      return feedbackFormsV2Api.summarizeReport(formId, { answers, filters: summaryFilters(real), responses: view.responses,
-        lastResponseAt: view.lastResponseAt })
+    mutationFn: async () => {
+      const read = await newestResponses(formId, real)
+      return feedbackFormsV2Api.summarizeReport(formId, { answers: summaryAnswers(form, read), filters: summaryFilters(real),
+        lastResponseAt: newestTime(read) })
     },
     onSuccess: () => client.invalidateQueries({ queryKey: [...feedbackFormsKey(), formId, 'report'] }),
   })

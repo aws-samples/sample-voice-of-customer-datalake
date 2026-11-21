@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from botocore.awsrequest import AWSResponse
 from botocore.compat import HTTPHeaders
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError, ReadTimeoutError
 from botocore.retries.standard import ExponentialBackoff
 
 from engineering.runtime.caps import Timings
@@ -22,6 +22,7 @@ from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness.board_client import InboxHttp
 from engineering.runtime.harness.cli import CliNotOffered
+from engineering.runtime.harness.converse_loop import ModelTimedOut
 from engineering.runtime.harness.main import Ports, S3Store, build_session, main
 from engineering.runtime.harness.model_wait import WAITING_ON_THE_MODEL, ModelWait
 from engineering.runtime.harness.ports import HarnessPortNotWired, PendingHarnessPorts, TaskBrief
@@ -491,11 +492,16 @@ class ClockedBoard(FakeBoard):
 
 @pytest.mark.parametrize('phase', [0, 1, 30, 59], ids=lambda phase: f'heartbeat-at-{phase}s')
 @pytest.mark.parametrize('reported', [True, False], ids=['reported', 'unreported-as-in-7.58.00'])
-def test_a_model_call_longer_than_the_stall_rule_does_not_get_its_task_stopped(tmp_path, phase, reported):
-    """A reply cut at the cap, then its retry, whose first request times out and is sent again by botocore: every
-    request as long as the harness's client waits for one, 31 minutes in all. The heartbeat beats once a minute (at
-    each ``phase``) and reports each request once; the supervisor judges the task every second. Without the line
-    (7.58.00) the task is stopped mid-call."""
+def test_a_model_call_longer_than_the_stall_rule_does_not_get_its_task_stopped(tmp_path, monkeypatch, phase,
+                                                                              reported):
+    """The harness's real Bedrock client: a reply cut at the cap, then its call again, whose request times out; every
+    request as long as the client waits for one. The heartbeat beats once a minute (at each ``phase``) and reports each
+    request once; the supervisor judges the task every second. Without the line (7.58.00) the task is stopped mid-call.
+    The timed-out request is never sent again (7.63.00: botocore would have sent it up to 8 times, each one reported,
+    for 81 minutes): the session ends as ``ModelTimedOut`` after its two requests, 20 minutes, never stopped."""
+    for name, value in (('AWS_ACCESS_KEY_ID', 'testing'), ('AWS_SECRET_ACCESS_KEY', 'testing')):
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv('AWS_SESSION_TOKEN', raising=False)
     timings, now = Timings(), [0.0]
     board = ClockedBoard(clock=now)
     wait = ModelWait(after=harness_main.HEARTBEAT_SECONDS, clock=lambda: now[0])
@@ -513,28 +519,48 @@ def test_a_model_call_longer_than_the_stall_rule_does_not_get_its_task_stopped(t
                 supervised[0] = replace(supervised[0], asked_at=int(now[0]) if verdict == 'ask_state' else None)
             verdicts.append(verdict)
 
-    class LongBedrock(FakeBedrock):
-        def converse(self, **request: Any) -> dict[str, Any]:
-            if len(self.requests) == 1:
-                spend(LONGEST_REQUEST)
-                spend(LONGEST_BACKOFF)
-                wait.sent()   # (botocore's before-send, for the request it sends again)
-            spend(LONGEST_REQUEST)
-            return super().converse(**request)
+    cut = {'output': {'message': {'role': 'assistant', 'content': [
+        {'text': 'I will now wri'}, use('write_file', 'cut-1', path='src/from_a_cut_reply.py', text='cut')]}},
+        'stopReason': 'max_tokens', 'usage': {'inputTokens': 1, 'outputTokens': 32_000, 'totalTokens': 32_001},
+        'metrics': {'latencyMs': 1}}
+    sends: list[int] = []
 
+    def send(request: Any, **_: Any) -> AWSResponse:
+        sends.append(int(now[0]))
+        spend(LONGEST_REQUEST)
+        if len(sends) == 1:
+            return AWSResponse(request.url, 200, HTTPHeaders(), _Raw(json.dumps(cut).encode()))
+        raise ReadTimeoutError(endpoint_url=request.url)
+
+    client = harness_main.bedrock_client('us-east-1', wait)
+    client.meta.events.register('before-send.bedrock-runtime.Converse', send)
     w = world(tmp_path)
     w.session.context.model_wait = wait
-    bedrock = LongBedrock([[use('finish', 't1', summary='fixed')]], cut=frozenset({0}))
-    assert harness_main.ConverseAdapter(bedrock, 'model-a').run(w.session) == 'done'
-    assert len(bedrock.requests) == 2
+    with pytest.raises(ModelTimedOut, match='did not answer within 600 s'):
+        harness_main.ConverseAdapter(client, 'model-a').run(w.session)
+    assert sends == [0, LONGEST_REQUEST]   # (the cut reply's call again, and no request after its timeout)
+    assert now[0] == 2 * LONGEST_REQUEST   # (bounded: two requests, 20 minutes 20 seconds)
     assert timings.stall_after < LONGEST_REQUEST
-    assert now[0] > 2 * (timings.stall_after + timings.answer_window)
+    assert now[0] > timings.stall_after + timings.answer_window
     lines = [step for *_, step in board.progress_seen]
     if reported:
-        assert lines == [WAITING_ON_THE_MODEL] * 3   # (one line per request, never one a minute)
+        assert lines == [WAITING_ON_THE_MODEL] * 2   # (one line per request, never one a minute)
         assert not {'stalled', 'crashed'} & set(verdicts)
     else:
         assert (lines, 'stalled' in verdicts) == ([], True)
+    assert not os.path.exists(os.path.join(tmp_path, 'repo', 'src', 'from_a_cut_reply.py'))
+
+
+def test_a_read_timeout_is_never_sent_again_but_a_server_error_is():
+    """botocore's ``needs-retry`` for Converse: a read timeout is ``ModelTimedOut`` at once, anything else (no
+    exception, a connection error) left to botocore's retries."""
+    with pytest.raises(ModelTimedOut) as raised:
+        harness_main.no_resend_after_a_read_timeout(caught_exception=ReadTimeoutError(endpoint_url='https://b'),
+                                                    attempts=1)
+    assert isinstance(raised.value.__cause__, ReadTimeoutError)
+    assert harness_main.no_resend_after_a_read_timeout(caught_exception=None, attempts=1) is None
+    assert harness_main.no_resend_after_a_read_timeout(
+        caught_exception=EndpointConnectionError(endpoint_url='https://b'), attempts=1) is None
 
 
 def test_no_model_request_outlasts_the_stall_rule_after_its_line():
@@ -614,6 +640,50 @@ def test_a_model_wait_the_board_did_not_take_is_reported_at_the_next_heartbeat()
     harness_main.beat(board, IDS, wait)
     assert (board.refused, [step for *_, step in board.progress_seen]) == (1, [WAITING_ON_THE_MODEL])
     assert len(board.heartbeats) == 5
+
+
+def test_a_model_wait_line_never_closes_the_wait_the_session_opens_after_its_call():
+    """The heartbeat's line has no ``waiting``, and a report without it closes the wait on the lease: a line sent after
+    its call returned would close the wait ``wait_for_agents`` opens right after it. The heartbeat has looked (a
+    request due) and is sending its line when the call returns; the session's wait comes after the line, never before
+    (before 7.63.00 the call ended at once, the wait went first and the late line closed it)."""
+    now = [61.0]
+    wait = ModelWait(after=60, clock=lambda: now[0])
+    sending, waited = threading.Event(), threading.Event()
+
+    @dataclass
+    class SlowLineBoard(FakeBoard):
+        """The model wait's line is held until the session's wait is on the board, or for a second at most."""
+
+        def progress(self, run_id: str, task_id: str, agent_id: str, step: str, *, waiting: bool = False) -> None:
+            if step == WAITING_ON_THE_MODEL:
+                sending.set()
+                waited.wait(1)
+            super().progress(run_id, task_id, agent_id, step, waiting=waiting)
+            if waiting:
+                waited.set()
+
+    board = SlowLineBoard()
+    calling = wait.calling()
+    calling.__enter__()
+    now[0] += 61
+    beating = threading.Thread(target=harness_main.beat, args=(board, IDS, wait), daemon=True)
+    beating.start()
+    assert sending.wait(5)
+
+    def session() -> None:
+        calling.__exit__(None, None, None)   # (the call returns while the line is under way)
+        board.progress(IDS['VOC_RUN_ID'], IDS['VOC_TASK_ID'], IDS['VOC_AGENT_ID'], 'waiting for 1 agent',
+                       waiting=True)   # (wait_for_agents)
+
+    ending = threading.Thread(target=session, daemon=True)
+    ending.start()
+    ending.join(5)
+    beating.join(5)
+    assert list(zip([step for *_, step in board.progress_seen], board.waiting_seen, strict=True)) == [
+        (WAITING_ON_THE_MODEL, False), ('waiting for 1 agent', True)]
+    now[0] += 61
+    assert (wait.due(), harness_main.beat(board, IDS, wait), len(board.progress_seen)) == (None, None, 2)
 
 
 def test_the_heartbeat_reports_a_long_model_call_once(aws, tmp_path, monkeypatch):

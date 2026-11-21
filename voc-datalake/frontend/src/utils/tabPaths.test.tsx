@@ -28,6 +28,8 @@ describe('the shared address parts', () => {
   it('reads the segments under a page, decoded, and nothing outside it', () => {
     expect([segmentsUnder('/admin', '/admin'), segmentsUnder('/admin', '/admin/access/users/'), segmentsUnder('/admin', '/administration'),
       segmentsUnder('/agents', '/agents/a%20b')]).toStrictEqual([[], ['access', 'users'], null, ['a b']])
+    // (pathPlace.ts's own example, 7.63.00: every segment under the base, never a tab's name for them)
+    expect(segmentsUnder('/admin', '/admin/access/users/u-1')).toStrictEqual(['access', 'users', 'u-1'])
   })
 
   it('writes a path with each segment encoded, and a query without some of its parameters', () => {

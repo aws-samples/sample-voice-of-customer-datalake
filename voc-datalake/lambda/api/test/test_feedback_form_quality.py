@@ -72,13 +72,16 @@ class TestThePublishGuard:
         assert (form['enabled'], form['questions'][1]['headline']) == (True, {'pl': 'Ocena {{ q_reason | tego }} w '
                                                                                     '{{screen}}'})
 
-    def test_a_definition_save_refuses_a_recall_it_cannot_fill(self, lambda_context):
+    def test_a_draft_keeps_a_recall_it_cannot_fill_and_publish_is_the_one_refusal(self, lambda_context):
+        # (7.63.00: no 400 on a definition save; the 409 when the form would go live is the one rule)
         fid = _create(lambda_context, {**LIVE, 'enabled': False})['form_id']
         later = {**LIVE['questions'][0], 'headline': {'pl': 'Po {{q_rate}}'}}
         status, answer = _call(lambda_context, 'PUT', f'/feedback-forms/{fid}',
                                body={'questions': [later, LIVE['questions'][1]]})
-        assert (status, answer['code'], answer['where'], answer['id']) == (400, 'recall_not_before',
-                                                                           'questions[0].headline.pl', 'q_rate')
+        assert (status, answer['form']['questions'][0]['headline']) == (200, {'pl': 'Po {{q_rate}}'})
+        status, answer = _call(lambda_context, 'PUT', f'/feedback-forms/{fid}', body={'enabled': True})
+        assert (status, answer['code'], answer['texts']) == (409, 'unresolved_placeholder', [
+            {'where': 'questions[0].headline.pl', 'placeholder': '{{q_rate}}'}])
 
     def test_a_form_saved_before_7_61_keeps_serving_but_is_not_published_again_until_fixed(self, world,
                                                                                          lambda_context):
@@ -114,6 +117,12 @@ class TestTheMatrix:
         metadata = validate_message(queued).metadata
         assert metadata is not None
         assert metadata.form_answers == {'q_phases': {'rows': {'lab': 'top'}}}
+
+    @pytest.mark.parametrize('column', [['top'], {'code': 'top'}], ids=['list', 'object'])
+    def test_a_column_that_is_no_text_is_a_400_on_the_public_submit(self, lambda_context, tested, column):
+        fid, _token = tested
+        status, answer = _submit(lambda_context, fid, {'answers': {'q_phases': {'rows': {'lab': column}}}})
+        assert (status, answer['code'], answer['question_id']) == (400, 'answer_invalid', 'q_phases')
 
     def test_results_count_each_row_and_the_link_checks_follow_the_channel(self, lambda_context, tested):
         fid, token = tested

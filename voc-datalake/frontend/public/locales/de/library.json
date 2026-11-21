@@ -113,6 +113,7 @@
     "notFound": "Dieser Eintrag der Bibliothek existiert nicht oder wurde gelöscht.",
     "pending": "Wartet auf seine Datei. Wenn das Hochladen nicht abgeschlossen wurde, löschen Sie diesen Eintrag und laden Sie die Datei erneut hoch.",
     "extracting": "Sein Text wird gelesen. Diese Seite aktualisiert sich, sobald er bereit ist.",
+    "stale": "Sein Text wurde nach 16 Minuten nicht gelesen: Das Lesen wurde abgebrochen. Lesen Sie ihn erneut.",
     "failed": "Sein Text konnte nicht gelesen werden.",
     "download": "Original herunterladen",
     "newTab": "(öffnet in einem neuen Tab)",

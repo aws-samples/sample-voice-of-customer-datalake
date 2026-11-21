@@ -2524,6 +2524,10 @@
       "already": "Esta execução já recebeu um aval.",
       "refused": "Só o dono do token dá o aval a esta execução.",
       "failed": "Não foi possível dar o aval: tente de novo."
+    },
+    "startWarnings": {
+      "title": "A execução começou com um aviso",
+      "dismiss": "Dispensar"
     }
   },
   "canvas": {

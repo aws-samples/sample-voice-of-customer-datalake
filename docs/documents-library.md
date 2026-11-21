@@ -21,11 +21,14 @@ Since 7.62.00 ([GitHub issue #566](https://github.com/aws-samples/sample-voice-o
   source (where it comes from), a document date, up to 10 tags and, outside a workspace, an optional project.
 - After the upload the file's text is read once (**extracting**, usually seconds, up to a few minutes for a long
   PDF); the item is then **ready**. A file that cannot be read is **failed**, with the reason, and can be retried.
+  A reading that has not finished after 16 minutes has stopped (the worker runs 15 at most): the item reads `stale`,
+  the page stops checking it and offers **Read it again**.
 - **Preview** shows the item's details, its extracted text page by page (a PDF's pages, a presentation's slides, or
   parts of 20,000 characters) and a link to download the original (valid 5 minutes). Its details can be edited;
   someone else's edit since you opened it is refused ("changed since you opened it"), so nothing is overwritten.
-- **Delete** removes the item for good: its row, its short name, its passages and every stored version of its
-  files. An admin, or the person who uploaded it, can delete an item.
+- **Delete** removes the item for good: its passages and every stored version of its files first, then its row and
+  its short name, so a delete that fails part way leaves the item to delete again (never passages or files that no
+  item names). An admin, or the person who uploaded it, can delete an item.
 
 ### Formats and limits
 
@@ -37,8 +40,11 @@ Since 7.62.00 ([GitHub issue #566](https://github.com/aws-samples/sample-voice-o
 
 The AI model (Amazon Bedrock, the **Documents** model of Administration → AI models) also reads what the standard
 library cannot: a PDF with no text layer (scanned pages) and a legacy `.doc` or `.xls`, each up to 4.5 MB (the most
-Converse takes in one document). A PDF is read up to 500 pages; the text is kept up to 2,000 passages (about 3.2
-million characters); either cut is shown on the item (**truncated**). Audio and video are not accepted.
+Converse takes in one document). A scanned PDF keeps its pages only when the model's text separates exactly the
+PDF's pages (the prompt asks for a form feed between pages); otherwise its text has no pages, so a citation names the
+item, never page 1 for all of it. A PDF is read up to 500 pages; the text is kept up to 2,000 passages (about 3.2
+million characters); either cut, and a model reading that stopped at its 16,000-token reply cap, is shown on the item
+(**truncated**). Audio and video are not accepted.
 
 ## In chat: `#slug`
 
@@ -56,7 +62,8 @@ For each item the stream Lambda asks the projects API (as you, with your access)
   capped at 6 MB), and attached to that message only, named "Library document N" (a file's own name could carry an
   instruction to the model). The model reads it as it is, tables and charts included;
 - **its best passages** otherwise (a bigger file, a presentation, a fourth document): the 8 passages closest to your
-  message (at most 12,000 characters together), each with a `[#slug p.N]` marker.
+  message (at most 12,000 characters together), each with a `[#slug p.N]` marker. A file whose fetch failed is
+  searched instead, within what the other items' passages left of those 12,000 characters.
 
 Both reach the model inside a `<library>` data block that says they are documents people uploaded: information,
 never instructions (a passage cannot close the block or open another). The assistant cites what it used
@@ -73,11 +80,10 @@ is about 50,000 to 75,000 input tokens each time it is attached.
 
 ## For agents (MCP)
 
-The global MCP server (`/mcp/global`, [mcp.md](mcp.md)) lists two read tools, run as the token's minter:
-
-- `library_search`: passages for a `query`, in up to 3 `items` (ids or short names) or the items whose metadata
-  matches; never a file.
-- `library_get`: one page of an item's extracted text.
+The global MCP server (`/mcp/global`, [mcp.md](mcp.md)) lists one read tool, run as the token's minter:
+`library_search`, passages for a `query`, in up to 3 `items` (ids or short names) or the items whose metadata
+matches; never a file. Reading an item's text page by page is the web app's (`GET …/text`); 7.62.00's `library_get`
+was removed in 7.63.00, to keep `tools/list` within its budget.
 
 ## Who can do what
 
@@ -111,7 +117,7 @@ segment (`shared/project_access.py` `NON_PROJECT_SEGMENTS`): no project route an
 | GET | `/projects/library/suggest?q=` | At most 8 ready items, for `#` |
 | POST | `/projects/library` | 201 `{item, upload: {url, headers, expires_in}}`: a pending item and a 15-minute presigned PUT bound to the file's exact length and type and to `If-None-Match: *` (written once) |
 | POST | `/projects/library/{id}/uploaded` | 202: the upload is checked (its length and type) and the extraction starts; idempotent |
-| POST | `/projects/library/{id}/retry` | 202: extract a failed item again (or one whose extraction outlived the worker) |
+| POST | `/projects/library/{id}/retry` | 202: extract a failed item again, or one whose extraction outlived the worker (16 minutes or more: the item reads `stale: true`); else 409 `not_failed` |
 | GET | `/projects/library/{id}` | `{item, preview: {text_excerpt, text_parts, original_url}}` |
 | GET | `/projects/library/{id}/text?page=` | One page or part of the extracted text |
 | PUT | `/projects/library/{id}` | Edit `title`, `slug`, `source`, `doc_date`, `tags`, `project_id` with `expected_version` (409 `stale`, 409 `slug_taken`) |
@@ -135,8 +141,9 @@ Refusals: 400 `unsupported_type`, 400 `too_large`, 409 `library_full` (1,000 ite
 extractor's notifications fire on `ws/` objects by suffix, and a library file never invokes it.
 
 **Extraction** runs once per upload on the projects API's 15-minute assist twin (`ProjectsAssistWorker`), started by
-`…/uploaded` with a claim token: each step checks the item is still claimed by that token, so a delete or a retry
-meanwhile makes the run remove what it wrote. Every passage is embedded (8 at a time) and stored; the text is
+`…/uploaded` with a claim token: each step checks the item is still claimed by that token. A delete revokes the
+claim first, so a run that finds its claim gone removes what it wrote when the item is gone or being deleted; when a
+retry claimed the item again, the run stops and deletes nothing (the passages and the text are the new run's). Every passage is embedded (8 at a time) and stored; the text is
 written beside the original. Retrieval embeds the question once and ranks the items' passages by cosine in the
 Lambda: no vector database, nothing running when nobody asks (the memory store's pattern, [memory.md](memory.md)).
 
@@ -167,9 +174,11 @@ Pay per use only, nothing fixed:
   exported (the manifest says why).
 - **Workspace hard delete**: the `library` sweep deletes each item's passages, then the library partition; the
   objects sweep takes `ws/{ws}/library/`.
-- **Erasure by email**: an item whose title, file name, source, tags or extracted text holds the address is listed
-  in the job's `files_needing_review` (an item not extracted yet in `files_not_checked`); the file is never changed or
-  deleted by an erasure (TENETS.md D5): a person decides.
+- **Erasure by email**: an item whose title, file name, source, tags, extracted text or the name of who made or last
+  changed it (`created_by` / `updated_by`) holds the address is listed in the job's `files_needing_review` (an item
+  not extracted yet in `files_not_checked`); the file is never changed or deleted by an erasure (TENETS.md D5): a
+  person decides. The name stored for who made or changed an item is the person's `name` claim or their username,
+  never their address (an item stored before 7.63.00 could hold an invited member's address there).
 - **Delete** of an item is recorded: `AUDIT#delete` kind `library_item` (in a workspace, `AUDIT#WS#{ws}`).
 
 ## Not in this release

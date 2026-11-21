@@ -23,6 +23,7 @@ DOMAIN_ENGAGEMENT: Final = 'engagement'
 DOMAIN_RADAR: Final = 'radar'
 DOMAIN_FEEDBACK_EDIT: Final = 'feedback_edit'
 DOMAIN_INTEGRATIONS: Final = 'integrations'
+DOMAIN_FORMS: Final = 'forms'
 
 # Keys never forwarded to an MCP client: storage keys, index keys, and anything
 # carrying a signed URL.

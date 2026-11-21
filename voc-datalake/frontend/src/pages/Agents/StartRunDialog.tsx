@@ -4,8 +4,10 @@
  * number of the issue it starts from (recorded as given) and (7.58.00) one model for every role of the run
  * (ModelChoiceField.tsx, as Run now's; the run's META records it, a Resume or a Restart keeps it), checked as
  * the server checks them, before anything is sent. The flow's monthly budget is the stored flow's,
- * never set here. On success the run monitor opens on the new run; a refusal (no image for the language, the hard cap
- * with nothing left of the month, a launch still under way) is said in the server's words.
+ * never set here. On success the run monitor opens on the new run, with what the start said beside it (7.63.00: a
+ * fine-grained token's expiry within 3 days, RunWorkspace/StartWarnings.tsx); a refusal (no image for the language,
+ * the hard cap with nothing left of the month, a launch still under way, an expired token on a flow that pushes) is
+ * said in the server's words.
  *
  * @module pages/Agents/StartRunDialog
  */
@@ -22,7 +24,7 @@ import { useActionError } from './engineeringRunText'
 import { ModelChoiceField } from './ModelChoiceField'
 import { draftOf, modelChoiceOf, modelIssue } from './modelChoice'
 import { engineeringRunPagePath, flowRunsPath } from './workflowPaths'
-import { MAX_RUN_GOAL, RUN_LANGUAGES, startOutcomeOf, startRunIssues, startRunRequest } from './startRunRules'
+import { MAX_RUN_GOAL, RUN_LANGUAGES, startOutcomeOf, startRunIssues, startRunRequest, startedState } from './startRunRules'
 import type { RunLanguage, StartRunForm, StartRunIssues } from './startRunRules'
 import type { WorkflowSummary } from '../../api/workflowsApi'
 
@@ -63,7 +65,8 @@ export function StartRunDialog({ workflow, onClose }: Readonly<{ workflow: Workf
   const fields = useRef<Partial<Record<TextKey, HTMLInputElement | HTMLTextAreaElement | null>>>({})
   const start = useMutation({
     mutationFn: () => engineeringRunsApi.start(startRunRequest(workflow.workflow_id, form, modelChoiceOf(model))),
-    onSuccess: ({ runId }) => { void navigate(engineeringRunPagePath(runId)) },
+    // (7.63.00: what the start said beside the run, a token's expiry within days, shown in the workspace it opens)
+    onSuccess: ({ runId, warnings }) => { void navigate(engineeringRunPagePath(runId), { state: startedState(warnings) }) },
   })
   const change = (field: keyof StartRunForm) => (value: string) => {
     setForm((current) => ({ ...current, [field]: value }))

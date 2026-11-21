@@ -27,12 +27,13 @@ FORM: dict[str, Any] = {
 
 
 def _row(n: int, text: str = '', *, category: str = 'content', sub: str = '', sentiment: str = 'positive',
-         at: str = '') -> ResultRow:
+         at: str = '', event: str = '') -> ResultRow:
     answers: dict[str, Any] = {'q_value': 4, 'q_nps': 9, 'q_email': f'person{n}@example.com'}
     if text:
         answers['q_takeaway'] = text
     return ResultRow(answers, list(answers), 'end_thanks', at or f'2026-11-{10 + n:02d}T10:00:00', response_id=f'r{n}',
-                     sentiment=sentiment.upper(), category=category, subcategory=sub)
+                     sentiment=sentiment.upper(), category=category, subcategory=sub,
+                     hidden={'event': event} if event else {})
 
 
 class TestTheThemes:
@@ -101,6 +102,31 @@ class TestTheStoredAiSummary:
         assert ai_view(STORED, FORM, [_row(0, 'a')]) == {'report_id': STORED['report_id'],
                                                          'created_at': STORED['created_at'],
                                                          'created_by': STORED['created_by'], 'withheld': 'access'}
+
+    def test_a_summary_made_under_a_filter_quotes_and_goes_stale_under_that_filter_only(self):
+        # (made for event B: its quotes are B's, whatever the view, and a newer response of A never makes it stale)
+        made_for_b = {**STORED, 'filters': {'hidden.event': 'B', 'days': 'all'}, 'response_ids': ['r0', 'r1'],
+                      'last_response_at': '2026-11-11T10:00:00',
+                      'themes': [{'label': 'Labs', 'count': 2, 'sentiment': 'positive', 'quote_ids': ['r1', 'r3', 'r0']}]}
+        rows = [_row(0, 'B liked the labs', event='B'), _row(1, 'B wants more labs', event='B'),
+                _row(3, 'A attendee text', event='A'), _row(4, 'A is newer', event='A')]
+        view = ai_view(made_for_b, FORM, rows)
+        assert view is not None
+        assert (view['filters'], view['stale']) == ({'hidden.event': 'B', 'days': 'all'}, False)
+        assert [quote['response_id'] for quote in view['themes'][0]['quotes']] == ['r1', 'r0']
+        newer_b = ai_view(made_for_b, FORM, [*rows, _row(5, 'B again', event='B')])
+        assert newer_b is not None
+        assert newer_b['stale'] is True
+        # (a summary made for all of it goes stale on any newer response)
+        unfiltered = ai_view({**made_for_b, 'filters': {}}, FORM, rows)
+        assert unfiltered is not None
+        assert unfiltered['stale'] is True
+
+    def test_its_dates_are_its_own_too(self):
+        until_the_11th = {**STORED, 'filters': {'to': '2026-11-11'}}
+        view = ai_view(until_the_11th, FORM, [_row(0, 'a'), _row(1, 'b'), _row(5, 'c')])
+        assert view is not None
+        assert view['stale'] is False
 
     def test_no_stored_report_is_none(self):
         assert ai_view(None, FORM, []) is None

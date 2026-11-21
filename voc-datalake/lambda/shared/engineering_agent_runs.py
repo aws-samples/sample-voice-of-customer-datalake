@@ -12,9 +12,10 @@ trigger. Both read the same things the same way, from here:
 * the stored connection (``connection_row``, ``run_connection``): its repository and default branch, copied onto the
   run, read from its row in voc-agents (``CONNECTIONS#<ws>`` / ``CONNECTION#<id>``: the spelling of
   engineering/connectors/connections.py, held to it by ``shared/test/test_engineering_agent_runs.py``); since 7.60.00
-  a fine-grained connection's token is held to its expiry at the start (``run_connection``: an expired or unset one is
-  refused, 409 "replace it"; ``token_warning``: one that expires within ``TOKEN_START_WARN_DAYS`` is said beside the
-  run, which starts);
+  a fine-grained connection's token is held to its expiry at the start of a flow that pushes (``run_connection``: an
+  expired or unset one is refused, 409 "replace it"; ``token_warning``: one that expires within
+  ``TOKEN_START_WARN_DAYS`` is said beside the run, which starts; 7.63.00: a flow that pushes nothing, as readiness
+  reads it, ``workflow_engineering.flow_pushes``, is neither refused nor warned);
 * the run caps the deployment sets (``run_cap``: ``-c engineeringRunCapUsd``, ``-c engineeringRunTokenCap``);
 * the goal (``run_goal``): trusted text only, the agent's instructions (an administrator's words) and one sentence this
   module writes from numbers and names (an issue's number and repository, a count of reviews, the scope's categories,
@@ -43,7 +44,7 @@ from shared import flow_expand, workflow_schema
 from shared.dynamo_values import plain
 from shared.exceptions import ConflictError, ServiceUnavailableError, ValidationError
 from shared.logging import logger
-from shared.workflow_engineering import budget_of
+from shared.workflow_engineering import budget_of, flow_pushes
 
 #: The engineering agents' fixed scope (engineering/connectors/identity.py WORKSPACE), until agents move per workspace.
 ENGINEERING_WORKSPACE: Final = 'default'
@@ -118,6 +119,9 @@ class StoredFlow:
     expansion: tuple[dict[str, Any], ...] = ()
     #: The calls it still holds (read without a reader): such a flow is never started (``start_request``).
     calls: int = 0
+    #: (7.63.00) Whether a run of it pushes (``workflow_engineering.flow_pushes`` on the stored definition, as readiness
+    #: reads it): only then is a start on an expired or unset fine-grained token refused (``run_connection``).
+    pushes: bool = True
 
 
 #: Why a flow is never started with its calls in it (the runtime has no ``call_flow`` step to run).
@@ -149,6 +153,7 @@ def stored_flow(workflow: Mapping[str, Any] | None,
     if broken:
         raise ConflictError(f'the flow\'s stored budget is off its rule ({broken}): save the flow again')
     revision = plain(workflow.get('revision')) or 1
+    pushes = flow_pushes(definition)
     expansion: tuple[dict[str, Any], ...] = ()
     pending = len(flow_expand.calls(definition))
     if pending and read_revision is not None:
@@ -160,7 +165,7 @@ def stored_flow(workflow: Mapping[str, Any] | None,
                                 'it again') from None
         definition, expansion, pending = expanded.definition, expanded.expansion, 0
     return StoredFlow(None if budget is None else float(budget['monthly_usd']),
-                      workflow_schema.encode_definition(definition), int(revision), expansion, pending)
+                      workflow_schema.encode_definition(definition), int(revision), expansion, pending, pushes)
 
 
 def connection_key(connection_id: str) -> dict[str, str]:
@@ -202,10 +207,10 @@ def token_days_left(row: Mapping[str, Any] | None, today: date | None = None) ->
         return -1
 
 
-def token_warning(row: Mapping[str, Any] | None, today: date | None = None) -> str | None:
+def token_warning(row: Mapping[str, Any] | None, today: date | None = None, *, pushes: bool) -> str | None:
     """What a start says beside a run on a fine-grained connection whose token expires within
-    ``TOKEN_START_WARN_DAYS`` (7.60.00), None otherwise."""
-    left = token_days_left(row, today)
+    ``TOKEN_START_WARN_DAYS`` (7.60.00), None otherwise; none for a flow that pushes nothing (7.63.00: ``pushes``)."""
+    left = token_days_left(row, today) if pushes else None
     if left is None or left <= 0 or left > TOKEN_START_WARN_DAYS:
         return None
     return (f"The connection's fine-grained token expires in {left} day{'s' if left != 1 else ''}: its owner replaces "
@@ -213,14 +218,16 @@ def token_warning(row: Mapping[str, Any] | None, today: date | None = None) -> s
 
 
 def run_connection(row: Mapping[str, Any] | None, issue: int | None = None,
-                   today: date | None = None) -> dict[str, Any]:
+                   today: date | None = None, *, pushes: bool) -> dict[str, Any]:
     """The run's ``repo`` (as its reports and the spend ledger group it) and ``default_branch``: the stored
     connection's, copied onto the run (the broker serves the run on that branch once the host confirms it has it);
     with the ``issue`` the run starts from, it and the connection's ``host``. 400 for a connection not stored; 409 for
-    a fine-grained connection whose token expired or is not set (7.60.00: its push would be refused)."""
+    a fine-grained connection whose token expired or is not set (7.60.00: its push would be refused) when the flow
+    pushes (7.63.00: ``pushes``, ``StoredFlow.pushes``, the rule readiness's ``connection`` check fails by; a triage
+    or another flow that pushes nothing starts, as readiness says it may)."""
     if row is None:
         raise ValidationError('connection names no stored repository connection: add it under Agents → Connections')
-    left = token_days_left(row, today)
+    left = token_days_left(row, today) if pushes else None
     if left is not None and left <= 0:
         raise ConflictError("The connection's fine-grained token has expired (or is not set): its owner replaces it "
                             'under Agents → Connections (Replace token), then the run starts.')
@@ -347,7 +354,7 @@ def start_request(plan: StartPlan) -> dict[str, Any]:
         'flow_definition': plan.flow.definition, 'flow_revision': plan.flow.revision,
         'connection': plan.connection_id, 'commit': '', 'resolve_commit': True, 'hard_cap': True,
         'language': plan.language, 'goal': plan.goal, 'actor': plan.actor,
-        **run_connection(plan.connection, plan.issue), **run_caps(),
+        **run_connection(plan.connection, plan.issue, pushes=plan.flow.pushes), **run_caps(),
     }
     if plan.flow.budget_usd is not None:
         request['budget_usd'] = plan.flow.budget_usd

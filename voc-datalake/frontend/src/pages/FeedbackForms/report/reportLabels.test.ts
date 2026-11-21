@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { figureText, kpiValue, rowAveragesText, segmentChoices, segmentValueLabel, shadeStep } from './reportLabels'
-import { REPORT, REPORT_FORM } from './report-fixtures'
+import { figureText, kpiValue, rowAveragesText, segmentChoices, segmentValueLabel, shadeStep, summaryOfView, summaryViewText } from './reportLabels'
+import { REPORT, REPORT_FORM, VIEW } from './report-fixtures'
 
 describe('what the Report names', () => {
   it('offers every hidden field, single choice and matrix row as a segment, in the form’s order', () => {
@@ -29,5 +29,22 @@ describe('what the Report names', () => {
 
   it('shades a heatmap cell in four steps', () => {
     expect([0, 10, 25, 49, 50, 100].map(shadeStep)).toStrictEqual([0, 1, 2, 2, 3, 3])
+  })
+})
+
+describe('the view an AI summary was made for', () => {
+  const t = (key: string, options?: Record<string, unknown>) => `${key}${options === undefined ? '' : JSON.stringify(options)}`
+
+  it('names its range, language, ending and hidden values in the form\'s words', () => {
+    expect(summaryViewText(REPORT_FORM, { from: 'x', days: '30', language: 'pl', 'hidden.customer': 'Example Ltd', 'hidden.event_date': '2026-11-01' }, t, 'en'))
+      .toBe('results.filters.days30 · Polski · Customer: Example Ltd · Event date: 2026-11-01')
+    // (a summary recorded with a start time only says since when)
+    expect(summaryViewText(REPORT_FORM, { from: '2026-11-01T00:00:00Z' }, t, 'en')).toMatch(/^feedbackForms:report\.ai\.since/)
+  })
+
+  it('is the report\'s summary on its own view only', () => {
+    expect(summaryOfView(REPORT, VIEW)).toBe(REPORT.ai)
+    expect(summaryOfView(REPORT, { ...VIEW, days: 7 })).toBeNull()
+    expect(summaryOfView({ ...REPORT, ai: null }, VIEW)).toBeNull()
   })
 })

@@ -45,18 +45,25 @@ carry it.
   answers grouped by the processed items' category and subcategory with two or three real quotes each (never a
   contact detail), the AI summary when there is one, and **Download PDF**, one page through the browser's print
   dialog (no new dependency).
-- **Segments**: `group_by=hidden.<id> | q_<id> | q_<id>.<row>` on `GET …/results` and the report gives per segment the
-  counts, NPS, CSAT, CES and averages; a segment of fewer than 5 responses is merged into "Other (fewer than 5)",
-  whose scores stay hidden while it is under 5 too, so no one can be picked out.
-- **Compare** (`GET /feedback-forms/{id}/compare?with=<up to 10 form ids>&by=hidden.<id>`): the form beside others of
-  the same workspace (the template's siblings first) or its trend by a hidden field such as `event_date`; questions
-  are matched by id and type, each point has at least 5 responses.
+- **Segments**: `group_by=hidden.<id> | q_<id> | q_<id>.<row>` on the report gives per segment the counts, NPS, CSAT,
+  CES and averages; a segment of fewer than 5 responses is merged into "Other (fewer than 5)", whose scores stay hidden
+  while it is under 5 too, and while that group is hidden but not empty the smallest named segment is hidden with it
+  (`withheld: 'complement'`), so no one can be picked out or worked out from the totals.
+- **Compare** (`GET /feedback-forms/{id}/compare?with=<up to 10 form ids>[&by=hidden.<id>]`): the form beside others of
+  the same workspace (the template's siblings first), each split by a hidden field such as `event_date` when asked
+  (`by` without `with` is a `400` `group_by_invalid`); questions are matched by id and type, a matrix by its column
+  scores too, and each point has at least 5 responses.
 - **AI summary of a report** (`POST /settings/form-reports`, polled at `GET /settings/form-reports/{job_id}`):
   optional, one utility model call (about 1–3 cents), 20 per person per hour, gated as Results. The browser sends the
-  open answers it already read with the person's access; the model only labels themes and picks quote ids, and the
-  stored report (`FORMREPORT#{form_id}#{report_id}` in the form's forms partition) keeps labels and ids, never a
-  respondent's text. Its quotes are joined against the reader's own rows, it is marked stale once newer responses
-  exist, and it is withheld from a reader who cannot see a response it read.
+  open answers it already read with the person's access, which the job's row keeps only while the job runs (its
+  `config` is removed when the job ends); the model only labels themes and picks quote ids, and the stored report
+  (`FORMREPORT#{form_id}#{report_id}` in the form's forms partition) keeps labels, ids and the view's filters, never a
+  respondent's text. Its quotes are joined against the reader's own rows under its own filters, it is marked stale once
+  newer responses of that view exist, it is shown and printed only on the view it was made for, and it is withheld
+  from a reader who cannot see a response it read.
+- **`forms_get_results` on `/mcp/global`**: a form's Results as JSON (`GET /feedback-forms/{id}/results`, as the
+  token's minter: its category and source access, and in a workspace the editor or admin role), with `from` / `to`,
+  `include_test` and up to 5 `hidden` values; never the CSV, the report or a write ([mcp.md](docs/mcp.md#tools)).
 
 ### Changed
 
@@ -70,13 +77,39 @@ carry it.
   `fineGrainedTokenIssue`); module-private symbols no longer exported; and the specs follow the save's one
   precondition (7.58.01) and the token fields (7.60.00).
 
+### Removed
+
+- `group_by` and `segments` on `GET …/results`, and Compare's one-form trend (`by` without `with`, now a `400`
+  `group_by_invalid`), built in this release (review round 1, F4: no caller): the report keeps its segments.
+- `library_get`, 7.62.00's second Library tool on `/mcp/global` (F1): an item's text page by page stays the web app's
+  (`GET /projects/library/{id}/text`), `library_search` gives an agent cited passages, and its room in the `tools/list`
+  budget goes to `forms_get_results` (TENETS.md tenet 4).
+
+### Fixed
+
+- **The AI summary keeps to the view it was made for** (review round 1, Q1): its quotes were joined and its `stale`
+  judged against the reader's whole view, so a report or PDF filtered to one hidden value showed another's summary and
+  quotes, and a filtered view never cleared `stale`. Both now apply the summary's stored filters; the Report and the
+  PDF show it only on that view, else "Made for another view: ‹filters›" with no summary or quote, and Summarize this
+  view.
+- **Secondary suppression** (Q7): when the merged "Other (fewer than 5)" group is withheld but not empty, the smallest
+  named segment is withheld too (`withheld: 'complement'`), in the report's segments, Compare, the page and the PDF
+  (10 + 1 responses: neither shows scores, so the one is never the total less the ten).
+- **Most skipped ranks a statement last** (Q8): a statement is never answered, so every showing counted as a skip.
+- **Compare never lines up matrices scored on different scales** (Q20): their column scores are part of the match.
+- **`responses_counted` is the answers the summary read** (Q21): the request's own count is gone, and the app sends
+  the newest response it read as `last_response_at`.
+- **The summary's job row keeps no respondent's text** (F5): its `config` (the open answers the browser sent) is
+  removed when the job ends, done or failed; a job whose worker never ran keeps it until the row's one-day TTL.
+
 ### Upgrade notes
 
-- No new AWS resource, stack, route resource (the API stack stays at 425), permission or flag: the report and
-  compare routes ride `/feedback-forms/{form_id}/{proxy+}`, the AI summary `/settings/{proxy+}` and the settings
+- No new AWS resource, stack, route resource (the API stack stays at 425) or flag, and one new permission (the next
+  note): the report and compare routes ride `/feedback-forms/{form_id}/{proxy+}`, the AI summary `/settings/{proxy+}` and the settings
   worker that already runs the AI drafts.
-- The global MCP server gets no forms tools in this release: `forms_get_results` and `forms_get_report` wait for room
-  in the `tools/list` token budget (TENETS.md tenet 4).
+- The global MCP server lists one forms tool, `forms_get_results` (read only), in the `tools/list` room left by
+  removing 7.62.00's `library_get`; `forms_get_report` waits for more room (TENETS.md tenet 4). The MCP role may now
+  invoke the forms Lambda (`voc-feedback-form-api`), its tenth domain function; no new resource.
 
 ## [7.62.00] - 2026-11-20
 
@@ -122,6 +155,30 @@ Gateway resource (the projects API's `/projects/{proxy+}`), no fixed cost.
   and items; the export and delete jobs their workspace's library partitions.
 - A `/projects/library/…` path that matches a project route (`/projects/library/jobs`) answers the one 404.
 
+### Fixed
+
+- **An item never names its uploader by address** (review round 1, Q2; `shared/library_routes.py`): an invited member
+  has no `name` claim, so the Library stored their email as `created_by` / `updated_by`'s name; it is now the `name`
+  claim or the username, as document review's comments do. An erasure by email also lists an item whose `created_by`
+  / `updated_by` name holds the address (the retention worker's deployment Query may now read those two attributes).
+- **A scanned PDF's citations no longer claim page 1 for all of it** (Q12): the model's transcription keeps the PDF's
+  pages only when it separates exactly those pages with a form feed, as the prompt now asks; otherwise the item has no
+  pages (`paged: false`).
+- **A model reading cut at its 16,000-token reply cap is marked truncated** (Q13: Bedrock's `stopReason`
+  `max_tokens`).
+- **A stalled extraction can be read again** (Q14, Q16): an item extracting for 16 minutes or more reads `stale: true`;
+  the list and the preview stop checking it, and the preview offers Read it again (the retry's own rule: 16 minutes or
+  more, else `409` `not_failed`).
+- **A file whose fetch failed is searched within the message's 12,000 characters** (Q15): its re-search gets only what
+  the other items' passages left (`budget`), and none when nothing is left.
+- **A delete leaves nothing orphaned** (Q17, Q18): it revokes the extraction's claim, deletes the passages and every
+  stored version of the files, then the item's rows, so a delete that fails part way leaves the item to delete again.
+  An extraction that finds its claim gone drops what it wrote only when the item is gone or being deleted; when a retry
+  claimed the item again, it stops and deletes nothing.
+- **Project documents send a PDF or Word file to the Library** (the review's cross-release finding): the product
+  documents' refusal (`product_context.py`) and the page's hint said "not supported yet" as if nothing read them, while
+  the Library reads both; they now say to add the file to the Documents Library and mention it with `#`.
+
 ### Upgrade notes
 
 - **New dependency**: `pypdf==7.1.1` (BSD-3-Clause) in `lambda/layers/signing-deps`, the projects API's own layer
@@ -164,8 +221,9 @@ empty, a publish guard for a placeholder respondents would see as written, and a
   there is none, and a missing value leaves the text tidy ("How was {{event}}?" reads "How was?"). Never an open text,
   a contact, a multiple choice, a consent or a matrix answer, never in an option label, a button or an address, and
   always as text. One grammar in the server, the builder and the widget, pinned by `schemas/form-recall-cases.json`
-  ([Recall](docs/feedback-forms.md#recall)). The builder's "Insert a value" menu lists what a text may recall and
-  previews it with and without the value; the AI draft writes and re-points placeholders.
+  (the tidy rules are the widget's alone, and the builder's preview is the widget's own;
+  [Recall](docs/feedback-forms.md#recall)). The builder's "Insert a value" menu lists what a text may recall and
+  previews it with the value; the AI draft writes and re-points placeholders.
 - **Link checks** (`link_health` in `GET /feedback-forms/{id}/results`): per hidden field how many of the view's
   responses carried it, overall and per channel (link, iframe, script), with a warning when it was never filled
   after 5 responses or missing from 80 % of at least 10 ("0 of 26 responses had `customer`: check your link"), shown
@@ -182,10 +240,9 @@ empty, a publish guard for a placeholder respondents would see as written, and a
 ### Changed
 
 - **A live form never shows a placeholder as written**: a `POST` or `PUT` that leaves a form live answers `409`
-  `unresolved_placeholder` (`texts: [{where, placeholder}]`) while any text holds a `{{…}}` recall cannot fill there,
-  and a save that changes a definition refuses (`400` `recall_unknown`, `recall_not_before`, `recall_type`) a recall
-  text whose placeholder names no hidden field, a later question or an answer never recalled. Turning a form Off
-  always works; the builder lists the same problems, and Publish waits for them.
+  `unresolved_placeholder` (`texts: [{where, placeholder}]`) while any text holds a `{{…}}` recall cannot fill there
+  (a placeholder that names no hidden field, a later question or an answer never recalled), the one rule: a draft saves
+  with it. Turning a form Off always works; the builder lists the same problems, and Publish waits for them.
 - **Results and exports show a headline's placeholders as `[id]`**, never a respondent's value: each question's
   `headline` in Results, the CSV's headers, and the text the processor reads.
 - **`format=csv` answers the familiar layout by default**; 7.55.00's file is `layout=detailed`, unchanged (a matrix
@@ -195,14 +252,24 @@ empty, a publish guard for a placeholder respondents would see as written, and a
 
 - **A matrix response is accepted by the processor**: the queue message's ingest schema (`form_answers`) took no
   nested mapping, so every matrix answer would have been refused before it reached the lake.
+- **A matrix answer whose column is a list or an object is a `400`** (`answer_invalid`) on the public submit, never a
+  `500` (review round 1, Q5).
+- **Link checks count a response towards a hidden field only when the revision it answered declared it** (Q6: the
+  form's snapshots): a field added later is never "missing" from the responses sent before it existed.
+- **The widget reads "Thanks {{name}}, {{company}}!" as "Thanks!"** when both are missing (Q19): gaps split only by a
+  separator are one gap (four new `render` cases in `schemas/form-recall-cases.json`, pinned in the widget suite).
+- **A draft is never refused for a placeholder** (F2): 7.61.00's `400` `recall_unknown`, `recall_not_before` and
+  `recall_type` on a definition save are gone, and the builder's recall problems block only Publish and Update live
+  form; the `409` `unresolved_placeholder` is the one rule. The builder's recall preview is plain substitution (F3):
+  its copy of the tidy rules and its "Without a value" line are gone, and the widget's preview shows the tidy text.
 
 ### Upgrade notes
 
 - **Scripts that read the responses CSV**: `GET …/responses?format=csv` now answers the familiar layout (a BOM and
   other columns). Add `layout=detailed` to keep 7.55.00's file exactly as before.
 - **A live form saved before 7.61.00 whose text happens to hold `{{…}}`** keeps serving (the widget now shows an
-  unknown placeholder as nothing, or its fallback), but cannot be saved live or re-enabled until the text is fixed;
-  its next save that changes the definition asks for it. Turning it Off always works.
+  unknown placeholder as nothing, or its fallback), but cannot be saved live or re-enabled until the text is fixed.
+  Turning it Off always works.
 - No new AWS resource, route, permission or flag; the API's resource count is unchanged.
 
 ## [7.60.00] - 2026-11-20
@@ -256,6 +323,24 @@ Gateway resource.
   of an unknown expiry, the rows' own Replace token rule) are counted in General's **Needs attention** and on the
   Engineering agents tab's badge, and listed with their chips on Engineering agents → GitHub connections, whose links
   now name the three ways to add a repository.
+
+### Fixed
+
+- **A token GitHub no longer takes says to replace it** (review round 1, Q9; `connectors/github.py`): a 401 (the token
+  revoked, expired or regenerated) or a 404 (it no longer reaches the repository) to one of a fine-grained token's
+  writes was a 502 whose write "is not known", which locked the attempt. It is now `409` `token_not_accepted`
+  ("nothing was written. Replace the token under Agents → Connections"), a refusal, so the attempt pushes again once
+  the token is replaced.
+- **A flow that pushes nothing starts on an expired token** (Q10): the start refused every run on a fine-grained
+  connection whose token had expired or was unset, while readiness passed a flow that pushes nothing (a triage). The
+  start and readiness's `connection` check now read one rule off the stored flow (`shared/workflow_engineering.py`
+  `flow_pushes`: its declared `requires.ci_attestation`, else a committer or a PR author among its steps), and the
+  3-day warning is said only beside a run that pushes.
+- **The start's token warning is shown** (Q11): `POST /agents/engineering/runs` answered `warnings` (a token that
+  expires within 3 days) that the web app never read. The Start dialog hands it to the run workspace it opens, which
+  shows it at the top until dismissed (nine languages), and the assistant's knowledge-refresh approval passes it on to
+  the person.
+- `TokenFacts.owner_type`, read at a token's save and never used, is gone (Q23).
 
 ### Security
 
@@ -337,6 +422,11 @@ messages only name the new places.
   navigation (`AdminNav.tsx`); `SectionAnchor.tsx` (now `CardAnchor.tsx`); `BrandPage.tsx` (now `GeneralTab.tsx`);
   Source settings' Advanced fold; the `settings:home.*` keys in 9 locales.
 
+### Fixed
+
+- `utils/pathPlace.ts`'s `segmentsUnder` example names every segment under the base (`/admin/access/users/u-1` →
+  `['access', 'users', 'u-1']`), and a test holds it (review round 1, Q24).
+
 ### Upgrade notes
 
 - Bookmarks and links keep working: `/admin` opens `/admin/general`, and every 7.54.00 address is replaced in place by
@@ -352,7 +442,7 @@ gets a native agent's task stopped as stalled; Improve with AI gives no question
 unanswered form's saves stop reading its brand's responses; the Contribute dialog acknowledges the licence GitHub
 answers now; a granted Claude that does not think adaptively runs natively once priced; a form save's precondition is
 its save count alone; and the images pin kiro-cli 3.5.0. Only with `-c engineeringAgents=true` for the engineering
-changes.
+changes. It sits here by its number, but it landed after 7.59.00–7.63.00, in the same push as they did.
 
 ### Changed
 
@@ -399,12 +489,23 @@ changes.
   its state, none 3 minutes later and it stops the task), and a Converse call answers only once its whole reply of up
   to 32,000 tokens is written, so one long call, or a cut reply and its retry, could be stopped mid-call and the paid
   call lost. The harness's heartbeat now reports "waiting on the model" once for each request to Bedrock still in flight
-  a minute after it was sent (one board line a request, never one a minute; a request botocore sends again after a read
-  timeout is a request of its own, told by botocore's `before-send`). Its client waits 600 seconds for an answer (900 in
-  7.58.00) and 10 for a connection, so a request ends within the stall rule's 10 minutes of its line and two requests'
-  lines come within its 13: a test holds both at the supervisor's default timings, the ones the stack runs, and a
-  simulated call of 31 minutes, a cut reply and a resend, is never stopped (it was, without the line)
+  a minute after it was sent (one board line a request, never one a minute; a request botocore sends again after a
+  throttle or a server error is a request of its own, told by botocore's `before-send`). Its client waits 600 seconds
+  for an answer (900 in 7.58.00) and 10 for a connection, so a request ends within the stall rule's 10 minutes of its
+  line and two requests' lines come within its 13: a test holds both at the supervisor's default timings, the ones the
+  stack runs, and a simulated long call, a cut reply and its call again, is never stopped (it was, without the line)
   ([autonomous-engineering.md](docs/autonomous-engineering.md#choosing-the-model-75800)).
+- **A read timeout on a model call is never sent again** (review round 1, Q3; `harness/main.py`): the harness's
+  Converse client let botocore send a request that outlasted its 600 s read timeout again, up to 8 times, each one
+  reported as the session's liveness, for more than 80 minutes before the session crashed all the same. A read timeout
+  now ends the session at once as a crash, `ModelTimedOut` ("the model did not answer within 600 s, the client's read
+  timeout: the request was not sent again"), its work checkpointed and continued by the supervisor like any crash;
+  throttles and server errors are still retried. The long-call test runs on the real client: a cut reply, then its
+  call again whose request times out, two requests in about 20 minutes, never stopped and never sent a third time.
+- **"Waiting on the model" never closes a coordinator's wait** (Q4; `harness/model_wait.py`): the heartbeat's line
+  carries no `waiting`, and a report without it closes the wait on the lease, so a line sent just after its call
+  returned could close the wait `wait_for_agents` had just opened. The line now goes while its call cannot end
+  (`ModelWait.report`: the call's end waits for a report under way), tested with the call returning mid-report.
 - **Improve with AI gives no question a removed question's id** (R2-1): the builder sends the form's `retired_ids`
   (with those its unsaved edits removed) in the draft request (`POST /settings/form-drafts` `retired_ids`, at most
   1,000 question ids; anything else is a `400`), and the server's id maker reserves them, so a question the model adds
@@ -416,6 +517,9 @@ changes.
   false`, so a save that changes its definition trusts the flag, which its first real response sets. Only a form with
   no such field (one created before 7.58.01) is still read for a real response, as before, and marked once one is
   found ([docs](docs/feedback-forms.md#the-lock-of-an-answered-form)).
+- **A failed answered mark is counted** (review round 1, Q22: `FeedbackFormMarkAnsweredFailed`), and a save that would
+  drop or reshape an answer on a form whose flag says false reads its responses once a real visitor has opened it (its
+  own funnel rows, a cheap read); a save the lock has nothing to refuse reads none.
 - **The Contribute dialog acknowledges the licence GitHub answers now** (Q22's remainder, Agents → Connections →
   Contribute → Install the App on your fork): it reads the upstream's licence live, as a fork's Acknowledge the current
   licence… does (`GET /agents/engineering/public-repositories?q=<owner/name>`), offers that one to tick and sends it.

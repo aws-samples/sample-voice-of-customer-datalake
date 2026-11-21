@@ -60,8 +60,8 @@ outcome — never the arguments or any content).
 
 ## Tools — when to use which
 
-Each tool's name starts with its area: `feedback_`, `memory_`, `company_`, `projects_`,
-`documents_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_`.
+Each tool's name starts with its area: `feedback_`, `forms_`, `memory_`, `company_`, `projects_`,
+`documents_`, `library_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_`.
 
 | Tool | Use it to |
 |---|---|
@@ -72,6 +72,7 @@ Each tool's name starts with its area: `feedback_`, `memory_`, `company_`, `proj
 | `feedback_list_dimensions` | The feedback dimensions (product, module, user type, ...) and their allowed values — use the exact keys and values in `dims` and as the `key` of the dimensions view. |
 | `feedback_edit` | (write) Correct one feedback item: `category` (+ `subcategory`), or `dimensions` (key → value, `null` clears) and `tags`. Not both in one call. |
 | `feedback_get_catalogue` | What each stored field of a feedback item means: its type, which step sets it, whether it holds personal data, what a `redact` / `summary_only` source policy does to it, and its allowed values. Read it before filtering or quoting an unfamiliar field. `sources: true` answers the data sources instead: each one's schedule (enabled or not) and circuit breaker. |
+| `forms_get_results` | A feedback form's Results by `form_id`: responses, per question counts, NPS / CSAT / CES, the latest open answers, endings and link checks. Narrow with `from` / `to` (YYYY-MM-DD) and `hidden` (`{"customer": "B"}`); `include_test: true` adds test responses. Read only; the answers are customer feedback, so cite them as such. |
 | `memory_search` | Check what the team already decided or knows (company + the user's personal memory) before proposing something. |
 | `company_get_context` | The vision and objectives a proposal should align with. |
 | `projects_list` | Find research projects (and their ids). |
@@ -93,7 +94,6 @@ Each tool's name starts with its area: `feedback_`, `memory_`, `company_`, `proj
 | `documents_apply_prototype_draft` | (write) Save a draft as the next version (`document_id`, `draft_id`); applying it again gives the same version. A feedback draft also marks its Done pins addressed and posts each Not done pin's reason as an AI reply, and answers `incorporation` (marked, replied, not written with a reason). Refused when a version was saved since the draft: ask again on the newest. |
 | `documents_discard_prototype_draft` | (write) Discard a draft by `document_id` and `draft_id`: it is gone for everyone; saved versions are untouched. |
 | `library_search` | Find passages in the Documents Library (reports, transcripts, decks the team uploaded; not customer feedback) for a question, in up to 3 items by id or slug, or in the items whose title or tags match. Cite each passage as `[#slug p.N]`. |
-| `library_get` | Read a library item's text by `item_id`, one `page` at a time. |
 | `agents_list` | Autonomous agents the user can see, with their status. |
 | `agents_get_run` | Follow an agent run: give `run_id` (from `agents_run`) for its status, current step, project and error, or leave it out for the agent's newest runs. |
 | `agents_run` | (write, admin-minted) Start an agent run now. |

@@ -3,7 +3,8 @@
 Every tool is a thin translation from MCP arguments to ONE route of the domain
 Lambda that owns the data (``shared.mcp_delegate``): metrics, settings, memory,
 projects, agents (and, since 7.53.00, the engineering runs: shared/mcp_global_tools_engineering.py), engagement (the
-feedback boards), radar, feedback edits or integrations (source status). The tool never reads a table itself, so the route's own
+feedback boards), radar, feedback edits, integrations (source status) or, since 7.63.00, the feedback forms (a form's
+Results, read only). The tool never reads a table itself, so the route's own
 validation, category filtering and per-project access rules apply to the call,
 evaluated for the token's minter (never admin, capped at editor).
 
@@ -29,12 +30,14 @@ from typing import Any, Final
 
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
 from shared.document_sections import SECTION_ORDER, newest_edit_first, row_section
+from shared.forms_v2 import HIDDEN_ID, MAX_HIDDEN_VALUE_CHARS
 from shared.library_keys import is_item_id
 from shared.mcp_global_kit import (
     BOOL_SCHEMA,
     DOMAIN_AGENTS,
     DOMAIN_ENGAGEMENT,
     DOMAIN_FEEDBACK_EDIT,
+    DOMAIN_FORMS,
     DOMAIN_INTEGRATIONS,
     DOMAIN_MEMORY,
     DOMAIN_METRICS,
@@ -61,6 +64,7 @@ from shared.mcp_global_tools_engineering import ENGINEERING_TOOLS
 from shared.mcp_global_tools_steps import LEGACY_REVISE_STEP, STEP_TOOLS, legacy_revise
 from shared.mcp_global_tools_work import WORK_TOOLS
 from shared.prototype_pins import STATUSES as PIN_STATUSES
+from shared.timestamps import ISO_DAY_RE
 
 DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_METRICS: 'METRICS_FUNCTION',
@@ -72,6 +76,7 @@ DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_RADAR: 'RADAR_FUNCTION',
     DOMAIN_FEEDBACK_EDIT: 'FEEDBACK_EDIT_FUNCTION',
     DOMAIN_INTEGRATIONS: 'INTEGRATIONS_FUNCTION',
+    DOMAIN_FORMS: 'FORMS_FUNCTION',
 }
 
 MAX_DAYS: Final = 9999           # shared.api.MAX_FEEDBACK_WINDOW_DAYS; 0 = all time
@@ -490,14 +495,37 @@ def _search_library(args: Mapping[str, Any], _project: str | None) -> RouteReque
     return RouteRequest(DOMAIN_PROJECTS, 'POST', '/projects/library/context', body=body)
 
 
-def _get_library_item(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
-    """One page or part of an item's extracted text (shared/library_routes.py, ``/projects/library/{id}/text``)."""
-    query = {'page': int_arg(args, 'page', default=1, low=1, high=MAX_LIBRARY_PAGE)}
-    return RouteRequest(DOMAIN_PROJECTS, 'GET', f"/projects/library/{id_arg(args, 'item_id')}/text", query=query)
+#: The hidden-field filters one read takes (each id and value as a form declares and the route bounds them).
+MAX_FORM_HIDDEN_FILTERS: Final = 5
 
 
-#: A library text's pages or parts (a 500-page PDF's at most; shared/library_extract.py MAX_PAGES).
-MAX_LIBRARY_PAGE: Final = 500
+def _form_day(args: Mapping[str, Any], name: str) -> str | None:
+    """``forms_get_results``' ``from`` / ``to``: a day (the route also takes a time, which an agent never needs)."""
+    value = text_arg(args, name, max_length=32)
+    if value is not None and not ISO_DAY_RE.match(value):
+        raise InvalidToolArgument(f'{name} must be a date, YYYY-MM-DD')
+    return value
+
+
+def _form_hidden(args: Mapping[str, Any]) -> dict[str, str]:
+    """``hidden`` ({field id: value}) as the route's ``hidden.<id>=<value>`` parameters."""
+    value = args.get('hidden')
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping) or len(value) > MAX_FORM_HIDDEN_FILTERS or not all(
+            isinstance(key, str) and HIDDEN_ID.fullmatch(key) and isinstance(text, str)
+            and 0 < len(text) <= MAX_HIDDEN_VALUE_CHARS for key, text in value.items()):
+        raise InvalidToolArgument(f'hidden must map up to {MAX_FORM_HIDDEN_FILTERS} hidden field ids to values')
+    return {f'hidden.{key}': text for key, text in value.items()}
+
+
+def _get_form_results(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
+    """A form's Results as JSON (api/feedback_form_handler.py ``get_form_results``, ``GET /feedback-forms/{id}/results``):
+    the forms Lambda reads them as the minter, with the route's category and source access and its workspace rule (a
+    viewer 403). Never the responses' CSV, never a write: no other forms route is a tool."""
+    query: dict[str, Any] = {'from': _form_day(args, 'from'), 'to': _form_day(args, 'to'),
+                             'include_test': 'true' if bool_arg(args, 'include_test') else None, **_form_hidden(args)}
+    return RouteRequest(DOMAIN_FORMS, 'GET', f"/feedback-forms/{id_arg(args, 'form_id')}/results", query=query)
 
 
 def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
@@ -508,7 +536,7 @@ def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 # Every name starts with its area (AREAS), so a client that lists or searches tools finds an area's tools
 # together; each description says what the tool does, its nouns and verbs, when to use it and its key
 # arguments (the whole list's budget: test_mcp_global_tools_budget.py).
-AREAS: Final[tuple[str, ...]] = ('feedback', 'memory', 'company', 'projects', 'documents', 'library', 'agents',
+AREAS: Final[tuple[str, ...]] = ('feedback', 'forms', 'memory', 'company', 'projects', 'documents', 'library', 'agents',
                                  'engineering', 'feature_requests', 'radar', 'prioritization')
 
 _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
@@ -597,12 +625,16 @@ _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
                ('query',)),
         _search_library, stripped),
     GlobalTool(
-        'library_get', 'Read a library item',
-        "Read a library item's text by `item_id`, one `page` at a time (a PDF page, a slide or 20,000 "
-        'characters).',
-        schema({'item_id': ID_SCHEMA, 'page': {'type': 'integer', 'minimum': 1, 'maximum': MAX_LIBRARY_PAGE}},
-               ('item_id',)),
-        _get_library_item, stripped),
+        'forms_get_results', 'Get form results',
+        "Read a feedback form's Results by `form_id`: responses, per question counts, NPS, CSAT, CES, latest open "
+        'answers, endings and link checks. Narrow with `from`/`to` (YYYY-MM-DD) and `hidden` ({field: value}); '
+        '`include_test` adds test responses.',
+        schema({'form_id': ID_SCHEMA, 'from': {'type': 'string', 'format': 'date'},
+                'to': {'type': 'string', 'format': 'date'}, 'include_test': BOOL_SCHEMA,
+                'hidden': {'type': 'object', 'maxProperties': MAX_FORM_HIDDEN_FILTERS,
+                           'additionalProperties': {'type': 'string', 'maxLength': MAX_HIDDEN_VALUE_CHARS}}},
+               ('form_id',)),
+        _get_form_results, stripped),
     GlobalTool(
         'agents_list', 'List agents',
         'List the autonomous agents you can see, with their status. Use it to find the `agent_id` the agents_ '

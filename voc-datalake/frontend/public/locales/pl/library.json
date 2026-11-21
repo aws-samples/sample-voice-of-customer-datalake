@@ -113,6 +113,7 @@
     "notFound": "Ten element biblioteki nie istnieje lub został usunięty.",
     "pending": "Czeka na swój plik. Jeśli przesyłanie się nie zakończyło, usuń ten element i prześlij plik ponownie.",
     "extracting": "Jego tekst jest odczytywany. Ta strona odświeży się, gdy będzie gotowy.",
+    "stale": "Jego tekst nie został odczytany po 16 minutach: odczyt się zatrzymał. Odczytaj go ponownie.",
     "failed": "Nie udało się odczytać jego tekstu.",
     "download": "Pobierz oryginał",
     "newTab": "(otwiera się w nowej karcie)",

@@ -451,11 +451,11 @@ describe('DocsUpload', () => {
     expect(zone).toHaveAttribute('data-drag-active', 'false')
   })
 
-  it('tells the user that PDF and Word are not supported yet', async () => {
+  it('tells the user that PDF and Word are not read here yet, and sends them to the Library', async () => {
     await renderSettled()
 
-    // "not yet" rather than silence: these used to be accepted here.
-    expect(screen.getByText(/not supported yet/i)).toBeInTheDocument()
+    // "not yet" rather than silence: these used to be accepted here; the Documents Library reads both (7.62.00).
+    expect(screen.getByText(/not read here yet: add them to the Library and mention them in the assistant with #/i)).toBeInTheDocument()
     // Same line names what IS accepted, and the two byte caps that differ.
     expect(screen.getByText(/PNG, JPEG, GIF, WebP up to 3\.5 MB/)).toBeInTheDocument()
     expect(screen.getByText(/MD, TXT up to 10 MB/)).toBeInTheDocument()
@@ -475,6 +475,6 @@ describe('DocsUpload', () => {
     expect(await screen.findByText('notes.md')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /drop files here/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
-    expect(screen.queryByText(/not supported yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/not read here yet/i)).not.toBeInTheDocument()
   })
 })

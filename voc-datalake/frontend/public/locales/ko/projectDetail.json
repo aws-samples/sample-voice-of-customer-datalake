@@ -543,7 +543,7 @@
       "heading": "내부 문서",
       "hint": "이미지 및 텍스트 — 최대 20개",
       "loading": "불러오는 중…",
-      "notYet": "PDF와 Word(.docx)는 아직 지원되지 않습니다.",
+      "notYet": "PDF와 Word(.docx)는 아직 여기에서 읽지 않습니다. 라이브러리에 추가하고 어시스턴트에서 #으로 언급하세요.",
       "statusExtracting": "추출 중…",
       "statusFailed": "실패",
       "statusReady": "준비됨",

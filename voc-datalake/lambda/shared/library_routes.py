@@ -44,7 +44,7 @@ from shared.library_keys import SLUG_PATTERN, slug_key
 from shared.library_objects import LibraryObjects
 from shared.library_worker import EXTRACT_ACTION
 from shared.logging import logger, tracer
-from shared.project_access import LEVEL_VIEW
+from shared.project_access import LEVEL_VIEW, claim_text, claims_from_event
 from shared.project_gate import acts_as_admin, caller_from_event, read_gate_meta, require_project_level
 from shared.request_body import json_object_body, validated_text
 from shared.request_workspace import request_workspace
@@ -106,9 +106,9 @@ def _caller() -> Caller:
 
 
 def _actor(caller: Caller) -> store.Actor:
-    claims = (_event().get('requestContext') or {}).get('authorizer', {}).get('claims') or {}
-    name = next((value for value in (claims.get('name'), caller.email, caller.username)
-                 if isinstance(value, str) and value.strip()), '')
+    # Never the address (as document_review_routes._member_author): an invited member has no `name` claim, and the
+    # stored created_by / updated_by is shown to every reader of the library and kept until the item is deleted.
+    name = claim_text(claims_from_event(_event()), 'name') or caller.username
     return store.Actor(caller.subject, name.strip()[:200])
 
 
@@ -281,23 +281,11 @@ def library_item_uploaded(item_id: str):
     return _start_extraction(scope, context, item, when=('pending',))
 
 
-#: An extraction this old (the twin's 15 minutes and a margin) is over, whatever its row still says.
-_STALE_EXTRACTION_SECONDS: Final = 16 * 60
-
-
-def _extraction_is_over(item: Mapping[str, Any]) -> bool:
-    from datetime import UTC, datetime
-
-    from shared.timestamps import parse_iso
-
-    started = parse_iso(item.get('extract_started_at'))
-    return started is not None and (datetime.now(UTC) - started).total_seconds() > _STALE_EXTRACTION_SECONDS
-
-
 @app.post('/projects/library/<item_id>/retry')
 @tracer.capture_method
 def retry_library_item(item_id: str):
-    """Extract a failed item again (or one whose extraction outlived the worker): 202."""
+    """Extract a failed item again, or one whose extraction outlived the worker (``stale``: 16 minutes or more since it
+    started, library_store.py ``extraction_is_over``): 202, else 409 ``not_failed``."""
     context = _context(write=True)
     _require_writer(context)
     scope = optional_scope(context)
@@ -305,7 +293,7 @@ def retry_library_item(item_id: str):
     status = item.get('status')
     if status == 'failed' and LibraryObjects(scope).head(item_id) is None:
         raise ConflictError('The file never arrived. Delete this item and upload it again.', code='not_uploaded')
-    if status == 'failed' or (status == 'extracting' and _extraction_is_over(item)):
+    if status == 'failed' or store.extraction_is_over(item):
         return _start_extraction(scope, context, item, when=(str(status),))
     raise ConflictError('Only a failed item can be extracted again.', code='not_failed')
 
@@ -397,18 +385,21 @@ def _record_delete(scope: WorkspaceScope | None, item: Mapping[str, Any]) -> Non
 @app.delete('/projects/library/<item_id>')
 @tracer.capture_method
 def delete_library_item(item_id: str):
-    """Delete an item for good: its row, its slug, its passages and every version of its objects, recorded."""
+    """Delete an item for good, recorded: its extraction's claim first (a run in flight then drops what it writes), its
+    passages and every version of its objects next, its row, slug and count last, so a delete that fails part way
+    leaves the item to delete again rather than passages or files no item names."""
     context = _context(write=True)
     scope = optional_scope(context)
     caller = _caller()
     item = store.require_item(_table(), scope, item_id, consistent=True)
     if not _may_delete(context, caller, item):
         raise AuthorizationError(DELETE_REFUSED)
-    store.delete_item_rows(_table(), scope, item)
+    store.revoke_claim(_table(), scope, item_id)
     delete_chunks(_table(), scope, item_id)
     refused = LibraryObjects(scope).delete_item(item_id)
     if refused:
         logger.warning('Some versions of a deleted library item were refused', extra={'refused': refused})
+    store.delete_item_rows(_table(), scope, item)
     _record_delete(scope, item)
     return {'success': True, 'deleted': item_id}
 

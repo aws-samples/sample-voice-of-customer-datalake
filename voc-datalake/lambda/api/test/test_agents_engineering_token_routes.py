@@ -310,20 +310,21 @@ def test_a_start_refuses_a_run_on_an_expired_or_unset_token(expires: str | None,
     row = {**token_row(expires), 'repository': REPOSITORY, 'default_branch': 'main'}
     if refused:
         with pytest.raises(ConflictError, match='replace'):
-            eng_runs.run_connection(row, today=date(2026, 11, 20))
+            eng_runs.run_connection(row, today=date(2026, 11, 20), pushes=True)
     else:
-        assert eng_runs.run_connection(row, today=date(2026, 11, 20)) == {'repo': REPOSITORY, 'default_branch': 'main'}
+        assert eng_runs.run_connection(row, today=date(2026, 11, 20), pushes=True) == {'repo': REPOSITORY, 'default_branch': 'main'}
     with pytest.raises(ConflictError):
         eng_runs.run_connection({**row, 'credential_set': False, 'token_expires_at': '2027-01-01'},
-                                today=date(2026, 11, 20))
+                                today=date(2026, 11, 20), pushes=True)
 
 
 @pytest.mark.parametrize(('expires', 'warned'), [('2026-11-23', '3 days'), ('2026-11-21', '1 day:'),
                                                  ('2026-11-24', None), ('2026-11-20', None)])
 def test_a_start_warns_three_days_or_fewer_before_the_expiry(expires: str, warned: str | None) -> None:
-    warning = eng_runs.token_warning(token_row(expires), date(2026, 11, 20))
+    warning = eng_runs.token_warning(token_row(expires), date(2026, 11, 20), pushes=True)
     assert warning is None if warned is None else warned in (warning or '')
-    assert eng_runs.token_warning({'repository': REPOSITORY}, date(2026, 11, 20)) is None
+    assert eng_runs.token_warning({'repository': REPOSITORY}, date(2026, 11, 20), pushes=True) is None
+    assert eng_runs.token_warning(token_row('2026-11-21'), date(2026, 11, 20), pushes=False) is None
 
 
 def test_the_public_search_hints_the_ways_each_repository_connects() -> None:

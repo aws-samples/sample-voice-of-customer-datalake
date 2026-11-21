@@ -60,6 +60,21 @@ describe('a run under way', () => {
       expect(within(screen.getByTestId('step-board')).getByText('You are here')).toBeInTheDocument()
     })
 
+    it('shows once what the start said beside the run (7.63.00), until dismissed', async () => {
+      const expiring = "The connection's fine-grained token expires in 2 days: its owner replaces it under Agents → Connections before then, or the run's push is refused."
+      renderWorkspace(RUN_PATH, { startWarnings: [expiring] })
+      const banner = screen.getAllByRole('status').find((each) => each.textContent.includes(expiring))
+      expect(banner).toHaveTextContent(`The run started with a warning${expiring}Dismiss`)
+      await userEvent.click(within(banner ?? document.body).getByRole('button', { name: 'Dismiss' }))
+      expect(screen.queryByText(expiring)).not.toBeInTheDocument()
+    })
+
+    it('shows no start warning on a run opened any other way', async () => {
+      renderWorkspace(RUN_PATH, { startWarnings: 'not a list' })
+      expect(await screen.findByText('Cost so far: $1.61 of its $50.00 cap')).toBeInTheDocument()
+      expect(screen.queryByText('The run started with a warning')).not.toBeInTheDocument()
+    })
+
     it('opens an agent\'s session from its lane, and acts on nothing', async () => {
       const router = renderWorkspace(RUN_PATH)
       const [fixer] = await screen.findAllByTestId('run-lane')

@@ -1,7 +1,7 @@
 /**
  * @fileoverview The Library list as the page reads it: the filters' pages (`next_cursor`, "Load more"), every tag in
  * use, and a refetch every few seconds while an item on screen is still being uploaded or read (its status moves on
- * in the projects assist worker, which tells nobody).
+ * in the projects assist worker, which tells nobody); never for an extraction the server reads as `stale`.
  *
  * @module pages/Library/useLibraryList
  */
@@ -14,7 +14,13 @@ import type { LibraryItem, LibraryPage } from '../../api/librarySchema'
 /** How often a list with an item in flight is read again. */
 export const IN_FLIGHT_REFETCH_MS = 4000
 
-export const isItemInFlight = (item: Pick<LibraryItem, 'status'>): boolean => item.status === 'pending' || item.status === 'extracting'
+/** Whether an item's status can still move on by itself: pending, or extracting and not yet stale (whose worker is over). */
+export const isItemInFlight = (item: Pick<LibraryItem, 'status' | 'stale'>): boolean =>
+  item.status === 'pending' || (item.status === 'extracting' && item.stale !== true)
+
+/** Whether a writer may read the item again: it failed, or its extraction outlived the worker (`stale`). */
+export const isItemRetryable = (item: Pick<LibraryItem, 'status' | 'stale'>): boolean =>
+  item.status === 'failed' || (item.status === 'extracting' && item.stale === true)
 
 function anyInFlight(pages: readonly LibraryPage[] | undefined): boolean {
   return (pages ?? []).some((page) => page.items.some(isItemInFlight))

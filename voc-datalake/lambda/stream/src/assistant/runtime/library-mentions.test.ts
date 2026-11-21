@@ -106,9 +106,28 @@ describe('resolveLibraryMentions', () => {
       invoke: invoker(calls), mentions: mentions(SMALL), question: 'q', claims: CLAIMS, attachedDocuments: 0,
       nativeAllowed: true, fetcher: () => Promise.resolve(new Response('denied', { status: 403 })),
     });
-    expect(calls.map((call) => call.body)).toStrictEqual([
-      { query: 'q', native_slots: 1, item_ids: [SMALL] }, { query: 'q', native_slots: 0, item_ids: [SMALL] }]);
+    expect(calls.map((call) => call.body)).toStrictEqual([{ query: 'q', native_slots: 1, item_ids: [SMALL] },
+      { query: 'q', native_slots: 0, budget: 12_000 - 55, item_ids: [SMALL] }]);
     expect(result.documents).toStrictEqual([]);
+  });
+
+  it("gives a failed fetch's re-search only what is left of the 12,000 characters, and none when nothing is", async () => {
+    const used = (chars: number) => (body: Record<string, unknown>) => ({
+      ...answer(Number(body.native_slots)), passages: body.budget === undefined
+        ? [{ item_id: BIG, chunk: 1, page: 1, text: 'x'.repeat(chars) }] : [] });
+    const denied: Fetcher = () => Promise.resolve(new Response('denied', { status: 403 }));
+    const calls: ApiCall[] = [];
+    await resolveLibraryMentions({
+      invoke: invoker(calls, used(11_000)), mentions: mentions(SMALL, BIG), question: 'q', claims: CLAIMS,
+      attachedDocuments: 0, nativeAllowed: true, fetcher: denied,
+    });
+    expect(calls.map((call) => call.body)).toMatchObject([{ native_slots: 2 }, { budget: 1000, item_ids: [SMALL] }]);
+    calls.length = 0;
+    await resolveLibraryMentions({
+      invoke: invoker(calls, used(12_000)), mentions: mentions(SMALL, BIG), question: 'q', claims: CLAIMS,
+      attachedDocuments: 0, nativeAllowed: true, fetcher: denied,
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it('says so when the library cannot be read, and never fails the run', async () => {

@@ -25,7 +25,8 @@ from shared.image_limits import CONVERSE_IMAGE_FORMATS, converse_image_format
 # pasted, and an image sent as a Converse image block.
 SUPPORTED_INPUT_TYPES = ('text', 'image')
 
-# Intended, but not possible yet: nothing in this repo extracts text from a PDF.
+# Intended, but not possible yet: the importer reads pasted text or an image, never a PDF (the Documents Library
+# extracts PDFs, shared/library_extract.py, but a persona import does not go through it).
 # Kept separate from "unsupported" (mirroring
 # ``product_context.DEFERRED_CONTENT_TYPES``) because "not yet" and "never" are
 # different answers and a caller has to be able to tell them apart.

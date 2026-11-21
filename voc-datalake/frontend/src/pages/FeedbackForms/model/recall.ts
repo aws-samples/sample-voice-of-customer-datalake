@@ -2,9 +2,10 @@
  * @fileoverview Recall in a form's texts (7.61.00, docs/feedback-forms.md "Recall"): `{{id}}` or `{{id|fallback}}`
  * shows a hidden field's value, or an earlier question's answer, where it stands.
  *
- * ONE grammar, three implementations pinned by `schemas/form-recall-cases.json`: lambda/shared/forms_recall.py (the
- * server's 400s and the publish guard's 409), this module (the builder's problems, its "Insert a value" menu and its
- * preview) and lambda/api/static/feedback-widget.js (what respondents see, rendered by `renderRecall`'s rules).
+ * ONE grammar, three implementations pinned by `schemas/form-recall-cases.json` (`parse`): lambda/shared/forms_recall.py
+ * (the publish guard's 409), this module (the builder's problems, its "Insert a value" menu and its preview with sample
+ * values) and lambda/api/static/feedback-widget.js (what respondents see). How a text reads when a value is missing
+ * (it is tidied around the gap, the cases' `render`) is the widget's alone: the builder's widget preview shows it.
  *
  * Recall works in the welcome's title and description, every question's headline and subheader, and every ending's
  * title and description. An id names a declared hidden field (looked up first) or a question placed BEFORE the text
@@ -47,53 +48,21 @@ export function placeholders(text: string): Placeholder[] {
   })
 }
 
-/** What stands for a placeholder that left nothing, while the text is tidied: a noncharacter, taken out of the text
- * and of every value first. */
-const GAP = '\uffff'
-const SPACE = '[ \\u00a0]*'
-const SEPARATORS = '[,;:、，]'
-const TERMINALS = '[.!?…。！？]'
-const gapRule = (pattern: string, flags = 'g'): RegExp => new RegExp(pattern.replaceAll('G', '\\uffff'), flags)
-const RULES: readonly (readonly [RegExp, string])[] = [
-  [gapRule(`\\n${SPACE}G${SPACE}`), '\n'],
-  [gapRule(`${SEPARATORS}?${SPACE}G${SPACE}(?=${TERMINALS})`), ''],
-  [gapRule(`${SPACE}G${SPACE}(?=${SEPARATORS}|[)\\]])`), ''],
-  [gapRule(`${SEPARATORS}?${SPACE}G${SPACE}(?=\\n|$)`), ''],
-  [gapRule('[ \\u00a0]+G[ \\u00a0]*|[ \\u00a0]*G[ \\u00a0]+'), ' '],
-  [gapRule('G'), ''],
-]
-const RUNS = gapRule(`G(?:${SPACE}G)+`)
-const EMPTY_BRACKETS = gapRule(`[([]${SPACE}G${SPACE}[)\\]]`)
-const AT_START = gapRule(`^${SPACE}G${SPACE}(${SEPARATORS}${SPACE})?`, '')
-
-/** `text` tidied where a placeholder left nothing (`GAP`): the rules of `schemas/form-recall-cases.json`. */
-function tidy(gapped: string): string {
-  const joined = gapped.replace(RUNS, GAP).replace(EMPTY_BRACKETS, GAP)
-  const start = AT_START.exec(joined)
-  const rest = start === null ? joined : joined.slice(start[0].length)
-  // (a separator taken off the start begins a new sentence: "{{name}}, how was it?" reads "How was it?")
-  const text = start?.[1] === undefined ? rest : rest.charAt(0).toUpperCase() + rest.slice(1)
-  return RULES.reduce((current, [rule, by]) => current.replace(rule, by), text)
-}
-
 const own = (values: Readonly<Record<string, string>>, key: string): string | undefined =>
   Object.prototype.hasOwnProperty.call(values, key) ? values[key] : undefined
 
-const withoutGap = (text: string): string => text.replaceAll(GAP, '')
-
 /**
- * `text` as respondents see it with `values` (by id; an id without one shows its fallback, or nothing, and the text
- * is tidied around the gap). Values are never tidied, and are text, never markup.
+ * `text` with each placeholder filled by `values` (by id; an id without one shows its fallback, or nothing): plain
+ * substitution, for the builder's preview with sample values. The widget alone tidies a text around a missing value.
+ * Values are text, never markup.
  */
 export function renderRecall(text: string, values: Readonly<Record<string, string>>): string {
   if (!text.includes('{{')) return text
-  // (the text and the values hold no GAP of their own: one left in `filled` is a placeholder that showed nothing)
-  const filled = withoutGap(text).replace(PLACEHOLDER, (_raw, inner: string) => {
+  return text.replace(PLACEHOLDER, (_raw, inner: string) => {
     const bar = inner.indexOf('|')
     const id = (bar < 0 ? inner : inner.slice(0, bar)).trim()
-    return withoutGap(own(values, id) ?? '').trim() || (bar < 0 ? '' : inner.slice(bar + 1).trim()) || GAP
+    return (own(values, id) ?? '').trim() || (bar < 0 ? '' : inner.slice(bar + 1).trim())
   })
-  return filled.includes(GAP) ? tidy(filled) : filled
 }
 
 /** `text` with each placeholder shown as `[id]`: how the server shows it to a reader of results (a CSV header, a
