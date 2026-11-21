@@ -9,6 +9,7 @@ import PersonasTab from './PersonasTab'
 import { projectPersonaScope } from './personaScope'
 import ProductTab from './ProductTab'
 import ParticipantsTab from './ParticipantsTab'
+import ValidationTab from './validation/ValidationTab'
 import type {
   Tab, NoteItem,
 } from './types'
@@ -23,7 +24,8 @@ import type { BlankDocumentControls } from './useBlankDocument'
 /** The fields the page hands straight through to the Overview tab. */
 type OverviewPassThrough = Pick<OverviewTabProps,
   'project' | 'personas' | 'documents' | 'methodology' | 'productContext' | 'productDocs' | 'designSystem'
-  | 'onGeneratePersonas' | 'onGenerateDoc' | 'onRunResearch' | 'onRemixDocuments' | 'onOpenProductTool' | 'onJobStarted'>
+  | 'onGeneratePersonas' | 'onGenerateDoc' | 'onRunResearch' | 'onRemixDocuments' | 'onOpenProductTool' | 'onJobStarted'
+  | 'onOpenValidation'>
 
 interface TabContentProps extends OverviewPassThrough {
   readonly activeTab: Tab
@@ -75,6 +77,7 @@ export default function TabContent({
   onRunResearch,
   onRemixDocuments,
   onOpenProductTool,
+  onOpenValidation,
   onSelectPersona,
   onEditPersona,
   onDeletePersona,
@@ -103,6 +106,7 @@ export default function TabContent({
         onRunResearch={onRunResearch}
         onRemixDocuments={onRemixDocuments}
         onOpenProductTool={onOpenProductTool}
+        onOpenValidation={onOpenValidation}
         // Same callback DocumentsTab uses for prototype *revisions* — the build
         // now starts from the Overview card, so both ends of the prototype
         // lifecycle hand off to the one jobs panel.
@@ -143,6 +147,10 @@ export default function TabContent({
 
   if (activeTab === 'participants') {
     return <ParticipantsTab projectId={project.project_id} canEdit={canEdit} />
+  }
+
+  if (activeTab === 'validation') {
+    return <ValidationTab projectId={project.project_id} canEdit={canEdit} documents={documents} onSelectDoc={onSelectDoc} />
   }
 
   if (activeTab === 'decisions') {

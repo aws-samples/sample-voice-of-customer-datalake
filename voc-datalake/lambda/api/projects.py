@@ -121,6 +121,7 @@ from shared.project_keys import (
     project_type_pk,
     version_partition_key,
 )
+from shared.project_validation import RUN_TYPE as VALIDATION_RUN_TYPE
 from shared.project_writes import (
     NEW_ROW_CONDITION,
     PROJECT_DELETION_ATTRIBUTE,
@@ -3109,11 +3110,14 @@ def _is_prototype(document: dict) -> bool:
 
 
 def _refuse_decision_edit(document: dict) -> None:
-    """A decision's content is rendered from its fields: edit it through its own route."""
+    """A decision's content is rendered from its fields: edit it through its own route. A synthetic validation run
+    (7.68.00) is the personas' record of one run: never edited, so nothing it says can read as a tester's."""
     if document.get('document_type') == DECISION_DOCUMENT_TYPE:
         raise ValidationError(
             'Decision records are edited through PUT /projects/{id}/decisions/{document_id}.'
         )
+    if document.get('document_type') == VALIDATION_RUN_TYPE:
+        raise ValidationError('A synthetic validation run is not edited: run the personas again instead.')
 
 
 @tracer.capture_method

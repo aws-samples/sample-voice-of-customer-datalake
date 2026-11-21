@@ -1633,6 +1633,19 @@ block (`incorporation_pins_block`), and a field that reads like an instruction i
 (`unsafe_anchor_fields`); the pin itself is not flagged for them. The agents' revision path
 (`lambda/agents/pins.py`) does not do this yet: it withholds flagged pins but does not screen the anchor fields.
 
+**Validation answers (7.68.00).** The project's Validate step
+([project-workspace.md → Validate](project-workspace.md#validate)) gives the pin form a version 2 definition of
+validation questions (per task yes or no, one CES, a rating per success criterion, "What was missing?") as its next
+revision, with its `FORMREV` snapshot and the forms' own checks (`shared/prototype_validation.py`), and
+`validation_open`. The public submit route then reads a pin form's body three ways: no `answers` is a pin, as
+above; a version 2 body is taken only when the form asks validation questions and the card is open (`400
+validation_closed` otherwise); `{answers: {}}` asks for the card (an empty response is never an answer), which the
+widget draws as "Tell us how it went", in the form's language. Any other version 2 body goes the way of every form's
+response: checked against the revision it answered, then queued as a `feedback_form` item of the form's channel
+`form_pf_…`, tagged `prototype_validation`, its form marked answered (so its questions lock). Validation answers are
+customer feedback in the lake; pins never are. The widget reaches nothing but the same submit URL, so the prototype
+CSP's single `connect-src` is unchanged, and `Origin: null` is echoed as for a pin.
+
 **Review (authenticated, project EDIT).** The routes ride the Cognito-authorized
 `/projects/{proxy+}` and the per-project gate:
 

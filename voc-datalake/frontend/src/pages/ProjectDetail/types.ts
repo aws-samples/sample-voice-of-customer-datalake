@@ -12,9 +12,12 @@ import type {
 import type { Tone } from '../../theme/tones'
 import type { LucideIcon } from 'lucide-react'
 
-export type Tab = 'overview' | 'personas' | 'focus-groups' | 'product' | 'documents' | 'decisions' | 'participants'
+export type Tab = 'overview' | 'personas' | 'focus-groups' | 'product' | 'documents' | 'validation' | 'decisions'
+  | 'participants'
 
-const TAB_IDS: readonly Tab[] = ['overview', 'personas', 'focus-groups', 'product', 'documents', 'decisions', 'participants']
+const TAB_IDS: readonly Tab[] = [
+  'overview', 'personas', 'focus-groups', 'product', 'documents', 'validation', 'decisions', 'participants',
+]
 
 /**
  * `?tab=` → a known tab. Unknown values fall back to overview, including the

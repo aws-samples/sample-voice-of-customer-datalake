@@ -228,7 +228,8 @@
       "documentsSkipped_few": "Pominięto {{count, number}} wybrane dokumenty referencyjne (czytane są tylko pierwsze {{cap, number}}).",
       "documentsSkipped_many": "Pominięto {{count, number}} wybranych dokumentów referencyjnych (czytane są tylko pierwsze {{cap, number}}).",
       "documentsSkipped_other": "Pominięto {{count, number}} wybranego dokumentu referencyjnego (czytane są tylko pierwsze {{cap, number}}).",
-      "handWritten": "Napisane ręcznie: nie cytuje jeszcze opinii klientów."
+      "handWritten": "Napisane ręcznie: nie cytuje jeszcze opinii klientów.",
+      "missingPrototype": "Utworzono bez prototypu: projekt go nie miał."
     },
     "blank": {
       "untitled": {
@@ -248,7 +249,8 @@
       "startWriting": "Zacznij pisać",
       "cancel": "Anuluj",
       "outlineNote": "{{type}} otworzy się tutaj ze swoim konspektem, abyś mógł w nim pisać."
-    }
+    },
+    "syntheticRunNotice": "Syntetyczny przebieg walidacji: persony wypróbowały ekrany prototypu. Ich werdykty to hipotezy do sprawdzenia z prawdziwymi testerami, nigdy opinie klientów, i nigdy nie liczą się do spełnienia kryterium."
   },
   "imageErrors": {
     "tooLarge": "{{name}} jest nadal zbyt duży po zmianie rozmiaru. Spróbuj mniejszego zrzutu ekranu lub przytnij go.",
@@ -359,7 +361,8 @@
       "documentsNeedContext": "Persony lub badania sprawią, że te dokumenty będą lepsze.",
       "researchNeedsPersonas": "Najpierw wygeneruj persony, aby oprzeć badania na ich podstawie.",
       "documentsNeedPersonas": "Najpierw wygeneruj persony: metodyka pisze PR/FAQ i PRD na ich podstawie.",
-      "prdNeedsPrfaq": "Napisz PR/FAQ przed PRD: metodyka je czyta."
+      "prdNeedsPrfaq": "Napisz PR/FAQ przed PRD: metodyka je czyta.",
+      "validationSkipped": "Decyzję podjęto bez walidacji prototypu."
     },
     "needAtLeast2Docs": "Wymagane są co najmniej 2 dokumenty",
     "nextStep": {
@@ -367,7 +370,8 @@
       "personas": "Wygeneruj persony na podstawie opinii.",
       "product": "Opisz swój produkt lub usługę.",
       "research": "Przeprowadź badanie — persony mogą je wesprzeć.",
-      "prototype": "Utwórz klikalny prototyp na podstawie dokumentów."
+      "prototype": "Utwórz klikalny prototyp na podstawie dokumentów.",
+      "validate": "Zwaliduj prototyp względem jego kryteriów sukcesu."
     },
     "nextStepLabel": "Następny krok:",
     "openProductTool": "Otwórz",
@@ -389,9 +393,14 @@
       "prototypes": "Zbudowane prototypy: {{total, number}}",
       "prototypesNone": "Brak",
       "research": "Dokumenty badawcze: {{total, number}}",
-      "researchNone": "Jeszcze nie uruchomiono"
+      "researchNone": "Jeszcze nie uruchomiono",
+      "validation": "Dokumenty walidacji: {{total, number}}",
+      "validationNone": "Jeszcze niezwalidowany"
     },
-    "prototype": "Klikalny prototyp"
+    "prototype": "Klikalny prototyp",
+    "validate": "Walidacja",
+    "validateDesc": "Przetestuj prototyp względem kryteriów sukcesu z PRD, z personami i prawdziwymi testerami",
+    "openValidation": "Otwórz walidację"
   },
   "personaEdit": {
     "ageRange": "Przedział wiekowy",
@@ -649,7 +658,8 @@
     "overview": "Przegląd",
     "personas": "Persony",
     "product": "Produkt",
-    "label": "Sekcje projektu"
+    "label": "Sekcje projektu",
+    "validation": "Walidacja"
   },
   "wizards": {
     "amazonQuestions": "5 pytań o klienta wg Amazon",
@@ -928,5 +938,80 @@
     "start": "Rozpocznij grupę fokusową",
     "saved": "Zapisane grupy fokusowe",
     "noneSaved": "Nie ma jeszcze zapisanych grup fokusowych. Zapisz grupę z jej karty podsumowania w asystencie."
+  },
+  "validation": {
+    "intro": "Walidacja to ostatni krok metodyki: przetestuj prototyp względem kryteriów sukcesu z PRD, najpierw z personami (syntetycznie), potem z prawdziwymi testerami w prototypie, i zdecyduj na podstawie tego, co mówią prawdziwi testerzy.",
+    "noPrototype": "Ten projekt nie ma jeszcze prototypu: ustal teraz kryteria i zbuduj prototyp do testów.",
+    "readOnly": "Walidację mogą otworzyć tylko edytorzy projektu: jej wyniki cytują to, co wpisali testerzy.",
+    "loadFailed": "Nie udało się wczytać walidacji. Spróbuj ponownie.",
+    "criteria": {
+      "title": "1. Kryteria sukcesu",
+      "hint": "Każde kryterium to stwierdzenie, które testerzy oceniają od 1 do 5. Jest spełnione, gdy średnia prawdziwych testerów osiąga cel (4 z 5, jeśli go nie ustawisz) przy co najmniej 5 odpowiedziach.",
+      "text": "Kryterium {{number}}",
+      "target": "Cel z 5",
+      "add": "Dodaj kryterium",
+      "remove": "Usuń kryterium {{number}}",
+      "save": "Zapisz kryteria",
+      "fromPrd": "Odczytaj je z PRD",
+      "reading": "Odczytywanie PRD…",
+      "replaceConfirm": "Zastąpić zapisane kryteria tymi odczytanymi z PRD?"
+    },
+    "plan": {
+      "title": "2. Plan walidacji",
+      "hint": "Scenariusz wywiadu z neutralnymi pytaniami dla każdego kryterium, z pytaniem pogłębiającym dla każdej persony, oraz skrypt testu z zadaniami do wypróbowania w prototypie. Jedno wywołanie AI albo napisz go sam.",
+      "ai": "Napisz plan z AI",
+      "blank": "Napiszę go sam",
+      "writing": "Pisanie planu…",
+      "open": "Otwórz plan"
+    },
+    "card": {
+      "title": "3. Prawdziwi testerzy",
+      "hint": "Prototyp pokazuje testerom kartę „Powiedz nam, jak poszło”: dla każdego zadania „Czy udało Ci się to zrobić?”, jak było łatwo, ocenę każdego kryterium i czego brakowało. Ich odpowiedzi są opiniami klientów; pinezki pozostają pinezkami.",
+      "task": "Zadanie {{number}}",
+      "addTask": "Dodaj zadanie",
+      "removeTask": "Usuń zadanie {{number}}",
+      "open": "Pokaż kartę w prototypie",
+      "save": "Zapisz kartę",
+      "live": "Karta działa w formularzu opinii samego prototypu (wersja {{revision, number}}).",
+      "closed": "Karta jest zapisana, ale niewidoczna.",
+      "stale": "Kryteria lub zadania zmieniły się od zapisania karty: zapisz ją ponownie.",
+      "oldWidget": "Ta wersja prototypu powstała przed kartą, więc jej widżet nie może jej pokazać: zapisz jej przewodnik lub zbuduj go ponownie, a potem zapisz kartę."
+    },
+    "synthetic": {
+      "title": "Syntetyczny przebieg z personami",
+      "label": "Syntetyczne",
+      "hint": "Persony wypróbowują skrypt testu na ekranach prototypu. Syntetyczne: nigdy nie są odpowiedziami testerów i nigdy nie liczą się do spełnienia kryterium.",
+      "run": "Uruchom z personami",
+      "running": "Persony wypróbowują prototyp…",
+      "lastRun": "Ostatni przebieg {{date}}, liczba person: {{personas, number}}."
+    },
+    "results": {
+      "title": "Wyniki",
+      "responses": "Odpowiedzi prawdziwych testerów: {{n, number}}",
+      "criterion": "Kryterium",
+      "target": "Cel",
+      "real": "Prawdziwi testerzy",
+      "status": "Status",
+      "personas": "Persony",
+      "average": "{{average}} z 5 ({{n, number}})",
+      "noAnswers": "Brak odpowiedzi",
+      "met": "Spełnione",
+      "not_met": "Niespełnione",
+      "not_enough_data": "Za mało danych",
+      "task": "Zadania",
+      "rate": "{{percent}}% dało radę ({{n, number}})",
+      "personasDone": "Ukończyło: {{completed, number}} z {{total, number}} person",
+      "ces": "Łatwość (CES): {{average}} z 7, testerzy: {{n, number}}",
+      "missing": "Czego brakowało?",
+      "noMissing": "Brak odpowiedzi."
+    },
+    "report": {
+      "title": "4. Raport i decyzja",
+      "hint": "Raport ocenia każde kryterium wyłącznie na podstawie prawdziwych testerów, z syntetycznym przebiegiem obok, a następnie proponuje wstępnie wypełnioną decyzję. Jedno wywołanie AI na podsumowanie.",
+      "write": "Napisz raport",
+      "writing": "Pisanie raportu…",
+      "open": "Otwórz raport",
+      "decide": "Utwórz decyzję"
+    }
   }
 }

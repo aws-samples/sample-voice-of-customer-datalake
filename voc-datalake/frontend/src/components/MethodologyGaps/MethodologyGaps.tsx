@@ -17,6 +17,7 @@ function missingText(t: TFunction<'projectDetail'>, step: string | undefined): s
     case 'personas': return t('documents.methodology.missingPersonas')
     case 'prfaq': return t('documents.methodology.missingPrfaq')
     case 'prd': return t('documents.methodology.missingPrd')
+    case 'prototype': return t('documents.methodology.missingPrototype')
     default: return null
   }
 }

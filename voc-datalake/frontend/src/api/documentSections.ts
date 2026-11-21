@@ -26,6 +26,9 @@ const SECTION_OF_TYPE: Readonly<Record<KnownProjectDocumentType, DocumentSection
   product_report: 'documents',
   decision: 'documents',
   focus_group: 'documents',
+  validation_plan: 'documents',
+  validation_run: 'documents',
+  validation_report: 'documents',
 }
 
 const SECTION_IDS: ReadonlySet<string> = new Set(DOCUMENT_SECTIONS)

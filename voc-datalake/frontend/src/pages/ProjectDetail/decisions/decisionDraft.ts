@@ -29,10 +29,13 @@ export const EMPTY_DRAFT: DecisionDraft = Object.freeze({
 /** The query parameter that opens the editor (see `decisionDeepLink`). */
 const NEW_DECISION_PARAM = 'newDecision'
 /** Every parameter a deep link may carry, so the page can drop them once read. */
-export const PREFILL_PARAMS = [NEW_DECISION_PARAM, 'title', 'verdict', 'rationale', 'feedback'] as const
+export const PREFILL_PARAMS = [NEW_DECISION_PARAM, 'title', 'verdict', 'rationale', 'feedback', 'successMetric', 'documents'] as const
 
 const MAX_PREFILL_TEXT = 4000
 const MAX_FEEDBACK_IDS = 50
+/** The success metric's bound (decision_records.MAX_CRITERION) and the project documents a decision may cite. */
+const MAX_METRIC_TEXT = 1000
+const MAX_DOCUMENT_IDS = 20
 
 /** Ids from free text: split on spaces and commas, de-duplicated, order kept. */
 export function parseIds(value: string): string[] {
@@ -64,6 +67,8 @@ export function draftFromParams(params: URLSearchParams): DecisionDraft | null {
     verdict: isVerdict(verdict) ? verdict : EMPTY_DRAFT.verdict,
     rationale: text('rationale'),
     feedbackIds: parseIds(text('feedback')).slice(0, MAX_FEEDBACK_IDS).join(' '),
+    successMetric: text('successMetric').slice(0, MAX_METRIC_TEXT),
+    documentIds: parseIds(text('documents')).slice(0, MAX_DOCUMENT_IDS),
   }
 }
 
@@ -89,6 +94,9 @@ interface DecisionPrefill {
   verdict?: Verdict
   rationale?: string
   feedbackIds?: readonly string[]
+  /** The Validate step's (7.68.00): the criteria it judged, and its report among the evidence documents. */
+  successMetric?: string
+  documentIds?: readonly string[]
 }
 
 /**
@@ -101,6 +109,8 @@ export function decisionDeepLink(projectId: string, prefill: DecisionPrefill = {
   const entries: [string, string | undefined][] = [
     ['title', prefill.title], ['verdict', prefill.verdict], ['rationale', prefill.rationale],
     ['feedback', prefill.feedbackIds?.slice(0, MAX_FEEDBACK_IDS).join(',')],
+    ['successMetric', prefill.successMetric?.slice(0, MAX_METRIC_TEXT)],
+    ['documents', prefill.documentIds?.slice(0, MAX_DOCUMENT_IDS).join(',')],
   ]
   entries.forEach(([key, value]) => {
     if (value !== undefined && value !== '') params.set(key, value)

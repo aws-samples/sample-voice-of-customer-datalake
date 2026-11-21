@@ -2412,6 +2412,103 @@
     ]
   },
   {
+    "file": "api/validationApi.ts",
+    "method": "GET",
+    "call": "base(projectId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/validation"
+      }
+    ]
+  },
+  {
+    "file": "api/validationApi.ts",
+    "method": "PUT",
+    "call": "`${base(projectId)}/criteria`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/validation/criteria",
+        "body": {
+          "criteria": [
+            {
+              "text": "Tracking a delivery is quick"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/validationApi.ts",
+    "method": "POST",
+    "call": "`${base(projectId)}/criteria`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/validation/criteria",
+        "body": {
+          "replace": true,
+          "response_language": "en"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/validationApi.ts",
+    "method": "POST",
+    "call": "`${base(projectId)}/plan`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/validation/plan",
+        "body": {
+          "mode": "blank"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/validationApi.ts",
+    "method": "POST",
+    "call": "`${base(projectId)}/synthetic`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/validation/synthetic",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/validationApi.ts",
+    "method": "PUT",
+    "call": "`${base(projectId)}/form`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/validation/form",
+        "body": {
+          "tasks": [
+            {
+              "text": "Find your delivery"
+            }
+          ],
+          "open": true,
+          "language": "en"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/validationApi.ts",
+    "method": "POST",
+    "call": "`${base(projectId)}/report`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/validation/report",
+        "body": {
+          "response_language": "en"
+        }
+      }
+    ]
+  },
+  {
     "file": "api/webReviewMethodsApi.ts",
     "method": "GET",
     "call": "'/integrations/web_reviews/methods'",

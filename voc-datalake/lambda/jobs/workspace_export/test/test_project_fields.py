@@ -32,6 +32,8 @@ WRITERS: Final = frozenset({
     'lambda/shared/prototype_drafts.py', 'lambda/shared/prototype_versions.py', 'lambda/shared/deleted_sources.py',
     # 7.64.00: a persona's evidence refreshes (evidence_updates, evidence_refreshed_at).
     'lambda/shared/persona_grounding.py',
+    # 7.68.00: the Validate step's META block and its plan, run and report documents.
+    'lambda/shared/project_validation.py', 'lambda/shared/project_validation_routes.py',
 })
 #: Modules that name a project's keys and write, but none of its own rows: each has its own export allowlist or none.
 NOT_PROJECT_ROW_WRITERS: Final = {

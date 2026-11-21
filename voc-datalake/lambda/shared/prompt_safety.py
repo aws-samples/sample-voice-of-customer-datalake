@@ -54,6 +54,10 @@ DATA_BLOCK_TAGS = (
     'current_form',
     # A form report's AI summary (shared/forms_v2_report_ai.py): the open-text answers it groups into themes.
     'form_answers',
+    # The Validate step (shared/validation_ai.py, 7.68.00): the criteria and tasks a person wrote, and the real
+    # testers' results (their "What was missing?" answers among them) a report's summary reads.
+    'validation_script',
+    'validation_results',
 )
 
 _TAG_RE = re.compile(

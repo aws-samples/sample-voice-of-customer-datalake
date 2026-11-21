@@ -8,8 +8,9 @@ autonomous caller) and the project and category access answer exactly as they
 do for the web app.
 
 * ``projects_generate`` starts one methodology step (personas, research, PR/FAQ,
-  PRD, prototype) and answers the job id with the route's ``methodology`` block;
-  MCP has no push, so ``projects_get_job`` reads the job until it ends.
+  PRD, prototype, and the Validate step's plan or report since 7.68.00) and answers
+  the job id with the route's ``methodology`` block; MCP has no push, so
+  ``projects_get_job`` reads the job until it ends.
 * ``documents_revise_from_comments`` starts "Revise from comments" on a PR/FAQ or
   PRD (an assist job, read with ``projects_get_job``), and
   ``documents_mark_comments_addressed`` marks or clears its threads
@@ -70,6 +71,10 @@ TOOL_REVISE: Final = 'documents_revise_from_comments'
 TOOL_MARK_ADDRESSED: Final = 'documents_mark_comments_addressed'
 #: The step the old ``generate`` tool took for "Revise from comments" (accepted through 6.10.00).
 LEGACY_REVISE_STEP: Final = 'revise'
+#: What ``projects_generate`` starts: every methodology step's artifact but Validate's own, which is two documents
+#: (7.68.00, shared/project_validation_routes.py): its plan and its report.
+VALIDATION_STEPS: Final = ('validation_plan', 'validation_report')
+GENERATE_STEPS: Final = (*(step for step in STEPS if step != 'validation'), *VALIDATION_STEPS)
 
 
 def _step_request(step: str, project: str, title: str | None, brief: str | None,
@@ -86,14 +91,18 @@ def _step_request(step: str, project: str, title: str | None, brief: str | None,
     if step == 'prototype':
         return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{project}/build-prototype',
                             body={'title': title} if title else {})
+    if step == 'validation_plan':
+        return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{project}/validation/plan', body={})
+    if step == 'validation_report':
+        return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{project}/validation/report', body={})
     body = {'doc_type': step, **({'title': title} if title else {}), **({'feature_idea': brief} if brief else {})}
     return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{project}/document', body=body)
 
 
 def _generate(args: Mapping[str, Any], project: str | None) -> RouteRequest:
     step = args.get('step')
-    if step not in STEPS:
-        raise InvalidToolArgument(f'step must be one of: {", ".join(STEPS)}')
+    if step not in GENERATE_STEPS:
+        raise InvalidToolArgument(f'step must be one of: {", ".join(GENERATE_STEPS)}')
     title = text_arg(args, 'title', max_length=MAX_TITLE_CHARS)
     brief = text_arg(args, 'brief', max_length=MAX_BRIEF_CHARS)
     return _step_request(str(step), require_project(project), title, brief, args)
@@ -293,11 +302,12 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
         'projects_generate', 'Start a methodology step',
         'Start one methodology step in a research project (write token): `step` personas (adds `count` personas, '
         'never replaces), research (`brief` = the research question), prfaq or prd (`brief` = the feature idea; '
-        'drafts a PR/FAQ or PRD from customer feedback), prototype (from the newest PRD or PR/FAQ). Answers a '
+        'drafts a PR/FAQ or PRD from customer feedback), prototype (from the newest PRD or PR/FAQ), '
+        'validation_plan or validation_report (the Validate step, from its success criteria). Answers a '
         'job_id and a `methodology` block (skipped upstream steps, warnings: tell the user); follow the job with '
         'projects_get_job. A PR/FAQ or PRD is refused unless the user and the project owner work AI-driven; a '
         'prototype without a PRD or PR/FAQ is refused. Confirm with the user first.',
-        schema({'project_id': PROJECT_ID_SCHEMA, 'step': {'type': 'string', 'enum': list(STEPS)},
+        schema({'project_id': PROJECT_ID_SCHEMA, 'step': {'type': 'string', 'enum': list(GENERATE_STEPS)},
                 'title': {'type': 'string', 'maxLength': MAX_TITLE_CHARS},
                 'brief': {'type': 'string', 'maxLength': MAX_BRIEF_CHARS},
                 'count': {'type': 'integer', 'minimum': 1, 'maximum': MAX_PERSONAS_PER_GENERATION}}, ('step',)),

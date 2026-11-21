@@ -45,8 +45,17 @@ describe('decisionDeepLink', () => {
     expect(draftFromParams(new URLSearchParams('newDecision=1&verdict=maybe'))?.verdict).toBe('pursue')
   })
 
+  it('carries the Validate step\'s success metric and its report among the evidence documents (7.68.00)', () => {
+    const link = decisionDeepLink('p', { title: 't', successMetric: 'Quick (target 4 of 5)', documentIds: ['doc_r'] })
+    expect(draftFromParams(new URLSearchParams(link.split('?')[1]))).toMatchObject({
+      successMetric: 'Quick (target 4 of 5)', documentIds: ['doc_r'],
+    })
+  })
+
   it('lists every parameter it writes, so the page can drop them', () => {
-    const params = new URLSearchParams(decisionDeepLink('p', { title: 't', verdict: 'park', rationale: 'r', feedbackIds: ['f'] }).split('?')[1])
+    const params = new URLSearchParams(decisionDeepLink('p', {
+      title: 't', verdict: 'park', rationale: 'r', feedbackIds: ['f'], successMetric: 'm', documentIds: ['d'],
+    }).split('?')[1])
     const written = [...params.keys()].filter((key) => key !== 'tab')
     expect(written.every((key) => PREFILL_PARAMS.some((name) => name === key))).toBe(true)
   })

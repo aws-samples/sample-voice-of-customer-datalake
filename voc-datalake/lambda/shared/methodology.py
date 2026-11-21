@@ -1,8 +1,10 @@
 """The methodology check (TENETS.md tenet 2): which upstream steps a generation skips.
 
 The platform teaches one path: customer evidence → personas → PR/FAQ → PRD →
-prototype. Nothing refuses a step done out of order (the steps are the same in
-every way of working, and a document without its upstream still has value), but
+prototype → review, the last step labelled **Validate** (7.68.00,
+shared/project_validation.py). Nothing refuses a step done out of order (the steps
+are the same in every way of working, and a document without its upstream still
+has value), but
 no client may skip a step SILENTLY. This module is the one place that says, for a
 project and a requested step, which upstream steps and evidence are missing or not
 used. Every route that starts a step returns its answer as ``methodology``, the
@@ -26,8 +28,14 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any, Final
 
-#: The methodology steps that produce an artifact, in order.
-STEPS: Final = ('personas', 'research', 'prfaq', 'prd', 'prototype')
+#: The methodology steps that produce an artifact, in order. ``validation`` is tenet 2's "review" (7.68.00).
+STEPS: Final = ('personas', 'research', 'prfaq', 'prd', 'prototype', 'validation')
+
+#: The Validate step's documents that count as its output (a ``DOC#`` row each, told apart by ``document_type``). A
+#: synthetic run (``validation_run``) never does: personas are no testers.
+VALIDATION_DOCUMENT_TYPES: Final = ('validation_plan', 'validation_report')
+#: Its report: the one a decision should rest on (``overview``'s ``skipped``).
+VALIDATION_REPORT_TYPE: Final = 'validation_report'
 
 #: The upstream steps each step should read, in methodology order. ``feedback`` is
 #: the customer evidence itself; research is an optional extra (no step requires it).
@@ -37,6 +45,8 @@ UPSTREAM: Final[Mapping[str, tuple[str, ...]]] = {
     'prfaq': ('feedback', 'personas'),
     'prd': ('feedback', 'personas', 'prfaq'),
     'prototype': ('prd', 'prfaq'),
+    # The prototype to test, and the PRD whose Success Metrics are the criteria.
+    'validation': ('prototype', 'prd'),
 }
 
 #: The project-partition sort-key prefix of each artifact-producing upstream step.
@@ -58,6 +68,7 @@ _STEP_LABEL: Final[Mapping[str, str]] = {
     'prfaq': 'a PR/FAQ',
     'prd': 'a PRD',
     'prototype': 'a prototype',
+    'validation': 'a validation',
 }
 
 #: Warning codes (the SPA keys its copy on these).
@@ -78,10 +89,18 @@ def _ids_with_prefix(items: Iterable[Mapping[str, Any]], prefix: str) -> list[st
     return ids
 
 
+def _ids_of_types(items: Iterable[Mapping[str, Any]], document_types: tuple[str, ...]) -> list[str]:
+    """The ``document_id`` of every ``DOC#`` row whose ``document_type`` is one of ``document_types``."""
+    return [str(item.get('document_id')) for item in items
+            if str(item.get('sk', '')).startswith('DOC#') and item.get('document_type') in document_types]
+
+
 def present_steps(project_items: Iterable[Mapping[str, Any]]) -> dict[str, list[str]]:
-    """Per artifact step, the ids of the artifacts the project holds."""
+    """Per artifact step, the ids of the artifacts the project holds (the Validate step's: its plans and reports)."""
     items = list(project_items)
-    return {step: _ids_with_prefix(items, prefix) for step, prefix in _STEP_PREFIX.items()}
+    present = {step: _ids_with_prefix(items, prefix) for step, prefix in _STEP_PREFIX.items()}
+    present['validation'] = _ids_of_types(items, VALIDATION_DOCUMENT_TYPES)
+    return present
 
 
 def _skip_warning(step: str, upstream: str, reason: str) -> dict[str, str]:
@@ -153,14 +172,28 @@ def overview(project_items: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
 
     ``GET /projects/{id}`` returns it as ``methodology``. ``prototype.blocked`` is the
     one hard refusal (no PRD and no PR/FAQ: ``POST /build-prototype`` answers 409).
+    ``validation.skipped`` reports, never refuses (owner decision, 7.68.00): the project
+    holds a decision and a prototype but no validation report, so a decision was made on
+    a prototype nobody validated.
     """
-    present = present_steps(project_items)
+    items = list(project_items)
+    present = present_steps(items)
     steps: dict[str, Any] = {}
     for step in STEPS:
         missing = [u for u in UPSTREAM[step] if u != 'feedback' and not present.get(u)]
         steps[step] = {'missing': missing, 'count': len(present.get(step, []))}
     steps['prototype']['blocked'] = not present['prd'] and not present['prfaq']
+    steps['validation']['skipped'] = validation_skipped(items, present)
     return {'order': list(STEPS), 'steps': steps}
+
+
+def validation_skipped(project_items: Iterable[Mapping[str, Any]],
+                       present: Mapping[str, list[str]] | None = None) -> bool:
+    """True when a decision was made on a prototype with no validation report (reported, never refused)."""
+    items = list(project_items)
+    found = present if present is not None else present_steps(items)
+    decided = bool(_ids_of_types(items, ('decision',)))
+    return decided and bool(found['prototype']) and not _ids_of_types(items, (VALIDATION_REPORT_TYPE,))
 
 
 def data_source_use(data_sources: Mapping[str, Any], selected_document_ids: list[str],

@@ -502,6 +502,8 @@ _ROUTE_OVERRIDES: Final = (
     ('GET', ('prototypes', '*', 'drafts', '*'), LEVEL_EDIT),
     # A prototype series' feedback quotes what testers typed: read at edit, as its pins are.
     ('GET', ('prototypes', '*', 'feedback'), LEVEL_EDIT),
+    # The Validate step's results (7.68.00, shared/project_validation_routes.py) quote what testers typed, as pins do.
+    ('GET', ('validation',), LEVEL_EDIT),
 )
 
 

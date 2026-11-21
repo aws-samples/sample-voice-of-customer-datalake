@@ -1,9 +1,9 @@
 /**
- * OverviewTab - Project overview: the six project tools, in dependency order,
+ * OverviewTab - Project overview: the seven project tools, in dependency order,
  * each reporting whether it has produced anything yet.
  *
  * The card order is Product → Personas → Research → PRD/PR/FAQ → Prototype →
- * Remix, which is the order the generators can actually feed each other (see
+ * Validate → Remix, which is the order the generators can actually feed each other (see
  * `overviewState.ts`). It is not the order the cards used to appear in: PRD/PR/FAQ
  * came *before* research, so reading the grid top to bottom produced documents
  * that had neither research nor a deliberate persona selection behind them.
@@ -17,7 +17,7 @@
  */
 
 import clsx from 'clsx'
-import { Users, FileText, Search, Sparkles, Shuffle, Package, Wand2, AlertCircle, Loader2 } from 'lucide-react'
+import { Users, FileText, Search, Sparkles, Shuffle, Package, Wand2, AlertCircle, Loader2, ClipboardCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { deriveOverviewState, type OverviewState, type OverviewStepState, type RecommendableStep } from './overviewState'
 import { canEditProject } from './projectAccess'
@@ -56,6 +56,8 @@ export interface OverviewTabProps {
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
   readonly onOpenProductTool: () => void
+  /** Opens the Validate tab (7.68.00); without it the card's button does nothing. */
+  readonly onOpenValidation?: () => void
   /** Tells the Background Jobs panel to pick up a started prototype build. */
   readonly onJobStarted?: () => void
 }
@@ -73,6 +75,7 @@ export default function OverviewTab({
   onRunResearch,
   onRemixDocuments,
   onOpenProductTool,
+  onOpenValidation,
   onJobStarted,
 }: OverviewTabProps) {
   const { t } = useTranslation('projectDetail')
@@ -102,6 +105,7 @@ export default function OverviewTab({
     research: t('overview.nextStep.research'),
     documents: t('overview.nextStep.documents'),
     prototype: t('overview.nextStep.prototype'),
+    validate: t('overview.nextStep.validate'),
   }
 
   return (
@@ -229,6 +233,19 @@ export default function OverviewTab({
           statusLine={prototypeStatusLine(prototypeBuild, t)}
         />
         <ActionCard
+          state={steps.validate}
+          icon={<ClipboardCheck size={20} className="text-accent" />}
+          iconBg="bg-accent-subtle"
+          title={t('overview.validate')}
+          description={t('overview.validateDesc')}
+          stateLabel={validateStateLabel(steps.validate, t)}
+          hint={steps.validate.skipped === true ? t('overview.hint.validationSkipped') : undefined}
+          isNext={nextStep === 'validate'}
+          buttonIcon={<ClipboardCheck size={16} />}
+          buttonLabel={t('overview.openValidation')}
+          onClick={() => onOpenValidation?.()}
+        />
+        <ActionCard
           state={steps.remix}
           icon={<Shuffle size={20} className="text-accent" />}
           iconBg="bg-accent-subtle"
@@ -346,6 +363,12 @@ function prototypeStatusText(build: PrototypeBuildControl, t: TFunction): ReactN
  * is in flight or after it failed. Unknown renders nothing — a card that cannot
  * tell should not claim the description is empty.
  */
+function validateStateLabel(state: OverviewStepState, t: TFunction): string {
+  return state.hasOutput
+    ? t('overview.state.validation', { total: state.count ?? 0 })
+    : t('overview.state.validationNone')
+}
+
 function productContextStateLabel(state: OverviewStepState, t: TFunction): string | undefined {
   if (state.filled == null) return undefined
   if (state.filled === 0) return t('overview.state.productEmpty')

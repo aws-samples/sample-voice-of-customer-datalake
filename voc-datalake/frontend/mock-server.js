@@ -46,6 +46,7 @@ import { handleDataQualityRoutes, stampBands } from './mock-data-quality.js';
 import { handleFeedbackCatalogueRoutes } from './mock-feedback-catalogue.js';
 import { handlePersonaRoutes } from './mock-personas.js';
 import { focusGroupEvents, handleFocusGroupRoutes } from './mock-focus-groups.js';
+import { handleValidationRoutes } from './mock-validation.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
@@ -1538,6 +1539,7 @@ function handleDomainModules(req, res, url) {
     || handleCompanyPersonaRoutes(req, res, url, send, shared)
     || handlePersonaRoutes(req, res, url, send, shared)
     || handleFocusGroupRoutes(req, res, url, send, shared)
+    || handleValidationRoutes(req, res, url, send, shared)
     || handleProjectActionRoutes(req, res, url, send, shared)
     || handleOnboardingRoutes(req, res, url, send, shared)
     || handleAppFeedbackRoutes(req, res, url, send, shared)

@@ -14,6 +14,16 @@
  * Standalone without a submitUrl (local dev, an older prototype) the widget says
  * where to open the prototype instead.
  *
+ * The validation card (7.68.00, lambda/shared/prototype_validation.py). Once
+ * mounted, the widget asks its form for the Validate step's questions with an
+ * empty version 2 response ({answers: {}}) on that same route (framed: through
+ * the host). A form that asks some answers with the card; the widget then shows
+ * "Tell us how it went" beside Feedback, and the tester's answers go the same
+ * way as {answers, form_revision, language}. No other URL is ever contacted, so
+ * the prototype CSP keeps its single connect-src. A form that asks none, a host
+ * that predates the card, or no network: no card, and pins work as before. A
+ * failed send keeps the card open with the answers given.
+ *
  * Messages. widget → host go to window.parent, targeted at the host's origin
  * (`location.origin` is the URL origin even in this opaque-origin, sandboxed
  * document). The ready message transfers a private MessageChannel port and
@@ -23,7 +33,10 @@
  *   widget → host  {source:'voc-pin-widget', type:'submit', formId, requestId, body}
  *                  {source:'voc-pin-widget', type:'ready', formId, review}
  *                  {source:'voc-pin-widget', type:'escape'}
+ *                  {source:'voc-pin-widget', type:'card' | 'answer', formId, requestId, body}
  *   host → widget  {source:'voc-pin-host', type:'result', requestId, ok}
+ *                  {source:'voc-pin-host', type:'card', requestId, ok, card}
+ *                  {source:'voc-pin-host', type:'answer', requestId, ok}
  *                  {source:'voc-pin-host', type:'show', pins:[{pin_id, number, selector, bbox, status}]}
  *                  {source:'voc-pin-host', type:'hide'}
  *
@@ -190,7 +203,8 @@
   }
 
   // ---- UI ------------------------------------------------------------------------------
-  var state = { formId: '', submitUrl: '', seq: 0, pending: {}, markers: [], picking: false };
+  var state = { formId: '', submitUrl: '', seq: 0, pending: {}, markers: [], picking: false,
+    cardSeq: 0, cardPending: {}, card: null, cardAsked: false, cardDone: false };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -252,19 +266,28 @@
     return state.submitUrl ? 'direct' : 'none';
   }
 
-  function submitDirect(body) {
-    var done = function (ok) {
-      notice(ok ? 'Thanks — your pin was saved.' : 'Your pin could not be saved. Please try again.');
-    };
+  // POST `body` to this form's own submit route (the one connect-src): {ok, data} (data: its JSON, or null).
+  function postDirect(body) {
+    var failed = { ok: false, data: null };
     try {
       return window.fetch(state.submitUrl, {
         method: 'POST', mode: 'cors', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-      }).then(function (response) { done(Boolean(response && response.ok)); }, function () { done(false); });
+      }).then(function (response) {
+        if (!response || !response.ok) return failed;
+        if (typeof response.json !== 'function') return { ok: true, data: null };
+        return response.json().then(function (data) { return { ok: true, data: data }; },
+          function () { return { ok: true, data: null }; });
+      }, function () { return failed; });
     } catch (e) {
-      done(false);
-      return Promise.resolve();
+      return Promise.resolve(failed);
     }
+  }
+
+  function submitDirect(body) {
+    return postDirect(body).then(function (result) {
+      notice(result.ok ? 'Thanks — your pin was saved.' : 'Your pin could not be saved. Please try again.');
+    });
   }
 
   function send(body) {
@@ -393,6 +416,10 @@
     if (data.type === 'result' && state.pending[data.requestId]) {
       delete state.pending[data.requestId];
       notice(data.ok ? 'Thanks — your pin was saved.' : 'Your pin could not be saved. Please try again.');
+    } else if ((data.type === 'card' || data.type === 'answer') && state.cardPending[data.requestId]) {
+      var settle = state.cardPending[data.requestId];
+      delete state.cardPending[data.requestId];
+      settle({ ok: Boolean(data.ok), data: data.type === 'card' ? { card: data.card } : null });
     } else if (data.type === 'show') {
       showMarkers(data.pins);
     } else if (data.type === 'hide') {
@@ -417,6 +444,165 @@
     channel.port1.onmessage = function (e) { onHostMessage(e.data); };
     state.hostPort = channel.port1;
     return [channel.port2];
+  }
+
+  // ---- The validation card (7.68.00) ---------------------------------------------------------------------
+  var MAX_ANSWER_CHARS = 5000;
+  var CARD_BUTTON = BASE + 'position:fixed;right:132px;bottom:16px;z-index:2147483646;padding:10px 16px;' +
+    'border:1px solid #1f2937;border-radius:999px;background:#fff;color:#1f2937;cursor:pointer;' +
+    'box-shadow:0 4px 12px rgba(0,0,0,.25);';
+  var CHOICE = SECONDARY + 'min-width:36px;';
+  var CHOSEN = PRIMARY + 'min-width:36px;';
+
+  // A card or an answer through this widget's transport: {ok, data}. A host that predates the card never
+  // answers, so its promise never settles and no card shows.
+  function cardRequest(kind, body) {
+    if (transport() === 'direct') return postDirect(body);
+    return new Promise(function (resolve) {
+      state.cardSeq += 1;
+      var requestId = 'v' + state.cardSeq;
+      state.cardPending[requestId] = resolve;
+      window.parent.postMessage({ source: 'voc-pin-widget', type: kind, formId: state.formId, requestId: requestId,
+        body: body }, window.location.origin);
+    });
+  }
+
+  function isCard(card) {
+    return Boolean(card) && typeof card === 'object' && typeof card.revision === 'number' &&
+      Array.isArray(card.questions) && card.questions.length > 0;
+  }
+
+  // The response the server checks: what the tester answered, the revision the card showed, its language.
+  function cardBody(card, answers) {
+    var given = {};
+    var count = 0;
+    for (var id in answers) {
+      if (Object.prototype.hasOwnProperty.call(answers, id)) { given[id] = answers[id]; count += 1; }
+    }
+    return count ? { answers: given, form_revision: card.revision, language: card.language } : null;
+  }
+
+  function label(card, key, fallback) {
+    return card.labels && typeof card.labels[key] === 'string' && card.labels[key] ? card.labels[key] : fallback;
+  }
+
+  function choices(question) {
+    if (question.options) {
+      return question.options.map(function (o) { return { value: { code: o.code }, text: o.label, key: o.code }; });
+    }
+    var out = [];
+    var range = question.range || [1, 5];
+    for (var n = range[0]; n <= range[1]; n += 1) out.push({ value: n, text: String(n), key: String(n) });
+    return out;
+  }
+
+  function choiceGroup(question, answers, labelId) {
+    var group = el('div', { role: 'group', 'aria-labelledby': labelId, style: 'display:flex;flex-wrap:wrap;gap:4px;' });
+    var buttons = [];
+    choices(question).forEach(function (choice) {
+      var button = el('button', { type: 'button', 'aria-pressed': 'false', style: CHOICE, 'data-choice': choice.key },
+        choice.text);
+      button.addEventListener('click', function () {
+        var on = button.getAttribute('aria-pressed') !== 'true';
+        buttons.forEach(function (other) { other.setAttribute('aria-pressed', 'false'); other.setAttribute('style', CHOICE); });
+        if (on) {
+          button.setAttribute('aria-pressed', 'true');
+          button.setAttribute('style', CHOSEN);
+          answers[question.id] = choice.value;
+        } else {
+          delete answers[question.id];
+        }
+      });
+      buttons.push(button);
+      group.appendChild(button);
+    });
+    return group;
+  }
+
+  function questionBlock(question, answers) {
+    var labelId = PREFIX + 'q-' + question.id;
+    var wrap = el('div', { style: 'margin:0 0 10px;' });
+    wrap.appendChild(el('p', { id: labelId, style: 'margin:0 0 4px;font-weight:600;' }, question.headline));
+    if (question.subheader) wrap.appendChild(el('p', { style: 'margin:0 0 4px;color:#4b5563;' }, question.subheader));
+    if (question.type === 'open_text') {
+      var area = el('textarea', { rows: '3', maxlength: String(MAX_ANSWER_CHARS), 'aria-labelledby': labelId,
+        style: BASE + 'width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;resize:vertical;' });
+      area.addEventListener('input', function () {
+        var text = area.value.trim();
+        if (text) answers[question.id] = text; else delete answers[question.id];
+      });
+      wrap.appendChild(area);
+      return wrap;
+    }
+    wrap.appendChild(choiceGroup(question, answers, labelId));
+    if (question.lower_label || question.upper_label) {
+      var ends = el('div', { style: 'display:flex;justify-content:space-between;color:#6b7280;font-size:12px;' });
+      ends.appendChild(el('span', {}, question.lower_label || ''));
+      ends.appendChild(el('span', {}, question.upper_label || ''));
+      wrap.appendChild(ends);
+    }
+    return wrap;
+  }
+
+  function removeCardButton() {
+    var button = document.getElementById(PREFIX + 'card-button');
+    if (button) button.parentNode.removeChild(button);
+  }
+
+  function openCard() {
+    var card = state.card;
+    var answers = {};
+    var children = [el('p', { style: 'margin:0 0 4px;font-weight:600;' }, card.title || 'Tell us how it went')];
+    if (card.description) children.push(el('p', { style: 'margin:0 0 8px;color:#4b5563;' }, card.description));
+    card.questions.forEach(function (question) { children.push(questionBlock(question, answers)); });
+    var status = el('p', { id: PREFIX + 'card-status', role: 'status', style: 'margin:0 0 8px;color:#b91c1c;' });
+    var row = el('div', { style: 'display:flex;gap:8px;justify-content:flex-end;' });
+    var cancel = el('button', { type: 'button', style: SECONDARY }, label(card, 'cancel', 'Cancel'));
+    var send = el('button', { type: 'button', style: PRIMARY }, label(card, 'send', 'Send'));
+    cancel.addEventListener('click', closePanel);
+    send.addEventListener('click', function () {
+      var body = cardBody(card, answers);
+      if (!body) { status.textContent = label(card, 'empty', 'Answer at least one question.'); return; }
+      send.disabled = true;
+      status.textContent = '';
+      cardRequest('answer', body).then(function (result) {
+        if (result.ok) {
+          state.cardDone = true;
+          removeCardButton();
+          notice(card.thanks || 'Thank you!');
+          return;
+        }
+        send.disabled = false;
+        status.textContent = label(card, 'failed', 'Your answers could not be sent. Please try again.');
+      });
+    });
+    row.appendChild(cancel);
+    row.appendChild(send);
+    children.push(status, row);
+    var panel = showPanel(children);
+    panel.setAttribute('aria-label', card.title || 'Tell us how it went');
+    panel.style.maxHeight = 'calc(100vh - 96px)';
+    panel.style.overflowY = 'auto';
+  }
+
+  function mountCardButton() {
+    if (state.cardDone || document.getElementById(PREFIX + 'card-button')) return;
+    var button = el('button', { id: PREFIX + 'card-button', type: 'button', style: CARD_BUTTON },
+      state.card.title || 'Tell us how it went');
+    button.addEventListener('click', openCard);
+    document.body.appendChild(button);
+  }
+
+  // Ask once a page load: an empty response asks for the card (the server never takes it as an answer).
+  function askCard() {
+    if (state.cardAsked || transport() === 'none') return;
+    state.cardAsked = true;
+    cardRequest('card', { answers: {} }).then(function (result) {
+      var card = result.ok && result.data ? result.data.card : null;
+      if (!isCard(card)) return;
+      state.card = card;
+      mountCardButton();
+    });
   }
 
   // Only THIS form's public submit route, over https (http only for a local mock).
@@ -445,6 +631,7 @@
         window.parent.postMessage({ source: 'voc-pin-widget', type: 'ready', formId: formId, review: review },
           window.location.origin, hostChannel());
       }
+      askCard();
     };
     if (document.body) mount();
     else document.addEventListener('DOMContentLoaded', mount);
@@ -462,6 +649,11 @@
     send: send,
     // The host may rely on the escape message (5.35); an older widget never sends it.
     forwardsEscape: true,
+    // The validation card (7.68.00): this widget draws it (the projects API reads this line in a version's HTML), the
+    // body an answer sends, and the card this page load was given.
+    validationCard: true,
+    cardBody: cardBody,
+    card: function () { return state.card; },
     consoleEntries: function () { return consoleLog.slice(); }
   });
 })();

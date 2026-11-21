@@ -204,7 +204,8 @@
       "noEvidence": "Cites no customer evidence.",
       "documentsSkipped_one": "{{count, number}} selected reference document was left out (only the first {{cap, number}} are read).",
       "documentsSkipped_other": "{{count, number}} selected reference documents were left out (only the first {{cap, number}} are read).",
-      "handWritten": "Written by hand: cites no customer feedback yet."
+      "handWritten": "Written by hand: cites no customer feedback yet.",
+      "missingPrototype": "Made without a prototype: the project had none."
     },
     "blank": {
       "untitled": {
@@ -224,7 +225,8 @@
       "startWriting": "Start writing",
       "cancel": "Cancel",
       "outlineNote": "The {{type}} opens here with its outline, for you to write in."
-    }
+    },
+    "syntheticRunNotice": "A synthetic validation run: personas tried the prototype's screens. Their verdicts are hypotheses to test with real testers, never customer feedback, and never count towards a criterion being met."
   },
   "imageErrors": {
     "tooLarge": "{{name}} is still too large after resizing. Try a smaller screenshot, or crop it.",
@@ -323,7 +325,8 @@
       "documentsNeedContext": "Personas or research make these documents stronger.",
       "researchNeedsPersonas": "Generate personas first to ground the research in them.",
       "documentsNeedPersonas": "Generate personas first: the methodology writes the PR/FAQ and PRD from them.",
-      "prdNeedsPrfaq": "Write the PR/FAQ before the PRD: the methodology reads it."
+      "prdNeedsPrfaq": "Write the PR/FAQ before the PRD: the methodology reads it.",
+      "validationSkipped": "A decision was made without validating the prototype."
     },
     "needAtLeast2Docs": "Need at least 2 documents",
     "nextStep": {
@@ -331,7 +334,8 @@
       "personas": "Generate personas from your feedback.",
       "product": "Describe your product or service.",
       "prototype": "Build a clickable prototype from your documents.",
-      "research": "Run research — your personas can ground it."
+      "research": "Run research — your personas can ground it.",
+      "validate": "Validate the prototype against its success criteria."
     },
     "nextStepLabel": "Next step:",
     "openProductTool": "Open",
@@ -354,8 +358,13 @@
       "prototypes": "Prototypes built: {{total, number}}",
       "prototypesNone": "None yet",
       "research": "Research documents: {{total, number}}",
-      "researchNone": "Not run yet"
-    }
+      "researchNone": "Not run yet",
+      "validation": "Validation documents: {{total, number}}",
+      "validationNone": "Not validated yet"
+    },
+    "validate": "Validate",
+    "validateDesc": "Test the prototype against the PRD's success criteria, with personas and real testers",
+    "openValidation": "Open Validate"
   },
   "personaEdit": {
     "ageRange": "Age Range",
@@ -599,7 +608,8 @@
     "overview": "Overview",
     "personas": "Personas",
     "product": "Product",
-    "label": "Project sections"
+    "label": "Project sections",
+    "validation": "Validate"
   },
   "wizards": {
     "amazonQuestions": "Amazon's 5 Customer Questions",
@@ -844,5 +854,80 @@
     "start": "Start focus group",
     "saved": "Saved focus groups",
     "noneSaved": "No saved focus group yet. Save one from its synthesis card in the assistant."
+  },
+  "validation": {
+    "intro": "Validate is the methodology's last step: test the prototype against the PRD's success criteria, first with your personas (synthetic), then with real testers inside the prototype, and decide from what real testers say.",
+    "noPrototype": "This project has no prototype yet: set the criteria now, and build one to test.",
+    "readOnly": "Only the project's editors can open the validation: its results quote what testers typed.",
+    "loadFailed": "Could not load the validation. Try again.",
+    "criteria": {
+      "title": "1. Success criteria",
+      "hint": "Each criterion is a statement testers rate from 1 to 5. It is met when real testers' average reaches its target (4 of 5 when you set none) from at least 5 answers.",
+      "text": "Criterion {{number}}",
+      "target": "Target of 5",
+      "add": "Add a criterion",
+      "remove": "Remove criterion {{number}}",
+      "save": "Save criteria",
+      "fromPrd": "Read them from the PRD",
+      "reading": "Reading the PRD…",
+      "replaceConfirm": "Replace the saved criteria with the ones read from the PRD?"
+    },
+    "plan": {
+      "title": "2. Validation plan",
+      "hint": "An interview guide of neutral questions per criterion, with a probe for each persona, and a test script of tasks to try on the prototype. One AI call, or write it yourself.",
+      "ai": "Write the plan with AI",
+      "blank": "Write it myself",
+      "writing": "Writing the plan…",
+      "open": "Open the plan"
+    },
+    "card": {
+      "title": "3. Real testers",
+      "hint": "The prototype shows testers a \"Tell us how it went\" card: for each task \"Could you do this?\", how easy it was, a rating for each criterion and what was missing. Their answers are customer feedback; pins stay pins.",
+      "task": "Task {{number}}",
+      "addTask": "Add a task",
+      "removeTask": "Remove task {{number}}",
+      "open": "Show the card in the prototype",
+      "save": "Save the card",
+      "live": "The card is live on the prototype's own feedback form (revision {{revision, number}}).",
+      "closed": "The card is saved but not shown.",
+      "stale": "The criteria or tasks changed since the card was saved: save it again.",
+      "oldWidget": "This prototype version was made before the card existed, so its widget cannot show it: save its walkthrough or build it again, then save the card."
+    },
+    "synthetic": {
+      "title": "Synthetic run with personas",
+      "label": "Synthetic",
+      "hint": "Personas try the test script on the prototype's screens. Synthetic: never testers' answers, and never counted towards a criterion being met.",
+      "run": "Run with personas",
+      "running": "The personas are trying the prototype…",
+      "lastRun": "Last run on {{date}} with {{personas, number}} personas."
+    },
+    "results": {
+      "title": "Results",
+      "responses": "Real tester responses: {{n, number}}",
+      "criterion": "Criterion",
+      "target": "Target",
+      "real": "Real testers",
+      "status": "Status",
+      "personas": "Personas",
+      "average": "{{average}} of 5 ({{n, number}})",
+      "noAnswers": "No answers yet",
+      "met": "Met",
+      "not_met": "Not met",
+      "not_enough_data": "Not enough data",
+      "task": "Tasks",
+      "rate": "{{percent}}% could ({{n, number}})",
+      "personasDone": "{{completed, number}} of {{total, number}} personas completed it",
+      "ces": "Ease (CES): {{average}} of 7 from {{n, number}} testers",
+      "missing": "What was missing?",
+      "noMissing": "No answers yet."
+    },
+    "report": {
+      "title": "4. Report and decision",
+      "hint": "The report judges each criterion on real testers only, with the synthetic run beside it, then offers the decision prefilled. One AI call for its summary.",
+      "write": "Write the report",
+      "writing": "Writing the report…",
+      "open": "Open the report",
+      "decide": "Create decision"
+    }
   }
 }

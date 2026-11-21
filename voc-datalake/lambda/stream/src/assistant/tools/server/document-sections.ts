@@ -13,6 +13,10 @@ export const SECTION_ORDER = ['prd', 'prfaq', 'prototypes', 'documents'] as cons
 export type DocumentSection = (typeof SECTION_ORDER)[number];
 
 const SECTION_OF_TYPE: Readonly<Record<string, DocumentSection>> = {
+  // The Validate step's documents (7.68.00): its plan, a synthetic run and its report.
+  validation_report: 'documents',
+  validation_run: 'documents',
+  validation_plan: 'documents',
   prd: 'prd',
   prfaq: 'prfaq',
   prototype: 'prototypes',

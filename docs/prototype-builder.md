@@ -631,8 +631,9 @@ The project's documents list groups its documents in four sections, always in th
 1. **PRD** (`prd`)
 2. **PR/FAQ** (`prfaq`)
 3. **Prototypes** (`prototype`)
-4. **Documents**: everything else (`research` reports, `custom` documents, `product_report`s and `decision`
-   records), and any type added later
+4. **Documents**: everything else (`research` reports, `custom` documents, `product_report`s, `decision`
+   records, saved `focus_group`s and the Validate step's `validation_plan`, `validation_run` and `validation_report`),
+   and any type added later
 
 - Each section is a disclosure: a button with the section name and its count ("Prototypes, 3"), `aria-expanded`,
   and its list below. Every section starts open on each page view; folding is not remembered. A section with
@@ -747,7 +748,8 @@ Part 4 adds no call at all.
   `draft_id` and none of the summary or outcomes. Every new mutating route is classified in
   `lambda/api/test/test_route_admin_gates.py`.
 - **Part 4**: a server test keyed on every `document_type` value the SPA knows (`KnownProjectDocumentType` in
-  `frontend/src/api/types.ts`: `prd`, `prfaq`, `research`, `custom`, `product_report`, `prototype`, `decision`),
+  `frontend/src/api/types.ts`: `prd`, `prfaq`, `research`, `custom`, `product_report`, `prototype`, `decision`,
+  `focus_group`, `validation_plan`, `validation_run`, `validation_report`),
   each mapped to its section and order, with an unknown type in Documents, and a check that the two lists stay
   the same (a new type added to one fails the test until it has a section); that the project read, the export
   manifest (per-section counts, rows unchanged) and the MCP and assistant listings group the same way; component

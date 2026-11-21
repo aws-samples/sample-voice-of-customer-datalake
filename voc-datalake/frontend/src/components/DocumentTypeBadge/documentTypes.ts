@@ -14,7 +14,10 @@
  * glyph is used, so a document and the step that writes it match.
  * @module components/DocumentTypeBadge/documentTypes
  */
-import { File, FileBarChart, FilePen, FileText, Hammer, MessagesSquare, Newspaper, Scale, Search } from 'lucide-react'
+import {
+  ClipboardCheck, ClipboardList, File, FileBarChart, FilePen, FileText, FlaskConical, Hammer, MessagesSquare, Newspaper,
+  Scale, Search,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { KnownProjectDocumentType } from '../../api/types'
 
@@ -27,6 +30,9 @@ const DOCUMENT_TYPE_ICONS: Readonly<Record<KnownProjectDocumentType, LucideIcon>
   prototype: Hammer,
   decision: Scale,
   focus_group: MessagesSquare,
+  validation_plan: ClipboardList,
+  validation_run: FlaskConical,
+  validation_report: ClipboardCheck,
 }
 
 /** `Object.hasOwn`, so an inherited name such as `constructor` never answers. */

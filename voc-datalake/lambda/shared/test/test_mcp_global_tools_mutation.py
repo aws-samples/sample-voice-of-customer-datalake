@@ -152,11 +152,12 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         'Start a methodology step',
         ('Start one methodology step in a research project (write token): `step` personas (adds `count` personas, '
          'never replaces), research (`brief` = the research question), prfaq or prd (`brief` = the feature idea; '
-         'drafts a PR/FAQ or PRD from customer feedback), prototype (from the newest PRD or PR/FAQ). Answers a '
+         'drafts a PR/FAQ or PRD from customer feedback), prototype (from the newest PRD or PR/FAQ), '
+         'validation_plan or validation_report (the Validate step, from its success criteria). Answers a '
          'job_id and a `methodology` block (skipped upstream steps, warnings: tell the user); follow the job with '
          'projects_get_job. A PR/FAQ or PRD is refused unless the user and the project owner work AI-driven; a '
          'prototype without a PRD or PR/FAQ is refused. Confirm with the user first.'),
-        _object({'project_id': ID, 'step': {'type': 'string', 'enum': ['personas', 'research', 'prfaq', 'prd', 'prototype']}, 'title': {'type': 'string', 'maxLength': 200}, 'brief': {'type': 'string', 'maxLength': 4000}, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, 'step'),
+        _object({'project_id': ID, 'step': {'type': 'string', 'enum': ['personas', 'research', 'prfaq', 'prd', 'prototype', 'validation_plan', 'validation_report']}, 'title': {'type': 'string', 'maxLength': 200}, 'brief': {'type': 'string', 'maxLength': 4000}, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, 'step'),
         True, False, True),
     'projects_get_job': (
         'Get a project job',

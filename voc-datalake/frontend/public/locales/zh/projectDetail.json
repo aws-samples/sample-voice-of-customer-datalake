@@ -204,7 +204,8 @@
       "noEvidence": "未引用任何客户证据。",
       "documentsSkipped_one": "有 {{count, number}} 份所选参考文档被省略(只读取前 {{cap, number}} 份)。",
       "documentsSkipped_other": "有 {{count, number}} 份所选参考文档被省略(只读取前 {{cap, number}} 份)。",
-      "handWritten": "手动撰写:尚未引用任何客户反馈。"
+      "handWritten": "手动撰写:尚未引用任何客户反馈。",
+      "missingPrototype": "未基于原型生成：项目中没有原型。"
     },
     "blank": {
       "untitled": {
@@ -224,7 +225,8 @@
       "startWriting": "开始撰写",
       "cancel": "取消",
       "outlineNote": "{{type}} 将带着大纲在这里打开，供你直接撰写。"
-    }
+    },
+    "syntheticRunNotice": "一次合成验证运行：画像试用了原型的界面。它们的结论是需要用真实测试者检验的假设，绝非客户反馈，也绝不计入标准是否达成。"
   },
   "imageErrors": {
     "tooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
@@ -323,7 +325,8 @@
       "documentsNeedContext": "有人物角色或调研，这些文档会更充实。",
       "researchNeedsPersonas": "先生成人物角色，调研即可以其为依据。",
       "documentsNeedPersonas": "请先生成用户画像:方法论基于它们撰写 PR/FAQ 和 PRD。",
-      "prdNeedsPrfaq": "请在 PRD 之前撰写 PR/FAQ:方法论会读取它。"
+      "prdNeedsPrfaq": "请在 PRD 之前撰写 PR/FAQ:方法论会读取它。",
+      "validationSkipped": "在未验证原型的情况下做出了决策。"
     },
     "needAtLeast2Docs": "需要至少 2 个文档",
     "nextStep": {
@@ -331,7 +334,8 @@
       "personas": "根据反馈生成人物角色。",
       "product": "描述您的产品或服务。",
       "prototype": "根据您的文档创建可点击的原型。",
-      "research": "运行调研——您的人物角色可以为其提供依据。"
+      "research": "运行调研——您的人物角色可以为其提供依据。",
+      "validate": "对照成功标准验证原型。"
     },
     "nextStepLabel": "下一步：",
     "openProductTool": "打开",
@@ -354,8 +358,13 @@
       "prototypes": "已创建原型：{{total, number}}",
       "prototypesNone": "暂无",
       "research": "调研文档：{{total, number}}",
-      "researchNone": "尚未运行"
-    }
+      "researchNone": "尚未运行",
+      "validation": "验证文档：{{total, number}}",
+      "validationNone": "尚未验证"
+    },
+    "validate": "验证",
+    "validateDesc": "对照 PRD 的成功标准测试原型，借助画像和真实测试者",
+    "openValidation": "打开验证"
   },
   "personaEdit": {
     "ageRange": "年龄范围",
@@ -599,7 +608,8 @@
     "overview": "概览",
     "personas": "用户角色",
     "product": "产品",
-    "label": "项目分区"
+    "label": "项目分区",
+    "validation": "验证"
   },
   "wizards": {
     "amazonQuestions": "亚马逊 5 个客户问题",
@@ -844,5 +854,80 @@
     "start": "开始焦点小组",
     "saved": "已保存的焦点小组",
     "noneSaved": "还没有保存的焦点小组。可在助手的总结卡片中保存。"
+  },
+  "validation": {
+    "intro": "验证是方法论的最后一步：对照 PRD 的成功标准测试原型，先用画像(合成)，再在原型内用真实测试者，并根据真实测试者的反馈做出决策。",
+    "noPrototype": "此项目还没有原型：现在就设定标准，然后构建一个原型来测试。",
+    "readOnly": "只有项目编辑者可以打开验证：其结果会引用测试者输入的内容。",
+    "loadFailed": "无法加载验证，请重试。",
+    "criteria": {
+      "title": "1. 成功标准",
+      "hint": "每条标准是测试者按 1 到 5 打分的陈述。在至少 5 条回答中，真实测试者的平均分达到目标(未设定时为 5 分中的 4 分)即为达成。",
+      "text": "标准 {{number}}",
+      "target": "目标(满分 5)",
+      "add": "添加标准",
+      "remove": "删除标准 {{number}}",
+      "save": "保存标准",
+      "fromPrd": "从 PRD 读取",
+      "reading": "正在读取 PRD…",
+      "replaceConfirm": "用从 PRD 读取的标准替换已保存的标准吗？"
+    },
+    "plan": {
+      "title": "2. 验证计划",
+      "hint": "每条标准的中立问题访谈指南(并为每个画像准备一个追问)，以及在原型上尝试的任务测试脚本。调用一次 AI，或自行编写。",
+      "ai": "用 AI 编写计划",
+      "blank": "自行编写",
+      "writing": "正在编写计划…",
+      "open": "打开计划"
+    },
+    "card": {
+      "title": "3. 真实测试者",
+      "hint": "原型会向测试者显示“告诉我们使用情况”卡片：每个任务的“您能完成这项操作吗？”、难易程度、每条标准的评分以及缺少了什么。他们的回答是客户反馈；图钉仍是图钉。",
+      "task": "任务 {{number}}",
+      "addTask": "添加任务",
+      "removeTask": "删除任务 {{number}}",
+      "open": "在原型中显示卡片",
+      "save": "保存卡片",
+      "live": "卡片已在原型自身的反馈表单上启用(修订 {{revision, number}})。",
+      "closed": "卡片已保存，但未显示。",
+      "stale": "保存卡片后标准或任务已更改：请重新保存。",
+      "oldWidget": "此原型版本早于卡片功能，其小组件无法显示卡片：请保存其导览或重新构建，然后保存卡片。"
+    },
+    "synthetic": {
+      "title": "画像合成运行",
+      "label": "合成",
+      "hint": "画像在原型界面上试用测试脚本。合成：绝非测试者的回答，也绝不计入标准是否达成。",
+      "run": "用画像运行",
+      "running": "画像正在试用原型…",
+      "lastRun": "最近一次运行于 {{date}}，共 {{personas, number}} 个画像。"
+    },
+    "results": {
+      "title": "结果",
+      "responses": "真实测试者回答：{{n, number}}",
+      "criterion": "标准",
+      "target": "目标",
+      "real": "真实测试者",
+      "status": "状态",
+      "personas": "画像",
+      "average": "{{average}} / 5 ({{n, number}})",
+      "noAnswers": "尚无回答",
+      "met": "已达成",
+      "not_met": "未达成",
+      "not_enough_data": "数据不足",
+      "task": "任务",
+      "rate": "{{percent}}% 能完成 ({{n, number}})",
+      "personasDone": "{{total, number}} 个画像中有 {{completed, number}} 个完成",
+      "ces": "易用度 (CES)：{{n, number}} 位测试者，{{average}} / 7",
+      "missing": "缺少了什么？",
+      "noMissing": "尚无回答。"
+    },
+    "report": {
+      "title": "4. 报告与决策",
+      "hint": "报告仅依据真实测试者评判每条标准，并在旁列出合成运行结果，然后提供预填的决策。摘要调用一次 AI。",
+      "write": "编写报告",
+      "writing": "正在编写报告…",
+      "open": "打开报告",
+      "decide": "创建决策"
+    }
   }
 }

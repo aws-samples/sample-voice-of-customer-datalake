@@ -204,7 +204,8 @@
       "noEvidence": "Zitiert keine Belege von Kunden.",
       "documentsSkipped_one": "{{count, number}} ausgewähltes Referenzdokument wurde ausgelassen (nur die ersten {{cap, number}} werden gelesen).",
       "documentsSkipped_other": "{{count, number}} ausgewählte Referenzdokumente wurden ausgelassen (nur die ersten {{cap, number}} werden gelesen).",
-      "handWritten": "Von Hand geschrieben: zitiert noch kein Kundenfeedback."
+      "handWritten": "Von Hand geschrieben: zitiert noch kein Kundenfeedback.",
+      "missingPrototype": "Ohne Prototyp erstellt: Das Projekt hatte keinen."
     },
     "blank": {
       "untitled": {
@@ -224,7 +225,8 @@
       "startWriting": "Mit dem Schreiben beginnen",
       "cancel": "Abbrechen",
       "outlineNote": "Das {{type}} öffnet sich hier mit seiner Gliederung, damit Sie hineinschreiben können."
-    }
+    },
+    "syntheticRunNotice": "Ein synthetischer Validierungslauf: Personas haben die Bildschirme des Prototyps ausprobiert. Ihre Urteile sind Hypothesen, die mit echten Testern zu prüfen sind, nie Kundenfeedback, und zählen nie dafür, dass ein Kriterium erfüllt ist."
   },
   "imageErrors": {
     "tooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",
@@ -323,7 +325,8 @@
       "documentsNeedContext": "Personas oder Recherche machen diese Dokumente stärker.",
       "researchNeedsPersonas": "Generieren Sie zuerst Personas, um die Recherche darauf zu stützen.",
       "documentsNeedPersonas": "Generieren Sie zuerst Personas: Die Methodik schreibt PR/FAQ und PRD auf ihrer Grundlage.",
-      "prdNeedsPrfaq": "Schreiben Sie die PR/FAQ vor dem PRD: Die Methodik liest sie."
+      "prdNeedsPrfaq": "Schreiben Sie die PR/FAQ vor dem PRD: Die Methodik liest sie.",
+      "validationSkipped": "Eine Entscheidung wurde getroffen, ohne den Prototyp zu validieren."
     },
     "needAtLeast2Docs": "Mindestens 2 Dokumente erforderlich",
     "nextStep": {
@@ -331,7 +334,8 @@
       "personas": "Personas aus Ihrem Feedback generieren.",
       "product": "Beschreiben Sie Ihr Produkt oder Ihren Service.",
       "prototype": "Erstellen Sie einen klickbaren Prototyp aus Ihren Dokumenten.",
-      "research": "Recherche starten – Ihre Personas können sie fundieren."
+      "research": "Recherche starten – Ihre Personas können sie fundieren.",
+      "validate": "Validieren Sie den Prototyp an seinen Erfolgskriterien."
     },
     "nextStepLabel": "Nächster Schritt:",
     "openProductTool": "Öffnen",
@@ -354,8 +358,13 @@
       "prototypes": "Erstellte Prototypen: {{total, number}}",
       "prototypesNone": "Noch keine",
       "research": "Recherchedokumente: {{total, number}}",
-      "researchNone": "Noch nicht ausgeführt"
-    }
+      "researchNone": "Noch nicht ausgeführt",
+      "validation": "Validierungsdokumente: {{total, number}}",
+      "validationNone": "Noch nicht validiert"
+    },
+    "validate": "Validieren",
+    "validateDesc": "Den Prototyp an den Erfolgskriterien des PRD testen, mit Personas und echten Testern",
+    "openValidation": "Validieren öffnen"
   },
   "personaEdit": {
     "ageRange": "Altersgruppe",
@@ -599,7 +608,8 @@
     "overview": "Übersicht",
     "personas": "Zielgruppen",
     "product": "Produkt",
-    "label": "Projektbereiche"
+    "label": "Projektbereiche",
+    "validation": "Validieren"
   },
   "wizards": {
     "amazonQuestions": "Amazons 5 Kundenfragen",
@@ -844,5 +854,80 @@
     "start": "Fokusgruppe starten",
     "saved": "Gespeicherte Fokusgruppen",
     "noneSaved": "Noch keine gespeicherte Fokusgruppe. Speichern Sie eine über ihre Synthesekarte im Assistenten."
+  },
+  "validation": {
+    "intro": "Validieren ist der letzte Schritt der Methodik: Testen Sie den Prototyp an den Erfolgskriterien des PRD, zuerst mit Ihren Personas (synthetisch), dann mit echten Testern im Prototyp, und entscheiden Sie nach dem, was echte Tester sagen.",
+    "noPrototype": "Dieses Projekt hat noch keinen Prototyp: Legen Sie die Kriterien jetzt fest und erstellen Sie einen zum Testen.",
+    "readOnly": "Nur die Bearbeiter des Projekts können die Validierung öffnen: Ihre Ergebnisse zitieren, was Tester geschrieben haben.",
+    "loadFailed": "Die Validierung konnte nicht geladen werden. Versuchen Sie es erneut.",
+    "criteria": {
+      "title": "1. Erfolgskriterien",
+      "hint": "Jedes Kriterium ist eine Aussage, die Tester von 1 bis 5 bewerten. Es ist erfüllt, wenn der Durchschnitt echter Tester sein Ziel erreicht (4 von 5, wenn Sie keines festlegen), bei mindestens 5 Antworten.",
+      "text": "Kriterium {{number}}",
+      "target": "Ziel von 5",
+      "add": "Kriterium hinzufügen",
+      "remove": "Kriterium {{number}} entfernen",
+      "save": "Kriterien speichern",
+      "fromPrd": "Aus dem PRD lesen",
+      "reading": "Das PRD wird gelesen…",
+      "replaceConfirm": "Die gespeicherten Kriterien durch die aus dem PRD gelesenen ersetzen?"
+    },
+    "plan": {
+      "title": "2. Validierungsplan",
+      "hint": "Ein Interviewleitfaden mit neutralen Fragen je Kriterium, mit einer Nachfrage für jede Persona, und ein Testskript mit Aufgaben, die im Prototyp ausprobiert werden. Ein KI-Aufruf, oder schreiben Sie ihn selbst.",
+      "ai": "Plan mit KI schreiben",
+      "blank": "Selbst schreiben",
+      "writing": "Der Plan wird geschrieben…",
+      "open": "Plan öffnen"
+    },
+    "card": {
+      "title": "3. Echte Tester",
+      "hint": "Der Prototyp zeigt Testern eine Karte „Erzählen Sie uns, wie es lief“: für jede Aufgabe „Konnten Sie das tun?“, wie einfach es war, eine Bewertung je Kriterium und was gefehlt hat. Ihre Antworten sind Kundenfeedback; Pins bleiben Pins.",
+      "task": "Aufgabe {{number}}",
+      "addTask": "Aufgabe hinzufügen",
+      "removeTask": "Aufgabe {{number}} entfernen",
+      "open": "Die Karte im Prototyp zeigen",
+      "save": "Karte speichern",
+      "live": "Die Karte ist im eigenen Feedbackformular des Prototyps aktiv (Revision {{revision, number}}).",
+      "closed": "Die Karte ist gespeichert, wird aber nicht gezeigt.",
+      "stale": "Die Kriterien oder Aufgaben haben sich seit dem Speichern der Karte geändert: Speichern Sie sie erneut.",
+      "oldWidget": "Diese Prototypversion ist älter als die Karte, ihr Widget kann sie nicht zeigen: Speichern Sie ihre Führung oder erstellen Sie sie neu und speichern Sie dann die Karte."
+    },
+    "synthetic": {
+      "title": "Synthetischer Lauf mit Personas",
+      "label": "Synthetisch",
+      "hint": "Personas probieren das Testskript auf den Bildschirmen des Prototyps aus. Synthetisch: nie Antworten von Testern und nie dafür gezählt, dass ein Kriterium erfüllt ist.",
+      "run": "Mit Personas ausführen",
+      "running": "Die Personas probieren den Prototyp aus…",
+      "lastRun": "Letzter Lauf am {{date}} mit {{personas, number}} Personas."
+    },
+    "results": {
+      "title": "Ergebnisse",
+      "responses": "Antworten echter Tester: {{n, number}}",
+      "criterion": "Kriterium",
+      "target": "Ziel",
+      "real": "Echte Tester",
+      "status": "Status",
+      "personas": "Personas",
+      "average": "{{average}} von 5 ({{n, number}})",
+      "noAnswers": "Noch keine Antworten",
+      "met": "Erfüllt",
+      "not_met": "Nicht erfüllt",
+      "not_enough_data": "Zu wenige Daten",
+      "task": "Aufgaben",
+      "rate": "{{percent}} % konnten es ({{n, number}})",
+      "personasDone": "{{completed, number}} von {{total, number}} Personas haben sie erledigt",
+      "ces": "Aufwand (CES): {{average}} von 7 von {{n, number}} Testern",
+      "missing": "Was hat gefehlt?",
+      "noMissing": "Noch keine Antworten."
+    },
+    "report": {
+      "title": "4. Bericht und Entscheidung",
+      "hint": "Der Bericht beurteilt jedes Kriterium nur anhand echter Tester, mit dem synthetischen Lauf daneben, und bietet dann die vorausgefüllte Entscheidung an. Ein KI-Aufruf für seine Zusammenfassung.",
+      "write": "Bericht schreiben",
+      "writing": "Der Bericht wird geschrieben…",
+      "open": "Bericht öffnen",
+      "decide": "Entscheidung anlegen"
+    }
   }
 }

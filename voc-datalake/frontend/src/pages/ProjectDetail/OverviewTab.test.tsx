@@ -133,6 +133,7 @@ describe('OverviewTab', () => {
         expect.stringContaining('Run Research'),
         expect.stringContaining('Generate PRD / PR/FAQ'),
         expect.stringContaining('Clickable Prototype'),
+        expect.stringContaining('Validate'),
         expect.stringContaining('Remix Documents'),
       ])
     })
@@ -148,7 +149,7 @@ describe('OverviewTab', () => {
       expect(titles[0]).toBe('1. Product / Service Description')
       expect(titles[2]).toBe('3. Run Research')
       expect(titles[4]).toBe('5. Clickable Prototype')
-      expect(titles[5]).toBe('6. Remix Documents')
+      expect(titles[6]).toBe('7. Remix Documents')
     })
   })
 
@@ -263,8 +264,9 @@ describe('OverviewTab', () => {
           personas={[persona('p1')]}
           // A prototype is now one of the recommendable steps, so "every step has
           // output" needs one — without it the recommendation correctly points at
-          // the prototype and this test would be asserting the wrong thing.
-          documents={[doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype')]}
+          // the prototype and this test would be asserting the wrong thing. So is
+          // Validate (7.68.00): its report.
+          documents={[doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype'), doc('d4', 'validation_report')]}
           productContext={contextWith({ product_name: 'VoC' })}
         />,
       )

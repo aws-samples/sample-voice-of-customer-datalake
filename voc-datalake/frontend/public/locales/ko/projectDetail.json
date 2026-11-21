@@ -204,7 +204,8 @@
       "noEvidence": "고객 근거를 인용하지 않습니다.",
       "documentsSkipped_one": "선택한 참고 문서 {{count, number}}개가 제외되었습니다(처음 {{cap, number}}개만 읽습니다).",
       "documentsSkipped_other": "선택한 참고 문서 {{count, number}}개가 제외되었습니다(처음 {{cap, number}}개만 읽습니다).",
-      "handWritten": "직접 작성한 문서: 아직 고객 피드백을 인용하지 않습니다."
+      "handWritten": "직접 작성한 문서: 아직 고객 피드백을 인용하지 않습니다.",
+      "missingPrototype": "프로토타입 없이 작성됨: 프로젝트에 프로토타입이 없었습니다."
     },
     "blank": {
       "untitled": {
@@ -224,7 +225,8 @@
       "startWriting": "작성 시작",
       "cancel": "취소",
       "outlineNote": "{{type}}이(가) 개요와 함께 여기에 열리며, 바로 작성할 수 있습니다."
-    }
+    },
+    "syntheticRunNotice": "합성 검증 실행: 페르소나가 프로토타입 화면을 사용해 보았습니다. 그 판단은 실제 테스터로 확인할 가설이며, 고객 피드백이 아니고, 기준 충족에는 절대 반영되지 않습니다."
   },
   "imageErrors": {
     "tooLarge": "{{name}}은(는) 크기를 줄인 뒤에도 여전히 너무 큽니다. 더 작은 스크린샷을 사용하거나 잘라내세요.",
@@ -323,7 +325,8 @@
       "documentsNeedContext": "페르소나나 리서치가 있으면 이 문서가 더 탄탄해집니다.",
       "researchNeedsPersonas": "먼저 페르소나를 생성하면 리서치의 근거로 사용할 수 있습니다.",
       "documentsNeedPersonas": "먼저 페르소나를 생성하세요. 방법론은 페르소나를 바탕으로 PR/FAQ와 PRD를 작성합니다.",
-      "prdNeedsPrfaq": "PRD보다 먼저 PR/FAQ를 작성하세요. 방법론은 PR/FAQ를 읽습니다."
+      "prdNeedsPrfaq": "PRD보다 먼저 PR/FAQ를 작성하세요. 방법론은 PR/FAQ를 읽습니다.",
+      "validationSkipped": "프로토타입을 검증하지 않고 결정이 내려졌습니다."
     },
     "needAtLeast2Docs": "최소 2개의 문서 필요",
     "nextStep": {
@@ -331,7 +334,8 @@
       "personas": "피드백에서 페르소나를 생성하세요.",
       "product": "제품 또는 서비스를 설명하세요.",
       "prototype": "문서에서 클릭 가능한 프로토타입을 만드세요.",
-      "research": "리서치를 실행하세요. 페르소나로 근거를 더할 수 있습니다."
+      "research": "리서치를 실행하세요. 페르소나로 근거를 더할 수 있습니다.",
+      "validate": "성공 기준에 비추어 프로토타입을 검증하세요."
     },
     "nextStepLabel": "다음 단계:",
     "openProductTool": "열기",
@@ -354,8 +358,13 @@
       "prototypes": "생성된 프로토타입: {{total, number}}",
       "prototypesNone": "아직 없음",
       "research": "리서치 문서: {{total, number}}",
-      "researchNone": "아직 실행하지 않음"
-    }
+      "researchNone": "아직 실행하지 않음",
+      "validation": "검증 문서: {{total, number}}",
+      "validationNone": "아직 검증하지 않음"
+    },
+    "validate": "검증",
+    "validateDesc": "PRD의 성공 기준에 비추어 페르소나와 실제 테스터로 프로토타입을 테스트합니다",
+    "openValidation": "검증 열기"
   },
   "personaEdit": {
     "ageRange": "나이대",
@@ -599,7 +608,8 @@
     "overview": "개요",
     "personas": "페르소나",
     "product": "제품",
-    "label": "프로젝트 섹션"
+    "label": "프로젝트 섹션",
+    "validation": "검증"
   },
   "wizards": {
     "amazonQuestions": "Amazon의 5가지 고객 질문",
@@ -844,5 +854,80 @@
     "start": "포커스 그룹 시작",
     "saved": "저장된 포커스 그룹",
     "noneSaved": "저장된 포커스 그룹이 아직 없습니다. 어시스턴트의 종합 카드에서 저장하세요."
+  },
+  "validation": {
+    "intro": "검증은 방법론의 마지막 단계입니다. PRD의 성공 기준에 비추어 프로토타입을 먼저 페르소나로(합성), 그다음 프로토타입 안의 실제 테스터로 테스트하고, 실제 테스터의 의견으로 결정하세요.",
+    "noPrototype": "이 프로젝트에는 아직 프로토타입이 없습니다. 지금 기준을 정하고, 테스트할 프로토타입을 만드세요.",
+    "readOnly": "검증은 프로젝트 편집자만 열 수 있습니다. 결과에 테스터가 입력한 내용이 인용됩니다.",
+    "loadFailed": "검증을 불러오지 못했습니다. 다시 시도하세요.",
+    "criteria": {
+      "title": "1. 성공 기준",
+      "hint": "각 기준은 테스터가 1~5로 평가하는 문장입니다. 답변이 5개 이상일 때 실제 테스터의 평균이 목표(설정하지 않으면 5점 중 4점)에 도달하면 충족됩니다.",
+      "text": "기준 {{number}}",
+      "target": "목표(5점 만점)",
+      "add": "기준 추가",
+      "remove": "기준 {{number}} 삭제",
+      "save": "기준 저장",
+      "fromPrd": "PRD에서 읽기",
+      "reading": "PRD를 읽는 중…",
+      "replaceConfirm": "저장된 기준을 PRD에서 읽은 기준으로 바꿀까요?"
+    },
+    "plan": {
+      "title": "2. 검증 계획",
+      "hint": "기준별 중립적인 질문으로 된 인터뷰 가이드(페르소나별 추가 질문 포함)와 프로토타입에서 시도할 작업의 테스트 스크립트입니다. AI를 한 번 호출하거나 직접 작성하세요.",
+      "ai": "AI로 계획 작성",
+      "blank": "직접 작성",
+      "writing": "계획을 작성하는 중…",
+      "open": "계획 열기"
+    },
+    "card": {
+      "title": "3. 실제 테스터",
+      "hint": "프로토타입은 테스터에게 \"어떠셨는지 알려 주세요\" 카드를 보여 줍니다. 작업별 \"이 작업을 할 수 있었나요?\", 쉬웠던 정도, 기준별 평가, 부족했던 점. 답변은 고객 피드백이 되며, 핀은 핀으로 남습니다.",
+      "task": "작업 {{number}}",
+      "addTask": "작업 추가",
+      "removeTask": "작업 {{number}} 삭제",
+      "open": "프로토타입에 카드 표시",
+      "save": "카드 저장",
+      "live": "카드가 프로토타입 자체의 피드백 양식에 게시되어 있습니다(개정 {{revision, number}}).",
+      "closed": "카드는 저장되었지만 표시되지 않습니다.",
+      "stale": "카드를 저장한 뒤 기준이나 작업이 바뀌었습니다. 다시 저장하세요.",
+      "oldWidget": "이 프로토타입 버전은 카드 기능 이전에 만들어져 위젯이 카드를 표시할 수 없습니다. 둘러보기를 저장하거나 다시 빌드한 뒤 카드를 저장하세요."
+    },
+    "synthetic": {
+      "title": "페르소나 합성 실행",
+      "label": "합성",
+      "hint": "페르소나가 프로토타입 화면에서 테스트 스크립트를 시도합니다. 합성: 테스터의 답변이 아니며, 기준 충족에 절대 반영되지 않습니다.",
+      "run": "페르소나로 실행",
+      "running": "페르소나가 프로토타입을 사용해 보는 중…",
+      "lastRun": "마지막 실행 {{date}}, 페르소나 {{personas, number}}명."
+    },
+    "results": {
+      "title": "결과",
+      "responses": "실제 테스터 답변: {{n, number}}",
+      "criterion": "기준",
+      "target": "목표",
+      "real": "실제 테스터",
+      "status": "상태",
+      "personas": "페르소나",
+      "average": "5점 중 {{average}} ({{n, number}})",
+      "noAnswers": "아직 답변 없음",
+      "met": "충족",
+      "not_met": "미충족",
+      "not_enough_data": "데이터 부족",
+      "task": "작업",
+      "rate": "{{percent}}% 가능 ({{n, number}})",
+      "personasDone": "페르소나 {{total, number}}명 중 {{completed, number}}명 완료",
+      "ces": "용이성(CES): 테스터 {{n, number}}명, 7점 중 {{average}}",
+      "missing": "무엇이 부족했나요?",
+      "noMissing": "아직 답변이 없습니다."
+    },
+    "report": {
+      "title": "4. 보고서와 결정",
+      "hint": "보고서는 각 기준을 실제 테스터만으로 판단하고 합성 실행을 옆에 둔 뒤, 미리 채운 결정을 제안합니다. 요약에 AI를 한 번 호출합니다.",
+      "write": "보고서 작성",
+      "writing": "보고서를 작성하는 중…",
+      "open": "보고서 열기",
+      "decide": "결정 만들기"
+    }
   }
 }

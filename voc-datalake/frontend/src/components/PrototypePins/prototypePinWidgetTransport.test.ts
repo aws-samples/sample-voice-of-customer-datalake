@@ -6,34 +6,12 @@
  * nowhere otherwise. Each case evaluates the real source afresh, so widget state
  * never leaks between cases.
  */
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { isRecord } from '../../lib/typeGuards'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  FORM_ID, SUBMIT_URL, fakeChannels, frameBy, installWidgetSandbox, invoke, loadWidget,
+} from '../../test/pinWidgetHarness'
 
-const WIDGET_SOURCE = readFileSync(
-  resolve(__dirname, '../../../../lambda/shared/static/prototype-pin-widget.js'), 'utf-8')
-
-const FORM_ID = 'pf_0123456789abcdef'
-const SUBMIT_URL = `https://abcde12345.execute-api.us-east-1.amazonaws.com/v1/feedback-forms/${FORM_ID}/submit`
 const BODY = { text: 'Make this bigger', pin: { selector: '#pay' } }
-
-/** A fresh widget instance initialised with `options`; returns its API. */
-function loadWidget(options: Record<string, unknown>): Record<string, unknown> {
-  const evaluate: unknown = Reflect.get(window, 'eval')
-  if (typeof evaluate !== 'function') throw new Error('no eval in this environment')
-  Reflect.apply(evaluate, window, [WIDGET_SOURCE])
-  const api: unknown = Reflect.get(window, 'VoCPinWidget')
-  if (!isRecord(api)) throw new Error('the widget did not install window.VoCPinWidget')
-  invoke(api, 'init', options)
-  return api
-}
-
-function invoke(api: Record<string, unknown>, name: string, ...args: unknown[]): unknown {
-  const fn: unknown = api[name]
-  if (typeof fn !== 'function') throw new Error(`VoCPinWidget.${name} is not a function`)
-  return Reflect.apply(fn, undefined, args)
-}
 
 function feedbackButton(): HTMLButtonElement {
   const button = document.getElementById('voc-pin-button')
@@ -45,25 +23,7 @@ function panelText(): string {
   return document.getElementById('voc-pin-panel')?.textContent ?? ''
 }
 
-/** Make the page look framed by the SPA viewer: a parent window that records postMessage. */
-function frameBy(parent: { postMessage: ReturnType<typeof vi.fn> }): void {
-  Object.defineProperty(window, 'parent', { value: parent, configurable: true })
-}
-
-const fetchMock = vi.fn()
-const ORIGINAL_MESSAGE_CHANNEL: unknown = Reflect.get(window, 'MessageChannel')
-
-beforeEach(() => {
-  fetchMock.mockReset()
-  vi.stubGlobal('fetch', fetchMock)
-  document.body.innerHTML = ''
-})
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-  Object.defineProperty(window, 'parent', { value: window, configurable: true })
-  Object.defineProperty(window, 'MessageChannel', { value: ORIGINAL_MESSAGE_CHANNEL, configurable: true })
-})
+const fetchMock = installWidgetSandbox()
 
 describe('standalone with its submit URL', () => {
   it('posts the pin directly to that URL, with no credentials, no Authorization header and no referrer', async () => {
@@ -73,7 +33,8 @@ describe('standalone with its submit URL', () => {
 
     await invoke(api, 'send', BODY)
 
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(SUBMIT_URL, {
+    // The first call is the validation card's question (7.68.00, prototypePinWidgetCard.test.ts): the same URL.
+    expect(fetchMock).toHaveBeenLastCalledWith(SUBMIT_URL, {
       method: 'POST', mode: 'cors', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(BODY),
     })
@@ -134,20 +95,6 @@ describe('framed by the SPA viewer', () => {
     )
   })
 })
-
-/** A MessageChannel stand-in: records the ports so a case can play the host's side. */
-function fakeChannels() {
-  const made: { port1: { onmessage: ((event: { data: unknown }) => void) | null }; port2: object }[] = []
-  class FakeChannel {
-    readonly port1: { onmessage: ((event: { data: unknown }) => void) | null } = { onmessage: null }
-    readonly port2 = { transferred: true }
-    constructor() {
-      made.push(this)
-    }
-  }
-  Object.defineProperty(window, 'MessageChannel', { value: FakeChannel, configurable: true })
-  return made
-}
 
 /** A host 'show' message with one marker on `#target`. */
 const SHOW_ON_TARGET = { source: 'voc-pin-host', type: 'show',

@@ -133,14 +133,20 @@ def _default_invoke(prompt: str, system: str) -> str:
                     surface=SURFACE, step_name='document_persona_review')
 
 
+def guarded_reply(call: Callable[[], str], failure: str) -> str | None:
+    """One persona's model reply, or None when its call failed (logged by error type only): one persona failing never
+    sinks the others (this review, and the Validate step's synthetic run, shared/validation_ai.py)."""
+    try:
+        return call()
+    except Exception as exc:  # noqa: BLE001 - one persona failing must not sink the rest
+        logger.warning(failure, extra={'error_type': type(exc).__name__})
+        return None
+
+
 def _consult(persona: Mapping[str, Any], document_type: str, prompt: str, text: str,
              invoke: Invoke) -> dict[str, Any] | None:
-    try:
-        reply = invoke(prompt, system_prompt(persona, document_type))
-    except Exception as exc:  # noqa: BLE001 - one persona failing must not sink the review
-        logger.warning('Persona review call failed', extra={'error_type': type(exc).__name__})
-        return None
-    return parse_review(reply, text)
+    reply = guarded_reply(lambda: invoke(prompt, system_prompt(persona, document_type)), 'Persona review call failed')
+    return None if reply is None else parse_review(reply, text)
 
 
 def _dedupe_key(persona_id: str, document_id: str, exact: str) -> tuple[str, str, str]:

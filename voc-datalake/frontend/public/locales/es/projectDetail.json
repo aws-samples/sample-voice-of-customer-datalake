@@ -214,7 +214,8 @@
       "noEvidence": "No cita ninguna evidencia de clientes.",
       "documentsSkipped_one": "Se omitió {{count, number}} documento de referencia seleccionado (solo se leen los primeros {{cap, number}}).",
       "documentsSkipped_other": "Se omitieron {{count, number}} documentos de referencia seleccionados (solo se leen los primeros {{cap, number}}).",
-      "handWritten": "Escrito a mano: todavía no cita opiniones de clientes."
+      "handWritten": "Escrito a mano: todavía no cita opiniones de clientes.",
+      "missingPrototype": "Hecho sin prototipo: el proyecto no tenía ninguno."
     },
     "blank": {
       "untitled": {
@@ -234,7 +235,8 @@
       "startWriting": "Empezar a escribir",
       "cancel": "Cancelar",
       "outlineNote": "El {{type}} se abre aquí con su esquema, para que escriba en él."
-    }
+    },
+    "syntheticRunNotice": "Una ejecución de validación sintética: las personas probaron las pantallas del prototipo. Sus veredictos son hipótesis que probar con testers reales, nunca feedback de clientes, y nunca cuentan para que un criterio se cumpla."
   },
   "imageErrors": {
     "tooLarge": "{{name}} sigue siendo demasiado grande después de redimensionarla. Prueba con una captura más pequeña o recórtala.",
@@ -339,7 +341,8 @@
       "documentsNeedContext": "Las personas o la investigación fortalecen estos documentos.",
       "researchNeedsPersonas": "Genere personas primero para fundamentar la investigación en ellas.",
       "documentsNeedPersonas": "Genere personas primero: la metodología escribe la PR/FAQ y el PRD a partir de ellas.",
-      "prdNeedsPrfaq": "Escriba la PR/FAQ antes del PRD: la metodología la lee."
+      "prdNeedsPrfaq": "Escriba la PR/FAQ antes del PRD: la metodología la lee.",
+      "validationSkipped": "Se tomó una decisión sin validar el prototipo."
     },
     "needAtLeast2Docs": "Se necesitan al menos 2 documentos",
     "nextStep": {
@@ -347,7 +350,8 @@
       "personas": "Genere personas a partir de sus comentarios.",
       "product": "Describa su producto o servicio.",
       "prototype": "Cree un prototipo interactivo a partir de sus documentos.",
-      "research": "Ejecute la investigación: sus personas pueden fundamentarla."
+      "research": "Ejecute la investigación: sus personas pueden fundamentarla.",
+      "validate": "Valide el prototipo frente a sus criterios de éxito."
     },
     "nextStepLabel": "Siguiente paso:",
     "openProductTool": "Abrir",
@@ -370,8 +374,13 @@
       "prototypes": "Prototipos creados: {{total, number}}",
       "prototypesNone": "Ninguno todavía",
       "research": "Documentos de investigación: {{total, number}}",
-      "researchNone": "Aún no ejecutada"
-    }
+      "researchNone": "Aún no ejecutada",
+      "validation": "Documentos de validación: {{total, number}}",
+      "validationNone": "Aún sin validar"
+    },
+    "validate": "Validar",
+    "validateDesc": "Pruebe el prototipo frente a los criterios de éxito del PRD, con personas y con testers reales",
+    "openValidation": "Abrir Validar"
   },
   "personaEdit": {
     "ageRange": "Rango de Edad",
@@ -619,7 +628,8 @@
     "overview": "Descripción General",
     "personas": "Arquetipos",
     "product": "Producto",
-    "label": "Secciones del proyecto"
+    "label": "Secciones del proyecto",
+    "validation": "Validar"
   },
   "wizards": {
     "amazonQuestions": "5 Preguntas de Cliente de Amazon",
@@ -878,5 +888,80 @@
     "start": "Iniciar grupo focal",
     "saved": "Grupos focales guardados",
     "noneSaved": "Aún no hay grupos focales guardados. Guarda uno desde su tarjeta de síntesis en el asistente."
+  },
+  "validation": {
+    "intro": "Validar es el último paso de la metodología: pruebe el prototipo frente a los criterios de éxito del PRD, primero con sus personas (sintético) y luego con testers reales dentro del prototipo, y decida según lo que digan los testers reales.",
+    "noPrototype": "Este proyecto aún no tiene prototipo: defina ahora los criterios y cree uno para probar.",
+    "readOnly": "Solo los editores del proyecto pueden abrir la validación: sus resultados citan lo que escribieron los testers.",
+    "loadFailed": "No se pudo cargar la validación. Inténtelo de nuevo.",
+    "criteria": {
+      "title": "1. Criterios de éxito",
+      "hint": "Cada criterio es una afirmación que los testers valoran de 1 a 5. Se cumple cuando la media de los testers reales alcanza su objetivo (4 de 5 si no fija ninguno) con al menos 5 respuestas.",
+      "text": "Criterio {{number}}",
+      "target": "Objetivo de 5",
+      "add": "Añadir un criterio",
+      "remove": "Quitar el criterio {{number}}",
+      "save": "Guardar criterios",
+      "fromPrd": "Leerlos del PRD",
+      "reading": "Leyendo el PRD…",
+      "replaceConfirm": "¿Sustituir los criterios guardados por los leídos del PRD?"
+    },
+    "plan": {
+      "title": "2. Plan de validación",
+      "hint": "Una guía de entrevista con preguntas neutrales por criterio, con una pregunta de sondeo para cada persona, y un guion de prueba con tareas que probar en el prototipo. Una llamada a la IA, o escríbalo usted.",
+      "ai": "Escribir el plan con IA",
+      "blank": "Escribirlo yo",
+      "writing": "Escribiendo el plan…",
+      "open": "Abrir el plan"
+    },
+    "card": {
+      "title": "3. Testers reales",
+      "hint": "El prototipo muestra a los testers una tarjeta \"Cuéntenos cómo le fue\": para cada tarea \"¿Pudo hacerlo?\", lo fácil que fue, una valoración de cada criterio y qué echó en falta. Sus respuestas son feedback de clientes; los pins siguen siendo pins.",
+      "task": "Tarea {{number}}",
+      "addTask": "Añadir una tarea",
+      "removeTask": "Quitar la tarea {{number}}",
+      "open": "Mostrar la tarjeta en el prototipo",
+      "save": "Guardar la tarjeta",
+      "live": "La tarjeta está activa en el formulario de feedback del propio prototipo (revisión {{revision, number}}).",
+      "closed": "La tarjeta está guardada pero no se muestra.",
+      "stale": "Los criterios o las tareas cambiaron desde que se guardó la tarjeta: guárdela de nuevo.",
+      "oldWidget": "Esta versión del prototipo es anterior a la tarjeta, así que su widget no puede mostrarla: guarde su recorrido o vuelva a crearlo y guarde la tarjeta."
+    },
+    "synthetic": {
+      "title": "Ejecución sintética con personas",
+      "label": "Sintético",
+      "hint": "Las personas prueban el guion en las pantallas del prototipo. Sintético: nunca son respuestas de testers y nunca cuentan para que un criterio se cumpla.",
+      "run": "Ejecutar con personas",
+      "running": "Las personas están probando el prototipo…",
+      "lastRun": "Última ejecución el {{date}} con {{personas, number}} personas."
+    },
+    "results": {
+      "title": "Resultados",
+      "responses": "Respuestas de testers reales: {{n, number}}",
+      "criterion": "Criterio",
+      "target": "Objetivo",
+      "real": "Testers reales",
+      "status": "Estado",
+      "personas": "Personas",
+      "average": "{{average}} de 5 ({{n, number}})",
+      "noAnswers": "Aún sin respuestas",
+      "met": "Cumplido",
+      "not_met": "No cumplido",
+      "not_enough_data": "Datos insuficientes",
+      "task": "Tareas",
+      "rate": "{{percent}}% pudo ({{n, number}})",
+      "personasDone": "{{completed, number}} de {{total, number}} personas la completaron",
+      "ces": "Facilidad (CES): {{average}} de 7 de {{n, number}} testers",
+      "missing": "¿Qué echó en falta?",
+      "noMissing": "Aún sin respuestas."
+    },
+    "report": {
+      "title": "4. Informe y decisión",
+      "hint": "El informe evalúa cada criterio solo con testers reales, con la ejecución sintética al lado, y ofrece la decisión ya rellenada. Una llamada a la IA para su resumen.",
+      "write": "Escribir el informe",
+      "writing": "Escribiendo el informe…",
+      "open": "Abrir el informe",
+      "decide": "Crear decisión"
+    }
   }
 }

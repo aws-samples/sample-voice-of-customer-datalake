@@ -96,7 +96,7 @@ class TestHumanAndOverview:
 
     def test_overview_on_an_empty_project(self):
         out = m.overview([{'sk': 'META'}])
-        assert out['order'] == ['personas', 'research', 'prfaq', 'prd', 'prototype']
+        assert out['order'] == ['personas', 'research', 'prfaq', 'prd', 'prototype', 'validation']
         assert out['steps']['prd'] == {'missing': ['personas', 'prfaq'], 'count': 0}
         assert out['steps']['prototype']['blocked'] is True
 
@@ -120,3 +120,37 @@ class TestAFocusGroupIsAReferenceOnly:
     def test_a_prd_after_it_still_misses_its_personas_and_pr_faq(self):
         skipped = m.assess('prd', [FOCUS_GROUP])['skipped']
         assert {entry['step'] for entry in skipped} == {'personas', 'prfaq'}
+
+
+def _doc(document_id, document_type, **extra):
+    return {'sk': f'DOC#{document_id}', 'document_id': document_id, 'document_type': document_type, **extra}
+
+
+class TestValidateIsTheReviewStep:
+    """7.68.00, owner decisions: Validate is tenet 2's "review" (after the prototype, reading it and the PRD); a
+    synthetic run is never its output; a decision made on an unvalidated prototype is reported, never refused."""
+
+    def test_it_comes_last_and_reads_the_prototype_and_the_prd(self):
+        assert m.STEPS[-2:] == ('prototype', 'validation')
+        assert m.UPSTREAM['validation'] == ('prototype', 'prd')
+
+    def test_a_plan_without_a_prototype_or_a_prd_is_reported_not_refused(self):
+        out = m.assess('validation', [{'sk': 'META'}])
+        assert out['skipped'] == [{'step': 'prototype', 'reason': 'missing'}, {'step': 'prd', 'reason': 'missing'}]
+        assert out['warnings'][0]['message'] == 'This validation is made without a prototype: the project has none yet.'
+        assert not m.is_blocked(out)
+
+    def test_its_plans_and_reports_count_and_a_synthetic_run_never_does(self):
+        items = [*_items('PROTOTYPE#v1', 'PRD#d1'), _doc('doc_p', 'validation_plan'),
+                 _doc('doc_r', 'validation_run', synthetic=True), _doc('doc_rep', 'validation_report')]
+        assert m.present_steps(items)['validation'] == ['doc_p', 'doc_rep']
+        assert m.overview(items)['steps']['validation'] == {'missing': [], 'count': 2, 'skipped': False}
+
+    def test_a_decision_on_an_unvalidated_prototype_is_reported_as_skipped(self):
+        items = [*_items('PROTOTYPE#v1'), _doc('doc_d', 'decision'), _doc('doc_r', 'validation_run')]
+        assert m.overview(items)['steps']['validation'] == {'missing': ['prd'], 'count': 0, 'skipped': True}
+        assert m.overview([*items, _doc('doc_rep', 'validation_report')])['steps']['validation']['skipped'] is False
+
+    def test_no_skip_without_a_decision_or_without_a_prototype(self):
+        assert m.validation_skipped(_items('PROTOTYPE#v1')) is False
+        assert m.validation_skipped([_doc('doc_d', 'decision')]) is False

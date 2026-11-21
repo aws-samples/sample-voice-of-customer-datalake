@@ -214,7 +214,8 @@
       "noEvidence": "Ne cite aucune preuve client.",
       "documentsSkipped_one": "{{count, number}} document de référence sélectionné a été laissé de côté (seuls les {{cap, number}} premiers sont lus).",
       "documentsSkipped_other": "{{count, number}} documents de référence sélectionnés ont été laissés de côté (seuls les {{cap, number}} premiers sont lus).",
-      "handWritten": "Écrit à la main : ne cite encore aucun avis client."
+      "handWritten": "Écrit à la main : ne cite encore aucun avis client.",
+      "missingPrototype": "Fait sans prototype : le projet n'en avait pas."
     },
     "blank": {
       "untitled": {
@@ -234,7 +235,8 @@
       "startWriting": "Commencer à écrire",
       "cancel": "Annuler",
       "outlineNote": "Le {{type}} s’ouvre ici avec son plan, pour que vous y écriviez."
-    }
+    },
+    "syntheticRunNotice": "Une validation synthétique : des personas ont essayé les écrans du prototype. Leurs verdicts sont des hypothèses à vérifier avec de vrais testeurs, jamais des retours clients, et ne comptent jamais pour qu'un critère soit atteint."
   },
   "imageErrors": {
     "tooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
@@ -339,7 +341,8 @@
       "documentsNeedContext": "Les personas ou la recherche renforcent ces documents.",
       "researchNeedsPersonas": "Générez d'abord des personas pour y ancrer la recherche.",
       "documentsNeedPersonas": "Générez d'abord des personas : la méthode écrit la PR/FAQ et le PRD à partir d'elles.",
-      "prdNeedsPrfaq": "Écrivez la PR/FAQ avant le PRD : la méthode la lit."
+      "prdNeedsPrfaq": "Écrivez la PR/FAQ avant le PRD : la méthode la lit.",
+      "validationSkipped": "Une décision a été prise sans valider le prototype."
     },
     "needAtLeast2Docs": "Au moins 2 documents requis",
     "nextStep": {
@@ -347,7 +350,8 @@
       "personas": "Générez des personas à partir de vos retours.",
       "product": "Décrivez votre produit ou service.",
       "prototype": "Créez un prototype cliquable à partir de vos documents.",
-      "research": "Lancez la recherche — vos personas peuvent l'étayer."
+      "research": "Lancez la recherche — vos personas peuvent l'étayer.",
+      "validate": "Validez le prototype au regard de ses critères de succès."
     },
     "nextStepLabel": "Étape suivante :",
     "openProductTool": "Ouvrir",
@@ -370,8 +374,13 @@
       "prototypes": "Prototypes créés : {{total, number}}",
       "prototypesNone": "Aucun pour le moment",
       "research": "Documents de recherche : {{total, number}}",
-      "researchNone": "Pas encore lancée"
-    }
+      "researchNone": "Pas encore lancée",
+      "validation": "Documents de validation : {{total, number}}",
+      "validationNone": "Pas encore validé"
+    },
+    "validate": "Valider",
+    "validateDesc": "Testez le prototype au regard des critères de succès du PRD, avec les personas et de vrais testeurs",
+    "openValidation": "Ouvrir Valider"
   },
   "personaEdit": {
     "ageRange": "Tranche d'âge",
@@ -619,7 +628,8 @@
     "overview": "Aperçu",
     "personas": "Profils",
     "product": "Produit",
-    "label": "Sections du projet"
+    "label": "Sections du projet",
+    "validation": "Valider"
   },
   "wizards": {
     "amazonQuestions": "Les 5 questions clients d'Amazon",
@@ -878,5 +888,80 @@
     "start": "Lancer le groupe de discussion",
     "saved": "Groupes de discussion enregistrés",
     "noneSaved": "Aucun groupe de discussion enregistré. Enregistrez-en un depuis sa carte de synthèse dans l’assistant."
+  },
+  "validation": {
+    "intro": "Valider est la dernière étape de la méthode : testez le prototype au regard des critères de succès du PRD, d'abord avec vos personas (synthétique), puis avec de vrais testeurs dans le prototype, et décidez d'après ce que disent les vrais testeurs.",
+    "noPrototype": "Ce projet n'a pas encore de prototype : définissez dès maintenant les critères, puis construisez-en un à tester.",
+    "readOnly": "Seuls les éditeurs du projet peuvent ouvrir la validation : ses résultats citent ce que les testeurs ont écrit.",
+    "loadFailed": "Impossible de charger la validation. Réessayez.",
+    "criteria": {
+      "title": "1. Critères de succès",
+      "hint": "Chaque critère est une affirmation que les testeurs notent de 1 à 5. Il est atteint quand la moyenne des vrais testeurs atteint son objectif (4 sur 5 si vous n'en fixez pas) sur au moins 5 réponses.",
+      "text": "Critère {{number}}",
+      "target": "Objectif sur 5",
+      "add": "Ajouter un critère",
+      "remove": "Retirer le critère {{number}}",
+      "save": "Enregistrer les critères",
+      "fromPrd": "Les lire dans le PRD",
+      "reading": "Lecture du PRD…",
+      "replaceConfirm": "Remplacer les critères enregistrés par ceux lus dans le PRD ?"
+    },
+    "plan": {
+      "title": "2. Plan de validation",
+      "hint": "Un guide d'entretien de questions neutres par critère, avec une relance pour chaque persona, et un script de test de tâches à essayer sur le prototype. Un appel à l'IA, ou rédigez-le vous-même.",
+      "ai": "Rédiger le plan avec l'IA",
+      "blank": "Le rédiger moi-même",
+      "writing": "Rédaction du plan…",
+      "open": "Ouvrir le plan"
+    },
+    "card": {
+      "title": "3. Vrais testeurs",
+      "hint": "Le prototype montre aux testeurs une carte « Dites-nous comment cela s'est passé » : pour chaque tâche « Avez-vous pu le faire ? », la facilité, une note pour chaque critère et ce qui manquait. Leurs réponses sont des retours clients ; les épingles restent des épingles.",
+      "task": "Tâche {{number}}",
+      "addTask": "Ajouter une tâche",
+      "removeTask": "Retirer la tâche {{number}}",
+      "open": "Afficher la carte dans le prototype",
+      "save": "Enregistrer la carte",
+      "live": "La carte est active sur le formulaire de retours du prototype (révision {{revision, number}}).",
+      "closed": "La carte est enregistrée mais pas affichée.",
+      "stale": "Les critères ou les tâches ont changé depuis l'enregistrement de la carte : enregistrez-la de nouveau.",
+      "oldWidget": "Cette version du prototype est antérieure à la carte : son widget ne peut pas l'afficher. Enregistrez sa visite guidée ou reconstruisez-le, puis enregistrez la carte."
+    },
+    "synthetic": {
+      "title": "Essai synthétique avec les personas",
+      "label": "Synthétique",
+      "hint": "Les personas essaient le script de test sur les écrans du prototype. Synthétique : jamais des réponses de testeurs, et jamais compté pour qu'un critère soit atteint.",
+      "run": "Lancer avec les personas",
+      "running": "Les personas essaient le prototype…",
+      "lastRun": "Dernier essai le {{date}} avec {{personas, number}} personas."
+    },
+    "results": {
+      "title": "Résultats",
+      "responses": "Réponses de vrais testeurs : {{n, number}}",
+      "criterion": "Critère",
+      "target": "Objectif",
+      "real": "Vrais testeurs",
+      "status": "Statut",
+      "personas": "Personas",
+      "average": "{{average}} sur 5 ({{n, number}})",
+      "noAnswers": "Pas encore de réponse",
+      "met": "Atteint",
+      "not_met": "Non atteint",
+      "not_enough_data": "Données insuffisantes",
+      "task": "Tâches",
+      "rate": "{{percent}} % ont pu ({{n, number}})",
+      "personasDone": "{{completed, number}} personas sur {{total, number}} l'ont réalisée",
+      "ces": "Facilité (CES) : {{average}} sur 7 de {{n, number}} testeurs",
+      "missing": "Qu'est-ce qui manquait ?",
+      "noMissing": "Pas encore de réponse."
+    },
+    "report": {
+      "title": "4. Rapport et décision",
+      "hint": "Le rapport juge chaque critère sur les vrais testeurs uniquement, avec l'essai synthétique à côté, puis propose la décision pré-remplie. Un appel à l'IA pour son résumé.",
+      "write": "Rédiger le rapport",
+      "writing": "Rédaction du rapport…",
+      "open": "Ouvrir le rapport",
+      "decide": "Créer une décision"
+    }
   }
 }

@@ -48,7 +48,9 @@ _PROTOTYPE_TAGS = ('prototype_outline', 'walkthrough_source')
 _FORM_DRAFT_TAGS = ('form_brief', 'current_form')
 # A form report's AI summary (7.63.00, shared/forms_v2_report_ai.py): the open-text answers it groups.
 _FORM_REPORT_TAGS = ('form_answers',)
-EVERY_TAG = (*_FIRST_TAGS, *_PROTOTYPE_TAGS, *_FORM_DRAFT_TAGS, *_FORM_REPORT_TAGS)
+# The Validate step (7.68.00, shared/validation_ai.py): the criteria and tasks, and the real testers' results.
+_VALIDATION_TAGS = ('validation_script', 'validation_results')
+EVERY_TAG = (*_FIRST_TAGS, *_PROTOTYPE_TAGS, *_FORM_DRAFT_TAGS, *_FORM_REPORT_TAGS, *_VALIDATION_TAGS)
 
 class TestEveryDataBlockTagIsFenced:
     def test_the_tag_tuple_is_exactly_this_in_this_order(self):

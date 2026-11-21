@@ -18,21 +18,27 @@ class TestGenerate:
          {'doc_type': 'prfaq', 'title': 'Seat map', 'feature_idea': 'A live seat map'}),
         ({'step': 'prd'}, '/projects/proj_1/document', {'doc_type': 'prd'}),
         ({'step': 'prototype', 'title': 'Proto'}, '/projects/proj_1/build-prototype', {'title': 'Proto'}),
+        # 7.68.00: the Validate step's two documents, each its own route (the plan by AI: a person writes one by hand).
+        ({'step': 'validation_plan'}, '/projects/proj_1/validation/plan', {}),
+        ({'step': 'validation_report', 'title': 'ignored'}, '/projects/proj_1/validation/report', {}),
     ])
     def test_each_step_is_its_route(self, args, path, body):
         request = _build('projects_generate', args)
         assert (request.domain, request.method, request.path, request.body) == ('projects', 'POST', path, body)
 
-    @pytest.mark.parametrize('step', ['review', 'revise'])
+    @pytest.mark.parametrize('step', ['review', 'revise', 'validation'])
     def test_an_unknown_step_is_refused(self, step):
-        """``revise`` is no step of its own any more: it is documents_revise_from_comments (6.10.00)."""
+        """``revise`` is no step of its own any more: it is documents_revise_from_comments (6.10.00); ``validation``
+        is two documents, its plan and its report (7.68.00)."""
         with pytest.raises(InvalidToolArgument) as caught:
             _build('projects_generate', {'step': step, 'document_id': 'd1'})
-        assert str(caught.value) == 'step must be one of: personas, research, prfaq, prd, prototype'
+        assert str(caught.value) == ('step must be one of: personas, research, prfaq, prd, prototype, validation_plan, '
+                                     'validation_report')
 
     def test_its_schema_offers_only_the_methodology_steps(self):
         properties = TOOLS_BY_NAME['projects_generate'].input_schema['properties']
-        assert properties['step']['enum'] == ['personas', 'research', 'prfaq', 'prd', 'prototype']
+        assert properties['step']['enum'] == ['personas', 'research', 'prfaq', 'prd', 'prototype', 'validation_plan',
+                                              'validation_report']
         assert not {'document_id', 'thread_ids', 'mark_addressed'} & set(properties)
 
     def test_a_project_is_required(self):

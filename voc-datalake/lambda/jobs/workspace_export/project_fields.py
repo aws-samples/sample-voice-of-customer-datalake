@@ -85,6 +85,12 @@ EXPORTED: Final = frozenset({
     'evidence_updates', 'evidence_refreshed_at', 'feedback_ids', 'sub',
     # A saved focus group (7.64.00, shared/focus_group_documents.py): synthetic, never evidence.
     'synthetic',
+    # The Validate step (7.68.00): the META's block (shared/project_validation.py: who last wrote it, when and why) and
+    # its documents' plan, synthetic run and report (shared/validation_documents.py).
+    'validation', 'updated_by', 'plan', 'run', 'report', 'criteria', 'tasks', 'guide', 'verdicts', 'ces', 'evidence',
+    'responses', 'missing_count', 'prd_document_id', 'prototype_document_id', 'plan_document_id', 'run_document_id',
+    'report_document_id', 'synthetic_run_id', 'form_id', 'form_language', 'form_open', 'form_revision',
+    'card_in_prototype', 'results',
 })
 
 #: A project ``META``'s ``members`` entry (api/projects.py: who was added, with which role, by whom and when); an

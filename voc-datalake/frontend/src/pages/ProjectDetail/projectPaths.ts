@@ -2,7 +2,7 @@
  * @fileoverview A project page's address, as paths (inside a workspace, under its `/workspace/<slug>` base):
  *
  * - a tab: `/projects/<id>/overview` (`/projects/<id>` is the Overview too), `/personas`, `/focus-groups`, `/product`,
- *   `/documents`, `/decisions`, `/participants`;
+ *   `/documents`, `/validation`, `/decisions`, `/participants`;
  * - a document: `/projects/<id>/documents/<docId>`;
  * - an older version of it, read-only (the toolbar's version picker): `…/documents/<docId>/v/<n>` (the version on
  *   the page is never `/v/`);

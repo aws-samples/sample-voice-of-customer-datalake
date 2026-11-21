@@ -17,6 +17,61 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.68.00] - 2026-11-21
+
+**A real Validate phase**: the methodology's last step (TENETS.md tenet 2's "review", labelled **Validate**) checks the
+prototype against the PRD's success criteria, first with your personas, then with real testers inside the prototype,
+and ends in a report and a prefilled decision ([project-workspace.md](docs/project-workspace.md#validate)). A synthetic
+run is always labelled and never counts towards a criterion being met; real testers' answers are customer feedback in
+the lake, pins never are. No new API Gateway resource (the API stack stays at 425), no fixed cost.
+
+### Added
+
+- **The Validate tab** (`/projects/{id}/validation`, editors: its results quote what testers typed) and a **Validate**
+  card on the Overview after the prototype (its plans and reports; it says so when a decision was made on a prototype
+  nobody validated).
+- **Success criteria** (`PUT /projects/{id}/validation/criteria`): up to 10 statements testers rate from 1 to 5, each
+  with an optional target (the average real testers must reach, 4 of 5 by default); **Read them from the PRD**
+  (`POST …/validation/criteria`, one model call, once unless asked again) turns the PRD's Success Metrics into criteria
+  and keeps its numbers in their text.
+- **The validation plan** (`POST …/validation/plan`, a `validation_plan` document): an interview guide of 5 to 8
+  neutral questions per criterion with a probe for each persona, and a task-based test script from the prototype's
+  screens and walkthrough (one model call); or **Write it myself** from a blank template (`mode: blank`), in every way
+  of working. Its `methodology` block says when it was made without a prototype or a PRD (reported, never refused).
+- **The synthetic run** (`POST …/validation/synthetic`, a `validation_run` document, always `synthetic: true`): up to 6
+  personas try the test script on the prototype's screens, a verdict per task (completed, struggled, failed) and a
+  rating per criterion; labelled Synthetic wherever it shows, never edited, never evidence and never "met".
+- **"Tell us how it went" for real testers** (`PUT …/validation/form`): the prototype's own pin form gains validation
+  questions (per task "Could you do this?", one CES, a rating per criterion and "What was missing?", in one of the nine
+  languages) as its next revision, and the pin widget shows them as a card, framed in the app or opened on its own. The
+  answers are queued as `feedback_form` items of the form's own channel, tagged `prototype_validation`.
+- **Results and the report** (`GET …/validation`, `POST …/validation/report`, a `validation_report` document): per
+  criterion its target, the real testers' average and **met**, **not met** or **not enough data** (fewer than 5
+  answers), the personas' average beside it labelled synthetic; per task the real success rate; the testers' ease
+  (CES); what they said was missing (read live under your category and source access, never copied into the report).
+  **Create decision** opens the Decisions tab prefilled: the suggested verdict (pursue only when every criterion is
+  met), the criteria as its success metric, the report and the real answers as its evidence.
+- MCP `projects_generate` takes `step: validation_plan` and `validation_report`.
+
+### Changed
+
+- `GET /projects/{id}` `methodology` gains `validation` (`{missing, count, skipped}`: its upstream is the prototype and
+  the PRD). The public submit of a prototype's pin form takes a version 2 response only when the form asks validation
+  questions (`400 validation_closed` otherwise); a pin is stored as before and never queued.
+- A workspace's export classifies the project's `validation` block and the Validate documents' `plan`, `run` and
+  `report`.
+
+### Upgrade notes
+
+- No new AWS resource, stack, route resource, flag or IAM statement: the routes ride the projects API's
+  `/projects/{proxy+}`; the projects role already writes the pin form rows and reads `voc-feedback` (the answers
+  through `gsi5-by-channel`); the forms Lambda already sends to the processing queue. The prototype CSP keeps its single
+  `connect-src` (the same pin form, the same submit URL).
+- Pay per use: the criteria, the plan and the report's summary are one model call each on the documents surface; a
+  synthetic run one per persona (at most 6).
+- The card shows in prototype versions made from 7.68.00 on (the widget is part of each version's HTML): save a
+  walkthrough or build again to give an older prototype the card.
+
 ## [7.67.00] - 2026-11-21
 
 **The import wizard: bring your own signals in minutes** ([import-wizard.md](docs/import-wizard.md)). Data sources →

@@ -392,6 +392,16 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /projects/<project_id>/personas/<persona_id>/evidence/refresh',
         'POST /projects/<project_id>/personas/evidence-pack',
     }),
+    # 7.68.00: the Validate step, the project's (its pin form and its answers the deployment's, as every prototype's).
+    'project_validation_routes.py': frozenset({
+        'GET /projects/<project_id>/validation',
+        'POST /projects/<project_id>/validation/criteria',
+        'POST /projects/<project_id>/validation/plan',
+        'POST /projects/<project_id>/validation/report',
+        'POST /projects/<project_id>/validation/synthetic',
+        'PUT /projects/<project_id>/validation/criteria',
+        'PUT /projects/<project_id>/validation/form',
+    }),
     'projects_handler.py': frozenset({
         'DELETE /projects/<project_id>',
         'DELETE /projects/<project_id>/documents/<document_id>',

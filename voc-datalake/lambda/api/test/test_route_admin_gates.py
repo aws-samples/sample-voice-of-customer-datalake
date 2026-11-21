@@ -448,6 +448,12 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'category and source access',
           'persona_grounding_routes.py', 'POST /projects/<project_id>/personas/evidence-pack',
           'POST /projects/<project_id>/personas/<persona_id>/evidence/refresh'),
+    _open('the Validate step (7.68.00, shared/project_validation_routes.py): per-project access, edit for every route '
+          '(its results quote testers); real answers read as the caller, by their category and source access',
+          'project_validation_routes.py', 'POST /projects/<project_id>/validation/criteria',
+          'PUT /projects/<project_id>/validation/criteria', 'POST /projects/<project_id>/validation/plan',
+          'POST /projects/<project_id>/validation/synthetic', 'PUT /projects/<project_id>/validation/form',
+          'POST /projects/<project_id>/validation/report'),
     _open('copy personas into a project: edit on the target project, and the source is the library or a '
           'project the caller owns or is a member of (since 5.60.00)',
           'persona_copy_routes.py', 'POST /projects/<project_id>/personas/copy'),

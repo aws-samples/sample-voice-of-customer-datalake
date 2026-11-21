@@ -25,6 +25,27 @@ const SubmitMessageSchema = z.object({
   }),
 })
 
+// The validation card (7.68.00, lambda/shared/prototype_validation.py): an empty response asks for the card, any other
+// answers it. Shape and bounds are the server's to check; here only what can be an answer is forwarded.
+const MAX_ANSWERS = 30
+const MAX_ANSWER_TEXT = 5000
+const AnswerValueSchema = z.union([
+  z.number().int(), z.string().max(MAX_ANSWER_TEXT), z.object({ code: z.string().max(40) }).strict(),
+])
+const CardBodySchema = z.object({
+  answers: z.record(z.string().max(44), AnswerValueSchema).refine((answers) => Object.keys(answers).length <= MAX_ANSWERS),
+  form_revision: z.number().int().positive().optional(),
+  language: z.string().max(10).optional(),
+}).strict()
+
+const CardMessageSchema = z.object({
+  source: z.literal('voc-pin-widget'),
+  type: z.enum(['card', 'answer']),
+  formId: z.string().regex(FORM_ID),
+  requestId: z.string().min(1).max(40),
+  body: CardBodySchema,
+})
+
 const ReadyMessageSchema = z.object({
   source: z.literal('voc-pin-widget'),
   type: z.literal('ready'),
@@ -32,7 +53,7 @@ const ReadyMessageSchema = z.object({
   review: z.boolean().catch(false),
 })
 
-const WidgetMessageSchema = z.discriminatedUnion('type', [SubmitMessageSchema, ReadyMessageSchema])
+const WidgetMessageSchema = z.union([SubmitMessageSchema, ReadyMessageSchema, CardMessageSchema])
 
 type WidgetMessage = z.infer<typeof WidgetMessageSchema>
 
@@ -52,11 +73,17 @@ interface MarkerPin {
 
 type HostMessage =
   | { readonly source: 'voc-pin-host'; readonly type: 'result'; readonly requestId: string; readonly ok: boolean }
+  | { readonly source: 'voc-pin-host'; readonly type: 'card' | 'answer'; readonly requestId: string; readonly ok: boolean
+    readonly card?: unknown }
   | { readonly source: 'voc-pin-host'; readonly type: 'show'; readonly pins: readonly MarkerPin[] }
   | { readonly source: 'voc-pin-host'; readonly type: 'hide' }
 
 export const resultMessage = (requestId: string, ok: boolean): HostMessage =>
   ({ source: 'voc-pin-host', type: 'result', requestId, ok })
+
+/** The answer to a card request (`card`: the server's card, which the widget checks before it draws it) or to an answer. */
+export const cardResultMessage = (type: 'card' | 'answer', requestId: string, ok: boolean, card?: unknown): HostMessage =>
+  ({ source: 'voc-pin-host', type, requestId, ok, ...(card === undefined ? {} : { card }) })
 
 /** Markers only — selector, position, status and number. Comments never enter the frame. */
 export const showMessage = (pins: readonly PrototypePin[]): HostMessage => ({

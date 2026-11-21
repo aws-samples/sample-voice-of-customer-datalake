@@ -60,6 +60,8 @@ const OverviewStepSchema = z.object({
   missing: z.array(z.string()).catch(() => []),
   count: z.number().int().nonnegative().catch(0),
   blocked: z.boolean().optional().catch(undefined),
+  /** Validate's (7.68.00): a decision made on a prototype nobody validated (reported, never refused). */
+  skipped: z.boolean().optional().catch(undefined),
 })
 
 const ProjectMethodologySchema = z.object({

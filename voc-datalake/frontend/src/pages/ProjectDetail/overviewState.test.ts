@@ -39,8 +39,9 @@ describe('deriveOverviewState', () => {
         research: steps.research.position,
         documents: steps.documents.position,
         prototype: steps.prototype.position,
+        validate: steps.validate.position,
         remix: steps.remix.position,
-      }).toStrictEqual({ product: 1, personas: 2, research: 3, documents: 4, prototype: 5, remix: 6 })
+      }).toStrictEqual({ product: 1, personas: 2, research: 3, documents: 4, prototype: 5, validate: 6, remix: 7 })
     })
   })
 
@@ -197,8 +198,15 @@ describe('deriveOverviewState', () => {
       // Prototype IS, which is the difference between the two hard-gated steps —
       // so this fixture needs a prototype document or the recommendation would
       // correctly still point at one.
-      const state = stateAfterPersonas([doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype')])
+      const state = stateAfterPersonas([doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype'),
+        doc('d4', 'validation_report')])
       expect(state.nextStep).toBeNull()
+    })
+
+    it('recommends validating once a prototype exists, and a synthetic run is no validation (7.68.00)', () => {
+      const state = stateAfterPersonas([doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype'),
+        doc('d4', 'validation_run')])
+      expect(state.nextStep).toBe('validate')
     })
 
     it('recommends the prototype once documents exist but none has been built', () => {

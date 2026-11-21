@@ -24,14 +24,17 @@ Long-running research, persona, document, merge, and prototype operations run as
 
 ## Methodology
 
-The platform teaches one path: customer evidence → personas → PR/FAQ → PRD → prototype (TENETS.md, tenet 2).
+The platform teaches one path: customer evidence → personas → PR/FAQ → PRD → prototype → review (TENETS.md, tenet 2),
+the last step labelled **Validate** ([Validate](#validate)).
 Steps may be done out of order, because a document without its upstream still has value, but no client skips a step
 silently. The server says which steps were skipped, in one module, `lambda/shared/methodology.py`, so the web app,
 the AI assistant, agents and MCP clients all see the same list.
 
 **The per-step overview.** `GET /projects/{id}` carries `methodology: {order, steps}`. `steps.<step>` is
-`{missing: [upstream steps the project has not produced], count}` for `personas`, `research`, `prfaq`, `prd` and
-`prototype`. `prototype` also has `blocked` (no PRD and no PR/FAQ). The upstream of each step:
+`{missing: [upstream steps the project has not produced], count}` for `personas`, `research`, `prfaq`, `prd`,
+`prototype` and `validation`. `prototype` also has `blocked` (no PRD and no PR/FAQ); `validation` has `skipped`, true when
+the project holds a decision and a prototype but no validation report (reported, never refused). `validation`'s count is
+its plans and reports: a synthetic run never counts. The upstream of each step:
 
 | Step | Reads |
 |---|---|
@@ -40,6 +43,7 @@ the AI assistant, agents and MCP clients all see the same list.
 | PR/FAQ | customer feedback, personas |
 | PRD | customer feedback, personas, the PR/FAQ |
 | prototype | the PRD and/or the PR/FAQ |
+| validation | the prototype, and the PRD (its Success Metrics are the criteria) |
 
 The Overview cards render this list: the research card's hint and the PR/FAQ + PRD card's hint name the missing
 steps ("Generate personas first", "Write the PR/FAQ before the PRD"), and the prototype card is disabled while
@@ -350,6 +354,94 @@ worker's lineage pass removes an erased review's id from a refresh entry (the en
 - MCP: no focus group tool. The global server's tool list is at its token budget (TENETS.md tenet 4 records the gap);
   an API client runs one through `POST /chat/stream` with a signed-in person's token, as the web app does, and an MCP
   client reads a saved one with `documents_get`.
+
+## Validate
+
+The methodology's last step (TENETS.md tenet 2's "review", labelled **Validate**; 7.68.00, owner decision: no tenet
+change). The project's **Validate** tab checks the prototype against the PRD's success criteria, first with the project's
+personas (synthetic), then with real testers inside the prototype, and ends in a report and a prefilled decision. The
+Overview shows the step as card 6, after the prototype. Every route is an edit, the GET too: its results quote what
+testers typed, as a prototype's pins do (`shared/project_access.py`). Projects are the deployment's (docs/multi-workspace.md,
+phase 3).
+
+**The state** is the project META's `validation` map (`shared/project_validation.py`): `{prd_document_id,
+prototype_document_id, criteria, tasks, plan_document_id, run_document_id, report_document_id, form_id, form_open,
+form_language, card_in_prototype, status, revision, updated_at, updated_by: {sub, kind}, reason}`. Every write is
+conditional on the `revision` it read (a person's editor sends `expected_revision`: a write in between is 409
+`validation_changed`; a job reads again and applies its change once more), records who, when and why (TENETS.md D4), and
+is refused on a project being deleted. `status` is `not_started`, `criteria`, `planned`, `testing` (the card is shown) or
+`reported`.
+
+**Success criteria** `[{id, text, target?}]` (1 to 10, `c` + 6 hex ids, never reused): statements testers rate from 1 to
+5. `target` is the average real testers must reach for the criterion to be **met** (1 to 5; 4 when unset). **Read them
+from the PRD** (`POST …/validation/criteria`, one model call on the documents surface) turns the PRD's Success Metrics into
+criteria, once: it refuses (409 `criteria_exist`) over saved criteria unless asked again with `replace`. A PRD's own
+numbers (a business target a prototype test cannot measure) stay in the criterion's text; no target is invented. They are
+edited by hand (`PUT …/validation/criteria`).
+
+**The plan** (`POST …/validation/plan`, a `validation_plan` document in the Documents section): an interview guide of 5
+to 8 neutral, open questions per criterion with one probe for each persona, and a task-based test script (1 to 8 tasks,
+each with what success looks like) from the newest prototype's outline and walkthrough (`GET …/prototypes/{doc}/outline`'s
+screens, never its pins). AI-backed by design, like research (TENETS.md tenet 3), in every way of working; `mode: blank`
+writes the hand-written template instead (`origin: human`). The answer and the document carry the step's `methodology`
+block: made without a prototype or a PRD is reported, never refused. The plan's test script becomes the step's tasks when
+it has none yet.
+
+**The synthetic run** (`POST …/validation/synthetic`, a `validation_run` document, always `synthetic: true`): up to 6 of
+the project's personas, 3 at a time, each one model call, try the test script on the prototype's screens as themselves:
+per task `completed`, `struggled` or `failed` with a sentence, per criterion a rating from 1 to 5 with a sentence. The run
+stores each verdict and the figures (per task the outcomes, per criterion the personas' average). It is labelled
+**Synthetic** wherever it shows, its document is never edited (the generic edit refuses it), it is never evidence, no
+methodology step counts it, and **it never counts towards a criterion being met**: beside a criterion it reads `likely_met`
+or `likely_not_met`, nothing more.
+
+**Real testers: the "Tell us how it went" card** (`PUT …/validation/form` `{tasks, open, language?}`,
+`shared/prototype_validation.py`). The prototype's own pin form (`pf_…`) gains validation questions as its next
+revision, through the forms' own checks (shared/forms_v2.py; the revision it replaces kept first as its
+`FORMREV#{form_id}#{n}` snapshot, a version 1 pin form's own fields with it; conditional on the revision and save count it
+read; a question an answered form keeps cannot change its type or range, 409 `answers_locked`): per task "Could you do
+this?" (yes or no), one CES (1 to 7), a 1-to-5 rating per criterion and an open "What was missing?", in one of the nine
+languages (the card's own words; a task's and a criterion's text stay as written). `open` shows the card or hides it. The
+pin widget asks the form for the card with an empty response on the same public submit route and draws it beside
+**Feedback**, framed in the app (through the host) or opened on its own. The form id does not change, so the prototype's
+CSP keeps its single `connect-src`, its own submit URL: neither the prototype's object nor its metadata is written. The
+card targets the newest prototype version when saved; a version made before 7.68.00 carries the earlier widget, which
+draws no card (`card_in_prototype: false`, and the tab says to save its walkthrough or build it again). Its answers are
+customer feedback in the lake: queued as `feedback_form` items of the form's channel `form_pf_…`, tagged
+`prototype_validation` ([feedback-forms.md → Prototype pin forms](feedback-forms.md#prototype-pin-forms-form_type-prototype_pin)).
+Pins stay pins, never queued.
+
+**Results** (`GET …/validation`): the real responses of the card's form, read through `gsi5-by-channel`
+(`CHANNEL#form_{form_id}`: what the channel holds, newest first, at most 2,000) and admitted by the caller's category and
+source access, each scored against the revision it answered (shared/forms_v2_results.py): per task its yes / no and
+success rate, the testers' CES, per criterion the real average and its status, **met** or **not met** against its target
+once at least 5 testers rated it, **not enough data** before, and "What was missing?" read live (never copied into a
+document). The latest synthetic run's figures sit beside them, labelled. `form.stale` says the criteria or tasks changed
+since the card was saved.
+
+**The report** (`POST …/validation/report`, a `validation_report` document): the same figures, read with the starter's
+category and source access (stored in the job's config), with a short summary (one model call; the computed tables stand
+without it). Each criterion's result is `results[i]` (`{id, text, target, target_set, real: {n, average}, outcome:
+met | not_met | not_enough_data, synthetic}`, as the GET answers it under `criteria`); the tasks, the ease, the counts and
+the synthetic run's id are `report`. Its `input_feedback_ids` are the real responses it counted (lineage: an erasure removes one,
+jobs/retention/lineage.py); it quotes no tester. **Create decision** opens the Decisions tab with a new decision prefilled:
+the suggested verdict (`pursue` only when every criterion is met by real testers, else `park`; never `reject` by itself),
+the criteria and their targets as its success metric, the report among its evidence documents and the real answers (up to
+50) as its evidence feedback. Nothing is saved until the person saves it.
+
+| Route | Access | Answer |
+|---|---|---|
+| `GET /projects/{id}/validation` | edit | the state, the card, the synthetic run, the real results, each criterion judged, the decision prefill and the step's `methodology` |
+| `POST /projects/{id}/validation/criteria` | edit | 202 + an assist job whose `result` is `{validation}` |
+| `PUT /projects/{id}/validation/criteria` | edit | `{success, validation}` |
+| `POST /projects/{id}/validation/plan` | edit | `ai`: 202 + an assist job (`{document_id, validation, methodology}`) and the `methodology` block; `blank`: 201 `{success, document, methodology}` |
+| `POST /projects/{id}/validation/synthetic` | edit | 202 + an assist job (`{document_id, synthetic: true, personas, validation}`) |
+| `PUT /projects/{id}/validation/form` | edit | `{success, validation, form}` |
+| `POST /projects/{id}/validation/report` | edit | 202 + an assist job (`{document_id, validation, decision_prefill}`) and the `methodology` block |
+
+MCP `projects_generate` takes `step: validation_plan` and `validation_report` ([mcp.md](mcp.md)). Cost: pay per use,
+one model call for the criteria, the plan and the report's summary, one per persona for a synthetic run; no fixed cost and
+no new AWS resource (the routes ride `/projects/{proxy+}`).
 
 ## Managed Document Versions
 

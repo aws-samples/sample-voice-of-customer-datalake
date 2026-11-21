@@ -105,6 +105,7 @@ from shared import (
     persona_grounding_routes,
     project_access,
     project_gate,
+    project_validation_routes,
     prototype_drafts,
     prototype_feedback,
     prototype_outline,
@@ -5493,6 +5494,8 @@ ASSIST_WORK = {
         _revise_work, 'Revising from comments failed. Please try again.'),
     ASSIST_WALKTHROUGH_DRAFT: assist_jobs.Work(
         _walkthrough_draft_work, 'Could not draft the walkthrough. Please try again.'),
+    # The Validate step's criteria, plan, synthetic run and report (shared/project_validation_routes.py, 7.68.00).
+    **project_validation_routes.ASSIST_WORK,
 }
 
 # Document comments and review links (shared/document_review_routes.py, docs/document-review.md). Included
@@ -5512,6 +5515,8 @@ app.include_router(company_personas_routes.app)
 app.include_router(persona_copy_routes.app)
 # The personas' evidence pack, freshness and refresh (shared/persona_grounding_routes.py, 7.64.00 focus groups).
 app.include_router(persona_grounding_routes.app)
+# The Validate step: criteria, plan, synthetic run, the testers' card and the report (7.68.00).
+app.include_router(project_validation_routes.app)
 # The Documents Library (shared/library_routes.py, docs/documents-library.md): its own scope's roles, not a project's.
 app.include_router(library_routes.app)
 

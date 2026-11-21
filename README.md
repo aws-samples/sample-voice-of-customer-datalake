@@ -50,6 +50,7 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 - **Company personas**: a shared persona library that projects copy from and promote into ([Project Workspace](docs/project-workspace.md#company-personas))
 - **Document canvas**: each project document as a page with an outline and its evidence, edited in place (blocks, "/" menu, Markdown shortcuts), every save a new version ([Document canvas](docs/document-canvas.md))
 - **Document review**: margin comments, "Ask personas to review" and share-for-review links on PR/FAQs and PRDs ([Document review](docs/document-review.md))
+- **Validate**: test a prototype against the PRD's success criteria with personas (synthetic) and real testers inside the prototype, then decide from a report ([Project Workspace](docs/project-workspace.md#validate))
 - **Ways of working with AI**: per person, Human-driven, AI-assisted or AI-driven writing of PR/FAQs and PRDs, enforced by the API ([Ways of working](docs/ways-of-working.md))
 - **Decisions and prioritization**: decision records per project, and Prioritization rows scored on your team's metrics with individual or room votes ([Prioritization](docs/prioritization.md))
 - **Autonomous agents**: agents watch a feedback scope and, when a trigger fires, run a workflow from research to a reviewed prototype, with human decision points ([Autonomous Agents](docs/autonomous-agents.md))
@@ -244,7 +245,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Data catalogue](docs/data-catalogue.md) | Every stored attribute of a feedback item: type, meaning, the step that sets it, PII and policy effects, `GET /feedback/catalogue` |
 | [Radar](docs/radar.md) | Other brands: love and hate, news and releases from web search, comparison |
 | [Decisions and Release Watch](docs/decisions-and-release-watch.md) | Decision records on projects and before/after feedback per release |
-| [Project Workspace](docs/project-workspace.md) | Projects, the Product tab, cited reviews, document versions, sharing, company personas |
+| [Project Workspace](docs/project-workspace.md) | Projects, the Product tab, cited reviews, document versions, sharing, company personas, the Validate step |
 | [Persona Generation](docs/persona-generation.md) | Adding personas next to the existing ones or replacing them; refreshing a persona's evidence |
 | [Document canvas](docs/document-canvas.md) | The Documents tab's page view: outline, evidence, editing in place, saving, history, the assistant's diffs |
 | [Prototype builder](docs/prototype-builder.md) | Back to an earlier version, edits from the assistant's chat bubble as previewed drafts, tester feedback selected into a revision, documents in sections, and a skippable guided walkthrough on a prototype |

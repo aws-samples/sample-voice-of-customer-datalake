@@ -34,8 +34,8 @@ import {
 import { serverMissing } from '../../api/methodologySchema'
 import type { ProjectMethodology } from '../../api/methodologySchema'
 
-/** The six Overview steps, in dependency order. */
-type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | 'prototype' | 'remix'
+/** The seven Overview steps, in dependency order (Validate, 7.68.00: tenet 2's "review", after the prototype). */
+type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | 'prototype' | 'validate' | 'remix'
 
 /** A step the overview can recommend: every step but `remix`, which has no detectable output. */
 export type RecommendableStep = Exclude<OverviewStep, 'remix'>
@@ -124,6 +124,11 @@ export interface OverviewStepState {
    * falls back to the local reading of `missingUpstream`.
    */
   readonly missingSteps?: readonly string[]
+  /**
+   * Validate only: a decision was made on a prototype with no validation report (the server's
+   * `methodology.steps.validation.skipped`). Reported, never a block.
+   */
+  readonly skipped?: boolean
 }
 
 /** One document a prototype build could be aimed at. */
@@ -312,8 +317,9 @@ export function deriveOverviewState({
       // the control has always enforced, just derived in one place now.
       missingUpstream: methodology?.steps.prototype?.blocked ?? (prdCount === 0 && prfaqCount === 0),
     },
+    validate: validateStep(methodology, documents, prototypeCount),
     remix: {
-      position: 6,
+      position: 7,
       hasOutput: false,
       missingUpstream: documents.length < REMIX_MIN_DOCUMENTS,
     },
@@ -336,6 +342,20 @@ export function deriveOverviewState({
       visualsFailed: countVisuals(productDocs, (s) => s === 'failed'),
     },
   }
+}
+
+/**
+ * Validate (7.68.00): its plans and reports (a synthetic run never counts), the server's count when it gave one.
+ * Its missing prototype is a hint, never a block (the criteria can come first); `skipped` is the server's report of a
+ * decision made on a prototype nobody validated.
+ */
+function validateStep(
+  methodology: ProjectMethodology | undefined, documents: ReadonlyArray<ProjectDocument>, prototypeCount: number,
+): OverviewStepState {
+  const local = documents.filter((d) => d.document_type === 'validation_plan' || d.document_type === 'validation_report')
+  const server = methodology?.steps.validation
+  const count = server?.count ?? local.length
+  return { position: 6, hasOutput: count > 0, count, missingUpstream: prototypeCount === 0, skipped: server?.skipped === true }
 }
 
 /**
@@ -420,8 +440,8 @@ function pickNextStep(
   filled: number | undefined,
 ): RecommendableStep | null {
   const candidates: ReadonlyArray<RecommendableStep> = filled == null
-    ? ['personas', 'research', 'documents', 'prototype']
-    : ['product', 'personas', 'research', 'documents', 'prototype']
+    ? ['personas', 'research', 'documents', 'prototype', 'validate']
+    : ['product', 'personas', 'research', 'documents', 'prototype', 'validate']
   return candidates.find((step) => !steps[step].hasOutput) ?? null
 }
 

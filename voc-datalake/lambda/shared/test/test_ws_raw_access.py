@@ -450,6 +450,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # through shared/feedback_partitions.py, as the project's own), and the caller's category access row.
     'lambda/shared/persona_grounding_routes.py': (3, {'get_aggregates_table': 1, 'get_feedback_table': 1,
                                                       'get_projects_table': 1}),
+    # 7.68.00: the Validate step's routes read the deployment's projects, its pin forms and their answers.
+    'lambda/shared/project_validation_routes.py': (3, {'get_aggregates_table': 1, 'get_feedback_table': 1,
+                                                       'get_projects_table': 1}),
     'lambda/shared/library_worker.py': (3, {'get_projects_table': 1}),
     'lambda/shared/library_index.py': (3, {'batch': 2}),
     'lambda/shared/library_objects.py': (3, {'generate_presigned_url': 2, 'put_object': 1}),

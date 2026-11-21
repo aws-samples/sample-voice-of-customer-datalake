@@ -53,6 +53,7 @@ from shared import forms_v2 as fv2
 from shared import forms_v2_csv as fcsv
 from shared import forms_v2_import as fimp
 from shared import forms_v2_responses as fresp
+from shared import prototype_validation as validation_card
 from shared.api import api_handler, create_api_resolver, get_caller_subject, get_raw_categories_config, validate_limit
 from shared.app_feedback_tag import APP_FEEDBACK_TEMPLATE_ID, RESERVED_MESSAGE, names_app_feedback
 from shared.audit_rows import put_new_audit_row
@@ -1838,7 +1839,13 @@ def submit_form_feedback(form_id: str):
         # posts with `Origin: null`; only a pin form's answer echoes that
         # (shared/null_origin_cors.py). Every other form keeps the resolver's CORS.
         null_origin_cors.accept()
-        return _submit_prototype_pin(form, body)
+        if not v2:
+            return _submit_prototype_pin(form, body)
+        # 7.68.00: a v2 body asks for or answers the validation card, queued as feedback and never a pin (400 when the
+        # prototype asks none: shared/prototype_validation.py).
+        form = validation_card.validation_form(form)
+        if (card := validation_card.card_answer(form, body)) is not None:
+            return card
     submission = _v2_submission(form_id, form, scope, body) if v2 else _v1_submission(form, body, text)
     if test_mode is not None:
         return _record_test_response(form_id, scope, submission, test_mode, body)

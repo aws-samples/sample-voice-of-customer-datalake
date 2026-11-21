@@ -310,6 +310,7 @@ export default function ProjectDetail() {
         onRunResearch={() => wizard.openResearchWizard(personas.map((p) => p.persona_id))}
         onRemixDocuments={wizard.openMergeWizard}
         onOpenProductTool={() => setActiveTab('product')}
+        onOpenValidation={() => setActiveTab('validation')}
         {...personaListHandlers(selection, confirm)}
         onSaveNotes={saveNotes}
         onImportPersona={() => importModal.setShowImportModal(true)}

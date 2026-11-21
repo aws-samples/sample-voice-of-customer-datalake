@@ -43,7 +43,7 @@ HANDLER_SOURCE = Path(__file__).resolve().parent.parent / 'projects_handler.py'
 # Routers projects_handler includes that serve /projects/{id}/... routes: the gate covers them too.
 _SHARED_DIR = Path(__file__).resolve().parents[2] / 'shared'
 ROUTER_SOURCES = (_SHARED_DIR / 'document_review_routes.py', _SHARED_DIR / 'persona_copy_routes.py',
-                  _SHARED_DIR / 'persona_grounding_routes.py')
+                  _SHARED_DIR / 'persona_grounding_routes.py', _SHARED_DIR / 'project_validation_routes.py')
 _ROUTE_PATTERN = re.compile(r'@app\.(get|post|put|patch|delete)\(\s*"([^"]+)"')
 
 
@@ -305,6 +305,20 @@ class TestGateRefusalsReachTheExceptionHandlers:
     def test_viewer_cannot_read_a_prototypes_feedback(self, call):
         # A GET, so a viewer's by default: listed at edit in _ROUTE_OVERRIDES (it quotes what testers typed).
         assert call(VIEWER, 'GET', '/projects/p1/prototypes/prototype_1/feedback') == (403, CANNOT_EDIT)
+
+    @pytest.mark.parametrize(('method', 'path'), [
+        # The Validate step (7.68.00): its results quote what testers typed, so its GET is an edit like every write.
+        ('GET', '/projects/p1/validation'),
+        ('POST', '/projects/p1/validation/criteria'),
+        ('PUT', '/projects/p1/validation/criteria'),
+        ('POST', '/projects/p1/validation/plan'),
+        ('POST', '/projects/p1/validation/synthetic'),
+        ('PUT', '/projects/p1/validation/form'),
+        ('POST', '/projects/p1/validation/report'),
+    ])
+    @pytest.mark.usefixtures('private_project')
+    def test_viewer_cannot_read_or_write_the_validation(self, call, method, path):
+        assert call(VIEWER, method, path, body={}) == (403, CANNOT_EDIT)
 
     @pytest.mark.usefixtures('private_project')
     def test_editor_cannot_manage(self, call):

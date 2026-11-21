@@ -29,6 +29,11 @@ SECTION_BY_TYPE: Final[dict[str, str]] = {
     'product_report': FALLBACK_SECTION,
     'decision': FALLBACK_SECTION,
     'focus_group': FALLBACK_SECTION,
+    # The Validate step (7.68.00, shared/project_validation.py): its plan, a synthetic run (personas, never evidence)
+    # and its report.
+    'validation_plan': FALLBACK_SECTION,
+    'validation_run': FALLBACK_SECTION,
+    'validation_report': FALLBACK_SECTION,
 }
 
 

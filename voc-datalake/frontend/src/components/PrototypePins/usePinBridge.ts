@@ -1,7 +1,8 @@
 /**
  * @fileoverview The host half of the prototype pin widget AND of the walkthrough runtime: listens to the
- * prototype iframe, forwards a tester's pin to the PUBLIC `POST /feedback-forms/{form_id}/submit`
- * route and answers the widget with the result; hands the walkthrough's messages to the page
+ * prototype iframe, forwards a tester's pin (and, since 7.68.00, the validation card's request and answers) to the
+ * PUBLIC `POST /feedback-forms/{form_id}/submit` route and answers the widget with the result; hands the walkthrough's
+ * messages to the page
  * (docs/prototype-builder.md Part 1). Framed, the widget always uses this bridge; only a prototype
  * opened standalone posts to that route itself (the one connect-src its CSP allows, docs/feedback-forms.md).
  *
@@ -14,7 +15,8 @@
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 import { api } from '../../api/client'
-import { isPrototypeFrameOrigin, parseWidgetMessage, postToWidget, resultMessage } from './pinMessages'
+import { isRecord } from '../../lib/typeGuards'
+import { cardResultMessage, isPrototypeFrameOrigin, parseWidgetMessage, postToWidget, resultMessage } from './pinMessages'
 import { parseWalkthroughMessage } from './walkthroughMessages'
 import type { WalkthroughMessage } from './walkthroughMessages'
 
@@ -83,6 +85,15 @@ export function usePinBridge(frameRef: RefObject<HTMLIFrameElement | null>, opti
       // The port at submit time: a reload in between hands over a new widget, which
       // never asked and must not be told.
       const port = portRef.current
+      if (message.type === 'card' || message.type === 'answer') {
+        // The validation card (7.68.00): the same public route, its answer (the card, or the answer's) handed back.
+        void api.submitPrototypePin(message.formId, message.body).then(
+          (answer) => postToWidget(port, cardResultMessage(message.type, message.requestId, true,
+            message.type === 'card' && isRecord(answer) ? answer['card'] : undefined)),
+          () => postToWidget(port, cardResultMessage(message.type, message.requestId, false)),
+        )
+        return
+      }
       void api.submitPrototypePin(message.formId, message.body).then(
         () => {
           postToWidget(port, resultMessage(message.requestId, true))
