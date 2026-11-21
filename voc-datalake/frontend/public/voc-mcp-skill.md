@@ -61,7 +61,8 @@ outcome — never the arguments or any content).
 ## Tools — when to use which
 
 Each tool's name starts with its area: `feedback_`, `forms_`, `memory_`, `company_`, `projects_`,
-`documents_`, `library_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_`.
+`documents_`, `library_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_`,
+`insights_`.
 
 | Tool | Use it to |
 |---|---|
@@ -107,6 +108,7 @@ Each tool's name starts with its area: `feedback_`, `forms_`, `memory_`, `compan
 | `radar_read` | Other brands' reviews (Radar): no `brand` = the brands and their totals; a `brand` key = its reviews (`days`, `limit` ≤ 50). These are NOT our customers: never add them to our feedback counts or quote them as our evidence. |
 | `prioritization_get` | The Prioritization board: rows (a project and its documents), the user's own scores, the team's aggregate and the scoring `axes` (their ids are the keys of `prioritization_score`). A `project_id` (or a pinned token) keeps only that project's rows. |
 | `prioritization_score` | (write; not for a project-scoped token) Set the user's own scores on one row: `row_id` and `scores` = `{axis id: 1-5}` from `prioritization_get`. It replaces only the axes given, on the user's own ballot (never a second vote). |
+| `insights_get_adoption` | (admin-minted token) The leadership view by month (`from`/`to` YYYY-MM): projects started and taken to a prototype, validations and validated decisions, decisions by verdict, cycle times, artifacts made with AI or by hand, assistant and agent use. Counts only, never a person. Its time saved is an ESTIMATE: always say so and quote its baselines and assumptions with it. |
 
 ## Prompts and resources
 

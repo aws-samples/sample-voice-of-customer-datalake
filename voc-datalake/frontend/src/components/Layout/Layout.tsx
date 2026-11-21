@@ -38,6 +38,7 @@ import {
   Lightbulb,
   Contact,
   Library,
+  ChartColumn,
 } from 'lucide-react'
 import { getDateRangeParams } from '../../api/client'
 import { useBrandName } from '../../hooks/useBrandSettings'
@@ -45,6 +46,7 @@ import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 import { useAgentsNeedingDecision } from '../../hooks/useAgentsNeedingDecision'
 import { useConfigStore } from '../../store/configStore'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
+import { useLeadershipAccess } from '../../pages/Leadership/useLeadershipAccess'
 import { useSignOut } from '../../hooks/useSignOut'
 import TimeRangeSelector from '../TimeRangeSelector/TimeRangeSelector'
 import ThemeToggle from '../ThemeToggle/ThemeToggle'
@@ -95,16 +97,18 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/memory', icon: Brain, labelKey: 'nav.memory', menuKey: 'memory', section: 'nav.section.knowledge' },
   { to: '/library', icon: Library, labelKey: 'nav.library', menuKey: 'library', section: 'nav.section.knowledge' },
   { to: '/connect', icon: Plug, labelKey: 'nav.connect', menuKey: 'connect', section: 'nav.section.connect' },
+  // Insights → Leadership (7.70.00, docs/leadership-view.md): the scope's admins only.
+  { to: '/leadership', icon: ChartColumn, labelKey: 'nav.leadership', menuKey: 'leadership', scopeAdminsOnly: true, section: 'nav.section.insights' },
   // menuKey stays `settings` so existing cdk.context.json menuStatus files keep working.
   { to: '/admin', icon: Settings, labelKey: 'nav.admin', menuKey: 'settings', adminOnly: true, section: 'nav.section.admin' },
 ]
 
-function isNavItemVisible(item: NavItem, isAdmin: boolean): boolean {
+function isNavItemVisible(item: NavItem, isAdmin: boolean, isScopeAdmin: boolean): boolean {
   // Check if menu item is enabled in config
   if (!isMenuItemEnabled(item.menuKey)) return false
   // Check admin-only restriction
   if (item.adminOnly === true && !isAdmin) return false
-  return true
+  return item.scopeAdminsOnly !== true || isScopeAdmin
 }
 
 /**
@@ -230,6 +234,7 @@ export default function Layout() {
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
   const { user, isAuthenticated } = useAuthStore()
   const isAdmin = useIsAdmin()
+  const isScopeAdmin = useLeadershipAccess().canRead
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
@@ -246,7 +251,7 @@ export default function Layout() {
   const brand = useBrandName(config.apiEndpoint)
 
   // Filter nav items based on menu config and user role
-  const visibleNavItems = NAV_ITEMS.filter(item => isNavItemVisible(item, isAdmin))
+  const visibleNavItems = NAV_ITEMS.filter(item => isNavItemVisible(item, isAdmin, isScopeAdmin))
 
   // Badge count comes from /metrics/summary (exact: it sums the precomputed
   // METRIC#urgent daily aggregates), NOT from /feedback/urgent whose `count`

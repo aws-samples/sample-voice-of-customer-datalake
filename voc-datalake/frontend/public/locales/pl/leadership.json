@@ -1,0 +1,155 @@
+{
+  "title": "Przywództwo",
+  "subtitle": "Jak Twoje zespoły korzystają z metody: pomysły doprowadzone do prototypu, zweryfikowane decyzje, czasy cyklu i szacunek zaoszczędzonego czasu. Tylko liczby, nigdy osoba.",
+  "adminsOnly": "Widok przywództwa jest dla administratorów: administratorzy obszaru roboczego widzą swój obszar, administratorzy wdrożenia i administratorzy platformy widzą wdrożenie.",
+  "loadFailed": "Nie udało się wczytać widoku przywództwa.",
+  "filters": {
+    "range": "Okres",
+    "presets": {
+      "last6": "Ostatnie 6 miesięcy",
+      "last12": "Ostatnie 12 miesięcy",
+      "thisYear": "Ten rok",
+      "last24": "Ostatnie 24 miesiące"
+    },
+    "grain": "Grupuj według",
+    "grains": {
+      "month": "Miesiąc",
+      "quarter": "Kwartał"
+    },
+    "assumptions": "Założenia",
+    "csv": "Pobierz CSV"
+  },
+  "asOf": {
+    "none": "Brak danych: pierwsze dzienne podsumowanie uruchamia się o 03:05 UTC.",
+    "at": "Dane na {{when}} UTC (przeliczane codziennie).",
+    "partial": "Ostatniemu podsumowaniu zabrakło czasu: część projektów nie jest jeszcze policzona."
+  },
+  "kpis": {
+    "label": "Najważniejsze liczby okresu",
+    "projectsStarted": "Rozpoczęte projekty",
+    "toPrototype": "Pomysły doprowadzone do prototypu",
+    "toPrototypeDetail": "{{reached}} z {{total, number}} projektów doszło do prototypu",
+    "validations": "Przeprowadzone walidacje",
+    "syntheticRuns": "Przebiegi syntetyczne: {{runs, number}} (nigdy nie liczą się jako spełnione)",
+    "validatedDecisions": "Zweryfikowane decyzje",
+    "ofDecisions": "Decyzje w okresie: {{total, number}}",
+    "timeSaved": "Zaoszczędzony czas (szacunek)",
+    "hours": "{{hours}} godz.",
+    "estimate": "Szacunek, nie pomiar",
+    "estimateNote": "Zaoszczędzony czas to szacunek: artefakty wykonane przez AI razy godziny, jakie każdy zająłby ręcznie.",
+    "seeAssumptions": "Zobacz założenia"
+  },
+  "periods": {
+    "quarter": "{{quarter}} kw. {{year}}"
+  },
+  "charts": {
+    "projects": {
+      "title": "Rozpoczęte projekty",
+      "subtitle": "Nowe projekty w każdym okresie.",
+      "series": "Rozpoczęte projekty"
+    },
+    "ways": {
+      "title": "Artefakty według sposobu pracy",
+      "subtitle": "Wykonane z AI (wspierane lub prowadzone przez AI) albo ręcznie, w okresie.",
+      "ai": "Z AI",
+      "human": "Ręcznie"
+    }
+  },
+  "artifacts": {
+    "personas": "Persony",
+    "research": "Badania",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototypy"
+  },
+  "steps": {
+    "personas": "Persony",
+    "research": "Badanie",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototyp",
+    "validation": "Walidacja"
+  },
+  "coverage": {
+    "title": "Jak daleko doszły projekty",
+    "subtitle": "Spośród projektów rozpoczętych w okresie ({{started}}) te, które doszły do każdego kroku.",
+    "figure": "{{percent}} · {{reached}}"
+  },
+  "decisions": {
+    "title": "Decyzje według werdyktu",
+    "subtitle": "Decyzje w okresie: {{total, number}}",
+    "verdicts": {
+      "pursue": "Kontynuować",
+      "park": "Odłożyć",
+      "reject": "Odrzucić"
+    },
+    "validated": "Zweryfikowane",
+    "validatedNote": "Zweryfikowana decyzja cytuje raport z walidacji, w którym co najmniej jedno kryterium sukcesu zostało spełnione przez prawdziwe wyniki; przebiegi syntetyczne nigdy się nie liczą."
+  },
+  "cycles": {
+    "title": "Czasy cyklu",
+    "subtitle": "Mediana w dniach, według okresu, w którym zakończył się każdy krok.",
+    "evidence_to_prd": "Od dowodów do PRD",
+    "prd_to_prototype": "Od PRD do prototypu",
+    "prototype_to_decision": "Od prototypu do decyzji",
+    "days": "{{days, number}} dni",
+    "projects": "Projekty: {{n, number}}"
+  },
+  "usage": {
+    "title": "Korzystanie z asystenta i agentów",
+    "conversations": "Rozmowy z asystentem",
+    "agentRuns": "Uruchomienia agentów",
+    "agentsDeploymentOnly": "Autonomiczne agenty działają dla wdrożenia, nie w obszarze roboczym.",
+    "note": "Rozmowa liczy się w miesiącu, w którym była ostatnio aktywna.",
+    "platformCost": "Koszt modeli na obszar roboczy to szacunek kosztów platformy (GET /platform/costs, dla administratorów platformy): zobacz Koszt na obszar roboczy w przewodniku po wielu obszarach."
+  },
+  "table": {
+    "title": "Tabela liczb",
+    "caption": "Liczby widoku przywództwa dla każdego okresu i łącznie",
+    "period": "Okres",
+    "total": "Łącznie",
+    "columns": {
+      "projects": "Projekty",
+      "toPrototype": "Do prototypu",
+      "validations": "Walidacje",
+      "decisions": "Decyzje",
+      "validated": "Zweryfikowane",
+      "withAi": "Z AI",
+      "byHand": "Ręcznie",
+      "conversations": "Rozmowy",
+      "agentRuns": "Uruchomienia agentów",
+      "hours": "Zaoszczędzone godz. (szac.)"
+    }
+  },
+  "assumptions": {
+    "title": "Jak szacowany jest zaoszczędzony czas",
+    "description": "Szacunek wraz z jego podstawą",
+    "label": "Szacunek, nie pomiar: artefakty wykonane przez AI razy godziny, jakie każdy zająłby ręcznie.",
+    "codes": {
+      "ai_made_only": "Liczą się tylko artefakty wykonane przez AI: wygenerowane, poprawione przez AI lub zbudowane przez kreator prototypów. Artefakty napisane ręcznie, edycje i przywrócenia nic nie oszczędzają.",
+      "baseline_hours": "Każdy artefakt wykonany przez AI oszczędza swoją wartość bazową: godziny, jakich osoba potrzebuje, by wykonać go ręcznie, ustawione przez administratora, a w przeciwnym razie pokazaną wartość domyślną.",
+      "review_not_subtracted": "Czas, jaki ludzie poświęcają na przegląd i edycję szkicu AI, nie jest odejmowany.",
+      "no_hours_for_the_rest": "Decyzje, walidacje, rozmowy z asystentem i uruchomienia agentów nie dodają godzin.",
+      "live_projects": "Usunięte projekty nie są liczone. Dane pochodzą z ostatniego dziennego podsumowania."
+    },
+    "tableCaption": "Zaoszczędzone godziny według typu artefaktu w okresie",
+    "columns": {
+      "artifact": "Artefakt",
+      "count": "Wykonane z AI",
+      "baseline": "Godziny na sztukę",
+      "hours": "Zaoszczędzone godziny"
+    },
+    "saved": "Ustawione przez administratora",
+    "default": "Domyślne",
+    "note": "Notatka administratora:",
+    "readOnly": "Wartości bazowe ustawia administrator tego obszaru roboczego (lub wdrożenia).",
+    "edit": {
+      "title": "Wartości bazowe",
+      "hoursFor": "{{artifact}}: godziny ręcznie",
+      "note": "Skąd pochodzą liczby (pokazywane razem z szacunkiem)",
+      "invalid": "Każda wartość bazowa to liczba godzin od 0 do {{max, number}}.",
+      "failed": "Nie udało się zapisać wartości bazowych. Spróbuj ponownie.",
+      "save": "Zapisz wartości bazowe"
+    }
+  }
+}

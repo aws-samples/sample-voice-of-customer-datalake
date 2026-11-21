@@ -38,7 +38,7 @@ import Login from './pages/Login/Login'
 import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, ImportWizard, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
-  DataExplorer, Vote, Memory, Company, Library, Agents, AgentsAutomations, AgentsRuns, AgentsSpend, AgentsFlows, AgentsConnections,
+  DataExplorer, Vote, Memory, Company, Library, Leadership, Agents, AgentsAutomations, AgentsRuns, AgentsSpend, AgentsFlows, AgentsConnections,
   AgentDetail, SetupGuide,
   WorkflowPage, WorkflowTemplatePage, RunWorkspace, GitHubAppCreated, GitHubAppInstalled, Account, Members, WorkspaceSettings, Connect, OAuthConsent,
   Radar, Participants,
@@ -176,6 +176,8 @@ export const routes: RouteObject[] = [
       // The Documents Library (7.62.00): one page; the item open in its preview drawer is `?item=<id>&page=<n>`, where
       // the assistant's citation chips link (Library/libraryParams.ts).
       { path: 'library', ...page(<Library />) },
+      // Insights → Leadership (7.70.00): the scope's admins (the page says so to anyone else; the server decides).
+      { path: 'leadership', ...page(<Leadership />) },
       // Agent orchestration (7.52.00; Agents/agentsPaths.ts): the shell of its tabs, each tab a child route, in their
       // order: Automations /agents, Runs /agents/runs (the engineering runs, filtered by `?month=&flow=&status=`),
       // Skills /agents/skills[/<role>[/v/<n>]], Spend /agents/spend, Flows /agents/workflows, Registry

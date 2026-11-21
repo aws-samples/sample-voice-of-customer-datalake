@@ -289,6 +289,9 @@ def settings_world(lambda_context: Any) -> Generator[World]:
         # id) and of each workspace.
         for row in _app_feedback_rows():
             aggregates.put_item(Item=row)
+        # The leadership view's baselines (7.70.00), of the deployment and of each workspace, each note its scope's.
+        for row in _adoption_rows():
+            aggregates.put_item(Item=row)
 
         yield World(call=_caller(settings_handler, lambda_context),
                     doubles={'cognito': cognito, 'lambda': invoke, 'assist': assist})
@@ -354,6 +357,37 @@ def _app_feedback_rows() -> list[dict[str, Any]]:
     return [form('FEEDBACK_FORM', APP_FORM_A, 'before_workspaces'), settings('SETTINGS#app_feedback', APP_FORM_A),
             form(f'WS#{WS_A}#FEEDBACK_FORM', APP_FORM_A, A_MARK), settings(f'WS#{WS_A}#SETTINGS#app_feedback', APP_FORM_A),
             form(f'WS#{WS_B}#FEEDBACK_FORM', APP_FORM_B, B_MARK), settings(f'WS#{WS_B}#SETTINGS#app_feedback', APP_FORM_B)]
+
+
+def _adoption_rows() -> list[dict[str, Any]]:
+    """The leadership view's rollup item and baselines (7.70.00) of the deployment and of each workspace: counts, and
+    a note carrying its scope's mark."""
+    def rows(prefix: str, mark: str, started: int) -> list[dict[str, Any]]:
+        return [{'pk': f'{prefix}ADOPTION#ROLLUP', 'sk': '2026-11-20', 'rolled_up_at': '2026-11-20T03:05:00+00:00',
+                 'months': {'2026-11': {'projects_started': started}}},
+                {'pk': f'{prefix}SETTINGS#adoption', 'sk': 'config', 'note': f'{mark} survey',
+                 'baselines': {'prd': started}}]
+
+    return [*rows('', 'before_workspaces', 1), *rows(f'WS#{WS_A}#', A_MARK, 2), *rows(f'WS#{WS_B}#', B_MARK, 3)]
+
+
+@contextmanager
+def metrics_world(lambda_context: Any) -> Generator[World]:
+    """The metrics Lambda (lambda/api/metrics_handler.py) for the leadership view it includes (7.70.00): its own
+    workspace resolution (shared/workspace_request.py) and the domain APIs' (shared/request_workspace.py) over the two
+    seeded workspaces."""
+    import metrics_handler
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        stack.enter_context(patch.object(metrics_handler, '_workspace', RequestWorkspace(table=lambda: workspaces)))
+        aggregates = pk_sk_table('aggregates')
+        stack.enter_context(patch.object(metrics_handler, 'aggregates_table', aggregates))
+        for row in _adoption_rows():
+            aggregates.put_item(Item=row)
+        yield World(call=_caller(metrics_handler, lambda_context), doubles={'cognito': cognito})
 
 
 #: A category reprocess job id of each workspace, and one in none (shared/reprocess_jobs.py ``rp_`` + 12 hex).
@@ -653,6 +687,9 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'forms_report_routes.py': settings_world,
     # Included by the settings handler (in-app micro-feedback's settings, 7.66.00).
     'app_feedback_routes.py': settings_world,
+    # Included by the settings handler (the leadership view's baselines, 7.70.00) and by the metrics handler (its read).
+    'adoption_routes.py': settings_world,
+    'adoption_metrics_routes.py': metrics_world,
     # Included by the projects handler (the Documents Library, 7.62.00).
     'library_routes.py': library_world,
 }
@@ -853,6 +890,20 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('app_feedback_routes.py', 'PUT /settings/app-feedback'): RouteCase(
         ids=_APP_FORM_IDS, body={'form_id': '{form_id}', 'enabled': True}, without_a_workspace=_AS_BEFORE,
         deployment_admins_without_a_workspace=True),
+    # The leadership view (7.70.00): each workspace's own rollup and baselines, for its admins only; without the header
+    # the deployment's, for the deployment's admins.
+    ('adoption_metrics_routes.py', 'GET /metrics/adoption'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's rollup and note; A reads only its own)",
+        query={'from': '2026-11', 'to': '2026-11'},
+        literals={'2026-11': 'a month of the calendar, the same in every workspace'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('adoption_routes.py', 'GET /settings/adoption'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's own baselines and note)",
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('adoption_routes.py', 'PUT /settings/adoption'): RouteCase(
+        no_ids='the baselines are numbers and words of the admin, the workspace is the header: check 1',
+        body={'note': 'From our own survey'}, literals={'From our own survey': 'a note the admin typed'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     # The onboarding buddy and its role playbook (7.66.00): the caller's own row, every workspace; the signals are the
     # request's workspace's (the deployment's without the header).
     ('settings_handler.py', 'GET /settings/my-onboarding'): RouteCase(

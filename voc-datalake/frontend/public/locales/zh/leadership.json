@@ -1,0 +1,155 @@
+{
+  "title": "领导视图",
+  "subtitle": "团队如何使用方法论：推进到原型的想法、经过验证的决策、周期时间，以及节省时间的估算。只有计数，从不显示个人。",
+  "adminsOnly": "领导视图仅供管理员使用：工作区的管理员查看其工作区，部署的管理员和平台管理员查看部署。",
+  "loadFailed": "无法加载领导视图。",
+  "filters": {
+    "range": "时间段",
+    "presets": {
+      "last6": "最近 6 个月",
+      "last12": "最近 12 个月",
+      "thisYear": "今年",
+      "last24": "最近 24 个月"
+    },
+    "grain": "分组方式",
+    "grains": {
+      "month": "月",
+      "quarter": "季度"
+    },
+    "assumptions": "假设",
+    "csv": "下载 CSV"
+  },
+  "asOf": {
+    "none": "尚无数据：首次每日汇总在 UTC 03:05 运行。",
+    "at": "截至 {{when}} UTC 的数据（每日重新计算）。",
+    "partial": "上次汇总超时：部分项目尚未计入。"
+  },
+  "kpis": {
+    "label": "该时间段的主要数据",
+    "projectsStarted": "已启动的项目",
+    "toPrototype": "推进到原型的想法",
+    "toPrototypeDetail": "{{total, number}} 个项目中有 {{reached}} 个达到原型",
+    "validations": "已进行的验证",
+    "syntheticRuns": "合成运行：{{runs, number}} 次（从不计为达成）",
+    "validatedDecisions": "经过验证的决策",
+    "ofDecisions": "该时间段的决策：{{total, number}} 个",
+    "timeSaved": "节省的时间（估算）",
+    "hours": "{{hours}} 小时",
+    "estimate": "估算，而非测量",
+    "estimateNote": "节省的时间是估算值：AI 生成的工件数 × 每个工件手工完成所需的小时数。",
+    "seeAssumptions": "查看其假设"
+  },
+  "periods": {
+    "quarter": "{{year}} 年第 {{quarter}} 季度"
+  },
+  "charts": {
+    "projects": {
+      "title": "已启动的项目",
+      "subtitle": "每个时间段的新项目。",
+      "series": "已启动的项目"
+    },
+    "ways": {
+      "title": "按工作方式划分的工件",
+      "subtitle": "该时间段内借助 AI（AI 辅助或 AI 驱动）或手工完成。",
+      "ai": "借助 AI",
+      "human": "手工"
+    }
+  },
+  "artifacts": {
+    "personas": "用户画像",
+    "research": "研究",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "原型"
+  },
+  "steps": {
+    "personas": "用户画像",
+    "research": "研究",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "原型",
+    "validation": "验证"
+  },
+  "coverage": {
+    "title": "项目推进程度",
+    "subtitle": "在该时间段启动的项目（{{started}} 个）中，达到各步骤的项目。",
+    "figure": "{{percent}} · {{reached}}"
+  },
+  "decisions": {
+    "title": "按结论划分的决策",
+    "subtitle": "该时间段的决策：{{total, number}} 个",
+    "verdicts": {
+      "pursue": "推进",
+      "park": "搁置",
+      "reject": "否决"
+    },
+    "validated": "已验证",
+    "validatedNote": "经过验证的决策会引用一份验证报告，其中至少有一项成功标准由真实结果达成；合成运行从不计入。"
+  },
+  "cycles": {
+    "title": "周期时间",
+    "subtitle": "天数中位数，按每个步骤结束的时间段统计。",
+    "evidence_to_prd": "从证据到 PRD",
+    "prd_to_prototype": "从 PRD 到原型",
+    "prototype_to_decision": "从原型到决策",
+    "days": "{{days, number}} 天",
+    "projects": "项目：{{n, number}} 个"
+  },
+  "usage": {
+    "title": "助手和代理的使用",
+    "conversations": "助手对话",
+    "agentRuns": "代理运行",
+    "agentsDeploymentOnly": "自主代理为部署运行，而不在工作区中运行。",
+    "note": "对话计入其最后活跃的月份。",
+    "platformCost": "每个工作区的模型成本是平台的成本估算（GET /platform/costs，供平台管理员使用）：请参阅多工作区指南中的“每个工作区的成本”。"
+  },
+  "table": {
+    "title": "数据表",
+    "caption": "领导视图每个时间段及合计的数据",
+    "period": "时间段",
+    "total": "合计",
+    "columns": {
+      "projects": "项目",
+      "toPrototype": "达到原型",
+      "validations": "验证",
+      "decisions": "决策",
+      "validated": "已验证",
+      "withAi": "借助 AI",
+      "byHand": "手工",
+      "conversations": "对话",
+      "agentRuns": "代理运行",
+      "hours": "节省小时（估算）"
+    }
+  },
+  "assumptions": {
+    "title": "节省时间如何估算",
+    "description": "一个估算值及其依据",
+    "label": "估算，而非测量：AI 生成的工件数 × 每个工件手工完成所需的小时数。",
+    "codes": {
+      "ai_made_only": "只计入 AI 生成的工件：生成的、经 AI 修订的或由原型构建器构建的。手工编写的工件、编辑和恢复不节省时间。",
+      "baseline_hours": "每个 AI 生成的工件节省其基准时间：一个人手工完成一个所需的小时数，即管理员设置的值，否则为显示的默认值。",
+      "review_not_subtracted": "人们审阅和编辑 AI 草稿所花的时间未被扣除。",
+      "no_hours_for_the_rest": "决策、验证、助手对话和代理运行不增加小时数。",
+      "live_projects": "已删除的项目不计入。数据截至最近一次每日汇总。"
+    },
+    "tableCaption": "该时间段内按工件类型节省的小时数",
+    "columns": {
+      "artifact": "工件",
+      "count": "借助 AI 完成",
+      "baseline": "每个小时数",
+      "hours": "节省的小时"
+    },
+    "saved": "由管理员设置",
+    "default": "默认值",
+    "note": "管理员备注：",
+    "readOnly": "基准值由此工作区（或部署）的管理员设置。",
+    "edit": {
+      "title": "基准值",
+      "hoursFor": "{{artifact}}：手工小时数",
+      "note": "数据来源（与估算值一起显示）",
+      "invalid": "每个基准值是 0 到 {{max, number}} 之间的小时数。",
+      "failed": "无法保存基准值。请重试。",
+      "save": "保存基准值"
+    }
+  }
+}

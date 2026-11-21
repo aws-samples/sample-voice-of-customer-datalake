@@ -1,0 +1,155 @@
+{
+  "title": "Liderazgo",
+  "subtitle": "Cómo usan el método tus equipos: ideas llevadas a prototipo, decisiones validadas, tiempos de ciclo y una estimación del tiempo ahorrado. Solo recuentos, nunca una persona.",
+  "adminsOnly": "La vista de liderazgo es para administradores: los admins de un espacio de trabajo ven su espacio; los admins de la implementación y los admins de la plataforma ven la implementación.",
+  "loadFailed": "No se pudo cargar la vista de liderazgo.",
+  "filters": {
+    "range": "Periodo",
+    "presets": {
+      "last6": "Últimos 6 meses",
+      "last12": "Últimos 12 meses",
+      "thisYear": "Este año",
+      "last24": "Últimos 24 meses"
+    },
+    "grain": "Agrupar por",
+    "grains": {
+      "month": "Mes",
+      "quarter": "Trimestre"
+    },
+    "assumptions": "Supuestos",
+    "csv": "Descargar CSV"
+  },
+  "asOf": {
+    "none": "Aún no hay cifras: el primer resumen diario se ejecuta a las 03:05 UTC.",
+    "at": "Cifras a {{when}} UTC (se recalculan a diario).",
+    "partial": "El último resumen se quedó sin tiempo: algunos proyectos aún no se cuentan."
+  },
+  "kpis": {
+    "label": "Cifras principales del periodo",
+    "projectsStarted": "Proyectos iniciados",
+    "toPrototype": "Ideas llevadas a prototipo",
+    "toPrototypeDetail": "{{reached}} de {{total, number}} proyectos llegaron a un prototipo",
+    "validations": "Validaciones realizadas",
+    "syntheticRuns": "Ejecuciones sintéticas: {{runs, number}} (nunca cuentan como cumplidas)",
+    "validatedDecisions": "Decisiones validadas",
+    "ofDecisions": "Decisiones en el periodo: {{total, number}}",
+    "timeSaved": "Tiempo ahorrado (estimación)",
+    "hours": "{{hours}} h",
+    "estimate": "Estimación, no una medición",
+    "estimateNote": "El tiempo ahorrado es una estimación: artefactos hechos por la IA por las horas que cada uno llevaría a mano.",
+    "seeAssumptions": "Ver sus supuestos"
+  },
+  "periods": {
+    "quarter": "T{{quarter}} {{year}}"
+  },
+  "charts": {
+    "projects": {
+      "title": "Proyectos iniciados",
+      "subtitle": "Proyectos nuevos en cada periodo.",
+      "series": "Proyectos iniciados"
+    },
+    "ways": {
+      "title": "Artefactos por forma de trabajo",
+      "subtitle": "Hechos con IA (asistida o dirigida por IA) o a mano, en el periodo.",
+      "ai": "Con IA",
+      "human": "A mano"
+    }
+  },
+  "artifacts": {
+    "personas": "Personas",
+    "research": "Investigaciones",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototipos"
+  },
+  "steps": {
+    "personas": "Personas",
+    "research": "Investigación",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototipo",
+    "validation": "Validación"
+  },
+  "coverage": {
+    "title": "Hasta dónde llegaron los proyectos",
+    "subtitle": "De los proyectos iniciados en el periodo ({{started}}), los que alcanzaron cada paso.",
+    "figure": "{{percent}} · {{reached}}"
+  },
+  "decisions": {
+    "title": "Decisiones por veredicto",
+    "subtitle": "Decisiones en el periodo: {{total, number}}",
+    "verdicts": {
+      "pursue": "Seguir",
+      "park": "Aparcar",
+      "reject": "Rechazar"
+    },
+    "validated": "Validadas",
+    "validatedNote": "Una decisión validada cita un informe de validación con al menos un criterio de éxito cumplido por resultados reales; las ejecuciones sintéticas nunca cuentan."
+  },
+  "cycles": {
+    "title": "Tiempos de ciclo",
+    "subtitle": "Mediana en días, según el periodo en que terminó cada paso.",
+    "evidence_to_prd": "De la evidencia al PRD",
+    "prd_to_prototype": "Del PRD al prototipo",
+    "prototype_to_decision": "Del prototipo a la decisión",
+    "days": "{{days, number}} días",
+    "projects": "Proyectos: {{n, number}}"
+  },
+  "usage": {
+    "title": "Uso del asistente y de los agentes",
+    "conversations": "Conversaciones con el asistente",
+    "agentRuns": "Ejecuciones de agentes",
+    "agentsDeploymentOnly": "Los agentes autónomos se ejecutan para la implementación, no en un espacio de trabajo.",
+    "note": "Una conversación cuenta en el mes en que estuvo activa por última vez.",
+    "platformCost": "El coste de modelos por espacio de trabajo es la estimación de costes de la plataforma (GET /platform/costs, para admins de la plataforma): consulta Coste por espacio de trabajo en la guía de varios espacios."
+  },
+  "table": {
+    "title": "Tabla de cifras",
+    "caption": "Las cifras de la vista de liderazgo por periodo y el total",
+    "period": "Periodo",
+    "total": "Total",
+    "columns": {
+      "projects": "Proyectos",
+      "toPrototype": "A prototipo",
+      "validations": "Validaciones",
+      "decisions": "Decisiones",
+      "validated": "Validadas",
+      "withAi": "Con IA",
+      "byHand": "A mano",
+      "conversations": "Conversaciones",
+      "agentRuns": "Ejecuciones de agentes",
+      "hours": "Horas ahorradas (est.)"
+    }
+  },
+  "assumptions": {
+    "title": "Cómo se estima el tiempo ahorrado",
+    "description": "Una estimación, con aquello en lo que se basa",
+    "label": "Estimación, no una medición: artefactos hechos por la IA por las horas que cada uno llevaría a mano.",
+    "codes": {
+      "ai_made_only": "Solo cuentan los artefactos que hizo la IA: generados, revisados por la IA o creados por el generador de prototipos. Los artefactos escritos a mano, las ediciones y las restauraciones no ahorran nada.",
+      "baseline_hours": "Cada artefacto hecho por la IA ahorra su referencia: las horas que una persona tarda en hacer uno a mano, según las fijó un admin, o la predeterminada que se muestra.",
+      "review_not_subtracted": "No se resta el tiempo que las personas dedican a revisar y editar un borrador de la IA.",
+      "no_hours_for_the_rest": "Las decisiones, validaciones, conversaciones con el asistente y ejecuciones de agentes no suman horas.",
+      "live_projects": "No se cuentan los proyectos eliminados. Las cifras son las del último resumen diario."
+    },
+    "tableCaption": "Horas ahorradas por tipo de artefacto en el periodo",
+    "columns": {
+      "artifact": "Artefacto",
+      "count": "Hechos con IA",
+      "baseline": "Horas cada uno",
+      "hours": "Horas ahorradas"
+    },
+    "saved": "Fijada por un admin",
+    "default": "Predeterminada",
+    "note": "Nota del admin:",
+    "readOnly": "Un admin de este espacio de trabajo (o de la implementación) fija las referencias.",
+    "edit": {
+      "title": "Referencias",
+      "hoursFor": "{{artifact}}: horas a mano",
+      "note": "De dónde salen las cifras (se muestra con la estimación)",
+      "invalid": "Cada referencia es un número de horas de 0 a {{max, number}}.",
+      "failed": "No se pudieron guardar las referencias. Inténtalo de nuevo.",
+      "save": "Guardar referencias"
+    }
+  }
+}

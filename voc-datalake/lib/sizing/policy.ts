@@ -400,6 +400,9 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   // Cost per workspace's daily rollup: a few Logs Insights queries polled, a row per workspace-day; I/O-bound, no
   // model call (unmeasured, new).
   'voc-cost-rollup': 256,
+  // The leadership view's daily rollup (7.70.00): paged projected Queries of every live project, a few at once, and one
+  // whole item per scope; I/O-bound, no model call (unmeasured, new).
+  'voc-adoption-rollup': 512,
   // VocWebSearchStack
   'VocWebSearchStack/AWS679f53fac002430cb0da5b7982bd22872D164C4C': 512,
 };

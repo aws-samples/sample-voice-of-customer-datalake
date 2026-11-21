@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from aws_lambda_powertools.event_handler import Response, content_types
 
 from shared import (
+    adoption_routes,
     app_feedback_routes,
     appearance_routes,
     assist_jobs,
@@ -245,6 +246,8 @@ app.include_router(forms_v2_draft_routes.app)
 app.include_router(forms_report_routes.app)
 # In-app micro-feedback's settings (7.66.00), GET and PUT /settings/app-feedback (shared/app_feedback_routes.py).
 app.include_router(app_feedback_routes.app)
+# The leadership view's time-saved baselines (7.70.00), GET and PUT /settings/adoption (shared/adoption_routes.py).
+app.include_router(adoption_routes.app)
 
 
 def _configured_table():

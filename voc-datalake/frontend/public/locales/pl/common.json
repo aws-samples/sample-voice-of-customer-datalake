@@ -20,6 +20,7 @@
     "scrapers": "Źródła danych",
     "memory": "Pamięć",
     "library": "Biblioteka",
+    "leadership": "Przywództwo",
     "company": "Firma",
     "agents": "Orkiestracja agentów",
     "agent": "Agent",
@@ -85,6 +86,7 @@
       "validate": "Weryfikuj",
       "knowledge": "Wiedza",
       "connect": "Połącz",
+      "insights": "Wnioski",
       "admin": "Administracja"
     },
     "aiChat": "Czat AI",
@@ -99,6 +101,7 @@
     "scrapers": "Źródła danych",
     "memory": "Pamięć",
     "library": "Biblioteka",
+    "leadership": "Przywództwo",
     "company": "Firma",
     "admin": "Administracja",
     "connect": "MCP i skille",

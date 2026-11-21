@@ -22,7 +22,7 @@ import { MemoryWorkers } from './memory-workers';
 import { AGGREGATOR_FUNCTION_BASE_NAME, AGGREGATOR_STREAM_FAILURES_BASE_NAME, FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME } from './dlq-alarms';
 import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
-import { createCostRollupWorker } from './cost-rollup-worker';
+import { addDailyRollups } from './daily-rollups';
 import { ENGINEERING_ROLE_NAME_TEMPLATE as ROLE_NAMES } from './engineering-broker';
 import { addProcessingEngineering } from './processing-engineering';
 import { createRadarScanWorker } from './radar-scan-worker';
@@ -409,9 +409,9 @@ export class VocProcessingStack extends VocStack {
         ? { url: props.webSearchGatewayUrl, arn: props.webSearchGatewayArn, toolName: props.webSearchToolName }
         : undefined,
     });
-    // Cost per workspace's daily rollup of the Bedrock usage lines (docs/multi-workspace.md, "Cost per workspace").
-    createCostRollupWorker(this, 'CostRollupWorker', { uniqueName, layer: processingLayer, kmsKey, aggregatesTable,
-      workspacesTable: props.workspacesTable, lambdaLogGroupPattern: this.uniqueNamePattern('/aws/lambda/voc-*') });
+    // The daily rollups (daily-rollups.ts): cost per workspace (docs/multi-workspace.md) and the leadership view (7.70.00).
+    addDailyRollups(this, { ...props, uniqueName, layer: processingLayer,
+      lambdaLogGroupPattern: this.uniqueNamePattern('/aws/lambda/voc-*') });
     // The engineering agents (docs/autonomous-engineering.md): only with -c engineeringAgents=true (processing-engineering.ts).
     // (its tables, its bucket and the GitHub Issues settings function's secret are the stack's props: `...props`)
     addProcessingEngineering(this, { ...props, uniqueName, layer: processingLayer, kmsKey, aggregatesTable, rawDataBucket,

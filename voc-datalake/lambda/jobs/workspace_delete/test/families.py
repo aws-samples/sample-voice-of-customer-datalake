@@ -46,6 +46,8 @@ FAMILIES: Final = {
     **{f'SETTINGS#{kind}': 'settings' for kind in WORKSPACE_SETTINGS_KINDS},
     # The workspace's daily cost rows (WS#{ws}#COST, shared/platform_costs.py), swept with its settings.
     'COST': 'settings',
+    # The workspace's leadership view rollup items (WS#{ws}#ADOPTION#ROLLUP, shared/adoption.py, 7.70.00), the same.
+    'ADOPTION': 'settings',
     # A member's own objectives in the workspace (WS#{ws}#USERCTX#{sub}) and the list of who saved some.
     'my_context_key': 'user_contexts', 'user_context_owners_pk': 'user_contexts',
     'workspace_tombstone_key': 'KEPT: a tombstone of each deleted item and memory, for good (TENETS.md D4, D5)',

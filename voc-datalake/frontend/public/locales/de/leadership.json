@@ -1,0 +1,155 @@
+{
+  "title": "Führung",
+  "subtitle": "Wie Ihre Teams die Methode nutzen: Ideen bis zum Prototyp, validierte Entscheidungen, Durchlaufzeiten und eine Schätzung der eingesparten Zeit. Nur Zählungen, nie eine Person.",
+  "adminsOnly": "Die Führungsansicht ist für Administratoren: Die Admins eines Workspaces sehen ihren Workspace, die Admins der Bereitstellung und Plattform-Admins die Bereitstellung.",
+  "loadFailed": "Die Führungsansicht konnte nicht geladen werden.",
+  "filters": {
+    "range": "Zeitraum",
+    "presets": {
+      "last6": "Letzte 6 Monate",
+      "last12": "Letzte 12 Monate",
+      "thisYear": "Dieses Jahr",
+      "last24": "Letzte 24 Monate"
+    },
+    "grain": "Gruppieren nach",
+    "grains": {
+      "month": "Monat",
+      "quarter": "Quartal"
+    },
+    "assumptions": "Annahmen",
+    "csv": "CSV herunterladen"
+  },
+  "asOf": {
+    "none": "Noch keine Zahlen: Die erste tägliche Zusammenfassung läuft um 03:05 UTC.",
+    "at": "Stand {{when}} UTC (täglich neu berechnet).",
+    "partial": "Der letzte Lauf hatte nicht genug Zeit: Einige Projekte sind noch nicht gezählt."
+  },
+  "kpis": {
+    "label": "Kennzahlen des Zeitraums",
+    "projectsStarted": "Gestartete Projekte",
+    "toPrototype": "Ideen bis zum Prototyp",
+    "toPrototypeDetail": "{{reached}} von {{total, number}} Projekten erreichten einen Prototyp",
+    "validations": "Durchgeführte Validierungen",
+    "syntheticRuns": "Synthetische Läufe: {{runs, number}} (zählen nie als erfüllt)",
+    "validatedDecisions": "Validierte Entscheidungen",
+    "ofDecisions": "Entscheidungen im Zeitraum: {{total, number}}",
+    "timeSaved": "Eingesparte Zeit (Schätzung)",
+    "hours": "{{hours}} Std.",
+    "estimate": "Schätzung, keine Messung",
+    "estimateNote": "Die eingesparte Zeit ist eine Schätzung: von der KI erstellte Artefakte mal die Stunden, die jedes von Hand dauern würde.",
+    "seeAssumptions": "Annahmen ansehen"
+  },
+  "periods": {
+    "quarter": "Q{{quarter}} {{year}}"
+  },
+  "charts": {
+    "projects": {
+      "title": "Gestartete Projekte",
+      "subtitle": "Neue Projekte je Zeitraum.",
+      "series": "Gestartete Projekte"
+    },
+    "ways": {
+      "title": "Artefakte nach Arbeitsweise",
+      "subtitle": "Mit KI (KI-gestützt oder KI-gesteuert) oder von Hand erstellt, im Zeitraum.",
+      "ai": "Mit KI",
+      "human": "Von Hand"
+    }
+  },
+  "artifacts": {
+    "personas": "Personas",
+    "research": "Recherchen",
+    "prfaq": "PR/FAQs",
+    "prd": "PRDs",
+    "prototype": "Prototypen"
+  },
+  "steps": {
+    "personas": "Personas",
+    "research": "Recherche",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototyp",
+    "validation": "Validierung"
+  },
+  "coverage": {
+    "title": "Wie weit die Projekte kamen",
+    "subtitle": "Von den im Zeitraum gestarteten Projekten ({{started}}) die, die jeden Schritt erreichten.",
+    "figure": "{{percent}} · {{reached}}"
+  },
+  "decisions": {
+    "title": "Entscheidungen nach Urteil",
+    "subtitle": "Entscheidungen im Zeitraum: {{total, number}}",
+    "verdicts": {
+      "pursue": "Verfolgen",
+      "park": "Zurückstellen",
+      "reject": "Verwerfen"
+    },
+    "validated": "Validiert",
+    "validatedNote": "Eine validierte Entscheidung zitiert einen Validierungsbericht mit mindestens einem durch echte Ergebnisse erfüllten Erfolgskriterium; synthetische Läufe zählen nie."
+  },
+  "cycles": {
+    "title": "Durchlaufzeiten",
+    "subtitle": "Median in Tagen, nach dem Zeitraum, in dem der Schritt endete.",
+    "evidence_to_prd": "Belege bis PRD",
+    "prd_to_prototype": "PRD bis Prototyp",
+    "prototype_to_decision": "Prototyp bis Entscheidung",
+    "days": "{{days, number}} Tage",
+    "projects": "Projekte: {{n, number}}"
+  },
+  "usage": {
+    "title": "Nutzung von Assistent und Agenten",
+    "conversations": "Assistenten-Unterhaltungen",
+    "agentRuns": "Agentenläufe",
+    "agentsDeploymentOnly": "Die autonomen Agenten laufen für die Bereitstellung, nicht in einem Workspace.",
+    "note": "Eine Unterhaltung zählt in dem Monat, in dem sie zuletzt aktiv war.",
+    "platformCost": "Die Modellkosten pro Workspace sind die Kostenschätzung der Plattform (GET /platform/costs, für Plattform-Admins): siehe Kosten pro Workspace im Multi-Workspace-Leitfaden."
+  },
+  "table": {
+    "title": "Tabelle der Zahlen",
+    "caption": "Die Zahlen der Führungsansicht je Zeitraum und insgesamt",
+    "period": "Zeitraum",
+    "total": "Gesamt",
+    "columns": {
+      "projects": "Projekte",
+      "toPrototype": "Bis Prototyp",
+      "validations": "Validierungen",
+      "decisions": "Entscheidungen",
+      "validated": "Validiert",
+      "withAi": "Mit KI",
+      "byHand": "Von Hand",
+      "conversations": "Unterhaltungen",
+      "agentRuns": "Agentenläufe",
+      "hours": "Gesparte Std. (gesch.)"
+    }
+  },
+  "assumptions": {
+    "title": "So wird die eingesparte Zeit geschätzt",
+    "description": "Eine Schätzung, mit ihren Grundlagen",
+    "label": "Schätzung, keine Messung: von der KI erstellte Artefakte mal die Stunden, die jedes von Hand dauern würde.",
+    "codes": {
+      "ai_made_only": "Nur von der KI erstellte Artefakte zählen: generiert, von der KI überarbeitet oder vom Prototyp-Builder gebaut. Von Hand geschriebene Artefakte, Bearbeitungen und Wiederherstellungen sparen nichts.",
+      "baseline_hours": "Jedes von der KI erstellte Artefakt spart seinen Richtwert: die Stunden, die eine Person für eines von Hand braucht, wie ein Admin sie festgelegt hat, sonst der angezeigte Standard.",
+      "review_not_subtracted": "Die Zeit, die Menschen mit dem Prüfen und Bearbeiten eines KI-Entwurfs verbringen, wird nicht abgezogen.",
+      "no_hours_for_the_rest": "Entscheidungen, Validierungen, Assistenten-Unterhaltungen und Agentenläufe fügen keine Stunden hinzu.",
+      "live_projects": "Gelöschte Projekte werden nicht gezählt. Die Zahlen entsprechen der letzten täglichen Zusammenfassung."
+    },
+    "tableCaption": "Eingesparte Stunden je Artefakttyp im Zeitraum",
+    "columns": {
+      "artifact": "Artefakt",
+      "count": "Mit KI erstellt",
+      "baseline": "Stunden je Stück",
+      "hours": "Eingesparte Stunden"
+    },
+    "saved": "Von einem Admin festgelegt",
+    "default": "Standard",
+    "note": "Notiz des Admins:",
+    "readOnly": "Ein Admin dieses Workspaces (oder der Bereitstellung) legt die Richtwerte fest.",
+    "edit": {
+      "title": "Richtwerte",
+      "hoursFor": "{{artifact}}: Stunden von Hand",
+      "note": "Woher die Zahlen stammen (wird mit der Schätzung angezeigt)",
+      "invalid": "Jeder Richtwert ist eine Stundenzahl von 0 bis {{max, number}}.",
+      "failed": "Die Richtwerte konnten nicht gespeichert werden. Versuchen Sie es erneut.",
+      "save": "Richtwerte speichern"
+    }
+  }
+}

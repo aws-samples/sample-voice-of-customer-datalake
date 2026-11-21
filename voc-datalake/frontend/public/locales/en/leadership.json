@@ -1,0 +1,155 @@
+{
+  "title": "Leadership",
+  "subtitle": "How your teams use the method: ideas taken to prototype, validated decisions, cycle times and an estimate of the time saved. Counts only, never a person.",
+  "adminsOnly": "The leadership view is for administrators: a workspace's admins see their workspace, the deployment's admins and platform admins see the deployment.",
+  "loadFailed": "The leadership view could not be loaded.",
+  "filters": {
+    "range": "Period",
+    "presets": {
+      "last6": "Last 6 months",
+      "last12": "Last 12 months",
+      "thisYear": "This year",
+      "last24": "Last 24 months"
+    },
+    "grain": "Group by",
+    "grains": {
+      "month": "Month",
+      "quarter": "Quarter"
+    },
+    "assumptions": "Assumptions",
+    "csv": "Download CSV"
+  },
+  "asOf": {
+    "none": "No figures yet: the first daily rollup runs at 03:05 UTC.",
+    "at": "Figures as of {{when}} UTC (rebuilt daily).",
+    "partial": "The last rollup ran out of time: some projects are not counted yet."
+  },
+  "kpis": {
+    "label": "Headline figures for the period",
+    "projectsStarted": "Projects started",
+    "toPrototype": "Ideas taken to prototype",
+    "toPrototypeDetail": "{{reached}} of {{total, number}} projects reached a prototype",
+    "validations": "Validations run",
+    "syntheticRuns": "Synthetic runs: {{runs, number}} (never counted as met)",
+    "validatedDecisions": "Validated decisions",
+    "ofDecisions": "Decisions in the period: {{total, number}}",
+    "timeSaved": "Time saved (estimate)",
+    "hours": "{{hours}} h",
+    "estimate": "Estimate, not a measurement",
+    "estimateNote": "Time saved is an estimate: AI-made artifacts times the hours each would take by hand.",
+    "seeAssumptions": "See its assumptions"
+  },
+  "periods": {
+    "quarter": "Q{{quarter}} {{year}}"
+  },
+  "charts": {
+    "projects": {
+      "title": "Projects started",
+      "subtitle": "New projects in each period.",
+      "series": "Projects started"
+    },
+    "ways": {
+      "title": "Artifacts by way of working",
+      "subtitle": "Made with AI (AI-assisted or AI-driven) or by hand, in the period.",
+      "ai": "With AI",
+      "human": "By hand"
+    }
+  },
+  "artifacts": {
+    "personas": "Personas",
+    "research": "Research",
+    "prfaq": "PR/FAQs",
+    "prd": "PRDs",
+    "prototype": "Prototypes"
+  },
+  "steps": {
+    "personas": "Personas",
+    "research": "Research",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototype",
+    "validation": "Validation"
+  },
+  "coverage": {
+    "title": "How far the projects got",
+    "subtitle": "Of the projects started in the period ({{started}}), those that reached each step.",
+    "figure": "{{percent}} · {{reached}}"
+  },
+  "decisions": {
+    "title": "Decisions by verdict",
+    "subtitle": "Decisions in the period: {{total, number}}",
+    "verdicts": {
+      "pursue": "Pursue",
+      "park": "Park",
+      "reject": "Reject"
+    },
+    "validated": "Validated",
+    "validatedNote": "A validated decision cites a validation report with at least one success criterion met by real results; synthetic runs never count."
+  },
+  "cycles": {
+    "title": "Cycle times",
+    "subtitle": "Median days, by the period each step ended in.",
+    "evidence_to_prd": "Evidence to PRD",
+    "prd_to_prototype": "PRD to prototype",
+    "prototype_to_decision": "Prototype to decision",
+    "days": "{{days, number}} days",
+    "projects": "Projects: {{n, number}}"
+  },
+  "usage": {
+    "title": "Assistant and agent use",
+    "conversations": "Assistant conversations",
+    "agentRuns": "Agent runs",
+    "agentsDeploymentOnly": "The autonomous agents run for the deployment, not in a workspace.",
+    "note": "A conversation counts in the month it was last active.",
+    "platformCost": "The model cost per workspace is the platform's cost estimate (GET /platform/costs, for platform admins): see Cost per workspace in the multi-workspace guide."
+  },
+  "table": {
+    "title": "Table of the figures",
+    "caption": "The leadership view's figures for each period and the total",
+    "period": "Period",
+    "total": "Total",
+    "columns": {
+      "projects": "Projects",
+      "toPrototype": "To prototype",
+      "validations": "Validations",
+      "decisions": "Decisions",
+      "validated": "Validated",
+      "withAi": "With AI",
+      "byHand": "By hand",
+      "conversations": "Conversations",
+      "agentRuns": "Agent runs",
+      "hours": "Hours saved (est.)"
+    }
+  },
+  "assumptions": {
+    "title": "How time saved is estimated",
+    "description": "An estimate, with what it rests on",
+    "label": "Estimate, not a measurement: AI-made artifacts times the hours each would take by hand.",
+    "codes": {
+      "ai_made_only": "Only artifacts the AI made count: generated, revised by the AI, or built by the prototype builder. Hand-written artifacts, edits and restores save nothing.",
+      "baseline_hours": "Each AI-made artifact saves its baseline: the hours a person takes to make one by hand, as an admin set them, else the default shown.",
+      "review_not_subtracted": "The time people spend reviewing and editing an AI draft is not subtracted.",
+      "no_hours_for_the_rest": "Decisions, validations, assistant conversations and agent runs add no hours.",
+      "live_projects": "Deleted projects are not counted. Figures are as of the last daily rollup."
+    },
+    "tableCaption": "Hours saved per artifact type in the period",
+    "columns": {
+      "artifact": "Artifact",
+      "count": "Made with AI",
+      "baseline": "Hours each",
+      "hours": "Hours saved"
+    },
+    "saved": "Set by an admin",
+    "default": "Default",
+    "note": "Admin's note:",
+    "readOnly": "An admin of this workspace (or of the deployment) sets the baselines.",
+    "edit": {
+      "title": "Baselines",
+      "hoursFor": "{{artifact}}: hours by hand",
+      "note": "Where the numbers come from (shown with the estimate)",
+      "invalid": "Each baseline is a number of hours from 0 to {{max, number}}.",
+      "failed": "The baselines could not be saved. Try again.",
+      "save": "Save baselines"
+    }
+  }
+}

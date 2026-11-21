@@ -143,6 +143,7 @@ everyone who uses the same browser.
 | My conversations | the assistant sidebar | content, not a setting |
 | Brand (name, handles, hashtags, URLs) | Administration → General | |
 | In-app feedback (the thumbs after key actions) | Administration → General → In-app feedback | `GET /settings/app-feedback` (every member) / `PUT` (the workspace's admins; outside a workspace the deployment's); off by default ([micro-feedback.md](micro-feedback.md)) |
+| Time-saved baselines (the leadership view's hours per artifact made by hand, and a note) | Insights → Leadership → Assumptions | `GET` / `PUT /settings/adoption` (the scope's admins, acting for themselves; outside a workspace the deployment's); defaults until set ([leadership-view.md](leadership-view.md)) |
 | Role playbook (Product, Scrum master, QA, Engineering) | Home → Your setup checklist → Your first week | the person's own, like the checklist's state; grants nothing ([playbooks.md](playbooks.md)) |
 | Default theme (the colour theme everyone sees until they pick their own) | Administration → General → Default theme | `GET /settings/appearance` (everyone) / `PUT` (platform admins, checked live: one colour scheme for the whole deployment, [Multi-workspace](multi-workspace.md#per-workspace-configuration)); everyone else, a plain admin included, sees it read-only |
 | Data sources, credentials, schedules, circuit breakers | Administration → Sources → Source settings | the deployment's own: its Deployment scope (platform admins) |

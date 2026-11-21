@@ -160,6 +160,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     # In-app micro-feedback's form and actions (7.66.00): the workspace's admins (require_settings_admin), acting as
     # themselves (a delegated caller is refused); without a workspace the deployment's `admins`.
     'app_feedback_routes.py': frozenset({'PUT /settings/app-feedback'}),
+    # The leadership view's time-saved baselines (7.70.00): the scope's admins (require_settings_admin), acting as
+    # themselves (a delegated caller is refused); without a workspace the deployment's `admins`.
+    'adoption_routes.py': frozenset({'PUT /settings/adoption'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
     # A form's test link (7.55.00): issuing or rotating its token. A token opens the form while it is Off, so only an
     # admin of the workspace (acting as themselves), else of the deployment (`_require_test_link_admin` ->

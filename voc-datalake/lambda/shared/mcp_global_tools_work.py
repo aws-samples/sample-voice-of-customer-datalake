@@ -22,12 +22,19 @@ every rule:
   apply; the request or +1 is recorded under the minter's verified email (one +1
   per person and request, ``board_route_claims``). Status changes are admin-only (``require_board_admin``): no tool.
 
+* ``insights_get_adoption`` (7.70.00): ``GET /metrics/adoption``, the leadership view (docs/leadership-view.md):
+  counts only, never a person; its time saved is an estimate the answer labels with its baselines and assumptions. The
+  route is an administrator's, so the tool is ``admin_only`` (a token an administrator minted, live-checked per call,
+  never a project-pinned one) and reads the deployment's view: inside a workspace a credential is never an admin, and
+  the route refuses it.
+
 No import tool: every CSV / JSON / paste / S3 import route is admin-only (the
 manual-import and S3-import handlers' ``admins_only`` middleware), and an MCP
 token is never admin.
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any, Final, TypeGuard
 
@@ -140,6 +147,21 @@ def _feature_request(args: Mapping[str, Any], _project: str | None) -> RouteRequ
     return RouteRequest(DOMAIN_ENGAGEMENT, 'POST', '/feature-requests', body=body)
 
 
+#: A month as ``GET /metrics/adoption`` reads it (shared/adoption_view.py); the tool reads by month.
+_MONTH: Final = {'type': 'string'}
+_MONTH_RE: Final = re.compile(r'\d{4}-(0[1-9]|1[0-2])')
+
+
+def _adoption(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
+    query: dict[str, Any] = {}
+    for name in ('from', 'to'):
+        month = text_arg(args, name, max_length=7)
+        if month is not None and _MONTH_RE.fullmatch(month) is None:
+            raise InvalidToolArgument(f'{name} must be a month, YYYY-MM')
+        query[name] = month
+    return RouteRequest(DOMAIN_METRICS, 'GET', '/metrics/adoption', query=query)
+
+
 WORK_TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'feedback_get_catalogue', 'Get the feedback data catalogue',
@@ -177,4 +199,10 @@ WORK_TOOLS: Final[tuple[GlobalTool, ...]] = (
                 'request_id': ID_SCHEMA,
                 'fields': {'type': 'object'}}),
         _feature_request, stripped, write=True, board_route=True),
+    GlobalTool(
+        'insights_get_adoption', 'Get the leadership view',
+        'Method use by month, counts only (admin token); time saved is an ESTIMATE: quote its assumptions. '
+        '`from`/`to` YYYY-MM.',
+        schema({'from': _MONTH, 'to': _MONTH}),
+        _adoption, stripped, admin_only=True),
 )

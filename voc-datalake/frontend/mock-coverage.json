@@ -2880,6 +2880,35 @@
     ]
   },
   {
+    "file": "api/adoptionApi.ts",
+    "method": "GET",
+    "call": "`${VIEW_PATH}?${query.toString()}`",
+    "probes": [
+      {
+        "path": "/metrics/adoption?from=2026-06&to=2026-11&grain=month"
+      },
+      {
+        "path": "/metrics/adoption?grain=quarter"
+      }
+    ]
+  },
+  {
+    "file": "api/adoptionApi.ts",
+    "method": "PUT",
+    "call": "SETTINGS_PATH",
+    "probes": [
+      {
+        "path": "/settings/adoption",
+        "body": {
+          "baselines": {
+            "prd": 10
+          },
+          "note": "From our own survey"
+        }
+      }
+    ]
+  },
+  {
     "file": "api/appFeedbackApi.ts",
     "method": "GET",
     "call": "PATH",

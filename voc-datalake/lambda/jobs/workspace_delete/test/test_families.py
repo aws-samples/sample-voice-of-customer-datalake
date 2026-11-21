@@ -22,6 +22,7 @@ from jobs.workspace_delete.test.conftest import (
     seed_workspace,
 )
 from jobs.workspace_delete.test.families import FAMILIES
+from shared.adoption import rollup_partition
 from shared.company_context import my_context_key, put_my_context
 from shared.conversations import conversant_key, conversation_partition
 from shared.document_comments import put_thread, thread_item, user_author
@@ -245,6 +246,8 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     **{f'SETTINGS#{kind}': (lambda w, kind=kind: _aggregate(w, settings_key(WS, kind)['pk'], 'config', kind=kind))
        for kind in WORKSPACE_SETTINGS_KINDS},
     'COST': lambda w: _aggregate(w, cost_partition(SCOPE), '2026-11-01', schema=1, totals={'calls': 1}),
+    'ADOPTION': lambda w: _aggregate(w, rollup_partition(SCOPE), '2026-11-21', schema=1,
+                                     months={'2026-11': {'projects_started': 1}}),
     # A member's own objectives, saved as the settings API saves them (its owner row first), and a former
     # member's owner row whose objectives row is already gone.
     'my_context_key': _my_context,

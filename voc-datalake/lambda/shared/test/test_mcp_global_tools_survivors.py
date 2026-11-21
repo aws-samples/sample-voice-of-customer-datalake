@@ -149,8 +149,8 @@ class TestExamples:
 
     def test_a_tool_with_no_area_ranks_after_the_last_area(self):
         tool = tools.GlobalTool('misc', 'T', 'd', {}, lambda _a, _p: tools.RouteRequest('x', 'GET', '/'))
-        # Twelve areas since 7.63.00 (`library`, the Documents Library's tools; `forms`, a form's Results).
-        assert tools._area_rank(tool) == len(tools.AREAS) == 12
+        # Thirteen areas since 7.70.00 (`insights`, the leadership view; 7.63.00 added `library` and `forms`).
+        assert tools._area_rank(tool) == len(tools.AREAS) == 13
 
     def test_a_non_row_before_the_rows_is_skipped_not_the_end(self):
         answer = FEATURE_SEARCH.shape({'items': ['odd', {'request_id': 'fr_1'}, {'request_id': 'fr_2'}]}, {})

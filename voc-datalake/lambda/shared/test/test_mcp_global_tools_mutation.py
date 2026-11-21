@@ -153,10 +153,10 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         ('Start one methodology step in a research project (write token): `step` personas (adds `count` personas, '
          'never replaces), research (`brief` = the research question), prfaq or prd (`brief` = the feature idea; '
          'drafts a PR/FAQ or PRD from customer feedback), prototype (from the newest PRD or PR/FAQ), '
-         'validation_plan or validation_report (the Validate step, from its success criteria). Answers a '
-         'job_id and a `methodology` block (skipped upstream steps, warnings: tell the user); follow the job with '
-         'projects_get_job. A PR/FAQ or PRD is refused unless the user and the project owner work AI-driven; a '
-         'prototype without a PRD or PR/FAQ is refused. Confirm with the user first.'),
+         'validation_plan or validation_report. Answers a job_id and a `methodology` block (skipped upstream '
+         'steps, warnings: tell the user); follow the job with projects_get_job. A PR/FAQ or PRD is refused '
+         'unless the user and the project owner work AI-driven; a prototype without a PRD or PR/FAQ is '
+         'refused. Confirm with the user first.'),
         _object({'project_id': ID, 'step': {'type': 'string', 'enum': ['personas', 'research', 'prfaq', 'prd', 'prototype', 'validation_plan', 'validation_report']}, 'title': {'type': 'string', 'maxLength': 200}, 'brief': {'type': 'string', 'maxLength': 4000}, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, 'step'),
         True, False, True),
     'projects_get_job': (
@@ -374,6 +374,13 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
          'own ballot (never a second vote). Confirm with the user first.'),
         _object({'row_id': ID, 'scores': {'type': 'object', 'additionalProperties': {'type': 'integer', 'minimum': 1, 'maximum': 5}}}, 'row_id', 'scores'),
         True, False, False),
+    # The leadership view (7.70.00): an administrator's token only (admin_only), a read.
+    'insights_get_adoption': (
+        'Get the leadership view',
+        ('Method use by month, counts only (admin token); time saved is an ESTIMATE: quote its assumptions. '
+         '`from`/`to` YYYY-MM.'),
+        _object({'from': {'type': 'string'}, 'to': {'type': 'string'}}),
+        False, True, False),
 }
 
 
@@ -462,7 +469,9 @@ class TestTheOldNames:
                           'engineering_runs_list', 'engineering_run_get', 'engineering_run_analysis',
                           'engineering_run_steer', 'engineering_run_request',
                           # (7.62.00, the Documents Library; 7.63.00, a form's Results)
-                          'library_search', 'forms_get_results'}
+                          'library_search', 'forms_get_results',
+                          # (7.70.00, the leadership view)
+                          'insights_get_adoption'}
         assert set(tools.RENAMED.values()) == listed - new_since_6_10
 
     @pytest.mark.parametrize(('old', 'new'), list(RENAMED_IN_6_10.items()))

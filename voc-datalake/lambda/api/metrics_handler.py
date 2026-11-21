@@ -25,7 +25,15 @@ from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import category_access, data_quality, feedback_catalogue, other_category, release_watch, source_profile
+from shared import (
+    adoption_metrics_routes,
+    category_access,
+    data_quality,
+    feedback_catalogue,
+    other_category,
+    release_watch,
+    source_profile,
+)
 from shared import category_scope_query as scope_query
 from shared.api import (
     DATE_BASIS_IMPORTED,
@@ -259,6 +267,9 @@ def _workspace_first(resolver: Any, next_middleware: Any) -> Any:
 
 
 app.use(middlewares=[_workspace_first])
+# The leadership view (7.70.00), GET /metrics/adoption (shared/adoption_metrics_routes.py), on this module's table.
+adoption_metrics_routes.bind_aggregates_table(lambda: aggregates_table)
+app.include_router(adoption_metrics_routes.app)
 
 
 def _feedback_query(partition_attribute: str, partition: str, *, sort: SortRange | None = None,

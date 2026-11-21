@@ -20,6 +20,8 @@ export interface NavItem {
   labelKey: string
   menuKey: string
   adminOnly?: boolean
+  /** Shown to the admins of the scope only: a workspace's admins in one, else the deployment's or platform admins. */
+  scopeAdminsOnly?: boolean
   /**
    * Section this item belongs to (listen → understand →
    * build → validate → knowledge → connect → admin). Items are grouped under a

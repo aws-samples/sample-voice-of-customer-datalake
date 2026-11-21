@@ -1,0 +1,155 @@
+{
+  "title": "리더십",
+  "subtitle": "팀의 방법론 활용: 프로토타입까지 간 아이디어, 검증된 결정, 사이클 타임, 절약된 시간의 추정치. 개수만 표시하며, 개인은 표시하지 않습니다.",
+  "adminsOnly": "리더십 보기는 관리자용입니다. 작업 공간 관리자는 자신의 작업 공간을, 배포 관리자와 플랫폼 관리자는 배포를 봅니다.",
+  "loadFailed": "리더십 보기를 불러오지 못했습니다.",
+  "filters": {
+    "range": "기간",
+    "presets": {
+      "last6": "최근 6개월",
+      "last12": "최근 12개월",
+      "thisYear": "올해",
+      "last24": "최근 24개월"
+    },
+    "grain": "묶음 단위",
+    "grains": {
+      "month": "월",
+      "quarter": "분기"
+    },
+    "assumptions": "가정",
+    "csv": "CSV 다운로드"
+  },
+  "asOf": {
+    "none": "아직 수치가 없습니다. 첫 일일 집계는 03:05 UTC에 실행됩니다.",
+    "at": "{{when}} UTC 기준 수치 (매일 다시 계산).",
+    "partial": "마지막 집계의 시간이 부족했습니다. 일부 프로젝트는 아직 집계되지 않았습니다."
+  },
+  "kpis": {
+    "label": "기간의 주요 수치",
+    "projectsStarted": "시작한 프로젝트",
+    "toPrototype": "프로토타입까지 간 아이디어",
+    "toPrototypeDetail": "{{total, number}}개 중 {{reached}}개 프로젝트가 프로토타입에 도달",
+    "validations": "실행한 검증",
+    "syntheticRuns": "합성 실행: {{runs, number}}건 (충족으로 세지 않음)",
+    "validatedDecisions": "검증된 결정",
+    "ofDecisions": "기간 내 결정: {{total, number}}건",
+    "timeSaved": "절약된 시간 (추정)",
+    "hours": "{{hours}}시간",
+    "estimate": "측정이 아닌 추정치",
+    "estimateNote": "절약된 시간은 추정치입니다: AI가 만든 산출물 수 × 각각을 직접 만들 때 걸리는 시간.",
+    "seeAssumptions": "가정 보기"
+  },
+  "periods": {
+    "quarter": "{{year}}년 {{quarter}}분기"
+  },
+  "charts": {
+    "projects": {
+      "title": "시작한 프로젝트",
+      "subtitle": "기간별 새 프로젝트.",
+      "series": "시작한 프로젝트"
+    },
+    "ways": {
+      "title": "작업 방식별 산출물",
+      "subtitle": "기간 내 AI로 (AI 지원 또는 AI 주도) 또는 직접 만든 산출물.",
+      "ai": "AI로 작성",
+      "human": "직접 작성"
+    }
+  },
+  "artifacts": {
+    "personas": "페르소나",
+    "research": "리서치",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "프로토타입"
+  },
+  "steps": {
+    "personas": "페르소나",
+    "research": "리서치",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "프로토타입",
+    "validation": "검증"
+  },
+  "coverage": {
+    "title": "프로젝트 진행 정도",
+    "subtitle": "기간 내 시작한 프로젝트({{started}}개) 중 각 단계에 도달한 프로젝트.",
+    "figure": "{{percent}} · {{reached}}"
+  },
+  "decisions": {
+    "title": "판정별 결정",
+    "subtitle": "기간 내 결정: {{total, number}}건",
+    "verdicts": {
+      "pursue": "추진",
+      "park": "보류",
+      "reject": "거절"
+    },
+    "validated": "검증됨",
+    "validatedNote": "검증된 결정은 실제 결과로 성공 기준을 하나 이상 충족한 검증 보고서를 인용합니다. 합성 실행은 세지 않습니다."
+  },
+  "cycles": {
+    "title": "사이클 타임",
+    "subtitle": "각 단계가 끝난 기간 기준, 일수의 중앙값.",
+    "evidence_to_prd": "근거에서 PRD까지",
+    "prd_to_prototype": "PRD에서 프로토타입까지",
+    "prototype_to_decision": "프로토타입에서 결정까지",
+    "days": "{{days, number}}일",
+    "projects": "프로젝트: {{n, number}}개"
+  },
+  "usage": {
+    "title": "어시스턴트와 에이전트 사용",
+    "conversations": "어시스턴트 대화",
+    "agentRuns": "에이전트 실행",
+    "agentsDeploymentOnly": "자율 에이전트는 작업 공간이 아니라 배포를 위해 실행됩니다.",
+    "note": "대화는 마지막으로 활동한 달에 셉니다.",
+    "platformCost": "작업 공간별 모델 비용은 플랫폼의 비용 추정치입니다 (GET /platform/costs, 플랫폼 관리자용). 다중 작업 공간 가이드의 작업 공간별 비용을 참고하세요."
+  },
+  "table": {
+    "title": "수치 표",
+    "caption": "기간별 및 합계 리더십 보기 수치",
+    "period": "기간",
+    "total": "합계",
+    "columns": {
+      "projects": "프로젝트",
+      "toPrototype": "프로토타입 도달",
+      "validations": "검증",
+      "decisions": "결정",
+      "validated": "검증됨",
+      "withAi": "AI로 작성",
+      "byHand": "직접 작성",
+      "conversations": "대화",
+      "agentRuns": "에이전트 실행",
+      "hours": "절약 시간 (추정)"
+    }
+  },
+  "assumptions": {
+    "title": "절약된 시간을 추정하는 방법",
+    "description": "추정치와 그 근거",
+    "label": "측정이 아닌 추정치: AI가 만든 산출물 수 × 각각을 직접 만들 때 걸리는 시간.",
+    "codes": {
+      "ai_made_only": "AI가 만든 산출물만 셉니다: 생성되었거나, AI가 수정했거나, 프로토타입 빌더가 만든 것. 직접 작성한 산출물, 편집, 복원은 시간을 절약하지 않습니다.",
+      "baseline_hours": "AI가 만든 산출물마다 기준 시간을 절약합니다: 사람이 직접 하나를 만드는 데 걸리는 시간으로, 관리자가 설정한 값이며 없으면 표시된 기본값입니다.",
+      "review_not_subtracted": "AI 초안을 검토하고 편집하는 데 쓰는 시간은 빼지 않습니다.",
+      "no_hours_for_the_rest": "결정, 검증, 어시스턴트 대화, 에이전트 실행은 시간을 더하지 않습니다.",
+      "live_projects": "삭제된 프로젝트는 세지 않습니다. 수치는 마지막 일일 집계 기준입니다."
+    },
+    "tableCaption": "기간 내 산출물 유형별 절약 시간",
+    "columns": {
+      "artifact": "산출물",
+      "count": "AI로 작성",
+      "baseline": "건당 시간",
+      "hours": "절약 시간"
+    },
+    "saved": "관리자가 설정",
+    "default": "기본값",
+    "note": "관리자 메모:",
+    "readOnly": "기준값은 이 작업 공간(또는 배포)의 관리자가 설정합니다.",
+    "edit": {
+      "title": "기준값",
+      "hoursFor": "{{artifact}}: 직접 작성 시간",
+      "note": "수치의 출처 (추정치와 함께 표시)",
+      "invalid": "각 기준값은 0에서 {{max, number}}까지의 시간입니다.",
+      "failed": "기준값을 저장하지 못했습니다. 다시 시도하세요.",
+      "save": "기준값 저장"
+    }
+  }
+}

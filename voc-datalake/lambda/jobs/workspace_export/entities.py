@@ -93,6 +93,8 @@ NOT_EXPORTED: Final = {
     # The company memory is exported since 7.22.00 (memory.py); personal memories (since 7.22.00) and the members'
     # conversations (since 7.24.00, conversations.py: how many people have any) are only counted (EXCLUDED).
     'metrics': 'Derived: the METRIC# counters are rebuilt from the feedback (scripts/retention/rebuild_aggregates.py).',
+    'adoption': ("Derived: the leadership view's daily rollup items (ADOPTION#ROLLUP, counts only) are rebuilt from the "
+                 'projects by voc-adoption-rollup; its time-saved baselines are a settings row (settings).'),
     'runs': 'Operational: the source and scraper run records (SOURCE_RUN#, SCRAPER_RUN#).',
     'circuit_breaker': "Operational: the plugins' failure counts and breaker rows (FAILURES#, CIRCUIT#).",
     'logs': 'Operational: the validation and processing logs (LOGS#).',

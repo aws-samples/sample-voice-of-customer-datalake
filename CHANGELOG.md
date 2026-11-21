@@ -17,6 +17,55 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.70.00] - 2026-11-21
+
+**The leadership view**: Insights → Leadership shows on one page how the teams use the method, by month or quarter:
+projects started and taken to a prototype, validations and validated decisions, decisions by verdict, cycle times,
+artifacts made with AI or by hand, assistant and agent use, and the time saved as a labelled estimate with its
+baselines and assumptions beside it ([leadership-view.md](docs/leadership-view.md)). Counts only: there is no
+per-person view and no leaderboard. A new daily job builds it; no new route resource.
+
+### Added
+
+- **Insights → Leadership** (`/leadership`, a new Insights section of the sidebar), for the admins of the scope: a
+  workspace's admins see their workspace; outside a workspace the deployment's `admins` and platform admins see the
+  deployment. The last 6, 12 or 24 months or this year, by month or quarter: headline figures (projects started, ideas
+  taken to prototype, validations run, validated decisions, time saved), projects started per period, how far the
+  projects got (personas, research, PR/FAQ, PRD, prototype, validation), artifacts by way of working (with AI or by
+  hand), decisions by verdict, the median days from evidence to PRD, PRD to prototype and prototype to decision,
+  assistant conversations and agent runs, and a table of every figure. **Download CSV** holds the same rows, then the
+  estimate's label, baselines, note and assumptions. A platform admin is pointed to the platform's cost estimate per
+  workspace (`GET /platform/costs`).
+- **Time saved, an estimate**: the artifacts the AI made in the period times the hours each would take by hand. Always
+  labelled as an estimate, with its baselines and assumptions on show (**Assumptions** on the page): only AI-made
+  artifacts count, review and editing time is not subtracted, decisions, validations and runs add no hours. Defaults
+  per artifact (personas 1.5 h, research 6 h, PR/FAQ 4 h, PRD 8 h, prototype 16 h) until an admin of the scope sets
+  their own, with a note on where the numbers come from.
+- `GET /metrics/adoption?from=&to=&grain=` on the metrics proxy: the view, counts only. `GET|PUT /settings/adoption`
+  on the settings proxy: the baselines and note, the scope's admins acting for themselves, never a delegated caller;
+  stored as `SETTINGS#adoption` (`WS#{ws}#SETTINGS#adoption` in a workspace) with who saved them, when and why, and
+  swept by a workspace's hard delete with its other settings rows.
+- **The `insights_get_adoption` MCP tool** (`from`/`to`, by month): the deployment's leadership view for a token an
+  administrator minted, re-checked live on every call like `agents_run` ([mcp.md](docs/mcp.md)).
+- **voc-adoption-rollup** (VocProcessingStack): at 03:05 UTC it rebuilds the last 24 months for the deployment and
+  every active workspace from their live projects, one whole item per scope and day (`ADOPTION#ROLLUP` /
+  `WS#{ws}#ADOPTION#ROLLUP`, kept 35 days), so a rerun is idempotent. It never Scans: projected Queries of the
+  workspace listing, the project registries and partitions (no document text, title, name or person), a count of the
+  assistant conversations and the agents' run starts; it writes only its own rows, reads no feedback and calls no
+  model. It reads the Validate phase's validation reports, runs and decisions tolerantly: a project without them
+  counts as not validated.
+
+### Upgrade notes
+
+- One new Lambda, `voc-adoption-rollup`, its log group and an EventBridge rule in VocProcessingStack: pay per use, no
+  fixed cost. No new API Gateway resource (the API stack stays at 425), stack or flag.
+- The view is empty until the first rollup (03:05 UTC the day after the deploy); invoke `voc-adoption-rollup`
+  asynchronously with `{"mode": "scheduled"}` to fill it at once.
+- The deployment's own projects are listed from its registry, `PROJECT_IDS`: a deployment from before 7.48.00 that has
+  not run `scripts/projects/backfill_review_registries.py` counts only its projects made since.
+- "With AI" counts AI-assisted and AI-driven artifacts together: a document does not record which way of working its
+  requester used. Agent runs are counted for the deployment only (the agents are not per workspace yet).
+
 ## [7.69.00] - 2026-11-21
 
 **Talk to the personas by voice** (idea 15, behind `-c voicePersonas=true`, off by default): press Talk on a project

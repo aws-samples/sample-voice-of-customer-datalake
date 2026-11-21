@@ -537,7 +537,7 @@ def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 # together; each description says what the tool does, its nouns and verbs, when to use it and its key
 # arguments (the whole list's budget: test_mcp_global_tools_budget.py).
 AREAS: Final[tuple[str, ...]] = ('feedback', 'forms', 'memory', 'company', 'projects', 'documents', 'library', 'agents',
-                                 'engineering', 'feature_requests', 'radar', 'prioritization')
+                                 'engineering', 'feature_requests', 'radar', 'prioritization', 'insights')
 
 _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
@@ -688,7 +688,8 @@ _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
         schema({'agent_id': ID_SCHEMA}, ('agent_id',)), _run_agent, stripped, write=True, admin_only=True),
     # Methodology steps, their jobs, Revise from comments, Radar and feedback edits (mcp_global_tools_steps.py).
     *STEP_TOOLS,
-    # The feedback catalogue and sources, Prioritization and board writes (shared/mcp_global_tools_work.py).
+    # The feedback catalogue and sources, Prioritization, board writes and the leadership view
+    # (shared/mcp_global_tools_work.py).
     *WORK_TOOLS,
     # The engineering runs, for an administrator's write token only (7.53.00, shared/mcp_global_tools_engineering.py).
     *ENGINEERING_TOOLS,

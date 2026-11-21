@@ -186,3 +186,30 @@ def _safe_build(tool):
         return tool.build({'sources': True} if tool is CATALOGUE else {}, 'proj_a')
     except InvalidToolArgument:
         return None
+
+
+ADOPTION = TOOLS_BY_NAME['insights_get_adoption']
+
+
+class TestTheLeadershipView:
+    """insights_get_adoption (7.70.00): the metrics route, an administrator's token only, the cleared claim."""
+
+    def test_is_the_metrics_route_by_month(self):
+        request = ADOPTION.build({'from': '2026-06', 'to': '2026-11'}, None)
+        assert (request.domain, request.method, request.path) == ('metrics', 'GET', '/metrics/adoption')
+        assert request.query == {'from': '2026-06', 'to': '2026-11'}
+
+    @pytest.mark.parametrize('month', ['2026-13', '26-01', '2026-01-05', 7])
+    def test_a_month_that_is_not_one_is_refused(self, month):
+        with pytest.raises(InvalidToolArgument):
+            ADOPTION.build({'from': month}, None)
+
+    def test_is_offered_only_to_a_token_an_administrator_minted_and_not_pinned(self):
+        assert (ADOPTION.write, ADOPTION.admin_only) == (False, True)
+        assert not h._may_offer(ADOPTION, READ_ROW)
+        assert h._may_offer(ADOPTION, {**READ_ROW, 'minted_by_admin': True})
+        assert not h._may_offer(ADOPTION, {**READ_ROW, 'minted_by_admin': True, 'project_id': 'proj_a'})
+
+    def test_its_call_carries_the_claim_the_route_admits_after_the_live_check(self):
+        claims = h._claims_for(h.ToolCall(ADOPTION, {}, None), {**READ_ROW, 'minted_by_admin': True})
+        assert claims[h.MCP_AGENT_RUN_CLAIM] == 'true'

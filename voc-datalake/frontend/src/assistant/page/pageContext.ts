@@ -93,6 +93,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'workspace-settings', kind: 'other' },
   // The Documents Library (docs/documents-library.md): no pack of its own; its items are `#slug` on every page.
   { route: 'library', kind: 'other' },
+  // The leadership view (docs/leadership-view.md): counts of the scope, no assistant pack of its own.
+  { route: 'leadership', kind: 'other' },
   // Participants (docs/participants.md): its own kind — core + the participants pack (lists, add people).
   { route: 'participants/*', kind: 'participants' },
   // The in-app feature-request board (docs/feature-requests.md): no assistant pack either.

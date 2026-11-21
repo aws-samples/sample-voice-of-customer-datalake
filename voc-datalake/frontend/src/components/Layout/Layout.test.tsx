@@ -45,6 +45,8 @@ const authState = vi.hoisted(() => ({
 vi.mock('../../store/authStore', () => ({
   useAuthStore: vi.fn(() => authState.DEFAULT),
   useIsAdmin: vi.fn(() => true),
+  // The leadership view's entry (7.70.00) shows to the scope's admins: here the deployment's.
+  useIsPlatformAdmin: vi.fn(() => false),
 }))
 
 // Mock menu config so P11 gating tests can toggle individual items.

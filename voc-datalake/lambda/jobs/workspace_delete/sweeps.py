@@ -44,6 +44,7 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from jobs.workspace_export.pages import TABLE_KEY, items, key, last_key, start
+from shared.adoption import rollup_partition
 from shared.categorization import allowed_category_names, load_categories_config
 from shared.company_context import my_context_key
 from shared.company_personas import COMPANY_PERSONAS_CONTAINER
@@ -1137,8 +1138,9 @@ def _done_in_pages(_ctx: Context, _batch: Batch) -> int:
 #: The kinds of settings a workspace keeps in voc-aggregates, ``WS#{ws}#SETTINGS#{kind}`` (shared/workspace_settings.py;
 #: written since the config cut-over, 7.08.00, and the brand, resolved-problems and company-context slices). The
 #: registry's lockstep (test/families.py, test/test_registry.py) holds it to every kind the code builds that key for.
-#: In-app micro-feedback's settings since 7.66.00 (shared/app_feedback.py).
-WORKSPACE_SETTINGS_KINDS: Final = ('app_feedback', 'brand', 'categories', 'company_context', 'dimensions',
+#: In-app micro-feedback's settings since 7.66.00 (shared/app_feedback.py); the leadership view's baselines since 7.70.00
+#: (shared/adoption.py).
+WORKSPACE_SETTINGS_KINDS: Final = ('adoption', 'app_feedback', 'brand', 'categories', 'company_context', 'dimensions',
                                    'resolved_problems', 'sources')
 
 
@@ -1147,9 +1149,11 @@ def _settings(ctx: Context) -> Iterator[str]:
     counters sweep lists the closed families' partitions from the categories and dimensions into the inventory once;
     a later round of it (a resume, or the verify pass sending the job back) re-derives only the defaults, and walks
     the inventory, which still lists round 1's partitions. With them, the workspace's cost rows (``WS#{ws}#COST``,
-    shared/platform_costs.py: the daily rollup writes none for a workspace that is not active)."""
+    shared/platform_costs.py: the daily rollup writes none for a workspace that is not active) and its leadership
+    view's rollup items (``WS#{ws}#ADOPTION#ROLLUP``, shared/adoption.py, 7.70.00: the same)."""
     yield from (settings_key(ctx.scope.ws, kind)['pk'] for kind in WORKSPACE_SETTINGS_KINDS)
     yield cost_partition(ctx.scope)
+    yield rollup_partition(ctx.scope)
 
 
 #: The aggregates families swept partition by partition (``_partitions_sweep``), in order, with how each finds its

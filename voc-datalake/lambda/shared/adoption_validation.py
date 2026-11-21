@@ -1,0 +1,66 @@
+"""What the leadership view reads of the Validate phase (7.68.00, idea 4), in one place: every field and document type
+name 7.68.00's spec gives, and the tolerant readers the rollup uses (shared/adoption_rollup.py). docs/leadership-view.md.
+
+The names, as the 7.68.00 spec defines them (roadmap section 2, "7.68.00 · Idea 4"):
+
+* the project ``META`` gains ``validation: {prd_document_id, criteria, plan_document_id, report_document_id, status}``;
+* the project documents of type ``validation_plan`` and ``validation_report``, and ``validation_run`` (a synthetic run
+  stored with ``synthetic: true``, which never counts as met);
+* a decision (shared/decision_records.py) that cites a validation report among its evidence ids
+  (``decision.evidence.document_ids``).
+
+A report's outcome per criterion ("met, not met or not enough data against its target") has no field name in the spec:
+``REPORT_RESULTS_FIELD`` / ``REPORT_OUTCOME_KEY`` / ``OUTCOME_MET`` are this module's reading of it, the names to align
+when 7.68.00 lands. Every reader is tolerant: a project, a report or a decision without any of it counts as not
+validated, never as an error, so the view works before, during and after the Validate phase ships.
+"""
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any, Final
+
+__all__ = ['MAX_REPORT_CRITERIA', 'META_VALIDATION_FIELD', 'OUTCOME_MET', 'REPORT_OUTCOME_KEY',
+           'REPORT_RESULTS_FIELD', 'SYNTHETIC_FIELD', 'VALIDATION_PLAN_TYPE', 'VALIDATION_REPORT_TYPE',
+           'VALIDATION_RUN_TYPE', 'VALIDATION_TYPES', 'is_synthetic', 'met_criteria', 'report_projection']
+
+#: The project ``META``'s map (7.68.00): ``{prd_document_id, criteria, plan_document_id, report_document_id, status}``.
+META_VALIDATION_FIELD: Final = 'validation'
+#: The document types the Validate phase writes (``document_type``).
+VALIDATION_PLAN_TYPE: Final = 'validation_plan'
+VALIDATION_REPORT_TYPE: Final = 'validation_report'
+VALIDATION_RUN_TYPE: Final = 'validation_run'
+VALIDATION_TYPES: Final = (VALIDATION_PLAN_TYPE, VALIDATION_REPORT_TYPE, VALIDATION_RUN_TYPE)
+#: A run with the personas (``validation_run``) says so: it never counts as met (owner decision 9).
+SYNTHETIC_FIELD: Final = 'synthetic'
+#: A report's per-criterion results (a list of maps) and the key of each one's outcome against its target.
+REPORT_RESULTS_FIELD: Final = 'results'
+REPORT_OUTCOME_KEY: Final = 'outcome'
+OUTCOME_MET: Final = 'met'
+#: The criteria of one report the rollup reads the outcome of (the PRD's success metrics: a handful).
+MAX_REPORT_CRITERIA: Final = 20
+
+
+def report_projection(names: dict[str, str]) -> list[str]:
+    """The projection paths of a report's outcomes, ``results[0].#outcome`` … (only the outcome of each criterion is
+    read: never a quote, a rate or a criterion's text), the outcome's name added to ``names``. The list is named as
+    itself, not through a placeholder (it is no reserved word; moto refuses a placeholder before an index)."""
+    names['#outcome'] = REPORT_OUTCOME_KEY
+    return [f'{REPORT_RESULTS_FIELD}[{index}].#outcome' for index in range(MAX_REPORT_CRITERIA)]
+
+
+def is_synthetic(row: Mapping[str, Any]) -> bool:
+    """Whether a validation run was made with the personas (anything but an explicit ``synthetic: false`` is, for a
+    ``validation_run``: synthetic is the only kind 7.68.00 stores as a run)."""
+    return row.get(SYNTHETIC_FIELD) is not False
+
+
+def met_criteria(row: Mapping[str, Any]) -> int:
+    """How many of a report's criteria were met by real results (0 for a report that says nothing readable); a
+    synthetic report counts none."""
+    if row.get(SYNTHETIC_FIELD) is True:
+        return 0
+    results = row.get(REPORT_RESULTS_FIELD)
+    if not isinstance(results, list):
+        return 0
+    return sum(1 for result in results
+               if isinstance(result, Mapping) and result.get(REPORT_OUTCOME_KEY) == OUTCOME_MET)

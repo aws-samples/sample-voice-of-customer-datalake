@@ -1,0 +1,155 @@
+{
+  "title": "Liderança",
+  "subtitle": "Como as suas equipes usam o método: ideias levadas a protótipo, decisões validadas, tempos de ciclo e uma estimativa do tempo poupado. Apenas contagens, nunca uma pessoa.",
+  "adminsOnly": "A vista de liderança é para administradores: os admins de um espaço de trabalho veem o seu espaço; os admins da implantação e os admins da plataforma veem a implantação.",
+  "loadFailed": "Não foi possível carregar a vista de liderança.",
+  "filters": {
+    "range": "Período",
+    "presets": {
+      "last6": "Últimos 6 meses",
+      "last12": "Últimos 12 meses",
+      "thisYear": "Este ano",
+      "last24": "Últimos 24 meses"
+    },
+    "grain": "Agrupar por",
+    "grains": {
+      "month": "Mês",
+      "quarter": "Trimestre"
+    },
+    "assumptions": "Pressupostos",
+    "csv": "Baixar CSV"
+  },
+  "asOf": {
+    "none": "Ainda não há números: o primeiro resumo diário é executado às 03:05 UTC.",
+    "at": "Números em {{when}} UTC (recalculados diariamente).",
+    "partial": "O último resumo ficou sem tempo: alguns projetos ainda não estão contados."
+  },
+  "kpis": {
+    "label": "Números principais do período",
+    "projectsStarted": "Projetos iniciados",
+    "toPrototype": "Ideias levadas a protótipo",
+    "toPrototypeDetail": "{{reached}} de {{total, number}} projetos chegaram a um protótipo",
+    "validations": "Validações realizadas",
+    "syntheticRuns": "Execuções sintéticas: {{runs, number}} (nunca contam como atingidas)",
+    "validatedDecisions": "Decisões validadas",
+    "ofDecisions": "Decisões no período: {{total, number}}",
+    "timeSaved": "Tempo poupado (estimativa)",
+    "hours": "{{hours}} h",
+    "estimate": "Estimativa, não uma medição",
+    "estimateNote": "O tempo poupado é uma estimativa: artefatos feitos pela IA vezes as horas que cada um levaria à mão.",
+    "seeAssumptions": "Ver os pressupostos"
+  },
+  "periods": {
+    "quarter": "T{{quarter}} {{year}}"
+  },
+  "charts": {
+    "projects": {
+      "title": "Projetos iniciados",
+      "subtitle": "Novos projetos em cada período.",
+      "series": "Projetos iniciados"
+    },
+    "ways": {
+      "title": "Artefatos por forma de trabalho",
+      "subtitle": "Feitos com IA (assistida ou conduzida por IA) ou à mão, no período.",
+      "ai": "Com IA",
+      "human": "À mão"
+    }
+  },
+  "artifacts": {
+    "personas": "Personas",
+    "research": "Pesquisas",
+    "prfaq": "PR/FAQs",
+    "prd": "PRDs",
+    "prototype": "Protótipos"
+  },
+  "steps": {
+    "personas": "Personas",
+    "research": "Pesquisa",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Protótipo",
+    "validation": "Validação"
+  },
+  "coverage": {
+    "title": "Até onde chegaram os projetos",
+    "subtitle": "Dos projetos iniciados no período ({{started}}), os que atingiram cada etapa.",
+    "figure": "{{percent}} · {{reached}}"
+  },
+  "decisions": {
+    "title": "Decisões por veredito",
+    "subtitle": "Decisões no período: {{total, number}}",
+    "verdicts": {
+      "pursue": "Seguir",
+      "park": "Adiar",
+      "reject": "Rejeitar"
+    },
+    "validated": "Validadas",
+    "validatedNote": "Uma decisão validada cita um relatório de validação com pelo menos um critério de sucesso atingido por resultados reais; execuções sintéticas nunca contam."
+  },
+  "cycles": {
+    "title": "Tempos de ciclo",
+    "subtitle": "Mediana em dias, pelo período em que cada etapa terminou.",
+    "evidence_to_prd": "Da evidência ao PRD",
+    "prd_to_prototype": "Do PRD ao protótipo",
+    "prototype_to_decision": "Do protótipo à decisão",
+    "days": "{{days, number}} dias",
+    "projects": "Projetos: {{n, number}}"
+  },
+  "usage": {
+    "title": "Uso do assistente e dos agentes",
+    "conversations": "Conversas com o assistente",
+    "agentRuns": "Execuções de agentes",
+    "agentsDeploymentOnly": "Os agentes autônomos são executados para a implantação, não num espaço de trabalho.",
+    "note": "Uma conversa conta no mês em que esteve ativa pela última vez.",
+    "platformCost": "O custo de modelos por espaço de trabalho é a estimativa de custos da plataforma (GET /platform/costs, para admins da plataforma): veja Custo por espaço de trabalho no guia de vários espaços."
+  },
+  "table": {
+    "title": "Tabela dos números",
+    "caption": "Os números da vista de liderança por período e o total",
+    "period": "Período",
+    "total": "Total",
+    "columns": {
+      "projects": "Projetos",
+      "toPrototype": "A protótipo",
+      "validations": "Validações",
+      "decisions": "Decisões",
+      "validated": "Validadas",
+      "withAi": "Com IA",
+      "byHand": "À mão",
+      "conversations": "Conversas",
+      "agentRuns": "Execuções de agentes",
+      "hours": "Horas poupadas (est.)"
+    }
+  },
+  "assumptions": {
+    "title": "Como o tempo poupado é estimado",
+    "description": "Uma estimativa, com aquilo em que se baseia",
+    "label": "Estimativa, não uma medição: artefatos feitos pela IA vezes as horas que cada um levaria à mão.",
+    "codes": {
+      "ai_made_only": "Só contam os artefatos feitos pela IA: gerados, revistos pela IA ou construídos pelo gerador de protótipos. Artefatos escritos à mão, edições e restaurações não poupam nada.",
+      "baseline_hours": "Cada artefato feito pela IA poupa a sua referência: as horas que uma pessoa leva a fazer um à mão, como um admin as definiu, ou o padrão mostrado.",
+      "review_not_subtracted": "O tempo que as pessoas passam a rever e editar um rascunho da IA não é subtraído.",
+      "no_hours_for_the_rest": "Decisões, validações, conversas com o assistente e execuções de agentes não somam horas.",
+      "live_projects": "Projetos excluídos não são contados. Os números são os do último resumo diário."
+    },
+    "tableCaption": "Horas poupadas por tipo de artefato no período",
+    "columns": {
+      "artifact": "Artefato",
+      "count": "Feitos com IA",
+      "baseline": "Horas cada",
+      "hours": "Horas poupadas"
+    },
+    "saved": "Definida por um admin",
+    "default": "Padrão",
+    "note": "Nota do admin:",
+    "readOnly": "Um admin deste espaço de trabalho (ou da implantação) define as referências.",
+    "edit": {
+      "title": "Referências",
+      "hoursFor": "{{artifact}}: horas à mão",
+      "note": "De onde vêm os números (mostrado com a estimativa)",
+      "invalid": "Cada referência é um número de horas de 0 a {{max, number}}.",
+      "failed": "Não foi possível salvar as referências. Tente novamente.",
+      "save": "Salvar referências"
+    }
+  }
+}

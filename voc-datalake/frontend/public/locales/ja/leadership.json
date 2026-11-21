@@ -1,0 +1,155 @@
+{
+  "title": "リーダーシップ",
+  "subtitle": "チームのメソッド活用状況: プロトタイプまで進んだアイデア、検証済みの意思決定、サイクルタイム、削減時間の推定。件数のみで、個人は表示しません。",
+  "adminsOnly": "リーダーシップビューは管理者向けです。ワークスペースの管理者はそのワークスペースを、デプロイメントの管理者とプラットフォーム管理者はデプロイメントを表示できます。",
+  "loadFailed": "リーダーシップビューを読み込めませんでした。",
+  "filters": {
+    "range": "期間",
+    "presets": {
+      "last6": "過去 6 か月",
+      "last12": "過去 12 か月",
+      "thisYear": "今年",
+      "last24": "過去 24 か月"
+    },
+    "grain": "集計単位",
+    "grains": {
+      "month": "月",
+      "quarter": "四半期"
+    },
+    "assumptions": "前提",
+    "csv": "CSV をダウンロード"
+  },
+  "asOf": {
+    "none": "まだ数値がありません。最初の日次集計は 03:05 UTC に実行されます。",
+    "at": "{{when}} UTC 時点の数値 (毎日再計算)。",
+    "partial": "前回の集計は時間切れでした。一部のプロジェクトはまだ数えられていません。"
+  },
+  "kpis": {
+    "label": "期間の主要な数値",
+    "projectsStarted": "開始したプロジェクト",
+    "toPrototype": "プロトタイプまで進んだアイデア",
+    "toPrototypeDetail": "{{total, number}} 件中 {{reached}} 件のプロジェクトがプロトタイプに到達",
+    "validations": "実施した検証",
+    "syntheticRuns": "合成実行: {{runs, number}} 件 (達成とは数えません)",
+    "validatedDecisions": "検証済みの意思決定",
+    "ofDecisions": "期間中の意思決定: {{total, number}} 件",
+    "timeSaved": "削減時間 (推定)",
+    "hours": "{{hours}} 時間",
+    "estimate": "推定値であり、測定値ではありません",
+    "estimateNote": "削減時間は推定値です: AI が作成した成果物の数 × それぞれを手作業で作る場合の時間。",
+    "seeAssumptions": "前提を見る"
+  },
+  "periods": {
+    "quarter": "{{year}} 年 Q{{quarter}}"
+  },
+  "charts": {
+    "projects": {
+      "title": "開始したプロジェクト",
+      "subtitle": "各期間の新しいプロジェクト。",
+      "series": "開始したプロジェクト"
+    },
+    "ways": {
+      "title": "作業方法別の成果物",
+      "subtitle": "期間中に AI で (AI アシストまたは AI ドリブン) または手作業で作成。",
+      "ai": "AI で作成",
+      "human": "手作業"
+    }
+  },
+  "artifacts": {
+    "personas": "ペルソナ",
+    "research": "リサーチ",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "プロトタイプ"
+  },
+  "steps": {
+    "personas": "ペルソナ",
+    "research": "リサーチ",
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "プロトタイプ",
+    "validation": "検証"
+  },
+  "coverage": {
+    "title": "プロジェクトの進捗",
+    "subtitle": "期間中に開始したプロジェクト ({{started}} 件) のうち、各ステップに到達したもの。",
+    "figure": "{{percent}} · {{reached}}"
+  },
+  "decisions": {
+    "title": "判定別の意思決定",
+    "subtitle": "期間中の意思決定: {{total, number}} 件",
+    "verdicts": {
+      "pursue": "推進",
+      "park": "保留",
+      "reject": "却下"
+    },
+    "validated": "検証済み",
+    "validatedNote": "検証済みの意思決定とは、実際の結果で少なくとも 1 つの成功基準を満たした検証レポートを引用するものです。合成実行は数えません。"
+  },
+  "cycles": {
+    "title": "サイクルタイム",
+    "subtitle": "日数の中央値。各ステップが終了した期間で集計。",
+    "evidence_to_prd": "エビデンスから PRD",
+    "prd_to_prototype": "PRD からプロトタイプ",
+    "prototype_to_decision": "プロトタイプから意思決定",
+    "days": "{{days, number}} 日",
+    "projects": "プロジェクト: {{n, number}} 件"
+  },
+  "usage": {
+    "title": "アシスタントとエージェントの利用",
+    "conversations": "アシスタントの会話",
+    "agentRuns": "エージェントの実行",
+    "agentsDeploymentOnly": "自律エージェントはデプロイメントのために実行され、ワークスペース内では実行されません。",
+    "note": "会話は最後にアクティブだった月に数えます。",
+    "platformCost": "ワークスペースごとのモデルコストはプラットフォームのコスト推定です (GET /platform/costs、プラットフォーム管理者向け)。マルチワークスペースガイドの「ワークスペースごとのコスト」を参照してください。"
+  },
+  "table": {
+    "title": "数値の表",
+    "caption": "期間ごとと合計のリーダーシップビューの数値",
+    "period": "期間",
+    "total": "合計",
+    "columns": {
+      "projects": "プロジェクト",
+      "toPrototype": "プロトタイプ到達",
+      "validations": "検証",
+      "decisions": "意思決定",
+      "validated": "検証済み",
+      "withAi": "AI で作成",
+      "byHand": "手作業",
+      "conversations": "会話",
+      "agentRuns": "エージェント実行",
+      "hours": "削減時間 (推定)"
+    }
+  },
+  "assumptions": {
+    "title": "削減時間の推定方法",
+    "description": "推定値と、その根拠",
+    "label": "推定値であり、測定値ではありません: AI が作成した成果物の数 × それぞれを手作業で作る場合の時間。",
+    "codes": {
+      "ai_made_only": "AI が作成した成果物だけを数えます: 生成されたもの、AI が改訂したもの、プロトタイプビルダーが作成したもの。手書きの成果物、編集、復元では時間は削減されません。",
+      "baseline_hours": "AI が作成した成果物はそれぞれ基準値の時間を削減します: 人が手作業で 1 つ作るのにかかる時間で、管理者が設定した値、なければ表示されている既定値です。",
+      "review_not_subtracted": "AI の下書きをレビュー・編集する時間は差し引いていません。",
+      "no_hours_for_the_rest": "意思決定、検証、アシスタントの会話、エージェントの実行は時間に加算しません。",
+      "live_projects": "削除されたプロジェクトは数えません。数値は最新の日次集計時点のものです。"
+    },
+    "tableCaption": "期間中の成果物の種類ごとの削減時間",
+    "columns": {
+      "artifact": "成果物",
+      "count": "AI で作成",
+      "baseline": "1 件あたりの時間",
+      "hours": "削減時間"
+    },
+    "saved": "管理者が設定",
+    "default": "既定値",
+    "note": "管理者のメモ:",
+    "readOnly": "基準値はこのワークスペース (またはデプロイメント) の管理者が設定します。",
+    "edit": {
+      "title": "基準値",
+      "hoursFor": "{{artifact}}: 手作業の時間",
+      "note": "数値の出典 (推定値と一緒に表示されます)",
+      "invalid": "各基準値は 0 から {{max, number}} までの時間数です。",
+      "failed": "基準値を保存できませんでした。もう一度お試しください。",
+      "save": "基準値を保存"
+    }
+  }
+}

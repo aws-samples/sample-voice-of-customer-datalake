@@ -303,10 +303,10 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
         'Start one methodology step in a research project (write token): `step` personas (adds `count` personas, '
         'never replaces), research (`brief` = the research question), prfaq or prd (`brief` = the feature idea; '
         'drafts a PR/FAQ or PRD from customer feedback), prototype (from the newest PRD or PR/FAQ), '
-        'validation_plan or validation_report (the Validate step, from its success criteria). Answers a '
-        'job_id and a `methodology` block (skipped upstream steps, warnings: tell the user); follow the job with '
-        'projects_get_job. A PR/FAQ or PRD is refused unless the user and the project owner work AI-driven; a '
-        'prototype without a PRD or PR/FAQ is refused. Confirm with the user first.',
+        'validation_plan or validation_report. Answers a job_id and a `methodology` block (skipped upstream '
+        'steps, warnings: tell the user); follow the job with projects_get_job. A PR/FAQ or PRD is refused '
+        'unless the user and the project owner work AI-driven; a prototype without a PRD or PR/FAQ is '
+        'refused. Confirm with the user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'step': {'type': 'string', 'enum': list(GENERATE_STEPS)},
                 'title': {'type': 'string', 'maxLength': MAX_TITLE_CHARS},
                 'brief': {'type': 'string', 'maxLength': MAX_BRIEF_CHARS},

@@ -29,6 +29,8 @@ export const Memory = lazy(() => import('./pages/Memory/Memory'))
 export const Company = lazy(() => import('./pages/Company/Company'))
 // The Documents Library (7.62.00): its preview drawer is `?item=<id>&page=<n>` (Library/libraryParams.ts).
 export const Library = lazy(() => import('./pages/Library/Library'))
+// Insights → Leadership (7.70.00): the leadership view, admins of the scope only (docs/leadership-view.md).
+export const Leadership = lazy(() => import('./pages/Leadership/Leadership'))
 // Agent orchestration (7.52.00): the shell of its tabs and the tabs it draws itself, one chunk.
 const orchestration = () => import('./pages/Agents/Agents')
 export const Agents = lazy(orchestration)

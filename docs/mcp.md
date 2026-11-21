@@ -113,7 +113,8 @@ an **admin**, and on every call the handler re-checks with `AdminListGroupsForUs
 that the minter is *still* in `admins`. Only then does it add the claim
 `voc:mcp_agent_run=true`, which `agents_handler.run_agent` honours for an `mcp:`
 principal acting for a person (`project_access.delegated_agent_run_allowed`) — the
-credential is still not an admin anywhere else.
+credential is still not an admin anywhere else. `insights_get_adoption` (7.70.00) is gated the same way, on a read
+token too: its route, the leadership view, admits that claim for its read alone.
 
 The five `engineering_` tools (7.53.00, [Engineering runs](#engineering-runs-75300)) are gated the same way, with
 one more limit: they are offered only to a **write** token minted by an **admin** (even the three that only read),
@@ -132,10 +133,11 @@ what it does, its main nouns and verbs (and the words a person might use for the
 roadmap), when to use it, its key arguments and, for a write, that it needs a write token and the user's
 confirmation. The names changed in 6.10.00 ([Renamed in 6.10.00](#renamed-in-61000)).
 
-**Budget.** The whole list (what an administrator's write token is shown: 42 tools) stays under an estimated
+**Budget.** The whole list (what an administrator's write token is shown: 43 tools) stays under an estimated
 10,000 tokens (`test_mcp_global_tools_budget.py`; 9,841 measured at 7.66.00, since 7.63.00's `forms_get_results`
-took the room `library_get` freed; about 9,880 since 7.68.00's `validation_plan` and `validation_report` steps).
-Clients cache it: a 2026-07-28 client is
+took the room `library_get` freed; about 9,880 since 7.68.00's `validation_plan` and `validation_report` steps, and
+about 9,994 since 7.70.00's `insights_get_adoption`, its description and `projects_generate`'s note on the Validate
+steps shortened to fit: the next tool needs room made first). Clients cache it: a 2026-07-28 client is
 told so by `tools/list` itself (`ttlMs` 5 minutes, `cacheScope: "private"`, [Protocol](#protocol)), a legacy
 client keeps it for the session, and a client that caches its prompt prefix pays for the list once per
 conversation, not on every turn. Past about 10,000 tokens a client is better served by searching tools on demand,
@@ -199,6 +201,7 @@ MCP call never sees an archived board.
 | `prioritization_score` | write, not pinned | `PATCH /projects/prioritization` (projects) with `{scores: {row_id: {axis: 1–5}}}` for one row: the route's validation (the active axes), its VIEW check on the row's project (a hidden row is 404) and its frozen-row rules apply. The ballot is the **minter's own**: the route keys a delegated `mcp:` ballot on the minter (`voc:acting_subject`), so a person never votes twice, and a token that acts for nobody is refused (403). The axes (`PUT /projects/prioritization/config`) are admin-only: no tool |
 | `feature_requests_write` | write | Without `request_id`: `POST /feature-requests` (engagement), `{board?, title, description?, fields?}` on a board the minter can see (omitted = the seeded board); with `request_id`: `POST /feature-requests/{id}/supports` (a +1, `fields?`). The board's audience, archive / pause (409), template fields (400), one +1 per person (409) and `anyone`-board rate limit (429) apply. Both are recorded under the minter's verified email and name, as if they posted in the app: one +1 per person and request, whichever token they use. Status changes, deletes and promotion are board-admin routes: no tool |
 | `agents_run` | write + admin-minted | `POST /agents/{id}/run` (agents) |
+| `insights_get_adoption` | read + admin-minted | `GET /metrics/adoption?from=&to=` (metrics; `YYYY-MM`, by month; 7.70.00, [leadership-view.md](leadership-view.md)): the deployment's leadership view, counts only, never a person, its time saved an estimate the answer labels with its baselines and assumptions. Offered only to a token an administrator minted (never a pinned one), re-checked live on every call like `agents_run`, whose claim the route admits; inside a workspace a credential is never an admin, so the route refuses it (403) |
 | `engineering_runs_list` | admin-minted write token | `GET /agents/engineering/runs?month=&flow=&status=&cursor=&limit=` (agents): a month's engineering runs, newest first (`run_id`, `flow`, `goal`, `status`, `started_at`, `ended_at`, `cost_usd`, `parent`) and `next` |
 | `engineering_run_get` | admin-minted write token | `GET /agents/engineering/{run_id}` (agents), cut field by field: the run's status, flow steps and lanes, gates, agents (role, task, status, step, attempt, model, cost), cost against its cap, parent and child runs, totals, and `links` (issue, pull request, the run's page in the app). Never its transcripts, diffs, flow definition, an agent's recent tool calls or people's comments |
 | `engineering_run_analysis` | admin-minted write token | `GET /agents/engineering/{run_id}/retrospective` (agents): the run's retrospective (failures, scorecards, the failures Learn took to the coach and what came of each) and `cross_run`, under a `label` that says it is model text |

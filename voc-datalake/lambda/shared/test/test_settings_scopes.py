@@ -68,6 +68,9 @@ WORKSPACE_KINDS: dict[str, frozenset[str]] = {
     # In-app micro-feedback's form and actions (7.66.00): a workspace's own from the start, the deployment's row for a
     # request that names no workspace.
     'app_feedback': frozenset({'lambda/shared/app_feedback.py'}),
+    # The leadership view's time-saved baselines (7.70.00): a workspace's own from the start, the deployment's row for
+    # a request that names no workspace.
+    'adoption': frozenset({'lambda/shared/adoption.py'}),
     'email_intake': frozenset({'lambda/shared/email_intake_settings.py'}),
     'fallback_owner': frozenset({'lambda/agents/nodes/select_or_create_project.py', 'lambda/shared/user_flags.py'}),
     # Its rows' keys, the deployment's and a workspace's, are built in one place (shared/radar_keys.py).

@@ -271,6 +271,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # Stays raw by design: voc-aggregates for the DEPLOYMENT#COST and UNATTRIBUTED#COST rows (no workspace's; a
     # workspace's WS#{ws}#COST goes through ws_table) and voc-workspaces for a META's status (the control plane).
     'lambda/jobs/cost_rollup/handler.py': (0, {'Table': 2}),
+    # Stays raw by design (7.70.00): the five tables it is handed, by name; each scope's projects and its rollup item go
+    # through `table_view` (its registry and partitions, its ADOPTION#ROLLUP put), the rest are the control plane's
+    # listing (WORKSPACES), the deployment's agents and a COUNT of the assistant conversations' index, no row read.
+    'lambda/jobs/adoption_rollup/handler.py': (0, {'Table': 1}),
     # Since 7.33.00 (voc-wiki) a prototype draft reads and records its job row (get_jobs_table) and the HTML puts
     # moved to shared/prototype_versions.py and shared/prototype_drafts.py.
     'lambda/jobs/document_generator/handler.py': (3, {'Table': 6, 'delete_objects': 1, 'get_jobs_table': 2, 'put_object': 1}),
