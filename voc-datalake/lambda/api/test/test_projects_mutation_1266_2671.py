@@ -1443,7 +1443,7 @@ class TestCreateDocument:
         with patch.object(projects, 'projects_table', MagicMock()), pytest.raises(ValidationError) as exc:
             projects.create_document('proj-1', {'content': 'x', 'document_type': document_type})
         assert str(exc.value) == (
-            'Only custom, prfaq and prd documents can be created directly. Every other '
+            'Only custom, focus_group, prfaq and prd documents can be created directly. Every other '
             'managed or workflow document type must use its dedicated route.'
         )
 

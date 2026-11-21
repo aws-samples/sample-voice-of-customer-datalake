@@ -264,7 +264,7 @@ function AnswerText({ response }: Readonly<{ response: PersonaResponse }>) {
 
 export function PersonaAnswers({ responses, colours }: Readonly<{
   responses: readonly PersonaResponse[]
-  /** A focus group's persona colours (focusGroupParts.ts `personaColours`), by persona id. */
+  /** A focus group's persona colours (focusGroupModel.ts `personaColours`), by persona id. */
   colours?: ReadonlyMap<string, string>
 }>) {
   const { t } = useTranslation('assistant')

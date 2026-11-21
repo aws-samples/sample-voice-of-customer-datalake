@@ -100,7 +100,8 @@ describe('the skill stays in step with the server', () => {
     const catalogue = fs.readFileSync(path.join(FRONTEND, '..', 'lambda', 'shared', 'mcp_global_prompts.py'), 'utf8')
     const serverPrompts = captures(catalogue, /Prompt\('([a-z_]+)',/g)
     const section = SKILL.split('## Prompts and resources').at(1)?.split('\n## ').at(0) ?? ''
-    expect(serverPrompts).toHaveLength(3)
+    // (7.66.00: weekly_summary, triage_urgent, prfaq_from_feedback and playbook)
+    expect(serverPrompts).toHaveLength(4)
     expect(captures(section, /^- `([a-z_]+)`/gm)).toStrictEqual(serverPrompts)
     expect(captures(section, /`(voc:\/\/[a-z-]+)`/g)).toStrictEqual(captures(catalogue, /Resource\('(voc:\/\/[a-z-]+)',/g))
   })

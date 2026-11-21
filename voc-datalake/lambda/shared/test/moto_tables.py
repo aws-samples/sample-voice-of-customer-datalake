@@ -3,7 +3,12 @@ DynamoDB to really evaluate a condition expression (a mock cannot refuse a write
 
 Call these inside an active ``moto.mock_aws()`` context.
 """
+from typing import TYPE_CHECKING
+
 import boto3
+
+if TYPE_CHECKING:
+    from mypy_boto3_dynamodb.type_defs import ProjectionTypeDef
 
 
 def create_pk_sk_table(table_name: str, resource=None):
@@ -52,7 +57,7 @@ def create_feedback_table_by_date_and_id(table_name: str, resource=None):
     (``gsi1pk`` / ``gsi1sk``) and ``gsi4-by-feedback-id`` (``gsi4pk``), all attributes projected."""
     if resource is None:
         resource = boto3.resource('dynamodb', region_name='us-east-1')
-    full = {'ProjectionType': 'ALL'}
+    full: ProjectionTypeDef = {'ProjectionType': 'ALL'}
     return resource.create_table(
         TableName=table_name, BillingMode='PAY_PER_REQUEST',
         KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],

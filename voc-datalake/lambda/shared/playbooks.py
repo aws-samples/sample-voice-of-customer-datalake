@@ -29,7 +29,7 @@ __all__ = ['PLAYBOOKS', 'ROLES', 'ROLE_TITLES', 'STEP_IDS', 'server_signals_of',
 ROLES: Final = ('product', 'scrum_master', 'qa', 'engineering')
 ROLE_TITLES: Final = {'product': 'Product manager', 'scrum_master': 'Scrum master', 'qa': 'QA',
                       'engineering': 'Engineering'}
-#: The evidence the onboarding GET computes (shared/onboarding.py ``playbook_signals``).
+#: The evidence the onboarding GET computes (shared/onboarding.py ``signals``).
 SERVER_SIGNALS: Final = ('brief_subscribed', 'objectives_set', 'feedback_form_configured', 'form_test_response')
 #: The evidence the browser already holds on Home.
 BROWSER_EVIDENCE: Final = ('assistant_used', 'project_owned', 'personas_generated', 'document_written',
@@ -47,6 +47,11 @@ class Step:
     title: str
     why: str
     how: str
+
+    def __post_init__(self) -> None:
+        # (a step naming evidence that neither the server nor Home computes would never tick: refused at import)
+        if self.evidence is not None and self.evidence not in (*SERVER_SIGNALS, *BROWSER_EVIDENCE):
+            raise ValueError(f'playbook step {self.id}: no evidence is called {self.evidence}')
 
 
 _ASK = Step('ask_assistant', '/chat', 'assistant_used', 'Ask the assistant a question about your customers',

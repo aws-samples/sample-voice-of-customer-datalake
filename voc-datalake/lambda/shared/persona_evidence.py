@@ -28,6 +28,12 @@ _CITATION = re.compile(r'\breviews?\s*#?\s*(\d+)((?:\s*(?:,|and|&)\s*#?\s*\d+)*)
 _LISTED = re.compile(r'\d+')
 
 
+
+def listed_ids(value: object) -> list[str]:
+    """The non-empty strings of a stored id list (anything else read as none): a persona's ``input_feedback_ids``,
+    ``evidence_feedback_ids`` or an evidence refresh's ``feedback_ids``."""
+    return [one for one in value if isinstance(one, str) and one] if isinstance(value, list) else []
+
 def _feedback_id(item: Mapping[str, Any]) -> str | None:
     value = item.get('feedback_id')
     return value if isinstance(value, str) and value else None

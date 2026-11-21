@@ -54,30 +54,45 @@ function problems(form) {
   return found;
 }
 
+/** The chosen form as the card shows it: null for none, `found: false` for one that no longer exists. */
+function formViewOf(forms) {
+  if (settings.form_id === null) return null;
+  const form = forms.find((candidate) => candidate.form_id === settings.form_id);
+  if (form === undefined) return { form_id: settings.form_id, found: false, name: null, enabled: false, languages: [], problems: [] };
+  return { form_id: form.form_id, found: true, name: form.name, enabled: form.enabled === true,
+    languages: form.languages ?? [form.language ?? 'en'], problems: problems(form) };
+}
+
 function view(forms) {
-  const form = settings.form_id === null ? undefined : forms.find((candidate) => candidate.form_id === settings.form_id);
-  const formView = settings.form_id === null ? null : form === undefined
-    ? { form_id: settings.form_id, found: false, name: null, enabled: false, languages: [], problems: [] }
-    : { form_id: form.form_id, found: true, name: form.name, enabled: form.enabled === true,
-      languages: form.languages ?? [form.language ?? 'en'], problems: problems(form) };
+  const formView = formViewOf(forms);
   return { ...settings, tag: 'voc_app', form: formView,
     active: settings.enabled && formView !== null && formView.found && formView.problems.length === 0 };
+}
+
+const refused = (error) => [400, { success: false, error }];
+
+/** The real validate_changes: the first refusal of the body's own fields, else null. */
+function fieldRefusal(body, given) {
+  const unknown = given.filter((key) => !FIELDS.includes(key)).sort((a, b) => a.localeCompare(b));
+  if (unknown.length > 0) return refused(`Unknown field(s): ${unknown.join(', ')}`);
+  if (given.length === 0) return refused(`Give at least one of: ${FIELDS.join(', ')}`);
+  if ('enabled' in body && typeof body.enabled !== 'boolean') return refused('enabled must be true or false');
+  if ('form_id' in body && body.form_id !== null && !(typeof body.form_id === 'string' && FORM_ID.test(body.form_id))) {
+    return refused('form_id must be a feedback form id, or null');
+  }
+  const actionsOk = (actions) => Array.isArray(actions) && actions.length > 0
+    && actions.every((action) => ACTIONS.includes(action)) && new Set(actions).size === actions.length;
+  if ('actions' in body && !actionsOk(body.actions)) {
+    return refused(`actions must list at least one of: ${ACTIONS.join(', ')}, each once`);
+  }
+  return null;
 }
 
 /** The real validate_changes + merged_config refusals, else the merged settings. */
 function merged(body, forms) {
   const given = body && typeof body === 'object' ? Object.keys(body) : [];
-  const unknown = given.filter((key) => !FIELDS.includes(key)).sort((a, b) => a.localeCompare(b));
-  if (unknown.length > 0) return [400, { success: false, error: `Unknown field(s): ${unknown.join(', ')}` }];
-  if (given.length === 0) return [400, { success: false, error: `Give at least one of: ${FIELDS.join(', ')}` }];
-  if ('enabled' in body && typeof body.enabled !== 'boolean') return [400, { success: false, error: 'enabled must be true or false' }];
-  if ('form_id' in body && body.form_id !== null && !(typeof body.form_id === 'string' && FORM_ID.test(body.form_id))) {
-    return [400, { success: false, error: 'form_id must be a feedback form id, or null' }];
-  }
-  if ('actions' in body && !(Array.isArray(body.actions) && body.actions.length > 0
-      && body.actions.every((action) => ACTIONS.includes(action)) && new Set(body.actions).size === body.actions.length)) {
-    return [400, { success: false, error: `actions must list at least one of: ${ACTIONS.join(', ')}, each once` }];
-  }
+  const refusal = fieldRefusal(body, given);
+  if (refusal !== null) return refusal;
   const next = { ...settings, ...body };
   if (next.enabled && next.form_id === null) {
     return [400, { success: false, code: 'app_feedback_form_required',

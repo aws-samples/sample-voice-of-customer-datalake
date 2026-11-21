@@ -27,7 +27,7 @@ from collections.abc import Mapping
 from typing import Any, Final, Literal
 
 from shared import methodology
-from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD
+from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, listed_ids
 
 MarkerSource = Literal['import', 'copy']
 
@@ -46,14 +46,10 @@ _MESSAGES: Final[Mapping[str, str]] = {
 }
 
 
-def _id_list(value: object) -> list[str]:
-    return [item for item in value if isinstance(item, str) and item] if isinstance(value, list) else []
-
-
 def review_count(persona: Mapping[str, Any]) -> int:
     """The reviews behind ``persona``: the corpus it read, else the reviews it cites."""
-    corpus = _id_list(persona.get('input_feedback_ids'))
-    return len(corpus) if corpus else len(_id_list(persona.get(EVIDENCE_FEEDBACK_IDS_FIELD)))
+    corpus = listed_ids(persona.get('input_feedback_ids'))
+    return len(corpus) if corpus else len(listed_ids(persona.get(EVIDENCE_FEEDBACK_IDS_FIELD)))
 
 
 def _origin(source: Mapping[str, Any]) -> str:

@@ -66,32 +66,32 @@ function view(shared) {
   };
 }
 
+/** The fields that take one of a list (the real CHOICES), in the order their refusals are checked. */
+const CHOICES = [['state', STATES], ['start_page', START_PAGES], ['guide', GUIDES], ['subscribe_prompt', SUBSCRIBE_PROMPTS]];
+
+/** The 400 of a ``playbook`` or ``playbook_done`` the real playbooks.validate_role / validate_done refuse, else null. */
+function playbookRefusal(body) {
+  if ('playbook' in body && body.playbook !== null && !ROLES.includes(body.playbook)) {
+    return `playbook must be one of: ${ROLES.join(', ')}, or null`;
+  }
+  if (!('playbook_done' in body)) return null;
+  const done = body.playbook_done;
+  if (!Array.isArray(done) || done.length > MAX_DONE) return `playbook_done must be a list of at most ${MAX_DONE} step ids`;
+  return done.some((step) => !STEP_IDS.has(step)) ? 'playbook_done names a step no playbook has' : null;
+}
+
 /** The 400 the real validate_preference answers for ``body``, else null. */
 function refusal(body) {
   const given = body && typeof body === 'object' ? Object.keys(body) : [];
   const unknown = given.filter((k) => !FIELDS.includes(k)).sort((a, b) => a.localeCompare(b));
   if (unknown.length > 0) return `Unknown field(s): ${unknown.join(', ')}`;
   if (!given.some((k) => FIELDS.includes(k))) return `Give at least one of: ${FIELDS.join(', ')}`;
-  if ('state' in body && !STATES.includes(body.state)) return `state must be one of: ${STATES.join(', ')}`;
-  if ('start_page' in body && !START_PAGES.includes(body.start_page)) {
-    return `start_page must be one of: ${START_PAGES.join(', ')}`;
-  }
-  if ('guide' in body && !GUIDES.includes(body.guide)) return `guide must be one of: ${GUIDES.join(', ')}`;
-  if ('subscribe_prompt' in body && !SUBSCRIBE_PROMPTS.includes(body.subscribe_prompt)) {
-    return `subscribe_prompt must be one of: ${SUBSCRIBE_PROMPTS.join(', ')}`;
-  }
+  const choice = CHOICES.find(([field, allowed]) => field in body && !allowed.includes(body[field]));
+  if (choice) return `${choice[0]} must be one of: ${choice[1].join(', ')}`;
   if ('dismiss_decision_run' in body && !(typeof body.dismiss_decision_run === 'string' && RUN_ID.test(body.dismiss_decision_run))) {
     return 'dismiss_decision_run must be an agent run id';
   }
-  if ('playbook' in body && body.playbook !== null && !ROLES.includes(body.playbook)) {
-    return `playbook must be one of: ${ROLES.join(', ')}, or null`;
-  }
-  if ('playbook_done' in body) {
-    const done = body.playbook_done;
-    if (!Array.isArray(done) || done.length > MAX_DONE) return `playbook_done must be a list of at most ${MAX_DONE} step ids`;
-    if (done.some((step) => !STEP_IDS.has(step))) return 'playbook_done names a step no playbook has';
-  }
-  return null;
+  return playbookRefusal(body);
 }
 
 function save(body) {

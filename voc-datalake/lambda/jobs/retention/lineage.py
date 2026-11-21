@@ -71,8 +71,8 @@ from shared.feature_requests_raw import FEATURE_REQUESTS_SOURCE
 from shared.feedback_sampling import INPUT_FEATURE_REQUEST_IDS_FIELD, INPUT_FEEDBACK_IDS_FIELD
 from shared.ingest_tables import table_view
 from shared.logging import logger
-from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD
-from shared.persona_grounding import EVIDENCE_UPDATES_FIELD, evidence_update_entries, listed_ids
+from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, listed_ids
+from shared.persona_grounding import EVIDENCE_UPDATES_FIELD, evidence_update_entries
 from shared.project_keys import project_partitions
 from shared.project_walk import checked_ids, checked_key, is_project_id, query_page
 from shared.retention import BOARD_COUNTER

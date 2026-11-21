@@ -44,11 +44,12 @@ function render(canEdit = true) {
 }
 
 /** A form of the list, as `GET /feedback-forms` answers it (only its id, name and type matter here). */
-const listed = (form_id: string, name: string, extra: Partial<FeedbackForm> = {}): FeedbackForm => ({
-  form_id, name, enabled: true, category: '', subcategory: '', title: '', description: '', question: '', placeholder: '',
+const listed = (formId: string, name: string, extra: Partial<FeedbackForm> = {}): FeedbackForm => ({
+  form_id: formId, name, enabled: true, category: '', subcategory: '', title: '', description: '', question: '', placeholder: '',
   rating_enabled: false, rating_type: 'stars', rating_max: 5, submit_button_text: '', success_message: '',
   theme: { primary_color: '', background_color: '', text_color: '', border_radius: '' }, collect_email: false,
-  collect_name: false, custom_fields: [], ...extra,
+  collect_name: false, custom_fields: [], created_at: '2026-11-01T09:00:00Z', updated_at: '2026-11-01T09:00:00Z',
+  ...extra,
 })
 const FORMS = [listed('ff_app', 'App feedback'), listed('ff_pin', 'Pin', { form_type: 'prototype_pin' })]
 

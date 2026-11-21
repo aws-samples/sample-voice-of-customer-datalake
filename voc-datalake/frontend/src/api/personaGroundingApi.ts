@@ -62,9 +62,9 @@ export const personaGroundingApi = {
   refreshEvidence: async (projectId: string, personaId: string): Promise<EvidenceRefresh> =>
     refreshSchema.parse(asRecord(await fetchApi<unknown>(`${projectPersonaPath(projectId, personaId)}/evidence/refresh`, post())) ?? {}),
 
-  saveFocusGroup: async (projectId: string, body: FocusGroupDocumentBody): Promise<{ document: ProjectDocument | null }> => {
+  saveFocusGroup: async (projectId: string, body: FocusGroupDocumentBody): Promise<ProjectDocument | null> => {
     const raw = await fetchApi<unknown>(`/projects/${encodeURIComponent(projectId)}/documents`,
       post({ ...body, document_type: 'focus_group' }))
-    return { document: normalizeProjectDocument(asRecord(raw)?.document) }
+    return normalizeProjectDocument(asRecord(raw)?.document)
   },
 }

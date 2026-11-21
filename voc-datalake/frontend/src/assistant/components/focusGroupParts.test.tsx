@@ -8,7 +8,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EventType } from '@ag-ui/core'
 import { renderWithQueryClient } from '@test/query-client'
-import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
+import { resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
 import { TestRouter } from '@test/TestRouter'
 import LocationSearch from '@test/LocationSearch'
 import { createThreadState, threadReducer } from '../thread/reducer'
@@ -147,9 +147,7 @@ describe('the synthesis card', () => {
     expect(within(region).getByText('Agreements')).toBeInTheDocument()
     await user.click(within(region).getByRole('button', { name: 'Save focus group' }))
     expect(await within(region).findByRole('button', { name: 'Saved to documents' })).toBeDisabled()
-    const [, options] = fetchApi.mock.calls.find(([path]) => path === '/projects/p1/documents') ?? []
-    const body = JSON.parse(String(options?.body)) as { document_type: string; derivation: unknown; content: string }
-    expect({ type: body.document_type, derivation: body.derivation }).toStrictEqual({ type: 'focus_group', derivation: {
+    expect(sentFetchApiBody('/projects/p1/documents', 'POST')).toMatchObject({ document_type: 'focus_group', derivation: {
       persona_ids: ['pa', 'pb'], feedback_ids: ['f1'], document_ids: ['d1'], library_item_ids: [], rounds: 2 } })
   })
 

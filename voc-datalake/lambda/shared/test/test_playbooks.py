@@ -86,3 +86,8 @@ def test_ticks_are_known_step_ids_sorted_once():
 def test_bad_ticks_are_refused(value, message):
     with pytest.raises(ValidationError, match=message):
         playbooks.validate_done(value)
+
+
+def test_a_step_naming_evidence_nobody_computes_is_refused():
+    with pytest.raises(ValueError, match='no evidence is called'):
+        playbooks.Step('typo', '/chat', 'assistant_usd', 'Title', 'Why.', 'How.')

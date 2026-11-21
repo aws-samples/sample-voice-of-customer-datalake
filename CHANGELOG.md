@@ -68,6 +68,14 @@ public submit route carry it.
 - The onboarding buddy's first-run signals (`feedback_present`, `feedback_form_configured`) are the request's
   workspace's: `GET|PUT /settings/my-onboarding` now resolve `X-Workspace-Id` (the one 404 for a non-member), and a
   request without the header reads the deployment's, as before.
+- A tag filter matches a tag ignoring its surrounding spaces as well as its case (`shared/app_feedback_tag.py`
+  `has_tag`, the `tag` filter's and the micro-feedback's one rule), so an item the dashboards leave out as `voc_app`
+  is the one a `tag=voc_app` request finds.
+- The 7.64.00–7.66.00 stack's integration findings: a persona's stored id lists read by one rule
+  (`shared/persona_evidence.py` `listed_ids`); a playbook step naming evidence nothing computes is refused when the
+  catalogue loads; the Focus groups tab's Start is a registered action row; the stream keeps only the custom-model
+  fields it reads; and the specs follow 7.64.00's focus-group documents, 7.66.00's playbook prompt and micro-feedback,
+  and a role's statements packed into its policy and its overflow in any order.
 
 ### Upgrade notes
 

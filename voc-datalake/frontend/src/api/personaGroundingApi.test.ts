@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchApi, resetFetchApi } from '@test/fetchApiRoutes'
+import { fetchApi, resetFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
 import { personaGroundingApi } from './personaGroundingApi'
 
 vi.mock('./client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -28,9 +28,8 @@ describe('personaGroundingApi', () => {
       title: 'Focus group', content: 'x', synthetic: true } })
     const derivation = { persona_ids: ['a', 'b'], feedback_ids: ['f1'], document_ids: [], library_item_ids: [], rounds: 2 }
     const saved = await personaGroundingApi.saveFocusGroup('p1', { title: 'Focus group', content: 'x', derivation })
-    expect(saved.document).toMatchObject({ document_id: 'doc_1', document_type: 'focus_group', synthetic: true })
-    const [path, options] = fetchApi.mock.calls[0] ?? []
-    expect([path, JSON.parse(String(options?.body))]).toStrictEqual(['/projects/p1/documents',
-      { title: 'Focus group', content: 'x', derivation, document_type: 'focus_group' }])
+    expect(saved).toMatchObject({ document_id: 'doc_1', document_type: 'focus_group', synthetic: true })
+    expect(sentFetchApiBody('/projects/p1/documents', 'POST'))
+      .toStrictEqual({ title: 'Focus group', content: 'x', derivation, document_type: 'focus_group' })
   })
 })

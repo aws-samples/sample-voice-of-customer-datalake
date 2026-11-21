@@ -15,7 +15,9 @@ import type { PersonaScope } from './personaScope'
 import type { ProjectPersona } from '../../api/projectTypes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
-vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
+// (the real store beside the doubles: 7.66.00's in-app micro-feedback reads useAuthStore under the persona)
+vi.mock('../../store/authStore', (importOriginal) =>
+  import('@test/fetchApiRoutes').then((m) => m.authStoreWithOriginal(importOriginal)))
 
 const { default: PersonaDetailView } = await import('./PersonaDetailView')
 

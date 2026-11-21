@@ -131,7 +131,9 @@ THIN_ROUTES = [
     ('PUT', '/projects/p1/personas/x1', BODY, None, 'update_persona', ('p1', 'x1', BODY), {}),
     ('DELETE', '/projects/p1/personas/x1', None, None, 'delete_persona', ('p1', 'x1'), {'actor': ACTOR}),
     ('POST', '/projects/p1/personas/x1/notes', BODY, None, 'add_persona_note', ('p1', 'x1', BODY), {}),
-    ('POST', '/projects/p1/documents', BODY, None, 'create_document', ('p1', BODY), {'creator_sub': 'test-user-id'}),
+    # (7.64.00: a focus group's save takes the caller's category scope; every other type none)
+    ('POST', '/projects/p1/documents', BODY, None, 'create_document', ('p1', BODY),
+     {'creator_sub': 'test-user-id', 'category_scope': None}),
     ('PUT', '/projects/p1/documents/d1', BODY, None, 'update_document', ('p1', 'd1', BODY),
      {'proposal': None}),
     # A save naming its pass (revise_job_id) is checked against the job: test_document_review_routes.py.

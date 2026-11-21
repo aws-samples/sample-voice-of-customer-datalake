@@ -19,18 +19,26 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-__all__ = ['APP_FEEDBACK_TAG', 'asks_for_app_feedback', 'is_app_feedback']
+__all__ = ['APP_FEEDBACK_TAG', 'asks_for_app_feedback', 'has_tag', 'is_app_feedback']
 
 #: The tag (lower case; tags match ignoring case, as the ``tag`` filter does).
 APP_FEEDBACK_TAG: Final = 'voc_app'
 
 
-def is_app_feedback(item: Mapping[str, Any]) -> bool:
-    """True for an item tagged ``voc_app`` (any case): the VoC app's own micro-feedback."""
+def has_tag(item: Mapping[str, Any], wanted: str) -> bool:
+    """True when one of ``item``'s tags is ``wanted``, ignoring case and surrounding spaces: the ``tag`` filter's rule
+    (shared/item_filters.py) and the micro-feedback's, one rule, so an item the dashboards leave out is the one a
+    ``tag=voc_app`` request finds."""
     tags = item.get('tags')
     if not isinstance(tags, list):
         return False
-    return any(isinstance(tag, str) and tag.strip().casefold() == APP_FEEDBACK_TAG for tag in tags)
+    folded = wanted.strip().casefold()
+    return any(isinstance(tag, str) and tag.strip().casefold() == folded for tag in tags)
+
+
+def is_app_feedback(item: Mapping[str, Any]) -> bool:
+    """True for an item tagged ``voc_app`` (any case): the VoC app's own micro-feedback."""
+    return has_tag(item, APP_FEEDBACK_TAG)
 
 
 def asks_for_app_feedback(tag_filter: object) -> bool:

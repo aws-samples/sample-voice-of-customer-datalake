@@ -60,10 +60,11 @@ describe('the Focus groups tab', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Slots PRD' }))
     await user.click(await screen.findByRole('checkbox', { name: '#survey · Survey' }))
     await user.click(start)
+    const projectPage: unknown = expect.objectContaining({ projectId: 'proj_1' })
     expect(startFocusGroup).toHaveBeenCalledWith('Shorter delivery slots?', {
       persona_ids: ['p1', 'p2'], rounds: 3, documents: [{ document_id: 'd_prd' }],
       library: [{ item_id: 'lib_20261120000000_0a1b2c3d' }],
-    }, expect.objectContaining({ page: expect.objectContaining({ projectId: 'proj_1' }) }))
+    }, expect.objectContaining({ page: projectPage }))
   })
 
   it('takes at most six personas', async () => {

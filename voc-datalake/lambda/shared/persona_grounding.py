@@ -47,7 +47,7 @@ from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, date_partiti
 from shared.feedback_sampling import Partition, fetch_full, read_pool
 from shared.indexes import FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX
 from shared.logging import logger
-from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD
+from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, listed_ids
 from shared.project_keys import PROJECT_GATE_STORE, project_pk, require_deployment
 from shared.prompt_safety import WITHHELD, injection_findings
 from shared.source_profiles import PII_SUMMARY_ONLY
@@ -57,16 +57,11 @@ from shared.timestamps import now_iso
 from shared.ws_repo import WorkspaceScope
 
 __all__ = [
-    'EVIDENCE_REFRESHED_AT_FIELD',
     'EVIDENCE_UPDATES_FIELD',
-    'MAX_EVIDENCE_UPDATES',
-    'MAX_FRESH',
-    'MAX_PACK_PERSONAS',
     'Reader',
     'evidence_freshness',
     'evidence_pack',
     'evidence_update_entries',
-    'listed_ids',
     'refresh_evidence',
     'validated_pack_request',
     'visible_ids',
@@ -178,11 +173,6 @@ def _project_filters(reader: Reader, project_id: str) -> dict[str, list[str]]:
         for name in ('sources', 'categories', 'sentiments')
         if isinstance(values := filters.get(name), list)
     }
-
-
-def listed_ids(value: object) -> list[str]:
-    """The non-empty strings of a stored id list (anything else read as none)."""
-    return [one for one in value if isinstance(one, str) and one] if isinstance(value, list) else []
 
 
 def evidence_update_entries(row: Mapping[str, Any]) -> list[dict[str, Any]]:

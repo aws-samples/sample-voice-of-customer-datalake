@@ -174,7 +174,7 @@ describe('inferenceScope=eu with -c customModels', () => {
     expect([missing.map((fn) => fn.id), leaked.map((fn) => fn.id)]).toStrictEqual([[], []]);
     // The readers that call no model: the cost rollup (prices) and the logs API (System → Environment).
     const readers = functions.filter((fn) => fn.role !== undefined && !callers.has(fn.role) && fn.env.CUSTOM_MODELS !== undefined);
-    expect(readers.map((fn) => fn.id.replace(/[0-9A-F]{8}$/, '')).sort())
+    expect(readers.map((fn) => fn.id.replace(/[0-9A-F]{8}$/, '')).sort((a, b) => a.localeCompare(b)))
       .toStrictEqual(['VocApiStack/LogsApi', 'VocProcessingStack/CostRollupWorkerCostRollup']);
   });
 

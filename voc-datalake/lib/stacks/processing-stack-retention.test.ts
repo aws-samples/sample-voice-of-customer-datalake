@@ -194,12 +194,13 @@ describe('voc-retention worker', () => {
 
   it('deletes objects and versions under raw/*, silver/* and each workspace\'s raw, silver and exports only, and lists versions of those prefixes only', () => {
     const s3 = statements().filter((s) => s.effect === 'Allow' && s.actions.some((a) => a.startsWith('s3:')));
-    expect(s3.map((s) => [...s.actions].sort(byCodeUnit).join(','))).toStrictEqual([
+    // (in any order: CDK packs a role's statements into its policy and an overflow policy by size)
+    expect(s3.map((s) => [...s.actions].sort(byCodeUnit).join(',')).sort(byCodeUnit)).toStrictEqual([
+      's3:AbortMultipartUpload',
       's3:DeleteObject,s3:DeleteObjectVersion',
       's3:GetObject',
-      's3:ListBucketVersions',
-      's3:AbortMultipartUpload',
       's3:ListBucketMultipartUploads',
+      's3:ListBucketVersions',
     ]);
     const objectPaths = [...itemAt(s3, 0).resource.matchAll(/"\/([^"]*)"/g)].flatMap((match) => match[1] ?? []);
     // One workspace id per pattern (`ws_` + 26 `?`): IAM's `*` would also match `/`.

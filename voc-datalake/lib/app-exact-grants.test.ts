@@ -111,7 +111,9 @@ describe('exact grants over the app', () => {
     const s3 = roleStatements('VocProcessingStack', 'RetentionWorkerRetentionRole')
       .filter((statement) => actionsOf(statement).some((action) => action.startsWith('s3:')))
       .map((statement) => [statement.Effect, [...actionsOf(statement)].sort(byCodeUnit)]);
-    expect(s3).toStrictEqual([
+    // (in any order: CDK packs a role's statements into its policy and an overflow policy by size)
+    const byStatement = (a: unknown, b: unknown) => byCodeUnit(JSON.stringify(a), JSON.stringify(b));
+    expect([...s3].sort(byStatement)).toStrictEqual([
       ['Allow', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
       // 7.43.00: a workspace's text product documents, read for an erased address (never written); since 7.48.00 the
       // deployment's extracted text too, in the same statement.
@@ -121,7 +123,7 @@ describe('exact grants over the app', () => {
       // A workspace's open export upload, which an erasure that reaches the workspace aborts (a derived copy, D5).
       ['Allow', ['s3:AbortMultipartUpload']],
       ['Allow', ['s3:ListBucketMultipartUploads']],
-    ]);
+    ].sort(byStatement));
   });
 
   it.each([

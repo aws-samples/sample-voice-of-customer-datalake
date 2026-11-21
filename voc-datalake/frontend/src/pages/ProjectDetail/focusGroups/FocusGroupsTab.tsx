@@ -15,6 +15,7 @@ import { FOCUS_GROUP_LIMITS, MENTION_LIMITS } from '@stream/assistant/contract'
 import { libraryApi, libraryKeys } from '../../../api/libraryApi'
 import { LabeledField } from '../../../components/LabeledField/LabeledField'
 import PressedChoices from '../../../components/PressedChoices/PressedChoices'
+import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { startFocusGroup } from '../../../assistant/runtime/runtime'
 import { useRunEnvironment } from '../../../assistant/runtime/useAssistant'
 import { formatDate } from '../../../utils/dateUtils'
@@ -167,10 +168,12 @@ function FocusGroupPanel({ personas, documents }: Readonly<Pick<FocusGroupsTabPr
         onToggle={(id) => setLibraryIds((current) => toggled(current, id, MENTION_LIMITS.maxLibraryItems))} />
       <CostLine personas={chosen.length} rounds={Number(rounds)} />
       <p className="text-[12px] text-muted">{t('focusGroups.synthetic')}</p>
-      <button type="button" disabled={!ready} onClick={start} className="btn btn-primary">
-        <Play size={14} aria-hidden />
-        {t('focusGroups.start')}
-      </button>
+      <StickyActionBar variant="footer">
+        <button type="button" disabled={!ready} onClick={start} className="btn btn-primary">
+          <Play size={14} aria-hidden />
+          {t('focusGroups.start')}
+        </button>
+      </StickyActionBar>
     </section>
   )
 }

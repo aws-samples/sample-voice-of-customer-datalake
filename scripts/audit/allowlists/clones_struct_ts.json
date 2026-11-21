@@ -33,9 +33,9 @@
     {
       "files": [
         "voc-datalake/frontend/src/components/MetricCard/MetricCard.tsx",
-        "voc-datalake/frontend/src/pages/Home/onboarding/OnboardingBuddy.tsx"
+        "voc-datalake/frontend/src/pages/Home/ChecklistProgress.tsx"
       ],
-      "reason": "two three-way enum -> icon switches (trend up/down/flat at 14 px, onboarding step done/pending/todo at 20 px with a spinner): different icons, sizes and classes; a shared helper would be a lookup table as long as each switch"
+      "reason": "two three-way enum -> icon switches (trend up/down/flat at 14 px, a checklist step done/pending/todo at 20 px with a spinner, shared by the onboarding buddy and the role playbook since 7.66.00): different icons, sizes and classes; a shared helper would be a lookup table as long as each switch"
     },
     {
       "files": [
@@ -79,6 +79,20 @@
         "voc-datalake/frontend/src/pages/Projects/ProjectCard.tsx"
       ],
       "reason": "two loading placeholders, each drawn in its own card's shape (the forms list card's three zones, its title, figures and controls; the project card's icon, title, line and button): what matches is the design system's `skeleton` recipe in a three-item map, and one component would take each card's layout as props"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Home/playbooks/RolePlaybook.tsx",
+        "voc-datalake/frontend/src/pages/Prioritization/ScoringSetupDialog.tsx"
+      ],
+      "reason": "two pickers of different areas (7.66.00's role playbook choice, saved on the person's onboarding row, and Prioritization's scoring templates, which a confirm applies): a grid of buttons each with a name and a line; the list, the texts, the disabled state and what a press does differ"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Prioritization/ScoringSetupDialog.tsx",
+        "voc-datalake/frontend/src/pages/ProjectDetail/focusGroups/FocusGroupsTab.tsx"
+      ],
+      "reason": "a list of rows with one control each: Prioritization's archived metrics (inside a details, Restore per metric) and 7.64.00's saved focus groups (a link per document and its date); only the 'map rows to an li with a button' shape matches"
     }
   ]
 }

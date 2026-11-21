@@ -37,6 +37,7 @@ from typing import Any
 
 from boto3.dynamodb.conditions import Attr, ConditionBase
 
+from shared.app_feedback_tag import has_tag
 from shared.category_scope_query import combine
 from shared.dimension_config import parse_dims_param
 from shared.item_facets import (
@@ -123,7 +124,7 @@ class ItemFilters:
             return False
         if self.rates and not self._rating_admits(item.get('rating')):
             return False
-        return not self.tag or _has_tag(item, self.tag)
+        return not self.tag or has_tag(item, self.tag)
 
     def _facets_admit(self, item: Mapping[str, Any]) -> bool:
         if self.sources and item.get('source_platform') not in self.sources:
@@ -199,14 +200,6 @@ def _has_dimensions(item: Mapping[str, Any], wanted: Mapping[str, str]) -> bool:
     stored = item.get('dimensions')
     stored = stored if isinstance(stored, Mapping) else {}
     return all(_dimension_admits(stored.get(key), value) for key, value in wanted.items())
-
-
-def _has_tag(item: Mapping[str, Any], wanted: str) -> bool:
-    tags = item.get('tags')
-    if not isinstance(tags, list):
-        return False
-    folded = wanted.casefold()
-    return any(isinstance(tag, str) and tag.casefold() == folded for tag in tags)
 
 
 def _rating_value(raw: object) -> Decimal | None:

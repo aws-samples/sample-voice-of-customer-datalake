@@ -38,6 +38,7 @@ const REGISTERED: Readonly<Record<string, string>> = {
   DimensionsEditControl: 'Feedback detail / card → Edit dimensions → Save',
   DraftSaveBar: 'Administration → Taxonomy → Dimensions / Privacy & access → Source policies → Save',
   RowCompositionPanel: 'Prioritization → row composition → Save',
+  FocusGroupsTab: 'Project → Focus groups → Start focus group (7.64.00), the setup form\'s footer row',
   ResearchNotes: 'Project → personas → Add note',
   DecisionForm: 'Project → Decisions → Save decision',
   RadarSection: 'Administration → Sources → Radar → Save',
@@ -147,6 +148,8 @@ const EXEMPT: Readonly<Record<string, string>> = {
   DocumentActionsBar: 'the canvas\'s Save and Discard register themselves as an action bar (useRegisterActionBar) and pin to the bottom on a phone while dirty',
   Library: 'Upload heads the Documents Library page (7.62.00; it opens the upload sheet), not a form\'s save row',
   ItemEditor: 'a library item\'s Save, rendered only inside the Library\'s preview drawer (PreviewDrawer.tsx, a SideSheet over the launcher)',
+  MicroFeedback: 'the in-app micro-feedback\'s Send (7.66.00): one short answer in a card under the result it is about, not a form\'s save row',
+  RolePlaybook: 'each playbook step\'s link to its screen (7.66.00), one of many in the checklist (per-item controls)',
 }
 
 // (a SideSheet is a ModalShell too: its footer sits over the launcher)

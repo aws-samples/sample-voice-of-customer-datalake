@@ -30,9 +30,7 @@ const CustomModelSchema = z.object({
 
 /** One registry entry, as the stream uses it. */
 export interface StreamCustomModel {
-  readonly key: string;
   readonly id: string;
-  readonly label: string;
   readonly surfaces: readonly string[];
   readonly tools: boolean;
   readonly documents: boolean;
@@ -62,9 +60,10 @@ function parseRegistry(raw: string): readonly StreamCustomModel[] {
       console.warn(`${CUSTOM_MODELS_ENV} entry ${String(index + 1)} skipped: it cannot be read or repeats an id`);
       continue;
     }
-    const { key, id, label, surfaces, capabilities, maxOutputTokens } = result.data;
+    // (the key and the label are the registry's, for the SPA and the logs; the stream reads neither)
+    const { id, surfaces, capabilities, maxOutputTokens } = result.data;
     models.push({
-      key, id, label, surfaces, tools: capabilities.tools, documents: capabilities.documents,
+      id, surfaces, tools: capabilities.tools, documents: capabilities.documents,
       maxOutputTokens: maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
     });
   }

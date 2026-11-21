@@ -58,7 +58,7 @@ describe('PersonaEvidenceFreshness', () => {
   it('shows nothing when the count cannot be read', async () => {
     routeFetchApi({})
     const { container } = renderWithQueryClient(<PersonaEvidenceFreshness projectId="proj_1" personaId="p1" canEdit />)
-    await vi.waitFor(() => expect(fetchApi).toHaveBeenCalled())
+    await vi.waitFor(() => expect(fetchApi).toHaveBeenCalledWith(FRESHNESS, undefined))
     expect(container).toBeEmptyDOMElement()
   })
 })
