@@ -159,6 +159,20 @@ class TestThePack:
         ids = _ids(_pack(tables, question='courier rain', limit=1))
         assert ids == [*cited[:grounding.MAX_STORED_EVIDENCE], 'fresh_courier']
 
+    def test_a_refreshed_review_competes_on_the_topic_whatever_its_age(self, tables):
+        # (7.71.00: a review a refresh took joins the fresh candidates even once it is older than the persona, so
+        # Refresh evidence changes the pack; a person who may not see it never gets it)
+        projects, feedback = tables
+        feedback.put_item(Item=_review('refreshed_old', 30, text='The courier threw it over the fence'))
+        feedback.put_item(Item=_review('refreshed_hidden', 30, source='support_tickets', text='Fence and courier'))
+        projects.put_item(Item=_persona(evidence_updates=[
+            {'at': GENERATED, 'by': {'sub': 'u1', 'kind': 'user'}, 'reason': 'manual_refresh',
+             'feedback_ids': ['refreshed_old', 'refreshed_hidden']}]))
+        assert _fresh(_pack(tables, question='fence courier', limit=1)) == ['refreshed_old']
+        no_tickets = CategoryScope(all=False, categories_all=True, source_deny=frozenset({'support_tickets'}))
+        no_tickets = _pack(tables, scope=no_tickets, question='fence courier', limit=8)
+        assert 'refreshed_hidden' not in _ids(no_tickets)
+
     def test_the_cited_reviews_are_always_kept_however_many_refreshes(self, tables):
         projects, feedback = tables
         refreshes = [[f'r{k}_{n}' for n in range(8)] for k in range(3)]

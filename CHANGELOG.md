@@ -474,7 +474,7 @@ custom models, a Claude-only twin set of the shared model policies for the engin
   every model it may invoke; `probe_failed` otherwise), for a Claude or a custom model; the image and web search
   models take basic only. `GET /settings/model` lists `custom_models`; to anyone but an administrator an imported
   model is its `key` and `label` only (its id is an ARN naming the account and Region), and a surface's pick of it and
-  the assistant's `assistant.context` `model` its `key`; a save or a Test may name it by its key.
+  the assistant's `assistant.context` `model` its `key`.
 - **Metering**: the cost rollup and the cost page price a custom model's tokens from its registry price
   (`shared/model_prices.py`, the cache tokens at the input price), so it is never an unpriced line (an imported
   model's is an estimate, `complete: false`: Custom Model Import bills its active copies, not its tokens); the
@@ -611,12 +611,13 @@ carry it.
 - **AI summary of a report** (`POST /settings/form-reports`, polled at `GET /settings/form-reports/{job_id}`):
   optional, one utility model call (about 1–3 cents), 20 per person per hour, gated as Results. The browser sends the
   open answers it already read with the person's access, which the job's row keeps only while the job runs (its
-  `config` is removed when the job ends); the model only labels themes and picks quote ids, and the stored report
-  (`FORMREPORT#{form_id}#{report_id}` in the form's forms partition) keeps labels, ids and the view's filters, never a
-  respondent's text. Its quotes are joined against the reader's own rows under its own filters, it is marked stale once
-  newer responses of that view exist, it is shown and printed only on the view it was made for (on another, "Made for
-  another view: ‹filters›" and Summarize this view), it counts the answers it read (`responses_counted`, and the
-  newest one's `last_response_at`), and it is withheld from a reader who cannot see a response it read.
+  `config` is removed when the job ends; a job whose worker never ran: until the row's one-day TTL); the model only
+  labels themes and picks quote ids, and the stored report (`FORMREPORT#{form_id}#{report_id}` in the form's forms
+  partition) keeps labels, ids and the view's filters, never a respondent's text. Its quotes are joined against the
+  reader's own rows under its own filters, it is marked stale once newer responses of that view exist, it is shown and
+  printed only on the view it was made for (on another, "Made for another view: ‹filters›" and Summarize this view),
+  it counts the answers it read (`responses_counted`, and the newest one's `last_response_at`), and it is withheld
+  from a reader who cannot see a response it read.
 - **`forms_get_results` on `/mcp/global`**: a form's Results as JSON (`GET /feedback-forms/{id}/results`, as the
   token's minter: its category and source access, and in a workspace the editor or admin role), with `from` / `to`,
   `include_test` and up to 5 `hidden` values; never the CSV, the report or a write ([mcp.md](docs/mcp.md#tools)).
@@ -732,8 +733,8 @@ empty, a publish guard for a placeholder respondents would see as written, and a
 - **Recall** in the welcome, headlines, subheaders (statements included) and endings: `{{id}}` shows a declared hidden
   field's value or an earlier score or single choice on the respondent's path, `{{id|fallback}}` a fallback when
   there is none, and a missing value leaves the text tidy ("How was {{event}}?" reads "How was?"; gaps side by side
-  or split only by a separator are one: "Thanks {{name}}, {{company}}!" reads "Thanks!"), as the iframe page's title
-  does with no value at all ("{{event|the workshop}}" is "the workshop"). Never an open text,
+  or split only by a separator are one: "Thanks {{name}}, {{company}}!" reads "Thanks!"; the iframe page's title is
+  "Feedback Form" until the widget sets it). Never an open text,
   a contact, a multiple choice, a consent or a matrix answer, never in an option label, a button or an address, and
   always as text. One grammar in the server, the builder and the widget, pinned by `schemas/form-recall-cases.json`
   (the tidy rules are the widget's alone, and the builder's preview is the widget's own;

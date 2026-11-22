@@ -132,7 +132,9 @@ lists or reads one (404).
   [Readiness before Enable](#readiness-before-enable)). The administrator who enables it is who it runs as from then (`owner_sub`,
   `owner_username`; `owner_sub` is never set by hand on an engineering agent): their way of working is the dial its
   pushes follow, and the heartbeat re-checks in Cognito before each start that they are still an enabled admin of the
-  same account (else the agent skips with `owner_not_admin`).
+  same account (else the agent skips with `owner_not_admin`). A run of a flow that pushes on a fine-grained token
+  that expired, or is not set, is refused before anything is written: the tick skips with `token_expired` until the
+  token's owner replaces it (Agents → Connections).
 - **Instructions** at most 300 characters: they become the trusted start of the run's goal, followed by one sentence
   the server writes from numbers and names only ("Fix the bug reported in issue #7 of owner/name.", "Hunt the defects
   behind 12 bug reports in all reviews.", "Build the feature the PRD … of project … describes."); never an issue's or a

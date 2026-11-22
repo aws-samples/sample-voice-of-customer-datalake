@@ -489,6 +489,9 @@ def test_a_scanned_pdf_is_never_sent_as_a_file_its_passages_are_searched(library
         'item_ids': [scanned['item_id']], 'query': 'faster delivery south', 'native_slots': 3})[1]
     assert body['native'] == []
     assert {passage['item_id'] for passage in body['passages']} == {scanned['item_id']}
+    # (7.71.00: what the item says of it follows the same rule, library_store.sent_as_a_file: its details read
+    # "passages", never that the assistant reads the file itself)
+    assert library.call('GET', f"/projects/library/{scanned['item_id']}")[1]['item']['native'] is False
 
 
 def test_the_context_without_ids_finds_items_by_their_words(library):

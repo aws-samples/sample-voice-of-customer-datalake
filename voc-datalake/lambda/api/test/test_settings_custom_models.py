@@ -83,12 +83,6 @@ def route_as_admin(api_gateway_event, lambda_context):
 
 
 class TestThePick:
-    def test_an_imported_model_is_saved_by_its_key_as_its_arn(self, route, table):
-        table.get_item.return_value = {}
-        response, payload = route('PUT', '/settings/model', {'surface': 'memory', 'model_id': 'mine'})
-        assert (response['statusCode'], payload['model_id']) == (200, MINE)
-        assert table.put_item.call_args.kwargs['Item']['surfaces'] == {'memory': MINE}
-
     def test_saves_a_custom_model_for_a_surface_it_declares(self, route, table):
         table.get_item.return_value = {}
         response, payload = route('PUT', '/settings/model', {'surface': 'documents', 'model_id': NOVA})

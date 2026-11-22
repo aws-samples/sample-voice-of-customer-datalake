@@ -782,7 +782,7 @@ class _RatingTally:
         self._last_response_at = ''
         self._channels: dict[str, str] = {}
 
-    def add(self, item: dict) -> None:
+    def add(self, item: Mapping[str, Any]) -> None:
         rating = item.get('rating')
         if rating:
             self.total_rating += float(rating)
@@ -994,8 +994,9 @@ def _stats_for_forms(items: list[dict], scope: WorkspaceScope | None = None) -> 
     every form of that brand — to filter one form's rows out of it. This reads
     each distinct partition once with an `IN` over the forms' source channels and
     tallies the rows per form, so N cards cost one request and one partition read
-    instead of N of each. Same counting rules as the single-form route: category
-    scope applied, the same rating tally.
+    instead of N of each: the results' own read (``_forms_feedback_items``, 7.71.00: one partition-once read for
+    the cards, Results and Compare). Same counting rules as the single-form route: category scope applied, the same
+    rating tally.
     """
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
@@ -1010,22 +1011,10 @@ def _stats_for_forms(items: list[dict], scope: WorkspaceScope | None = None) -> 
 
     tallies = {fid: _RatingTally(definitions[fid]) for ids in form_ids_by_pk.values() for fid in ids}
     counts = dict.fromkeys(tallies, 0)
-    for source_pk, form_ids in form_ids_by_pk.items():
-        for chunk in _chunks(form_ids, _MAX_IN_OPERANDS):
-            values = {f':sc{i}': f'form_{fid}' for i, fid in enumerate(chunk)}
-            query_kwargs: dict[str, Any] = {
-                'FilterExpression': f"source_channel IN ({', '.join(values)})",
-                'ExpressionAttributeValues': values,
-                # `category` + `source_platform`: both access rules read them (admits_item).
-                # `metadata` (and `source_created_at`): the headline figure's answers.
-                'ProjectionExpression': 'feedback_id, rating, category, source_platform, source_channel, metadata, '
-                                        'source_created_at',
-            }
-            for row in category_access.filter_items(access, _partition_rows(feedback_table, scope, source_pk, query_kwargs)):
-                form_id = str(row.get('source_channel', '')).removeprefix('form_')
-                if form_id in tallies:
-                    counts[form_id] += 1
-                    tallies[form_id].add(row)
+    for form_id, row in _forms_feedback_items(form_ids_by_pk, scope, access):
+        if form_id in tallies:
+            counts[form_id] += 1
+            tallies[form_id].add(row)
     return {fid: tally.stats(counts[fid]) for fid, tally in tallies.items()}
 
 
@@ -2075,10 +2064,10 @@ def get_form_iframe(form_id: str):
     form_id, form, _routed = _public_form(form_id, 'Failed to load form')
     definition = _definition(form)
     language = str(definition.get('language') or fv2.DEFAULT_LOCALE)
-    # (7.66.00: a recall placeholder shows as a respondent with no value sees it, its fallback or nothing, tidied:
-    # the page knows no hidden value, so ``{{event|the workshop}}`` is "the workshop", never the braces)
-    title = recall.shown_without_values(
-        fv2.text_in((definition.get('welcome') or {}).get('title'), language, language) or '') or 'Feedback Form'
+    # A welcome title that recalls a value is never the page's title: the page knows no link's values, and the widget
+    # sets ``document.title`` itself once it renders (so the braces are never the browser tab's, even before it does).
+    welcome_title = fv2.text_in((definition.get('welcome') or {}).get('title'), language, language) or ''
+    title = 'Feedback Form' if not welcome_title or recall.placeholders(welcome_title) else welcome_title
 
     host = app.current_event.request_context.get('domainName', '')
     stage = app.current_event.request_context.get('stage', 'v1')
@@ -2572,22 +2561,16 @@ _RESULT_FIELDS = {'#fid': 'feedback_id', '#rating': 'rating', '#cat': 'category'
 ReadForm = tuple[str, Mapping[str, Any], Mapping[str, Any]]
 
 
-def _forms_feedback_rows(forms: Sequence[ReadForm], workspace: WorkspaceScope | None,
-                         access: category_access.CategoryScope) -> dict[str, list[ResultRow]]:
-    """Each form's feedback items that ``access`` admits (the caller's category access AND source access, as on the
-    stats routes and every feedback read: ``admits_item`` reads ``category`` and ``source_platform``) as results
-    rows, by form id. Each brand partition is read ONCE for all its forms' channels (an ``IN``, as
-    ``_stats_for_forms``), then split by form (7.66.00: a Compare of 11 forms of one brand reads it once, not 11
-    times). An item tagged ``is_test`` is never one (none should exist: test responses are never queued)."""
+def _forms_feedback_items(form_ids_by_partition: Mapping[str, Sequence[str]], workspace: WorkspaceScope | None,
+                          access: category_access.CategoryScope) -> Iterator[tuple[str, Mapping[str, Any]]]:
+    """``(form id, item)`` for each feedback item of the forms that ``access`` admits (the caller's category access
+    AND source access, as on every feedback read: ``admits_item`` reads ``category`` and ``source_platform``), with
+    ``_RESULT_FIELDS``. Each brand partition is read ONCE for all its forms' channels (an ``IN``): the one read of the
+    form cards' stats, Results and Compare (7.66.00: a Compare of 11 forms of one brand reads it once, not 11 times)."""
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
-    definitions = {form_id: definition for form_id, _form, definition in forms}
-    by_partition: dict[str, list[str]] = {}
-    for form_id, form, _definition in forms:
-        by_partition.setdefault(_form_source_pk(dict(form), workspace), []).append(form_id)
-    rows: dict[str, list[ResultRow]] = {form_id: [] for form_id in definitions}
-    for source_pk, form_ids in by_partition.items():
-        for chunk in _chunks(form_ids, _MAX_IN_OPERANDS):
+    for source_pk, form_ids in form_ids_by_partition.items():
+        for chunk in _chunks(list(form_ids), _MAX_IN_OPERANDS):
             values = {f':sc{i}': f'form_{form_id}' for i, form_id in enumerate(chunk)}
             query_kwargs: dict[str, Any] = {
                 'FilterExpression': f"source_channel IN ({', '.join(values)})",
@@ -2595,12 +2578,24 @@ def _forms_feedback_rows(forms: Sequence[ReadForm], workspace: WorkspaceScope | 
                 'ProjectionExpression': ', '.join(_RESULT_FIELDS),
                 'ExpressionAttributeNames': dict(_RESULT_FIELDS),
             }
-            items = _partition_rows(feedback_table, workspace, source_pk, query_kwargs)
-            for item in category_access.filter_items(access, items):
-                form_id = str(item.get('source_channel', '')).removeprefix('form_')
-                row = None if item.get('is_test') or form_id not in rows else _result_row(item, definitions[form_id])
-                if row is not None:
-                    rows[form_id].append(row)
+            for item in category_access.filter_items(access, _partition_rows(feedback_table, workspace, source_pk,
+                                                                             query_kwargs)):
+                yield str(item.get('source_channel', '')).removeprefix('form_'), item
+
+
+def _forms_feedback_rows(forms: Sequence[ReadForm], workspace: WorkspaceScope | None,
+                         access: category_access.CategoryScope) -> dict[str, list[ResultRow]]:
+    """Each form's admitted feedback items (``_forms_feedback_items``) as results rows, by form id. An item tagged
+    ``is_test`` is never one (none should exist: test responses are never queued)."""
+    definitions = {form_id: definition for form_id, _form, definition in forms}
+    by_partition: dict[str, list[str]] = {}
+    for form_id, form, _definition in forms:
+        by_partition.setdefault(_form_source_pk(dict(form), workspace), []).append(form_id)
+    rows: dict[str, list[ResultRow]] = {form_id: [] for form_id in definitions}
+    for form_id, item in _forms_feedback_items(by_partition, workspace, access):
+        row = None if item.get('is_test') or form_id not in rows else _result_row(item, definitions[form_id])
+        if row is not None:
+            rows[form_id].append(row)
     return rows
 
 

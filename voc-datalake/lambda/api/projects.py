@@ -18,6 +18,7 @@ from botocore.exceptions import ClientError
 
 from shared import (
     category_access,
+    custom_models,
     draft_intent,
     methodology,
     persona_feedback_preview,
@@ -2436,7 +2437,8 @@ def _build_persona_items(
             'created_at': now,
             'updated_at': now,
             'llm_metadata': {
-                'model': model_id,
+                # (an imported model by its key, never its ARN: every reader of the persona sees this)
+                'model': custom_models.stored_id(model_id),
                 'prompt_version': PERSONA_PROMPT_VERSION,
                 'generation_time_ms': llm_time
             },

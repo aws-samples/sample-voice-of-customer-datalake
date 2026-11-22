@@ -409,19 +409,12 @@ def _heal_lock(table: Any, agent: Mapping[str, Any], now: datetime) -> bool:
     return True
 
 
-def _record_skip(table: Any, agent: Mapping[str, Any], reason: str) -> str:
-    """Remember a cap skip (``_skip_reason`` returns only cap reasons) the first time it is hit."""
-    if agent.get('last_skip_reason') != reason:
-        store.set_agent_attributes(table, agent['agent_id'], {'last_skip_reason': reason})
-    return reason
-
-
 def _engineering_tick(table: Any, agent: Mapping[str, Any], ctx: Context) -> str:
     """An engineering agent's tick once its lock and caps allow a run: set up, due, then started through
     voc-engineering-start (``engineering.start``)."""
     prepared = engineering.ready(table, agent)
     if prepared is None:
-        return _record_skip(table, agent, 'not_set_up')
+        return store.record_skip(table, agent, 'not_set_up')
     decision = evaluate(agent, ctx, prepared)
     if decision.trigger is None:
         if decision.skip:
@@ -456,7 +449,7 @@ def process_agent(table: Any, agent: Mapping[str, Any], ctx: Context) -> str:
         return 'active_run'
     reason = _skip_reason(agent, ctx.now)
     if reason:
-        return _record_skip(table, agent, reason)
+        return store.record_skip(table, agent, reason)
     if store.is_engineering_agent(agent):
         return _engineering_tick(table, agent, ctx)
     decision = evaluate(agent, ctx)

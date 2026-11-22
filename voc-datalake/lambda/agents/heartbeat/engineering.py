@@ -118,18 +118,29 @@ def heal(table: Any, agent: Mapping[str, Any], run: Mapping[str, Any], now: date
     return False
 
 
+def _token_expired(connection: Mapping[str, Any]) -> bool:
+    """Whether the connection's fine-grained token expired or is not set (``token_days_left``: 0 or fewer)."""
+    left = eng_runs.token_days_left(connection)
+    return left is not None and left <= 0
+
+
 def start(table: Any, agent: Mapping[str, Any], prepared: Ready, start_with: eng_runs.AgentStart,
           now: datetime) -> str:
-    """Start the agent's run (``start_agent_run``); the tick's outcome for the agent."""
+    """Start the agent's run (``start_agent_run``); the tick's outcome for the agent. An expired or unset
+    fine-grained token of a flow that pushes is refused before anything is written (``run_connection``): a skip,
+    ``token_expired``, on every due tick until its owner replaces it, never an error."""
     if not owner_is_admin(agent):
-        store.set_agent_attributes(table, agent['agent_id'], {'last_skip_reason': 'owner_not_admin'})
-        return 'owner_not_admin'
+        return store.record_skip(table, agent, 'owner_not_admin')
     try:
         started = eng_runs.start_agent_run(table, agent, prepared.workflow, prepared.connection, start_with,
                                            client=start_client(), function=os.environ[eng_runs.START_FUNCTION_ENV],
                                            now=now)
     except store.IssueClaimed:
         return 'issue_claimed'   # (another tick or agent took the issue meanwhile: the next tick takes the next one)
+    except ConflictError:
+        if _token_expired(prepared.connection):
+            return store.record_skip(table, agent, 'token_expired')
+        raise
     if started.run is None or started.answer is None:
         return 'lock_or_cap'
     logger.info('Engineering agent run', extra={'agent_id': agent['agent_id'], 'run_id': started.run['run_id'],

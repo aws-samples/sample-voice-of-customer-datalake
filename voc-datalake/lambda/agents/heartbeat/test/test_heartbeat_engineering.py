@@ -227,6 +227,21 @@ class TestTick:
             assert stored_agent(env.agents, agent['agent_id'])['last_skip_reason'] == 'not_set_up'
             assert client.sent == []
 
+    def test_an_expired_fine_grained_token_skips_and_writes_no_run_lock_or_claim(self) -> None:
+        """7.71.00 (Q16): the start's token refusal (``run_connection``, a ``ConflictError``) is the tick's skip reason
+        on every due tick, never an error, and nothing is written: no run, no lock, no issue claim."""
+        with _env() as (env, feedback, client):
+            agent = _agent(env)   # (the bug fixer's flow pushes)
+            env.agents.put_item(Item={**CONNECTION, 'connection_kind': 'fine_grained', 'credential_set': True,
+                                      'token_expires_at': '2026-11-01'})
+            _issue(feedback, 42, at=NOW - timedelta(hours=2))
+            assert hb.run_heartbeat(_context(), now=NOW)['outcomes'] == {'token_expired': 1}
+            stored = stored_agent(env.agents, agent['agent_id'])
+            assert (_runs(env, agent), client.sent, stored.get('active_run_id'), stored['last_skip_reason']) == (
+                [], [], None, 'token_expired')
+            assert not store.issue_claimed(env.agents, REPO, 42)
+            assert hb.run_heartbeat(_context(), now=NOW + timedelta(hours=1))['outcomes'] == {'token_expired': 1}
+
     def test_a_refused_start_fails_the_run_and_keeps_the_issue_claimed(self) -> None:
         with _env(start=Start('RuntimeRefused')) as (env, feedback, client):
             agent = _agent(env)

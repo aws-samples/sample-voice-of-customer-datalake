@@ -2,6 +2,8 @@
  * Small runtime helpers: usage mapping, reasoning codec, error mapping,
  * system prompt, emitter framing and source de-duplication.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import { ApiError, ServiceError, ValidationError } from '../../lib/errors.js';
 import { nth } from '../../lib/nth-fixtures.js';
@@ -33,6 +35,20 @@ describe('usage', () => {
 
   it('reports nothing when no turn reported usage', () => {
     expect(toAguiUsage(addUsage(emptyUsage(), null), 'm')).toStrictEqual([]);
+  });
+
+  it('names an imported custom model by its key, never its ARN (it names the account)', () => {
+    // The CDK specs' registry: `mine` is an imported model (lib/test-support/custom-models-env.json).
+    vi.stubEnv('CUSTOM_MODELS', readFileSync(join(__dirname, '..', '..', '..', '..', '..', 'lib', 'test-support',
+      'custom-models-env.json'), 'utf8'));
+    try {
+      const totals = addUsage(emptyUsage(), { inputTokens: 3, outputTokens: 4, totalTokens: 7 });
+      const [usage] = toAguiUsage(totals, 'arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456');
+      expect(usage?.model).toBe('mine');
+      expect(JSON.stringify(usage)).not.toContain('111111111111');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

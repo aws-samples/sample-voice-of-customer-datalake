@@ -345,9 +345,7 @@ def save_model_settings():
     body = json_object_body(app)
     if 'model_id' not in body:
         raise ValidationError('model_id is required (an allowlisted id, or null to clear)')
-    # (7.66.00: a custom model may be named by its key, an imported one's as readers are shown it: its ARN here)
-    model_id = custom_models.by_key_or_id(body.get('model_id')) if isinstance(body.get('model_id'), str) else \
-        body.get('model_id')
+    model_id = body.get('model_id')
     surface = body.get('surface')
     surfaces = offered_picker_surfaces()
     if surface is not None and surface not in surfaces:
@@ -390,8 +388,7 @@ def run_model_test():
     """
     require_admin(app.current_event.raw_event)
     body = json_object_body(app)
-    model_id = custom_models.by_key_or_id(body.get('model_id')) if isinstance(body.get('model_id'), str) else \
-        body.get('model_id')
+    model_id = body.get('model_id')
     probe = body.get('probe', 'basic')
     if probe not in model_capacity.PROBES:
         raise ValidationError(f"probe must be one of: {', '.join(model_capacity.PROBES)}")

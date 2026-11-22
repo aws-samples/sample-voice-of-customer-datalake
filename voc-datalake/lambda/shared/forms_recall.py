@@ -18,8 +18,7 @@ one): a recall text's placeholder that names nothing (``recall_unknown``), a que
 (``recall_not_before``) or one whose answer is never recalled (``recall_type``), and any placeholder in a text where
 recall never works.
 ``shown_as_ids`` is how the server shows a text with placeholders to a reader of its results (a CSV header, an item's
-text): ``[id]``, never a respondent's value. ``shown_without_values`` is how a respondent with no value sees one, the
-widget's rules for a missing value (the cases' ``render`` with no values): the iframe page's ``<title>`` (7.66.00).
+text): ``[id]``, never a respondent's value. How a respondent sees a text is the widget's alone (the cases' ``render``).
 
 Pure: no AWS client, no I/O.
 """
@@ -30,7 +29,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-__all__ = ['PLACEHOLDER', 'shown_as_ids', 'shown_without_values', 'unresolved_placeholders']
+__all__ = ['PLACEHOLDER', 'shown_as_ids', 'unresolved_placeholders']
 
 #: ``{{`` and ``}}`` around a text without braces: one placeholder (``{{{x}}}`` holds ``{{x}}`` and two loose braces).
 PLACEHOLDER: Final = re.compile(r'\{\{([^{}]*)\}\}')
@@ -76,67 +75,6 @@ def placeholders(text: object) -> list[Placeholder]:
 def shown_as_ids(text: str) -> str:
     """``text`` with each placeholder shown as ``[id]``: a results reader's view, never a respondent's value."""
     return PLACEHOLDER.sub(lambda match: f"[{match.group(1).partition('|')[0].strip()}]", text)
-
-
-#: The widget's rules for a text whose placeholder left nothing (lambda/api/static/feedback-widget.js ``tidyGaps``,
-#: pinned by the cases' ``render``): a noncharacter stands for the gap while the text is tidied.
-_GAP: Final = '\uffff'
-_SPACE: Final = '[ \u00a0]*'
-_SEPARATORS: Final = '[,;:\u3001\uff0c]'   # (the ideographic and the fullwidth comma too)
-_TERMINALS: Final = '[.!?\u2026\u3002\uff01\uff1f]'   # (the ellipsis, the ideographic full stop, the fullwidth ! and ?)
-
-
-def _gap_rule(pattern: str) -> re.Pattern[str]:
-    return re.compile(pattern.replace('G', _GAP))
-
-
-#: In this order: a gap at a line's start; before closing punctuation (with the separator before it); before a
-#: separator or a closing bracket; at a line's end or the text's end (with its separator); between words (one space);
-#: anything left.
-_GAP_RULES: Final = (
-    (_gap_rule('\n' + _SPACE + 'G' + _SPACE), '\n'),
-    (_gap_rule(_SEPARATORS + '?' + _SPACE + 'G' + _SPACE + '(?=' + _TERMINALS + ')'), ''),
-    (_gap_rule(_SPACE + 'G' + _SPACE + '(?=' + _SEPARATORS + '|[)\\]])'), ''),
-    (_gap_rule(_SEPARATORS + '?' + _SPACE + 'G' + _SPACE + '(?=\n|\\Z)'), ''),
-    (_gap_rule('[ \u00a0]+G[ \u00a0]*|[ \u00a0]*G[ \u00a0]+'), ' '),
-    (_gap_rule('G'), ''),
-)
-_GAP_RUNS: Final = _gap_rule('G(?:' + _SPACE + _SEPARATORS + '?' + _SPACE + 'G)+')
-_GAP_BRACKETS: Final = _gap_rule('[([]' + _SPACE + 'G' + _SPACE + '[)\\]]')
-_GAP_START: Final = _gap_rule('\\A' + _SPACE + 'G' + _SPACE + '(' + _SEPARATORS + _SPACE + ')?')
-
-
-def _tidied(gapped: str) -> str:
-    """The widget's ``tidyGaps``: no doubled space, no space or separator before closing punctuation, no empty
-    brackets, no separator at either end; a text that lost a leading separator starts with a capital."""
-    text = _GAP_BRACKETS.sub(_GAP, _GAP_RUNS.sub(_GAP, gapped))
-    start = _GAP_START.match(text)
-    if start:
-        text = text[start.end():]
-        if start.group(1) is not None:
-            text = text[:1].upper() + text[1:]
-    for rule, replacement in _GAP_RULES:
-        text = rule.sub(replacement, text)
-    return text
-
-
-def shown_without_values(text: str) -> str:
-    """``text`` as a respondent with no value sees it (the widget's ``recallText`` with neither a hidden value nor an
-    answer): each placeholder its fallback, else nothing, the text tidied around the gaps."""
-    if '{{' not in text:
-        return text
-    gaps = 0
-
-    def filled(match: re.Match[str]) -> str:
-        nonlocal gaps
-        _key, bar, fallback = match.group(1).partition('|')
-        if bar and fallback.strip():
-            return fallback.strip()
-        gaps += 1
-        return _GAP
-
-    text = PLACEHOLDER.sub(filled, text.replace(_GAP, ''))
-    return _tidied(text) if gaps else text
 
 
 def _texts(value: object) -> Iterator[tuple[str, str]]:

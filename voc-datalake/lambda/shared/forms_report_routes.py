@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Final
 
 from aws_lambda_powertools.event_handler.api_gateway import Router
 
-from shared import assist_jobs, forms_v2_report_ai
+from shared import assist_jobs, custom_models, forms_v2_report_ai
 from shared.api import get_caller_subject
 from shared.delete_audit import actor_from_event
 from shared.dynamo_values import plain
@@ -128,6 +128,8 @@ def run_job(config: dict, scope: WorkspaceScope | None) -> dict:
         'responses_counted': len(request['answers']), 'last_response_at': request['last_response_at'],
         'filters': request['filters'], 'response_ids': [answer['response_id'] for answer in request['answers']],
         'themes': result['themes'],
-        'ai': {'model': result['model'], 'prompt_version': result['prompt_version'], 'summary': result['summary']},
+        # (an imported model by its key, never its ARN: every editor of the form reads the report)
+        'ai': {'model': custom_models.stored_id(str(result['model'])), 'prompt_version': result['prompt_version'],
+               'summary': result['summary']},
     }, ConditionExpression='attribute_not_exists(sk)')
     return {'success': True, 'form_id': request['form_id'], 'report_id': report_id}

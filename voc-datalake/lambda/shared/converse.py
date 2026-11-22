@@ -16,10 +16,11 @@ from shared.aws import get_bedrock_client
 from shared.custom_models import JSON_INSTRUCTION, custom_model
 from shared.logging import logger, metrics
 from shared.model_config import (
+    CHARS_PER_TOKEN,
     DEFAULT_SURFACE,
     SERVICE_TIERS,
     apply_model_profile,
-    custom_window_room,
+    context_window_tokens,
     fallback_chain,
     get_active_model_id,
     invocation_model_id,
@@ -776,10 +777,12 @@ def _converse_on_model(
                 empty_budget_raises += 1
                 kwargs, result, stop_reason = retried
                 continue
-            # (7.66.00) A custom model's window: the prompt, the answer so far and the next turn's maxTokens must fit,
-            # else the answer so far is kept, truncated, rather than sent past the window (a 400 that loses it all).
+            # (7.66.00) The model's window (a custom model's is its registry's contextWindow): the prompt, the answer
+            # so far and the next turn's maxTokens must fit, else the answer so far is kept, truncated, rather than sent
+            # past the window (a 400 that loses it all).
             sent_chars = len(system_prompt) + len(prompt) + len(result) + len(_CONTINUE_PROMPT)
-            if not custom_window_room(used_model, sent_chars, int(kwargs['inferenceConfig']['maxTokens'])):
+            next_turn = int(kwargs['inferenceConfig']['maxTokens'])
+            if sent_chars // CHARS_PER_TOKEN + next_turn > context_window_tokens(used_model):
                 logger.warning(f"[BEDROCK] Step '{step_name}' stops continuing: the next turn would not fit "
                                f"{used_model}'s context window ({len(result)} chars kept, truncated)")
                 break

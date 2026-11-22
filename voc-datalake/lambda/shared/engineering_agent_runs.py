@@ -538,9 +538,16 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
         fields['feedback_count'] = start.feedback.count
     if flow.expansion:   # (7.52.00: the calls its flow expanded, as the run's copy of it records them)
         fields['expansion'] = [dict(call) for call in flow.expansion]
-    # The connection's refusals before anything is written, as POST /agents/engineering/runs refuses them (7.66.00):
-    # a connection not stored (400), an expired or unset fine-grained token of a flow that pushes (409).
-    run_connection(connection, None if start.issue is None else start.issue.number, pushes=flow.pushes)
+    plan = StartPlan(run_id=engineering_run_id, workflow_id=str(agent.get('workflow_id')), flow=flow,
+                     connection_id=str(settings.get('connection')), connection=connection,
+                     language=str(settings.get('language')), goal=goal, actor=start.actor,
+                     issue=None if start.issue is None else start.issue.number, feedback=start.feedback,
+                     prd=start.prd, via={'agent_id': agent['agent_id'], 'agent_run_id': run_id, 'trigger': start.trigger},
+                     model_choice=start.model_choice)
+    # The start's request before anything is written (7.71.00), so its refusals, as POST /agents/engineering/runs's
+    # (a connection not stored: 400; an expired or unset fine-grained token of a flow that pushes: 409), leave no
+    # run, no lock and no claim.
+    payload = start_request(plan)
     request = store.RunStart(
         trigger=start.trigger, requested_by=start.requested_by, workflow_revision=flow.revision,
         trigger_detail=start.trigger_detail, counts_against_daily_cap=start.counts_against_daily_cap,
@@ -551,21 +558,6 @@ def start_agent_run(table: Any, agent: Mapping[str, Any], workflow: Mapping[str,
         return AgentRunStarted(None)
     if claim is not None and not start.claim:
         store.claim_issue_if_free(table, claim)   # (a rerun keeps an earlier claim; a first run takes it)
-    plan = StartPlan(run_id=engineering_run_id, workflow_id=str(agent.get('workflow_id')), flow=flow,
-                     connection_id=str(settings.get('connection')), connection=connection,
-                     language=str(settings.get('language')), goal=goal, actor=start.actor,
-                     issue=None if start.issue is None else start.issue.number, feedback=start.feedback,
-                     prd=start.prd, via={'agent_id': agent['agent_id'], 'agent_run_id': run_id, 'trigger': start.trigger},
-                     model_choice=start.model_choice)
-    try:
-        payload = start_request(plan)
-    except (ConflictError, ValidationError) as refused:
-        # (a backstop: the checks above refuse first) the run fails, its lock is freed and, when this run wrote the
-        # issue's claim, the claim goes too: nothing began, so the issue may start a run again
-        store.finish_run(table, agent['agent_id'], run_id, store.RUN_FAILED, now=now, error=str(refused))
-        if claim is not None:
-            store.release_issue_claim(table, claim)
-        raise
     answer = invoke_start(client, function, payload)
     if answer.outcome in ('started', 'uncertain'):
         store.mark_engineering_running(table, agent['agent_id'], run_id)

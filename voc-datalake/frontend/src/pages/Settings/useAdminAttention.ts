@@ -6,8 +6,8 @@
  * - the enabled people with no way of working saved (`GET /users`) → Privacy & access → Users;
  * - the AI models this account cannot call (`GET /settings/model/capacity`) → AI models;
  * - (7.60.00) the fine-grained tokens to replace, expiring within 14 days, expired, not set or of an unknown expiry
- *   (`GET /agents/engineering/connections`, while the Engineering agents tab is shown) → Engineering agents → GitHub
- *   connections, which lists them.
+ *   (`GET /agents/engineering/connections`, while the Engineering agents tab is shown) → Agents → Connections, which
+ *   lists them (7.66.00). No tab lists them, so they badge no tab (7.71.00): General's strip alone says so.
  *
  * Shown twice, compactly: a count badge on each tab concerned (the tab row and the phone's select, Settings.tsx) and,
  * on General (the first tab), one strip that says what and links to it (AdminAttention.tsx).
@@ -80,18 +80,19 @@ export function useAdminAttention(viewer: Pick<AdminViewer, 'isAdmin' | 'agentsS
   const copy = usePluginCopy()
   const { paused, waysUnset, modelsBlocked, tokens } = useAttentionFacts(viewer, apiEndpoint !== '')
   const list = paused.map((plugin) => copy(plugin).name).join(', ')
-  const candidates: readonly (AttentionItem & { readonly tab: AdminTabId; readonly count: number })[] = [
+  // (`tab`: the tab whose badge counts it; null for one no tab lists)
+  const candidates: readonly (AttentionItem & { readonly tab: AdminTabId | null; readonly count: number })[] = [
     { tab: 'sources', count: paused.length, key: 'sources', text: t('attention.sourcesPaused', { count: paused.length, list }),
       action: t('attention.reviewSources'), to: adminPath({ tab: 'sources', section: 'plugins' }) },
     { tab: 'access', count: waysUnset, key: 'ways', text: t('attention.waysUnset', { count: waysUnset }),
       action: t('attention.openUsers'), to: adminPath({ tab: 'access', section: 'users' }) },
     { tab: 'ai', count: modelsBlocked, key: 'models', text: t('attention.modelsBlocked', { count: modelsBlocked }),
       action: t('attention.openModels'), to: adminPath({ tab: 'ai' }) },
-    { tab: 'agents', count: tokens, key: 'tokens', text: t('attention.tokensToReplace', { count: tokens }),
-      // (7.66.00: where a token is replaced, Agents → Connections)
+    { tab: null, count: tokens, key: 'tokens', text: t('attention.tokensToReplace', { count: tokens }),
+      // (7.66.00: where a token is replaced, Agents → Connections; no Administration tab lists them, 7.71.00)
       action: t('attention.openConnections'), to: agentsPath({ view: 'connections' }) },
   ]
   const shown = candidates.filter((candidate) => candidate.count > 0)
-  const counts = new Map(shown.map((candidate) => [candidate.tab, candidate.count]))
+  const counts = new Map(shown.flatMap((candidate) => (candidate.tab === null ? [] : [[candidate.tab, candidate.count] as const])))
   return { items: shown.map(({ tab: _tab, count: _count, ...item }) => item), countOf: (tab) => counts.get(tab) ?? 0 }
 }

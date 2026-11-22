@@ -306,24 +306,6 @@ def test_an_agents_start_on_an_expired_token_writes_nothing_when_its_flow_pushes
         assert _nothing_held(env, agent['agent_id']) == [[], None, False]
 
 
-def test_a_start_request_refused_after_the_run_was_written_frees_the_lock_and_the_claim(
-        monkeypatch: pytest.MonkeyPatch) -> None:
-    """The backstop: a refusal of ``start_request`` once the run is written fails it and releases the agent's lock
-    and the issue claim this run wrote (nothing began)."""
-    def refused(_plan: Any) -> dict:
-        raise ConflictError('refused late')
-
-    with agents_env() as env:
-        agent, row = _engineering_agent(env)
-        monkeypatch.setattr(eng_runs, 'start_request', refused)
-        client = Lambda()
-        with pytest.raises(ConflictError, match='refused late'):
-            eng_runs.start_agent_run(env.agents, agent, store.get_workflow(env.agents, agent['workflow_id']), row,
-                                     _start(), client=client, function='f', now=NOW)
-        runs_, lock, claimed = _nothing_held(env, agent['agent_id'])
-        assert [[run['status'] for run in runs_], lock, claimed, client.sent] == [[store.RUN_FAILED], None, False, []]
-
-
 def test_an_unreadable_connection_is_503() -> None:
     class Broken:
         def get_item(self, **_kwargs: Any) -> dict:

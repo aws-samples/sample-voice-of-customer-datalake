@@ -113,4 +113,16 @@ describe('Results responses', () => {
     expect(within(sheet).getByText('Quoted in the report')).toBeInTheDocument()
     expect(getResponses).toHaveBeenCalledTimes(3)   // (found on the third page: no fourth read)
   })
+
+  it('stops reading on for an open response once a page fails, and leaves Load more to retry it', async () => {
+    // (7.71.00: a failing page 2 was asked for again without end)
+    getResponses
+      .mockResolvedValueOnce({ responses: [response('r_1')], next_cursor: 'c_2' })
+      .mockRejectedValueOnce(new Error('throttled'))
+    renderWithDraft(<ResultsTab />, RESULTS_FORM, { rest: ['responses', 'r_far'] })
+    await waitFor(() => expect(getResponses).toHaveBeenCalledTimes(2))
+    await new Promise((resolve) => { setTimeout(resolve, 100) })
+    expect(getResponses).toHaveBeenCalledTimes(2)
+    expect(await screen.findByRole('button', { name: 'Load more' })).toBeEnabled()
+  })
 })

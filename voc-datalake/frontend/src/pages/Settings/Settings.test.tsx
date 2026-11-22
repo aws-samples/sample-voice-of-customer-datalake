@@ -219,7 +219,7 @@ describe('needs attention', () => {
     expect(screen.getByRole('tab', { name: 'Sources' })).toBeInTheDocument()
   })
 
-  it("counts the fine-grained tokens to replace (7.60.00) on Engineering agents' GitHub connections", async () => {
+  it('says the fine-grained tokens to replace (7.60.00) on General only, linking to Agents → Connections', async () => {
     auth.agents = true
     listConnections.mockResolvedValue({ limit: 50, connections: [
       tokenConnection('c-soon', 'partner-org/sdk', 3), tokenConnection('c-fine', 'partner-org/docs', 60),
@@ -230,7 +230,9 @@ describe('needs attention', () => {
     expect(await screen.findByRole('link', { name: 'Open GitHub connections' })).toHaveAttribute('href', '/agents/connections')
     expect(screen.getByRole('heading', { name: 'Needs attention' }).closest('[role="status"]'))
       .toHaveTextContent('2 fine-grained tokens expire soon or need replacing')
-    expect(screen.getByRole('tab', { name: 'Engineering agents, 2 need attention' })).toBeInTheDocument()
+    // (7.71.00: the Engineering agents tab no longer lists them, so its badge counts none)
+    expect(screen.getByRole('tab', { name: 'Engineering agents' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /Engineering agents, \d+ needs? attention/ })).not.toBeInTheDocument()
   })
 
   it('reads no connections while the Engineering agents tab is hidden', async () => {

@@ -8,6 +8,7 @@
  */
 import type { TokenUsage as BedrockUsage } from '@aws-sdk/client-bedrock-runtime';
 import type { TokenUsage } from '@ag-ui/core';
+import { shownModelId } from '../../bedrock/custom-models.js';
 
 export interface UsageTotals {
   uncachedInput: number;
@@ -32,12 +33,16 @@ export function addUsage(totals: UsageTotals, usage: BedrockUsage | null): Usage
   };
 }
 
+/**
+ * The run's usage as RUN_FINISHED reports it to the person: an imported custom model by its registry key, never its
+ * ARN, which names the account (bedrock/custom-models.ts `shownModelId`, as `assistant.context` shows it).
+ */
 export function toAguiUsage(totals: UsageTotals, modelId: string): TokenUsage[] {
   if (totals.turns === 0) return [];
   const inputTokens = totals.uncachedInput + totals.cacheRead + totals.cacheWrite;
   return [{
     ...(modelId.includes('anthropic') ? { provider: 'anthropic' } : {}),
-    model: modelId,
+    model: shownModelId(modelId),
     inputTokens,
     outputTokens: totals.output,
     totalTokens: inputTokens + totals.output,

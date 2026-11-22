@@ -36,13 +36,6 @@ def test_the_grammar_is_the_builders_and_the_widgets(case):
     assert found == case['placeholders']
 
 
-@pytest.mark.parametrize('case', [case for case in CASES['render'] if not case['values']],
-                         ids=[case['text'] for case in CASES['render'] if not case['values']])
-def test_a_text_without_values_reads_as_the_widget_shows_it(case):
-    # (7.66.00: the iframe page's title, shown_without_values: the widget's rules for a missing value)
-    assert recall.shown_without_values(case['text']) == case['output']
-
-
 @pytest.mark.parametrize('case', CASES['publish'], ids=[case['name'] for case in CASES['publish']])
 def test_only_what_respondents_can_be_shown_blocks_a_publish(case):
     # (review round 1 of the second gate, 7.66.00: a switched-off welcome, Other or None row is never shown)

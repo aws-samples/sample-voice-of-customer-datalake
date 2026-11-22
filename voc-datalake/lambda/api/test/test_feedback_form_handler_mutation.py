@@ -541,8 +541,9 @@ class TestListingForms:
         logger.exception.assert_called_once_with('Error fetching stats for the form list: slow')
 
 
-LIST_PROJECTION = ('feedback_id, rating, category, source_platform, source_channel, metadata, '
-                   'source_created_at')
+#: The cards' stats read the Results' own projection (7.71.00: one partition-once read, ``_forms_feedback_items``).
+LIST_PROJECTION = ', '.join(h._RESULT_FIELDS)
+LIST_NAMES = dict(h._RESULT_FIELDS)
 
 
 def _rating_headline(average: float, count: int = 1) -> dict:
@@ -579,14 +580,14 @@ class TestTheListStatsReadEachPartitionOnce:
         acme = {'KeyConditionExpression': Key('pk').eq('SOURCE#Acme'),
                 'FilterExpression': 'source_channel IN (:sc0, :sc1)',
                 'ExpressionAttributeValues': {':sc0': 'form_a', ':sc1': 'form_b'},
-                'ProjectionExpression': LIST_PROJECTION}
+                'ProjectionExpression': LIST_PROJECTION, 'ExpressionAttributeNames': LIST_NAMES}
         assert [c.kwargs for c in feedback.query.call_args_list] == [
             acme,
             {**acme, 'ExclusiveStartKey': {'k': 1}},
             {'KeyConditionExpression': Key('pk').eq('SOURCE#Beta'),
              'FilterExpression': 'source_channel IN (:sc0)',
              'ExpressionAttributeValues': {':sc0': 'form_c'},
-             'ProjectionExpression': LIST_PROJECTION},
+             'ProjectionExpression': LIST_PROJECTION, 'ExpressionAttributeNames': LIST_NAMES},
         ]
 
     def test_a_source_restricted_caller_counts_only_visible_submissions(self, feedback):

@@ -222,10 +222,9 @@ def shown_id(model_id: str | None, *, admin: bool) -> str | None:
     return custom.key if custom is not None and custom.source == 'imported' and not admin else model_id
 
 
-def by_key_or_id(value: object) -> str | None:
-    """The id of the custom model ``value`` names by its ``key`` (an imported model's, as a reader is shown it),
-    else ``value`` itself: the server resolves a key to its ARN (7.66.00)."""
-    if not isinstance(value, str):
-        return None
-    found = next((model for model in custom_models() if model.key == value), None)
-    return found.id if found is not None else value
+def stored_id(model_id: str) -> str:
+    """``model_id`` as a row that every reader sees stores it (a persona's and a revised document's ``llm_metadata``, a
+    form Report's AI summary): an imported model's ``key``, never its ARN, which names the account (7.71.00); any
+    other id as it is."""
+    return shown_id(model_id, admin=False) or model_id
+

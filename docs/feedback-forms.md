@@ -293,8 +293,8 @@ shows it through the widget's own preview (since 7.63.00: no second copy of the 
   nothing: the widget then tidies the text around the gap (no doubled space, no space or comma left before `?`, `!`,
   `.`, no empty brackets, no separator at either end; gaps side by side or split only by a separator are one gap), so
   "How was {{event}}?" reads "How was?", "Thanks, {{name}}!" reads "Thanks!" and "Thanks {{name}}, {{company}}!"
-  reads "Thanks!". The iframe page's title (the browser tab) is the welcome title as a respondent with no value sees
-  it (7.66.00: the server knows no link's values), so "{{event|the workshop}}" is "the workshop".
+  reads "Thanks!". The iframe page's title (the browser tab) is "Feedback Form" while the welcome title recalls a
+  value (the server knows no link's values), until the widget renders and sets the tab's title itself.
 - **Safe.** Values go in as text, never as markup, and an id is looked up only among the form's own fields (`{{constructor}}`
   is an unknown id: nothing). `__proto__`, `constructor` and `prototype` stay reserved for hidden fields.
 - **Publishing is the one rule** (since 7.63.00: a draft's save is never refused for a placeholder, so it keeps one

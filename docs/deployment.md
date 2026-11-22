@@ -1693,11 +1693,13 @@ or `us.` profile is refused ([eu-deployment.md](eu-deployment.md#your-own-models
 
 - **The picker.** Administration → AI models lists the custom models of a surface under **Your models**
   (`GET /settings/model` → `custom_models`). To anyone but an administrator an imported model is its `key` and `label`
-  only (its id is an ARN naming the account and the Region), a surface's pick of it and the assistant's
-  `assistant.context` `model` its `key`; a save or a Test may name it by its key, which the server resolves to the ARN
-  (7.66.00). Only a per-surface pick can name one: the pick for all surfaces, the
-  deployment's default, the e2e test users' model and the capacity fallback stay Claude. A pick whose model is later
-  removed from the registry falls back to the surface default, and the settings and inference logs say so. For the
+  only (its id is an ARN naming the account and the Region), and so is a surface's pick of it (7.66.00); an
+  administrator, who saves and tests the picks, is sent its ARN. What every reader sees names it by its key: the
+  assistant's `assistant.context` `model` and RUN_FINISHED usage, and a persona's, a revised document's and a form
+  Report's model (7.71.00; one stored before keeps the id it stored). Only a per-surface pick can name one: the pick
+  for all surfaces, the deployment's default, the e2e test users' model and the capacity fallback stay Claude. A pick
+  whose model is later removed from the registry falls back to the surface default, and the settings and inference
+  logs say so. For the
   model a surface resolves to, the card shows a **Your model** badge (and EU residency), where its inference runs
   ("Runs in eu-central-1 · imported model"), its price, a note that the prompts are tuned for Claude and, for an
   imported model, that its first request after a pause can take tens of seconds or minutes (Custom Model Import

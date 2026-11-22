@@ -470,20 +470,15 @@ class TestThePublicConfig:
                      "VoCFeedbackForm.linkLanguage = params.get('lang');", "key.indexOf('hf_') === 0"):
             assert line in page
 
-
-    @pytest.mark.parametrize(('title', 'shown'), [
-        ('{{event|the workshop}}', 'the workshop'),
-        ('Jak było na {{event}}?', 'Jak było na?'),
-        ('Dzięki {{name}}, {{company}}!', 'Dzięki!'),
-        ('{{event}}', 'Feedback Form'),
-    ])
-    def test_the_iframe_page_s_title_shows_a_placeholder_as_a_respondent_with_no_value_sees_it(
-            self, lambda_context, title, shown):
-        # (review round 1 of the second gate, 7.66.00: its fallback or nothing, tidied; never the braces, never a value)
+    @pytest.mark.parametrize('title', ['{{event|the workshop}}', 'Jak było na {{event}}?', 'Dzięki {{name}}, {{company}}!'])
+    def test_a_welcome_title_that_recalls_a_value_leaves_the_page_s_title_feedback_form(self, lambda_context, title):
+        # (7.71.00: the page knows no link's values and the widget sets document.title itself once it renders, so a
+        # recall placeholder is never the tab's title, neither its braces nor a guess at its value)
         form = _create(lambda_context, {**V2_FORM, 'welcome': {'enabled': True, 'title': {'pl': title}},
                                         'hidden_fields': [{'id': 'event'}, {'id': 'name'}, {'id': 'company'}]})
         page = _call(lambda_context, 'GET', f"/feedback-forms/{form['form_id']}/iframe", claims={}, raw=True)[1]['body']
-        assert f'<title>{shown}</title>' in page
+        assert '<title>Feedback Form</title>' in page
+        assert '{{' not in page.split('<title>', 1)[1].split('</title>', 1)[0]
 
 
 # ── The submit ──────────────────────────────────────────────────────────────────────────────────────────────────

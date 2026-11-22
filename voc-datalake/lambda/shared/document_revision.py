@@ -56,7 +56,7 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared import ai_mode, category_access
+from shared import ai_mode, category_access, custom_models
 from shared import document_comments as comments
 from shared.assist_jobs import COMPLETED
 from shared.converse import ConverseResult, answering_model, converse_detailed
@@ -384,8 +384,9 @@ def _default_invoke(prompt: str, system: str) -> ConverseResult:
 
 
 def pass_llm_metadata(model_id: str, prompt_version: str = REVISE_PROMPT_VERSION) -> dict[str, str]:
-    """The ``llm_metadata`` of a revised version: ``{model, prompt_version}`` (the shape personas use)."""
-    return {'model': model_id, 'prompt_version': prompt_version}
+    """The ``llm_metadata`` of a revised version: ``{model, prompt_version}`` (the shape personas use; an imported
+    model by its key, never its ARN: every reader of the document sees it)."""
+    return {'model': custom_models.stored_id(model_id), 'prompt_version': prompt_version}
 
 
 def new_revise_id() -> str:

@@ -30,7 +30,7 @@ from botocore.exceptions import ClientError
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
 from shared.ids import timestamped_id
 from shared.ingest_tables import table_view
-from shared.library_extract import FORMATS, MAX_NATIVE_IMAGE_BYTES, MAX_UPLOAD_BYTES, format_of, is_native
+from shared.library_extract import FORMATS, MAX_NATIVE_IMAGE_BYTES, MAX_UPLOAD_BYTES, MODEL_METHOD, format_of, is_native
 from shared.library_keys import (
     ITEM_SK_PREFIX,
     SLUG_PATTERN,
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'MAX_ITEMS', 'PUBLIC_FIELDS', 'Actor', 'create_item', 'delete_item_rows', 'get_item', 'list_items',
-    'public_view', 'require_item', 'set_status', 'update_item', 'validate_new_item',
+    'public_view', 'require_item', 'sent_as_a_file', 'set_status', 'update_item', 'validate_new_item',
 ]
 
 MAX_ITEMS: Final = 1000
@@ -223,9 +223,18 @@ def upload_is_over(item: Mapping[str, Any]) -> bool:
         datetime.now(UTC) - created).total_seconds() >= STALE_UPLOAD_SECONDS
 
 
+def sent_as_a_file(item: Mapping[str, Any]) -> bool:
+    """Whether the assistant may get the item's file itself: a native one, but never a scanned PDF (its text came from
+    Amazon Bedrock, ``MODEL_METHOD``: a PDF sent with no citations is read by its empty text layer), whose passages
+    are searched instead (7.66.00). The one rule of the assistant's context (shared/library_routes.py) and of what an
+    item says of it (``public_view``'s ``native``, 7.71.00)."""
+    return bool(item.get('native')) and not (item.get('format') == 'pdf' and item.get('method') == MODEL_METHOD)
+
+
 def public_view(item: Mapping[str, Any]) -> dict[str, Any]:
-    """An item as a client sees it (numbers as ints; ``stale`` when its extraction is over, ``extraction_is_over``, or
-    its upload is, ``upload_is_over``)."""
+    """An item as a client sees it (numbers as ints; ``native`` whether the assistant is sent the file itself,
+    ``sent_as_a_file``; ``stale`` when its extraction is over, ``extraction_is_over``, or its upload is,
+    ``upload_is_over``)."""
     view: dict[str, Any] = {}
     for field in PUBLIC_FIELDS:
         value = item.get(field)
@@ -234,6 +243,8 @@ def public_view(item: Mapping[str, Any]) -> dict[str, Any]:
         view[field] = int(value) if hasattr(value, 'as_integer_ratio') and not isinstance(value, bool | float) \
             else value
     view.setdefault('tags', [])
+    if 'native' in view:
+        view['native'] = sent_as_a_file(item)
     if extraction_is_over(item) or upload_is_over(item):
         view['stale'] = True
     return view

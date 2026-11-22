@@ -18,12 +18,17 @@ from test_settings_form_drafts import world as drafts_world
 
 import settings_handler
 from shared import assist_jobs, forms_report_routes, forms_v2_report_ai
+from shared.custom_models import CUSTOM_MODELS_ENV
+from shared.test.repo_paths import repo_root
 from shared.ws_repo import WorkspaceScope
 
 #: test_settings_form_drafts.py's moto tables and wired settings handler.
 world = drafts_world
 
 FORM_ID = 'fd_0000000000000000000000000000a1b2'
+#: The CDK specs' registry, whose `mine` is an imported model (lib/test-support/custom-models-env.json).
+REGISTRY = (repo_root() / 'lib' / 'test-support' / 'custom-models-env.json').read_text(encoding='utf-8')
+IMPORTED_ARN = 'arn:aws:bedrock:us-west-2:111111111111:imported-model/abc123def456'
 WS_FORM_ID = 'ff_0000000000000000000000000000c3d4'
 ANSWERS = [{'response_id': 'fb_1', 'text': 'The labs ran long'}, {'response_id': 'fb_2', 'text': 'Great demo'}]
 BODY = {'form_id': FORM_ID, 'answers': ANSWERS, 'filters': {'from': '2026-11-01'},
@@ -111,6 +116,16 @@ class TestTheWorkersJob:
         assert (row['created_by'], row['reason'], row['filters'], row['responses_counted'], 'ttl' in row) == (
             {'sub': 'sub-us', 'kind': 'user'}, 'ai_summary', {'from': '2026-11-01'}, 2, False)
         assert 'The labs ran long' not in json.dumps(row, default=str)
+
+    def test_an_imported_models_arn_is_stored_as_its_key(self, world, lambda_context, monkeypatch):
+        # (S2, 7.71.00: an imported model's id is an ARN naming the account, and every editor reads the report)
+        monkeypatch.setenv(CUSTOM_MODELS_ENV, REGISTRY)
+        config = _config(world, lambda_context, body=BODY)
+        with patch('shared.forms_v2_report_ai._converse', return_value=(MODEL_ANSWER, IMPORTED_ARN)):
+            assert forms_report_routes.run_job(dict(config), None)['success'] is True
+        [row] = _reports(world)
+        assert row['ai']['model'] == 'mine'
+        assert '111111111111' not in json.dumps(row, default=str)
 
     @pytest.mark.parametrize(('model_answer', 'status'), [(MODEL_ANSWER, 'completed'), ('{}', 'completed'),
                                                           (None, 'failed')], ids=['summary', 'no-summary', 'failed'])

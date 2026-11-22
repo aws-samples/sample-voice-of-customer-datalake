@@ -92,18 +92,19 @@ function ResponseCard({ form, response, onOpen }: Readonly<{ form: FormV2; respo
 
 /**
  * Reads the next pages while the response open in the sheet is past the loaded ones (a Report theme's quote opens its
- * response wherever it is, 7.66.00), until it is found or no page is left.
+ * response wherever it is, 7.66.00), until it is found or no page is left. A page that fails stops it (7.71.00): it
+ * is never asked for again on its own, and the list's Load more retries it.
  */
 function usePageUntilOpen(rows: readonly FormResponse[] | undefined, openId: string | null, pages: {
-  hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => Promise<unknown>
+  hasNextPage: boolean; isFetchingNextPage: boolean; isFetchNextPageError: boolean; fetchNextPage: () => Promise<unknown>
 }): void {
   const missing = rows !== undefined && openId !== null && !rows.some((response) => response.response_id === openId)
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = pages
   // (the rows read so far are a dependency: a page may land with the other flags as they were)
   const loaded = rows?.length ?? 0
   useEffect(() => {
-    if (missing && hasNextPage && !isFetchingNextPage) void fetchNextPage()
-  }, [missing, hasNextPage, isFetchingNextPage, fetchNextPage, loaded])
+    if (missing && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage()
+  }, [missing, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage, loaded])
 }
 
 export default function ResponsesTable({ form, formId, filters, openId, onOpen, onClose }: Readonly<{

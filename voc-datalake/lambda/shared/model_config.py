@@ -542,14 +542,6 @@ def supports_flex(model_id: str) -> bool:
 CHARS_PER_TOKEN = 4
 
 
-def custom_window_room(model_id: str, prompt_chars: int, max_tokens: int) -> bool:
-    """Whether a request of about ``prompt_chars`` characters, answered in at most ``max_tokens``, fits a custom
-    model's window (its registry ``contextWindow``); always True for any other model (Claude's windows hold every
-    request this app sends)."""
-    custom = custom_model(model_id)
-    return custom is None or prompt_chars // CHARS_PER_TOKEN + max_tokens <= custom.context_window
-
-
 def context_window_tokens(model_id: str) -> int:
     """Input context window, in tokens, for a model ID. Never raises.
 

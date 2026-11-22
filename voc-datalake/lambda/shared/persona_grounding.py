@@ -8,7 +8,8 @@ phase and the voice personas after them. Each persona's pack is:
 * fresh retrieval: the reviews imported since the persona was generated that match it, other than those it cites and
   those it was written from, at most ``MAX_FRESH`` (8), the ones that share the most words with the question first
   (``shared/feedback_similarity.py``'s tokens: title, problem summary, text), then the newest. A review a refresh added
-  is such a match, so it competes here on the topic, as every review since the generation does. "Match" is the
+  competes here on the topic too, whatever its age (7.71.00: it joins the candidates, as the person may see it, even
+  past the fresh read's newest ``MAX_FRESH_CANDIDATES`` or its window), so a refresh changes the pack. "Match" is the
   persona's categories (the categories of the reviews it cites, else of those it was written from, most frequent
   first) within the project's own filters (``filters.sources``, ``categories``, ``sentiments`` on its ``META``).
 
@@ -342,15 +343,32 @@ def _quote(item: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _fresh_items(reader: Reader, match: _Match, skip: set[str], question: str, limit: int,
+def _refreshed_rows(reader: Reader, persona: Mapping[str, Any], skip: set[str], budget: WalkBudget) -> list[dict]:
+    """The reviews the persona's refreshes took (newest refresh first) that the person may see, at most
+    ``MAX_STORED_EXAMINED`` looked at: fresh candidates whatever their age (7.71.00)."""
+    found: list[dict] = []
+    for feedback_id in [one for one in dict.fromkeys(_refreshed_ids(persona)) if one not in skip][:MAX_STORED_EXAMINED]:
+        if budget.exhausted():
+            break
+        row = _by_id(reader, feedback_id)
+        if row is not None:
+            found.append(row)
+    return found
+
+
+def _fresh_items(reader: Reader, match: _Match, persona: Mapping[str, Any], question: str, limit: int,
                  budget: WalkBudget) -> tuple[list[dict], bool]:
-    """The ``limit`` best fresh reviews in full, and whether the read was cut short."""
+    """The ``limit`` best fresh reviews in full (the refreshed ones among the candidates), and whether the read was
+    cut short."""
     if limit == 0:
         return [], False
+    skip = _held_ids(persona)
     fresh = _fresh_rows(reader, match, skip, budget, stop_after=MAX_FRESH_CANDIDATES)
     candidates = fetch_full(reader.feedback_table, fresh.rows[:MAX_FRESH_CANDIDATES])
     # Re-checked on the full items: a review re-categorised since the (eventually consistent) index read.
     admitted = [item for item in candidates if match.admits(item, reader.scope)]
+    seen = {item.get('feedback_id') for item in admitted}
+    admitted += [row for row in _refreshed_rows(reader, persona, skip, budget) if row.get('feedback_id') not in seen]
     return _ranked(admitted, question, limit), fresh.capped
 
 
@@ -358,7 +376,7 @@ def _persona_pack(reader: Reader, project_id: str, persona: Mapping[str, Any], f
                   question: str, limit: int, budget: WalkBudget) -> dict[str, Any]:
     cited = _cited_evidence(reader, persona, budget)
     match = _match_for(reader, persona, filters, _since(persona))
-    fresh, capped = _fresh_items(reader, match, _held_ids(persona), question, limit, budget)
+    fresh, capped = _fresh_items(reader, match, persona, question, limit, budget)
     logger.info('Persona evidence pack read', extra={
         'project_id': project_id, 'cited': len(cited), 'fresh': len(fresh), 'capped': capped})
     return {
