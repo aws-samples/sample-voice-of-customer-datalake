@@ -34,6 +34,7 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.audit_rows import put_new_audit_row
+from shared.dynamo_values import plain, text_field
 from shared.exceptions import ConflictError, NotFoundError
 from shared.persona_save import cancellation_codes
 from shared.platform_workspaces import LISTING_PK, listing_sort_key
@@ -44,18 +45,17 @@ from shared.trial_state import (
     PAUSED,
     PAUSED_AT,
     TRIAL,
+    TRIAL_PAUSED_CODE,
     at_second,
     is_paused,
     paused_lists,
-    plain,
-    text_field,
 )
-from shared.workspace import ACTIVE, audit_key, audit_sort_key, is_workspace_id, ws_key
+from shared.workspace import ACTIVE, audit_key, audit_sort_key, consistent_row, is_workspace_id, ws_key
 
 #: An extension's history is kept on the map, so it is bounded.
 MAX_EXTENSIONS: Final = 50
 TRIAL_EXTENDED: Final = 'trial_extended'
-TRIAL_PAUSED_KIND: Final = 'trial_paused'
+TRIAL_PAUSED_KIND: Final = TRIAL_PAUSED_CODE   # (the audit row's kind is the refusal's code)
 TRIAL_CONVERTED: Final = 'trial_converted'
 #: The one 404 of a trial route: a malformed or unknown id, a workspace that is not active, or one that is no trial.
 TRIAL_NOT_FOUND: Final = 'Trial not found'
@@ -64,7 +64,6 @@ TRIAL_CHANGED: Final = 'The trial changed meanwhile: reload it and try again'
 TOO_MANY_EXTENSIONS: Final = f'A trial is extended at most {MAX_EXTENSIONS} times: convert it instead'
 #: What a trial route reads of ``META``.
 META_ATTRIBUTES: Final = ('pk', 'sk', 'status', 'name', 'slug', TRIAL)
-_FAILED: Final = 'ConditionalCheckFailed'
 
 
 def expiry_of(trial: Mapping[str, Any]) -> datetime | None:
@@ -91,10 +90,7 @@ def trial_view(trial: object) -> dict[str, Any] | None:
 
 def read_meta(table: Any, ws: str) -> dict[str, Any]:
     """Workspace ``ws``'s ``META`` (``META_ATTRIBUTES``, strongly consistent), or {} when there is none."""
-    names = {f'#a{n}': attribute for n, attribute in enumerate(META_ATTRIBUTES)}
-    found = table.get_item(Key={'pk': ws_key(ws), 'sk': 'META'}, ConsistentRead=True,
-                           ProjectionExpression=', '.join(names), ExpressionAttributeNames=names).get('Item')
-    return dict(found) if isinstance(found, Mapping) else {}
+    return dict(consistent_row(table, ws_key(ws), 'META', META_ATTRIBUTES))
 
 
 def trial_workspace(table: Any, ws: object) -> tuple[str, dict[str, Any], dict[str, Any]]:
@@ -136,7 +132,7 @@ def save_trial(table: Any, ws: str, meta: Mapping[str, Any], trial: Mapping[str,
         table.meta.client.transact_write_items(TransactItems=items)
     except ClientError as exc:
         codes = cancellation_codes(exc)
-        if _FAILED in codes or 'TransactionConflict' in codes:
+        if 'ConditionalCheckFailed' in codes or 'TransactionConflict' in codes:
             raise ConflictError(TRIAL_CHANGED, code='trial_changed') from exc
         raise
     return saved

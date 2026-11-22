@@ -12,14 +12,13 @@ from unittest.mock import patch
 import pytest
 from handler_events_fixtures import call_route
 from moto import mock_aws
+from test_settings_app_feedback import ADMIN, USER
 
 import metrics_handler
 import settings_handler
 from shared.project_access import ACTING_SUBJECT_CLAIM, MCP_AGENT_RUN_CLAIM
 from shared.test.moto_tables import create_pk_sk_table
 
-ADMIN = {'sub': 'admin-sub', 'cognito:username': 'alice', 'cognito:groups': 'admins'}
-USER = {'sub': 'user-sub', 'cognito:username': 'bob', 'cognito:groups': 'users'}
 PLATFORM = {'sub': 'plat-sub', 'cognito:username': 'pat', 'cognito:groups': 'platform-admins'}
 DELEGATED = {'sub': 'mcp:tok_1', ACTING_SUBJECT_CLAIM: 'admin-sub', 'cognito:groups': 'admins'}
 CLEARED = {**DELEGATED, MCP_AGENT_RUN_CLAIM: 'true'}

@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "367e0645998b6aafe858456f05345737582dbdfc7c756a4b80af23db4a3d5b89",
+      "templateSha256": "ca28181c5ac7a45a494087f4dda9b871fa51ba61ee185479f484be10c10581ae",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -87,6 +87,7 @@
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-github_issues-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:iam::111111111111:role/voc-trial-scheduler-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-category-reprocess-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-design-capture-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-engagement-api-<AWS::AccountId>-<AWS::Region>",
@@ -114,6 +115,7 @@
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>:*",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>:*",
+          "arn:aws:scheduler:us-east-1:111111111111:schedule/voc-trials-<AWS::AccountId>-<AWS::Region>/voc-trial-*",
           "arn:aws:sns:us-east-1:111111111111:voc-briefing-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:sns:us-east-1:111111111111:voc-ops-alarms-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:sqs:us-east-1:111111111111:voc-aggregator-stream-failures-<AWS::AccountId>-<AWS::Region>",
@@ -181,6 +183,9 @@
           "SYSTEM_API_ACCESS_LOG_GROUP = /aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
           "SYSTEM_LOG_GROUP_PATTERN = /aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>",
           "SYSTEM_WORKFLOW_LOG_GROUP_PATTERN = /aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>",
+          "TRIAL_EXPIRY_FUNCTION_ARN = arn:aws:lambda:us-east-1:111111111111:function:voc-trial-expiry-<AWS::AccountId>-<AWS::Region>",
+          "TRIAL_SCHEDULER_ROLE_ARN = arn:aws:iam::111111111111:role/voc-trial-scheduler-<AWS::AccountId>-<AWS::Region>",
+          "TRIAL_SCHEDULE_GROUP = voc-trials-<AWS::AccountId>-<AWS::Region>",
           "WEBSCRAPER_FUNCTION_NAME = voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
           "WORKSPACE_PARAMETER_PREFIX = /voc/ws"
         ]
@@ -356,9 +361,10 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "3de6e34fd42340f613b4b8ef909318711dba165b2f7bd96b8a206696613fa617",
+      "templateSha256": "d5a7b4166aeaa3234ebf38906db5d6bc974eb640e0a6bfd0e07400ebb63b416d",
       "names": {
         "physicalNames": [
+          "AWS::Events::Rule Name = voc-adoption-rollup-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-briefing-dispatch-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-cost-rollup-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -366,6 +372,8 @@
           "AWS::Events::Rule Name = voc-memory-scanner-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-radar-scan-schedule-<AWS::AccountId>-<AWS::Region>",
           "AWS::Events::Rule Name = voc-retention-schedule-<AWS::AccountId>-<AWS::Region>",
+          "AWS::IAM::Role RoleName = voc-trial-scheduler-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-adoption-rollup-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-agent-conductor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-agent-heartbeat-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-agent-nodes-<AWS::AccountId>-<AWS::Region>",
@@ -382,7 +390,9 @@
           "AWS::Lambda::Function FunctionName = voc-radar-scan-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-research-step-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-retention-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-trial-expiry-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-workspace-export-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-adoption-rollup-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-agent-conductor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-agent-heartbeat-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-agent-nodes-<AWS::AccountId>-<AWS::Region>",
@@ -399,6 +409,7 @@
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-radar-scan-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-research-step-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-retention-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-trial-expiry-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-workspace-export-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-agent-run-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-research-workflow-<AWS::AccountId>-<AWS::Region>",
@@ -408,6 +419,7 @@
           "AWS::SQS::Queue QueueName = voc-briefing-dlq-<AWS::AccountId>-<AWS::Region>",
           "AWS::SQS::Queue QueueName = voc-memory-extract-<AWS::AccountId>-<AWS::Region>",
           "AWS::SQS::Queue QueueName = voc-memory-extract-dlq-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Scheduler::ScheduleGroup Name = voc-trials-<AWS::AccountId>-<AWS::Region>",
           "AWS::StepFunctions::StateMachine StateMachineName = voc-agent-run-<AWS::AccountId>-<AWS::Region>",
           "AWS::StepFunctions::StateMachine StateMachineName = voc-research-workflow-<AWS::AccountId>-<AWS::Region>"
         ],
@@ -442,6 +454,7 @@
           "INTEGRATIONS_FUNCTION = voc-integrations-api-<AWS::AccountId>-<AWS::Region>",
           "MEMORY_FUNCTION = voc-memory-api-<AWS::AccountId>-<AWS::Region>",
           "METRICS_FUNCTION = voc-metrics-api-<AWS::AccountId>-<AWS::Region>",
+          "POWERTOOLS_SERVICE_NAME = voc-adoption-rollup",
           "POWERTOOLS_SERVICE_NAME = voc-agent-conductor",
           "POWERTOOLS_SERVICE_NAME = voc-agent-heartbeat",
           "POWERTOOLS_SERVICE_NAME = voc-agent-nodes",
@@ -457,6 +470,7 @@
           "POWERTOOLS_SERVICE_NAME = voc-radar-scan",
           "POWERTOOLS_SERVICE_NAME = voc-research-step",
           "POWERTOOLS_SERVICE_NAME = voc-retention",
+          "POWERTOOLS_SERVICE_NAME = voc-trial-expiry",
           "POWERTOOLS_SERVICE_NAME = voc-workspace-export",
           "PROJECTS_FUNCTION = voc-projects-api-<AWS::AccountId>-<AWS::Region>",
           "RADAR_EXA_PARAMETER = /voc/radar/exa-api-key",

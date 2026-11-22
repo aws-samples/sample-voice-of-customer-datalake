@@ -35,6 +35,20 @@ async function fillIn(email = 'ana@example.com') {
   await userEvent.selectOptions(screen.getByLabelText('Suggested playbook'), 'qa')
 }
 
+/** Create a trial whose member add answers `member` (the pack's other calls succeed); its result's status. */
+async function createWithPack(member: () => unknown): Promise<HTMLElement> {
+  routeFetchApi({
+    'POST /platform/workspaces': () => ({ workspace: TRIAL_WS }),
+    'POST /me/workspaces/current/members': member,
+    'POST /feedback-forms': () => ({ success: true }),
+    'PUT /settings/categories': () => ({ success: true }),
+  })
+  renderDialog()
+  await fillIn()
+  await userEvent.click(screen.getByRole('button', { name: 'Create the trial' }))
+  return screen.findByRole('status')
+}
+
 beforeEach(() => { resetFetchApi() })
 
 describe('CreateTrialDialog', () => {
@@ -66,16 +80,7 @@ describe('CreateTrialDialog', () => {
   })
 
   it('sends every starter-pack call to the new workspace, the forms Off and the sample categories as they are', async () => {
-    routeFetchApi({
-      'POST /platform/workspaces': () => ({ workspace: TRIAL_WS }),
-      'POST /me/workspaces/current/members': () => ({ member: {} }),
-      'POST /feedback-forms': () => ({ success: true }),
-      'PUT /settings/categories': () => ({ success: true }),
-    })
-    renderDialog()
-    await fillIn()
-    await userEvent.click(screen.getByRole('button', { name: 'Create the trial' }))
-    await screen.findByRole('status')
+    await createWithPack(() => ({ member: {} }))
     const packCalls = fetchApi.mock.calls.filter(([endpoint]) => endpoint !== '/platform/workspaces')
     expect(packCalls.map(([, , scope]) => scope)).toStrictEqual(packCalls.map(() => ({ workspaceId: TRIAL_WS.id })))
     expect(sentFetchApiBody('/settings/categories', 'PUT')).toStrictEqual({ categories: STARTER_CATEGORIES })
@@ -85,16 +90,7 @@ describe('CreateTrialDialog', () => {
   })
 
   it('says a refused step with the server\'s reason and still runs the others', async () => {
-    routeFetchApi({
-      'POST /platform/workspaces': () => ({ workspace: TRIAL_WS }),
-      'POST /me/workspaces/current/members': () => { throw new ApiError(403, 'This email has no account yet') },
-      'POST /feedback-forms': () => ({ success: true }),
-      'PUT /settings/categories': () => ({ success: true }),
-    })
-    renderDialog()
-    await fillIn()
-    await userEvent.click(screen.getByRole('button', { name: 'Create the trial' }))
-    const done = await screen.findByRole('status')
+    const done = await createWithPack(() => { throw new ApiError(403, 'This email has no account yet') })
     expect(within(done).getByText(/Could not add ana@example.com/)).toBeInTheDocument()
     expect(within(done).getByText(/sample categories/)).toBeInTheDocument()
   })

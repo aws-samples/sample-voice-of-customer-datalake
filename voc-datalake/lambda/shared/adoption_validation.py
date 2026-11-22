@@ -20,17 +20,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-__all__ = ['MAX_REPORT_CRITERIA', 'META_VALIDATION_FIELD', 'OUTCOME_MET', 'REPORT_OUTCOME_KEY',
-           'REPORT_RESULTS_FIELD', 'SYNTHETIC_FIELD', 'VALIDATION_PLAN_TYPE', 'VALIDATION_REPORT_TYPE',
-           'VALIDATION_RUN_TYPE', 'VALIDATION_TYPES', 'is_synthetic', 'met_criteria', 'report_projection']
+# The Validate phase's document types the rollup reads (``document_type``; a plan counts towards nothing).
+from shared.methodology import VALIDATION_REPORT_TYPE, VALIDATION_RUN_TYPE
+
+__all__ = ['META_VALIDATION_FIELD', 'REPORT_RESULTS_FIELD', 'SYNTHETIC_FIELD', 'VALIDATION_REPORT_TYPE',
+           'VALIDATION_RUN_TYPE', 'is_synthetic', 'met_criteria', 'report_projection']
 
 #: The project ``META``'s map (7.68.00): ``{prd_document_id, criteria, plan_document_id, report_document_id, status}``.
 META_VALIDATION_FIELD: Final = 'validation'
-#: The document types the Validate phase writes (``document_type``).
-VALIDATION_PLAN_TYPE: Final = 'validation_plan'
-VALIDATION_REPORT_TYPE: Final = 'validation_report'
-VALIDATION_RUN_TYPE: Final = 'validation_run'
-VALIDATION_TYPES: Final = (VALIDATION_PLAN_TYPE, VALIDATION_REPORT_TYPE, VALIDATION_RUN_TYPE)
 #: A run with the personas (``validation_run``) says so: it never counts as met (owner decision 9).
 SYNTHETIC_FIELD: Final = 'synthetic'
 #: A report's per-criterion results (a list of maps) and the key of each one's outcome against its target.

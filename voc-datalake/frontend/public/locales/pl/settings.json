@@ -1257,7 +1257,7 @@
     "loading": "Wczytywanie wykorzystania głosu…",
     "failed": "Nie udało się wczytać wykorzystania głosu.",
     "minutes": "Wykorzystane minuty",
-    "ofTotal": "{{used}} z {{total}}",
+    "ofTotal": "{{used, number}} z {{total, number}}",
     "sessions": "Sesje w tym miesiącu",
     "cost": "Szacowany koszt",
     "live": "Teraz na żywo",

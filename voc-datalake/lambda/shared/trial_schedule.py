@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from shared.aws import unqualified_function_arn as unqualified
 from shared.exceptions import ConfigurationError
 
 #: Every trial schedule's name starts so (the workspaces API's grant is on this prefix in the group). Held equal to
@@ -42,11 +43,6 @@ MAX_EVENT_AGE_SECONDS: Final = 86_400
 def schedule_name(ws: str, expires_at: datetime) -> str:
     """``voc-trial-<ws>-<YYYYMMDDTHHMMSS>`` (UTC): one per trial and expiry."""
     return f'{SCHEDULE_PREFIX}{ws}-{expires_at.astimezone(UTC).strftime("%Y%m%dT%H%M%S")}'
-
-
-def unqualified(function_arn: str) -> str:
-    """A Lambda function's ARN without an alias or version (``arn:aws:lambda:<region>:<account>:function:<name>``)."""
-    return ':'.join(function_arn.split(':')[:7])
 
 
 @dataclass(frozen=True)

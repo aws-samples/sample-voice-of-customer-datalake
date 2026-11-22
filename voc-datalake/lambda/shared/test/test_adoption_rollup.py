@@ -170,7 +170,7 @@ def test_the_validate_names_are_7_68s_as_shipped():
     """shared/adoption_validation.py reads 7.68.00's own names (shared/project_validation.py): the META's map, the three
     document types, a criterion's outcome and the decision prefill's evidence ids."""
     assert pv.block_of({av.META_VALIDATION_FIELD: {'report_document_id': 'd1'}}) == {'report_document_id': 'd1'}
-    assert av.VALIDATION_TYPES == (pv.PLAN_TYPE, pv.REPORT_TYPE, pv.RUN_TYPE)
+    assert (av.VALIDATION_REPORT_TYPE, av.VALIDATION_RUN_TYPE) == (pv.REPORT_TYPE, pv.RUN_TYPE)
     results = pv.criteria_results([{'id': 'c000001', 'text': 'Quick', 'target': 3}],
                                   {'criteria': {'c000001': {'n': pv.MIN_RESPONSES, 'average': 4}}}, None)
     assert [result[av.REPORT_OUTCOME_KEY] for result in results] == [av.OUTCOME_MET]

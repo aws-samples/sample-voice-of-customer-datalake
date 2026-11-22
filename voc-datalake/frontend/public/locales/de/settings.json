@@ -1187,7 +1187,7 @@
     "loading": "Sprachnutzung wird geladen…",
     "failed": "Die Sprachnutzung konnte nicht geladen werden.",
     "minutes": "Genutzte Minuten",
-    "ofTotal": "{{used}} von {{total}}",
+    "ofTotal": "{{used, number}} von {{total, number}}",
     "sessions": "Sitzungen in diesem Monat",
     "cost": "Geschätzte Kosten",
     "live": "Gerade live",

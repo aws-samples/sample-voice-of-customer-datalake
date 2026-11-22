@@ -393,7 +393,7 @@
       "createDescription": "A trial workspace for a customer at the end of a workshop: its people, a starter pack, then the import wizard. It runs for 14, 30 or 60 days, then pauses.",
       "dialogTitle": "Create a trial workspace",
       "days": "Length",
-      "daysOption": "{{days}} days",
+      "daysOption": "{{days, number}} days",
       "pausesNotice": "When the trial ends it pauses: its plugins and live forms stop, and nothing is deleted. Reads and the export keep working until a platform admin extends or converts it. A trial never deletes itself.",
       "fixNameSlug": "Check the name and the address.",
       "submit": "Create the trial",
@@ -414,7 +414,7 @@
         "title": "Starter pack",
         "hint": "Made in the trial with your own access, each one recorded by its own route. Forms are created Off.",
         "form": "Form: {{name}}",
-        "categories": "Sample categories ({{n}})"
+        "categories": "Sample categories ({{n, number}})"
       },
       "done": {
         "title": "{{name}} is ready.",

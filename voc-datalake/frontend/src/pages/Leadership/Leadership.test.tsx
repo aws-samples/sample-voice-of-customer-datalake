@@ -55,6 +55,27 @@ describe('Leadership', () => {
     expect(endpoint).toMatch(/^\/metrics\/adoption\?from=\d{4}-\d{2}&to=\d{4}-\d{2}&grain=month$/)
   })
 
+  it('reads again by quarter and for another period, and downloads the CSV it shows', async () => {
+    const user = userEvent.setup()
+    const saved: string[] = []
+    Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:csv'), configurable: true })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true })
+    // (jsdom cannot follow a download link: the file name it would save is kept instead)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) { saved.push(this.download) })
+    render()
+    await screen.findByText('Projects started', { selector: 'p' })
+    await user.click(screen.getByRole('button', { name: 'Quarter' }))
+    await waitFor(() => expect(fetchApi.mock.calls.at(-1)?.[0]).toMatch(/&grain=quarter$/))
+    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveAttribute('aria-pressed', 'true')
+    const calls = fetchApi.mock.calls.length
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'Last 24 months')
+    await waitFor(() => expect(fetchApi.mock.calls.length).toBeGreaterThan(calls))
+    await user.click(await screen.findByRole('button', { name: 'Download CSV' }))
+    expect(saved).toStrictEqual(['leadership-deployment-2026-10-2026-11.csv'])
+    click.mockRestore()
+  })
+
   it('opens the assumptions with each baseline, its count and the hours, and saves an admin\'s baselines', async () => {
     const user = userEvent.setup()
     render()

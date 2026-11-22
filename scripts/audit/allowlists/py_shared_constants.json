@@ -149,8 +149,8 @@
       "reason": "an engineering run request waiting for an administrator (engineering/run_requests.py, 7.53.00) and an assist job its worker has not claimed yet (shared/assist_jobs.py, voc-jobs): the same word for two lifecycles whose states move apart (a request is confirmed, declined or expired; a job runs, then completes or fails)"
     },
     {
-      "key": "FORM_LOOKUP_PREFIX|_FORM_PREFIX::lambda/api/feedback_form_handler.py,lambda/shared/ws_repo.py",
-      "reason": "the same text in two key spaces: a form's own row in its forms partition (FORM#{id}, which the handler's list reads with begins_with) and a workspace form's public-id lookup row in voc-workspaces (ws_repo.py); a change to one must not move the other"
+      "key": "FORM_LOOKUP_PREFIX|_FORM_PREFIX::lambda/api/feedback_form_handler.py,lambda/shared/trial_pause.py,lambda/shared/ws_repo.py",
+      "reason": "the same text in two key spaces: a form's own row in its forms partition (FORM#{id}, which the handler's list and a trial's pause, shared/trial_pause.py 7.71.00, read with begins_with) and a workspace form's public-id lookup row in voc-workspaces (ws_repo.py); a change to one must not move the other"
     },
     {
       "key": "FORM_LOCALES|LANGUAGES::lambda/shared/briefing_prefs.py,lambda/shared/forms_v2.py",

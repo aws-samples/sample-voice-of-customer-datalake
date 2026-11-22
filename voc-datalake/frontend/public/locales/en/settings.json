@@ -1187,7 +1187,7 @@
     "loading": "Loading voice usage…",
     "failed": "Voice usage could not be loaded.",
     "minutes": "Minutes used",
-    "ofTotal": "{{used}} of {{total}}",
+    "ofTotal": "{{used, number}} of {{total, number}}",
     "sessions": "Sessions this month",
     "cost": "Estimated cost",
     "live": "Live now",

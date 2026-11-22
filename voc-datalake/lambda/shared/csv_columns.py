@@ -23,6 +23,7 @@ from typing import Final
 from shared.dimension_config import DIMENSION_KEY_RE
 
 __all__ = [
+    'DIMENSION_PREFIX',
     'ColumnPlan',
     'bounded_metadata',
     'plan_columns',
@@ -43,7 +44,7 @@ AUTO_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
 }
 SINGLE_TARGETS: Final = frozenset(AUTO_COLUMNS)
 _MULTI_TARGETS: Final = frozenset({'metadata', 'ignore'})
-_DIMENSION_PREFIX: Final = 'dimension:'
+DIMENSION_PREFIX: Final = 'dimension:'
 _MAX_COLUMN_MAP_ENTRIES: Final = 200
 _MAX_HEADER_CHARS: Final = 256
 
@@ -67,7 +68,7 @@ def _target(raw: object, header: str) -> str:
     target = raw.strip()
     if target in SINGLE_TARGETS or target in _MULTI_TARGETS:
         return target
-    if target.startswith(_DIMENSION_PREFIX) and DIMENSION_KEY_RE.match(target[len(_DIMENSION_PREFIX):]):
+    if target.startswith(DIMENSION_PREFIX) and DIMENSION_KEY_RE.match(target[len(DIMENSION_PREFIX):]):
         return target
     raise ValueError(
         f'column_map target "{target[:40]}" for "{header}" is not one of '
@@ -111,8 +112,8 @@ def plan_columns(headers: list[str], column_map: object = None) -> tuple[ColumnP
     mapped, warnings = _explicit(column_map, present)
     plan = ColumnPlan()
     for header, target in mapped.items():
-        if target.startswith(_DIMENSION_PREFIX):
-            plan.dimensions[target[len(_DIMENSION_PREFIX):]] = header
+        if target.startswith(DIMENSION_PREFIX):
+            plan.dimensions[target[len(DIMENSION_PREFIX):]] = header
         elif target == 'metadata':
             plan.metadata.append(header)
         elif target != 'ignore':

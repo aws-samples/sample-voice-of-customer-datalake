@@ -85,6 +85,14 @@
       ],
       "name": "models_access",
       "reason": "typing.Protocol method stubs of one list argument: readiness's model-access port and the harness's inbox acknowledgement declare different operations that only share the empty shape"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/shared/adoption_metrics_routes.py",
+        "voc-datalake/lambda/shared/forms_v2_draft_routes.py"
+      ],
+      "name": "bind_aggregates_table",
+      "reason": "each included router binds the including handler's own voc-aggregates getter into its own module (read at call time, so a test that patches the handler's table patches the router's): one binding per router, as the per-module table getters above"
     }
   ]
 }

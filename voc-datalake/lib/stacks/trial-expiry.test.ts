@@ -7,15 +7,15 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { pkSkTable } from '../test-support/api-stack-fixture';
 import { itemAt } from '../test-support/guards';
-import { IamPolicySchema, isAttachedToRole, isAuditRowGuardStatement, statementActions } from '../test-support/iam-statements';
-import { findWorkerFunction } from '../test-support/worker-function';
+import { findWorkerFunction, pinnedStatements } from '../test-support/worker-function';
+import type { PinnedStatement } from '../test-support/worker-function';
 import { applyAppAspects } from '../utils/app-aspects';
 import { byCodeUnit } from '../utils/compare';
 import { addTrialExpiry, TRIAL_SCHEDULE_PREFIX } from './trial-expiry';
@@ -26,12 +26,8 @@ let template: Template;
 beforeAll(() => {
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
   const stack = new cdk.Stack(app, 'Trials', { env: { account: '111111111111', region: 'us-east-1' } });
-  const table = (id: string) => new dynamodb.Table(stack, id, {
-    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-  });
-  const workspacesTable = table('Workspaces');
-  const aggregatesTable = table('Aggregates');
+  const workspacesTable = pkSkTable(stack, 'Workspaces');
+  const aggregatesTable = pkSkTable(stack, 'Aggregates');
   addTrialExpiry(stack, {
     workspacesTable, aggregatesTable, kmsKey: new kms.Key(stack, 'Key'), enabledSources: ['webscraper'],
     layer: lambda.LayerVersion.fromLayerVersionArn(stack, 'Layer', 'arn:aws:lambda:us-east-1:111111111111:layer:deps:1'),
@@ -41,19 +37,11 @@ beforeAll(() => {
   template = Template.fromStack(stack);
 });
 
-interface Statement { effect: string; sid?: string; actions: string[]; resource: string; condition: unknown }
+type Statement = PinnedStatement;
 const RoleIdSchema = z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) });
 
-function statementsOf(roleId: string, { guard = false } = {}): Statement[] {
-  return Object.values(template.findResources('AWS::IAM::Policy'))
-    .map((resource) => IamPolicySchema.parse(resource).Properties)
-    .filter((policy) => isAttachedToRole(policy, roleId))
-    .flatMap((policy) => policy.PolicyDocument.Statement)
-    .filter((statement) => guard === isAuditRowGuardStatement(statement))
-    .map((statement) => ({ effect: statement.Effect ?? 'Allow', sid: statement.Sid,
-      actions: [...statementActions(statement)].sort(byCodeUnit), resource: JSON.stringify(statement.Resource),
-      condition: statement.Condition }));
-}
+const statementsOf = (roleId: string, options: { guard?: boolean } = {}): Statement[] =>
+  pinnedStatements(template, roleId, options);
 const job = () => findWorkerFunction(template, 'voc-trial-expiry-');
 const jobRole = () => RoleIdSchema.parse(job().Role)['Fn::GetAtt'][0];
 const keys = (partitions: string[]) => ({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } });

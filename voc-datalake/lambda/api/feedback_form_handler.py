@@ -870,16 +870,10 @@ def item_to_form(item: dict) -> dict:
         # ``question_id_reused``): the builder never offers one for a new question, a copy or a follow-up.
         'retired_ids': [qid for qid in fv2.plain(item.get('retired_ids') or []) if isinstance(qid, str)],
         # How many saves the form row has taken: a save's ``expected_write_count`` (the builder's precondition).
-        'write_count': _write_count(item),
+        'write_count': fv2.write_count(item),
         # Still stored as version 1 (served migrated until its first save writes it back as version 2).
         **({} if fv2.is_v2(item) else {'migrated_from': 1}),
     }
-
-
-def _write_count(item: Mapping[str, Any]) -> int:
-    """The form row's save counter (0 for a row written before 7.58.00, which has none)."""
-    value = fv2.plain(item.get('write_count'))
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def item_to_widget_config(item: dict) -> dict:
@@ -1137,13 +1131,11 @@ def _create_workspace_form(item: dict, scope: WorkspaceScope) -> None:
 # only. Test responses are not in this partition at all: they have their own beside it (``FEEDBACK_FORM_TEST``, a
 # workspace's ``WS#{ws}#FEEDBACK_FORM_TEST``; shared/form_test_responses.py), the only one voc-retention may delete in.
 
-_REVISION_PREFIX = 'FORMREV#'
 _IMPORTED_STAYS_OFF = ('An imported form stays off: it has no public link, and its responses are the file it was '
                        'made from')
 _FORM_PREFIX = 'FORM#'
 #: The v1 fields a version 2 form still maps from a version 1 patch (the assistant's update tool sends them).
 _MAPPED_V1_FIELDS = frozenset({'title', 'description', 'success_message', 'submit_button_text'})
-_CHANGED_MEANWHILE = 'The form was changed by someone else: reload it, then save again'
 _ANSWERS_LOCKED = ('This form has responses: its question ids, types, ranges and option codes cannot change. Name each '
                    'question or option you remove in removes (its answers stay in Results), or keep it; to ask a '
                    'question another way, remove it and add a new one')
@@ -1151,12 +1143,12 @@ _ANSWERS_LOCKED = ('This form has responses: its question ids, types, ranges and
 
 def _saved_by(stored: Mapping[str, Any]) -> dict[str, Any]:
     """A 409's details: the stored revision and save count, and who saved it when (the editor's conflict banner)."""
-    return {'revision': fv2.revision_of(stored), 'write_count': _write_count(stored),
+    return {'revision': fv2.revision_of(stored), 'write_count': fv2.write_count(stored),
             'updated_by': str(stored.get('updated_by') or ''), 'updated_at': str(stored.get('updated_at') or '')}
 
 
 def _revision_key(form_id: str, revision: int, scope: WorkspaceScope | None) -> dict[str, str]:
-    return {'pk': _forms_partition(scope), 'sk': f'{_REVISION_PREFIX}{form_id}#{revision:06d}'}
+    return {'pk': _forms_partition(scope), 'sk': f'{fv2.REVISION_PREFIX}{form_id}#{revision:06d}'}
 
 
 def _put_revision(form_id: str, scope: WorkspaceScope | None, revision: int, definition: Mapping[str, Any],
@@ -1173,10 +1165,6 @@ def _read_revision(form_id: str, scope: WorkspaceScope | None, revision: int) ->
     """An earlier revision's definition, None when no snapshot is kept for it."""
     item = _forms(scope).get_item(_revision_key(form_id, revision, scope)).get('Item')
     return {name: fv2.plain(item.get(name)) for name in fv2.DEFINITION_FIELDS} if item else None
-
-
-def _canonical(definition: Mapping[str, Any]) -> str:
-    return json.dumps(fv2.plain(dict(definition)), sort_keys=True, ensure_ascii=False, default=str)
 
 
 def _put_text(container: dict[str, Any], key: str, value: object, field_name: str, primary: str) -> None:
@@ -1283,9 +1271,9 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
     write that leaves the form live while a text shows a placeholder as written is a 409 ``unresolved_placeholder``."""
     _require_update_fields(body)
     revision = fv2.revision_of(stored)
-    expected_writes, writes = body.get('expected_write_count'), _write_count(stored)
+    expected_writes, writes = body.get('expected_write_count'), fv2.write_count(stored)
     if is_whole(expected_writes) and expected_writes != writes:
-        raise ConflictError(_CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(stored))
+        raise ConflictError(fv2.CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(stored))
     current = _definition(stored)
     proposed = _definition_update(stored, current, body)
     retired = [qid for qid in fv2.plain(stored.get('retired_ids') or []) if isinstance(qid, str)]
@@ -1293,7 +1281,7 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
     # version 2 too: its migration is validated like any save, never persisted unchecked.
     to_check = proposed if proposed is not None else (None if fv2.is_v2(stored) else current)
     definition = fv2.validate_definition(to_check, retired=retired) if to_check is not None else current
-    changed = proposed is not None and _canonical(definition) != _canonical(current)
+    changed = proposed is not None and fv2.canonical(definition) != fv2.canonical(current)
     # Publish, and a colour change on a live form, need readable text; any other save of a live form whose stored
     # theme is already unreadable goes through with a warning; turning a form Off always works.
     live = body['enabled'] if 'enabled' in body else stored.get('enabled', False)
@@ -1392,7 +1380,7 @@ def update_form(form_id: str):
     except Exception as e:
         if _is_conditional_check_failure(e):
             current = _read_form(form_id, 'Failed to update form', scope)  # the 404 when it was deleted meanwhile
-            raise ConflictError(_CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(current)) from e
+            raise ConflictError(fv2.CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(current)) from e
         logger.exception(f"Error updating form: {e}")
         raise ServiceError('Failed to update form') from e
     saved: dict[str, Any] = {'success': True, 'form': item_to_form(response.get('Attributes', {}))}
@@ -1498,7 +1486,7 @@ def _delete_form_rows(form_id: str, scope: WorkspaceScope | None, tests: list[di
     its test responses (``tests``: their keys in the scope's ``FEEDBACK_FORM_TEST``, as the delete's record counted
     them). The funnel's visit rows (``FORMSESSION#{id}#…``) are left to their 7-day ``ttl``: plumbing, never data, and
     a busy form's week of them is not worth a delete that could outrun the request."""
-    for prefix in (_REVISION_PREFIX, _FUNNEL_PREFIX, REPORT_PREFIX):
+    for prefix in (fv2.REVISION_PREFIX, _FUNNEL_PREFIX, REPORT_PREFIX):
         _delete_rows(scope, f'{prefix}{form_id}#')
     _delete_keys(scope, tests)
 
@@ -2700,7 +2688,7 @@ def _revisions(form_id: str, scope: WorkspaceScope | None, form: Mapping[str, An
     out: dict[int, dict[str, Any]] = {}
     try:
         for item in iter_partition(scope, _forms_table(), 'pk', _forms_partition(scope),
-                                   sort_prefix=f'{_REVISION_PREFIX}{form_id}#'):
+                                   sort_prefix=f'{fv2.REVISION_PREFIX}{form_id}#'):
             number = fv2.plain(item.get('revision'))
             if isinstance(number, int) and not isinstance(number, bool):
                 out[number] = {name: fv2.plain(item.get(name)) for name in fv2.DEFINITION_FIELDS}

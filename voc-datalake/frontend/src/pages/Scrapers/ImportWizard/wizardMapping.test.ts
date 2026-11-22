@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Dimension } from '../../../api/dimensionsSchema'
-import { chunksOf, dimensionFor, formName, importTag, mappingProblem, reviewsMapping } from './wizardMapping'
+import { chunksOf, dimensionFor, formName, importTag, wizardMappingProblem, reviewsMapping } from './wizardMapping'
 
 const dimension = (key: string, label: string): Dimension => ({ key, label, infer: false, values: [] })
 const DIMENSIONS = [dimension('product', 'Product line'), dimension('user_type', 'Type of user')]
@@ -21,10 +21,10 @@ describe('a reviews file', () => {
   })
 
   it('needs an open-text column, a survey a question', () => {
-    expect(mappingProblem({ A: 'choice' }, 'reviews')).toBe('noText')
-    expect(mappingProblem({ A: 'open_text' }, 'reviews')).toBeNull()
-    expect(mappingProblem({ A: 'date', B: 'email' }, 'survey')).toBe('noQuestion')
-    expect(mappingProblem({ A: 'nps_0_10' }, 'survey')).toBeNull()
+    expect(wizardMappingProblem({ A: 'choice' }, 'reviews')).toBe('noText')
+    expect(wizardMappingProblem({ A: 'open_text' }, 'reviews')).toBeNull()
+    expect(wizardMappingProblem({ A: 'date', B: 'email' }, 'survey')).toBe('noQuestion')
+    expect(wizardMappingProblem({ A: 'nps_0_10' }, 'survey')).toBeNull()
   })
 })
 

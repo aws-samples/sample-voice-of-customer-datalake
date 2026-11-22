@@ -19,8 +19,8 @@ answered form is the forms' 409 ``answers_locked``. ``validation_open`` says whe
 taken only when the form asks validation questions (``validation_form``; 400 ``validation_closed`` otherwise); an
 empty ``answers`` asks for the card itself (``card_answer``: the widget opened on its own can reach nothing but this
 one URL); any other then goes the way of every form's response: checked against the revision it answered, queued for
-the processor as a ``feedback_form`` item of the form's channel ``form_pf_…``, tagged ``prototype_validation``. The
-answers are customer feedback in the lake; pins never are.
+the processor as a ``feedback_form`` item of the form's own channel (form_ and the pin form's id), tagged
+``prototype_validation``. The answers are customer feedback in the lake; pins never are.
 
 **The results** (``real_rows``, ``real_summary``): the form's processed items, read through ``gsi5-by-channel``
 (what the channel holds, never the brand's partition), each admitted by the reader's category and source access, and
@@ -28,7 +28,6 @@ scored per question against the revision each answered (shared/forms_v2_results.
 """
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Final
 
@@ -44,18 +43,19 @@ from shared.exceptions import ConflictError, NotFoundError, ServiceError, Valida
 from shared.feedback_partitions import CHANNEL_INDEX_PARTITION, channel_partition
 from shared.forms_v2_results import ResultRow, tally_results
 from shared.indexes import FEEDBACK_BY_CHANNEL_INDEX
+from shared.onboarding import FEEDBACK_FORM_PK
 from shared.producer_labels import clean_tags
 from shared.prototype_pins import FORM_TYPE_PROTOTYPE_PIN
 from shared.scoped_query import iter_partition
 from shared.timestamps import now_iso
 
-#: The tag every validation answer carries in the lake (the channel stays the form's own ``form_pf_…``).
+#: The tag every validation answer carries in the lake (the channel stays the form's own: form_ and its pin form's id).
 VALIDATION_TAG: Final = 'prototype_validation'
 TASK_PREFIX: Final = 'q_vt_'
 CRITERION_PREFIX: Final = 'q_vc_'
 CES_ID: Final = 'q_v_ces'
 MISSING_ID: Final = 'q_v_missing'
-ENDING_ID: Final = 'end_thanks'
+ENDING_ID: Final = fv2.V1_ENDING_ID   # (the forms' one thank-you ending)
 #: Whether the card is offered and its answers taken (a form attribute beside the definition).
 OPEN_FIELD: Final = 'validation_open'
 CLOSED_CODE: Final = 'validation_closed'
@@ -63,9 +63,7 @@ CLOSED_MESSAGE: Final = 'This prototype asks no validation questions'
 #: Real responses one read scores (newest first): far above a prototype test's testers.
 MAX_RESPONSES: Final = 2000
 #: The deployment's forms partition in voc-aggregates (a pin form is never a workspace's).
-FORMS_PARTITION: Final = 'FEEDBACK_FORM'
-_REVISION_PREFIX: Final = 'FORMREV#'
-_CHANGED_MEANWHILE: Final = 'The form was changed by someone else: reload it, then save again'
+FORMS_PARTITION: Final = FEEDBACK_FORM_PK
 _LOCKED: Final = ('This prototype has validation answers: a question they answered keeps its type and range. Add a new '
                   'task or criterion instead')
 #: What the card's processed items are read with (``metadata`` holds the answers).
@@ -181,7 +179,7 @@ def form_key(form_id: str) -> dict[str, str]:
 
 
 def revision_key(form_id: str, revision: int) -> dict[str, str]:
-    return {'pk': FORMS_PARTITION, 'sk': f'{_REVISION_PREFIX}{form_id}#{revision:06d}'}
+    return {'pk': FORMS_PARTITION, 'sk': f'{fv2.REVISION_PREFIX}{form_id}#{revision:06d}'}
 
 
 def read_pin_form(table: Any, form_id: str) -> dict[str, Any]:
@@ -190,15 +188,6 @@ def read_pin_form(table: Any, form_id: str) -> dict[str, Any]:
     if not item or item.get('form_type') != FORM_TYPE_PROTOTYPE_PIN:
         raise NotFoundError("This prototype has no feedback form: build a new version of it first")
     return item
-
-
-def _canonical(definition: Mapping[str, Any]) -> str:
-    return json.dumps(fv2.plain(dict(definition)), sort_keys=True, ensure_ascii=False, default=str)
-
-
-def _count(stored: Mapping[str, Any]) -> int:
-    value = fv2.plain(stored.get('write_count'))
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def _snapshot(form_id: str, revision: int, definition: Mapping[str, Any], v1: Mapping[str, Any] | None) -> dict:
@@ -229,13 +218,13 @@ def save_questions(table: Any, form_id: str, proposed: Mapping[str, Any], *, ope
     retired = [qid for qid in fv2.plain(stored.get('retired_ids') or []) if isinstance(qid, str)]
     definition = fv2.validate_definition(proposed, retired=retired)
     fv2.validate_placeholders(definition, live=stored.get('enabled') is True)
-    changed = _canonical(definition) != _canonical(current)
+    changed = fv2.canonical(definition) != fv2.canonical(current)
     if changed and stored.get('has_responses') is True and fv2.reshaped_questions(current, definition):
         raise ConflictError(_LOCKED, code='answers_locked',
                             details={'changed': fv2.reshaped_questions(current, definition)})
     revision = fv2.revision_of(stored)
     sets: dict[str, Any] = {**definition, 'schema_version': fv2.SCHEMA_VERSION, 'revision': revision + int(changed),
-                            'write_count': _count(stored) + 1, 'updated_at': now_iso(), 'updated_by': actor_sub,
+                            'write_count': fv2.write_count(stored) + 1, 'updated_at': now_iso(), 'updated_by': actor_sub,
                             OPEN_FIELD: open_card}
     if changed:
         sets['retired_ids'] = fv2.retired_ids(current, definition, retired)
@@ -256,7 +245,7 @@ def save_questions(table: Any, form_id: str, proposed: Mapping[str, Any], *, ope
                                      ReturnValues='ALL_NEW')
     except ClientError as error:
         if is_conditional_check_failure(error):
-            raise ConflictError(_CHANGED_MEANWHILE, code='revision_conflict') from error
+            raise ConflictError(fv2.CHANGED_MEANWHILE, code='revision_conflict') from error
         raise
     return response.get('Attributes') or {}
 
@@ -334,7 +323,7 @@ def public_card(form: Mapping[str, Any]) -> dict[str, Any]:
 def revisions_of(table: Any, form_id: str) -> dict[int, dict[str, Any]]:
     """The form's earlier revisions' definitions by number (its ``FORMREV#`` snapshots)."""
     rows = iter_query(table, {'KeyConditionExpression': Key('pk').eq(FORMS_PARTITION)
-                              & Key('sk').begins_with(f'{_REVISION_PREFIX}{form_id}#')})
+                              & Key('sk').begins_with(f'{fv2.REVISION_PREFIX}{form_id}#')})
     out: dict[int, dict[str, Any]] = {}
     for row in rows:
         number = fv2.plain(row.get('revision'))
@@ -357,12 +346,11 @@ def _as_row(item: Mapping[str, Any]) -> ResultRow | None:
                      sentiment=item.get('sentiment_label') or None)
 
 
-def real_rows(feedback_table: Any, form_id: str, scope: CategoryScope, *,
-              cap: int = MAX_RESPONSES) -> list[ResultRow]:
+def real_rows(feedback_table: Any, form_id: str, scope: CategoryScope) -> list[ResultRow]:
     """The form's processed responses the reader may see (category and source access), newest first, at most
-    ``cap``: keys from ``gsi5-by-channel`` (``CHANNEL#form_{form_id}``), then the items themselves."""
+    ``MAX_RESPONSES``: keys from ``gsi5-by-channel`` (``CHANNEL#form_{form_id}``), then the items themselves."""
     index_rows = iter_partition(None, feedback_table, CHANNEL_INDEX_PARTITION, channel_partition(None, f'form_{form_id}'),
-                                IndexName=FEEDBACK_BY_CHANNEL_INDEX, ScanIndexForward=False, max_items=cap)
+                                IndexName=FEEDBACK_BY_CHANNEL_INDEX, ScanIndexForward=False, max_items=MAX_RESPONSES)
     keys = [{'pk': row['pk'], 'sk': row['sk']} for row in index_rows if admits_item(scope, row)]
     if not keys:
         return []

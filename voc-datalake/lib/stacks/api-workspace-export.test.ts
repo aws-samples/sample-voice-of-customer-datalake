@@ -29,6 +29,8 @@ describe('the workspaces API\'s export routes', () => {
       .filter((s) => !JSON.stringify(s.condition).includes('JOB#erasure'))
       // GET /platform/costs' Query of the cost rows is pinned in api-workspaces-lambda.test.ts.
       .filter((s) => !JSON.stringify(s.condition).includes('#COST'))
+      // A trial's resume of its paused forms (7.71.00) is pinned there too.
+      .filter((s) => !JSON.stringify(s.condition).includes('#FEEDBACK_FORM'))
       .map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))
       .sort((a, b) => byCodeUnit(a.actions.join(), b.actions.join()));
     expect(onAggregates).toStrictEqual([

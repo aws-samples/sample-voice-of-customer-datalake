@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from shared.exceptions import ValidationError
+from shared.forms_v2_responses import EMAIL_PATTERN
 from shared.import_dates import infer_date_order, is_excel_serial, looks_like_date
 
 __all__ = [
@@ -72,7 +73,6 @@ _MAX_NAME_CHARS: Final = 40
 _REPEATED: Final = 1.5
 _NPS_HIGH: Final = 10
 _FIVE: Final = 5
-_EMAIL: Final = re.compile(r'[^@\s]+@[^@\s]+\.[^@\s]+')
 _URL: Final = re.compile(r'https?://\S+', re.IGNORECASE)
 _INTEGER: Final = re.compile(r'([+-]?\d{1,9})(?:[.,]0+)?(?:\s*/\s*\d{1,3})?')
 _MATRIX_PAIR: Final = re.compile(r'\s*([^;]+?)\s*--\s*([^;]+?)\s*')
@@ -138,10 +138,6 @@ class Column:
 
 # ── Reading the sample ──────────────────────────────────────────────────────────────────────────────────────────
 
-def _fail(message: str, code: str) -> ValidationError:
-    return ValidationError(message, code=code)
-
-
 def _sniff(header_line: str) -> str:
     """The separator the header line uses most, outside quotes (a comma when none appears)."""
     counts = Counter(ch for ch in re.sub(r'"[^"]*"', '', header_line) if ch in DELIMITERS)
@@ -165,9 +161,9 @@ def _delimited(text: str, delimiter: str | None, *, truncated: bool) -> Table:
     try:
         records = [record for record in reader if any(cell.strip() for cell in record)]
     except csv.Error as e:
-        raise _fail(f'The file could not be read as delimited text: {e}', 'file_unreadable') from e
+        raise ValidationError(f'The file could not be read as delimited text: {e}', code='file_unreadable') from e
     if not records:
-        raise _fail('The file has no header row', 'file_empty')
+        raise ValidationError('The file has no header row', code='file_empty')
     if truncated and len(records) > 1:
         records = records[:-1]  # the sample ends mid-file: its last row may be cut
     headers = _headers(records[0])
@@ -193,7 +189,8 @@ def _json_lines(body: str) -> list[object]:
     try:
         lines: list[object] = [json.loads(line) for line in body.splitlines() if line.strip()]
     except json.JSONDecodeError as e:
-        raise _fail('The file is not JSON: an array of objects, or one object per line', 'file_unreadable') from e
+        raise ValidationError('The file is not JSON: an array of objects, or one object per line',
+                              code='file_unreadable') from e
     return lines
 
 
@@ -208,14 +205,14 @@ def _json_records(text: str) -> list[object]:
         records: list[object] = lists[0] if len(lists) == 1 else [parsed]
         return records
     if not isinstance(parsed, list):
-        raise _fail('The JSON holds no list of records', 'file_unreadable')
+        raise ValidationError('The JSON holds no list of records', code='file_unreadable')
     return list(parsed)
 
 
 def _json_table(text: str) -> Table:
     records = [record for record in _json_records(text) if isinstance(record, dict)]
     if not records:
-        raise _fail('The JSON holds no records', 'file_empty')
+        raise ValidationError('The JSON holds no records', code='file_empty')
     names: list[str] = []
     for record in records:
         names.extend(str(key) for key in record if str(key) not in names)
@@ -230,7 +227,7 @@ def rows_table(rows: Sequence[Sequence[object]]) -> Table:
     """A table from rows of cells, the first the header (an XLSX sheet, shared/library_extract.py ``xlsx_rows``)."""
     filled = [row for row in rows if any(str(cell or '').strip() for cell in row)]
     if not filled:
-        raise _fail('The sheet is empty', 'file_empty')
+        raise ValidationError('The sheet is empty', code='file_empty')
     headers = _headers(filled[0])
     return Table(headers, [{header: (_cell_text(row[i]) if i < len(row) else '') for i, header in enumerate(headers)}
                            for row in filled[1:]], ',')
@@ -243,7 +240,7 @@ def parse_sample(fmt: str, text: str, *, delimiter: str | None = None, truncated
         return _json_table(text)
     if fmt in ('csv', 'tsv'):
         return _delimited(text, '\t' if fmt == 'tsv' and delimiter is None else delimiter, truncated=truncated)
-    raise _fail(f'format must be one of: {", ".join(FORMATS)}', 'format_invalid')
+    raise ValidationError(f'format must be one of: {", ".join(FORMATS)}', code='format_invalid')
 
 
 # ── One column ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -435,7 +432,7 @@ def detect_column(header: str, raw_values: Sequence[str]) -> Column:
 
 
 def _detect(header: str, values: list[str]) -> Column:
-    if _share(values, _EMAIL.fullmatch) >= _MOST:
+    if _share(values, EMAIL_PATTERN.fullmatch) >= _MOST:
         return Column(header, 'email', 0.95, [_reason('emails'), _reason('personal_data')])
     if _share(values, _URL.fullmatch) >= _MOST:
         return Column(header, *_with_header('url', header, 0.8, [_reason('urls')]))

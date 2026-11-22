@@ -30,9 +30,8 @@ from shared.request_body import require_known_change
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
-__all__ = ['ADOPTION_FAMILY', 'ADOPTION_KIND', 'ARTIFACT_TYPES', 'DEFAULT_BASELINE_HOURS', 'DEPLOYMENT_KEY',
-           'DEPLOYMENT_ROLLUP_PARTITION', 'MAX_BASELINE_HOURS', 'MAX_NOTE_CHARS', 'REASON', 'ROLLUP_TTL_DAYS',
-           'baselines_of', 'config_view', 'merged_config', 'rollup_partition', 'stored_fields', 'validate_changes']
+__all__ = ['ADOPTION_KIND', 'ARTIFACT_TYPES', 'DEPLOYMENT_KEY', 'REASON', 'ROLLUP_TTL_DAYS', 'baselines_of',
+           'config_view', 'merged_config', 'rollup_partition', 'stored_fields', 'validate_changes']
 
 #: The rollup's family in a workspace's keys (``WS#{ws}#ADOPTION#ROLLUP``) and the deployment's partition.
 ADOPTION_FAMILY: Final = 'ADOPTION'

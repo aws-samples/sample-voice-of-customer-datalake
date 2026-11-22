@@ -69,7 +69,7 @@ export function cardLanguage(language: string): SupportedLanguage {
 }
 
 /** A rate (0 to 1) as a whole percent, or null without answers. */
-export function percent(rate: number | null): number | null {
+export function percentOfRate(rate: number | null): number | null {
   return rate === null ? null : Math.round(rate * 100)
 }
 

@@ -386,7 +386,7 @@
       "createDescription": "Próbna przestrzeń robocza dla klienta na koniec warsztatów: jego osoby, pakiet startowy, a potem kreator importu. Działa 14, 30 lub 60 dni, a potem zostaje wstrzymana.",
       "dialogTitle": "Utwórz próbną przestrzeń roboczą",
       "days": "Czas trwania",
-      "daysOption": "{{days}} dni",
+      "daysOption": "{{days, number}} dni",
       "pausesNotice": "Po zakończeniu wersja próbna zostaje wstrzymana: jej wtyczki i aktywne formularze przestają działać, a nic nie jest usuwane. Odczyt i eksport działają, dopóki administrator platformy jej nie przedłuży lub nie przekształci. Wersja próbna nigdy nie usuwa się sama.",
       "fixNameSlug": "Sprawdź nazwę i adres.",
       "submit": "Utwórz wersję próbną",
@@ -407,7 +407,7 @@
         "title": "Pakiet startowy",
         "hint": "Tworzony w wersji próbnej z Twoim własnym dostępem, każdy element rejestrowany przez własną trasę. Formularze są tworzone jako wyłączone.",
         "form": "Formularz: {{name}}",
-        "categories": "Przykładowe kategorie ({{n}})"
+        "categories": "Przykładowe kategorie ({{n, number}})"
       },
       "done": {
         "title": "{{name}} jest gotowa.",

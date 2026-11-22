@@ -4,14 +4,13 @@
  */
 import type { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
-import {
-  IamPolicySchema, isAttachedToRole, isAuditRowGuardStatement, statementActions, WORKSPACE_STATUS_READ_CONDITION,
-} from '../test-support/iam-statements';
+import { WORKSPACE_STATUS_READ_CONDITION } from '../test-support/iam-statements';
 import { itemAt } from '../test-support/guards';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
-import { findWorkerFunction } from '../test-support/worker-function';
+import {
+  findWorkerFunction, FunctionPropertiesSchema, pinnedStatements, RetryConfigSchema, ScheduleSchema,
+} from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
 import { COST_PARTITIONS } from './cost-rollup-worker';
 
@@ -20,31 +19,11 @@ beforeAll(() => { template = synthProcessingTemplate({ withIndexes: true }); });
 
 const ONE = `ws_${'?'.repeat(26)}`;
 const worker = () => findWorkerFunction(template, 'voc-cost-rollup-');
-/** The role's statements, each `{effect, actions, resource, condition}`, actions sorted. */
-interface Statement { effect: string; actions: string[]; resource: string; condition: unknown }
-function statements(): Statement[] {
-  const roleId = worker().Role['Fn::GetAtt'][0];
-  const found: Statement[] = [];
-  for (const resource of Object.values(template.findResources('AWS::IAM::Policy'))) {
-    const policy = IamPolicySchema.parse(resource).Properties;
-    if (!isAttachedToRole(policy, roleId)) continue;
-    // The audit-row guard's Denies are every writer's of voc-aggregates (pinned by audit-row-guard.test.ts).
-    for (const statement of policy.PolicyDocument.Statement.filter((s) => !isAuditRowGuardStatement(s))) {
-      found.push({ effect: statement.Effect ?? 'Allow', actions: [...statementActions(statement)].sort(byCodeUnit),
-        resource: JSON.stringify(statement.Resource), condition: statement.Condition });
-    }
-  }
-  return found;
-}
+/** The role's statements, pinned, actions sorted (the audit-row guard's Denies, every writer's of voc-aggregates, left
+ *  out). */
+const statements = () => pinnedStatements(template, worker().Role['Fn::GetAtt'][0]);
 const on = (service: string) => statements().filter((s) => s.actions.some((action) => action.startsWith(service)));
 
-const FunctionPropertiesSchema = z.object({ Properties: z.record(z.string(), z.unknown()) });
-const InvokeConfigSchema = z.object({
-  Properties: z.object({ FunctionName: z.object({ Ref: z.string() }), MaximumRetryAttempts: z.number() }).loose(),
-});
-const ScheduleSchema = z.object({
-  Properties: z.object({ ScheduleExpression: z.string(), Targets: z.tuple([z.object({ Input: z.string() })]) }),
-}).transform(({ Properties }) => ({ expression: Properties.ScheduleExpression, input: Properties.Targets[0].Input }));
 
 describe('the voc-cost-rollup job', () => {
   it('reserves no concurrency, which a Workshop Studio account cannot spare (CHANGELOG 7.23.00, Known issues)', () => {
@@ -60,7 +39,7 @@ describe('the voc-cost-rollup job', () => {
   it('runs the rollup handler 15 minutes at most, with no async retry', () => {
     expect(worker().Handler).toBe('jobs/cost_rollup/handler.lambda_handler');
     const retries = Object.values(template.findResources('AWS::Lambda::EventInvokeConfig'))
-      .map((resource) => InvokeConfigSchema.parse(resource).Properties)
+      .map((resource) => RetryConfigSchema.parse(resource).Properties)
       .filter((config) => config.FunctionName.Ref.startsWith('CostRollupWorkerCostRollup'))
       .map((config) => config.MaximumRetryAttempts);
     expect(retries).toStrictEqual([0]);

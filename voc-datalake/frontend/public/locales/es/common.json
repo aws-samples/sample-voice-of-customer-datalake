@@ -396,7 +396,7 @@
       "createDescription": "Un espacio de trabajo de prueba para un cliente al final de un taller: sus personas, un paquete inicial y después el asistente de importación. Dura 14, 30 o 60 días y luego se pausa.",
       "dialogTitle": "Crear un espacio de trabajo de prueba",
       "days": "Duración",
-      "daysOption": "{{days}} días",
+      "daysOption": "{{days, number}} días",
       "pausesNotice": "Cuando la prueba termina, se pausa: sus plugins y formularios activos se detienen y no se borra nada. La lectura y la exportación siguen funcionando hasta que un administrador de la plataforma la amplíe o la convierta. Una prueba nunca se borra sola.",
       "fixNameSlug": "Revise el nombre y la dirección.",
       "submit": "Crear la prueba",
@@ -417,7 +417,7 @@
         "title": "Paquete inicial",
         "hint": "Se crea en la prueba con su propio acceso, y cada elemento queda registrado por su propia ruta. Los formularios se crean desactivados.",
         "form": "Formulario: {{name}}",
-        "categories": "Categorías de ejemplo ({{n}})"
+        "categories": "Categorías de ejemplo ({{n, number}})"
       },
       "done": {
         "title": "{{name}} está listo.",

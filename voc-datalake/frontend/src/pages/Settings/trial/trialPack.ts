@@ -8,7 +8,6 @@
  * @module pages/Settings/trial/trialPack
  */
 import starter from '../../../../../schemas/trial-pack.json'
-import { apiErrorStatus } from '../../../api/apiErrorStatus'
 import { serverReason } from '../../../lib/errors'
 import type { FormV2 } from '../../FeedbackForms/model/formsV2'
 import { templateById } from '../../FeedbackForms/formTemplates'
@@ -34,16 +33,15 @@ export interface PackStep {
   readonly kind: 'member' | 'form' | 'categories'
   readonly subject: string
   readonly ok: boolean
-  readonly status: number | null
   readonly reason: string | null
 }
 
 async function step(kind: PackStep['kind'], subject: string, run: () => Promise<unknown>): Promise<PackStep> {
   try {
     await run()
-    return { kind, subject, ok: true, status: null, reason: null }
+    return { kind, subject, ok: true, reason: null }
   } catch (error: unknown) {
-    return { kind, subject, ok: false, status: apiErrorStatus(error), reason: serverReason(error) }
+    return { kind, subject, ok: false, reason: serverReason(error) }
   }
 }
 

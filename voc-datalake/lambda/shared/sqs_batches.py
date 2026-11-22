@@ -18,7 +18,7 @@ from shared.logging import logger
 if TYPE_CHECKING:
     from mypy_boto3_sqs.type_defs import SendMessageBatchRequestEntryTypeDef
 
-__all__ = ['BATCH_SIZE', 'send_batches']
+__all__ = ['send_batches']
 
 BATCH_SIZE = 10
 

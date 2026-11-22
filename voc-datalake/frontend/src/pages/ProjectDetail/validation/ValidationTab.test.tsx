@@ -88,6 +88,32 @@ describe('the Validate tab', () => {
     expect(api.saveCriteria).toHaveBeenCalledWith('proj_1', [{ id: 'c00aa11', text: 'Paying takes a minute', target: 4.5 }], 3)
   })
 
+  it('edits the rows (a target, a removed and an added criterion) before they are saved', async () => {
+    api.saveCriteria.mockResolvedValue(BLOCK)
+    renderTab()
+    const user = userEvent.setup()
+    const target = await screen.findByRole('spinbutton', { name: 'Target of 5 1' })
+    await user.clear(target)
+    await user.type(target, '4')
+    await user.click(screen.getByRole('button', { name: 'Add a criterion' }))
+    await user.type(screen.getByRole('textbox', { name: 'Criterion 2' }), 'Testers find the export')
+    await user.click(screen.getByRole('button', { name: 'Remove criterion 1' }))
+    await user.click(screen.getByRole('button', { name: 'Save criteria' }))
+    expect(api.saveCriteria).toHaveBeenCalledWith('proj_1', [{ text: 'Testers find the export' }], 3)
+  })
+
+  it('reads the criteria from the PRD over saved ones only once the editor confirms', async () => {
+    api.extractCriteria.mockResolvedValue(BLOCK)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    renderTab()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Read them from the PRD' }))
+    expect(api.extractCriteria).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Read them from the PRD' }))
+    expect(api.extractCriteria).toHaveBeenCalledWith('proj_1', true, 'en')
+    confirm.mockRestore()
+  })
+
   it('offers Create decision once a report exists, prefilled from it', async () => {
     api.get.mockResolvedValue(view({ validation: { ...BLOCK, report_document_id: 'doc_rep' } }))
     renderTab()

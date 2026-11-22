@@ -12,9 +12,10 @@ import { useTranslation } from 'react-i18next'
 import type { ColumnKind, InferredForm } from '../../../api/importWizardSchema'
 import TypeChip from '../../FeedbackForms/ui/TypeChip'
 import type { ConfirmProblem, ImportWizardState } from './useImportWizard'
-import { kindLabel } from './columnText'
+import { columnKindLabel } from './columnText'
 import { inferredQuestions } from './inferredQuestions'
 import type { InferredQuestion } from './inferredQuestions'
+import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 
 const PROBLEM_KEYS: Readonly<Record<ConfirmProblem, string>> = {
   noText: 'importWizard.map.problems.noText',
@@ -71,7 +72,7 @@ function ReviewsSummary({ wizard }: Readonly<{ wizard: ImportWizardState }>) {
       <dl className="grid gap-1 text-sm sm:grid-cols-[12rem_1fr]">
         {SUMMARY_KINDS.filter((kind) => headersOf(kind).length > 0).map((kind) => (
           <div key={kind} className="contents">
-            <dt className="text-muted">{kindLabel(t, kind)}</dt>
+            <dt className="text-muted">{columnKindLabel(t, kind)}</dt>
             <dd className="text-text-strong break-words">{headersOf(kind).join(', ')}</dd>
           </div>
         ))}
@@ -99,11 +100,11 @@ export default function ConfirmStep({ wizard }: Readonly<{ wizard: ImportWizardS
           {t('importWizard.confirm.importing', { done: progress.done, total: progress.total })}
         </p>
       )}
-      <div className="flex justify-between gap-2">
+      <StickyActionBar variant="footer" className="flex justify-between gap-2">
         <button type="button" className="btn btn-secondary" disabled={wizard.busy} onClick={() => wizard.setStep('map')}>{t('importWizard.back')}</button>
         <button type="button" className="btn btn-primary" disabled={confirmProblem !== null || wizard.busy || wizard.name.trim() === ''}
           onClick={() => void wizard.start()}>{t('importWizard.confirm.start')}</button>
-      </div>
+      </StickyActionBar>
     </section>
   )
 }

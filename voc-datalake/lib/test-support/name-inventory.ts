@@ -40,6 +40,7 @@ const NAME_PROPERTIES = [
   'LogGroupName', // AWS::Logs::LogGroup
   'Name', // AWS::Events::Rule, AWS::ApiGateway::RestApi, AWS::SecretsManager::Secret, …
   'QueueName', // AWS::SQS::Queue
+  'RoleName', // AWS::IAM::Role — only a role named on purpose (7.71.00: the trials' scheduler role)
   'StateMachineName', // AWS::StepFunctions::StateMachine
   'TableName', // AWS::DynamoDB::Table
   'TopicName', // AWS::SNS::Topic

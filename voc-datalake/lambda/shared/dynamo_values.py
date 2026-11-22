@@ -49,6 +49,12 @@ def as_text(item: Mapping[str, Any], field: str) -> str:
     return value if isinstance(value, str) else ''
 
 
+def text_field(item: Mapping[str, Any], field: str) -> str | None:
+    """A stored item's string attribute (an empty one too); None when it is missing or not a string."""
+    value = item.get(field)
+    return value if isinstance(value, str) else None
+
+
 def mapping_or_empty(value: object) -> Mapping[str, Any]:
     """A stored value as a mapping; {} when it is not one."""
     return value if isinstance(value, Mapping) else {}

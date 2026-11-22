@@ -33,10 +33,10 @@ from shared.project_validation import (
     to_dynamo,
 )
 from shared.project_writes import create_counted_project_child
+from shared.validation_ai import OUTCOMES
 
 MAX_TITLE_CHARS: Final = 200
 _STATUS_WORDS: Final = {MET: 'Met', NOT_MET: 'Not met', NOT_ENOUGH_DATA: 'Not enough data'}
-_OUTCOMES: Final = ('completed', 'struggled', 'failed')
 SYNTHETIC_NOTICE: Final = ('Synthetic: personas tried the prototype\'s screens. These are not testers\' answers and '
                            'never count towards a criterion being met.')
 
@@ -82,7 +82,7 @@ def run_tallies(verdicts: Sequence[Mapping[str, Any]], tasks: Sequence[Mapping[s
     task_out = {}
     for task in tasks:
         outcomes = [v['tasks'][task['id']]['outcome'] for v in verdicts if task['id'] in v['tasks']]
-        task_out[task['id']] = {**{outcome: outcomes.count(outcome) for outcome in _OUTCOMES}, 'n': len(outcomes)}
+        task_out[task['id']] = {**{outcome: outcomes.count(outcome) for outcome in OUTCOMES}, 'n': len(outcomes)}
     criteria_out = {}
     for criterion in criteria:
         ratings = [v['criteria'][criterion['id']]['rating'] for v in verdicts if criterion['id'] in v['criteria']]
@@ -98,7 +98,7 @@ def render_run(verdicts: Sequence[Mapping[str, Any]], tallies: Mapping[str, Any]
              '| Task | Completed | Struggled | Failed |', '|---|---|---|---|']
     for task in tasks:
         figures = tallies['tasks'].get(task['id']) or {}
-        lines.append(f"| {task['text']} | " + ' | '.join(str(figures.get(o, 0)) for o in _OUTCOMES) + ' |')
+        lines.append(f"| {task['text']} | " + ' | '.join(str(figures.get(o, 0)) for o in OUTCOMES) + ' |')
     lines += ['', '## Criteria', '', '| Criterion | Personas\' average of 5 |', '|---|---|']
     for criterion in criteria:
         average = (tallies['criteria'].get(criterion['id']) or {}).get('average')

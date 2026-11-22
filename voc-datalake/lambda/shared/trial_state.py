@@ -21,9 +21,9 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Any, Final
 
+from shared.dynamo_values import plain, text_field
 from shared.exceptions import ConflictError, ValidationError
 from shared.request_body import reject_unknown_fields
 from shared.workspace_ids import ws_key
@@ -123,22 +123,6 @@ def new_trial(trial: NewTrial, creator: str, now: datetime) -> dict[str, Any]:
     """The map a new trial is created with (see the module docstring)."""
     return {'rev': 1, 'days': trial.days, 'created_at': at_second(now), 'created_by': creator,
             'expires_at': at_second(now + timedelta(days=trial.days)), 'pack': trial.pack, 'extended': []}
-
-
-def plain(value: Any) -> Any:
-    """``value`` as JSON can carry it: DynamoDB's whole Decimals as ints, maps and lists all the way down."""
-    if isinstance(value, Decimal):
-        return int(value) if value == value.to_integral_value() else float(value)
-    if isinstance(value, Mapping):
-        return {str(key): plain(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [plain(item) for item in value]
-    return value
-
-
-def text_field(trial: Mapping[str, Any], field: str) -> str | None:
-    value = trial.get(field)
-    return value if isinstance(value, str) else None
 
 
 def paused_lists(trial: Mapping[str, Any]) -> dict[str, list[str]]:

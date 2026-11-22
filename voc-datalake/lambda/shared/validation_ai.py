@@ -16,12 +16,12 @@ an unusable one is a 400 the page can act on (try again, or write it by hand), n
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Final
 
 from shared.converse import converse
-from shared.document_review import guarded_reply
+from shared.document_review import SURFACE, guarded_reply
 from shared.exceptions import ValidationError
 from shared.forms_v2 import FORM_LOCALES
 from shared.memory_store import parse_json_object
@@ -31,7 +31,6 @@ from shared.prompt_safety import DATA_NOTICE, data_block, injection_findings
 from shared.prompts import get_response_language_instruction
 from shared.prototype_walkthrough_draft import outline_text
 
-SURFACE: Final = 'documents'
 MAX_DOCUMENT_CHARS: Final = 40_000
 CRITERIA_MAX_TOKENS: Final = 1_500
 PLAN_MAX_TOKENS: Final = 6_000
@@ -48,11 +47,8 @@ OUTCOMES: Final = ('completed', 'struggled', 'failed')
 NO_CRITERIA: Final = 'The AI found no success criteria in this PRD. Try again, or write them yourself.'
 NO_PLAN: Final = 'The AI wrote no usable plan. Try again, or write the plan yourself.'
 
-#: ``(prompt, system prompt, max tokens, step name) -> the reply's text``: the one seam the tests replace.
-Invoke = Callable[[str, str, int, str], str]
-
-
 def default_invoke(prompt: str, system: str, max_tokens: int, step_name: str) -> str:
+    """One model call on the documents surface (the tests patch ``converse`` beneath it); the reply's text."""
     return converse(prompt=prompt, system_prompt=system, max_tokens=max_tokens, temperature=None, surface=SURFACE,
                     step_name=step_name)
 
@@ -89,11 +85,11 @@ _CRITERIA_SYSTEM: Final = (
 )
 
 
-def extract_criteria(prd_text: str, *, language: object = None, invoke: Invoke = default_invoke) -> list[dict]:
+def extract_criteria(prd_text: str, *, language: object = None) -> list[dict]:
     """The PRD's success criteria, validated (ids minted), or a 400 when the reply holds none."""
     prompt = '\n\n'.join((f'Read the Success Metrics of this PRD. {language_line(language)}',
                           data_block('document', prd_text[:MAX_DOCUMENT_CHARS])))
-    answer = parse_json_object(invoke(prompt, _CRITERIA_SYSTEM, CRITERIA_MAX_TOKENS, 'validation_criteria'))
+    answer = parse_json_object(default_invoke(prompt, _CRITERIA_SYSTEM, CRITERIA_MAX_TOKENS, 'validation_criteria'))
     texts = [text for entry in _list(answer, 'criteria')
              if isinstance(entry, Mapping) and (text := _clean(entry.get('text')))]
     if not texts:
@@ -144,8 +140,8 @@ def _guide(answer: Mapping[str, Any] | None, criteria_ids: set[str], persona_ids
 
 
 def draft_plan(*, criteria: Sequence[Mapping[str, Any]], personas: Sequence[Mapping[str, Any]],
-               outline: Mapping[str, Any] | None, walkthrough: Sequence[Mapping[str, Any]], language: object = None,
-               invoke: Invoke = default_invoke) -> dict[str, Any]:
+               outline: Mapping[str, Any] | None, walkthrough: Sequence[Mapping[str, Any]],
+               language: object = None) -> dict[str, Any]:
     """``{guide: [{criterion_id, questions, probes}], tasks: [{text, success}]}``, or a 400 when unusable."""
     steps = '\n'.join(f"Step: {step.get('title')}: {step.get('body')}" for step in walkthrough)
     prompt = '\n\n'.join(part for part in (
@@ -153,7 +149,7 @@ def draft_plan(*, criteria: Sequence[Mapping[str, Any]], personas: Sequence[Mapp
         _personas_block(personas),
         data_block('prototype_outline', f"{outline_text(outline)}\n{steps}".strip() if outline else ''),
     ) if part)
-    answer = parse_json_object(invoke(prompt, _PLAN_SYSTEM, PLAN_MAX_TOKENS, 'validation_plan'))
+    answer = parse_json_object(default_invoke(prompt, _PLAN_SYSTEM, PLAN_MAX_TOKENS, 'validation_plan'))
     guide = _guide(answer, {c['id'] for c in criteria}, {str(p['persona_id']) for p in personas})
     tasks = [{'text': text, 'success': _clean(entry.get('success'))} for entry in _list(answer, 'tasks')
              if isinstance(entry, Mapping) and (text := _clean(entry.get('text')))][:MAX_TASKS]
@@ -212,14 +208,14 @@ def persona_prompt(tasks: Sequence[Mapping[str, Any]], criteria: Sequence[Mappin
 
 def run_personas(personas: Sequence[Mapping[str, Any]], tasks: Sequence[Mapping[str, Any]],
                  criteria: Sequence[Mapping[str, Any]], outline: Mapping[str, Any],
-                 walkthrough: Sequence[Mapping[str, Any]], *, invoke: Invoke = default_invoke) -> list[dict[str, Any]]:
+                 walkthrough: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Each persona's verdict, ``PERSONA_CONCURRENCY`` at a time; one whose call failed or answered nothing usable is
     left out (one never sinks the run)."""
     prompt = persona_prompt(tasks, criteria, outline, walkthrough)
     task_ids, criteria_ids = {task['id'] for task in tasks}, {criterion['id'] for criterion in criteria}
     with ThreadPoolExecutor(max_workers=PERSONA_CONCURRENCY) as pool:
         replies = list(pool.map(lambda persona: guarded_reply(
-            lambda: invoke(prompt, persona_system_prompt(persona), PERSONA_MAX_TOKENS, 'validation_synthetic'),
+            lambda: default_invoke(prompt, persona_system_prompt(persona), PERSONA_MAX_TOKENS, 'validation_synthetic'),
             'Synthetic validation call failed'), personas))
     verdicts = (parse_persona_verdict(reply, persona, task_ids, criteria_ids)
                 for persona, reply in zip(personas, replies, strict=True) if reply is not None)
@@ -237,12 +233,12 @@ _SUMMARY_SYSTEM: Final = (
 )
 
 
-def report_summary(results_text: str, *, language: object = None, invoke: Invoke = default_invoke) -> str:
+def report_summary(results_text: str, *, language: object = None) -> str:
     """The summary paragraph ('' when the reply is unusable: the report keeps its computed tables either way)."""
     prompt = '\n\n'.join((f'Summarise these results. {language_line(language)}',
                           data_block('validation_results', results_text)))
     # The computed report stands without its summary.
-    reply = guarded_reply(lambda: invoke(prompt, _SUMMARY_SYSTEM, SUMMARY_MAX_TOKENS, 'validation_report'),
+    reply = guarded_reply(lambda: default_invoke(prompt, _SUMMARY_SYSTEM, SUMMARY_MAX_TOKENS, 'validation_report'),
                           'Validation report summary failed')
     text = (reply or '').strip()[:MAX_SUMMARY_CHARS]
     return '' if injection_findings(text) else text

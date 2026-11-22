@@ -25,7 +25,7 @@ from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
 from shared.category_access import CategoryScope
-from shared.dynamo_values import as_count, plain
+from shared.dynamo_values import as_count, plain, text_field
 from shared.exceptions import NotFoundError, ValidationError
 from shared.memory_policy import parse_datetime
 from shared.metric_keys import DAILY_TOTAL_PK
@@ -108,11 +108,6 @@ def _card_states(item: Mapping[str, Any]) -> dict[str, str]:
     return {str(k): str(v) for k, v in raw.items() if v in CARD_STATES}
 
 
-def _text(item: Mapping[str, Any], name: str) -> str | None:
-    value = item.get(name)
-    return value if isinstance(value, str) else None
-
-
 def brief_view(item: Mapping[str, Any] | None, now: datetime) -> dict[str, Any]:
     """The ``GET /settings/my-briefing/brief`` body (``status: 'none'`` before the first brief)."""
     if not isinstance(item, Mapping):
@@ -121,12 +116,12 @@ def brief_view(item: Mapping[str, Any] | None, now: datetime) -> dict[str, Any]:
     cards = [plain(card) for card in item.get('cards') or [] if isinstance(card, Mapping)]
     return {
         'status': effective_status(item, now),
-        'day': _text(item, 'sk'),
-        'generated_at': _text(item, 'generated_at'),
-        'requested_at': _text(item, 'requested_at'),
-        'headline': _text(item, 'headline') or '',
-        'summary': _text(item, 'summary') or '',
-        'language': _text(item, 'language'),
+        'day': text_field(item, 'sk'),
+        'generated_at': text_field(item, 'generated_at'),
+        'requested_at': text_field(item, 'requested_at'),
+        'headline': text_field(item, 'headline') or '',
+        'summary': text_field(item, 'summary') or '',
+        'language': text_field(item, 'language'),
         'cards': cards,
         'card_state': _card_states(item),
     }

@@ -29,6 +29,7 @@ import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt } from '../test-support/guards';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_ACCOUNT, SYNTH_REGION, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { VOICE_SCRATCH_PREFIX } from '../utils/voice-personas';
 
 /** The pseudo-parameters as the fixtures deploy them (core-stack-fixture.ts, processing-stack-fixture.ts). */
 const PSEUDO: Readonly<Record<string, string>> = {
@@ -464,6 +465,8 @@ describe('raw bucket prefixes in lib/stacks', () => {
     ['WORKSPACE_SILVER_HISTORY_PREFIX', WORKSPACE_SILVER_HISTORY_PREFIX],
     ['WORKSPACE_MEMORY_IMPORTS_PREFIX', WORKSPACE_MEMORY_IMPORTS_PREFIX],
     ['WORKSPACE_EXPORTS_PREFIX', WORKSPACE_EXPORTS_PREFIX],
+    // A utils/ constant the stacks import (7.69.00, voice-relay.ts), which the scan of lib/stacks cannot see.
+    ['VOICE_SCRATCH_PREFIX', VOICE_SCRATCH_PREFIX],
   ]);
   for (const source of sources) {
     for (const match of source.matchAll(/const ([A-Z][A-Z0-9_]*) = '([^']*)'/g)) {

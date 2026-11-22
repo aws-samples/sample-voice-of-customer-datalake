@@ -52,6 +52,9 @@ const REGISTERED: Readonly<Record<string, string>> = {
   SaveBar: 'the document surface\'s own save row (components/Document/surface): Discard and Save',
   TenetsReview: 'Agent orchestration → Setup guide → Tenets: a version\'s reason, then Reject or Accept',
   RoleModelSetting: 'Agents → Registry → a role\'s card → Model → Save model (7.58.00)',
+  UploadStep: 'Data sources → Import a file → Upload: Continue (7.67.00)',
+  MapStep: 'Data sources → Import a file → Columns: Back and Continue (7.67.00)',
+  ConfirmStep: 'Data sources → Import a file → Confirm: Back and Start import (7.67.00)',
 }
 
 /** Module name → why its primary button is not a form's save / submit row. */
@@ -150,6 +153,11 @@ const EXEMPT: Readonly<Record<string, string>> = {
   ItemEditor: 'a library item\'s Save, rendered only inside the Library\'s preview drawer (PreviewDrawer.tsx, a SideSheet over the launcher)',
   MicroFeedback: 'the in-app micro-feedback\'s Send (7.66.00): one short answer in a card under the result it is about, not a form\'s save row',
   RolePlaybook: 'each playbook step\'s link to its screen (7.66.00), one of many in the checklist (per-item controls)',
+  ImportWizardPrompt: 'Import a file is the empty Home\'s card link to the import wizard (7.67.00), nothing to save',
+  InsightsStep: 'Open the dashboard is a link that ends the import wizard\'s First insights (7.67.00), after the import has run; nothing left unsaved',
+  TrialPackResult: 'Open the import wizard in ‹name› is rendered only inside the Create trial dialog (CreateTrialDialog, a ModalShell), after the trial is made',
+  ValidationTab: 'Save criteria, Save the card and Write the report each end their own card of the Validate tab (7.68.00), left-aligned in the card, one of several cards',
+  LeadershipFilters: 'Leadership → Group by: the pressed grain of a toggle group (aria-pressed) wears the primary style (7.70.00); nothing is saved',
 }
 
 // (a SideSheet is a ModalShell too: its footer sits over the launcher)

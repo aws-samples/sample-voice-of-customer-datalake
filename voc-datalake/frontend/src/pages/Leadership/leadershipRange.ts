@@ -5,6 +5,7 @@
  * @module pages/Leadership/leadershipRange
  */
 import type { AdoptionRange, Grain } from '../../api/adoptionApi'
+import { formatCalendarMonth } from '../../utils/dateUtils'
 
 export const RANGE_PRESETS = ['last6', 'last12', 'thisYear', 'last24'] as const
 export type RangePreset = typeof RANGE_PRESETS[number]
@@ -26,15 +27,11 @@ export function presetRange(preset: RangePreset, grain: Grain, today: Date): Ado
 }
 
 const QUARTER = /^(\d{4})-Q([1-4])$/
-const MONTH = /^(\d{4})-(\d{2})$/
 
 /** A period's label: a month in the locale's short form, a quarter through `quarterLabel`, else the period itself. */
 export function periodLabel(period: string, locale: string,
   quarterLabel: (quarter: string, year: string) => string): string {
   const quarter = QUARTER.exec(period)
   if (quarter) return quarterLabel(quarter[2] ?? '', quarter[1] ?? '')
-  const parts = MONTH.exec(period)
-  if (!parts) return period
-  const at = new Date(Date.UTC(Number(parts[1]), Number(parts[2]) - 1, 1))
-  return new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(at)
+  return formatCalendarMonth(period, locale, 'short')
 }

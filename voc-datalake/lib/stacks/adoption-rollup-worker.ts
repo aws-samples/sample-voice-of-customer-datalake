@@ -25,20 +25,13 @@
  * No reserved concurrency (a Workshop Studio account cannot spare one): two runs at once write the same whole items.
  * No async retry: the next day's run rebuilds a scope that was not written.
  */
-import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as events from 'aws-cdk-lib/aws-events';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
-import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
-import { LOG_RETENTION } from '../utils/log-retention';
-import { pythonLambdaAsset } from '../utils/python-lambda-asset';
-import { grantKeyScopedWrites } from '../utils/table-write-grants';
-import { scheduleWorker, workerRole } from '../utils/worker-lambda';
+import { createDailyJob } from '../utils/worker-lambda';
 import { WORKSPACE_ID_PATTERN } from './core-buckets';
 import { CONVERSATIONS_BY_KIND_INDEX } from './memory-workers';
 
@@ -67,23 +60,6 @@ export interface AdoptionRollupWorkerProps {
   workspacesTable: dynamodb.ITable;
   conversationsTable: dynamodb.ITable;
   agentsTable: dynamodb.ITable;
-}
-
-/** Only `jobs/adoption_rollup`, `jobs/__init__.py` and `shared/` reach this bundle (and its hash). */
-function adoptionRollupCode(): lambda.Code {
-  return pythonLambdaAsset('lambda', {
-    exclude: [
-      '/jobs/*', '!/jobs/__init__.py', '!/jobs/adoption_rollup/',
-      '/aggregator/', '/api/', '/processor/', '/research/',
-      ...WORKER_TREE_ASSET_EXCLUDES, ...PY_LAMBDA_ASSET_EXCLUDES,
-    ],
-    copy: [
-      'mkdir -p /asset-output/jobs',
-      'cp /asset-input/jobs/__init__.py /asset-output/jobs/',
-      'cp -r /asset-input/jobs/adoption_rollup /asset-output/jobs/',
-      'cp -r /asset-input/shared /asset-output/',
-    ],
-  });
 }
 
 /** A projected Query: `actions` Query on `resource`, of `partitions` and `attributes` only. */
@@ -124,45 +100,17 @@ function grantRollupReads(role: iam.Role, props: AdoptionRollupWorkerProps): voi
 }
 
 export function createAdoptionRollupWorker(scope: Construct, id: string, props: AdoptionRollupWorkerProps): lambda.Function {
-  const worker = new Construct(scope, id);
-  const { uniqueName, kmsKey, aggregatesTable } = props;
-  const functionName = uniqueName(ADOPTION_ROLLUP_FUNCTION_BASE_NAME);
-
-  const role = workerRole(worker, 'AdoptionRollupRole');
-  grantRollupReads(role, props);
-  grantKeyScopedWrites(aggregatesTable, role, ['PutItem'], ADOPTION_PARTITIONS);
-  kmsKey.grantEncryptDecrypt(role);
-
-  const fn = new lambda.Function(worker, 'AdoptionRollup', {
-    functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
-    architecture: lambda.Architecture.ARM_64,
-    handler: 'jobs/adoption_rollup/handler.lambda_handler',
-    code: adoptionRollupCode(),
-    role,
-    timeout: cdk.Duration.minutes(15),
-    memorySize: ADOPTION_ROLLUP_MEMORY_MB,
-    retryAttempts: 0,
+  // 03:05 UTC daily, after the cost rollup (02:15): the day before is over in every timezone the view reports in UTC.
+  return createDailyJob(scope, id, props, {
+    job: 'adoption_rollup', baseName: ADOPTION_ROLLUP_FUNCTION_BASE_NAME, fnId: 'AdoptionRollup',
+    memorySize: ADOPTION_ROLLUP_MEMORY_MB, daily: { hour: '3', minute: '5' }, partitions: ADOPTION_PARTITIONS,
+    grant: (role) => { grantRollupReads(role, props); },
     environment: {
-      AGGREGATES_TABLE: aggregatesTable.tableName,
+      AGGREGATES_TABLE: props.aggregatesTable.tableName,
       PROJECTS_TABLE: props.projectsTable.tableName,
       WORKSPACES_TABLE: props.workspacesTable.tableName,
       CONVERSATIONS_TABLE: props.conversationsTable.tableName,
       AGENTS_TABLE: props.agentsTable.tableName,
-      POWERTOOLS_SERVICE_NAME: ADOPTION_ROLLUP_FUNCTION_BASE_NAME,
-      LOG_LEVEL: 'INFO',
     },
-    layers: [props.layer],
-    logGroup: new logs.LogGroup(worker, 'AdoptionRollupLogs', {
-      logGroupName: `/aws/lambda/${functionName}`,
-      retention: LOG_RETENTION,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    }),
   });
-
-  // 03:05 UTC daily, after the cost rollup (02:15): the day before is over in every timezone the view reports in UTC.
-  scheduleWorker(worker, 'AdoptionRollupSchedule', fn, uniqueName('voc-adoption-rollup-schedule'),
-    events.Schedule.cron({ hour: '3', minute: '5' }),
-    events.RuleTargetInput.fromObject({ mode: 'scheduled' }));
-  return fn;
 }

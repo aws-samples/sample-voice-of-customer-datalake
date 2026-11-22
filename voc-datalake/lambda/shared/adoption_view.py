@@ -19,11 +19,10 @@ from typing import Any, Final
 from shared.adoption import ARTIFACT_TYPES, baselines_of
 from shared.adoption_rollup import COHORT_STEPS, CYCLES, month_of, months_between
 from shared.decision_records import VERDICTS
-from shared.dynamo_values import as_count
+from shared.dynamo_values import as_count, mapping_or_empty
 from shared.exceptions import ValidationError
 
-__all__ = ['ASSUMPTIONS', 'ESTIMATE_LABEL', 'GRAINS', 'MAX_RANGE_MONTHS', 'AdoptionRange', 'adoption_view',
-           'parse_range']
+__all__ = ['adoption_view', 'parse_range']
 
 GRAINS: Final = ('month', 'quarter')
 DEFAULT_MONTHS: Final = 6
@@ -111,11 +110,6 @@ def _counts(value: object) -> Counter[str]:
     return Counter({str(name): as_count(count) for name, count in value.items()})
 
 
-def _map(value: object) -> Mapping[str, Any]:
-    """A stored map, or an empty one for anything else."""
-    return value if isinstance(value, Mapping) else {}
-
-
 def _median(histogram: Counter[str]) -> float | None:
     """The median of a ``{days: count}`` histogram (the mean of the two middle values for an even count)."""
     values = sorted((int(days), count) for days, count in histogram.items() if days.isdigit() and count > 0)
@@ -143,8 +137,8 @@ def _merged(buckets: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             out[name] += as_count(bucket.get(name))
         for name in ('with', 'decisions', 'validation_runs'):
             out[name].update(_counts(bucket.get(name)))
-        artifacts = _map(bucket.get('artifacts'))
-        cycles = _map(bucket.get('cycle_days'))
+        artifacts = mapping_or_empty(bucket.get('artifacts'))
+        cycles = mapping_or_empty(bucket.get('cycle_days'))
         for kind in ARTIFACT_TYPES:
             out['artifacts'][kind].update(_counts(artifacts.get(kind)))
         for cycle in CYCLES:
@@ -181,12 +175,12 @@ def adoption_view(item: Mapping[str, Any] | None, settings_row: Mapping[str, Any
     """The answer for ``chosen`` from the scope's newest rollup ``item`` (None before the first rollup: every count 0,
     ``as_of`` null) and its baselines row."""
     item = item or {}
-    stored = _map(item.get('months'))
+    stored = mapping_or_empty(item.get('months'))
     baselines = baselines_of(settings_row)
     hours = {kind: float(baselines[kind]['hours']) for kind in ARTIFACT_TYPES}
 
     def bucket(month: str) -> Mapping[str, Any]:
-        return _map(stored.get(month))
+        return mapping_or_empty(stored.get(month))
 
     periods = [_period_view(label, months, _merged(bucket(m) for m in months), hours)
                for label, months in chosen.periods()]

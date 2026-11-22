@@ -31,11 +31,14 @@ from typing import Any, Final
 #: The methodology steps that produce an artifact, in order. ``validation`` is tenet 2's "review" (7.68.00).
 STEPS: Final = ('personas', 'research', 'prfaq', 'prd', 'prototype', 'validation')
 
-#: The Validate step's documents that count as its output (a ``DOC#`` row each, told apart by ``document_type``). A
-#: synthetic run (``validation_run``) never does: personas are no testers.
-VALIDATION_DOCUMENT_TYPES: Final = ('validation_plan', 'validation_report')
-#: Its report: the one a decision should rest on (``overview``'s ``skipped``).
+#: The Validate step's document types (7.68.00; written by shared/validation_documents.py): its plan, its report (the
+#: one a decision should rest on, ``overview``'s ``skipped``) and a synthetic run. Their one home.
+VALIDATION_PLAN_TYPE: Final = 'validation_plan'
 VALIDATION_REPORT_TYPE: Final = 'validation_report'
+VALIDATION_RUN_TYPE: Final = 'validation_run'
+#: The ones that count as the step's output (a ``DOC#`` row each, told apart by ``document_type``). A synthetic run
+#: never does: personas are no testers.
+VALIDATION_DOCUMENT_TYPES: Final = (VALIDATION_PLAN_TYPE, VALIDATION_REPORT_TYPE)
 
 #: The upstream steps each step should read, in methodology order. ``feedback`` is
 #: the customer evidence itself; research is an optional extra (no step requires it).

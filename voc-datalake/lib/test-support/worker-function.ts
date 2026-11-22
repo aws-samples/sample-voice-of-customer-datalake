@@ -6,8 +6,10 @@ import type { Template } from 'aws-cdk-lib/assertions';
 import { expect } from 'vitest';
 import { z } from 'zod';
 
+import { byCodeUnit } from '../utils/compare';
 import { itemAt } from './guards';
-import type { NormalizedStatement } from './iam-statements';
+import { IamPolicySchema, isAttachedToRole, isAuditRowGuardStatement, statementActions } from './iam-statements';
+import type { IamStatement, NormalizedStatement } from './iam-statements';
 
 const WorkerFunctionSchema = z.object({
   Properties: z.object({
@@ -65,3 +67,39 @@ export function expectSelfInvokeOnly(statements: readonly NormalizedStatement[],
   expect(resource).toContain(`:function:${functionPrefix}`);
   expect(resource).not.toContain('function/');
 }
+
+/**
+ * Every statement of the policies attached to the role `roleId` (by `Roles: [{Ref}]`), as written: without the
+ * audit-row guard's Denies (every writer's of voc-aggregates and voc-workspaces, pinned by audit-row-guard.test.ts),
+ * or only those with `guard`.
+ */
+export function attachedStatements(template: Template, roleId: string, { guard = false } = {}): IamStatement[] {
+  return Object.values(template.findResources('AWS::IAM::Policy'))
+    .map((resource) => IamPolicySchema.parse(resource).Properties)
+    .filter((policy) => isAttachedToRole(policy, roleId))
+    .flatMap((policy) => policy.PolicyDocument.Statement)
+    .filter((statement) => guard === isAuditRowGuardStatement(statement));
+}
+
+/** A role's statement as a worker spec pins it: its effect, its Sid, its actions sorted, its resource as JSON. */
+export interface PinnedStatement { effect: string; sid: string | undefined; actions: string[]; resource: string; condition: unknown }
+
+/** {@link attachedStatements}, each pinned ({@link PinnedStatement}). */
+export function pinnedStatements(template: Template, roleId: string, { guard = false } = {}): PinnedStatement[] {
+  return attachedStatements(template, roleId, { guard }).map((statement) => ({
+    effect: statement.Effect ?? 'Allow', sid: statement.Sid, actions: [...statementActions(statement)].sort(byCodeUnit),
+    resource: JSON.stringify(statement.Resource), condition: statement.Condition,
+  }));
+}
+
+/** A Lambda function's properties, read loosely. */
+export const FunctionPropertiesSchema = z.object({ Properties: z.record(z.string(), z.unknown()) });
+/** A function's async invoke config: the function it names and its retries (any event age). */
+export const RetryConfigSchema = z.object({
+  Properties: z.object({ FunctionName: z.object({ Ref: z.string() }), MaximumRetryAttempts: z.number() }).loose(),
+});
+/** An EventBridge rule's schedule and its one target's input. */
+export const ScheduleSchema = z.object({
+  Properties: z.object({ ScheduleExpression: z.string(), Targets: z.tuple([z.object({ Input: z.string() })]) }),
+}).transform(({ Properties }) => ({ expression: Properties.ScheduleExpression, input: Properties.Targets[0].Input }));
+

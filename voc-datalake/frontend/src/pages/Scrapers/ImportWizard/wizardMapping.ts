@@ -45,7 +45,7 @@ export function reviewsMapping(kinds: Readonly<Record<string, ColumnKind>>, dime
 }
 
 /** Why the kinds cannot be imported as `target`, or null. */
-export function mappingProblem(kinds: Readonly<Record<string, ColumnKind>>, target: ImportTarget): MappingProblem | null {
+export function wizardMappingProblem(kinds: Readonly<Record<string, ColumnKind>>, target: ImportTarget): MappingProblem | null {
   const chosen = Object.values(kinds)
   if (target === 'reviews') return chosen.includes('open_text') ? null : 'noText'
   return chosen.some((kind) => QUESTION_KINDS.has(kind)) ? null : 'noQuestion'

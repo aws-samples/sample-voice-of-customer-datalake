@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Info } from 'lucide-react'
-import { ARTIFACT_TYPES, adoptionApi } from '../../api/adoptionApi'
+import { ADOPTION_ROOT_KEY, ARTIFACT_TYPES, adoptionApi } from '../../api/adoptionApi'
 import type { AdoptionView, ArtifactType } from '../../api/adoptionApi'
 import SideSheet from '../../components/SideSheet/SideSheet'
 import { formatCount, formatDecimal } from '../../utils/numberFormat'
@@ -44,7 +44,7 @@ function BaselineEditor({ view, onSaved }: Readonly<{ view: AdoptionView; onSave
       note: note.trim() === '' ? null : note.trim(),
     }),
     onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ['metrics', 'adoption'] })
+      await client.invalidateQueries({ queryKey: ADOPTION_ROOT_KEY })
       onSaved()
     },
   })

@@ -1187,7 +1187,7 @@
     "loading": "正在加载语音用量…",
     "failed": "无法加载语音用量。",
     "minutes": "已用分钟数",
-    "ofTotal": "{{used}} / {{total}}",
+    "ofTotal": "{{used, number}} / {{total, number}}",
     "sessions": "本月会话数",
     "cost": "估计费用",
     "live": "当前进行中",

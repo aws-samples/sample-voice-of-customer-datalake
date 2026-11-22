@@ -4,12 +4,9 @@ platform admin extends or converts the trial; every other save works, and anothe
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import ExitStack
 from typing import Any
 
 import pytest
-from moto import mock_aws
-from moto_helpers import pk_sk_table
 from test_feedback_form_workspace import (
     EDITOR,
     FORM_A,
@@ -21,6 +18,7 @@ from test_feedback_form_workspace import (
     _form,
     _present,
     _stored,
+    form_tables,
     wire_form_handler,
 )
 
@@ -34,8 +32,7 @@ PAUSED_TRIAL = {'rev': 2, 'days': 30, 'expires_at': '2026-11-01T09:00:00+00:00',
 
 @pytest.fixture
 def world() -> Iterator[dict[str, Any]]:
-    with mock_aws(), ExitStack() as stack:
-        aggregates, feedback, workspaces = pk_sk_table('aggregates'), pk_sk_table('feedback'), pk_sk_table('workspaces')
+    with form_tables() as (stack, aggregates, feedback, workspaces):
         workspaces.put_item(Item={'pk': f'WS#{WS_A}', 'sk': 'META', 'status': 'active', 'name': 'Trial', 'slug': 'trial',
                                   'trial': PAUSED_TRIAL})
         workspaces.put_item(Item={'pk': f'WS#{WS_B}', 'sk': 'META', 'status': 'active', 'name': 'B', 'slug': 'b'})

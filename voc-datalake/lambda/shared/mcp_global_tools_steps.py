@@ -51,7 +51,7 @@ from shared.mcp_global_kit import (
     stripped,
     text_arg,
 )
-from shared.methodology import STEPS
+from shared.methodology import STEPS, VALIDATION_DOCUMENT_TYPES
 from shared.prototype_drafts import MAX_INSTRUCTION_CHARS
 from shared.prototype_pins import MAX_BATCH_PINS
 from shared.prototype_walkthrough import MAX_STEPS as MAX_WALKTHROUGH_STEPS
@@ -73,7 +73,7 @@ TOOL_MARK_ADDRESSED: Final = 'documents_mark_comments_addressed'
 LEGACY_REVISE_STEP: Final = 'revise'
 #: What ``projects_generate`` starts: every methodology step's artifact but Validate's own, which is two documents
 #: (7.68.00, shared/project_validation_routes.py): its plan and its report.
-VALIDATION_STEPS: Final = ('validation_plan', 'validation_report')
+VALIDATION_STEPS: Final = VALIDATION_DOCUMENT_TYPES
 GENERATE_STEPS: Final = (*(step for step in STEPS if step != 'validation'), *VALIDATION_STEPS)
 
 

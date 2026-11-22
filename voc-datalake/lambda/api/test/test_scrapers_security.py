@@ -11,10 +11,10 @@ the state BEFORE round 1 gated the writes; they are kept because they are why
 the writes are gated.
 
 SCOPE, first, because the module name and the URL prefix do not line up: this file
-covers `scrapers_handler` ONLY. `/scrapers/*` is served by TWO Lambdas — seven more
+covers `scrapers_handler` ONLY. `/scrapers/*` is served by TWO Lambdas — eight more
 routes under the same prefix live in `manual_import_handler`
 (`/scrapers/manual/parse`, `.../parse/<job_id>`, `.../confirm`, `.../csv-upload`,
-`.../json-upload`, and since #237 the read-only `.../history` and `.../history/<run_id>`).
+`.../json-upload`, since #237 the read-only `.../history` and `.../history/<run_id>`, and since 7.67.00 `.../detect`).
 Before #242 none
 of them called `require_admin`; measured then as a caller whose only
 `cognito:groups` claim is `users`:
@@ -31,10 +31,10 @@ false one.
 
 Those five are now admin-only too (#242): importing content
 (manual paste, CSV, JSON — and S3 import in `s3_import_handler`) is an
-administrator's action. They are gated differently from the nine here — by ONE
-resolver middleware in `manual_import_handler` (`shared.api.admins_only`) rather than a call
-in each route body — which is why `TestTheInventoryIsOneHandlers` pins the
-middleware, and `test_import_admin_gates.py` asserts the behaviour.
+administrator's action. Since 7.67.00 (the import works in a workspace, and the import
+wizard's `.../detect` joins them) they are gated as the nine here: each route's first
+statement is the two-path gate (`_request.require_request_admin()`), which
+`TestTheInventoryIsOneHandlers` pins, and `test_import_admin_gates.py` asserts the behaviour.
 
 `scrapers_handler` writes the SAME shared API-credentials secret that
 `integrations_handler` does — `POST /scrapers` and `DELETE /scrapers/<id>` both
@@ -98,7 +98,6 @@ REVERT MAP — each assertion below names the mutation it catches:
       the middleware, so dropping `app.use(middlewares=[admins_only])` fails here.
 """
 import ast
-import importlib
 import inspect
 import json
 from typing import ClassVar
@@ -460,9 +459,11 @@ MANUAL_IMPORT_ROUTES = {
     'confirm_import',
     'csv_upload',
     'json_upload',
-    # Import history (#237), read-only, behind the same module middleware.
+    # Import history (#237), read-only, behind the same gate.
     'list_import_history',
     'get_import_history_run',
+    # The import wizard's first look at a file (7.67.00): deterministic, nothing stored, admin-only like the others.
+    'detect_import_columns',
 }
 
 
@@ -592,33 +593,29 @@ class TestTheInventoryIsOneHandlers:
             f'they no longer all do: {paths}'
         )
 
-    def test_they_are_gated_by_the_module_middleware_not_per_route(self):
-        """The state the docstring above describes, pinned (#242).
+    def test_every_route_calls_the_two_path_admin_gate_first(self):
+        """The state the docstring above describes, pinned (#242; 7.67.00: the import works in a workspace).
 
-        The gate is ONE `app.use(middlewares=[admins_only])` (shared.api) whose body calls
-        `require_admin` unconditionally; no route repeats it. Dropping the
-        middleware, or emptying it, fails here (and in `test_import_admin_gates.py`).
+        The module's one middleware resolves the request's workspace (`_request.middleware`, shared/workspace_request.py
+        ResolvedRoutes); each route's first statement is then the two-path admin gate
+        (`_request.require_request_admin()`: the deployment's `admins`, or the workspace's admin role), and none calls
+        the deployment-only `require_admin` (it would refuse a workspace's admin). `test_import_admin_gates.py` asserts
+        the behaviour.
         """
         module = self._manual_import_module()
         tree = ast.parse(inspect.getsource(module))
         installed = [
-            elt.id
+            ast.unparse(elt)
             for stmt in tree.body
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
             and isinstance(stmt.value.func, ast.Attribute) and stmt.value.func.attr == 'use'
             for kw in stmt.value.keywords if kw.arg == 'middlewares' and isinstance(kw.value, ast.List)
-            for elt in kw.value.elts if isinstance(elt, ast.Name)
+            for elt in kw.value.elts
         ]
-        assert installed == ['admins_only']
-        shared_api = ast.parse(inspect.getsource(importlib.import_module('shared.api')))
-        middleware = next(n for n in shared_api.body if isinstance(n, ast.FunctionDef) and n.name == 'admins_only')
-        assert 'require_admin' in plain_calls_in(middleware)
-        per_route = {
-            name
-            for name, node in _route_functions(module).items()
-            if 'require_admin' in plain_calls_in(node)
-        }
-        assert per_route == set()
+        assert installed == ['_request.middleware']
+        routes = _route_functions(module)
+        assert {name: _first_statement_call(node) for name, node in routes.items()} == dict.fromkeys(routes, ADMIN_GATE)
+        assert {name for name, node in routes.items() if 'require_admin' in plain_calls_in(node)} == set()
 
     def test_the_control_the_parser_reaches_that_module_at_all(self):
         """Non-vacuity for the assertion above.

@@ -21,21 +21,15 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as events from 'aws-cdk-lib/aws-events';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
 import { readsCustomModelRegistry } from '../utils/custom-models';
-import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { logGroupArn } from '../utils/lambda-log-grants';
-import { LOG_RETENTION } from '../utils/log-retention';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
-import { pythonLambdaAsset } from '../utils/python-lambda-asset';
-import { grantKeyScopedWrites } from '../utils/table-write-grants';
-import { scheduleWorker, workerRole } from '../utils/worker-lambda';
+import { createDailyJob } from '../utils/worker-lambda';
 import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 import { WORKSPACE_ID_PATTERN } from './core-buckets';
 
@@ -52,23 +46,6 @@ export interface CostRollupWorkerProps {
   kmsKey: kms.IKey;
   aggregatesTable: dynamodb.ITable;
   workspacesTable: dynamodb.ITable;
-}
-
-/** Only `jobs/cost_rollup`, `jobs/__init__.py` and `shared/` reach this bundle (and its hash). */
-function costRollupCode(): lambda.Code {
-  return pythonLambdaAsset('lambda', {
-    exclude: [
-      '/jobs/*', '!/jobs/__init__.py', '!/jobs/cost_rollup/',
-      '/aggregator/', '/api/', '/processor/', '/research/',
-      ...WORKER_TREE_ASSET_EXCLUDES, ...PY_LAMBDA_ASSET_EXCLUDES,
-    ],
-    copy: [
-      'mkdir -p /asset-output/jobs',
-      'cp /asset-input/jobs/__init__.py /asset-output/jobs/',
-      'cp -r /asset-input/jobs/cost_rollup /asset-output/jobs/',
-      'cp -r /asset-input/shared /asset-output/',
-    ],
-  });
 }
 
 /** The Logs Insights reads: list the groups, query the deployment's Lambda groups, poll and stop by query id. */
@@ -89,50 +66,25 @@ function grantUsageSearch(stack: cdk.Stack, role: iam.Role, pattern: string): vo
 }
 
 export function createCostRollupWorker(scope: Construct, id: string, props: CostRollupWorkerProps): lambda.Function {
-  const worker = new Construct(scope, id);
-  const { uniqueName, kmsKey, aggregatesTable, workspacesTable } = props;
-  const functionName = uniqueName(COST_ROLLUP_FUNCTION_BASE_NAME);
-
-  const role = workerRole(worker, 'CostRollupRole');
-  grantUsageSearch(cdk.Stack.of(worker), role, props.lambdaLogGroupPattern);
-  grantKeyScopedWrites(aggregatesTable, role, ['PutItem'], COST_PARTITIONS);
-  grantWorkspaceStatusRead(role, workspacesTable);
-  kmsKey.grantEncryptDecrypt(role);
-
-  const fn = new lambda.Function(worker, 'CostRollup', {
-    functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
-    architecture: lambda.Architecture.ARM_64,
-    handler: 'jobs/cost_rollup/handler.lambda_handler',
-    code: costRollupCode(),
-    role,
-    timeout: cdk.Duration.minutes(15),
-    memorySize: COST_ROLLUP_MEMORY_MB,
-    // No reserved concurrency: a Workshop Studio account cannot spare one (CHANGELOG 7.23.00, Known issues), and none
-    // is needed: two runs at once write the same whole items, so the later one simply overwrites.
-    // A day that was not written is rerun by the next tick (it rolls up two days) or a backfill.
-    retryAttempts: 0,
+  // No reserved concurrency: a Workshop Studio account cannot spare one (CHANGELOG 7.23.00, Known issues), and none
+  // is needed: two runs at once write the same whole items, so the later one simply overwrites.
+  // A day that was not written is rerun by the next tick (it rolls up two days) or a backfill.
+  // 02:15 UTC daily: yesterday is over, and the day before is rolled up again for lines that arrived late.
+  const fn = createDailyJob(scope, id, props, {
+    job: 'cost_rollup', baseName: COST_ROLLUP_FUNCTION_BASE_NAME, fnId: 'CostRollup', memorySize: COST_ROLLUP_MEMORY_MB,
+    daily: { hour: '2', minute: '15' }, partitions: COST_PARTITIONS,
+    grant: (role, worker) => {
+      grantUsageSearch(cdk.Stack.of(worker), role, props.lambdaLogGroupPattern);
+      grantWorkspaceStatusRead(role, props.workspacesTable);
+    },
     environment: {
-      AGGREGATES_TABLE: aggregatesTable.tableName,
-      WORKSPACES_TABLE: workspacesTable.tableName,
+      AGGREGATES_TABLE: props.aggregatesTable.tableName,
+      WORKSPACES_TABLE: props.workspacesTable.tableName,
       // The groups it reads, as the System logs search names them (lambda/shared/system_log_sources.py).
       SYSTEM_LOG_GROUP_PATTERN: props.lambdaLogGroupPattern,
-      POWERTOOLS_SERVICE_NAME: COST_ROLLUP_FUNCTION_BASE_NAME,
-      LOG_LEVEL: 'INFO',
     },
-    layers: [props.layer],
-    logGroup: new logs.LogGroup(worker, 'CostRollupLogs', {
-      logGroupName: `/aws/lambda/${functionName}`,
-      retention: LOG_RETENTION,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    }),
   });
-
   // A -c customModels model's tokens are priced from the registry (shared/model_prices.py), though the job calls no model.
   readsCustomModelRegistry(fn);
-  // 02:15 UTC daily: yesterday is over, and the day before is rolled up again for lines that arrived late.
-  scheduleWorker(worker, 'CostRollupSchedule', fn, uniqueName('voc-cost-rollup-schedule'),
-    events.Schedule.cron({ hour: '2', minute: '15' }),
-    events.RuleTargetInput.fromObject({ mode: 'scheduled' }));
   return fn;
 }

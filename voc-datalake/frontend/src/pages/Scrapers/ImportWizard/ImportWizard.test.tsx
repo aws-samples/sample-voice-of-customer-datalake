@@ -6,7 +6,7 @@
  * data only.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
@@ -109,6 +109,24 @@ describe('ImportWizard: reviews or tickets', () => {
       'POST /scrapers/manual/detect': () => REVIEWS_ANSWER,
       'POST /scrapers/manual/csv-upload': () => ({ success: true, imported_count: 2, total_rows: 2 }),
     })
+  })
+
+  it('takes a dropped file the way it takes a chosen one; Choose a file opens the picker, which is no Tab stop', async () => {
+    renderWithQueryClient(<MemoryRouter><ImportWizard /></MemoryRouter>)
+    const input = fileInput()
+    expect(input).toHaveAttribute('tabindex', '-1')
+    const opened = vi.spyOn(input, 'click').mockImplementation(() => {})
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Choose a file' }))
+    expect(opened).toHaveBeenCalledTimes(1)
+    const zone = screen.getByTestId('import-drop-zone')
+    fireEvent.dragOver(zone)
+    expect(zone).toHaveClass('border-accent')
+    fireEvent.dragLeave(zone)
+    expect(zone).not.toHaveClass('border-accent')
+    const dropped = csvFile(REVIEWS, 'dropped.csv')
+    fireEvent.drop(zone, { dataTransfer: { files: { length: 1, 0: dropped, item: () => dropped } } })
+    expect(await screen.findByText('dropped.csv')).toBeInTheDocument()
+    expect(sentFetchApiBody('/scrapers/manual/detect', 'POST')).toMatchObject({ format: 'csv', sample: REVIEWS })
   })
 
   it('previews the file and sends its first 256 KB to the detection', async () => {

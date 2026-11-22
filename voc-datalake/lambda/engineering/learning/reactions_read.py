@@ -43,6 +43,7 @@ from engineering.learning.scorecard import ScorecardStore
 from engineering.rows import LAUNCH_HOLD, get_row, run_pk, run_rows, string_attr
 from engineering.run_links import run_pull_request
 from engineering.runtime.runs import ENDED
+from shared.aws import unqualified_function_arn as unqualified
 from shared.logging import logger
 
 #: Every schedule's name starts so (the runtime's grant is on this prefix in its group): ``<prefix><run id>``.
@@ -57,11 +58,6 @@ NO_PULL_REQUEST: Final = 'no_pull_request'
 NOT_ENDED: Final = 'not_ended'
 NO_RUN: Final = 'no_run'
 NO_CONNECTION: Final = 'no_connection'
-
-
-def unqualified(function_arn: str) -> str:
-    """A Lambda function's ARN without its alias or version (``arn:aws:lambda:<region>:<account>:function:<name>``)."""
-    return ':'.join(function_arn.split(':')[:7])
 
 
 def has_pull_request(client: Any, table: str, ws: str, run_id: str) -> bool:

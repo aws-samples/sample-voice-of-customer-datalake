@@ -40,7 +40,7 @@ from shared.ws_repo import optional_scope
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
-__all__ = ['app', 'bind_aggregates_table', 'require_adoption_reader']
+__all__ = ['app', 'bind_aggregates_table']
 
 app = Router()
 #: voc-aggregates as the including handler holds it (``bind_aggregates_table``: the metrics handler's own table).

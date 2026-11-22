@@ -1187,7 +1187,7 @@
     "loading": "음성 사용량을 불러오는 중…",
     "failed": "음성 사용량을 불러오지 못했습니다.",
     "minutes": "사용한 시간(분)",
-    "ofTotal": "{{used}} / {{total}}",
+    "ofTotal": "{{used, number}} / {{total, number}}",
     "sessions": "이번 달 세션",
     "cost": "예상 비용",
     "live": "현재 진행 중",

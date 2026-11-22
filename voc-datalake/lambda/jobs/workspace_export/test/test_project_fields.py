@@ -47,6 +47,8 @@ NOT_PROJECT_ROW_WRITERS: Final = {
     'lambda/shared/document_comments.py': ("comment threads (document_comments, THREAD_FIELDS) and a series' row in "
                                            "a project's series list or the deployment's series registry (keys only)"),
     'lambda/jobs/workspace_delete/handler.py': "the hard delete's job row and audit rows",
+    'lambda/jobs/adoption_rollup/handler.py': ("the leadership view's daily rollup (7.70.00): reads projects' partitions, "
+                                               'projected; writes only its ADOPTION#ROLLUP items in voc-aggregates'),
     'lambda/jobs/workspace_export/projects.py': 'the export itself: reads only (its cursor keys look like writes)',
     'lambda/shared/assist_jobs.py': 'assist job rows in voc-jobs (left out of project_jobs)',
     'lambda/shared/voice_session_routes.py': "a voice session's transcript job, an assist job row (keys only)",

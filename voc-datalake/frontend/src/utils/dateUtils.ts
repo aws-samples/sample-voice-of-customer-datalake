@@ -156,10 +156,11 @@ export function formatCalendarDay(day: string, language: string, style: 'short' 
 const CALENDAR_MONTH = /^\d{4}-(?:0[1-9]|1[0-2])$/u
 
 /**
- * A `YYYY-MM` month in the reader's locale ("October 2026", de "Oktober 2026"), for month headings.
- * Read as a LOCAL date (its first day); `fallback` (the input) when it is not such a month.
+ * A `YYYY-MM` month in the reader's locale: `long` = "October 2026" (de "Oktober 2026"), for month headings; `short`
+ * = "Oct 2026" (a table's or a chart's periods). Read as a LOCAL date (its first day); `fallback` (the input) when it
+ * is not such a month.
  */
-export function formatCalendarMonth(month: string, language: string): string {
+export function formatCalendarMonth(month: string, language: string, style: 'short' | 'long' = 'long'): string {
   if (!CALENDAR_MONTH.test(month)) return month
-  return new Intl.DateTimeFormat(language || 'en', { month: 'long', year: 'numeric' }).format(parseISO(`${month}-01`))
+  return new Intl.DateTimeFormat(language || 'en', { month: style, year: 'numeric' }).format(parseISO(`${month}-01`))
 }

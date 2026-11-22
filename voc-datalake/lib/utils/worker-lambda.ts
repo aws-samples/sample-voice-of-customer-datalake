@@ -11,16 +11,19 @@
  * there first).
  */
 import * as cdk from 'aws-cdk-lib';
+import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from './log-retention';
 import { Construct } from 'constructs';
 
-import { PY_LAMBDA_ASSET_EXCLUDES } from './lambda-asset-excludes';
+import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from './lambda-asset-excludes';
 import { pythonLambdaAsset } from './python-lambda-asset';
+import { grantKeyScopedWrites } from './table-write-grants';
 
 /** The worker trees under `lambda/`. */
 type WorkerTree = 'memory' | 'agents' | 'briefing' | 'engineering';
@@ -167,4 +170,81 @@ export function scheduleWorker(
     schedule,
     targets: [new targets.LambdaFunction(fn, { retryAttempts: 2, event: input })],
   });
+}
+
+/** Only `jobs/<job>`, `jobs/__init__.py` and `shared/` reach a job's bundle (and its hash). */
+function jobLambdaCode(job: string): lambda.Code {
+  return pythonLambdaAsset('lambda', {
+    exclude: [
+      '/jobs/*', '!/jobs/__init__.py', `!/jobs/${job}/`,
+      '/aggregator/', '/api/', '/processor/', '/research/',
+      ...WORKER_TREE_ASSET_EXCLUDES, ...PY_LAMBDA_ASSET_EXCLUDES,
+    ],
+    copy: [
+      'mkdir -p /asset-output/jobs',
+      'cp /asset-input/jobs/__init__.py /asset-output/jobs/',
+      `cp -r /asset-input/jobs/${job} /asset-output/jobs/`,
+      'cp -r /asset-input/shared /asset-output/',
+    ],
+  });
+}
+
+/** What every daily job is given: the stack's naming, its layer, the key and voc-aggregates (its one write). */
+export interface DailyJobProps {
+  uniqueName: (baseName: string) => string;
+  layer: lambda.ILayerVersion;
+  kmsKey: kms.IKey;
+  aggregatesTable: dynamodb.ITable;
+}
+
+export interface DailyJobSpec {
+  /** The job's directory under `lambda/jobs/` (its handler is `jobs/<job>/handler.lambda_handler`). */
+  job: string;
+  /** The function's base name (its physical name through `uniqueName`, its Powertools service name). */
+  baseName: string;
+  /** The function's construct id: its role is `<fnId>Role`, its log group `<fnId>Logs`, its schedule `<fnId>Schedule`. */
+  fnId: string;
+  memorySize: number;
+  environment: Record<string, string>;
+  /** When it runs, UTC, every day (its rule `<baseName>-schedule`, the event `{mode: 'scheduled'}`). */
+  daily: { hour: string; minute: string };
+  /** Its whole items in voc-aggregates: PutItem held to these partitions (`dynamodb:LeadingKeys`). */
+  partitions: readonly string[];
+  /** The job's own reads, granted on its role before the write. */
+  grant: (role: iam.Role, scope: Construct) => void;
+}
+
+/**
+ * A daily job of `lambda/jobs/` (the cost rollup, the leadership view's rollup) in a construct `id` of its own: its role
+ * (its reads, its PutItem on voc-aggregates' `partitions`, the key), 15 minutes at most, no async retry (a day that was
+ * not written is rebuilt by the next run), its 30-day log group and its schedule.
+ */
+export function createDailyJob(scope: Construct, id: string, props: DailyJobProps, spec: DailyJobSpec): lambda.Function {
+  const worker = new Construct(scope, id);
+  const functionName = props.uniqueName(spec.baseName);
+  const role = workerRole(worker, `${spec.fnId}Role`);
+  spec.grant(role, worker);
+  grantKeyScopedWrites(props.aggregatesTable, role, ['PutItem'], spec.partitions);
+  props.kmsKey.grantEncryptDecrypt(role);
+  const fn = new lambda.Function(worker, spec.fnId, {
+    functionName,
+    runtime: lambda.Runtime.PYTHON_3_14,
+    architecture: lambda.Architecture.ARM_64,
+    handler: `jobs/${spec.job}/handler.lambda_handler`,
+    code: jobLambdaCode(spec.job),
+    role,
+    timeout: cdk.Duration.minutes(15),
+    memorySize: spec.memorySize,
+    retryAttempts: 0,
+    environment: { ...spec.environment, POWERTOOLS_SERVICE_NAME: spec.baseName, LOG_LEVEL: 'INFO' },
+    layers: [props.layer],
+    logGroup: new logs.LogGroup(worker, `${spec.fnId}Logs`, {
+      logGroupName: `/aws/lambda/${functionName}`,
+      retention: LOG_RETENTION,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    }),
+  });
+  scheduleWorker(worker, `${spec.fnId}Schedule`, fn, props.uniqueName(`${spec.baseName}-schedule`),
+    events.Schedule.cron(spec.daily), events.RuleTargetInput.fromObject({ mode: 'scheduled' }));
+  return fn;
 }

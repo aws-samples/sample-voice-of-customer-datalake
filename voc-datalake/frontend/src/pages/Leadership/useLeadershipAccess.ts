@@ -14,7 +14,6 @@ export interface LeadershipAccess {
   readonly canEdit: boolean
   /** Outside a workspace, a platform admin: the page links the platform's cost estimate. */
   readonly showsPlatformCost: boolean
-  readonly inWorkspace: boolean
 }
 
 export function useLeadershipAccess(): LeadershipAccess {
@@ -23,7 +22,7 @@ export function useLeadershipAccess(): LeadershipAccess {
   const isPlatformAdmin = useIsPlatformAdmin()
   if (workspace !== null) {
     const admin = workspace.role === 'admin'
-    return { canRead: admin, canEdit: admin, showsPlatformCost: false, inWorkspace: true }
+    return { canRead: admin, canEdit: admin, showsPlatformCost: false }
   }
-  return { canRead: isAdmin || isPlatformAdmin, canEdit: isAdmin, showsPlatformCost: isPlatformAdmin, inWorkspace: false }
+  return { canRead: isAdmin || isPlatformAdmin, canEdit: isAdmin, showsPlatformCost: isPlatformAdmin }
 }

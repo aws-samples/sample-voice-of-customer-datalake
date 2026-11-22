@@ -12,7 +12,8 @@ import { DATE_ORDERS } from '../../../api/importWizardSchema'
 import type { DateOrder, ImportTarget } from '../../../api/importWizardSchema'
 import ColumnCard from './ColumnCard'
 import type { ImportWizardState } from './useImportWizard'
-import { mappingProblem } from './wizardMapping'
+import { wizardMappingProblem } from './wizardMapping'
+import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 
 const TARGETS: readonly ImportTarget[] = ['reviews', 'survey']
 const TARGET_KEYS: Readonly<Record<ImportTarget, { readonly title: string; readonly hint: string }>> = {
@@ -30,7 +31,7 @@ export default function MapStep({ wizard }: Readonly<{ wizard: ImportWizardState
   const { detected } = wizard
   if (detected === null) return null
   const hasDates = Object.values(wizard.kinds).includes('date')
-  const problem = mappingProblem(wizard.kinds, wizard.target)
+  const problem = wizardMappingProblem(wizard.kinds, wizard.target)
   return (
     <section className="card space-y-5" aria-labelledby={`${ids}-title`}>
       <h2 id={`${ids}-title`} className="text-sm font-semibold text-text-strong">{t('importWizard.steps.map')}</h2>
@@ -62,14 +63,14 @@ export default function MapStep({ wizard }: Readonly<{ wizard: ImportWizardState
         </ul>
       </div>
       {problem !== null && <p role="alert" className="text-sm text-danger">{t(PROBLEM_KEYS[problem])}</p>}
-      <div className="flex justify-between gap-2">
+      <StickyActionBar variant="footer" className="flex justify-between gap-2">
         <button type="button" className="btn btn-secondary" onClick={() => wizard.setStep('upload')}>{t('importWizard.back')}</button>
         <button type="button" className="btn btn-primary" disabled={problem !== null || wizard.busy}
           onClick={() => void wizard.toConfirm()}>
           {wizard.busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
           {t('importWizard.continue')}
         </button>
-      </div>
+      </StickyActionBar>
     </section>
   )
 }

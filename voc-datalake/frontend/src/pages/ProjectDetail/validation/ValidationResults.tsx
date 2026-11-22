@@ -7,7 +7,7 @@
 import clsx from 'clsx'
 import { FlaskConical } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { percent } from './validationModel'
+import { percentOfRate } from './validationModel'
 import type { CriterionResult, TaskResult, ValidationView } from '../../../api/validationApi'
 
 const STATUS_TONE: Readonly<Record<CriterionResult['outcome'], string>> = {
@@ -65,7 +65,7 @@ function CriteriaTable({ criteria }: Readonly<{ criteria: readonly CriterionResu
 
 function TaskLine({ task }: Readonly<{ task: TaskResult }>) {
   const { t } = useTranslation('projectDetail')
-  const rate = percent(task.real.rate)
+  const rate = percentOfRate(task.real.rate)
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-2 py-1.5">
       <span className="min-w-0 flex-1 text-text">{task.text}</span>

@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from shared import forms_v2 as fv2
+from shared.csv_columns import DIMENSION_PREFIX
 from shared.dimension_config import DIMENSION_KEY_RE
 from shared.exceptions import ValidationError
 from shared.import_dates import DATE_ORDERS, DEFAULT_DATE_ORDER, normalise_date
@@ -49,7 +50,7 @@ from shared.import_detect import (
 from shared.import_survey import ColumnChoice, infer_form
 from shared.library_extract import ExtractionError, xlsx_rows
 
-__all__ = ['ReviewFields', 'check_reviews_mapping', 'detect_view', 'reviews_fields']
+__all__ = ['check_reviews_mapping', 'detect_view', 'reviews_fields']
 
 #: The rows of a workbook the detect answer carries (the wizard imports at most this many from one).
 MAX_TABLE_ROWS: Final = 20_000
@@ -58,7 +59,6 @@ VALUE_KINDS: Final = frozenset({'choice', 'multi_choice', 'matrix_cell'})
 MAX_VALUE_COLUMNS: Final = 50
 MAX_VALUES_PER_COLUMN: Final = 500
 MAX_VALUE_CHARS: Final = 1000
-DIMENSION_PREFIX: Final = 'dimension:'
 _RATING_KINDS: Final = ('rating_1_5', 'csat', 'rating_1_10')
 _SCALE_KINDS: Final = frozenset({*_RATING_KINDS, 'nps_0_10'})
 _METADATA_KINDS: Final = frozenset({'choice', 'multi_choice', 'matrix_cell', *_SCALE_KINDS})
@@ -66,33 +66,30 @@ _FIVE: Final = 5
 _TEN: Final = 10
 
 
-def _fail(message: str, code: str) -> ValidationError:
-    return ValidationError(message, code=code)
-
-
 def _sample_table(body: Mapping[str, Any]) -> tuple[Table, str, bool]:
     """``(table, format, the rows travel back)`` of a detect body's ``format`` and ``sample``."""
     fmt, sample = body.get('format'), body.get('sample')
     if fmt not in FORMATS:
-        raise _fail(f'format must be one of: {", ".join(FORMATS)}', 'format_invalid')
+        raise ValidationError(f'format must be one of: {", ".join(FORMATS)}', code='format_invalid')
     if not isinstance(sample, str) or not sample.strip():
-        raise _fail('sample is required: the start of the file', 'sample_required')
+        raise ValidationError('sample is required: the start of the file', code='sample_required')
     if fmt == 'xlsx':
         try:
             data = base64.b64decode(sample, validate=True)
         except (binascii.Error, ValueError) as e:
-            raise _fail('sample must be the workbook in base64', 'sample_invalid') from e
+            raise ValidationError('sample must be the workbook in base64', code='sample_invalid') from e
         if len(data) > MAX_SAMPLE_BYTES:
-            raise _fail('This workbook is larger than 256 KB: save it as CSV and import that', 'sample_too_large')
+            raise ValidationError('This workbook is larger than 256 KB: save it as CSV and import that',
+                                  code='sample_too_large')
         try:
             return rows_table(xlsx_rows(data, MAX_TABLE_ROWS + 1)), fmt, True
         except ExtractionError as e:
-            raise _fail(str(e), 'file_unreadable') from e
+            raise ValidationError(str(e), code='file_unreadable') from e
     if len(sample.encode('utf-8')) > MAX_SAMPLE_BYTES:
-        raise _fail('sample must be at most 256 KB: send the start of the file', 'sample_too_large')
+        raise ValidationError('sample must be at most 256 KB: send the start of the file', code='sample_too_large')
     delimiter = body.get('delimiter')
     if delimiter is not None and delimiter not in DELIMITERS:
-        raise _fail('delimiter must be one of , ; | or a tab', 'delimiter_invalid')
+        raise ValidationError('delimiter must be one of , ; | or a tab', code='delimiter_invalid')
     return parse_sample(fmt, sample, delimiter=delimiter, truncated=body.get('truncated') is True), fmt, False
 
 
@@ -102,11 +99,12 @@ def _chosen(body: Mapping[str, Any], headers: Sequence[str]) -> dict[str, str]:
     if raw is None:
         return {}
     if not isinstance(raw, Mapping) or len(raw) > len(headers) + 1:
-        raise _fail('mapping must be an object of {header: kind}', 'mapping_invalid')
+        raise ValidationError('mapping must be an object of {header: kind}', code='mapping_invalid')
     out: dict[str, str] = {}
     for header, kind in raw.items():
         if kind not in KINDS:
-            raise _fail(f'mapping: "{str(kind)[:40]}" is not a kind ({", ".join(KINDS)})', 'mapping_invalid')
+            raise ValidationError(f'mapping: "{str(kind)[:40]}" is not a kind ({", ".join(KINDS)})',
+                                  code='mapping_invalid')
         if header in headers:
             out[str(header)] = str(kind)
     return out
@@ -118,12 +116,12 @@ def _sent_values(body: Mapping[str, Any]) -> dict[str, list[str]]:
     if raw is None:
         return {}
     if not isinstance(raw, Mapping) or len(raw) > MAX_VALUE_COLUMNS:
-        raise _fail(f'values must be an object of at most {MAX_VALUE_COLUMNS} columns', 'values_invalid')
+        raise ValidationError(f'values must be an object of at most {MAX_VALUE_COLUMNS} columns', code='values_invalid')
     out: dict[str, list[str]] = {}
     for header, values in raw.items():
         if not isinstance(values, list) or len(values) > MAX_VALUES_PER_COLUMN or any(
                 not isinstance(value, str) or len(value) > MAX_VALUE_CHARS for value in values):
-            raise _fail(f'values: at most {MAX_VALUES_PER_COLUMN} texts per column', 'values_invalid')
+            raise ValidationError(f'values: at most {MAX_VALUES_PER_COLUMN} texts per column', code='values_invalid')
         out[str(header)] = values
     return out
 
@@ -182,16 +180,18 @@ def check_reviews_mapping(mapping: object) -> dict[str, str]:
     """A CSV upload's wizard ``mapping`` (``{header: kind | dimension:<key>}``) with at least one open-text column.
     A 400 naming what is wrong otherwise."""
     if not isinstance(mapping, Mapping) or not mapping or len(mapping) > 200:
-        raise _fail('mapping must be an object of {header: kind}', 'mapping_invalid')
+        raise ValidationError('mapping must be an object of {header: kind}', code='mapping_invalid')
     out: dict[str, str] = {}
     for header, kind in mapping.items():
         is_dimension = isinstance(kind, str) and kind.startswith(DIMENSION_PREFIX) and bool(
             DIMENSION_KEY_RE.match(kind.removeprefix(DIMENSION_PREFIX)))
         if not isinstance(header, str) or not (kind in KINDS or is_dimension):
-            raise _fail(f'mapping: "{str(kind)[:40]}" is not a kind or dimension:<key>', 'mapping_invalid')
+            raise ValidationError(f'mapping: "{str(kind)[:40]}" is not a kind or dimension:<key>',
+                                  code='mapping_invalid')
         out[header] = str(kind)
     if 'open_text' not in out.values():
-        raise _fail('mapping: choose at least one open-text column: it is the feedback text', 'mapping_no_text')
+        raise ValidationError('mapping: choose at least one open-text column: it is the feedback text',
+                              code='mapping_no_text')
     return out
 
 

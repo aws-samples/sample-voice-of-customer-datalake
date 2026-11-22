@@ -34,6 +34,7 @@ from botocore.exceptions import ClientError
 from shared.aws import is_conditional_check_failure
 from shared.dynamo_values import plain
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
+from shared.methodology import VALIDATION_PLAN_TYPE, VALIDATION_REPORT_TYPE, VALIDATION_RUN_TYPE
 from shared.project_writes import (
     PROJECT_WRITABLE_ATTRIBUTE_NAMES,
     PROJECT_WRITABLE_ATTRIBUTE_VALUES,
@@ -44,9 +45,9 @@ from shared.project_writes import (
 from shared.request_body import validated_text
 from shared.timestamps import now_iso
 
-PLAN_TYPE: Final = 'validation_plan'
-RUN_TYPE: Final = 'validation_run'
-REPORT_TYPE: Final = 'validation_report'
+PLAN_TYPE: Final = VALIDATION_PLAN_TYPE
+RUN_TYPE: Final = VALIDATION_RUN_TYPE
+REPORT_TYPE: Final = VALIDATION_REPORT_TYPE
 
 CRITERION_ID: Final = re.compile(r'c[0-9a-f]{6}')
 TASK_ID: Final = re.compile(r't[0-9a-f]{6}')
@@ -179,9 +180,9 @@ def block_of(meta: Mapping[str, Any] | None) -> dict[str, Any]:
     return plain(dict(stored)) if isinstance(stored, Mapping) else {}
 
 
-def status_of(block: Mapping[str, Any], *, form_open: bool | None = None) -> str:
+def status_of(block: Mapping[str, Any]) -> str:
     """Where the step stands: reported, testing (the card asks real testers), planned, criteria, not started."""
-    is_open = block.get('form_open') is True if form_open is None else form_open
+    is_open = block.get('form_open') is True
     if block.get('report_document_id'):
         return STATUS_REPORTED
     if is_open:

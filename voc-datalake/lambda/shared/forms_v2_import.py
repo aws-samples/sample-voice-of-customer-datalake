@@ -31,8 +31,7 @@ from shared.exceptions import ValidationError
 from shared.import_dates import DATE_ORDERS, DEFAULT_DATE_ORDER
 from shared.import_survey import ImportedRow, row_answers
 
-__all__ = ['FILE_FORMATS', 'MAX_IMPORT_ROWS', 'ImportRequest', 'file_key_of', 'import_request', 'read_rows',
-           'response_message']
+__all__ = ['ImportRequest', 'file_key_of', 'import_request', 'read_rows', 'response_message']
 
 MAX_IMPORT_ROWS: Final = 5_000
 #: The original file a call carries: 2 MB, so the call (rows beside it, JSON-escaped twice in the Lambda event) stays

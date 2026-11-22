@@ -9,7 +9,8 @@
 import type { RelayMessage, VoiceEndReason } from '@stream/voice/protocol'
 
 type VoicePhase = 'connecting' | 'live' | 'ending' | 'ended'
-type VoiceNotice = 'time_almost_up' | 'budget_almost_up' | 'wrapping_up'
+/** The relay's notices, as its protocol decodes them (`@stream/voice/protocol`'s `notice` message). */
+type VoiceNotice = Extract<RelayMessage, { type: 'notice' }>['code']
 
 export interface VoiceCaption {
   readonly role: 'user' | 'assistant'

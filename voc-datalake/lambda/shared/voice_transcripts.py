@@ -39,6 +39,7 @@ from shared.project_keys import document_keys
 from shared.project_writes import create_counted_project_child
 from shared.prompt_safety import neutralise_tags
 from shared.s3_versions import delete_every_version
+from shared.text_clip import WHITESPACE_RE
 from shared.voice_sessions import Stores
 
 PERSONA_INTERVIEW_TYPE: Final = 'persona_interview'
@@ -56,8 +57,7 @@ MAX_SUMMARY_CHARS: Final = 2000
 MAX_SUMMARY_TRANSCRIPT_CHARS: Final = 60_000
 #: The usage line's operation for a voice session (one bidirectional stream, or a few across a rollover).
 VOICE_OPERATION: Final = 'InvokeModelWithBidirectionalStream'
-_ID: Final = re.compile(r'^[A-Za-z0-9_-]{1,128}$')
-_SPACE: Final = re.compile(r'\s+')
+_ID: Final = re.compile(r'\A[A-Za-z0-9_-]{1,128}\Z')
 
 SUMMARY_SYSTEM: Final = (
     'You summarise a product team\'s interview with a synthetic customer persona (an AI speaking as the persona). '
@@ -135,7 +135,7 @@ def _redacted(turns: Sequence[Turn], language: str) -> list[Turn]:
 
 
 def _plain(text: str) -> str:
-    return _SPACE.sub(' ', text).strip().casefold()
+    return WHITESPACE_RE.sub(' ', text).strip().casefold()
 
 
 def _summary(turns: Sequence[Turn], persona_name: str, summarize: Summarize) -> tuple[str, list[str]]:

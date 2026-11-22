@@ -148,7 +148,6 @@ def _feature_request(args: Mapping[str, Any], _project: str | None) -> RouteRequ
 
 
 #: A month as ``GET /metrics/adoption`` reads it (shared/adoption_view.py); the tool reads by month.
-_MONTH: Final = {'type': 'string'}
 _MONTH_RE: Final = re.compile(r'\d{4}-(0[1-9]|1[0-2])')
 
 
@@ -203,6 +202,6 @@ WORK_TOOLS: Final[tuple[GlobalTool, ...]] = (
         'insights_get_adoption', 'Get the leadership view',
         'Method use by month, counts only (admin token); time saved is an ESTIMATE: quote its assumptions. '
         '`from`/`to` YYYY-MM.',
-        schema({'from': _MONTH, 'to': _MONTH}),
+        schema({'from': {'type': 'string'}, 'to': {'type': 'string'}}),
         _adoption, stripped, admin_only=True),
 )

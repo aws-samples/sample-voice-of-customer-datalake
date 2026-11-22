@@ -18,6 +18,7 @@ import type { AdoptionView, Grain } from '../../api/adoptionApi'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import PageLoader from '../../components/PageLoader/PageLoader'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
+import { formatDateTime } from '../../utils/dateUtils'
 import { formatCount } from '../../utils/numberFormat'
 import AssumptionsDrawer from './AssumptionsDrawer'
 import { ProjectsChart, WaysOfWorkingChart } from './LeadershipCharts'
@@ -34,8 +35,7 @@ import type { LeadershipAccess } from './useLeadershipAccess'
 function AsOf({ view }: Readonly<{ view: AdoptionView }>) {
   const { t, i18n } = useTranslation('leadership')
   if (view.as_of === null) return <p className="text-sm text-muted" role="note">{t('asOf.none')}</p>
-  const when = new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })
-    .format(new Date(view.as_of))
+  const when = formatDateTime(view.as_of, i18n.language)
   return (
     <p className="text-sm text-muted">
       {t('asOf.at', { when })}

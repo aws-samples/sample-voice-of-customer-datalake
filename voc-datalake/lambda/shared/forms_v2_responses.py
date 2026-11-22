@@ -48,6 +48,7 @@ from shared.forms_v2 import (
 )
 
 __all__ = [
+    'EMAIL_PATTERN',
     'answer_category',
     'check_envelope',
     'contact_of',
@@ -75,7 +76,7 @@ MAX_RESPONSE_TEXT_CHARS: Final = 20_000
 MAX_TEST_TOKEN_CHARS: Final = 64
 _MAX_ID_CHARS: Final = 44
 _CONTACT_LIMITS: Final = {'name': 200, 'email': 254, 'phone': 40, 'company': 200}
-_EMAIL: Final = re.compile(r'[^@\s]+@[^@\s]+\.[^@\s]+')
+EMAIL_PATTERN: Final = re.compile(r'[^@\s]+@[^@\s]+\.[^@\s]+')
 _PHONE: Final = re.compile(r'\+?[0-9 ().\-/]{3,40}')
 
 
@@ -152,7 +153,7 @@ def check_envelope(body: Mapping[str, Any]) -> None:
 def _check_input(question: Mapping[str, Any], text: str) -> None:
     """The open-text ``input_type``'s format (text: any; a long text is always text, as the widget draws it)."""
     kind = 'text' if question.get('long') is True else question.get('input_type')
-    if kind == 'email' and (len(text) > _CONTACT_LIMITS['email'] or not _EMAIL.fullmatch(text)):
+    if kind == 'email' and (len(text) > _CONTACT_LIMITS['email'] or not EMAIL_PATTERN.fullmatch(text)):
         raise _bad(question, ' must be an email address')
     if kind == 'phone' and (not _PHONE.fullmatch(text) or sum(ch.isdigit() for ch in text) < 3):
         raise _bad(question, ' must be a phone number')
@@ -251,7 +252,7 @@ def _contact_value(question: Mapping[str, Any], name: str, value: object) -> str
     if not isinstance(value, str) or len(value.strip()) > limit:
         raise _bad(question, f'.{name} must be a string of at most {limit} characters')
     text = value.strip()
-    if text and name == 'email' and not _EMAIL.fullmatch(text):
+    if text and name == 'email' and not EMAIL_PATTERN.fullmatch(text):
         raise _bad(question, '.email must be an email address')
     return text
 

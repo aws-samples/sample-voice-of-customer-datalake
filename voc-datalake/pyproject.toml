@@ -44,6 +44,9 @@ ignore_names = [
     "software_version", "version_source",
     # Test seam: resets the module-level categories cache; 30+ API tests call it between cases.
     "clear_categories_cache",
+    # Lockstep, read as source by lib/stacks/adoption-rollup-worker.test.ts (the role's dynamodb:Attributes equal it)
+    # and by shared/test/test_adoption_rollup.py (the projection's names within it): shared/adoption_rollup.py.
+    "PROJECT_ATTRIBUTES",
     # Test seam: resets shared/model_capacity.py's Service Quotas listing cache between cases.
     "clear_quota_cache",
     # shared/model_capacity.py TypedDict wire fields of the /settings/model/test and /capacity

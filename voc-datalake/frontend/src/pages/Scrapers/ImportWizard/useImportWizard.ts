@@ -19,7 +19,7 @@ import { serverReason } from '../../../lib/errors'
 import { inferredQuestions } from './inferredQuestions'
 import { MAX_SURVEY_BYTES, distinctValues, pickProblem, readWizardFile, sampleOf, tableOf, toCsv } from './wizardFile'
 import type { FilePickProblem, Table, WizardFile } from './wizardFile'
-import { ROWS_PER_CALL, chunksOf, formName, importTag, mappingProblem, reviewsMapping } from './wizardMapping'
+import { ROWS_PER_CALL, chunksOf, formName, importTag, wizardMappingProblem, reviewsMapping } from './wizardMapping'
 import type { MappingProblem } from './wizardMapping'
 
 export type WizardStep = 'upload' | 'map' | 'confirm' | 'insights'
@@ -203,7 +203,7 @@ export function useImportWizard() {
   }, [detected, form, importReviews, importSurvey, invalidateFeedbackData, t, target])
 
   const confirmProblem = ((): ConfirmProblem | null => {
-    const problem = mappingProblem(kinds, target)
+    const problem = wizardMappingProblem(kinds, target)
     if (problem !== null) return problem
     if (target !== 'survey') return null
     if ((detected?.file.size ?? 0) > MAX_SURVEY_BYTES) return 'surveyTooLarge'

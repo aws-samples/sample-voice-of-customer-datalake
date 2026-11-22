@@ -54,10 +54,8 @@ from shared.platform_workspaces import LISTING_PK
 from shared.project_keys import project_pk
 from shared.project_walk import StuckQuery, query_page, registry_page
 from shared.timestamps import now_iso
-from shared.workspace_ids import is_workspace_id
+from shared.workspace_ids import ACTIVE, is_workspace_id
 from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
-
-__all__ = ['HISTORY_MONTHS', 'Rollup', 'RollupIncomplete', 'handle_event', 'lambda_handler']
 
 #: The months each item covers, the current one included (the view reads at most as many: shared/adoption_view.py).
 HISTORY_MONTHS: Final = 24
@@ -67,7 +65,6 @@ RESERVE_SECONDS: Final = 60.0
 PROJECT_READERS: Final = 8
 PROJECT_CHUNK: Final = 40
 SCHEMA: Final = 1
-_ACTIVE: Final = 'active'
 _AGENT_PREFIX: Final = 'AGENT#'
 _RUN_PREFIX: Final = 'RUN#'
 _TABLE_ENVS: Final = ('AGGREGATES_TABLE', 'PROJECTS_TABLE', 'WORKSPACES_TABLE', 'CONVERSATIONS_TABLE', 'AGENTS_TABLE')
@@ -102,7 +99,7 @@ def _active_workspaces(table: Any) -> list[WorkspaceScope]:
                               'ProjectionExpression': '#ws, #status', 'Select': 'SPECIFIC_ATTRIBUTES',
                               'ExpressionAttributeNames': {'#ws': 'workspace_id', '#status': 'status'}})
     return [scope_from_message({WORKSPACE_FIELD: row['workspace_id']}) for row in rows
-            if row.get('status') == _ACTIVE and is_workspace_id(row.get('workspace_id'))]
+            if row.get('status') == ACTIVE and is_workspace_id(row.get('workspace_id'))]
 
 
 def _live_projects(table: Any, scope: WorkspaceScope | None) -> list[str]:

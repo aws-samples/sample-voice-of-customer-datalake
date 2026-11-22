@@ -11,11 +11,12 @@
  * @module pages/Scrapers/ImportWizard/wizardFile
  */
 import type { ColumnKind, FileFormat } from '../../../api/importWizardSchema'
+import { isRecord } from '../../../lib/typeGuards'
 
 export const SAMPLE_BYTES = 256 * 1024
 /** A reviews file's ceiling (the CSV import's 10 MB), a survey export's (sent whole on the first import call, so its
  * request stays inside Lambda's 6 MB payload: 2 MB). */
-export const MAX_REVIEWS_BYTES = 10 * 1024 * 1024
+const MAX_REVIEWS_BYTES = 10 * 1024 * 1024
 export const MAX_SURVEY_BYTES = 2 * 1024 * 1024
 const MAX_COLUMNS = 200
 const MAX_HEADER_CHARS = 256
@@ -98,7 +99,7 @@ export function sampleOf(file: WizardFile): { sample: string; truncated: boolean
 
 /** One cell and what ends it (the separator, a line end or the end), quoted (a doubled quote is a quote) or bare. */
 function cellPattern(delimiter: string): RegExp {
-  const separator = delimiter === '|' ? '\\|' : delimiter.replace('\t', '\\t')
+  const separator = delimiter === '|' ? '\\|' : delimiter.replaceAll('\t', '\\t')
   return new RegExp(`(?:"([^"]*(?:""[^"]*)*)"|([^${separator}\\r\\n]*))(${separator}|\\r\\n|\\n|\\r|$)`, 'gu')
 }
 
@@ -159,10 +160,6 @@ function jsonRecords(text: string): unknown[] {
     return lists.length === 1 && only !== undefined ? only : [parsed]
   }
   return []
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function jsonTable(text: string): Table {

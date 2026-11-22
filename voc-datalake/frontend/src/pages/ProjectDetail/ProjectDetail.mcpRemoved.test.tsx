@@ -49,11 +49,11 @@ describe('ProjectDetail without the Export / MCP tab', () => {
     api.getProject.mockResolvedValue({ project: PAGE_PROJECT, personas: [], documents: [] })
   })
 
-  it('offers only Overview, Personas, Focus groups, Product, Documents, Decisions and Participants', async () => {
+  it('offers only Overview, Personas, Focus groups, Product, Documents, Validate, Decisions and Participants', async () => {
     renderAt('/projects/proj-1')
     await screen.findByRole('tablist')
     const names = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(names).toHaveLength(7)
+    expect(names).toHaveLength(8)
     expect(names.join(' ')).not.toMatch(/MCP|Export/)
   })
 

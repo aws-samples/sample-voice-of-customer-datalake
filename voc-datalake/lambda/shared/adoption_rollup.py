@@ -32,8 +32,7 @@ from shared import adoption_validation as av
 from shared.adoption import ARTIFACT_TYPES
 from shared.decision_records import DECISION_DOCUMENT_TYPE, VERDICTS
 
-__all__ = ['COHORT_STEPS', 'CYCLES', 'PROJECT_ATTRIBUTES', 'MonthBuckets', 'month_of', 'months_between',
-           'project_projection']
+__all__ = ['COHORT_STEPS', 'CYCLES', 'MonthBuckets', 'month_of', 'months_between', 'project_projection']
 
 #: The steps a project started in a month is counted "with".
 COHORT_STEPS: Final = (*ARTIFACT_TYPES, 'validation')
@@ -50,7 +49,6 @@ _NOT_NEW: Final = frozenset({'edit', 'restore'})
 _AI_REVISION: Final = 'revise'
 _LEGACY_PREFIX: Final = (('PERSONA#', 'personas'), ('RESEARCH#', 'research'), ('PRFAQ#', 'prfaq'), ('PRD#', 'prd'),
                          ('PROTOTYPE#', 'prototype'))
-_META_SK: Final = 'META'
 
 
 def project_projection() -> tuple[str, dict[str, str]]:
@@ -158,7 +156,7 @@ class _Project:
 
     def add(self, row: Mapping[str, Any]) -> None:
         at = _moment(row.get('created_at'))
-        if row.get('sk') == _META_SK:
+        if row.get('sk') == 'META':   # (the project's own row)
             self.started = at
             validation = row.get(av.META_VALIDATION_FIELD)
             report = validation.get('report_document_id') if isinstance(validation, Mapping) else None

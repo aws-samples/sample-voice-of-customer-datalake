@@ -324,8 +324,8 @@ def _xlsx_text(data: bytes) -> str:
 
 
 _CELL_COLUMN: Final = re.compile(r'([A-Z]{1,3})\d*')
-#: The columns of a sheet ``xlsx_rows`` reads (a cell further right is left out: a reference like ``XFD1`` must not
-#: make every row 16,384 cells long).
+#: The columns of a sheet ``xlsx_rows`` reads (a cell further right is left out: a reference to the last column, XFD,
+#: must not make every row 16,384 cells long).
 MAX_SHEET_COLUMNS: Final = 256
 
 

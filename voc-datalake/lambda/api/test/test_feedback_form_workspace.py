@@ -10,8 +10,8 @@ workspace's form serves its own config and queues its submissions with that work
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from contextlib import ExitStack
+from collections.abc import Generator, Iterator
+from contextlib import ExitStack, contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -63,10 +63,17 @@ def _form(pk: str, form_id: str, title: str) -> dict:
             'brand_name': 'Acme', 'created_at': '2026-11-01T00:00:00+00:00', 'updated_at': '2026-11-01T00:00:00+00:00'}
 
 
+@contextmanager
+def form_tables() -> Generator[tuple[ExitStack, Any, Any, Any], None, None]:
+    """``(stack, aggregates, feedback, workspaces)``: moto's three tables and the stack ``wire_form_handler`` patches
+    the handler on, for the life of the block (this module's world and test_feedback_form_trial_paused.py's)."""
+    with mock_aws(), ExitStack() as stack:
+        yield stack, pk_sk_table('aggregates'), pk_sk_table('feedback'), pk_sk_table('workspaces')
+
+
 @pytest.fixture
 def world() -> Iterator[dict[str, Any]]:
-    with mock_aws(), ExitStack() as stack:
-        aggregates, feedback, workspaces = pk_sk_table('aggregates'), pk_sk_table('feedback'), pk_sk_table('workspaces')
+    with form_tables() as (stack, aggregates, feedback, workspaces):
         for ws, status in ((WS_A, 'active'), (WS_B, 'active'), (WS_GONE, 'deleting')):
             workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'status': status, 'name': ws, 'slug': ws[-6:]})
         for ws, member, role in ((WS_A, EDITOR, 'editor'), (WS_A, VIEWER, 'viewer'), (WS_B, MEMBER_B, 'admin'),

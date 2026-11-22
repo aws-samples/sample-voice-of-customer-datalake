@@ -393,7 +393,7 @@
       "createDescription": "Ein Test-Workspace für einen Kunden am Ende eines Workshops: seine Personen, ein Startpaket, dann der Import-Assistent. Er läuft 14, 30 oder 60 Tage und wird dann pausiert.",
       "dialogTitle": "Test-Workspace anlegen",
       "days": "Dauer",
-      "daysOption": "{{days}} Tage",
+      "daysOption": "{{days, number}} Tage",
       "pausesNotice": "Am Ende der Testphase wird sie pausiert: Plugins und live geschaltete Formulare stoppen, und nichts wird gelöscht. Lesen und der Export funktionieren weiter, bis ein Plattform-Admin sie verlängert oder umwandelt. Eine Testphase löscht sich nie selbst.",
       "fixNameSlug": "Prüfen Sie den Namen und die Adresse.",
       "submit": "Testphase anlegen",
@@ -414,7 +414,7 @@
         "title": "Startpaket",
         "hint": "Wird mit Ihrem eigenen Zugang im Test-Workspace angelegt, jeweils von seiner eigenen Route protokolliert. Formulare werden ausgeschaltet angelegt.",
         "form": "Formular: {{name}}",
-        "categories": "Beispielkategorien ({{n}})"
+        "categories": "Beispielkategorien ({{n, number}})"
       },
       "done": {
         "title": "{{name}} ist bereit.",

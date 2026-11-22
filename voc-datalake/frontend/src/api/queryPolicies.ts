@@ -134,6 +134,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'logs': 'config', // ['logs', 'alerts']: the alerting switch and recipients
   'logs-summary': 'live',
   'memory': 'standard',
+  'metrics': 'feedbackData', // (7.70.00) Leadership's adoption views (GET /metrics/adoption): daily rollups; a saved baseline invalidates them
   'model-capacity': 'config',
   'model-settings': 'config',
   'my-ai-mode': 'config', // the caller's way of working with AI (GET /users/me/ai-mode, admin-set)
@@ -176,6 +177,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'urgent': 'feedbackData',
   'user-category-access': 'standard',
   'users': 'standard',
+  'validation': 'standard', // (7.68.00) a project's Validate step: its plan and report (its AI jobs are awaited in validationApi, not polled through this key)
   'validation-logs': 'live',
   'voice-offer': 'live', // (7.69.00) a persona's voice offer: the month's minutes and today's sessions left move with use
   'voice-session': 'polled', // (7.69.00) a voice session's status, polled until its transcript is filed

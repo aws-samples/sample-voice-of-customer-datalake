@@ -396,7 +396,7 @@
       "createDescription": "Um espaço de trabalho de teste para um cliente no fim de um workshop: as suas pessoas, um pacote inicial e depois o assistente de importação. Dura 14, 30 ou 60 dias e depois fica em pausa.",
       "dialogTitle": "Criar um espaço de trabalho de teste",
       "days": "Duração",
-      "daysOption": "{{days}} dias",
+      "daysOption": "{{days, number}} dias",
       "pausesNotice": "Quando o teste termina, fica em pausa: os plugins e os formulários ativos param, e nada é apagado. A leitura e a exportação continuam a funcionar até um administrador da plataforma o prolongar ou converter. Um teste nunca se apaga sozinho.",
       "fixNameSlug": "Verifique o nome e o endereço.",
       "submit": "Criar o teste",
@@ -417,7 +417,7 @@
         "title": "Pacote inicial",
         "hint": "Criado no teste com o seu próprio acesso, cada item registado pela sua própria rota. Os formulários são criados desativados.",
         "form": "Formulário: {{name}}",
-        "categories": "Categorias de exemplo ({{n}})"
+        "categories": "Categorias de exemplo ({{n, number}})"
       },
       "done": {
         "title": "{{name}} está pronto.",

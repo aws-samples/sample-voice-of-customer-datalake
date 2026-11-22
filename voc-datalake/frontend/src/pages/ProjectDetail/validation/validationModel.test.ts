@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { draftFromParams } from '../decisions/decisionDraft'
 import {
-  cardLanguage, criteriaRows, decisionLink, newRow, parsedTarget, percent, rowsValid, taskRows, toCriteria, toTasks,
+  cardLanguage, criteriaRows, decisionLink, newRow, parsedTarget, percentOfRate, rowsValid, taskRows, toCriteria, toTasks,
 } from './validationModel'
 
 describe('the criteria editor', () => {
@@ -38,7 +38,7 @@ describe('the rest', () => {
   })
 
   it('shows a rate as a whole percent', () => {
-    expect([percent(0.6667), percent(null)]).toStrictEqual([67, null])
+    expect([percentOfRate(0.6667), percentOfRate(null)]).toStrictEqual([67, null])
   })
 
   it('opens the Decisions tab with the report\'s decision, its report among the evidence', () => {

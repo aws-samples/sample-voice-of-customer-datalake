@@ -105,7 +105,9 @@ export interface AdoptionRange {
   readonly grain: Grain
 }
 
-export const adoptionKey = (range: AdoptionRange) => ['metrics', 'adoption', range.from, range.to, range.grain] as const
+/** Every leadership view's queries (a saved baseline invalidates them all). */
+export const ADOPTION_ROOT_KEY = ['metrics', 'adoption'] as const
+export const adoptionKey = (range: AdoptionRange) => [...ADOPTION_ROOT_KEY, range.from, range.to, range.grain] as const
 
 const VIEW_PATH = '/metrics/adoption'
 const SETTINGS_PATH = '/settings/adoption'

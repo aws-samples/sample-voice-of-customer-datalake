@@ -8,7 +8,7 @@ import type { TFunction } from 'i18next'
 import type { ColumnKind, DetectedColumn } from '../../../api/importWizardSchema'
 
 /** A kind's name (`importWizard.kinds.<kind>`). */
-export function kindLabel(t: TFunction, kind: ColumnKind): string {
+export function columnKindLabel(t: TFunction, kind: ColumnKind): string {
   return t(`importWizard.kinds.${kind}`)
 }
 

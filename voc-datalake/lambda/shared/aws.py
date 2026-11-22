@@ -74,6 +74,12 @@ def is_missing_s3_object(error: Exception) -> bool:
     return str(code) in S3_MISSING_KEY_CODES
 
 
+def unqualified_function_arn(function_arn: str) -> str:
+    """A Lambda function's ARN without its alias or version (``arn:aws:lambda:<region>:<account>:function:<name>``):
+    a schedule's target, which must never pin an alias or version the invocation's own ARN carried."""
+    return ':'.join(function_arn.split(':')[:7])
+
+
 def is_conditional_check_failure(error: Exception) -> bool:
     """True for DynamoDB's ConditionalCheckFailedException, however it arrives.
 
@@ -273,6 +279,13 @@ def get_scheduler_client():
     if _scheduler_client is None:
         _scheduler_client = boto3.client("scheduler")
     return _scheduler_client
+
+
+@lru_cache(maxsize=4)
+def get_agentcore_client(region: str):
+    """Get a shared Amazon Bedrock AgentCore data-plane client for ``region`` with connection reuse (built on first
+    use: a voice session's stop, shared/voice_sessions.py, in the relay runtime's Region)."""
+    return boto3.client('bedrock-agentcore', region_name=region)
 
 
 def get_cognito_idp_client():

@@ -40,16 +40,20 @@ beforeEach(() => {
   api.saveForm.mockImplementation((_id, form) => Promise.resolve(stored(form)))
 })
 
+/** Publish is held back (a click saves nothing) while Save still saves the draft Off. */
+async function expectPublishHeldBackAndSaveSaves(harness: ReturnType<typeof renderButtons>): Promise<void> {
+  await renameDraft(harness)
+  const publish = await screen.findByRole('button', { name: 'Publish' })
+  expect(publish).toHaveAttribute('aria-disabled', 'true')
+  await harness.user.click(publish)
+  expect(api.saveForm).not.toHaveBeenCalled()
+  await harness.user.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ enabled: false }), 5, null) })
+}
+
 describe('an unreadable theme', () => {
   it('blocks Publish with the reason, and never Save', async () => {
-    const harness = renderButtons(GREY)
-    await renameDraft(harness)
-    const publish = await screen.findByRole('button', { name: 'Publish' })
-    expect(publish).toHaveAttribute('aria-disabled', 'true')
-    await harness.user.click(publish)
-    expect(api.saveForm).not.toHaveBeenCalled()
-    await harness.user.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ enabled: false }), 5, null) })
+    await expectPublishHeldBackAndSaveSaves(renderButtons(GREY))
   })
 
   it('only warns on a live form kept on its own unreadable theme: Update live form goes through', async () => {
@@ -124,14 +128,7 @@ describe('a paused trial', () => {
 
   it('holds Publish back with the reason, and still saves', async () => {
     setCurrentTrial({ trial: PAUSED, playbook: null })
-    const harness = renderButtons(sampleForm())
-    await renameDraft(harness)
-    const publish = await screen.findByRole('button', { name: 'Publish' })
-    expect(publish).toHaveAttribute('aria-disabled', 'true')
-    await harness.user.click(publish)
-    expect(api.saveForm).not.toHaveBeenCalled()
-    await harness.user.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => { expect(api.saveForm).toHaveBeenCalledWith('f_test', expect.objectContaining({ enabled: false }), 5, null) })
+    await expectPublishHeldBackAndSaveSaves(renderButtons(sampleForm()))
     setCurrentTrial({ trial: null, playbook: null })
   })
 })

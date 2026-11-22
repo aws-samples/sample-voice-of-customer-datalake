@@ -27,14 +27,14 @@ from shared.exceptions import ValidationError
 from shared.import_dates import DEFAULT_DATE_ORDER, normalise_date
 from shared.import_detect import as_integer, split_choices, split_matrix
 
-__all__ = ['DATE_TARGET', 'ID_TARGET', 'IGNORE_TARGET', 'ImportedRow', 'InferredForm', 'infer_form', 'row_answers']
+__all__ = ['ImportedRow', 'infer_form', 'row_answers']
 
 DATE_TARGET: Final = 'date'
 ID_TARGET: Final = 'id'
 IGNORE_TARGET: Final = 'ignore'
 HIDDEN_PREFIX: Final = 'hidden:'
 CHANNEL_FIELD: Final = 'channel'
-ENDING_ID: Final = 'end_thanks'
+ENDING_ID: Final = fv2.V1_ENDING_ID   # (the thank-you ending a version 1 form migrates to)
 #: The id an imported row is kept under at most (``IngestMessage.csv_row_id``'s bound).
 MAX_ROW_ID_CHARS: Final = 256
 DATE_INVALID: Final = 'date_invalid'

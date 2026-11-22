@@ -1222,7 +1222,7 @@
     "loading": "Carregando o uso de voz…",
     "failed": "Não foi possível carregar o uso de voz.",
     "minutes": "Minutos usados",
-    "ofTotal": "{{used}} de {{total}}",
+    "ofTotal": "{{used, number}} de {{total, number}}",
     "sessions": "Sessões neste mês",
     "cost": "Custo estimado",
     "live": "Ao vivo agora",

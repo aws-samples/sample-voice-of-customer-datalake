@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ClipboardCheck, FileText, FlaskConical, Save, Scale, Sparkles } from 'lucide-react'
 import MethodologyGaps from '../../../components/MethodologyGaps/MethodologyGaps'
+import { formatDate } from '../../../utils/dateUtils'
 import { projectKey } from '../../../api/projectQueryKeys'
 import { validationApi, validationKeys } from '../../../api/validationApi'
 import RowsEditor from './RowsEditor'
@@ -198,7 +199,7 @@ function SyntheticSection({ view, actions }: Readonly<{ view: ValidationView; ac
       <p className="text-[12px] text-muted">{t('validation.synthetic.hint')}</p>
       {run === null ? null : (
         <p className="text-sm text-text">{t('validation.synthetic.lastRun', {
-          date: new Date(run.created_at ?? '').toLocaleDateString(i18n.language), personas: run.personas,
+          date: formatDate(run.created_at, i18n.language), personas: run.personas,
         })}</p>
       )}
       <button type="button" className="btn btn-secondary btn-sm" disabled={busy || view.validation.tasks.length === 0}

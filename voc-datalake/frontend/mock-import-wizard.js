@@ -19,9 +19,9 @@ const DELIMITERS = [',', ';', '\t', '|'];
 const MAX_SAMPLE_BYTES = 256 * 1024;
 
 /** The records of a delimited text (quotes, doubled quotes, any line end; blank lines out). */
-export function parseDelimited(text, delimiter) {
+function parseDelimited(text, delimiter) {
   const records = [[]];
-  const separator = delimiter === '|' ? '\\|' : delimiter.replace('\t', '\\t');
+  const separator = delimiter === '|' ? '\\|' : delimiter.replaceAll('\t', '\\t');
   const pattern = new RegExp(`(?:"([^"]*(?:""[^"]*)*)"|([^${separator}\\r\\n]*))(${separator}|\\r\\n|\\n|\\r|$)`, 'gu');
   for (const match of text.replace(/^\uFEFF/u, '').matchAll(pattern)) {
     if (match[0] === '') break;
@@ -42,15 +42,27 @@ const headersOf = (raw) => raw.slice(0, 200).reduce((out, name, i) => {
   return [...out, out.includes(text) ? `${text} (${i + 1})` : text];
 }, []);
 
+/** A JSON value as one cell: a list joined with "; ", nothing as ''. */
+const cellText = (value) => {
+  if (value == null) return '';
+  return String(Array.isArray(value) ? value.join('; ') : value);
+};
+
+/** The delimiter asked for, else a TSV's tab, else the one the first line splits on most. */
+function delimiterOf(format, sample, delimiter) {
+  if (DELIMITERS.includes(delimiter)) return delimiter;
+  return format === 'tsv' ? '\t' : sniff(sample);
+}
+
 function table(format, sample, delimiter) {
   if (format === 'json') {
     const parsed = JSON.parse(sample);
     const records = (Array.isArray(parsed) ? parsed : Object.values(parsed).find(Array.isArray) ?? [parsed]).filter((r) => r && typeof r === 'object');
     const names = [...new Set(records.flatMap((r) => Object.keys(r)))];
     const headers = headersOf(names);
-    return { delimiter: ',', headers, rows: records.map((r) => headers.map((_h, i) => (r[names[i]] == null ? '' : String(Array.isArray(r[names[i]]) ? r[names[i]].join('; ') : r[names[i]])))) };
+    return { delimiter: ',', headers, rows: records.map((r) => headers.map((_h, i) => cellText(r[names[i]]))) };
   }
-  const sep = DELIMITERS.includes(delimiter) ? delimiter : format === 'tsv' ? '\t' : sniff(sample);
+  const sep = delimiterOf(format, sample, delimiter);
   const [header = [], ...records] = parseDelimited(sample, sep);
   const headers = headersOf(header);
   return { delimiter: sep, headers, rows: records.map((r) => headers.map((_h, i) => (r[i] ?? '').trim())) };
@@ -59,36 +71,70 @@ function table(format, sample, delimiter) {
 const integer = (v) => (/^-?\d{1,9}(?:[.,]0+)?$/u.test(v) ? Number.parseInt(v, 10) : null);
 const share = (values, test) => (values.length === 0 ? 0 : values.filter(test).length / values.length);
 
-/** One column's kind, confidence and reasons (import_detect.py `detect_column`, shortened). */
-function detectColumn(header, raw) {
-  const values = raw.map((v) => v.trim()).filter(Boolean);
-  const word = KIND_WORDS.find(([, re]) => re.test(header));
-  const said = word ? [{ code: 'header_says', params: { word: header.match(word[1])[0].toLowerCase() } }] : [];
-  if (values.length === 0) return { kind: 'ignore', confidence: 0.9, reasons: [{ code: 'empty', params: {} }] };
-  if (share(values, (v) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/u.test(v)) >= 0.8) return { kind: 'email', confidence: 0.95, reasons: [{ code: 'emails', params: {} }] };
-  if (share(values, (v) => / -- /u.test(v)) >= 0.8) return { kind: 'matrix_cell', confidence: 0.9, reasons: [{ code: 'matrix_pairs', params: {} }] };
-  if (share(values, (v) => /^\d{4}-\d{2}-\d{2}|^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}/u.test(v)) >= 0.8) {
+/** One address: no space, one `@` with text before it, and a `.` inside the part after it (no backtracking regex). */
+function isEmail(value) {
+  if (/\s/u.test(value)) return false;
+  const [local, domain, ...more] = value.split('@');
+  return more.length === 0 && local !== '' && domain !== undefined
+    && [...domain].some((char, i) => char === '.' && i > 0 && i < domain.length - 1);
+}
+
+const DATE_VALUE = /^\d{4}-\d{2}-\d{2}|^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}/u;
+
+/** A column of whole numbers 0 to 10: NPS (its header, or a 0), CSAT (its header), else a 1-5 or 1-10 rating. */
+function scoreKind(word, low, high) {
+  if (word === 'nps_0_10' || low === 0) return 'nps_0_10';
+  if (word === 'csat') return 'csat';
+  return high <= 5 ? 'rating_1_5' : 'rating_1_10';
+}
+
+/** The kinds the values alone say (an address, a grid, a date, a score), else null. */
+function valueKind(values, said, word) {
+  if (share(values, isEmail) >= 0.8) return { kind: 'email', confidence: 0.95, reasons: [{ code: 'emails', params: {} }] };
+  if (share(values, (v) => v.includes(' -- ')) >= 0.8) return { kind: 'matrix_cell', confidence: 0.9, reasons: [{ code: 'matrix_pairs', params: {} }] };
+  if (share(values, (v) => DATE_VALUE.test(v)) >= 0.8) {
     return { kind: 'date', confidence: 0.9, reasons: [{ code: 'dates', params: { order: 'dmy' } }, ...said], date_order: 'dmy' };
   }
   const numbers = values.map(integer).filter((n) => n !== null);
-  if (numbers.length >= 0.9 * values.length && Math.max(...numbers) <= 10 && Math.min(...numbers) >= 0) {
-    const low = Math.min(...numbers);
-    const high = Math.max(...numbers);
-    const kind = word?.[0] === 'nps_0_10' || low === 0 ? 'nps_0_10' : word?.[0] === 'csat' ? 'csat' : high <= 5 ? 'rating_1_5' : 'rating_1_10';
-    return { kind, confidence: said.length ? 0.95 : 0.6, reasons: [{ code: 'values_range', params: { min: low, max: high } }, ...said] };
-  }
+  if (numbers.length < 0.9 * values.length || Math.max(...numbers) > 10 || Math.min(...numbers) < 0) return null;
+  const low = Math.min(...numbers);
+  const high = Math.max(...numbers);
+  return { kind: scoreKind(word, low, high), confidence: said.length ? 0.95 : 0.6,
+    reasons: [{ code: 'values_range', params: { min: low, max: high } }, ...said] };
+}
+
+/** A text column's kind: a header naming an id, a name, a channel or an address; a list; a choice; else open text. */
+function textKind(values, said, word) {
   const distinct = new Set(values.map((v) => v.toLowerCase()));
-  if (word && ['id', 'name', 'channel', 'email'].includes(word[0])) return { kind: word[0], confidence: 0.85, reasons: said };
+  if (['id', 'name', 'channel', 'email'].includes(word)) return { kind: word, confidence: 0.85, reasons: said };
   if (share(values, (v) => v.includes(';')) >= 0.3) return { kind: 'multi_choice', confidence: 0.75, reasons: [{ code: 'separator', params: { separator: ';' } }], separator: ';' };
   if (distinct.size <= 12 && values.length >= 2 * distinct.size) return { kind: 'choice', confidence: 0.7, reasons: [{ code: 'distinct_values', params: { count: distinct.size } }] };
   const average = Math.round(values.reduce((n, v) => n + v.length, 0) / values.length);
   return { kind: 'open_text', confidence: said.length ? 0.85 : 0.6, reasons: [{ code: 'long_text', params: { average } }, ...said] };
 }
 
+/** One column's kind, confidence and reasons (import_detect.py `detect_column`, shortened). */
+function detectColumn(header, raw) {
+  const values = raw.map((v) => v.trim()).filter(Boolean);
+  const word = KIND_WORDS.find(([, re]) => re.test(header));
+  const said = word ? [{ code: 'header_says', params: { word: header.match(word[1])[0].toLowerCase() } }] : [];
+  if (values.length === 0) return { kind: 'ignore', confidence: 0.9, reasons: [{ code: 'empty', params: {} }] };
+  return valueKind(values, said, word?.[0]) ?? textKind(values, said, word?.[0]);
+}
+
 const slug = (text) => text.normalize('NFKD').replace(/[\u0300-\u036f]/gu, '').toLowerCase().replace(/[^a-z0-9]+/gu, '_').replace(/^_|_$/gu, '').slice(0, 40);
 const QUESTION = { open_text: { type: 'open_text', long: true, input_type: 'text' }, nps_0_10: { type: 'nps' }, csat: { type: 'csat' },
   rating_1_5: { type: 'rating', scale: 'star', range: 5 }, rating_1_10: { type: 'rating', scale: 'number', range: 10 } };
 const distinctCells = (cells) => [...new Map(cells.filter(Boolean).map((v) => [v.toLowerCase(), v])).values()];
+/** `object` without the `keys` (rather than a rest destructure's unused names). */
+const omit = (object, keys) => Object.fromEntries(Object.entries(object).filter(([key]) => !keys.includes(key)));
+
+/** A choice column's labels: its distinct cells, a multiple choice's split on `;`; none for any other kind. */
+function choiceLabels(column) {
+  if (column.kind === 'choice') return distinctCells(column.cells);
+  if (column.kind === 'multi_choice') return distinctCells(column.cells.flatMap((c) => c.split(';').map((p) => p.trim())));
+  return [];
+}
 
 /** The imported form of the columns (import_survey.py `infer_form`, shortened: no matrix). */
 function inferForm(columns, language) {
@@ -96,8 +142,7 @@ function inferForm(columns, language) {
   const mapping = {};
   for (const column of columns) {
     const base = QUESTION[column.kind];
-    const labels = column.kind === 'choice' ? distinctCells(column.cells)
-      : column.kind === 'multi_choice' ? distinctCells(column.cells.flatMap((c) => c.split(';').map((p) => p.trim()))) : [];
+    const labels = choiceLabels(column);
     const shape = base ?? (labels.length > 0 && labels.length <= 50
       ? { type: column.kind === 'choice' ? 'single_select' : 'multi_select',
           options: labels.map((label, i) => ({ code: slug(label) || `option_${i + 1}`, label: { [language]: label } })) }
@@ -106,7 +151,8 @@ function inferForm(columns, language) {
       mapping[column.header] = { date: 'date', id: 'id' }[column.kind] ?? 'ignore';
       continue;
     }
-    const id = `q_${slug(column.header) || `col_${questions.length + 1}`}`;
+    const name = slug(column.header) || `col_${questions.length + 1}`;
+    const id = `q_${name}`;
     questions.push({ id, headline: { [language]: column.header }, required: false, ...shape });
     mapping[column.header] = id;
   }
@@ -116,6 +162,13 @@ function inferForm(columns, language) {
 }
 
 const fail = (status, error, code) => [status, { success: false, error, ...(code ? { code } : {}) }];
+
+/** The import's target: the one asked for, else a survey for its kinds (NPS, a list, a grid, or no open text). */
+function targetOf(asked, kinds) {
+  if (['reviews', 'survey'].includes(asked)) return asked;
+  const survey = kinds.some((k) => ['nps_0_10', 'multi_choice', 'matrix_cell'].includes(k)) || !kinds.includes('open_text');
+  return survey ? 'survey' : 'reviews';
+}
 
 /** POST /scrapers/manual/detect. */
 export function detectColumns(_ctx, body) {
@@ -141,11 +194,10 @@ export function detectColumns(_ctx, body) {
       ...(found.separator ? { separator: found.separator } : {}), cells: body.values?.[header] ?? cells };
   });
   const kinds = columns.map((c) => c.kind);
-  const target = ['reviews', 'survey'].includes(body.target) ? body.target
-    : kinds.some((k) => ['nps_0_10', 'multi_choice', 'matrix_cell'].includes(k)) || !kinds.includes('open_text') ? 'survey' : 'reviews';
+  const target = targetOf(body.target, kinds);
   const form = inferForm(columns, typeof body.language === 'string' ? body.language : 'en');
   return [200, { format: body.format, delimiter: read.delimiter, headers: read.headers, row_count: read.rows.length,
-    columns: columns.map(({ cells: _cells, ...column }) => column),
+    columns: columns.map((column) => omit(column, ['cells'])),
     suggested: { target, mapping: Object.fromEntries(columns.map((c) => [c.header, c.kind])), date_order: body.date_order ?? 'dmy',
       form, form_problem: form === null ? 'no_questions' : null } }];
 }
@@ -163,13 +215,17 @@ export function wizardCsvBody(body) {
   const kinds = headers.map((h) => body.mapping[h] ?? 'ignore');
   const kept = headers.map((h, i) => [h, kinds[i]]).filter(([, k]) => !['open_text', 'email', 'name', 'ignore'].includes(k));
   const rating = kept.find(([, k]) => ['rating_1_5', 'csat', 'rating_1_10'].includes(k))?.[0];
-  const targetOf = (h, k) => CSV_TARGET[k] ?? (k.startsWith('dimension:') ? k : h === rating ? 'rating' : 'metadata');
-  const columnMap = { text: 'text', ...Object.fromEntries(kept.map(([h, k]) => [h, targetOf(h, k)])),
+  const csvTarget = (h, k) => {
+    if (CSV_TARGET[k] !== undefined) return CSV_TARGET[k];
+    if (k.startsWith('dimension:')) return k;
+    return h === rating ? 'rating' : 'metadata';
+  };
+  const columnMap = { text: 'text', ...Object.fromEntries(kept.map(([h, k]) => [h, csvTarget(h, k)])),
     ...(body.import_tag ? { tags: 'tags' } : {}) };
   const out = [['text', ...kept.map(([h]) => h), ...(body.import_tag ? ['tags'] : [])],
     ...rows.map((row) => [headers.filter((_h, i) => kinds[i] === 'open_text').map((h) => row[headers.indexOf(h)] ?? '').filter(Boolean).join('\n\n'),
       ...kept.map(([h]) => row[headers.indexOf(h)] ?? ''), ...(body.import_tag ? [body.import_tag] : [])])];
-  const { mapping: _m, delimiter: _d, date_order: _o, import_tag: _t, ...rest } = body;
+  const rest = omit(body, ['mapping', 'delimiter', 'date_order', 'import_tag']);
   return { ...rest, column_map: columnMap, csv_text: `${out.map((r) => r.map(csvCell).join(',')).join('\n')}\n` };
 }
 

@@ -396,7 +396,7 @@
       "createDescription": "Un espace de travail d'essai pour un client à la fin d'un atelier : ses personnes, un pack de démarrage, puis l'assistant d'import. Il dure 14, 30 ou 60 jours, puis se met en pause.",
       "dialogTitle": "Créer un espace de travail d'essai",
       "days": "Durée",
-      "daysOption": "{{days}} jours",
+      "daysOption": "{{days, number}} jours",
       "pausesNotice": "À la fin de l'essai, il se met en pause : ses plugins et ses formulaires en ligne s'arrêtent, et rien n'est supprimé. La lecture et l'export continuent de fonctionner jusqu'à ce qu'un administrateur de la plateforme le prolonge ou le convertisse. Un essai ne se supprime jamais lui-même.",
       "fixNameSlug": "Vérifiez le nom et l'adresse.",
       "submit": "Créer l'essai",
@@ -417,7 +417,7 @@
         "title": "Pack de démarrage",
         "hint": "Créé dans l'essai avec votre propre accès, chaque élément étant enregistré par sa propre route. Les formulaires sont créés désactivés.",
         "form": "Formulaire : {{name}}",
-        "categories": "Catégories d'exemple ({{n}})"
+        "categories": "Catégories d'exemple ({{n, number}})"
       },
       "done": {
         "title": "{{name}} est prêt.",

@@ -7,16 +7,18 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { pkSkTable } from '../test-support/api-stack-fixture';
 import { synthApiTemplate } from '../test-support/api-stack-template';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { fixtureBucket } from '../test-support/fixture-resources';
 import { itemAt } from '../test-support/guards';
-import { IamPolicySchema, isAttachedToRole, isAuditRowGuardStatement } from '../test-support/iam-statements';
+import { IamPolicySchema } from '../test-support/iam-statements';
+import type { IamStatement } from '../test-support/iam-statements';
+import { attachedStatements } from '../test-support/worker-function';
 import { VOICE_REGIONS, voiceSettings } from '../utils/voice-personas';
 import { addVoiceRelay } from './voice-relay';
 
@@ -32,18 +34,15 @@ const RuntimeSchema = z.object({ Properties: z.object({
   EnvironmentVariables: z.record(z.string(), z.unknown()),
   RoleArn: z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) }),
 }) });
-type Statement = z.infer<typeof IamPolicySchema>['Properties']['PolicyDocument']['Statement'][number];
+type Statement = IamStatement;
 
 function voiceRuntimes(template: Template): z.infer<typeof RuntimeSchema>[] {
   return Object.values(template.findResources(RUNTIME_TYPE)).map((resource) => RuntimeSchema.parse(resource))
     .filter((runtime) => runtime.Properties.AgentRuntimeName.includes('persona_voice'));
 }
 
-function roleStatements(template: Template, roleId: string): Statement[] {
-  return Object.values(template.findResources('AWS::IAM::Policy')).map((resource) => IamPolicySchema.parse(resource).Properties)
-    .filter((policy) => isAttachedToRole(policy, roleId))
-    .flatMap((policy) => policy.PolicyDocument.Statement).filter((statement) => !isAuditRowGuardStatement(statement));
-}
+/** The role's statements as written, without the audit-row guard's Denies. */
+const roleStatements = (template: Template, roleId: string): Statement[] => attachedStatements(template, roleId);
 
 const text = (value: unknown): string => JSON.stringify(value);
 
@@ -53,12 +52,8 @@ function synthRelay(context: Record<string, unknown>): { arn: string | undefined
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], ...context } });
   const stack = new cdk.Stack(app, 'Relay', { env: { account: '111111111111', region: 'us-east-1' } });
   const kmsKey = new kms.Key(stack, 'Key');
-  const table = (id: string) => new dynamodb.Table(stack, id, {
-    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-  });
   const arn = addVoiceRelay(stack, {
-    projectsTable: table('Projects'), aggregatesTable: table('Aggregates'),
+    projectsTable: pkSkTable(stack, 'Projects'), aggregatesTable: pkSkTable(stack, 'Aggregates'),
     rawDataBucket: fixtureBucket(stack, 'Raw'), kmsKey,
   });
   return { arn, template: Template.fromStack(stack) };

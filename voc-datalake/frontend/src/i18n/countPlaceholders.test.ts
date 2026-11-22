@@ -90,6 +90,10 @@ const LEFT_PLAIN: Readonly<Record<string, { params: readonly string[]; why: stri
   'feedbackForms:problems.outsideScale': { params: ['min', 'max'], why: SCALE_POINT },
   'feedbackForms:questionList.meta.range': { params: ['min', 'max'], why: SCALE_POINT },
   'feedbackForms:results.reachCard.answeredBy': { params: ['total'], why: PRE_FORMATTED },
+  // The import wizard's detection reasons (lambda/shared/import_detect.py): a whole-number column's lowest and
+  // highest values, never a count.
+  'scrapers:importWizard.reasons.values_range': { params: ['min', 'max'], why: SCALE_POINT },
+  'scrapers:importWizard.reasons.numbers': { params: ['min', 'max'], why: 'a column\'s lowest and highest values as the file writes them (a year or a code), not a count' },
 }
 
 /** Every `[namespace:key, value]` string of one locale, plural suffix dropped from the key. */

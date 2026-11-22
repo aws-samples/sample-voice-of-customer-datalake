@@ -10,7 +10,7 @@ import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { COLUMN_KINDS, PERSONAL_KINDS } from '../../../api/importWizardSchema'
 import type { ColumnKind, DetectedColumn } from '../../../api/importWizardSchema'
-import { kindLabel, reasonsText } from './columnText'
+import { columnKindLabel, reasonsText } from './columnText'
 
 const HIGH = 0.8
 const MEDIUM = 0.5
@@ -46,7 +46,7 @@ export default function ColumnCard({ column, kind, onKind }: Readonly<{
         <label htmlFor={selectId} className="text-xs text-muted">{t('importWizard.map.kind')}</label>
         <select id={selectId} className="select w-auto text-sm" value={kind}
           onChange={(event) => onKind(COLUMN_KINDS.find((option) => option === event.target.value) ?? 'ignore')}>
-          {COLUMN_KINDS.map((option) => <option key={option} value={option}>{kindLabel(t, option)}</option>)}
+          {COLUMN_KINDS.map((option) => <option key={option} value={option}>{columnKindLabel(t, option)}</option>)}
         </select>
       </div>
       <p className="text-xs text-text">{kind === column.kind ? reasonsText(t, column) : t('importWizard.reasons.chosen')}</p>

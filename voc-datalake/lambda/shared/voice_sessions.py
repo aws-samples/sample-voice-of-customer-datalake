@@ -41,7 +41,7 @@ from botocore.auth import SigV4QueryAuth
 from botocore.awsrequest import AWSRequest
 
 from shared import persona_grounding
-from shared.aws import is_conditional_check_failure
+from shared.aws import get_agentcore_client, is_conditional_check_failure
 from shared.category_access import CategoryScope
 from shared.company_personas import is_company_container
 from shared.dynamo_values import as_count, plain
@@ -95,7 +95,6 @@ USAGE_TTL: Final = timedelta(days=400)
 #: AgentCore's signed query parameters: the session id (one microVM) and the one custom header the runtime forwards.
 SESSION_PARAM: Final = 'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id'
 SCOPE_PARAM: Final = 'X-Amzn-Bedrock-AgentCore-Runtime-Custom-Voc-Scope'
-SIGNING_SERVICE: Final = 'bedrock-agentcore'
 
 SESSION_SK: Final = 'SESSION'
 SESSION_PREFIX: Final = 'VOICE#'
@@ -244,7 +243,7 @@ def connect_url(config: VoiceConfig, session_id: str, scope: str, credentials: A
     path = f'/runtimes/{quote(config.runtime_arn, safe="")}/ws'
     query = urlencode({SESSION_PARAM: session_id, SCOPE_PARAM: scope})
     request = AWSRequest(method='GET', url=f'https://{host}{path}?{query}', headers={'host': host})
-    SigV4QueryAuth(credentials, SIGNING_SERVICE, config.region, expires=CONNECT_SECONDS).add_auth(request)
+    SigV4QueryAuth(credentials, 'bedrock-agentcore', config.region, expires=CONNECT_SECONDS).add_auth(request)
     return 'wss://' + str(request.url).removeprefix('https://')
 
 
@@ -561,7 +560,7 @@ def stop_runtime_session(config: VoiceConfig, session_id: str) -> None:
     """End the relay's microVM for this session (End, or the API's own stop). Never raises: it also ends by itself
     after 2 minutes without a frame."""
     try:
-        boto3.client('bedrock-agentcore', region_name=config.region).stop_runtime_session(
+        get_agentcore_client(config.region).stop_runtime_session(
             runtimeSessionId=session_id, agentRuntimeArn=config.runtime_arn, qualifier='DEFAULT')
     except Exception:  # noqa: BLE001 - the runtime's idle timeout ends it anyway
         logger.warning('The voice relay session could not be stopped', extra={'session_id': session_id})

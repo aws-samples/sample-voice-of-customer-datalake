@@ -1187,7 +1187,7 @@
     "loading": "音声の利用状況を読み込んでいます…",
     "failed": "音声の利用状況を読み込めませんでした。",
     "minutes": "使用時間 (分)",
-    "ofTotal": "{{used}} / {{total}}",
+    "ofTotal": "{{used, number}} / {{total, number}}",
     "sessions": "今月のセッション数",
     "cost": "推定費用",
     "live": "現在ライブ中",

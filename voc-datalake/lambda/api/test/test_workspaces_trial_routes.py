@@ -12,15 +12,13 @@ import boto3
 import pytest
 from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
+from test_workspaces_platform_routes import ADA, PAT, UMA
 from workspaces_api_world import handler_doubles
 
 import workspaces_handler
 from shared.trial_pause import PauseTables, pause
 from shared.trials import read_meta
 
-PAT = {'sub': 'sub-pat', 'cognito:username': 'pat', 'cognito:groups': '[admins, platform-admins]'}
-ADA = {'sub': 'sub-ada', 'cognito:username': 'ada', 'cognito:groups': 'admins'}
-UMA = {'sub': 'sub-uma', 'cognito:username': 'uma', 'cognito:groups': 'users'}
 BODY = {'name': 'Acme Trial', 'slug': 'acme-trial',
         'trial': {'days': 14, 'pack': {'forms': ['workshop'], 'categories': True, 'playbooks': True}}}
 CEILING = '["webscraper", "app_reviews_ios"]'

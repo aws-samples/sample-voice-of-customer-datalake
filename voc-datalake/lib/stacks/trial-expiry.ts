@@ -129,7 +129,7 @@ function schedulerRole(scope: Construct, name: string, groupArn: string, job: la
     assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com', {
       conditions: { StringEquals: { 'aws:SourceAccount': cdk.Stack.of(scope).account }, ArnEquals: { 'aws:SourceArn': groupArn } },
     }),
-    description: 'EventBridge Scheduler: runs voc-trial-expiry once at a trial workspace\'s end, nothing else',
+    description: 'EventBridge Scheduler: runs the trial expiry job once at a trial workspace\'s end, nothing else',
   });
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'InvokeTheTrialExpiry', actions: ['lambda:InvokeFunction'], resources: [job.functionArn],

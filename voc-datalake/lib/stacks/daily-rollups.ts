@@ -4,23 +4,14 @@
  * workspace") and the leadership view (`voc-adoption-rollup`, adoption-rollup-worker.ts, 7.70.00;
  * docs/leadership-view.md). Each keeps its construct id directly under the stack, so its logical ids are its own.
  */
-import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import type * as kms from 'aws-cdk-lib/aws-kms';
-import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import type { Construct } from 'constructs';
 
 import { createAdoptionRollupWorker } from './adoption-rollup-worker';
+import type { AdoptionRollupWorkerProps } from './adoption-rollup-worker';
 import { createCostRollupWorker } from './cost-rollup-worker';
 
-export interface DailyRollupsProps {
-  uniqueName: (baseName: string) => string;
-  layer: lambda.ILayerVersion;
-  kmsKey: kms.IKey;
-  aggregatesTable: dynamodb.ITable;
-  projectsTable: dynamodb.ITable;
-  workspacesTable: dynamodb.ITable;
-  conversationsTable: dynamodb.ITable;
-  agentsTable: dynamodb.ITable;
+/** Both rollups' props: the leadership view's (it reads the most tables) and the cost rollup's log groups. */
+export interface DailyRollupsProps extends AdoptionRollupWorkerProps {
   /** The deployment's Lambda log groups, `/aws/lambda/[<prefix>-]voc-*-<account>-<region>` (the cost rollup's). */
   lambdaLogGroupPattern: string;
 }

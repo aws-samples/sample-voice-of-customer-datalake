@@ -17,7 +17,7 @@ export const COLUMN_KINDS = [
 export type ColumnKind = (typeof COLUMN_KINDS)[number]
 /** Dropped by default: the wizard warns and keeps them out unless a person picks another kind. */
 export const PERSONAL_KINDS: ReadonlySet<ColumnKind> = new Set(['email', 'name'])
-export const FILE_FORMATS = ['csv', 'tsv', 'json', 'xlsx'] as const
+const FILE_FORMATS = ['csv', 'tsv', 'json', 'xlsx'] as const
 export type FileFormat = (typeof FILE_FORMATS)[number]
 export const DATE_ORDERS = ['dmy', 'mdy', 'ymd'] as const
 export type DateOrder = (typeof DATE_ORDERS)[number]

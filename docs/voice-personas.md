@@ -101,8 +101,9 @@ browser ──HTTPS──▶ projects API (/projects/{proxy+})  ── checks, e
    projects API checks, in this order: the flag; consent; a project persona; a person (not an MCP credential or an
    agent); a minute left this month; 3 starts this minute and 5 sessions today for this person; a free stream. Then it
    reads the persona's evidence pack as the person (the focus groups' grounding, `shared/persona_grounding.py`: at
-   most 12 cited reviews and 8 fresh ones, the newest that match it (a session names no topic), each the stored text under its source's PII policy, screened
-   for instructions to a model, never its author) and writes it with the persona's profile to
+   most 12 cited reviews and 8 fresh ones, the newest that match it (a session names no topic), each the stored text
+   under its source's PII policy, screened for instructions to a model, never its author) and writes it with the
+   persona's profile to
    `scratch/voice/<session>/evidence.json`, writes the session row `VOICE#<session>` / `SESSION` (status `minted`) and
    a pointer under the project, and answers a WebSocket URL presigned for **60 seconds**.
 2. **The URL** is `wss://bedrock-agentcore.<region>.amazonaws.com/runtimes/<runtime ARN>/ws?…`, signed with SigV4

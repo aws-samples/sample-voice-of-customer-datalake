@@ -224,6 +224,23 @@ def is_v2(item: Mapping[str, Any]) -> bool:
     return plain(item.get('schema_version')) == SCHEMA_VERSION
 
 
+#: A form revision's snapshot row, ``FORMREV#{form_id}#{n:06d}`` beside the form's own row in its forms partition.
+REVISION_PREFIX: Final = 'FORMREV#'
+#: The one 409 of a form save that lost the race with another (the revision or the save counter it read moved).
+CHANGED_MEANWHILE: Final = 'The form was changed by someone else: reload it, then save again'
+
+
+def write_count(item: Mapping[str, Any]) -> int:
+    """The form row's save counter (0 for a row written before 7.58.00, which has none)."""
+    value = plain(item.get('write_count'))
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def canonical(definition: Mapping[str, Any]) -> str:
+    """A definition as one comparable text: its keys sorted, DynamoDB's numbers as JSON's."""
+    return json.dumps(plain(dict(definition)), sort_keys=True, ensure_ascii=False, default=str)
+
+
 def revision_of(item: Mapping[str, Any]) -> int:
     """The form's current revision: its stored one, 1 for a version 1 form (served migrated as its first)."""
     revision = plain(item.get('revision'))

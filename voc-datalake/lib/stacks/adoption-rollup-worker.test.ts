@@ -8,11 +8,11 @@ import path from 'node:path';
 
 import type { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
-import { IamPolicySchema, isAttachedToRole, isAuditRowGuardStatement, statementActions } from '../test-support/iam-statements';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
-import { findWorkerFunction } from '../test-support/worker-function';
+import {
+  findWorkerFunction, FunctionPropertiesSchema, pinnedStatements, RetryConfigSchema, ScheduleSchema,
+} from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
 import { ADOPTION_PARTITIONS, PROJECT_QUERY_ATTRIBUTES, PROJECT_QUERY_PARTITIONS } from './adoption-rollup-worker';
 
@@ -21,24 +21,8 @@ beforeAll(() => { template = synthProcessingTemplate({ withIndexes: true }); });
 
 const ONE = `ws_${'?'.repeat(26)}`;
 const worker = () => findWorkerFunction(template, 'voc-adoption-rollup-');
-interface Statement { sid: string | undefined; effect: string; actions: string[]; resource: string; condition: unknown }
-const StatementSidSchema = z.object({ Sid: z.string().optional() }).loose();
-
-function statements(): Statement[] {
-  const roleId = worker().Role['Fn::GetAtt'][0];
-  const found: Statement[] = [];
-  for (const resource of Object.values(template.findResources('AWS::IAM::Policy'))) {
-    const policy = IamPolicySchema.parse(resource).Properties;
-    if (!isAttachedToRole(policy, roleId)) continue;
-    // The audit-row guard's Denies are every writer's of voc-aggregates (pinned by audit-row-guard.test.ts).
-    for (const statement of policy.PolicyDocument.Statement.filter((s) => !isAuditRowGuardStatement(s))) {
-      found.push({ sid: StatementSidSchema.parse(statement).Sid, effect: statement.Effect ?? 'Allow',
-        actions: [...statementActions(statement)].sort(byCodeUnit), resource: JSON.stringify(statement.Resource),
-        condition: statement.Condition });
-    }
-  }
-  return found;
-}
+/** The role's statements, pinned (the audit-row guard's Denies, every writer's of voc-aggregates, left out). */
+const statements = () => pinnedStatements(template, worker().Role['Fn::GetAtt'][0]);
 const dynamodbStatements = () => statements().filter((s) => s.actions.some((action) => action.startsWith('dynamodb:')));
 /** The table a statement names (the fixture's table id) and the index after it, if any. */
 function target(resource: string): string {
@@ -52,13 +36,6 @@ const projected = (partitions: string[], attributes: string[]) => ({
   StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
 });
 
-const ScheduleSchema = z.object({
-  Properties: z.object({ ScheduleExpression: z.string(), Targets: z.tuple([z.object({ Input: z.string() })]) }),
-}).transform(({ Properties }) => ({ expression: Properties.ScheduleExpression, input: Properties.Targets[0].Input }));
-const FunctionPropertiesSchema = z.object({ Properties: z.record(z.string(), z.unknown()) });
-const InvokeConfigSchema = z.object({
-  Properties: z.object({ FunctionName: z.object({ Ref: z.string() }), MaximumRetryAttempts: z.number() }).loose(),
-});
 
 describe('the voc-adoption-rollup job', () => {
   it('runs the rollup handler 15 minutes at most at 512 MB, with no reserved concurrency and no async retry', () => {
@@ -69,7 +46,7 @@ describe('the voc-adoption-rollup job', () => {
       .toStrictEqual([['jobs/adoption_rollup/handler.lambda_handler', 512, 900]]);
     expect(fn.filter((properties) => 'ReservedConcurrentExecutions' in properties)).toStrictEqual([]);
     const retries = Object.values(template.findResources('AWS::Lambda::EventInvokeConfig'))
-      .map((resource) => InvokeConfigSchema.parse(resource).Properties)
+      .map((resource) => RetryConfigSchema.parse(resource).Properties)
       .filter((config) => config.FunctionName.Ref.startsWith('AdoptionRollupWorkerAdoptionRollup'))
       .map((config) => config.MaximumRetryAttempts);
     expect(retries).toStrictEqual([0]);

@@ -10,6 +10,7 @@ import type { DragEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ImportWizardState } from './useImportWizard'
 import type { FilePickProblem, Table } from './wizardFile'
+import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 
 const PREVIEW_ROWS = 20
 const PROBLEM_KEYS: Readonly<Record<FilePickProblem, string>> = {
@@ -64,8 +65,10 @@ export default function UploadStep({ wizard }: Readonly<{ wizard: ImportWizardSt
         <FileUp size={20} className="mx-auto mb-2 text-muted" aria-hidden="true" />
         <p className="text-sm text-text">{t('importWizard.upload.drop')}</p>
         <p className="text-xs text-muted mt-1">{t('importWizard.upload.formats')}</p>
-        <label htmlFor={inputId} className="btn btn-secondary btn-sm mt-3 cursor-pointer">{t('importWizard.upload.choose')}</label>
-        <input id={inputId} ref={input} type="file" className="sr-only" accept=".csv,.tsv,.tab,.txt,.json,.jsonl,.ndjson,.xlsx"
+        <button type="button" className="btn btn-secondary btn-sm mt-3" onClick={() => input.current?.click()}>
+          {t('importWizard.upload.choose')}
+        </button>
+        <input ref={input} type="file" className="sr-only" tabIndex={-1} aria-hidden="true" accept=".csv,.tsv,.tab,.txt,.json,.jsonl,.ndjson,.xlsx"
           onChange={(event) => void wizard.pick(event.target.files?.item(0) ?? null)} />
       </div>
       {wizard.busy && <p role="status" className="text-sm text-muted inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden="true" />{t('importWizard.upload.reading')}</p>}
@@ -77,9 +80,9 @@ export default function UploadStep({ wizard }: Readonly<{ wizard: ImportWizardSt
             {t('importWizard.upload.rows', { count: detected.table.rows.length, columns: detected.table.headers.length })}
           </p>
           <PreviewTable table={detected.table} />
-          <div className="flex justify-end">
+          <StickyActionBar variant="footer" className="flex justify-end">
             <button type="button" className="btn btn-primary" onClick={() => wizard.setStep('map')}>{t('importWizard.continue')}</button>
-          </div>
+          </StickyActionBar>
         </>
       )}
     </section>
