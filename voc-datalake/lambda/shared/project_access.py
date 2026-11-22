@@ -95,12 +95,15 @@ DELEGATED_SUBJECT_PREFIX: Final = 'mcp:'
 # and which only an IAM-authorised direct invoke can produce — API Gateway
 # builds `requestContext.authorizer.claims` from the verified JWT alone.
 ACTING_SUBJECT_CLAIM: Final = 'voc:acting_subject'
-# Claim the GLOBAL MCP Lambda (api/mcp_global_handler.py) adds to exactly one kind
-# of delegated call: `agents_run`, after it has verified, per call, that the token is
-# a write token minted by an administrator who is STILL an administrator in
-# Cognito. Honoured only beside a delegated `mcp:` subject acting for a person (see
-# delegated_agent_run_allowed) — API Gateway never produces either from a JWT.
+# Claim the GLOBAL MCP Lambda (api/mcp_global_handler.py) adds to the call of an admin-only tool, after it has
+# verified, per call, that the token is a write token minted by an administrator who is STILL an administrator in
+# Cognito: its value is the ONE operation the tool serves, one of MCP_ADMIN_OPS (`agents_run`, and since 7.70.00
+# `insights_get_adoption`), so a route admits the call for its own operation only. Honoured only beside a delegated
+# `mcp:` subject acting for a person (see delegated_agent_run_allowed) — API Gateway never produces either from a JWT.
 MCP_AGENT_RUN_CLAIM: Final = 'voc:mcp_agent_run'
+#: The admin-only MCP operations the claim may name: Run now on an agent (POST /agents/{id}/run) and the leadership
+#: view (GET /metrics/adoption, the deployment's only).
+MCP_ADMIN_OPS: Final = frozenset({'agents_run', 'insights_get_adoption'})
 # Claim the GLOBAL MCP Lambda adds to an engineering tool's call (7.53.00, "MCP for runs"), after the same per-call
 # check as `agents_run` (a write token minted by an administrator who is STILL one): its value is the ONE engineering
 # operation the tool serves, so a route admits the call only for its own operation (delegated_engineering_allowed).
@@ -256,17 +259,19 @@ def _human_sub(value: str) -> str:
     return '' if not value or is_synthetic_subject(value) else value
 
 
-def delegated_agent_run_allowed(claims: Mapping[str, Any]) -> bool:
-    """True for a global-MCP ``agents_run`` call the MCP Lambda has cleared.
+def delegated_agent_run_allowed(claims: Mapping[str, Any], op: str) -> bool:
+    """True for a global-MCP call of admin-only operation ``op`` the MCP Lambda has cleared: ``agents_run`` (Run now on
+    an agent) or ``insights_get_adoption`` (the deployment's leadership view), the two of ``MCP_ADMIN_OPS``.
 
-    The ONE delegated path to an admin-only action, and deliberately narrow: an
-    ``mcp:`` subject, acting for a real person, carrying ``MCP_AGENT_RUN_CLAIM``
-    exactly ``'true'``. The claim is never forwarded from a request; the MCP Lambda
-    adds it from the stored token row after its own per-call admin check.
+    The delegated path to those two admin-only actions, and deliberately narrow: an ``mcp:`` subject, acting for a
+    real person, carrying ``MCP_AGENT_RUN_CLAIM`` equal to ``op`` (a call cleared for one never passes for the other).
+    The claim is never forwarded from a request; the MCP Lambda adds it from the stored token row after its own
+    per-call admin check. The principal is still not an admin anywhere else.
     """
     return (
-        claim_text(claims, 'sub').startswith(DELEGATED_SUBJECT_PREFIX)
-        and claim_text(claims, MCP_AGENT_RUN_CLAIM) == 'true'
+        op in MCP_ADMIN_OPS
+        and claim_text(claims, 'sub').startswith(DELEGATED_SUBJECT_PREFIX)
+        and claim_text(claims, MCP_AGENT_RUN_CLAIM) == op
         and bool(_human_sub(claim_text(claims, ACTING_SUBJECT_CLAIM)))
     )
 

@@ -8,6 +8,10 @@
  * - Citations: the ids the persona's `cite` named, kept only when the evidence pack holds them (the focus groups'
  *   rule: an answer can only cite a review the pack held). A `[fb:<id>]` the model writes in its text anyway is moved
  *   to the turn's citations the same way and removed from the text (`keepCitations`), so no id is read aloud or shown.
+ *   What a caption or a citation says stays within the wire schema's bounds (protocol.ts `MAX_CAPTION_CHARS`, the
+ *   ellipsis of a clipped one included, and `MAX_CITED_IDS` at a time).
+ * - A rollover (`keepPartial`): the old stream's FINAL text of the turn just spoken never arrives, so the persona's
+ *   SPECULATIVE segments past its FINAL ones are kept as said (never for a turn the person spoke over).
  * - Parts: every turn but the latest is settled once a newer one starts (and every turn at the end); settled turns
  *   are taken once each, for one write-once part.
  * - No audio is ever kept: only this text.
@@ -46,8 +50,9 @@ const MAX_TURN_CITATIONS = 20;
 const MAX_HISTORY_BYTES = 200 * 1024;
 const MAX_HISTORY_ENTRY_BYTES = 50 * 1024;
 
+/** The turn's words as one caption: clipped so that, with its ellipsis, it is at most `MAX_CAPTION_CHARS`. */
 function joined(words: readonly string[]): string {
-  return clip(words.join(' ').replaceAll(/\s+/gu, ' ').trim(), MAX_CAPTION_CHARS);
+  return clip(words.join(' ').replaceAll(/\s+/gu, ' ').trim(), MAX_CAPTION_CHARS - 1);
 }
 
 function textOf(turn: Turn): string {
@@ -95,13 +100,13 @@ export class Transcript {
   cite(ids: readonly string[]): { turn: number; cited: string[] } | undefined {
     const turn = this.turnFor('assistant');
     if (turn === undefined) return undefined;
-    return { turn: turn.turn, cited: this.addCitations(turn, ids.slice(0, MAX_CITED_IDS)) };
+    return { turn: turn.turn, cited: this.addCitations(turn, ids) };
   }
 
-  /** The ids of `ids` the pack holds and the turn did not cite yet, now cited. */
+  /** The ids of `ids` the pack holds and the turn did not cite yet, now cited (at most one citation message's). */
   private addCitations(turn: Turn, ids: readonly string[]): string[] {
     const added = [...new Set(ids)].filter((id) => this.packIds.has(id) && !turn.feedbackIds.includes(id))
-      .slice(0, MAX_TURN_CITATIONS - turn.feedbackIds.length);
+      .slice(0, Math.min(MAX_CITED_IDS, MAX_TURN_CITATIONS - turn.feedbackIds.length));
     turn.feedbackIds = [...turn.feedbackIds, ...added];
     return added;
   }
@@ -109,6 +114,14 @@ export class Transcript {
   /** The number of the latest turn, if any. */
   lastTurn(): number | undefined {
     return this.turns.at(-1)?.turn;
+  }
+
+  /** A rollover: the persona's latest turn keeps the SPECULATIVE segments its FINAL text has not covered (unless the
+   *  person spoke over it: those were never said). */
+  keepPartial(): void {
+    const last = this.turns.at(-1);
+    if (last?.role !== 'assistant' || last.interrupted) return;
+    last.final = [...last.final, ...last.speculative.slice(last.final.length)];
   }
 
   /** Barge-in: the persona's current turn was cut short. */

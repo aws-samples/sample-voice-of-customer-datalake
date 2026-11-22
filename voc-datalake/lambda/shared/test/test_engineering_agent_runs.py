@@ -299,9 +299,11 @@ def test_an_agents_start_on_an_expired_token_writes_nothing_when_its_flow_pushes
         agent, _row = _engineering_agent(env)
         assert eng_runs.stored_flow(stored_workflow(env.agents, agent['workflow_id'])).pushes is True
         client = Lambda()
-        with pytest.raises(ConflictError, match='expired'):
+        with pytest.raises(ConflictError, match='expired') as refused:
             eng_runs.start_agent_run(env.agents, agent, store.get_workflow(env.agents, agent['workflow_id']), EXPIRED,
                                      _start(), client=client, function='f', now=NOW)
+        # (the code the heartbeat skips on: review round 1, F5)
+        assert refused.value.code == eng_runs.EXPIRED_CONNECTION_CODE == 'token_expired'
         assert client.sent == []
         assert _nothing_held(env, agent['agent_id']) == [[], None, False]
 

@@ -438,8 +438,11 @@ def _detect(header: str, values: list[str]) -> Column:
         return Column(header, *_with_header('url', header, 0.8, [_reason('urls')]))
     if _share(values, split_matrix) >= _MOST:
         return Column(header, 'matrix_cell', 0.9, [_reason('matrix_pairs')])
-    serials = _header_word(header, 'date') is not None and _share(values, is_excel_serial) >= _MOST
-    if serials or _share(values, looks_like_date) >= _MOST:
+    # An Excel serial (a number from 20,000 to 80,000) is a date only under a date header: elsewhere it is a count or
+    # an id (``Ticket ID`` 45001…), so there the values must read as dates without it.
+    date_header = _header_word(header, 'date') is not None
+    serials = date_header and _share(values, is_excel_serial) >= _MOST
+    if serials or _share(values, looks_like_date if date_header else _written_date) >= _MOST:
         order = infer_date_order(values)
         reasons = [_reason('excel_serial')] if serials else [_reason('dates', order=order)]
         return Column(header, *_with_header('date', header, 0.75, reasons), date_order=order)
@@ -448,6 +451,11 @@ def _detect(header: str, values: list[str]) -> Column:
         return Column(header, *_numeric_kind(header, numbers))
     kind, confidence, reasons, separator = _text_kind(header, values)
     return Column(header, kind, confidence, reasons, separator=separator)
+
+
+def _written_date(value: str) -> bool:
+    """A date as written (ISO, slashed, dotted), never a bare Excel serial."""
+    return not is_excel_serial(value) and looks_like_date(value)
 
 
 def column_cells(table: Table, header: str) -> list[str]:

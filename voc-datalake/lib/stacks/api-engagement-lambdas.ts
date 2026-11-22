@@ -66,6 +66,12 @@ function grantFormRouting(ctx: ApiStackContext, role: iam.Role): Record<string, 
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [FORM_LOOKUP_PARTITION] } },
   }));
   grantKeyScopedWrites(workspacesTable, role, ['PutItem', 'DeleteItem'], [FORM_LOOKUP_PARTITION]);
+  // A form put live in a workspace is conditional on its trial (7.71.00, lambda/shared/ws_repo.py `unpaused_in`): one
+  // ConditionCheck of the workspace's META in the save's own transaction, which writes nothing.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'FormPublishUnpaused', actions: ['dynamodb:ConditionCheckItem'], resources: [workspacesTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } },
+  }));
   return resolutionEnv;
 }
 

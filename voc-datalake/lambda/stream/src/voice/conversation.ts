@@ -74,6 +74,7 @@ export class Conversation {
       case 'toolUse':
         this.toolUse(output.toolName, output.toolUseId, output.content);
         break;
+      case 'completionStart':
       case 'usage':
       case 'other':
         break;

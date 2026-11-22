@@ -21,11 +21,12 @@ from shared.test.moto_tables import create_pk_sk_table
 
 PLATFORM = {'sub': 'plat-sub', 'cognito:username': 'pat', 'cognito:groups': 'platform-admins'}
 DELEGATED = {'sub': 'mcp:tok_1', ACTING_SUBJECT_CLAIM: 'admin-sub', 'cognito:groups': 'admins'}
-CLEARED = {**DELEGATED, MCP_AGENT_RUN_CLAIM: 'true'}
-ROLLUP = {'pk': 'ADOPTION#ROLLUP', 'sk': '2026-11-20', 'rolled_up_at': '2026-11-20T03:05:00+00:00',
+CLEARED = {**DELEGATED, MCP_AGENT_RUN_CLAIM: 'insights_get_adoption'}
+ROLLUP = {'pk': 'ADOPTION#ROLLUP', 'sk': 'latest', 'rolled_up_at': '2026-11-20T03:05:00+00:00',
           'complete': True, 'first_month': '2024-12', 'agent_runs_counted': True,
           'months': {'2026-11': {'projects_started': 2, 'with': {'prototype': 1},
                                  'artifacts': {'prd': {'ai': Decimal(3)}}}}}
+#: Another row of the rollup partition (not the one fixed item): never read.
 OLDER = {**ROLLUP, 'sk': '2026-11-19', 'months': {'2026-11': {'projects_started': 9}}}
 SETTINGS_KEY = {'pk': 'SETTINGS#adoption', 'sk': 'config'}
 
@@ -78,13 +79,14 @@ class TestTheView:
     def test_a_credential_reads_it_only_once_the_mcp_lambda_cleared_it(self, api_gateway_event, lambda_context):
         assert _view(api_gateway_event, lambda_context, claims=DELEGATED)[0] == 403
         assert _view(api_gateway_event, lambda_context, claims=CLEARED)[0] == 200
+        # A call cleared for Run now (agents_run) never reads the view (review round 1, S4).
+        assert _view(api_gateway_event, lambda_context, claims={**DELEGATED, MCP_AGENT_RUN_CLAIM: 'agents_run'})[0] == 403
 
     def test_a_bad_range_is_a_400(self, api_gateway_event, lambda_context):
         assert _view(api_gateway_event, lambda_context, grain='week')[0] == 400
 
     def test_before_any_rollup_it_answers_zeros(self, api_gateway_event, lambda_context, table):
-        table.delete_item(Key={'pk': 'ADOPTION#ROLLUP', 'sk': '2026-11-20'})
-        table.delete_item(Key={'pk': 'ADOPTION#ROLLUP', 'sk': '2026-11-19'})
+        table.delete_item(Key={'pk': 'ADOPTION#ROLLUP', 'sk': 'latest'})
         status, body = _view(api_gateway_event, lambda_context)
         assert (status, body['as_of'], body['totals']['projects_started']) == (200, None, 0)
 

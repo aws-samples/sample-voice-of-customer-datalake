@@ -4,16 +4,22 @@
  * Reviews or tickets go through the CSV import with a `mapping` of each header to its kind: a choice column whose
  * header names a configured dimension (by key or label) becomes that dimension (`dimension:<key>`), every other
  * column keeps its kind (lambda/shared/import_wizard.py `reviews_fields` reads them). A survey export becomes an
- * imported form, its rows sent 1,000 a call. Every row of a reviews import carries one tag (`import-YYYY-MM-DD-xxxx`)
- * so First insights reads that import's reviews only.
+ * imported form, its rows sent in calls sized by `importCalls`. Every row of a reviews import carries one tag
+ * (`import-YYYY-MM-DD-xxxx`) so First insights reads that import's reviews only.
  *
  * @module pages/Scrapers/ImportWizard/wizardMapping
  */
 import type { Dimension } from '../../../api/dimensionsSchema'
 import type { ColumnKind, ImportTarget } from '../../../api/importWizardSchema'
 
-/** Rows per `POST /feedback-forms/{id}/import` call: far inside the API's 29 s and its 5,000. */
-export const ROWS_PER_CALL = 1000
+/** The rows one `POST /feedback-forms/{id}/import` call takes at most (lambda/shared/forms_v2_import.py). */
+const MAX_ROWS_PER_CALL = 5000
+/** The texts (each row's text and its open answers) one call holds when its source redacts personal data, each one
+ * Comprehend call (lambda/shared/forms_v2_import.py `MAX_REDACTED_TEXTS`): a call stays well inside the API's 29 s. */
+const MAX_REDACTED_TEXTS = 250
+/** A call's body as its Lambda event carries it (its JSON escaped once more, as the event's `body`): Lambda takes 6 MB
+ * a synchronous call, headers and request context included, so a call stays under 4 MB. */
+const MAX_CALL_BYTES = 4 * 1024 * 1024
 
 export type MappingProblem = 'noText' | 'noQuestion'
 
@@ -57,10 +63,44 @@ export function importTag(now: Date, random: () => number = Math.random): string
   return `import-${now.toISOString().slice(0, 10)}-${letters}`
 }
 
-/** `items` in runs of `size`, each with the index of its first item. */
-export function chunksOf<T>(items: readonly T[], size: number): { readonly offset: number; readonly items: readonly T[] }[] {
-  return Array.from({ length: Math.ceil(items.length / size) }, (_unused, index) =>
-    ({ offset: index * size, items: items.slice(index * size, (index + 1) * size) }))
+interface ImportCall<T> {
+  /** The index of its first row. */
+  readonly offset: number
+  readonly items: readonly T[]
+}
+
+const encoder = new TextEncoder()
+
+/** The bytes `value` takes in a Lambda event: its JSON, escaped again as a string (without that string's quotes). */
+export function eventBytes(value: unknown): number {
+  return encoder.encode(JSON.stringify(JSON.stringify(value))).length - 2
+}
+
+interface CallSizes {
+  /** `eventBytes` of the first call without its rows (the original file rides it). */
+  readonly first: number
+  /** `eventBytes` of a later call without its rows (the first call's file key instead). */
+  readonly later: number
+  /** The texts one row may hold: its text and one per open-text question. */
+  readonly textsPerRow: number
+}
+
+/** The rows in calls, in order: each at most `MAX_REDACTED_TEXTS` texts and, with the call's other fields, at most
+ * `MAX_CALL_BYTES` (a row too large on its own still goes, alone). */
+export function importCalls<T>(rows: readonly T[], sizes: CallSizes): ImportCall<T>[] {
+  const maxRows = Math.max(1, Math.min(MAX_ROWS_PER_CALL, Math.floor(MAX_REDACTED_TEXTS / Math.max(1, sizes.textsPerRow))))
+  const calls: { readonly offset: number; readonly items: T[]; bytes: number }[] = []
+  rows.forEach((row, index) => {
+    const bytes = eventBytes(row) + 1 // and its comma
+    const last = calls.at(-1)
+    if (last === undefined || last.items.length >= maxRows || last.bytes + bytes > MAX_CALL_BYTES) {
+      calls.push({ offset: index, items: [row], bytes: (last === undefined ? sizes.first : sizes.later) + bytes })
+    } else {
+      last.items.push(row)
+      last.bytes += bytes
+    }
+  })
+  return calls.map(({ offset, items }) => ({ offset, items }))
 }
 
 /** An imported form's name from its file's (`Workshop results.csv` → `Workshop results`). */

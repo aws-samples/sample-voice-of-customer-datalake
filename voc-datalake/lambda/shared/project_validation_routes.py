@@ -185,11 +185,15 @@ def _form(block: Mapping[str, Any]) -> dict[str, Any] | None:
         return None
 
 
-def _form_view(form: Mapping[str, Any] | None, block: Mapping[str, Any]) -> dict[str, Any] | None:
-    """The card's state, and whether it lags the criteria and tasks saved since (``stale``: save the card again)."""
+def _form_view(form: Mapping[str, Any] | None, block: Mapping[str, Any],
+               rows: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """The card's state, whether it lags the criteria and tasks saved since (``stale``: save the card again), and the
+    newest prototype version when the card is on an older one (``newer_version``: its testers see no card)."""
     if not form:
         return None
     state = proto.form_state(form)
+    newest = _newest(rows, 'PROTOTYPE#')
+    state['newer_version'] = newest if newest and newest != block.get('prototype_document_id') else None
     language = str(block.get('form_language') or fv2.DEFAULT_LOCALE)
     wanted = proto.definition_for(block.get('tasks') or [], block.get('criteria') or [], language)
     try:
@@ -201,9 +205,10 @@ def _form_view(form: Mapping[str, Any] | None, block: Mapping[str, Any]) -> dict
     return state
 
 
-def results(table: Any, project_id: str, meta: Mapping[str, Any], scope: category_access.CategoryScope
-            ) -> tuple[dict[str, Any], list[str]]:
-    """The Validation tab's whole view (and the report's figures), and the real responses' feedback ids."""
+def results(table: Any, project_id: str, meta: Mapping[str, Any], scope: category_access.CategoryScope,
+            rows: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+    """The Validation tab's whole view (and the report's figures), and the real responses' feedback ids. ``rows``: the
+    project's rows (``_rows``)."""
     block = pv.block_of(meta)
     form = _form(block)
     synthetic = _run_figures(table, project_id, block.get('run_document_id'))
@@ -213,7 +218,7 @@ def results(table: Any, project_id: str, meta: Mapping[str, Any], scope: categor
     prefill = pv.decision_prefill(str(meta.get('name') or 'the prototype'), criteria,
                                   report_document_id=block.get('report_document_id'), feedback_ids=feedback_ids,
                                   responses=int((real or {}).get('responses') or 0)) if criteria else None
-    return {'validation': block, 'form': _form_view(form, block), 'synthetic': synthetic,
+    return {'validation': block, 'form': _form_view(form, block, rows), 'synthetic': synthetic,
             'real': {key: value for key, value in real.items() if key != 'feedback_ids'} if real else None,
             'criteria': criteria, 'tasks': pv.task_results(block.get('tasks') or [], real, synthetic),
             'decision_prefill': prefill}, feedback_ids
@@ -225,8 +230,9 @@ def get_validation(project_id: str) -> dict[str, Any]:
     table = _projects()
     meta = pv.read_meta(table, project_id)
     scope = _scope()
-    view, _feedback_ids = results(table, project_id, meta, scope)
-    return {'success': True, **view, 'methodology': methodology.assess('validation', _rows(table, project_id))}
+    rows = _rows(table, project_id)
+    view, _feedback_ids = results(table, project_id, meta, scope, rows)
+    return {'success': True, **view, 'methodology': methodology.assess('validation', rows)}
 
 
 # ── Criteria ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -425,7 +431,13 @@ def _synthetic_work(config: dict[str, Any]) -> dict[str, Any]:
 @app.put("/projects/<project_id>/validation/form")
 @tracer.capture_method
 def save_validation_form(project_id: str) -> dict[str, Any]:
-    """The tasks, and the card on the prototype's own pin form (its next revision), offered or not (``open``)."""
+    """The tasks, and the card on the prototype's own pin form (its next revision), offered or not (``open``).
+
+    The project's block is written first, conditional on the revision it read (``expected_revision``: a 409 for any
+    write in between), with the card's definition built from the criteria it holds and checked against the pin form
+    (a 400 or 409 before any write); the pin form second. A write that fails in between leaves the card ``stale`` in
+    the view, never a block and a card that disagree unseen. Moving the card to a newer prototype version turns it off
+    on the version it leaves."""
     body = json_object_body(app)
     tasks = pv.validated_tasks(body.get('tasks'))
     if not isinstance(body.get('open'), bool):
@@ -434,24 +446,33 @@ def save_validation_form(project_id: str) -> dict[str, Any]:
     expected = pv.validated_expected_revision(body.get('expected_revision'))
     table = _projects()
     block = pv.block_of(pv.read_meta(table, project_id))
-    criteria = _criteria_or_400(block)
+    _criteria_or_400(block)
     if expected is not None and int(block.get('revision') or 0) != expected:
         raise ConflictError(pv.STALE_MESSAGE, code=pv.CHANGED_CODE, details={'revision': block.get('revision') or 0})
+    rows = _rows(table, project_id)
     prototype_id = body.get('prototype_document_id')
     if prototype_id is not None:
         if not isinstance(prototype_id, str):
             raise ValidationError('prototype_document_id must be a document id')
         _row(table, project_id, f'PROTOTYPE#{prototype_id}', 'Prototype not found')
     else:
-        prototype_id = _prototype_of(block, _rows(table, project_id))
-    form_id = pin_form_id(prototype_id)
-    form = proto.save_questions(_forms(), form_id, proto.definition_for(tasks, criteria, language),
-                                open_card=body['open'], actor_sub=_actor()['sub'])
-    saved = pv.update_block(table, project_id, lambda _stored: {
-        'tasks': tasks, 'prototype_document_id': prototype_id, 'form_id': form_id, 'form_open': body['open'],
-        'form_language': language, 'card_in_prototype': _shows_card(table, project_id, prototype_id)},
-        actor=_actor(), reason=pv.REASON_FORM_SAVED, expected_revision=expected)
-    return {'success': True, 'validation': saved, 'form': _form_view(form, saved)}
+        prototype_id = _prototype_of(block, rows)
+    form_id, shows_card, forms = pin_form_id(prototype_id), _shows_card(table, project_id, prototype_id), _forms()
+    card: dict[str, Any] = {}
+
+    def changes(stored: dict[str, Any]) -> dict[str, Any]:
+        card['definition'] = proto.check_questions(
+            forms, form_id, proto.definition_for(tasks, _criteria_or_400(stored), language))
+        card['previous'] = stored.get('form_id')
+        return {'tasks': tasks, 'prototype_document_id': prototype_id, 'form_id': form_id, 'form_open': body['open'],
+                'form_language': language, 'card_in_prototype': shows_card}
+
+    saved = pv.update_block(table, project_id, changes, actor=_actor(), reason=pv.REASON_FORM_SAVED,
+                            expected_revision=expected)
+    form = proto.save_questions(forms, form_id, card['definition'], open_card=body['open'], actor_sub=_actor()['sub'])
+    if isinstance(card['previous'], str) and card['previous'] and card['previous'] != form_id:
+        proto.close_card(forms, card['previous'], actor_sub=_actor()['sub'])
+    return {'success': True, 'validation': saved, 'form': _form_view(form, saved, rows)}
 
 
 # ── The report ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -472,8 +493,8 @@ def write_validation_report(project_id: str):
 
 
 def results_text(view: Mapping[str, Any]) -> str:
-    """The computed results as the summary's DATA: figures, statuses, the synthetic readings (labelled) and what
-    testers said was missing."""
+    """The computed results as the summary's DATA: figures, statuses, the synthetic readings (labelled) and how many
+    testers said what was missing, never what they wrote (the report quotes no tester: its readers have VIEW)."""
     real = view.get('real') or {}
     lines = [f"Real tester responses: {real.get('responses', 0)}"]
     for result in view.get('criteria') or []:
@@ -483,7 +504,7 @@ def results_text(view: Mapping[str, Any]) -> str:
                      f"synthetic personas' average {synthetic.get('average')} (synthetic, not evidence)")
     lines.extend(f"Task: {task['text']} | real success rate {task['real'].get('rate')} from "
                      f"{task['real'].get('n', 0)}" for task in view.get('tasks') or [])
-    lines += [f'Missing (a tester): {entry.get("text")}' for entry in real.get('missing') or []]
+    lines.append(f"Testers who said what was missing: {len(real.get('missing') or [])}")
     return '\n'.join(lines)
 
 
@@ -493,7 +514,7 @@ def _report_work(config: dict[str, Any]) -> dict[str, Any]:
     meta = pv.read_meta(table, project_id)
     _criteria_or_400(pv.block_of(meta))
     scope = category_access.scope_from_config(config.get(category_access.SCOPE_CONFIG_KEY)) or category_access.NOTHING
-    view, feedback_ids = results(table, project_id, meta, scope)
+    view, feedback_ids = results(table, project_id, meta, scope, _rows(table, project_id))
     summary = ai.report_summary(results_text(view), language=config.get('response_language'))
     real = view.get('real') or {}
     report = {'tasks': view['tasks'], 'ces': real.get('ces') or {},

@@ -933,6 +933,7 @@
       "live": "O cartão está ativo no próprio formulário de feedback do protótipo (revisão {{revision, number}}).",
       "closed": "O cartão está salvo, mas não é exibido.",
       "stale": "Os critérios ou as tarefas mudaram desde que o cartão foi salvo: salve-o novamente.",
+      "newerVersion": "Uma versão mais recente do protótipo não mostra o cartão: salve o cartão para movê-lo para lá (nesta versão ele é fechado).",
       "oldWidget": "Esta versão do protótipo é anterior ao cartão, então o widget dela não pode mostrá-lo: salve o tour dela ou crie-a novamente e salve o cartão."
     },
     "synthetic": {

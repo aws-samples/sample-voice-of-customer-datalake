@@ -12,7 +12,8 @@ shared/forms_v2.py's own checks, as every forms save is: the definition validate
 unresolved placeholder on a live form), the revision it replaces kept first as its ``FORMREV#{form_id}#{n:06d}``
 snapshot (a version 1 pin form's own fields with it), then the row written conditional on the revision and the save
 count it read (a 409 otherwise), the version 1 fields removed. A question kept with another type or range on an
-answered form is the forms' 409 ``answers_locked``. ``validation_open`` says whether the card is offered.
+answered form is the forms' 409 ``answers_locked``. ``validation_open`` says whether the card is offered; moving the
+card to a newer prototype version turns it off on the version it leaves (``close_card``).
 
 **The submit** (``POST /feedback-forms/{form_id}/submit``, api/feedback_form_handler.py) hooks in here for a
 ``prototype_pin`` form. A body without ``answers`` is a pin, as before (``PINS#``, never queued). A version 2 body is
@@ -209,11 +210,10 @@ def _conditional(stored: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     return ' AND '.join(parts), values
 
 
-def save_questions(table: Any, form_id: str, proposed: Mapping[str, Any], *, open_card: bool,
-                   actor_sub: str) -> dict[str, Any]:
-    """Write ``proposed`` as the pin form's definition (a new revision when it changes it) and ``validation_open``;
-    the row as written."""
-    stored = read_pin_form(table, form_id)
+def _checked(stored: Mapping[str, Any],
+             proposed: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any], list[str], bool]:
+    """``proposed`` through every check of the save against the stored row: ``(definition, current, retired ids,
+    changed)``; a 400 or the 409 ``answers_locked`` otherwise."""
     current = fv2.definition_of(stored)
     retired = [qid for qid in fv2.plain(stored.get('retired_ids') or []) if isinstance(qid, str)]
     definition = fv2.validate_definition(proposed, retired=retired)
@@ -222,6 +222,21 @@ def save_questions(table: Any, form_id: str, proposed: Mapping[str, Any], *, ope
     if changed and stored.get('has_responses') is True and fv2.reshaped_questions(current, definition):
         raise ConflictError(_LOCKED, code='answers_locked',
                             details={'changed': fv2.reshaped_questions(current, definition)})
+    return definition, current, retired, changed
+
+
+def check_questions(table: Any, form_id: str, proposed: Mapping[str, Any]) -> dict[str, Any]:
+    """The definition ``save_questions`` would write, every check of it made and nothing written (a 404, 400 or 409
+    first): the Validate step checks the card before it writes the project's block."""
+    return _checked(read_pin_form(table, form_id), proposed)[0]
+
+
+def save_questions(table: Any, form_id: str, proposed: Mapping[str, Any], *, open_card: bool,
+                   actor_sub: str) -> dict[str, Any]:
+    """Write ``proposed`` as the pin form's definition (a new revision when it changes it) and ``validation_open``;
+    the row as written."""
+    stored = read_pin_form(table, form_id)
+    definition, current, retired, changed = _checked(stored, proposed)
     revision = fv2.revision_of(stored)
     sets: dict[str, Any] = {**definition, 'schema_version': fv2.SCHEMA_VERSION, 'revision': revision + int(changed),
                             'write_count': fv2.write_count(stored) + 1, 'updated_at': now_iso(), 'updated_by': actor_sub,
@@ -248,6 +263,23 @@ def save_questions(table: Any, form_id: str, proposed: Mapping[str, Any], *, ope
             raise ConflictError(fv2.CHANGED_MEANWHILE, code='revision_conflict') from error
         raise
     return response.get('Attributes') or {}
+
+
+def close_card(table: Any, form_id: str, *, actor_sub: str) -> None:
+    """Stop offering the card on ``form_id`` (``validation_open`` false, a save counted; its questions and answers
+    stay): the card moved to a newer prototype version, whose testers answer there. A form gone since is left alone."""
+    try:
+        table.update_item(
+            Key=form_key(form_id), ConditionExpression='attribute_exists(sk) AND #type = :pin',
+            UpdateExpression='SET #open = :closed, #updated_at = :now, #updated_by = :by, '
+                             '#write_count = if_not_exists(#write_count, :zero) + :one',
+            ExpressionAttributeNames={'#type': 'form_type', '#open': OPEN_FIELD, '#updated_at': 'updated_at',
+                                      '#updated_by': 'updated_by', '#write_count': 'write_count'},
+            ExpressionAttributeValues={':pin': FORM_TYPE_PROTOTYPE_PIN, ':closed': False, ':now': now_iso(),
+                                       ':by': actor_sub, ':zero': 0, ':one': 1})
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            raise
 
 
 def form_state(form: Mapping[str, Any]) -> dict[str, Any]:

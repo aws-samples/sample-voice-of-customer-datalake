@@ -1,7 +1,8 @@
 /**
  * @fileoverview Project → Validate (7.68.00): editors only (its results quote testers); the criteria saved with the
  * revision the editor loaded; the results judged on real testers with the personas' figure beside them, labelled
- * synthetic; Create decision once a report exists, prefilled from it.
+ * synthetic; a newer prototype version without the card is said; Create decision once a report exists, prefilled
+ * from it.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
@@ -24,14 +25,15 @@ const BLOCK: ValidationView['validation'] = {
   criteria: [{ id: 'c00aa11', text: 'Paying is quick', target: 4.5 }], tasks: [{ id: 't00aa11', text: 'Pay' }],
   prd_document_id: 'prd_1', prototype_document_id: 'proto_1', plan_document_id: null, run_document_id: 'doc_run',
   report_document_id: null, form_id: 'pf_0123456789abcdef', form_open: true, form_language: 'en',
-  card_in_prototype: true, status: 'testing',
+  card_in_prototype: true,
   revision: 3, updated_at: null,
 }
 
 function view(overrides: Partial<ValidationView> = {}): ValidationView {
   return {
     validation: BLOCK,
-    form: { form_id: 'pf_0123456789abcdef', revision: 2, open: true, questions: 4, has_responses: true, stale: false },
+    form: { form_id: 'pf_0123456789abcdef', revision: 2, open: true, questions: 4, has_responses: true, stale: false,
+            newer_version: null },
     synthetic: { synthetic: true, document_id: 'doc_run', created_at: '2026-11-20T10:00:00Z', personas: 3 },
     real: { responses: 2, last_response_at: null, ces: { n: 2, average: 6, score: 100 },
       missing: [{ text: 'An export button', at: null, response_id: 'f1' }] },
@@ -120,6 +122,13 @@ describe('the Validate tab', () => {
     const link = await screen.findByRole('link', { name: 'Create decision' })
     expect(link.getAttribute('href')).toContain('/projects/proj_1/decisions?newDecision=1')
     expect(link.getAttribute('href')).toContain('successMetric=Paying+is+quick')
+  })
+
+  it('says when a newer prototype version shows no card', async () => {
+    api.get.mockResolvedValue(view({ form: { form_id: 'pf_0123456789abcdef', revision: 2, open: true, questions: 4,
+                                             has_responses: true, stale: false, newer_version: 'proto_2' } }))
+    renderTab()
+    expect(await screen.findByText(/A newer version of the prototype shows no card/u)).toBeInTheDocument()
   })
 
   it('has no Create decision before the report', async () => {

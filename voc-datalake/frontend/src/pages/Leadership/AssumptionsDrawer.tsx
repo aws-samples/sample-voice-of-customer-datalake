@@ -32,6 +32,16 @@ function hoursOf(text: string): number | null {
   return text.trim() !== '' && Number.isFinite(value) && value >= 0 && value <= MAX_HOURS ? value : null
 }
 
+/** Only the baselines the admin changed: a type left as shown is not sent, so one at its default stays a default
+ *  (never saved as the admin's own). Undefined when none changed. */
+function changedBaselines(view: AdoptionView, draft: Draft): Partial<Record<ArtifactType, number | null>> | undefined {
+  const changed = ARTIFACT_TYPES.flatMap((type) => {
+    const hours = hoursOf(draft[type])
+    return hours === view.time_saved.baselines[type].hours ? [] : [[type, hours] as const]
+  })
+  return changed.length === 0 ? undefined : Object.fromEntries(changed)
+}
+
 function BaselineEditor({ view, onSaved }: Readonly<{ view: AdoptionView; onSaved: () => void }>) {
   const { t } = useTranslation('leadership')
   const client = useQueryClient()
@@ -39,10 +49,13 @@ function BaselineEditor({ view, onSaved }: Readonly<{ view: AdoptionView; onSave
   const [note, setNote] = useState(view.time_saved.note ?? '')
   const invalid = ARTIFACT_TYPES.some((type) => hoursOf(draft[type]) === null) || note.length > MAX_NOTE
   const save = useMutation({
-    mutationFn: () => adoptionApi.saveSettings({
-      baselines: Object.fromEntries(ARTIFACT_TYPES.map((type) => [type, hoursOf(draft[type])])),
-      note: note.trim() === '' ? null : note.trim(),
-    }),
+    mutationFn: () => {
+      const baselines = changedBaselines(view, draft)
+      return adoptionApi.saveSettings({
+        ...(baselines === undefined ? {} : { baselines }),
+        note: note.trim() === '' ? null : note.trim(),
+      })
+    },
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ADOPTION_ROOT_KEY })
       onSaved()

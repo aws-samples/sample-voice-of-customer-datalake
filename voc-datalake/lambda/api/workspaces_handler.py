@@ -27,17 +27,18 @@ Routes:
                                 transaction (shared/platform_workspaces.py). 400 for a bad name, slug or trial, 409
                                 for a slug that is taken; secret_status is always 'ready' (decision 19: nothing else
                                 is made, a plugin's credentials parameters come with its first save). A trial
-                                (7.71.00, shared/trials.py): 14, 30 or 60 days (30), its one schedule made first
-                                (shared/trial_schedule.py), then the same transaction with the trial on META and
-                                the listing row and a trial_created audit row; `trial` answers its view (null
-                                for none).
+                                (7.71.00, shared/trials.py): 14, 30 or 60 days (30), in the same transaction with
+                                the trial on META and the listing row and a trial_created audit row (the expiry's
+                                hourly tick reads its end from the listing); `trial` answers its view (null for
+                                none).
     GET /platform/workspaces    {workspaces: [{id, name, slug, status, created_at, secret_status, trial}], next_cursor}:
                                 every workspace by name, ?limit= (1-100, default 25) and ?cursor= (one Query of the
                                 listing partition, never a Scan); `trial` is the listing row's copy (or null).
     POST /platform/workspaces/{ws}/trial/extend   {days} -> {trial}: 14, 30 or 60 more days from its end (or from now
-                                once it ended), audited first (trial_extended), the new end's schedule made, a
-                                paused trial's plugins and forms turned back on (shared/trial_pause.py). 404 for no
-                                trial, 409 for a converted one or one changed meanwhile.
+                                once it ended), audited first (trial_extended), a paused trial's plugins and forms
+                                turned back on (shared/trial_pause.py; a form no longer publishable stays off and is
+                                named in the history's `resumed.skipped`). 404 for no trial, 409 for a converted one
+                                or one changed meanwhile.
     POST /platform/workspaces/{ws}/trial/convert  -> {trial}: a regular workspace from now on, audited first
                                 (trial_converted), a paused trial resumed the same way; a converted one is answered
                                 as it is. Neither route, nor the expiry, deletes anything.
@@ -140,7 +141,6 @@ from shared.aws import (
     get_cognito_idp_client,
     get_dynamodb_resource,
     get_s3_client,
-    get_scheduler_client,
     invoke_lambda_async,
 )
 from shared.enabled_sources import enabled_plugin_ids
@@ -169,7 +169,6 @@ from shared.platform_workspaces import (
 from shared.request_body import json_object_body
 from shared.tables import cached_table
 from shared.trial_pause import PauseTables, resume
-from shared.trial_schedule import configured_schedule
 from shared.trial_state import new_trial, parse_extension, stored_trial, trial_summary
 from shared.trials import convert_trial, extend_trial, trial_view
 from shared.warm_init import warm_at_init
@@ -574,10 +573,6 @@ def create_platform_workspace():  # a Response: the resolver validates a return 
     ws = new_workspace_id()
     trial = None if new.trial is None else new_trial(new.trial, creator, datetime.now(UTC))
     try:
-        if trial is not None:
-            # The schedule first (a 500 before anything is written when it is not configured or refused): a create
-            # that then fails leaves a schedule that runs once for no workspace and does nothing.
-            configured_schedule(get_scheduler_client).create(ws, datetime.fromisoformat(trial['expires_at']))
         # Every plugin the deployment offers starts on (7.40.00); Workspace settings turns one off.
         create_workspace(get_workspaces_table(), new, creator, enabled_plugin_ids(), ws=ws, trial=trial)
     except (ClientError, BotoCoreError) as exc:
@@ -591,7 +586,7 @@ def create_platform_workspace():  # a Response: the resolver validates a return 
                     body=json.dumps({'workspace': workspace}))
 
 
-def _resume(ws: str, trial: Mapping[str, Any], actor: str, reason: str) -> dict[str, int]:
+def _resume(ws: str, trial: Mapping[str, Any], actor: str, reason: str) -> dict[str, Any]:
     """A paused trial's plugins and forms turned back on (shared/trial_pause.py), as the platform admin."""
     if not AGGREGATES_TABLE:
         raise ConfigurationError('Aggregates table not configured')
@@ -610,8 +605,8 @@ def extend_workspace_trial(ws: str) -> dict:
     require_live_platform_admin(event, FAILED_EXTEND_TRIAL)
     days = parse_extension(json_object_body(app))
     try:
-        trial = extend_trial(get_workspaces_table(), ws, days, get_caller_subject(event),
-                             schedule=configured_schedule(get_scheduler_client), resume=_resume, now=datetime.now(UTC))
+        trial = extend_trial(get_workspaces_table(), ws, days, get_caller_subject(event), resume=_resume,
+                             now=datetime.now(UTC))
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Error extending a trial')
         raise ServiceError(FAILED_EXTEND_TRIAL) from exc

@@ -9,16 +9,22 @@
  *   stream's life (or at 7:45 whatever it is doing) a new stream opens with the same prompt and the conversation so far
  *   as its chat history (transcript.ts `history`, within Nova Sonic's 200 KB), the microphone moves to it, the old one
  *   closes. The meter sums every stream's usage.
- * - The meter, every minute and at the end: the session row's seconds, tokens and cost, and the month's (the
- *   deployment's) seconds and cost, whose new total is the budget check: at or over the month's minutes the persona
- *   says goodbye and the session ends (`budget`); with a minute left, a notice. The session's own limit ends it the
- *   same way (`session_limit`), with a notice a minute before.
- * - Wrap-up: a notice, a cross-modal turn asking the persona to say goodbye, then the end at its finished turn or after
- *   10 seconds.
+ * - The meter, every minute and at the end, one write after another: the session row's seconds, tokens and cost, and
+ *   the month's (the deployment's) seconds and cost, whose new totals are the budget check: at or over the month's
+ *   minutes or its cost cap the persona says goodbye and the session ends (`budget`); with a minute left, a notice.
+ *   The session's own cost cap (checked at every usage event) ends it the same way (`budget`), and its time limit
+ *   (`session_limit`), with a notice a minute before.
+ * - The microphone: frames past a real-time budget (16 kHz PCM16, 1.5 times real time since the session went live,
+ *   plus a second's head start) are dropped, so a browser sending faster than it speaks cannot grow the stream's
+ *   queue or its cost.
+ * - Wrap-up: a notice, a cross-modal turn asking the persona to say goodbye, then the end at the goodbye's own
+ *   finished turn (the first of a response that started after it was asked: an answer under way when the wrap-up
+ *   began finishes first) or after 10 seconds.
  * - End (once, whatever asked: the person's End, a limit, the budget, a stream failure, the browser leaving): the
  *   stream closes, the last turns are written, the usage recorded, the row marked ended (only while live), the session
  *   leaves the live set, and the browser hears `ended {reason}` (after the writes: the projects API finalizes when the
- *   browser asks it to, once it heard this).
+ *   browser asks it to, once it heard this, or at its next offer of this project's personas). A session row that is
+ *   gone (its project deleted) ends the session with `error` at the first write that finds it so.
  */
 import { errorName } from '../lib/error-name.js';
 import { Conversation } from './conversation.js';
@@ -26,10 +32,12 @@ import { isBusyError, SonicStream, type SonicTransport } from './bedrock-stream.
 import { logEvent } from './log.js';
 import { Meter, centsOf } from './meter.js';
 import { citeToolSpec, GOODBYE_TURN, systemPrompt } from './prompt.js';
-import { browserMessageSchema, VOICE_CLOSE, type RelayMessage, type VoiceEndReason } from './protocol.js';
+import {
+  browserMessageSchema, VOICE_CLOSE, VOICE_INPUT_SAMPLE_RATE, type RelayMessage, type VoiceEndReason,
+} from './protocol.js';
 import { parseSessionInput, SCOPE_ID, SESSION_ID, type SessionInput } from './session-input.js';
 import { audioEvent, openingEvents, textBlock, toolResultEvents, type HistoryEntry, type SonicOutput } from './sonic-events.js';
-import type { VoiceStore } from './store.js';
+import { SessionGoneError, type VoiceStore } from './store.js';
 import { Transcript } from './transcript.js';
 
 export interface Clock {
@@ -61,6 +69,10 @@ const WRAP_UP_MS = 10_000;
 const USAGE_EVERY_MS = 5000;
 /** Microphone frames kept while the stream is not there yet (64 ms each: 4 seconds). */
 const MAX_PENDING_FRAMES = 64;
+/** The microphone's real-time rate (PCM16 at 16 kHz), how far ahead of it the browser may run, and its head start. */
+const MIC_BYTES_PER_SECOND = VOICE_INPUT_SAMPLE_RATE * 2;
+const MIC_RATE_ALLOWANCE = 1.5;
+const MIC_HEAD_START_SECONDS = 1;
 
 interface Failure {
   reason: VoiceEndReason;
@@ -79,11 +91,17 @@ export class VoiceSession {
   private activated = false;
   private startedAt = 0;
   private reported = { seconds: 0, cost: 0 };
+  private meterWrites: Promise<void> = Promise.resolve();
   private minutesLeft = 0;
+  private monthCost = 0;
+  private micBytes = 0;
+  private droppedFrames = 0;
   private usageSentAt = 0;
   private budgetWarned = false;
   private rolling = false;
   private wrapping: VoiceEndReason | undefined;
+  /** A response started after the goodbye was asked for: its finished turn ends the session. */
+  private goodbyeStarted = false;
   private pendingAudio: Buffer[] = [];
   private parts = 0;
   private writes: Promise<void> = Promise.resolve();
@@ -118,7 +136,18 @@ export class VoiceSession {
       this.pendingAudio = [...this.pendingAudio, pcm].slice(-MAX_PENDING_FRAMES);
       return;
     }
-    this.stream.send(audioEvent(pcm));
+    this.forward(this.stream, pcm);
+  }
+
+  /** A frame to the model, within the microphone's real-time budget (past it, dropped and counted). */
+  private forward(stream: SonicStream, pcm: Buffer): void {
+    const seconds = (this.deps.clock.now() - this.startedAt) / 1000 + MIC_HEAD_START_SECONDS;
+    if (this.micBytes + pcm.length > seconds * MIC_BYTES_PER_SECOND * MIC_RATE_ALLOWANCE) {
+      this.droppedFrames += 1;
+      return;
+    }
+    this.micBytes += pcm.length;
+    stream.send(audioEvent(pcm));
   }
 
   /** A JSON control message from the browser: `end` is the person's End; anything else is ignored. */
@@ -189,7 +218,7 @@ export class VoiceSession {
     stream.send(openingEvents({ voiceId: input.voiceId, systemPrompt: systemPrompt(input), tools: [citeToolSpec()], history }));
     const previous = this.stream;
     this.stream = stream;
-    for (const frame of this.pendingAudio) stream.send(audioEvent(frame));
+    for (const frame of this.pendingAudio) this.forward(stream, frame);
     this.pendingAudio = [];
     previous?.close();
     const output = await stream.start(this.deps.transport);
@@ -214,9 +243,11 @@ export class VoiceSession {
     if (event.kind === 'usage') {
       this.meter.record(stream.index, event.totals);
       this.sendUsage();
+      if (this.input !== undefined && this.meter.costMicroUsd() >= this.input.sessionCostCapMicroUsd) this.wrapUp('budget');
       return;
     }
     if (stream !== this.stream || this.ending !== undefined) return;
+    if (event.kind === 'completionStart' && this.wrapping !== undefined) this.goodbyeStarted = true;
     this.conversation?.handle(event);
     this.writeParts(false);
   }
@@ -235,7 +266,7 @@ export class VoiceSession {
 
   private assistantTurnEnded(): void {
     if (this.wrapping !== undefined) {
-      void this.end(this.wrapping);
+      if (this.goodbyeStarted) void this.end(this.wrapping);
       return;
     }
     const stream = this.stream;
@@ -246,6 +277,8 @@ export class VoiceSession {
     if (this.rolling || this.ending !== undefined || this.wrapping !== undefined || this.transcript === undefined) return;
     this.rolling = true;
     try {
+      // The old stream's FINAL text of the turn just spoken never arrives: keep what it planned to say.
+      this.transcript.keepPartial();
       await this.openStream(this.transcript.history());
       logEvent('stream_rollover', { session_id: this.ids.sessionId, streams: this.streams });
     } catch (error) {
@@ -263,11 +296,12 @@ export class VoiceSession {
     this.timer(MINUTE_MS, () => { void this.tick(); });
   }
 
-  /** The minute's meter and the budget check; then the next minute's. */
+  /** The minute's meter and the budget check (the month's minutes and its cost); then the next minute's. */
   private async tick(): Promise<void> {
     if (this.endRequested()) return;
-    await this.attempt('meter', () => this.recordMeter());
+    await this.recordMeter('meter');
     if (this.endRequested()) return;
+    if (this.input !== undefined && this.monthCost >= this.input.monthlyCostCapMicroUsd) this.minutesLeft = 0;
     this.channel.json({ type: 'budget', minutes_left: Math.round(this.minutesLeft * 10) / 10 });
     if (this.minutesLeft <= 0) {
       this.wrapUp('budget');
@@ -282,8 +316,14 @@ export class VoiceSession {
     return this.startedAt === 0 ? 0 : Math.floor((this.deps.clock.now() - this.startedAt) / 1000);
   }
 
-  /** The session row's usage, then the month's: the seconds and the cost since the last record, its new total back. */
-  private async recordMeter(): Promise<void> {
+  /** The meter's next write, after the one before it (a minute's tick and the end never add the same delta twice). */
+  private recordMeter(operation: string): Promise<void> {
+    this.meterWrites = this.meterWrites.then(() => this.attempt(operation, () => this.writeMeter()));
+    return this.meterWrites;
+  }
+
+  /** The session row's usage, then the month's: the seconds and the cost since the last record, its new totals back. */
+  private async writeMeter(): Promise<void> {
     const input = this.input;
     if (input === undefined) return;
     const seconds = this.elapsedSeconds();
@@ -292,7 +332,8 @@ export class VoiceSession {
     const total = await this.deps.store.addMonthly(input.usageKey, seconds - this.reported.seconds,
       cost - this.reported.cost, new Date(this.deps.clock.now()));
     this.reported = { seconds, cost };
-    this.minutesLeft = Math.max(0, (input.monthlySeconds - total) / 60);
+    this.minutesLeft = Math.max(0, (input.monthlySeconds - total.seconds) / 60);
+    this.monthCost = total.costMicroUsd;
   }
 
   private wrapUp(reason: VoiceEndReason): void {
@@ -318,12 +359,14 @@ export class VoiceSession {
     }));
   }
 
-  /** A store call that must not stop the session or its end: its failure is logged by name. */
+  /** A store call that must not stop the session's end: its failure is logged by name, and a session row that is gone
+   *  ends the session. */
   private async attempt(operation: string, call: () => Promise<void>): Promise<void> {
     try {
       await call();
     } catch (error) {
       logEvent('store_failed', { session_id: this.ids.sessionId, operation, error: errorName(error) });
+      if (error instanceof SessionGoneError) void this.end('error', VOICE_CLOSE.error);
     }
   }
 
@@ -347,11 +390,14 @@ export class VoiceSession {
     if (this.activated) {
       this.writeParts(true);
       await this.writes;
-      await this.attempt('usage', () => this.recordMeter());
+      await this.recordMeter('usage');
       await this.attempt('ended', () => this.deps.store.markEnded(sessionId, reason, new Date(this.deps.clock.now())));
       await this.attempt('live', () => this.deps.store.leaveLive(sessionId));
     }
-    logEvent('session_ended', { session_id: sessionId, reason, parts: this.parts, streams: this.streams, seconds: this.elapsedSeconds() });
+    logEvent('session_ended', {
+      session_id: sessionId, reason, parts: this.parts, streams: this.streams, seconds: this.elapsedSeconds(),
+      dropped_frames: this.droppedFrames,
+    });
     this.channel.json({ type: 'ended', reason });
     this.channel.close(code);
     this.over = true;

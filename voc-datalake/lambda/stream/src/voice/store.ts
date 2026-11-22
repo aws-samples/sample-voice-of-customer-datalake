@@ -5,9 +5,10 @@
  * voc-projects, the session's own partition only (`VOICE#<session id>` / `SESSION`; the role's `LeadingKeys` hold it
  * there and its `Attributes` to the names below), UpdateItem alone:
  * - activate: `minted` → `live` once, before the URL's minute is up (single use: a second connection is refused);
- * - usage and parts: `seconds`, `tokens`, `cost_microusd`, `streams`, `transcript_parts`;
+ * - usage and parts: `seconds`, `tokens`, `cost_microusd`, `streams`, `transcript_parts`, only while the row exists
+ *   (a deleted project's session row is never made again: the write fails with `SessionGoneError`);
  * - ended: `status`, `ended_at`, `end_reason`, only while `live` (the projects API may have ended it first).
- * voc-aggregates, `VOICEUSE#…` rows only, UpdateItem alone: the month's seconds and cost (`ADD`, the new total back),
+ * voc-aggregates, `VOICEUSE#…` rows only, UpdateItem alone: the month's seconds and cost (`ADD`, the new totals back),
  * and leaving the deployment's live set (`VOICEUSE#LIVE`).
  * The raw bucket, under `scratch/voice/<session id>/` (expired after 2 days): GetObject of `evidence.json`, PutObject
  * of `transcript/part-NNNN.json`, write-once (`If-None-Match: *`). No delete, no list, no other key.
@@ -31,6 +32,11 @@ export interface SessionUsage {
   streams: number;
 }
 
+export interface MonthTotals {
+  seconds: number;
+  costMicroUsd: number;
+}
+
 export interface VoiceStore {
   /** `minted` → `live`, while the URL's minute lasts; false when it was used, ended or expired. */
   activate(sessionId: string, now: Date): Promise<boolean>;
@@ -39,8 +45,8 @@ export interface VoiceStore {
   writePart(sessionId: string, part: number, body: string): Promise<void>;
   recordParts(sessionId: string, parts: number): Promise<void>;
   recordUsage(sessionId: string, usage: SessionUsage): Promise<void>;
-  /** Add to the month's usage; the month's seconds after it. */
-  addMonthly(usageKey: string, seconds: number, costMicroUsd: number, now: Date): Promise<number>;
+  /** Add to the month's usage; the month's seconds and cost after it. */
+  addMonthly(usageKey: string, seconds: number, costMicroUsd: number, now: Date): Promise<MonthTotals>;
   markEnded(sessionId: string, reason: VoiceEndReason, now: Date): Promise<void>;
   leaveLive(sessionId: string): Promise<void>;
 }
@@ -49,6 +55,16 @@ export interface VoiceStore {
 function conditionFailed(error: unknown): boolean {
   return error instanceof Error && error.name === 'ConditionalCheckFailedException';
 }
+
+/** The session row is gone (its project was deleted): the session ends. */
+export class SessionGoneError extends Error {
+  constructor() {
+    super('The voice session row is gone');
+    this.name = 'SessionGoneError';
+  }
+}
+
+const countOf = (value: unknown): number => (typeof value === 'number' ? value : 0);
 
 /** Where the store's AWS calls go (the real clients by default; a spec passes its fakes). */
 export interface StoreDeps {
@@ -92,6 +108,15 @@ export function createVoiceStore(config: StoreConfig, deps: StoreDeps): VoiceSto
     if (!response.ok) throw new ObjectStoreError(operation, response.status);
     return response;
   };
+  /** An update of the session row that never makes it again: on a row that is gone, `SessionGoneError`. */
+  const existing = async (input: UpdateCommandInput): Promise<void> => {
+    try {
+      await deps.update({ ...input, ConditionExpression: 'attribute_exists(pk)' });
+    } catch (error) {
+      if (conditionFailed(error)) throw new SessionGoneError();
+      throw error;
+    }
+  };
   return {
     async activate(sessionId, now) {
       try {
@@ -119,20 +144,16 @@ export function createVoiceStore(config: StoreConfig, deps: StoreDeps): VoiceSto
         method: 'PUT', url: objectUrl(key), body, headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       });
     },
-    async recordParts(sessionId, parts) {
-      await deps.update({
-        ...session(sessionId), UpdateExpression: 'SET transcript_parts = :parts', ExpressionAttributeValues: { ':parts': parts },
-      });
-    },
-    async recordUsage(sessionId, usage) {
-      await deps.update({
-        ...session(sessionId),
-        UpdateExpression: 'SET seconds = :seconds, tokens = :tokens, cost_microusd = :cost, streams = :streams',
-        ExpressionAttributeValues: {
-          ':seconds': usage.seconds, ':tokens': usage.tokens, ':cost': usage.costMicroUsd, ':streams': usage.streams,
-        },
-      });
-    },
+    recordParts: (sessionId, parts) => existing({
+      ...session(sessionId), UpdateExpression: 'SET transcript_parts = :parts', ExpressionAttributeValues: { ':parts': parts },
+    }),
+    recordUsage: (sessionId, usage) => existing({
+      ...session(sessionId),
+      UpdateExpression: 'SET seconds = :seconds, tokens = :tokens, cost_microusd = :cost, streams = :streams',
+      ExpressionAttributeValues: {
+        ':seconds': usage.seconds, ':tokens': usage.tokens, ':cost': usage.costMicroUsd, ':streams': usage.streams,
+      },
+    }),
     async addMonthly(usageKey, seconds, costMicroUsd, now) {
       const attributes = await deps.update({
         TableName: config.aggregatesTable, Key: { pk: usageKey, sk: USAGE_SK },
@@ -140,8 +161,7 @@ export function createVoiceStore(config: StoreConfig, deps: StoreDeps): VoiceSto
         ExpressionAttributeValues: { ':seconds': seconds, ':cost': costMicroUsd, ':now': now.toISOString() },
         ReturnValues: 'UPDATED_NEW',
       });
-      const total = attributes?.seconds;
-      return typeof total === 'number' ? total : 0;
+      return { seconds: countOf(attributes?.seconds), costMicroUsd: countOf(attributes?.cost_microusd) };
     },
     async markEnded(sessionId, reason, now) {
       try {

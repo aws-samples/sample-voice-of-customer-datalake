@@ -366,11 +366,11 @@ phase 3).
 
 **The state** is the project META's `validation` map (`shared/project_validation.py`): `{prd_document_id,
 prototype_document_id, criteria, tasks, plan_document_id, run_document_id, report_document_id, form_id, form_open,
-form_language, card_in_prototype, status, revision, updated_at, updated_by: {sub, kind}, reason}`. Every write is
+form_language, card_in_prototype, revision, updated_at, updated_by: {sub, kind}, reason}`. Every write is
 conditional on the `revision` it read (a person's editor sends `expected_revision`: a write in between is 409
 `validation_changed`; a job reads again and applies its change once more), records who, when and why (TENETS.md D4), and
-is refused on a project being deleted. `status` is `not_started`, `criteria`, `planned`, `testing` (the card is shown) or
-`reported`.
+is refused on a project being deleted. No stored status: where the step stands is read from the map itself (its
+criteria, plan, open card and report).
 
 **Success criteria** `[{id, text, target?}]` (1 to 10, `c` + 6 hex ids, never reused): statements testers rate from 1 to
 5. `target` is the average real testers must reach for the criterion to be **met** (1 to 5; 4 when unset). **Read them
@@ -403,10 +403,16 @@ read; a question an answered form keeps cannot change its type or range, 409 `an
 this?" (yes or no), one CES (1 to 7), a 1-to-5 rating per criterion and an open "What was missing?", in one of the nine
 languages (the card's own words; a task's and a criterion's text stay as written). `open` shows the card or hides it. The
 pin widget asks the form for the card with an empty response on the same public submit route and draws it beside
-**Feedback**, framed in the app (through the host) or opened on its own. The form id does not change, so the prototype's
+**Feedback**, framed in the app (through the host, which asks once per form for the page session, five minutes at most
+and forgotten when the card is saved: the route's throttle is every form's) or opened on its own (once a page load: a
+sandboxed prototype has no storage). The form id does not change, so the prototype's
 CSP keeps its single `connect-src`, its own submit URL: neither the prototype's object nor its metadata is written. The
-card targets the newest prototype version when saved; a version made before 7.68.00 carries the earlier widget, which
-draws no card (`card_in_prototype: false`, and the tab says to save its walkthrough or build it again). Its answers are
+card targets the newest prototype version when saved, and the version it leaves stops offering it (its
+`validation_open` turned off); a version made before 7.68.00 carries the earlier widget, which draws no card
+(`card_in_prototype: false`, and the tab says to save its walkthrough or build it again). The save writes the project's
+block first, conditional on the revision it read (`expected_revision`: 409 `validation_changed` for any write in
+between) and with the card checked against the pin form, then the pin form, so the two never disagree unseen (a failed
+second write leaves the card `stale`). Its answers are
 customer feedback in the lake: queued as `feedback_form` items of the form's channel `form_pf_…`, tagged
 `prototype_validation` ([feedback-forms.md → Prototype pin forms](feedback-forms.md#prototype-pin-forms-form_type-prototype_pin)).
 Pins stay pins, never queued.
@@ -417,11 +423,12 @@ source access, each scored against the revision it answered (shared/forms_v2_res
 success rate, the testers' CES, per criterion the real average and its status, **met** or **not met** against its target
 once at least 5 testers rated it, **not enough data** before, and "What was missing?" read live (never copied into a
 document). The latest synthetic run's figures sit beside them, labelled. `form.stale` says the criteria or tasks changed
-since the card was saved.
+since the card was saved; `form.newer_version` names a prototype version made since, whose testers see no card until
+the card is saved again.
 
 **The report** (`POST …/validation/report`, a `validation_report` document): the same figures, read with the starter's
 category and source access (stored in the job's config), with a short summary (one model call; the computed tables stand
-without it). Each criterion's result is `results[i]` (`{id, text, target, target_set, real: {n, average}, outcome:
+without it), written from the figures and statuses and the number of "What was missing?" answers, never their text. Each criterion's result is `results[i]` (`{id, text, target, target_set, real: {n, average}, outcome:
 met | not_met | not_enough_data, synthetic}`, as the GET answers it under `criteria`); the tasks, the ease, the counts and
 the synthetic run's id are `report`. Its `input_feedback_ids` are the real responses it counted (lineage: an erasure removes one,
 jobs/retention/lineage.py); it quotes no tester. **Create decision** opens the Decisions tab with a new decision prefilled:

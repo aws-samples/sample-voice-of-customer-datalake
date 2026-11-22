@@ -7,9 +7,10 @@ On the metrics proxy (no new API Gateway resource). With ``X-Workspace-Id`` the 
 member admin, or a platform admin who entered, audited: shared/request_workspace.py); without it the deployment's, for
 the deployment's ``admins`` and for a platform admin (live-checked). A delegated caller reads only the deployment's
 view, and only through the MCP tool ``insights_get_adoption``, which the MCP Lambda offers to a token an administrator
-minted and clears per call with its live admin check (``project_access.delegated_agent_run_allowed``, the claim it adds
-to an ``admin_only`` tool's call); in a workspace a credential is never an admin (shared/workspace.py), so it is
-refused there. Read-only: the newest rollup item of the scope and its baselines row (shared/adoption.py), never a
+minted and clears per call with its live admin check (``project_access.delegated_agent_run_allowed(claims,
+'insights_get_adoption')``: the claim the MCP Lambda adds to an ``admin_only`` tool's call names that one operation, so
+a call cleared for ``agents_run`` never reads the view); in a workspace a credential is never an admin (shared/workspace.py), so it is
+refused there. Read-only: the scope's one rollup item and its baselines row (shared/adoption.py), never a
 project, a feedback item or a person. The answer holds counts only, no per-person figure (owner decision 11).
 """
 from __future__ import annotations
@@ -21,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Final
 from aws_lambda_powertools.event_handler.api_gateway import Router
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.adoption import ADOPTION_KIND, DEPLOYMENT_KEY, rollup_partition
+from shared.adoption import ADOPTION_KIND, DEPLOYMENT_KEY, rollup_key
 from shared.adoption_view import adoption_view, parse_range
 from shared.api import get_caller_groups
 from shared.exceptions import AuthorizationError, ServiceError
@@ -48,6 +49,8 @@ _bound: list[Callable[[], Any]] = []
 
 FAILED_READ: Final = 'Failed to read the leadership view'
 ADMINS_ONLY: Final = 'The leadership view is for administrators'
+#: The MCP operation a delegated read is cleared for (shared/mcp_global_tools_work.py ``insights_get_adoption``).
+ADOPTION_OP: Final = 'insights_get_adoption'
 DELEGATED_REFUSED: Final = ("The leadership view reaches a credential only through insights_get_adoption, on a token "
                             'an administrator minted, outside a workspace')
 
@@ -60,7 +63,7 @@ def bind_aggregates_table(getter: Callable[[], Any]) -> None:
 def require_adoption_reader(event: dict, context: WorkspaceContext | None) -> None:
     """403 unless the caller may read the scope's leadership view (see the module docstring)."""
     if caller_from_event(event).delegated:
-        if context is None and delegated_agent_run_allowed(claims_from_event(event)):
+        if context is None and delegated_agent_run_allowed(claims_from_event(event), ADOPTION_OP):
             return
         raise AuthorizationError(DELEGATED_REFUSED)
     if context is not None:
@@ -78,10 +81,9 @@ def require_adoption_reader(event: dict, context: WorkspaceContext | None) -> No
 
 
 def _newest_rollup(table: Any, scope: WorkspaceScope | None) -> dict[str, Any] | None:
-    """The scope's newest rollup item (its sort key is the day it was rolled up), None before the first."""
-    page = table_view(scope, table).query('pk', rollup_partition(scope), ScanIndexForward=False, Limit=1)
-    items = page.get('Items') or []
-    return dict(items[0]) if items and isinstance(items[0], dict) else None
+    """The scope's one rollup item (one GetItem: each run overwrites it), None before the first."""
+    item = table_view(scope, table).get_item(rollup_key(scope)).get('Item')
+    return dict(item) if isinstance(item, dict) else None
 
 
 @app.get('/metrics/adoption')

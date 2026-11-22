@@ -17,8 +17,8 @@ Creating a workspace is ONE DynamoDB transaction (all or nothing), every put con
 
 A trial (7.71.00, ``trial`` in the body: shared/trials.py, docs/multi-workspace.md "Trial workspaces") puts the same
 ``trial`` map on ``META`` and the listing row, and one more audit row in the same transaction, kind ``trial_created``
-(actor, at, days, expires_at, the pack asked for). Its schedule is made first, by the route: a create that then fails
-leaves a schedule that runs once for no workspace and does nothing.
+(actor, at, days, expires_at, the pack asked for). The expiry's hourly tick (voc-trial-expiry) reads the listing
+row's copy to find the trials that are due.
 
 No row carries ``ttl``: only ``INVITE#`` rows expire (lib/customer-data-deletes.test.ts pins it).
 
@@ -151,7 +151,7 @@ def _creation_items(table_name: str, new: NewWorkspace, ws: str, creator: str, a
 def create_workspace(table: Any, new: NewWorkspace, creator: str, plugins: Sequence[str] = (), *,
                      ws: str | None = None, trial: Mapping[str, Any] | None = None) -> str:
     """Write the new workspace in one transaction, every plugin of ``plugins`` (the deployment's) on, and return its
-    id (``ws`` when the caller drew it first: a trial's schedule names it); 409 when the slug is taken. ``trial``: a
+    id (``ws`` when the caller drew it first); 409 when the slug is taken. ``trial``: a
     trial's map (shared/trial_state.py ``new_trial``)."""
     if len(plugins) > MAX_PLUGINS_AT_CREATE:
         raise ValueError(f'at most {MAX_PLUGINS_AT_CREATE} plugins fit in the creation transaction')

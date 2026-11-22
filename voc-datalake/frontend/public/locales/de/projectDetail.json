@@ -899,6 +899,7 @@
       "live": "Die Karte ist im eigenen Feedbackformular des Prototyps aktiv (Revision {{revision, number}}).",
       "closed": "Die Karte ist gespeichert, wird aber nicht gezeigt.",
       "stale": "Die Kriterien oder Aufgaben haben sich seit dem Speichern der Karte geändert: Speichern Sie sie erneut.",
+      "newerVersion": "Eine neuere Version des Prototyps zeigt keine Karte: Speichern Sie die Karte, um sie dorthin zu verschieben (auf dieser Version wird sie geschlossen).",
       "oldWidget": "Diese Prototypversion ist älter als die Karte, ihr Widget kann sie nicht zeigen: Speichern Sie ihre Führung oder erstellen Sie sie neu und speichern Sie dann die Karte."
     },
     "synthetic": {

@@ -2,7 +2,7 @@
  * The browser audio of a voice session, on stand-ins for getUserMedia and Web Audio: the microphone asked with echo
  * cancellation, the capture worklet loaded from the same origin, its frames and level handed on (anything else
  * ignored), the persona's PCM16 played back to back at 24 kHz, barge-in stopping every queued chunk, and everything
- * released on close or when the worklet cannot load.
+ * released on close (after the queued voice has played, when the close gives it time) or when the worklet cannot load.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MIC_FRAME_SAMPLES, VOICE_INPUT_SAMPLE_RATE, VOICE_OUTPUT_SAMPLE_RATE } from '@stream/voice/protocol'
@@ -94,6 +94,21 @@ describe('openVoiceAudio', () => {
     await audio.close()
     expect([stub.sources[0]?.stop.mock.calls.length, stub.track.stop.mock.calls.length, stub.context.close.mock.calls.length])
       .toStrictEqual([0, 1, 1])
+  })
+
+  it('releases the microphone at once and the context once the queued voice has played, at most the drain given', async () => {
+    vi.useFakeTimers()
+    const stub = stubAudio()
+    const audio = await openVoiceAudio()
+    audio.play(new ArrayBuffer(2 * VOICE_OUTPUT_SAMPLE_RATE))
+    const closing = audio.close(10_000)
+    await vi.advanceTimersByTimeAsync(1000)
+    const midway = [stub.track.stop.mock.calls.length, stub.context.close.mock.calls.length]
+    await vi.advanceTimersByTimeAsync(100)
+    await closing
+    vi.useRealTimers()
+    // One second of voice queued 50 ms ahead: the context closes 1,050 ms later, not after the drain's 10 s.
+    expect([midway, stub.context.close.mock.calls.length]).toStrictEqual([[1, 0], 1])
   })
 
   it('releases the microphone when the worklet cannot load', async () => {

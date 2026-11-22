@@ -565,6 +565,7 @@
       "preview_other": "最初の {{count, number}} 行",
       "rows_one": "{{count, number}} 行、{{columns}} 列",
       "rows_other": "{{count, number}} 行、{{columns}} 列",
+      "legacyEncoding": "このファイルは UTF-8 ではないため、Windows-1252（西ヨーロッパ）として読み取りました。続行する前に、プレビューでアクセント付きの文字が正しく表示されているか確認してください。",
       "problems": {
         "format": "この種類のファイルはインポートできません。CSV、TSV、JSON、Excel (.xlsx) のいずれかのファイルを選んでください。",
         "tooLarge": "このファイルは 10 MB を超えています。分割して、1 つずつインポートしてください。",
@@ -663,7 +664,10 @@
         "too_many_options": "「{{header}}」には 50 を超える異なる回答があるため、除外されます。残すには自由記述にしてください。",
         "matrix_too_large": "「{{header}}」は 20 行または 10 回答を超えるマトリックスのため、除外されます。",
         "no_values": "「{{header}}」には選択肢にできる回答がないため、除外されます。",
-        "too_many_questions": "「{{header}}」は除外されます。フォームの質問は 30 個までです。"
+        "too_many_questions": "「{{header}}」は除外されます。フォームの質問は 30 個までです。",
+        "extra_date": "「{{header}}」は除外されます。各回答の日付には最初の日付列を使います。",
+        "extra_id": "「{{header}}」は除外されます。各回答は最初の ID 列で識別します。",
+        "extra_channel": "「{{header}}」は除外されます。最初のチャネル列を各回答のチャネルにします。"
       }
     },
     "insights": {
@@ -674,6 +678,8 @@
       "refusedRow": "{{row}} 行目: {{reason}}",
       "processing": "分析中: {{done, number}} / {{total, number}}…",
       "slow": "まだ分析中です。大きなファイルは数分かかることがあります。",
+      "alreadyImported": "新しく分析するものはありません。これらの行は以前にインポート済みです。",
+      "alreadyImportedLink": "ダッシュボードで見る",
       "ready_one": "{{count, number}} 件を分析しました。わかったことは次のとおりです:",
       "ready_other": "{{count, number}} 件を分析しました。わかったことは次のとおりです:",
       "sentiment": "感情",

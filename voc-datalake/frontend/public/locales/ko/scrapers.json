@@ -565,6 +565,7 @@
       "preview_other": "처음 {{count, number}}개 행",
       "rows_one": "{{count, number}}행, {{columns}}열",
       "rows_other": "{{count, number}}행, {{columns}}열",
+      "legacyEncoding": "이 파일은 UTF-8이 아니어서 Windows-1252(서유럽)로 읽었습니다. 계속하기 전에 미리보기에서 악센트가 있는 글자가 제대로 보이는지 확인하세요.",
       "problems": {
         "format": "이 파일 형식은 가져올 수 없습니다. CSV, TSV, JSON 또는 Excel (.xlsx) 파일을 선택하세요.",
         "tooLarge": "이 파일은 10 MB보다 큽니다. 파일을 나눠 하나씩 가져오세요.",
@@ -663,7 +664,10 @@
         "too_many_options": "“{{header}}”에는 서로 다른 답변이 50개를 넘어 제외됩니다. 유지하려면 자유 텍스트로 바꾸세요.",
         "matrix_too_large": "“{{header}}”은(는) 20행 또는 답변 10개를 넘는 매트릭스라 제외됩니다.",
         "no_values": "“{{header}}”에는 선택지로 만들 답변이 없어 제외됩니다.",
-        "too_many_questions": "“{{header}}”은(는) 제외됩니다. 양식의 질문은 최대 30개입니다."
+        "too_many_questions": "“{{header}}”은(는) 제외됩니다. 양식의 질문은 최대 30개입니다.",
+        "extra_date": "“{{header}}”은(는) 제외됩니다. 각 응답의 날짜는 첫 번째 날짜 열을 따릅니다.",
+        "extra_id": "“{{header}}”은(는) 제외됩니다. 각 응답은 첫 번째 ID 열로 식별합니다.",
+        "extra_channel": "“{{header}}”은(는) 제외됩니다. 첫 번째 채널 열이 각 응답의 채널입니다."
       }
     },
     "insights": {
@@ -674,6 +678,8 @@
       "refusedRow": "{{row}}행: {{reason}}",
       "processing": "분석 중: {{total, number}}개 중 {{done, number}}개…",
       "slow": "아직 분석 중입니다. 큰 파일은 몇 분 걸릴 수 있습니다.",
+      "alreadyImported": "새로 분석할 내용이 없습니다. 이 행들은 이미 가져왔습니다.",
+      "alreadyImportedLink": "대시보드에서 보기",
       "ready_one": "{{count, number}}개를 분석했습니다. 결과는 다음과 같습니다:",
       "ready_other": "{{count, number}}개를 분석했습니다. 결과는 다음과 같습니다:",
       "sentiment": "감정",

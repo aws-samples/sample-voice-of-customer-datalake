@@ -4,8 +4,10 @@
 definition (shared/forms_v2.py ``validate_definition`` passes it) and the import mapping its rows are read with: a
 choice column becomes a single select whose options are its distinct values, a multiple choice a multi select, an NPS
 column ``nps``, a CSAT column ``csat``, a rating a 5- or 10-point rating, a matrix cell (``Row -- value; …``) a
-``matrix`` (7.61.00), open text ``open_text``; a date and an id column date and key each response, a channel column
-becomes the hidden field ``channel``; personal data (``email``, ``name``), links and ignored columns are left out.
+``matrix`` (7.61.00), open text ``open_text``; the first date and the first id column date and key each response, the
+first channel column becomes the hidden field ``channel`` (a second one of each is left out, named in ``problems``, so
+the mapping always passes ``check_mapping``); personal data (``email``, ``name``), links and ignored columns are left
+out.
 
 ``row_answers`` reads one row through that mapping into a response (shared/forms_v2_responses.py
 ``validate_imported``: types and ranges, never the logic path, which was the other tool's). Its refusals carry the
@@ -136,15 +138,23 @@ def _question_shape(column: ColumnChoice) -> dict[str, Any] | str | None:
     return None
 
 
-def _non_question_target(kind: str, hidden: list[dict[str, str]]) -> str:
-    if kind == 'date':
-        return DATE_TARGET
-    if kind == 'id':
-        return ID_TARGET
-    if kind == 'channel' and not hidden:
+#: A second date, id or channel column is left out with this code (the Confirm step says so): a response has one
+#: date, one id and one channel, and ``check_mapping`` takes each target once.
+_SECOND_COLUMN: Final[Mapping[str, str]] = {'date': 'extra_date', 'id': 'extra_id', 'channel': 'extra_channel'}
+
+
+def _non_question_target(kind: str, hidden: list[dict[str, str]], mapping: Mapping[str, str]) -> tuple[str, str | None]:
+    """The target of a column that is no question, and the problem code of a second date, id or channel column (the
+    first one keeps the target)."""
+    targets = {'date': DATE_TARGET, 'id': ID_TARGET, 'channel': f'{HIDDEN_PREFIX}{CHANNEL_FIELD}'}
+    target = targets.get(kind)
+    if target is None:
+        return IGNORE_TARGET, None
+    if target in mapping.values():
+        return IGNORE_TARGET, _SECOND_COLUMN[kind]
+    if kind == 'channel':
         hidden.append({'id': CHANNEL_FIELD, 'label': 'Channel'})
-        return f'{HIDDEN_PREFIX}{CHANNEL_FIELD}'
-    return IGNORE_TARGET
+    return target, None
 
 
 def infer_form(columns: Sequence[ColumnChoice], language: str) -> InferredForm:
@@ -159,10 +169,11 @@ def infer_form(columns: Sequence[ColumnChoice], language: str) -> InferredForm:
     for column in columns:
         shape = _question_shape(column)
         if shape is None or isinstance(shape, str):
-            mapping[column.header] = (_non_question_target(column.kind, hidden) if shape is None
-                                      else IGNORE_TARGET)
-            if isinstance(shape, str):
-                problems.append({'header': column.header, 'code': shape})
+            target, problem = (_non_question_target(column.kind, hidden, mapping) if shape is None
+                               else (IGNORE_TARGET, shape))
+            mapping[column.header] = target
+            if problem is not None:
+                problems.append({'header': column.header, 'code': problem})
             continue
         if len(questions) >= fv2.MAX_QUESTIONS:
             mapping[column.header] = IGNORE_TARGET
@@ -193,11 +204,13 @@ def _localised(value: Any, primary: str) -> Any:
 
 @dataclass(frozen=True)
 class ImportedRow:
-    """A row read as a response: the checked response, its date (ISO 8601, UTC) and its own id ('' when none)."""
+    """A row read as a response: the checked response, its date (ISO 8601, UTC), its own id ('' when none) and
+    whether the date is the row's own (``dated``) or the call's default."""
 
     response: fresp.Response
     created_at: str
     row_id: str
+    dated: bool = False
 
 
 def _refuse(message: str, code: str, question_id: str | None = None) -> ValidationError:
@@ -253,14 +266,14 @@ def row_answers(definition: Mapping[str, Any], mapping: Mapping[str, str], row: 
     questions = {question['id']: question for question in definition.get('questions') or []}
     answers: dict[str, Any] = {}
     hidden: dict[str, str] = {}
-    created_at, row_id = default_at, ''
+    created_at, row_id, dated = default_at, '', False
     for header, target in mapping.items():
         raw = row.get(header)
         text = raw.strip() if isinstance(raw, str) else ('' if raw is None else str(raw).strip())
         if not text:
             continue
         if target == DATE_TARGET:
-            created_at = normalise_date(text, date_order) or ''
+            created_at, dated = normalise_date(text, date_order) or '', True
             if not created_at:
                 raise _refuse(f'"{header}" is not a date: {text[:40]}', DATE_INVALID)
         elif target == ID_TARGET:
@@ -269,7 +282,7 @@ def row_answers(definition: Mapping[str, Any], mapping: Mapping[str, str], row: 
             hidden[target.removeprefix(HIDDEN_PREFIX)] = text
         elif target in questions:
             answers[target] = _cell_answer(questions[target], text, primary)
-    return ImportedRow(fresp.validate_imported(definition, answers, hidden), created_at, row_id)
+    return ImportedRow(fresp.validate_imported(definition, answers, hidden), created_at, row_id, dated)
 
 
 def check_mapping(definition: Mapping[str, Any], mapping: object) -> dict[str, str]:

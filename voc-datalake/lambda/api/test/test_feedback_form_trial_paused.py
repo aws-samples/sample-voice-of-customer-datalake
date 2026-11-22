@@ -68,3 +68,23 @@ def test_another_workspace_is_not_affected(world, lambda_context):
                       body={'enabled': True}, form_id=FORM_B)
     assert status == 200
     assert _present(_stored(world, f'WS#{WS_B}#FEEDBACK_FORM', FORM_B))['enabled'] is True
+
+
+def test_a_pause_that_commits_between_the_saves_reads_and_its_write_still_wins(world, lambda_context, monkeypatch):
+    """Review round 1 (S5): the refusal is a condition of the save's own write, never a read before it."""
+    import feedback_form_handler as h
+
+    planned = h._plan_update
+
+    def paused_meanwhile(*args, **kwargs):
+        plan = planned(*args, **kwargs)
+        world['workspaces'].update_item(Key={'pk': f'WS#{WS_B}', 'sk': 'META'}, UpdateExpression='SET #trial = :t',
+                                        ExpressionAttributeNames={'#trial': 'trial'},
+                                        ExpressionAttributeValues={':t': PAUSED_TRIAL})
+        return plan
+
+    monkeypatch.setattr(h, '_plan_update', paused_meanwhile)
+    status, body = _call(lambda_context, 'PUT', f'/feedback-forms/{FORM_B}', claims=MEMBER_B, ws=WS_B,
+                         body={'enabled': True}, form_id=FORM_B)
+    assert (status, body['code']) == (409, 'trial_paused')
+    assert _present(_stored(world, f'WS#{WS_B}#FEEDBACK_FORM', FORM_B))['enabled'] is False

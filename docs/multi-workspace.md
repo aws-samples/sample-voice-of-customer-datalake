@@ -1617,8 +1617,8 @@ convert trials.
 **Create a trial** asks for a name, an address (slug) and a length, the people to add (each with a role and,
 optionally, the role playbook to suggest to them), and a starter pack: forms from the workshop feedback and the in-app
 feedback templates (created Off) and sample categories (`voc-datalake/schemas/trial-pack.json`). `POST
-/platform/workspaces` with `trial: {days, pack}` makes the trial's one-time schedule first, then the workspace in its
-usual transaction, with the same `trial` map on `META` and the listing row and a `trial_created` audit row. The starter
+/platform/workspaces` with `trial: {days, pack}` makes the workspace in its usual transaction, with the same `trial`
+map on `META` and the listing row and a `trial_created` audit row; nothing is scheduled. The starter
 pack is then applied as ordinary creates through the existing routes, with the admin's own credentials, in the new
 workspace (the SPA names it in `X-Workspace-Id`), each audited by its own route: `POST /me/workspaces/current/members`
 per person (someone with no account gets one, and Cognito emails them a temporary password), `POST /feedback-forms`
@@ -1633,13 +1633,17 @@ for), `extended` (`[{at, by, days, expires_at, resumed?}]`, at most 50), and onc
 `GET /me/workspaces/current` (`trial`: when it ends, whether and since when it is paused, how many plugins and forms the
 pause turned off, whether it was converted; never who did what), and the app shows it as a banner above every page.
 
-**The end.** One EventBridge Scheduler schedule per trial and end, `voc-trial-<ws>-<end>` in the deployment's
-`voc-trials` group, runs `voc-trial-expiry` (VocProcessingStack) once at `expires_at` and then deletes itself
-(`ActionAfterCompletion` `DELETE`, the pattern of the engineering run reactions). The workspaces API holds
-`scheduler:CreateSchedule` on that group's `voc-trial-*` names only and `iam:PassRole` of the scheduler's role only;
-the scheduler's role may invoke the job and nothing else. The job reads the stored `expires_at` (never the event's):
-a trial extended meanwhile, converted, being deleted or no trial at all is left alone, so an older schedule that runs
-after an extension does nothing. A due trial is paused (`lambda/shared/trial_pause.py`):
+**The end.** One EventBridge rule runs `voc-trial-expiry` (VocProcessingStack) every hour, so **a trial pauses within
+the hour after its `expires_at`**. Each tick reads the platform listing once (one Query of the `WORKSPACES` partition,
+whose rows carry each trial's map, written in the same transaction as `META`'s) and pauses every trial that is not
+converted, whose `expires_at` has passed and that is not paused yet; a trial paused within the last day is visited
+again, so a pause a failed attempt left half done is finished, and one trial that fails is left for the next tick
+without stopping the others. The pause reads the trial from `META` again (the stored `expires_at` decides): a trial
+extended meanwhile, converted, being deleted or no trial at all is left alone. A trial whose `expires_at` does not
+parse is never paused: the tick skips it and logs a warning, and the pause refuses it too, until a platform admin
+extends it. Creating, extending or converting a trial schedules nothing: the job's role may Query the listing
+partition, and the workspaces API holds no scheduler or `iam:PassRole` action. A due trial is paused
+(`lambda/shared/trial_pause.py`):
 
 1. `paused_at` first: from then on a workspace admin cannot turn a plugin on (`PUT /me/workspaces/current/plugins/{id}`
    answers 409 `trial_paused`; its transaction's check of `META` needs `paused_at` absent, so a pause that lands
@@ -1649,7 +1653,8 @@ after an extension does nothing. A due trial is paused (`lambda/shared/trial_pau
    stored as `paused`;
 3. a `trial_paused` audit row (actor `trial-expiry`, kind `schedule`, the lists);
 4. each plugin turned off by the existing audited disable (its own `plugin_disabled` row, reason `trial_paused`) and
-   each live form set `enabled: false` (its save counter one up, `updated_by` `trial-expiry`).
+   each live form set `enabled: false` (its save counter one up, `updated_by` `trial-expiry`);
+5. the live forms read once more: a form put live while the pause ran is recorded and turned off the same way.
 
 **No new workspace status.** A paused trial is `active`, so every reader, writer, the export and the hard delete treat
 it as any workspace: reads, edits, chat, imports and the export keep working; what stops is its scheduled plugins and
@@ -1670,11 +1675,15 @@ project's card is a live form of that workspace and joins the pause and its `tri
 **Extend and convert** (`POST /platform/workspaces/{ws}/trial/extend` `{days}` and `…/convert`, platform admins only,
 live-checked; the console's row of a trial): each writes its audit row first (`trial_extended`, `trial_converted`),
 turns a paused trial's recorded plugins and forms back on (each plugin the deployment still offers, each form still
-there and still off), then writes the map without the pause. An extension counts from the stored end, or from now once
-it ended, and creates the new end's schedule; a conversion ends the trial for good (its pending schedule still runs
-once and does nothing).
+there, still off and still publishable: a form edited while paused so that its theme is unreadable or a text shows a
+placeholder as written stays off, and the extension's history names it in `resumed.skipped` with the publish rule's
+code, for its editors to fix and publish), then writes the map without the pause. An extension counts from the stored
+end, or from now once it ended; the hourly tick reads the new end. A conversion ends the trial for good (the tick
+passes a converted trial by). A 409 `trial_changed` (the trial written meanwhile) after the resume leaves it resumed
+but still marked paused, and the same extension again finishes it, counted from the same stored end.
 
-**Fixed cost: none** (tenet 7): a schedule group and schedules cost nothing until a schedule runs, once per trial end.
+**Fixed cost: about none** (tenet 7): 720 ticks a month, each one Query of the listing partition (a few rows per
+workspace) and nothing more while no trial is due.
 
 ## Tenet questions, settled (owner, 2026-11-12)
 

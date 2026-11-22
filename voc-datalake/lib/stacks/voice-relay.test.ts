@@ -3,8 +3,14 @@
  * off by default (nothing in any stack, the SPA's headers unchanged), and with the flag one AgentCore Runtime of
  * direct code in PUBLIC mode whose role is pinned EXACTLY, statement by statement, with its negative pins; the
  * projects role's presign and stop grants on that runtime alone, with no new VocApiStack resource; the CSP and the
- * Permissions-Policy; and every synth refusal (Region, model id, minutes, a companion setting without the flag).
+ * Permissions-Policy; every synth refusal (Region, model id, minutes, a companion setting without the flag); and the
+ * bundle itself: the asset's `relay.js`, built as a deploy builds it, answers `/ping` and a `/ws` handshake.
  */
+import { spawn } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
+import { createServer } from 'node:net';
+import { join } from 'node:path';
+
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import * as kms from 'aws-cdk-lib/aws-kms';
@@ -18,6 +24,7 @@ import { fixtureBucket } from '../test-support/fixture-resources';
 import { itemAt } from '../test-support/guards';
 import { IamPolicySchema } from '../test-support/iam-statements';
 import type { IamStatement } from '../test-support/iam-statements';
+import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { attachedStatements } from '../test-support/worker-function';
 import { VOICE_REGIONS, voiceSettings } from '../utils/voice-personas';
 import { addVoiceRelay } from './voice-relay';
@@ -47,8 +54,9 @@ const roleStatements = (template: Template, roleId: string): Statement[] => atta
 const text = (value: unknown): string => JSON.stringify(value);
 
 /** The relay as bin/voc-datalake.ts adds it to VocProcessingStack, on a stack of its own with VocCoreStack's kinds of
- *  table, bucket and key; its ARN (or undefined) and the stack's template. */
-function synthRelay(context: Record<string, unknown>): { arn: string | undefined; template: Template } {
+ *  table, bucket and key; its ARN (or undefined), the stack's template and the assembly's directory (the staged
+ *  assets, bundled only when `context` asks for it). */
+function synthRelay(context: Record<string, unknown>): { arn: string | undefined; template: Template; outdir: string } {
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], ...context } });
   const stack = new cdk.Stack(app, 'Relay', { env: { account: '111111111111', region: 'us-east-1' } });
   const kmsKey = new kms.Key(stack, 'Key');
@@ -56,7 +64,37 @@ function synthRelay(context: Record<string, unknown>): { arn: string | undefined
     projectsTable: pkSkTable(stack, 'Projects'), aggregatesTable: pkSkTable(stack, 'Aggregates'),
     rawDataBucket: fixtureBucket(stack, 'Raw'), kmsKey,
   });
-  return { arn, template: Template.fromStack(stack) };
+  return { arn, template: Template.fromStack(stack), outdir: app.outdir };
+}
+
+/** A local port nothing listens on now. */
+function freePort(): Promise<number> {
+  return new Promise((resolve) => {
+    const probe = createServer().listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      probe.close(() => { resolve(typeof address === 'object' && address !== null ? address.port : 0); });
+    });
+  });
+}
+
+/** `/ping`'s answer once the relay listens (it is polled while the process starts). */
+async function pingWhenUp(port: number, deadline = Date.now() + 20_000): Promise<unknown> {
+  try {
+    return await (await fetch(`http://127.0.0.1:${port}/ping`)).json();
+  } catch (error) {
+    if (Date.now() > deadline) throw error;
+    await new Promise((resolve) => { setTimeout(resolve, 100); });
+    return pingWhenUp(port, deadline);
+  }
+}
+
+/** A WebSocket on `/ws` with none of AgentCore's headers: what it heard and how it closed. */
+function refusedSession(port: number): Promise<{ opened: boolean; messages: unknown[]; code: number }> {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  const seen: { opened: boolean; messages: unknown[] } = { opened: false, messages: [] };
+  socket.addEventListener('open', () => { seen.opened = true; });
+  socket.addEventListener('message', (event) => { seen.messages.push(JSON.parse(String(event.data))); });
+  return new Promise((resolve) => { socket.addEventListener('close', (event) => { resolve({ ...seen, code: event.code }); }); });
 }
 
 describe('voice personas off (the default)', () => {
@@ -151,6 +189,25 @@ describe('voice personas on: the relay', () => {
     expect(all).not.toMatch(/Feedback|ssm:|secretsmanager:|lambda:|ecr:|PROJECT#/);
     expect(all).not.toContain('"Resource":"*"');
   });
+});
+
+describe('voice personas on: the relay bundle', () => {
+  it('answers /ping and completes a /ws handshake as the asset\'s relay.js (refusing a session without its headers)', async () => {
+    const { outdir } = synthRelay({ ...ON, 'aws:cdk:bundling-stacks': ['**'] });
+    const bundle = readdirSync(outdir).map((name) => join(outdir, name, 'relay.js')).find((file) => existsSync(file));
+    expect(bundle).toBeDefined();
+    const port = await freePort();
+    const relay = spawn(process.execPath, [bundle ?? ''], { stdio: 'ignore', env: {
+      VOICE_MODEL_ID: 'amazon.nova-2-5-sonic', VOICE_REGION: 'us-east-1', PROJECTS_TABLE: 'p', AGGREGATES_TABLE: 'a',
+      RAW_DATA_BUCKET: 'b', PORT: String(port),
+    } });
+    try {
+      expect(await pingWhenUp(port)).toMatchObject({ status: 'Healthy' });
+      expect(await refusedSession(port)).toStrictEqual({ opened: true, messages: [{ type: 'ended', reason: 'refused' }], code: 1008 });
+    } finally {
+      relay.kill();
+    }
+  }, SYNTH_TIMEOUT_MS);
 });
 
 describe('voice personas on: the projects API and the SPA', () => {

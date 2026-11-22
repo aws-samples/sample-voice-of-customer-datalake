@@ -5,7 +5,9 @@
  *
  * - Direct code, not a container (the S-15 spike): a ZIP of the stream package's `src/voice/main.ts` bundled by
  *   esbuild into `relay.js`, run on AgentCore's `NODE_22` (arm64), from the CDK assets bucket. No ECR repository, no
- *   image to push, sessions created at AgentCore's 25 a second, the language runtime patched by AWS.
+ *   image to push, sessions created at AgentCore's 25 a second, the language runtime patched by AWS. The bundle holds
+ *   its WebSocket server, `ws` (docs/dependencies.md), without the two native add-ons ws only tries to load
+ *   (`bufferutil`, `utf-8-validate`: external and never installed, so ws runs its JavaScript fallbacks).
  * - Network mode PUBLIC: no VPC, no NAT gateway, no endpoint (tenet 7). The container is reachable only through
  *   AgentCore's own endpoint, which authenticates every request with SigV4: the browser's URL is presigned for 60 s by
  *   the projects API (lambda/shared/voice_sessions.py) for one session id and one project, both signed.
@@ -51,8 +53,11 @@ const STREAM_ROOT = path.join(__dirname, '../../lambda/stream');
 const ENTRY = 'src/voice/main.ts';
 const BUNDLE = 'relay.js';
 const ESBUILD = path.join(__dirname, '../../node_modules/.bin/esbuild');
-/** What the bundle is built with: one CommonJS file for Node 22, every dependency inside it. */
-const ESBUILD_ARGS = [ENTRY, '--bundle', '--platform=node', '--target=node22', '--format=cjs', '--legal-comments=none'];
+/** What the bundle is built with: one CommonJS file for Node 22, every dependency inside it but ws's optional add-ons. */
+const ESBUILD_ARGS = [
+  ENTRY, '--bundle', '--platform=node', '--target=node22', '--format=cjs', '--legal-comments=none',
+  '--external:bufferutil', '--external:utf-8-validate',
+];
 
 /** The relay's session lifecycle (seconds): idle without a frame, and the longest life (the session cap is 15 min). */
 const VOICE_IDLE_TIMEOUT_SECONDS = 120;

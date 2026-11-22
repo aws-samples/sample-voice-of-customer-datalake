@@ -24,7 +24,7 @@ const PROJECT = 'proj/1'
 const BASE = '/projects/proj%2F1/validation'
 const BLOCK = {
   criteria: [{ id: 'c1', text: 'Paying is quick', target: 4.5 }, { text: 'no id' }, 'junk'],
-  tasks: [{ id: 't1', text: 'Pay' }], form_open: true, status: 'testing', revision: 3,
+  tasks: [{ id: 't1', text: 'Pay' }], form_open: true, revision: 3,
 }
 
 /** The `index`th fetchApi call: its path, method and JSON body. */
@@ -63,7 +63,7 @@ describe('validationApi', () => {
 
   it('reads an answer without its block as an empty one', async () => {
     fetchApi.mockResolvedValue({})
-    expect((await validationApi.get(PROJECT)).validation).toMatchObject({ criteria: [], status: 'not_started' })
+    expect((await validationApi.get(PROJECT)).validation).toMatchObject({ criteria: [], revision: 0, form_open: false })
   })
 
   it('saves the criteria with the revision the editor loaded', async () => {

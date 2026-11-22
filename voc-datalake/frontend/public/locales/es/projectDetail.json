@@ -933,6 +933,7 @@
       "live": "La tarjeta está activa en el formulario de feedback del propio prototipo (revisión {{revision, number}}).",
       "closed": "La tarjeta está guardada pero no se muestra.",
       "stale": "Los criterios o las tareas cambiaron desde que se guardó la tarjeta: guárdela de nuevo.",
+      "newerVersion": "Una versión más reciente del prototipo no muestra la tarjeta: guárdela para moverla allí (en esta versión se cierra).",
       "oldWidget": "Esta versión del prototipo es anterior a la tarjeta, así que su widget no puede mostrarla: guarde su recorrido o vuelva a crearlo y guarde la tarjeta."
     },
     "synthetic": {

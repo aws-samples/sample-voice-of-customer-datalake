@@ -5,7 +5,7 @@
  *
  * @module pages/Scrapers/ImportWizard/useImportWizard
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { importWizardApi } from '../../../api/importWizardApi'
 import type { DetectRequest } from '../../../api/importWizardApi'
@@ -19,7 +19,7 @@ import { serverReason } from '../../../lib/errors'
 import { inferredQuestions } from './inferredQuestions'
 import { MAX_SURVEY_BYTES, distinctValues, pickProblem, readWizardFile, sampleOf, tableOf, toCsv } from './wizardFile'
 import type { FilePickProblem, Table, WizardFile } from './wizardFile'
-import { ROWS_PER_CALL, chunksOf, formName, importTag, wizardMappingProblem, reviewsMapping } from './wizardMapping'
+import { eventBytes, formName, importCalls, importTag, wizardMappingProblem, reviewsMapping } from './wizardMapping'
 import type { MappingProblem } from './wizardMapping'
 
 export type WizardStep = 'upload' | 'map' | 'confirm' | 'insights'
@@ -49,6 +49,18 @@ interface ImportProgress {
 }
 
 export type ConfirmProblem = MappingProblem | 'surveyTooLarge' | 'noForm'
+
+/** A survey import under way: the form it made and the calls answered so far, so Import again after a failed call
+ * resumes at that call into the same form (the same file and the same inferred form only). */
+interface SurveyRun {
+  readonly detected: Detected
+  readonly form: InferredForm
+  readonly formId: string
+  readonly results: RowsImported[]
+}
+
+/** The longest key the first call answers (`ws/{ws}/raw/feedback_form/import/{form}/{run}.xlsx`), for sizing. */
+const KEPT_KEY_CHARS = 160
 
 const MANUAL_IMPORT_SOURCE = 'manual_import'
 const FORM_SOURCE = 'feedback_form'
@@ -157,24 +169,42 @@ export function useImportWizard() {
              source: MANUAL_IMPORT_SOURCE, npsQuestionIds: [] }
   }, [dateOrder, dimensionsConfig?.dimensions, kinds])
 
-  const importSurvey = useCallback(async (current: Detected, inferred: InferredForm): Promise<ImportOutcome> => {
+  const surveyRun = useRef<SurveyRun | null>(null)
+
+  /** The run to go on with (the last one, when it was for this file and this form), else a new form's. */
+  const surveyRunFor = useCallback(async (current: Detected, inferred: InferredForm): Promise<SurveyRun> => {
+    const last = surveyRun.current
+    if (last !== null && last.detected === current && last.form === inferred) return last
     const formId = await importWizardApi.createImportedForm({
       name, definition: inferred.definition,
       imported: { from: 'file', at: new Date().toISOString(), filename: current.file.name },
     })
-    const results: RowsImported[] = []
+    surveyRun.current = { detected: current, form: inferred, formId, results: [] }
+    return surveyRun.current
+  }, [name])
+
+  const importSurvey = useCallback(async (current: Detected, inferred: InferredForm): Promise<ImportOutcome> => {
+    const run = await surveyRunFor(current, inferred)
+    const { formId, results } = run
     const total = current.table.rows.length
-    for (const chunk of chunksOf(current.table.rows, ROWS_PER_CALL)) {
-      setProgress({ done: chunk.offset, total })
+    const file = { name: current.file.name, format: current.file.format, content: current.file.content }
+    const fields = { mapping: inferred.mapping, date_order: dateOrder, offset: total, rows: [] }
+    const calls = importCalls(current.table.rows, {
+      first: eventBytes({ ...fields, file }), later: eventBytes({ ...fields, file_key: 'k'.repeat(KEPT_KEY_CHARS) }),
+      textsPerRow: 1 + inferredQuestions(inferred).filter((q) => q.type === 'open_text').length,
+    })
+    // A failed call stops here; Import again sends the calls not yet answered, into the same form.
+    for (const call of calls.slice(results.length)) {
+      setProgress({ done: call.offset, total })
       // The original file rides the first call; every later one names the object the first kept.
       const kept = keptKey(results[0])
       results.push(await importWizardApi.importRows(formId, {
-        rows: chunk.items, mapping: inferred.mapping, date_order: dateOrder, offset: chunk.offset,
-        ...(results.length === 0 ? { file: { name: current.file.name, format: current.file.format,
-                                             content: current.file.content } } : {}),
+        rows: call.items, mapping: inferred.mapping, date_order: dateOrder, offset: call.offset,
+        ...(results.length === 0 ? { file } : {}),
         ...(kept === undefined ? {} : { file_key: kept }),
       }))
     }
+    surveyRun.current = null
     setProgress({ done: total, total })
     const accepted = results.reduce((sum, result) => sum + result.accepted, 0)
     const refusedCount = results.reduce((sum, result) => sum + result.refused_count, 0)
@@ -182,7 +212,7 @@ export function useImportWizard() {
     return { target: 'survey', accepted, refused, refusedCount, filter: { channel: `form_${formId}` },
              source: FORM_SOURCE, formId,
              npsQuestionIds: inferredQuestions(inferred).filter((q) => q.type === 'nps').map((q) => q.id) }
-  }, [dateOrder, name])
+  }, [dateOrder, surveyRunFor])
 
   const start = useCallback(async () => {
     if (detected === null) return
@@ -211,6 +241,7 @@ export function useImportWizard() {
   })()
 
   const reset = useCallback(() => {
+    surveyRun.current = null
     setStep('upload')
     setDetected(null)
     setOutcome(null)

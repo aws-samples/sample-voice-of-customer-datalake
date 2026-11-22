@@ -4,7 +4,8 @@
  * named exactly as the server names them (lambda/shared/import_detect.py `_headers`: trimmed, a blank one
  * `Column n`, a repeated one `Name (n)`), so a mapping the detection answered fits the rows sent.
  *
- * CSV and TSV are parsed here (RFC 4180 quoting, a byte-order mark dropped) with the separator the detection found;
+ * A text file is read as UTF-8, else as Windows-1252 with a warning. CSV and TSV are parsed here (RFC 4180 quoting, a
+ * byte-order mark dropped) with the separator the detection found;
  * JSON (an array of objects, an object holding one, or one object per line) as the server reads it; a workbook's rows
  * come back from the detection (the browser cannot read an XLSX). Pure but for `readWizardFile`.
  *
@@ -31,6 +32,8 @@ export interface WizardFile {
   readonly size: number
   /** The text of a CSV, TSV or JSON file; the base64 of a workbook. */
   readonly content: string
+  /** A text file that was not UTF-8, read as Windows-1252 (the Upload step says so). */
+  readonly legacyEncoding: boolean
 }
 
 export interface Table {
@@ -67,11 +70,23 @@ function base64Of(bytes: Uint8Array): string {
   return btoa(parts.join(''))
 }
 
+/** A text file's characters: UTF-8 (its byte-order mark dropped) when the bytes are UTF-8, else Windows-1252, which
+ * older spreadsheet tools write a CSV in (`legacyEncoding`: never replacement characters in silence). */
+function decodeText(bytes: Uint8Array): { readonly text: string; readonly legacyEncoding: boolean } {
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), legacyEncoding: false }
+  } catch {
+    return { text: new TextDecoder('windows-1252').decode(bytes), legacyEncoding: true }
+  }
+}
+
 /** The picked file read once: its text, or a workbook's base64. */
 export async function readWizardFile(file: File): Promise<WizardFile> {
   const format = formatOf(file.name) ?? 'csv'
-  const content = format === 'xlsx' ? base64Of(new Uint8Array(await file.arrayBuffer())) : await file.text()
-  return { name: file.name, format, size: file.size, content }
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (format === 'xlsx') return { name: file.name, format, size: file.size, content: base64Of(bytes), legacyEncoding: false }
+  const { text, legacyEncoding } = decodeText(bytes)
+  return { name: file.name, format, size: file.size, content: text, legacyEncoding }
 }
 
 /** The first 256 KB of a text, cut after its last whole line; `truncated` when that is not the whole text. */

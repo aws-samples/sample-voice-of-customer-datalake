@@ -3,7 +3,7 @@
  * A trial workspace from the command line (7.71.00; docs/multi-workspace.md "Trial workspaces"), what the platform
  * console's Create a trial does, for headless use at the end of a workshop:
  *
- *   1. POST /platform/workspaces {name, slug, trial: {days, pack}}: the trial (its schedule first), the caller its admin;
+ *   1. POST /platform/workspaces {name, slug, trial: {days, pack}}: the trial, the caller its admin;
  *   2. each person of --people (a CSV of `email,role[,playbook]`, a header line allowed): POST
  *      /me/workspaces/current/members in the new workspace (someone with no account gets one, and Cognito emails them
  *      a temporary password);
@@ -54,10 +54,11 @@ function parsePeople(text) {
  */
 function trialRequests(plan) {
   if (!DAYS.includes(plan.days)) throw new Error('--days must be 14, 30 or 60');
-  const templates = plan.forms.flatMap((form) => {
+  // Each template once: two forms from one template are one entry of the pack (the API refuses a repeated id).
+  const templates = [...new Set(plan.forms.flatMap((form) => {
     const template = /** @type {{ id?: unknown } | undefined} */ (form.template);
     return typeof template?.id === 'string' ? [template.id] : [];
-  });
+  }))];
   return [
     { method: 'POST', path: '/platform/workspaces', inWorkspace: false, body: { name: plan.name, slug: plan.slug,
       trial: { days: plan.days, pack: { forms: templates, categories: plan.categories,

@@ -1,69 +1,89 @@
 /**
- * A raw WebSocket client for the relay server's specs: the handshake over `http.request`, masked frames up, and the
- * server's (unmasked) frames read back, so the specs pin the wire format itself rather than a library's view of it.
+ * A real `ws` client for the relay server's specs: it connects as AgentCore's proxy does (its headers on `/ws`), and
+ * records every message, the pongs, the close code and any error the client saw (an invalid frame or close code from
+ * the relay is one), so the specs pin what reaches the wire.
  */
-import { randomBytes } from 'node:crypto';
-import { request } from 'node:http';
-import type { Server } from 'node:http';
-import type { Socket } from 'node:net';
+import { request, type Server } from 'node:http';
 
-/** A client frame: masked with a random key, its length in the shortest form. */
-export function maskedFrame(opcode: number, payload: Buffer, fin = true): Buffer {
-  const mask = randomBytes(4);
-  const masked = Buffer.from(payload.map((byte, index) => byte ^ mask.readUInt8(index % 4)));
-  const first = (fin ? 0x80 : 0) | opcode;
-  const length = payload.length;
-  const head = length < 126 ? Buffer.from([first, 0x80 | length])
-    : Buffer.concat([Buffer.from([first, 0x80 | 126]), Buffer.from([length >> 8, length & 0xff])]);
-  return Buffer.concat([head, mask, masked]);
-}
+import { afterEach } from 'vitest';
 
-export interface ServerFrame {
-  opcode: number;
-  payload: Buffer;
-}
-
-/** The server's frames in `bytes` (unmasked, short or 16-bit lengths: what the specs send back). */
-export function serverFrames(bytes: Buffer): ServerFrame[] {
-  if (bytes.length < 2) return [];
-  const marker = bytes.readUInt8(1) & 0x7f;
-  const offset = marker === 126 ? 4 : 2;
-  const length = marker === 126 ? bytes.readUInt16BE(2) : marker;
-  const frame = { opcode: bytes.readUInt8(0) & 0x0f, payload: bytes.subarray(offset, offset + length) };
-  return [frame, ...serverFrames(bytes.subarray(offset + length))];
-}
+import { WebSocket, type RawData } from 'ws';
 
 export interface Client {
-  socket: Socket;
-  status: number;
-  /** Every byte the server sent after the handshake. */
-  received(): Buffer;
+  socket: WebSocket;
+  /** The text messages, parsed as JSON. */
+  readonly texts: unknown[];
+  /** The binary messages' lengths. */
+  readonly binaries: number[];
+  readonly pongs: Buffer[];
+  readonly errors: string[];
+  /** The close code, once the connection closed. */
+  readonly closed: Promise<number>;
 }
 
-/** Open `/ws` (or `path`) with AgentCore's headers; resolves after the 101, or with the refusal's status. */
-export function connect(server: Server, headers: Record<string, string>, path = '/ws'): Promise<Client> {
+function parsed(text: string): unknown {
+  const value: unknown = JSON.parse(text);
+  return value;
+}
+
+function portOf(server: Server): number {
   const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : 0;
+  return typeof address === 'object' && address !== null ? address.port : 0;
+}
+
+/** Open `path` on `server` with AgentCore's headers; resolves once open (rejects on a refused handshake). */
+export function connect(server: Server, headers: Record<string, string>, path = '/ws'): Promise<Client> {
+  const socket = new WebSocket(`ws://127.0.0.1:${portOf(server)}${path}`, { headers });
+  const client: Omit<Client, 'closed'> = { socket, texts: [], binaries: [], pongs: [], errors: [] };
+  socket.on('message', (data: RawData, isBinary: boolean) => {
+    // The default binaryType delivers each message as one Buffer.
+    if (!Buffer.isBuffer(data)) return;
+    if (isBinary) client.binaries.push(data.length);
+    else client.texts.push(parsed(data.toString('utf8')));
+  });
+  socket.on('pong', (data: Buffer) => { client.pongs.push(data); });
+  const closed = new Promise<number>((resolve) => { socket.on('close', (code: number) => { resolve(code); }); });
   return new Promise((resolve, reject) => {
-    const outgoing = request({
-      port, host: '127.0.0.1', path,
-      headers: {
-        Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13',
-        'Sec-WebSocket-Key': randomBytes(16).toString('base64'), ...headers,
-      },
+    socket.on('error', (error: Error) => {
+      client.errors.push(error.message);
+      reject(error);
     });
+    socket.on('open', () => { resolve({ ...client, closed }); });
+  });
+}
+
+/** The status an upgrade request with only `headers` gets: 101 when accepted, else the refusal's (a handshake no
+ *  WebSocket client would send, so it goes over plain HTTP). */
+export function upgradeStatus(server: Server, headers: Record<string, string>, path = '/ws'): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const outgoing = request({ port: portOf(server), host: '127.0.0.1', path, headers: { Connection: 'Upgrade', ...headers } });
     outgoing.on('upgrade', (response, socket) => {
-      const chunks: Buffer[] = [];
-      socket.on('data', (chunk: Buffer) => { chunks.push(chunk); });
-      resolve({ socket, status: response.statusCode ?? 0, received: () => Buffer.concat(chunks) });
+      socket.destroy();
+      resolve(response.statusCode ?? 0);
     });
     outgoing.on('response', (response) => {
       response.resume();
-      resolve({ socket: response.socket, status: response.statusCode ?? 0, received: () => Buffer.alloc(0) });
+      resolve(response.statusCode ?? 0);
     });
     outgoing.on('error', reject);
     outgoing.end();
   });
+}
+
+/** Resolves once `ready()` holds, checking as I/O runs (rejects after `ms`). */
+export async function until(ready: () => boolean, ms = 2000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new RangeError(`still waiting after ${ms} ms`);
+    await new Promise((resolve) => { setTimeout(resolve, 2); });
+  }
+}
+
+/** A request's status and JSON body (or null without one). */
+export async function httpJson(server: Server, method: string, path: string): Promise<{ status: number; body: unknown }> {
+  const response = await fetch(`http://127.0.0.1:${portOf(server)}${path}`, { method });
+  const text = await response.text();
+  return { status: response.status, body: text === '' ? null : parsed(text) };
 }
 
 /** Listen on a free local port. */
@@ -77,6 +97,20 @@ export function whenListening(server: Server): Promise<void> {
   return new Promise((resolve) => { server.once('listening', () => { resolve(); }); });
 }
 
+/** What a spec opens, closed after each of its tests (the clients first: a server's close waits for its sockets). */
+export function closedAfterEach(): { servers: Server[]; clients: Client[] } {
+  const opened: { servers: Server[]; clients: Client[] } = { servers: [], clients: [] };
+  afterEach(async () => {
+    for (const client of opened.clients.splice(0)) client.socket.terminate();
+    await Promise.all(opened.servers.splice(0).map(closed));
+  });
+  return opened;
+}
+
+/** Close `server`, ending the connections it still holds. */
 export function closed(server: Server): Promise<void> {
-  return new Promise((resolve) => { server.close(() => { resolve(); }); });
+  return new Promise((resolve) => {
+    server.close(() => { resolve(); });
+    server.closeAllConnections();
+  });
 }

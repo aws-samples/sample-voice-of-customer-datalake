@@ -31,22 +31,26 @@ no fixed cost.
 
 - **Create a trial** (Administration → Workspaces, platform admins only): a name, an address, a length (14, 30 or 60
   days), the people to add (email, role and a suggested role playbook) and the starter pack. `POST
-  /platform/workspaces` takes an optional `trial: {days, pack}`; the trial's one-time schedule is made first, then the
-  workspace, with the `trial` map on its `META` and listing rows and a `trial_created` audit row. The pack is then
+  /platform/workspaces` takes an optional `trial: {days, pack}`: the workspace, with the `trial` map on its `META` and
+  listing rows and a `trial_created` audit row. The pack is then
   applied as ordinary creates through the existing routes, with the admin's own credentials, in the new workspace, each
   audited by its own route: the member add (someone with no account gets one, and Cognito emails them a temporary
   password), the forms from the `workshop` and `app_micro_feedback` templates (Off) and the sample categories
   (`voc-datalake/schemas/trial-pack.json`). A refused step is reported and the others still run. Then the trial's import
   wizard opens inside it. `voc-datalake/scripts/trial-pack.mjs` does the same headless, with a platform admin's ID
   token (`--dry-run` prints the requests).
-- **The trial's end.** One EventBridge Scheduler schedule per trial and end (`voc-trial-<ws>-<end>` in the new
-  `voc-trials` group, deleting itself once it has run) invokes the new `voc-trial-expiry` job in VocProcessingStack.
-  It pauses a due trial: `paused_at` first, then the workspace's plugins through the existing audited disable
-  (`plugin_disabled`, reason `trial_paused`) and its live forms turned off, all recorded on the trial (`paused`) and in
-  a `trial_paused` audit row. A trial extended meanwhile, converted or being deleted is left alone.
+- **The trial's end.** The new `voc-trial-expiry` job in VocProcessingStack runs every hour (one EventBridge rule), so
+  a trial pauses within the hour after it ends. Each tick reads the platform listing once (the `WORKSPACES` partition)
+  and pauses each trial that is due: `paused_at` first, then the workspace's plugins through the existing audited
+  disable (`plugin_disabled`, reason `trial_paused`) and its live forms turned off, all recorded on the trial (`paused`)
+  and in a `trial_paused` audit row; the live forms are read once more at the end, so one put live while the pause
+  ran is turned off too. A trial extended meanwhile, converted or being deleted is left alone, and one whose
+  `expires_at` does not parse is never paused (logged). Nothing is scheduled per trial.
 - **Extend and convert** on a trial's row in the console (`POST /platform/workspaces/{ws}/trial/extend` `{days}` and
   `…/convert`, platform admins only, live-checked, audited first as `trial_extended` and `trial_converted`). A paused
-  trial's plugins and forms are turned back on. An extension counts from the trial's end, or from now once it ended.
+  trial's plugins and forms are turned back on; a form that is no longer publishable (an unreadable theme, a
+  placeholder shown as written) stays off and is named in the extension's `resumed.skipped`. An extension counts from
+  the trial's end, or from now once it ended.
 - **The trial banner** above every page of a trial workspace, for every member: when it ends and that it then only
   pauses, or since when it is paused and what the pause turned off. `GET /me/workspaces/current` answers `trial`.
 - **A suggested playbook.** The member add takes an optional `playbook` (a role playbook, [playbooks.md](docs/playbooks.md));
@@ -56,23 +60,24 @@ no fixed cost.
 
 - **A paused trial holds back what would turn it on again.** A plugin's enable answers 409 `trial_paused` (its
   transaction also checks that the trial is not paused, so a pause that lands meanwhile wins), and so does a form put
-  live (`POST` or `PUT /feedback-forms…` with `enabled: true`). Workspace settings, a form's Live switch and the
-  builder's Publish say why. Reads, edits, imports and the export keep working.
+  live (`POST` or `PUT /feedback-forms…` with `enabled: true`), the check a condition of the form's own write in the
+  same transaction. Workspace settings, a form's Live switch and the builder's Publish say why. Reads, edits, imports
+  and the export keep working. A form's `enabled` is true or false (400 for anything else, `"false"` included).
 - `GET /platform/workspaces` answers each workspace's `trial` (or null).
 
 ### Upgrade notes
 
 - **Nothing is deleted** by a trial's end, an extension or a conversion. The job's one delete is the existing plugin
   disable's own `PLUGIN#{plugin}` / `WS#{ws}` row, which holds no data (a present row means enabled). Its role holds no
-  other delete action of any kind (no S3, no other DeleteItem, no BatchWriteItem, no scheduler delete), pinned by
+  other delete action of any kind (no S3, no other DeleteItem, no BatchWriteItem, no scheduler action), pinned by
   `lib/stacks/trial-expiry.test.ts`. A whole-workspace delete stays the data controller's request, behind
   `-c workspaceHardDelete=true`.
-- **New resources, VocProcessingStack only:** the `voc-trial-expiry` function with its role and log group, the
-  `voc-trials` schedule group and the scheduler's role (`lambda:InvokeFunction` on the job alone). VocApiStack gains
-  statements on the workspaces API's role only (UpdateItem of `trial` on `META` and the listing row,
-  `scheduler:CreateSchedule` on the group's `voc-trial-*` names, `iam:PassRole` of the scheduler's role to EventBridge
-  Scheduler, and UpdateItem of a form's `enabled` and stamps for a resume): no new resource, it stays at 425.
-- **No fixed cost:** a schedule group and schedules are free until a schedule runs, once per trial end.
+- **New resources, VocProcessingStack only:** the `voc-trial-expiry` function with its role, log group and hourly
+  rule (its role: Query of the listing partition, the trial's reads and writes, and the plugin disable's DeleteItem on
+  `PLUGIN#*` alone). VocApiStack gains statements on the workspaces API's role only (UpdateItem of `trial` on `META`
+  and the listing row, and GetItem and UpdateItem of a form's `enabled` and stamps for a resume): no new resource, it
+  stays at 425, and no scheduler or `iam:PassRole` action.
+- **About no fixed cost:** 720 ticks a month, each one Query of the listing partition while no trial is due.
 
 ## [7.70.00] - 2026-11-21
 
@@ -86,7 +91,8 @@ per-person view and no leaderboard. A new daily job builds it; no new route reso
 
 - **Insights → Leadership** (`/leadership`, a new Insights section of the sidebar), for the admins of the scope: a
   workspace's admins see their workspace; outside a workspace the deployment's `admins` and platform admins see the
-  deployment. The last 6, 12 or 24 months or this year, by month or quarter: headline figures (projects started, ideas
+  deployment. The last 6, 12 or 24 months or this year, by month or quarter (a quarter range starts on a quarter and
+  stays within 24 months): headline figures (projects started, ideas
   taken to prototype, validations run, validated decisions, time saved), projects started per period, how far the
   projects got (personas, research, PR/FAQ, PRD, prototype, validation), artifacts by way of working (with AI or by
   hand), decisions by verdict, the median days from evidence to PRD, PRD to prototype and prototype to decision,
@@ -94,7 +100,8 @@ per-person view and no leaderboard. A new daily job builds it; no new route reso
   estimate's label, baselines, note and assumptions. A platform admin is pointed to the platform's cost estimate per
   workspace (`GET /platform/costs`).
 - **Time saved, an estimate**: the artifacts the AI made in the period times the hours each would take by hand. Always
-  labelled as an estimate, with its baselines and assumptions on show (**Assumptions** on the page): only AI-made
+  labelled as an estimate, with its baselines and assumptions on show (**Assumptions** on the page, which saves only
+  the baselines an admin changed, so a type left at its default stays one): only AI-made
   artifacts count, review and editing time is not subtracted, decisions, validations and runs add no hours. Defaults
   per artifact (personas 1.5 h, research 6 h, PR/FAQ 4 h, PRD 8 h, prototype 16 h) until an admin of the scope sets
   their own, with a note on where the numbers come from.
@@ -103,10 +110,14 @@ per-person view and no leaderboard. A new daily job builds it; no new route reso
   stored as `SETTINGS#adoption` (`WS#{ws}#SETTINGS#adoption` in a workspace) with who saved them, when and why, and
   swept by a workspace's hard delete with its other settings rows.
 - **The `insights_get_adoption` MCP tool** (`from`/`to`, by month): the deployment's leadership view for a token an
-  administrator minted, re-checked live on every call like `agents_run` ([mcp.md](docs/mcp.md)).
+  administrator minted, re-checked live on every call like `agents_run` ([mcp.md](docs/mcp.md)). The claim the MCP
+  Lambda adds to an admin-only tool's call now names its one operation (`agents_run` or `insights_get_adoption`), and
+  each route admits only its own.
 - **voc-adoption-rollup** (VocProcessingStack): at 03:05 UTC it rebuilds the last 24 months for the deployment and
-  every active workspace from their live projects, one whole item per scope and day (`ADOPTION#ROLLUP` /
-  `WS#{ws}#ADOPTION#ROLLUP`, kept 35 days), so a rerun is idempotent. It never Scans: projected Queries of the
+  every active workspace from their live projects into ONE whole item per scope (`ADOPTION#ROLLUP` /
+  `WS#{ws}#ADOPTION#ROLLUP`, sort key `latest`, overwritten by each run, no TTL), which the route reads with one
+  GetItem. Each scope gets its share of the run's time, and a scope cut short never replaces complete figures: the
+  last complete ones stay, with their `as_of`. It never Scans: projected Queries of the
   workspace listing, the project registries and partitions (no document text, title, name or person), a count of the
   assistant conversations and the agents' run starts; it writes only its own rows, reads no feedback and calls no
   model. It reads the Validate phase's validation reports, runs and decisions tolerantly: a project without them
@@ -141,7 +152,10 @@ presigns; no API Gateway resource, no fixed cost ([voice-personas.md](docs/voice
 - **The voice session**: a microphone level, live captions for both sides, the timer, the cost so far and the minutes
   left, the reviews the persona cites as chips, the "Synthetic voice" label always in view, barge-in (the persona stops
   when you speak; queued audio is dropped), the relay's notices (a minute left, the budget nearly used, the persona
-  saying goodbye) and End, which waits for the transcript and offers "Open transcript" and "Save to Library".
+  saying goodbye) and End, which waits for the transcript and offers "Open transcript" and "Save to Library". If the
+  end cannot be recorded it is retried (three attempts, then **Try again**), and it is sent once more with `keepalive`
+  when the page closes first. At the time limit or the budget, the persona's goodbye plays out (at most 10 seconds)
+  before the audio is released.
 - **The persona's voice**: by default `tiffany` or `matthew` (the two that speak every supported language), picked from
   a hash of the persona's id, never from its name or picture; editable on the persona's form among Nova Sonic's 16
   voices (`voice_id` on `PUT /projects/{id}/personas/{persona_id}`, `null` for the default). The prompt states the
@@ -149,28 +163,35 @@ presigns; no API Gateway resource, no fixed cost ([voice-personas.md](docs/voice
 - **Languages**: the persona follows the language you speak; of the app's languages, en, de, es, fr and pt. In ja,
   ko, pl and zh the app says the voice does not speak your language.
 - **Routes** on the projects API's `/projects/{proxy+}` (`shared/voice_session_routes.py`, one include in
-  `projects_handler.py`): `GET` and `POST /projects/{id}/personas/{persona_id}/voice-sessions` (the offer, view; the
-  start, edit, 201 with the presigned `connect_url`), `GET …/voice-sessions/{session_id}` (view),
+  `projects_handler.py`): `GET` and `POST /projects/{id}/personas/{persona_id}/voice-sessions` (the offer, view, which
+  first saves its reader's sessions of the project that ended without End; the start, edit, 201 with the presigned
+  `connect_url`), `GET …/voice-sessions/{session_id}` (view),
   `POST …/voice-sessions/{session_id}/end` (202, its starter or an admin) and `GET /projects/voice/usage` (admins:
   the month's minutes, sessions, cost and live streams, on Administration → AI).
 - **The start's checks** (`shared/voice_sessions.py`), in order: the flag (404 `voice_off`), consent (400
   `consent_required`), a project persona, a person acting for themselves (403 `person_only` for an MCP credential or
-  an agent), a minute left this month (409 `budget_exhausted`), 3 starts a minute (429 `rate_limited`) and 5 sessions
+  an agent), a minute left this month and the month's cost under its cap (409 `budget_exhausted`), 3 starts a minute (429 `rate_limited`) and 5 sessions
   a day (429 `daily_limit`) per person, a free stream (429 `busy`, `voiceMaxConcurrent`).
 - **The relay** (`voc-datalake/lambda/stream/src/voice/`, a `voc_persona_voice` AgentCore Runtime in
   VocProcessingStack, direct code `NODE_22` bundled by esbuild, PUBLIC network mode, idle 2 minutes, at most 20):
-  a small RFC 6455 server on port 8080 (`/ws`, `/ping`), single-use activation of the session row, Nova Sonic's
+  the `ws` package's WebSocket server on port 8080 (`/ws`, at most 32 KB a message, no compression), `GET /ping`
+  (`HealthyBusy` while a conversation is live, dated when its status last changed, so the 2-minute idle timeout ends a
+  microVM whose conversation is over) and `POST /invocations` (400 `use /ws`), single-use activation of the session
+  row, Nova Sonic's
   bidirectional stream (16 kHz in, 24 kHz out, one async `cite` tool held to the evidence pack, the focus groups'
   evidence block and citation rule), a stream rollover after 7 minutes replaying the conversation (at most 200 KB),
-  a meter from the model's usage events every minute and at the end, the month's budget and the session's limit as a
-  spoken and visual stop, write-once transcript parts, and logs of ids and counts only.
+  a meter from the model's usage events every minute and at the end, the month's minutes and cost cap, the session's
+  cost cap (both 5 cents a minute) and its time limit as a spoken and visual stop (the end comes at the goodbye's own
+  finished turn), the microphone held to 1.5 times real time, write-once transcript parts, and logs of ids and counts
+  only ([voice-personas.md → Roadmap](docs/voice-personas.md#roadmap)).
 - **The transcript** (`shared/voice_transcripts.py`, the assist job `assist_voice_finalize` on the projects assist
   twin): a `persona_interview` document, `synthetic: true`, labelled, the person's turns through
   `shared/pii_redaction.py`, the persona's turns with the reviews it cited (`[fb:<id>]`, only ids of its pack; they are
   its `input_feedback_ids`), a summary and key quotes from one model call (a quote kept only when it was said word for
   word); the session's `bedrock_usage` line (`shared/usage_meter.py` `log_stream_usage`), so the cost rollup counts
   Nova Sonic; then the session's scratch files are deleted, every version.
-- **The mock**: the routes and a fake voice session over a hand-rolled WebSocket on the mock server (captions, a tone,
+- **The mock**: the routes and a fake voice session over a hand-rolled WebSocket on the mock server (development
+  only: the frontend has no `ws`; captions, a tone,
   a citation, usage ticks), `frontend/mock-voice.js`.
 
 ### Changed
@@ -189,7 +210,16 @@ presigns; no API Gateway resource, no fixed cost ([voice-personas.md](docs/voice
 - A new entry point, reviewed in [voice-personas.md → Security review](docs/voice-personas.md#security-review): the
   runtime takes SigV4 only; the browser's URL lives 60 seconds and signs one session id and one project scope; the
   relay accepts it once (close 1008 for a second connection or a failed activation) and refuses evidence of another
-  session or project, and frames over 32 KB (1009).
+  session or project, and messages over 32 KB (1009). `/ws` is served by the `ws` package (8.23.0, MIT, no
+  dependencies; approved by the owner on 2026-11-22, [dependencies.md](docs/dependencies.md)), so the repository holds
+  no hand-written RFC 6455 code; ws's optional native add-ons (`bufferutil`, `utf-8-validate`) are left out of the
+  bundle.
+- **Spend is capped in cost as well as minutes:** 5 cents a minute of the session's limit (75 cents for 15 minutes)
+  and of the month's minutes ($15 for 300), checked by the projects API at the start and by the relay (the month every
+  minute, the session at every usage event); the relay drops microphone frames past 1.5 times real time, so a client
+  that sends faster than it speaks can grow neither the model stream's queue nor its cost. The relay's updates of a
+  session row hold only while the row exists: a session whose project is deleted ends (`error`) instead of making the
+  row again.
 - The relay's role is pinned exactly (`lib/stacks/voice-relay.test.ts`): `bedrock:InvokeModel` on the one Nova Sonic
   model ARN, `dynamodb:UpdateItem` held by `dynamodb:LeadingKeys` to `VOICE#*` on voc-projects and `VOICEUSE#*` on
   voc-aggregates and by `dynamodb:Attributes` to the meter, `s3:GetObject` of a session's evidence and `s3:PutObject`
@@ -205,8 +235,11 @@ presigns; no API Gateway resource, no fixed cost ([voice-personas.md](docs/voice
   any other Region: an EU deployment gets no voice in v1). `-c voiceModelId=amazon.nova-2-sonic-v1:0` pins Nova 2
   Sonic; `-c voiceMonthlyMinutes` (300), `-c voiceSessionMinutes` (15) and `-c voiceMaxConcurrent` (8) set the limits.
   Deploy every stack (VocProcessingStack holds the runtime, VocApiStack imports its ARN, VocCoreStack the headers).
-- Cost: about 1 to 3 cents a conversation minute for Nova 2.5 Sonic (300 minutes a month at most about $9) and at most
+- Cost: about 1 to 3 cents a conversation minute for Nova 2.5 Sonic (300 minutes a month at most about $9, and never
+  more than the month's cost cap, $15 for 300 minutes) and at most
   about $0.001 a minute of AgentCore Runtime; nothing standing (no ECR, VPC, NAT or endpoint).
+- **A new dependency**, `ws` 8.23.0 in `voc-datalake/lambda/stream` (pinned exactly, MIT, in
+  THIRD-PARTY-LICENSES.md): run `npm ci --prefix voc-datalake/lambda/stream` before a deploy that builds the relay.
 - If the account has Bedrock model invocation logging on, check whether it captures the stream's events (they carry
   base64 audio) before turning voice on ([voice-personas.md → Data and retention](docs/voice-personas.md#data-and-retention)).
 - Not yet run against AWS: check the items of [voice-personas.md → What to check on a live
@@ -239,11 +272,18 @@ the lake, pins never are. No new API Gateway resource (the API stack stays at 42
 - **"Tell us how it went" for real testers** (`PUT …/validation/form`): the prototype's own pin form gains validation
   questions (per task "Could you do this?", one CES, a rating per criterion and "What was missing?", in one of the nine
   languages) as its next revision, and the pin widget shows them as a card, framed in the app or opened on its own. The
-  answers are queued as `feedback_form` items of the form's own channel, tagged `prototype_validation`.
+  answers are queued as `feedback_form` items of the form's own channel, tagged `prototype_validation`. Saving the
+  card writes the project's block first, conditional on the revision it read (409 `validation_changed` for a write in
+  between), then the pin form, so the two never disagree unseen. Moving the card to a newer prototype version turns it
+  off on the version it leaves, and the tab says when a newer version shows no card (`form.newer_version`). Framed in
+  the app, the card is asked once per form for the page session (five minutes at most, forgotten when the card is
+  saved), so viewing prototypes no longer spends the public submit route's throttle, which every form shares; a
+  prototype opened on its own asks once a page load.
 - **Results and the report** (`GET …/validation`, `POST …/validation/report`, a `validation_report` document): per
   criterion its target, the real testers' average and **met**, **not met** or **not enough data** (fewer than 5
   answers), the personas' average beside it labelled synthetic; per task the real success rate; the testers' ease
-  (CES); what they said was missing (read live under your category and source access, never copied into the report).
+  (CES); what they said was missing (read live under your category and source access; the report's summary is given
+  only how many said something, never their words, and the report quotes no tester).
   **Create decision** opens the Decisions tab prefilled: the suggested verdict (pursue only when every criterion is
   met), the criteria as its success metric, the report and the real answers as its evidence.
 - MCP `projects_generate` takes `step: validation_plan` and `validation_report`.
@@ -282,15 +322,20 @@ and no fixed cost: the existing manual-import and forms proxies carry it, and de
   file and from a new workspace's Home while it has no feedback. It has four steps:
   - **Upload.** CSV, TSV and JSON up to 10 MB (a survey export up to 2 MB, as it is kept whole), an `.xlsx` workbook
     up to 256 KB. A byte-order mark is fine, the separator (`,`, `;`, tab or `|`) is found, and the first 20 rows are
-    previewed.
+    previewed. A text file is read as UTF-8, else as Windows-1252, and the step then says so, so accented letters are
+    checked in the preview.
   - **Map.** Reviews or tickets, or a survey export. Each column has a kind (id, date, rating 1-5 or 1-10, NPS 0-10,
     CSAT, one choice, several choices, a grid of `row -- answer` pairs, open text, email, name, link, channel, or left
     out), shown with its confidence and its reasons in nine languages. Every kind can be changed. Personal data
     (email, name) is flagged and left out by default. Dates may be day-first, month-first or year-first, and Excel
-    date numbers are read.
+    date numbers are read under a date header (elsewhere a five-digit number is an id or a count: `Ticket ID`
+    45001… is an id).
   - **Confirm.** A survey's inferred questions are shown with the builder's type chips; for reviews, what goes where.
+    A second date, id or channel column is left out and named (`extra_date`, `extra_id`, `extra_channel`), so an
+    export with Start and End dates imports.
   - **First insights.** The import's progress, then the sentiment split, the top categories, a survey's NPS, three
-    quotes, and links to the filtered dashboard and to the form's Results.
+    quotes, and links to the filtered dashboard and to the form's Results. Five minutes with none of the rows
+    analysed, it says they were imported before, with a link to the dashboard.
 - `POST /scrapers/manual/detect` (admin): `{format, sample ≤ 256 KB, …}` answers each column's kind, confidence and
   reasons, the suggested target and mapping, and for a survey the imported form inferred from it (a workbook's rows
   too). It is deterministic and free, and stores nothing.
@@ -307,14 +352,23 @@ and no fixed cost: the existing manual-import and forms proxies carry it, and de
   a 409 `imported_form`, and it takes no test link. The forms list marks it **Imported**.
 - `POST /feedback-forms/{form_id}/import` (admins acting as themselves, never a delegated caller; #242):
   - **Body.** `{rows (≤ 5,000 a call), mapping, date_order?, offset?, dry_run?, file | file_key}`; the answer is
-    `{accepted, refused: [{row, code, question_id?}], refused_count, run_id, raw_s3_key}`.
+    `{accepted, refused: [{row, code, question_id?}], refused_count, run_id, raw_s3_key}`. Under a redacting source
+    profile (a workspace's default) a call holds at most 250 texts, each row's text and its open answers (400
+    `too_many_texts`, before any is redacted).
   - **Checks.** Each row is checked for its types and ranges, never the logic path (owner decision: it followed the
     other tool's logic).
   - **Queued.** Each row is queued as a response with its own date, revision and `form_answers`. NPS is never the
     rating, and the text falls back to `headline: answer` lines.
-  - **Idempotent.** Importing the same file into the same form again names the same items.
+  - **Idempotent.** Importing the same file into the same form again names the same items: a row without its own id
+    is keyed by its file row, its own date and its answers, never the call's clock.
+  - **Redacted.** Under a redacting profile the rows are redacted several at once, and only their own words (the
+    text, the open answers, a choice's Other) reach Comprehend; their ids, codes and hidden values get the patterns
+    alone.
   - **Kept.** The original file is kept write-once at `raw/feedback_form/import/{form_id}/{run}.{ext}`, and each call
     is an import-history run (`form`).
+- **The wizard sizes its import calls** by the texts a redacting source takes and by their size (each call's body, as
+  its Lambda event carries it, under 4 MB of Lambda's 6 MB, the first one with the whole file). A call that fails stops
+  the import; **Import** again resumes at that call into the same form, never a second one.
 
 ### Changed
 
@@ -336,6 +390,9 @@ and no fixed cost: the existing manual-import and forms proxies carry it, and de
   and VocApiStack stays at 425. The forms role's existing `raw/feedback_form/*` puts already cover the imported files.
 - **Throughput.** "First insights in about two minutes" depends on the processor's concurrency. 1,000 rows cost the
   usual enrichment, about $1. Both are to be measured on a test deployment.
+- **Known follow-up: a large reviews or tickets file is one call.** `POST /scrapers/manual/csv-upload` takes the whole
+  file (at most 50,000 rows) in one request, so a very large file can pass API Gateway's 29 s; splitting a reviews
+  file across calls, as a survey's already is, is a follow-up. Until then, split a very large file before importing.
 
 ## [7.66.00] - 2026-11-21
 

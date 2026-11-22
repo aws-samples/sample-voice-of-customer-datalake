@@ -15,7 +15,9 @@ go straight into it. A paused trial still takes imports: only its plugins and li
    or an Excel workbook (`.xlsx`) up to 256 KB. The browser sends the file's first 256 KB (cut at a line end) to
    `POST /scrapers/manual/detect`. A workbook is sent whole, because the browser cannot read one: the server reads its
    first sheet with the Documents Library's zip-plus-XML reader (`shared/library_extract.py` `xlsx_rows`, each cell
-   in its own column) and sends its rows back. The first 20 rows are shown.
+   in its own column) and sends its rows back. A text file is read as UTF-8, else as Windows-1252 (what older
+   spreadsheet tools write a CSV in), which the step then says, so accented letters are checked in the preview. The
+   first 20 rows are shown.
 2. **Map.** What the file is: **reviews or tickets** (each row is one piece of feedback) or **a survey export** (each
    row is one person's answers). Then each column, with the kind detected, its confidence (*Sure*, *Likely* or *A
    guess*), its reasons in the reader's language, and a few of its values. Every kind can be changed. Dates are read
@@ -25,7 +27,7 @@ go straight into it. A paused trial still takes imports: only its plugins and li
    text, the rating, the date and the id, and which are left out.
 4. **First insights.** How many rows were imported (and why any were not), how many are analysed so far, then the
    sentiment split, the top categories, a survey's NPS and three quotes. Links open the dashboard filtered to the
-   source and, for a survey, the form's Results.
+   source and, for a survey, the form's Results. Five minutes with none analysed: the rows were imported before.
 
 ## Detection
 
@@ -42,7 +44,7 @@ The kinds are:
 | Kind | Read from |
 |---|---|
 | `id` | Every value different and short, or the header says so (`id`, `identyfikator`, `identificador`, `ticket`) |
-| `date` | ISO 8601, `31/12/2026`, `12/31/2026 9:30 PM`, `31.12.26`, or an Excel serial number (`46095`) under a date header |
+| `date` | ISO 8601, `31/12/2026`, `12/31/2026 9:30 PM`, `31.12.26`, or an Excel serial number (`46095`) under a date header only (elsewhere such a number is an id or a count: `Ticket ID` 45001…) |
 | `rating_1_5`, `rating_1_10` | Whole numbers from 1, the header saying rating, stars, score, *valoración*, *ocena*… |
 | `nps_0_10` | Whole numbers from 0 to 10 whose header says recommend (*recomendar*, *polecić*, *empfehlen*…), or any 0 among them |
 | `csat` | 1 to 5 with a satisfaction header (*satisfacción*, *zadowolenie*…) |
@@ -94,20 +96,25 @@ columns over the whole file (`values`):
 | `choice` | `single_select`, one option per distinct value (at most 50) |
 | `multi_choice` | `multi_select`, one option per distinct answer |
 | `matrix_cell` | `matrix` (7.61.00): its rows and columns from the pairs (at most 20 rows and 10 columns) |
-| `date`, `id` | The response's date and its own id |
-| `channel` | The hidden field `channel` |
+| `date`, `id` | The response's date and its own id (the first column of each; a second is left out, `extra_date`, `extra_id`) |
+| `channel` | The hidden field `channel` (the first channel column; a second is left out, `extra_channel`) |
 | `email`, `name`, `url`, `ignore` | Left out |
 
 No question is required and none carries logic. A column that cannot become a question (more than 50 answers, a grid
-that is too large, more than 30 questions) is named with its reason. The form is created with
+that is too large, more than 30 questions), and a second date, id or channel column, is named with its reason on the
+Confirm step, so the inferred mapping always passes the import's own check. The form is created with
 `imported: {from, at, filename}` (`POST /feedback-forms`). An imported form:
 
 - is **Off for good** and has **no public link**: its config, iframe, submit and events routes answer 404 as for an
   unknown id; a save that turns it on is a 409 `imported_form`; and it takes no test link;
 - can still be renamed and its questions' wording edited. Its answers lock as any answered form's does.
 
-Its rows are imported by `POST /feedback-forms/{form_id}/import`. The wizard sends 1,000 rows a call, and the route
-takes at most 5,000:
+Its rows are imported by `POST /feedback-forms/{form_id}/import`. The route takes at most 5,000 rows a call, and
+under a redacting source profile (a workspace's default) at most 250 texts: each row's text and its open answers,
+each one Comprehend call with `PII_COMPREHEND=1` (400 `too_many_texts` above it, before any is redacted). The wizard
+sizes its calls by both and by their size: each call's body, as its Lambda event carries it (escaped once more),
+stays under 4 MB of Lambda's 6 MB, the first call with the whole file. A call that fails stops the import; **Import**
+again resumes at that call, into the same form:
 
 - **Checks.** Each row is checked for its types and ranges like any response: option codes, scales, grid rows and
   columns, the character limits and declared hidden fields. The logic path is **not** enforced and no answer is
@@ -118,8 +125,12 @@ takes at most 5,000:
   own date, under the form's brand partition, so Results, Report and Compare read it. NPS stays in `form_answers`:
   the item's rating is the first rating or CSAT answer, never the NPS. The text is the open answers under their
   headlines, else `headline: answer` lines. Its metadata names the run (`form_import_run`).
-- **Idempotent.** A row's id is derived from the form and the row's own id (else its file row and its answers), so
-  importing the same file into the same form again names the same items, and the processor skips them.
+- **Idempotent.** A row's id is derived from the form and the row's own id (else its file row, its own date and its
+  answers, never the call's clock), so importing the same file into the same form again names the same items, and the
+  processor skips them. First insights then finds none analysed: after five minutes it says the rows were imported
+  before, with the dashboard's link.
+- **Redaction.** Under a redacting profile the rows are redacted several at once, and only their own words (the text,
+  the open answers, a choice's "Other") reach Comprehend: their ids, codes and hidden values get the patterns alone.
 - **Dry run.** `dry_run: true` checks every row and writes nothing.
 - **Who.** Admins acting as themselves only: the workspace's admins in one, never a delegated caller (an MCP token,
   an agent or a plan step). A form that was not imported is a 409 `not_imported`.
@@ -163,6 +174,7 @@ refusals ([import-history.md](import-history.md)).
   rows (to be measured).
 - **Speed.** "About two minutes" to the first insights depends on the processor's concurrency (to be measured on a
   test deployment).
-- **Timeouts.** Each call stays far inside the API's 29 s: 1,000 rows a call, sent to the queue ten at a time.
+- **Timeouts.** Each call stays far inside the API's 29 s: at most 250 texts to redact a call, several at once, and
+  the rows sent to the queue ten at a time.
 - **Not included.** Live Google Sheets, a store API (the app review plugins exist), and de-duplication across
   datasets beyond `csv-row-v2`.

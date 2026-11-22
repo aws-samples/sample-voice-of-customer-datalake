@@ -629,6 +629,7 @@
       "rows_few": "{{count, number}} wiersze, kolumny: {{columns}}",
       "rows_many": "{{count, number}} wierszy, kolumny: {{columns}}",
       "rows_other": "{{count, number}} wiersza, kolumny: {{columns}}",
+      "legacyEncoding": "Ten plik nie jest w UTF-8, więc odczytano go jako Windows-1252 (zachodnioeuropejskie). Zanim przejdziesz dalej, sprawdź w podglądzie, czy litery z akcentami wyglądają poprawnie.",
       "problems": {
         "format": "Tego typu pliku nie można zaimportować. Wybierz plik CSV, TSV, JSON lub Excel (.xlsx).",
         "tooLarge": "Ten plik ma ponad 10 MB. Podziel go i importuj części po kolei.",
@@ -733,7 +734,10 @@
         "too_many_options": "„{{header}}” ma ponad 50 różnych odpowiedzi: kolumna zostaje pominięta. Zmień ją na tekst otwarty, aby ją zachować.",
         "matrix_too_large": "„{{header}}” to siatka z ponad 20 wierszami lub 10 odpowiedziami: kolumna zostaje pominięta.",
         "no_values": "„{{header}}” nie ma odpowiedzi, z których można utworzyć opcje: kolumna zostaje pominięta.",
-        "too_many_questions": "Kolumna „{{header}}” zostaje pominięta: formularz może mieć najwyżej 30 pytań."
+        "too_many_questions": "Kolumna „{{header}}” zostaje pominięta: formularz może mieć najwyżej 30 pytań.",
+        "extra_date": "„{{header}}” zostaje pominięta: datę każdej odpowiedzi wyznacza pierwsza kolumna z datą.",
+        "extra_id": "„{{header}}” zostaje pominięta: każdą odpowiedź identyfikuje pierwsza kolumna z identyfikatorem.",
+        "extra_channel": "„{{header}}” zostaje pominięta: kanał każdej odpowiedzi to pierwsza kolumna z kanałem."
       }
     },
     "insights": {
@@ -748,6 +752,8 @@
       "refusedRow": "Wiersz {{row}}: {{reason}}",
       "processing": "Analizowanie: {{done, number}} z {{total, number}}…",
       "slow": "Analiza wciąż trwa. Duży plik może zająć kilka minut.",
+      "alreadyImported": "Nie ma nic nowego do analizy: te wiersze zostały już wcześniej zaimportowane.",
+      "alreadyImportedLink": "Zobacz je na pulpicie",
       "ready_one": "Przeanalizowano {{count, number}} opinię. Oto co mówi:",
       "ready_few": "Przeanalizowano {{count, number}} opinie. Oto co mówią:",
       "ready_many": "Przeanalizowano {{count, number}} opinii. Oto co mówią:",

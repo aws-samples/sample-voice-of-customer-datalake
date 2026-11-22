@@ -10,7 +10,8 @@
  * - `end` asks the relay to finish (`{type: 'end'}`: it flushes the transcript and says `ended`) and closes anyway
  *   after `END_GRACE_MS`.
  * - The socket's close, whatever caused it, releases the microphone and reports once, with the reason the relay
- *   gave, else `disconnected`.
+ *   gave, else `disconnected`. After the session's time limit or the month's budget the persona's goodbye, already
+ *   queued, plays out (at most `GOODBYE_DRAIN_MS`) before the audio is released; any other end silences it at once.
  *
  * @module pages/ProjectDetail/voice/voiceConnection
  */
@@ -20,6 +21,10 @@ import type { VoiceAudio } from './voiceAudio'
 
 /** How long the relay has to say `ended` after End before the browser closes the socket itself. */
 const END_GRACE_MS = 5000
+/** The ends that come after the persona's goodbye, and how long what is queued of it still plays (the relay waits 10
+ *  seconds at most for the goodbye). */
+const GOODBYE_REASONS: ReadonlySet<VoiceEndReason> = new Set(['session_limit', 'budget'])
+const GOODBYE_DRAIN_MS = 10_000
 
 export interface VoiceConnectionEvents {
   readonly onMessage: (message: RelayMessage) => void
@@ -52,9 +57,11 @@ export function createVoiceConnection(url: string, audio: VoiceAudio, events: Vo
   const finish = (reason: VoiceEndReason) => {
     if (held.closed) return
     held.closed = true
+    const ended = held.reason ?? reason
     if (held.socket !== null && held.socket.readyState <= WebSocket.OPEN) held.socket.close(VOICE_CLOSE.normal)
-    audio.close().catch((error: unknown) => { console.warn('Voice session: releasing the audio failed', error) })
-    events.onClosed(held.reason ?? reason)
+    audio.close(GOODBYE_REASONS.has(ended) ? GOODBYE_DRAIN_MS : 0)
+      .catch((error: unknown) => { console.warn('Voice session: releasing the audio failed', error) })
+    events.onClosed(ended)
   }
 
   const sendFrame = (pcm: ArrayBuffer) => {

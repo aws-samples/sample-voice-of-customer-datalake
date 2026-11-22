@@ -8,6 +8,8 @@ import {
 } from './voice-fixtures.js';
 
 const MINUTE = 60_000;
+/** One microphone frame: 64 ms of PCM16 at 16 kHz. */
+const FRAME = Buffer.alloc(2048, 1);
 
 function harness(input: Record<string, unknown> = sessionInput(), ids = { sessionId: SESSION_ID, scope: PROJECT_ID }) {
   const clock = new ManualClock();
@@ -33,9 +35,11 @@ function named(name: string): Error {
 
 type Run = Awaited<ReturnType<typeof started>>;
 
-/** The persona says `text` and finishes its spoken turn (an ASSISTANT TEXT block, then its AUDIO block's END_TURN). */
+/** The persona says `text` and finishes its spoken turn (a response: an ASSISTANT TEXT block, then its AUDIO block's
+ *  END_TURN). */
 async function personaSays(run: Run, text: string, stream = 0): Promise<void> {
   const model = run.transport.stream(stream);
+  model.emit('completionStart', { completionId: `c-${text}` });
   model.emit('contentStart', { contentId: `t-${text}`, role: 'ASSISTANT', type: 'TEXT', additionalModelFields: '{"generationStage":"FINAL"}' });
   model.emit('textOutput', { contentId: `t-${text}`, role: 'ASSISTANT', content: text });
   model.emit('contentStart', { contentId: `a-${text}`, role: 'ASSISTANT', type: 'AUDIO' });
@@ -179,6 +183,21 @@ describe('VoiceSession conversation', () => {
   });
 });
 
+describe('VoiceSession microphone budget', () => {
+  it('forwards up to 1.5 times real time (with a second\'s head start) and drops the frames past it', async () => {
+    const run = await started();
+    const speak = (frames: number) => { Array.from({ length: frames }).forEach(() => { run.session.audio(FRAME); }); };
+    speak(40);
+    await settle();
+    const atStart = run.transport.stream(0).bodies('audioInput').length;
+    run.clock.advance(1000);
+    speak(40);
+    await settle();
+    // 48,000 bytes a second: 23 frames of 2,048 in the head start, 46 after one more second.
+    expect([atStart, run.transport.stream(0).bodies('audioInput').length]).toStrictEqual([23, 46]);
+  });
+});
+
 describe('VoiceSession end', () => {
   it('on the person\'s End writes the last turns and the usage, marks the row ended, leaves the live set, then says ended', async () => {
     const run = await started();
@@ -256,6 +275,69 @@ describe('VoiceSession limits', () => {
   });
 });
 
+describe('VoiceSession cost caps', () => {
+  const usage = (speech: number) => ({ details: { total: { input: { speechTokens: 0, textTokens: 0 }, output: { speechTokens: speech, textTokens: 0 } } } });
+
+  it('wraps up with budget once the session\'s cost reaches its cap', async () => {
+    const run = await started(sessionInput({ session_cost_cap_microusd: 12_000 }));
+    run.transport.stream(0).emit('usageEvent', usage(900));
+    await settle();
+    expect(run.channel.of('notice')).toStrictEqual([]);
+    run.clock.advance(5000);
+    run.transport.stream(0).emit('usageEvent', usage(1000));
+    await personaSays(run, 'Goodbye!');
+    expect(run.channel.of('notice')).toStrictEqual([{ type: 'notice', code: 'wrapping_up' }]);
+    expect(run.channel.of('ended')).toStrictEqual([{ type: 'ended', reason: 'budget' }]);
+  });
+
+  it('stops the month on its cost cap as well as its minutes', async () => {
+    const run = await started(sessionInput({ monthly_cost_cap_microusd: 50_000 }));
+    run.store.monthCost = 49_000;
+    run.transport.stream(0).emit('usageEvent', usage(100));
+    await settle();
+    run.clock.advance(MINUTE);
+    await settle();
+    expect(run.channel.of('budget')).toStrictEqual([{ type: 'budget', minutes_left: 0 }]);
+    expect(run.channel.of('notice')).toStrictEqual([{ type: 'notice', code: 'wrapping_up' }]);
+  });
+});
+
+describe('VoiceSession wrap-up and the meter', () => {
+  it('lets an answer under way finish, and ends at the goodbye\'s own finished turn', async () => {
+    const run = await started(sessionInput({ session_seconds: 60 }));
+    const model = run.transport.stream(0);
+    model.emit('completionStart', { completionId: 'c-answer' });
+    model.emit('contentStart', { contentId: 'a-answer', role: 'ASSISTANT', type: 'AUDIO' });
+    await settle();
+    run.clock.advance(MINUTE);
+    model.emit('contentEnd', { contentId: 'a-answer', stopReason: 'END_TURN', type: 'AUDIO' });
+    await settle();
+    expect([run.channel.of('notice').map((notice) => notice.code), run.channel.of('ended')]).toStrictEqual([['wrapping_up'], []]);
+    await personaSays(run, 'Goodbye!');
+    expect(run.channel.of('ended')).toStrictEqual([{ type: 'ended', reason: 'session_limit' }]);
+  });
+
+  it('adds a minute\'s delta to the month once when the end comes while that minute is still being written', async () => {
+    const run = await started();
+    const release: { open?: () => void } = {};
+    run.store.usageGate = new Promise((resolve) => { release.open = resolve; });
+    run.clock.advance(MINUTE);
+    run.session.control('{"type":"end"}');
+    release.open?.();
+    await settle();
+    expect(run.store.monthly.map((month) => month.seconds)).toStrictEqual([60, 0]);
+  });
+
+  it('ends with error when the session row is gone (its project deleted), and never makes it again', async () => {
+    const run = await started();
+    run.store.gone = true;
+    await personSays(run, 'Hello?');
+    await personaSays(run, 'Hi.');
+    expect(run.channel.of('ended')).toStrictEqual([{ type: 'ended', reason: 'error' }]);
+    expect(run.channel.closedWith).toBe(1011);
+  });
+});
+
 describe('VoiceSession rollover', () => {
   it('waits for a finished turn after 7 minutes, then replays the conversation into a new stream and closes the old one', async () => {
     const run = await started(sessionInput({ session_seconds: 900 }));
@@ -284,6 +366,24 @@ describe('VoiceSession rollover', () => {
     expect(run.transport.streams).toHaveLength(2);
     expect(run.store.usage.at(-1)?.tokens.speech_in).toBe(140);
     expect(run.store.usage.at(-1)?.streams).toBe(2);
+  });
+
+  it('keeps the persona\'s planned words of the turn its old stream never confirmed', async () => {
+    const run = await started();
+    await personSays(run, 'And then?');
+    const model = run.transport.stream(0);
+    const segment = (id: string, stage: string, text: string) => {
+      model.emit('contentStart', { contentId: id, role: 'ASSISTANT', type: 'TEXT', additionalModelFields: `{"generationStage":"${stage}"}` });
+      model.emit('textOutput', { contentId: id, role: 'ASSISTANT', content: text });
+    };
+    segment('s1', 'SPECULATIVE', 'It came late.');
+    segment('f1', 'FINAL', 'It came late.');
+    segment('s2', 'SPECULATIVE', 'On day nine.');
+    await settle();
+    run.clock.advance(7 * MINUTE + 45_000);
+    await settle();
+    expect(run.transport.stream(1).bodies('textInput').slice(1).map((body) => body.content))
+      .toStrictEqual(['And then?', 'It came late. On day nine.']);
   });
 
   it('ends with error when the new stream does not open', async () => {

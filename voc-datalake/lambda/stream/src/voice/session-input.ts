@@ -43,6 +43,9 @@ const inputSchema = z.object({
   monthly_seconds: z.number().int().positive(),
   minutes_left: z.number().nonnegative(),
   usage_key: z.string().regex(/^VOICEUSE#[A-Za-z0-9#_-]{1,200}$/),
+  /** The session's and the month's cost caps in micro-dollars (voice_sessions.py MAX_CENTS_PER_MINUTE). */
+  session_cost_cap_microusd: z.number().int().positive(),
+  monthly_cost_cap_microusd: z.number().int().positive(),
 });
 
 /** The input of the session the browser connected for (its id and project are checked when it is parsed). */
@@ -57,6 +60,8 @@ export interface SessionInput {
   monthlySeconds: number;
   minutesLeft: number;
   usageKey: string;
+  sessionCostCapMicroUsd: number;
+  monthlyCostCapMicroUsd: number;
 }
 
 /** The session's input, or undefined when it is unreadable or names another session or scope (refused: 1008). */
@@ -75,5 +80,7 @@ export function parseSessionInput(raw: unknown, sessionId: string, scope: string
     monthlySeconds: data.monthly_seconds,
     minutesLeft: data.minutes_left,
     usageKey: data.usage_key,
+    sessionCostCapMicroUsd: data.session_cost_cap_microusd,
+    monthlyCostCapMicroUsd: data.monthly_cost_cap_microusd,
   };
 }

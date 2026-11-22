@@ -33,7 +33,7 @@ Everything comes from the scope's **live projects** (a deleted project counts no
 | Decisions by verdict | decision records (`pursue`, `park`, `reject`) by the day they were decided |
 | Validated decisions | decisions that cite, among their evidence document ids, a validation report of the same project with at least one success criterion **met by real results** |
 | Cycle times | the median, in whole days, from a project's evidence (its first personas or research, else its start) to its first PRD; from the first PRD to the first prototype; from the first prototype to the first decision after it. Each counts in the period its step ended; a step out of order is left out. Medians merge exactly across months and quarters |
-| Artifacts by way of working | personas, research, PR/FAQs, PRDs and prototypes made in the period, **with AI** (generated, revised by the AI, built by the prototype builder) or **by hand** (written from a blank template, imported personas). An edit or a restore of a version, and a copied persona, are no new artifact |
+| Artifacts by way of working | personas, research, PR/FAQs, PRDs and prototypes made in the period, **with AI** (generated, revised by the AI, built by the prototype builder) or **by hand** (written from a blank template, imported personas). An edit or a restore that made a new version of a PR/FAQ, PRD or prototype, and a copied persona, are no new artifact; a persona or research document edited or restored in place is still counted once |
 | Assistant conversations | assistant conversations last active in the period |
 | Agent runs | autonomous agent runs started in the period: the agents are the deployment's, so a workspace's view counts none (it says so) |
 
@@ -63,7 +63,7 @@ No new API Gateway resource: both ride existing proxies.
 
 | Method | Path | Lambda | What |
 |---|---|---|---|
-| GET | `/metrics/adoption?from=YYYY-MM&to=YYYY-MM&grain=month\|quarter` | metrics (`shared/adoption_metrics_routes.py`) | the view: `{scope, grain, from, to, as_of, complete, covered_from, agent_runs_counted, periods, totals, time_saved}`. A day (`YYYY-MM-DD`) reads as its month; the default is the last six months; at most 24 months; `quarter` widens the range to whole quarters. 400 for a bad range, 403 for anyone but the scope's admins |
+| GET | `/metrics/adoption?from=YYYY-MM&to=YYYY-MM&grain=month\|quarter` | metrics (`shared/adoption_metrics_routes.py`) | the view: `{scope, grain, from, to, as_of, complete, covered_from, agent_runs_counted, periods, totals, time_saved}`. A day (`YYYY-MM-DD`) reads as its month; the default is the last six months; at most 24 months; `quarter` widens the range to whole quarters, dropping its first quarter when the widened range would pass 24 months. 400 for a bad range, 403 for anyone but the scope's admins |
 | GET | `/settings/adoption` | settings (`shared/adoption_routes.py`) | the baselines `{baselines: {type: {hours, saved}}, defaults, note, updated_at, max_hours, max_note_chars}` |
 | PUT | `/settings/adoption` | settings | `{baselines?: {type: hours \| null}, note?}`: null puts a type back to its default. The scope's admins, never a delegated caller |
 
@@ -73,8 +73,9 @@ guarded against spreadsheet formulas.
 
 **MCP.** `insights_get_adoption` (`from`/`to` as `YYYY-MM`, by month) calls `GET /metrics/adoption` as the token's
 minter. It is `admin_only`, like `agents_run`: offered only to a token an administrator minted (never a project-pinned
-one) and checked live on every call, after which the MCP Lambda adds the claim the route admits
-(`project_access.delegated_agent_run_allowed`). It reads the deployment's view: inside a workspace a credential is
+one) and checked live on every call, after which the MCP Lambda adds the claim naming `insights_get_adoption`, which
+the route admits for its read alone (`project_access.delegated_agent_run_allowed`: a call cleared for `agents_run`
+never reads the view). It reads the deployment's view: inside a workspace a credential is
 never an admin, so the route refuses it ([mcp.md](mcp.md)).
 
 ## Data
@@ -83,7 +84,7 @@ Both rows are in voc-aggregates, per scope.
 
 | Row | Key | Holds |
 |---|---|---|
-| The rollup (gold, rebuildable) | `ADOPTION#ROLLUP` / `{YYYY-MM-DD}`; `WS#{ws}#ADOPTION#ROLLUP` / `{YYYY-MM-DD}` in a workspace | one whole item per scope and day: `months` (each month's counts and day histograms, zeros left out), `first_month`, `last_month`, `projects`, `projects_read`, `complete`, `agent_runs_counted`, `rolled_up_at`, `schema` 1, and a `ttl` 35 days on. The route reads the newest |
+| The rollup (gold, rebuildable) | `ADOPTION#ROLLUP` / `latest`; `WS#{ws}#ADOPTION#ROLLUP` / `latest` in a workspace | ONE whole item per scope, overwritten by each run (no `ttl`): `months` (each month's counts and day histograms, zeros left out), `first_month`, `last_month`, `projects`, `projects_read`, `complete`, `agent_runs_counted`, `rolled_up_at`, `schema` 1. The route reads it with one GetItem |
 | The baselines | `SETTINGS#adoption` / `config`; `WS#{ws}#SETTINGS#adoption` / `config` | `{baselines, note, updated_by: {sub, kind}, updated_at, reason: adoption_baselines}` (who, when, why: TENETS D4). No row: every default |
 
 A workspace's hard delete sweeps both with its settings (`jobs/workspace_delete/sweeps.py`); the workspace export
@@ -93,10 +94,12 @@ leaves the rollup out (derived: rebuilt from the projects) and carries no settin
 
 VocProcessingStack, `lambda/jobs/adoption_rollup/handler.py`, 512 MB, at most 15 minutes, no reserved concurrency,
 no async retry. An EventBridge rule runs it at **03:05 UTC** (pay per use: no fixed cost); an operator's async invoke
-does the same. Each run rebuilds the last 24 months for the deployment and every active workspace and writes one
-whole item per scope for the day, so a rerun the same day writes the same item: the rebuild is idempotent. A scope
-whose reads AWS refuses is not written (the others are) and the run fails after them; the next day rebuilds it. A
-scope cut short by the invocation's time is written with `complete: false`, which the page says.
+does the same. Each run rebuilds the last 24 months for the deployment and every active workspace and overwrites the
+scope's one item: the rebuild is idempotent. A scope whose reads AWS refuses is not written (the others are) and the
+run fails after them; the next day rebuilds it. Each scope gets its share of the time left (that time over the scopes
+not done yet), so one large workspace never takes the others' time. A scope cut short is written with
+`complete: false` only where no complete item is stored; otherwise the last complete figures stay, and the page shows
+their `as_of`.
 
 **It never Scans**, reads no feedback and calls no model. Every read is a Query (`lib/stacks/adoption-rollup-worker.ts`
 holds the role to them, and `adoption-rollup-worker.test.ts` pins every statement and what is refused):
@@ -105,7 +108,7 @@ holds the role to them, and `adoption-rollup-worker.test.ts` pins every statemen
 - voc-projects: each scope's registry of project ids (`PROJECT_IDS`, `WS#{ws}#PROJECT_IDS`), then each live project's
   partition, of these attributes only (`dynamodb:Attributes`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`): keys, type,
   id, dates, how an artifact was made (`origin`, `edit_kind`, `imported_from`, `copied_from`), `synthetic`, a
-  decision's verdict, date and evidence document ids, the `META`'s validation report id and status, and a report's
+  decision's verdict, date and evidence document ids, the `META`'s validation report id, and a report's
   per-criterion outcomes. Never a document's text, a title, a name, a quote or a person;
 - voc-conversations: a **count** of the assistant conversations per scope and month (`gsi1-by-kind-updated-at`,
   `dynamodb:Select` `COUNT`): the role cannot read a conversation;

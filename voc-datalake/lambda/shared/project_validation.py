@@ -11,7 +11,7 @@ TENETS.md tenet 2's chain ends "… → prototype → review"; the platform labe
 * the project META's ``validation`` map::
 
       {prd_document_id, prototype_document_id, criteria, tasks, plan_document_id, run_document_id,
-       report_document_id, form_id, form_open, form_language, card_in_prototype, status, revision, updated_at,
+       report_document_id, form_id, form_open, form_language, card_in_prototype, revision, updated_at,
        updated_by: {sub, kind}, reason}
 
   every write conditional on the ``revision`` it read (409 ``validation_changed`` otherwise), recording who, when and
@@ -60,12 +60,6 @@ MAX_TARGET: Final = 5.0
 DEFAULT_TARGET: Final = 4.0
 #: Real answers a criterion needs before it is judged at all (the forms' minimum segment, 7.63.00).
 MIN_RESPONSES: Final = 5
-
-STATUS_NOT_STARTED: Final = 'not_started'
-STATUS_CRITERIA: Final = 'criteria'
-STATUS_PLANNED: Final = 'planned'
-STATUS_TESTING: Final = 'testing'
-STATUS_REPORTED: Final = 'reported'
 
 MET: Final = 'met'
 NOT_MET: Final = 'not_met'
@@ -180,18 +174,6 @@ def block_of(meta: Mapping[str, Any] | None) -> dict[str, Any]:
     return plain(dict(stored)) if isinstance(stored, Mapping) else {}
 
 
-def status_of(block: Mapping[str, Any]) -> str:
-    """Where the step stands: reported, testing (the card asks real testers), planned, criteria, not started."""
-    is_open = block.get('form_open') is True
-    if block.get('report_document_id'):
-        return STATUS_REPORTED
-    if is_open:
-        return STATUS_TESTING
-    if block.get('plan_document_id'):
-        return STATUS_PLANNED
-    return STATUS_CRITERIA if block.get('criteria') else STATUS_NOT_STARTED
-
-
 def read_meta(table: Any, project_id: str) -> dict[str, Any]:
     """The project's META (strongly consistent); 404 when it is gone or being deleted."""
     meta = table.get_item(Key=project_meta_key(project_id), ConsistentRead=True).get('Item')
@@ -214,7 +196,6 @@ def _write_block(table: Any, project_id: str, stored: Mapping[str, Any], changes
     block = {**stored, **changes, 'revision': revision + 1, 'updated_at': now_iso(),
              'updated_by': {'sub': str(actor.get('sub') or ''), 'kind': str(actor.get('kind') or '')},
              'reason': reason}
-    block['status'] = status_of(block)
     names = {**PROJECT_WRITABLE_ATTRIBUTE_NAMES, '#validation': _BLOCK}
     values: dict[str, Any] = {**PROJECT_WRITABLE_ATTRIBUTE_VALUES, ':block': to_dynamo(block)}
     if revision:

@@ -1,9 +1,9 @@
 /**
  * @fileoverview The import wizard end to end against a routed `fetchApi` (7.67.00, docs/import-wizard.md): a reviews
  * file goes through the CSV import with the wizard's mapping and its tag; a survey export becomes an imported form
- * (off, `imported`) and its rows are imported with the original file; a kind can be changed and a personal-data
- * column is flagged; a file it cannot read is refused in words. First insights' reads are their own spec. Made-up
- * data only.
+ * (off, `imported`) and its rows are imported with the original file, a failed call resumed into the same form; a
+ * kind can be changed and a personal-data column is flagged; a file that is not UTF-8 is read as Windows-1252 with a
+ * warning, and one it cannot read is refused in words. First insights' reads are their own spec. Made-up data only.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { pageFileInput, textFile } from '@test/textFiles'
+import { isRecord } from '../../../lib/typeGuards'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 import { fetchApi, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
@@ -23,10 +24,10 @@ const mockAfterIngest = vi.fn()
 vi.mock('../../../api/invalidateFeedbackData', () => ({ useInvalidateFeedbackData: () => mockAfterIngest }))
 const importRight = { allowed: true }
 vi.mock('./useCanImport', () => ({ useCanImport: () => importRight.allowed }))
-vi.mock('./useFirstInsights', () => ({
-  useFirstInsights: () => ({ processed: 2, ready: true, slow: false, sentiment: { positive: 50, negative: 50 },
-    categories: [['delivery', 2]], quotes: [{ id: 'f1', text: 'Fast delivery' }], nps: 20 }),
-}))
+const READY = { processed: 2, ready: true, slow: false, alreadyImported: false, sentiment: { positive: 50, negative: 50 },
+  categories: [['delivery', 2]], quotes: [{ id: 'f1', text: 'Fast delivery' }], nps: 20 }
+const insights = { now: READY }
+vi.mock('./useFirstInsights', () => ({ useFirstInsights: () => insights.now }))
 
 const REVIEWS = 'Comment;Product;Stars;Email\nFast delivery;App;5;ana@example.com\nLogin fails;Web;1;bo@example.com\n'
 const SURVEY = 'Response ID,Recommend us?,Plan\nr1,9,Pro\nr2,6,Free\n'
@@ -104,6 +105,7 @@ const SURVEY_ROUTES = {
 describe('ImportWizard: reviews or tickets', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    insights.now = READY
     resetFetchApi()
     routeFetchApi({
       'POST /scrapers/manual/detect': () => REVIEWS_ANSWER,
@@ -161,6 +163,24 @@ describe('ImportWizard: reviews or tickets', () => {
     expect(screen.getByText('Fast delivery')).toBeInTheDocument()
   })
 
+  it('says when the rows were imported before, with the link to the dashboard', async () => {
+    insights.now = { ...READY, processed: 0, ready: false, alreadyImported: true }
+    await importReviews(await upload(REVIEWS, 'reviews.csv'))
+    expect(screen.getByRole('status')).toHaveTextContent('Nothing new to analyse: these rows were imported before.')
+    expect(screen.getByRole('link', { name: 'See them on the dashboard' })).toHaveAttribute('href', '/dashboard?source=manual_import')
+  })
+
+  it('reads a file that is not UTF-8 as Windows-1252 and says so', async () => {
+    const encode = (text: string) => [...new TextEncoder().encode(text)]
+    const bytes = new Uint8Array([...encode('Comment;Product;Stars;Email\nOpini'), 0xf3, ...encode('n;App;5;\n')])
+    const picked = new File([bytes], 'legacy.csv')
+    Object.defineProperty(picked, 'arrayBuffer', { value: () => Promise.resolve(bytes.buffer) })
+    renderWithQueryClient(<MemoryRouter><ImportWizard /></MemoryRouter>)
+    await userEvent.setup().upload(fileInput(), picked)
+    expect(await screen.findByText(/read as Windows-1252/u)).toBeInTheDocument()
+    expect(screen.getByRole('table')).toHaveTextContent('Opinión')
+  })
+
   it('needs an open-text column', async () => {
     const user = await upload(REVIEWS, 'reviews.csv')
     await next(user)
@@ -203,6 +223,32 @@ describe('ImportWizard: a survey export', () => {
       offset: 0, date_order: 'dmy', mapping: SURVEY_ANSWER.suggested.form.mapping,
       rows: [{ 'Response ID': 'r1', 'Recommend us?': '9', Plan: 'Pro' }, { 'Response ID': 'r2', 'Recommend us?': '6', Plan: 'Free' }],
       file: { name: 'Workshop results.csv', format: 'csv', content: SURVEY } })
+  })
+
+  it('resumes a failed import at the call that failed, into the same form', async () => {
+    const lines = Array.from({ length: 300 }, (_unused, index) => `r${index},${index % 11},Pro`)
+    const answered = { calls: 0 }
+    routeFetchApi({ ...SURVEY_ROUTES, 'POST /feedback-forms/ff_1/import': (body) => {
+      answered.calls += 1
+      if (answered.calls === 2) throw new Error('API Error: 504')
+      const rows = isRecord(body) && Array.isArray(body['rows']) ? body['rows'].length : 0
+      return { accepted: rows, refused: [], refused_count: 0, run_id: `run-${answered.calls}`,
+               raw_s3_key: 's3://raw/raw/feedback_form/import/ff_1/x.csv' }
+    } })
+    const user = await upload(`Response ID,Recommend us?,Plan\n${lines.join('\n')}\n`, 'Workshop results.csv')
+    await next(user)
+    await next(user)
+    await screen.findByText('The questions it becomes')
+    await user.click(screen.getByRole('button', { name: 'Import' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The import stopped')
+    await user.click(screen.getByRole('button', { name: 'Import' }))
+    await screen.findByText('300 rows imported.')
+    expect(sentBodies('/feedback-forms')).toHaveLength(1)
+    const calls = sentBodies('/feedback-forms/ff_1/import').filter(isRecord)
+    expect(calls.map((call) => [call['offset'], Array.isArray(call['rows']) ? call['rows'].length : 0, 'file' in call,
+                                call['file_key']])).toStrictEqual([
+      [0, 250, true, undefined], [250, 50, false, 'raw/feedback_form/import/ff_1/x.csv'],
+      [250, 50, false, 'raw/feedback_form/import/ff_1/x.csv']])
   })
 
   it('names the rows it did not import, links to the results and shows the NPS', async () => {

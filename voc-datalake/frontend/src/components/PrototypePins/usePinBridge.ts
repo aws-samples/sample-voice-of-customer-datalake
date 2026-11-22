@@ -1,7 +1,8 @@
 /**
  * @fileoverview The host half of the prototype pin widget AND of the walkthrough runtime: listens to the
- * prototype iframe, forwards a tester's pin (and, since 7.68.00, the validation card's request and answers) to the
- * PUBLIC `POST /feedback-forms/{form_id}/submit` route and answers the widget with the result; hands the walkthrough's
+ * prototype iframe, forwards a tester's pin (and, since 7.68.00, the validation card's request, asked once per form for
+ * the page session, and answers) to the PUBLIC `POST /feedback-forms/{form_id}/submit` route and answers the widget with
+ * the result; hands the walkthrough's
  * messages to the page
  * (docs/prototype-builder.md Part 1). Framed, the widget always uses this bridge; only a prototype
  * opened standalone posts to that route itself (the one connect-src its CSP allows, docs/feedback-forms.md).
@@ -17,6 +18,7 @@ import type { RefObject } from 'react'
 import { api } from '../../api/client'
 import { isRecord } from '../../lib/typeGuards'
 import { cardResultMessage, isPrototypeFrameOrigin, parseWidgetMessage, postToWidget, resultMessage } from './pinMessages'
+import { cachedCard } from './prototypeCardCache'
 import { parseWalkthroughMessage } from './walkthroughMessages'
 import type { WalkthroughMessage } from './walkthroughMessages'
 
@@ -45,6 +47,21 @@ function listen(port: MessagePort | undefined, handle: (message: WalkthroughMess
     const message = parseWalkthroughMessage(event.data)
     if (message !== null && message.event !== 'ready') handle(message)
   }
+}
+
+/**
+ * The validation card (7.68.00): its request or an answer on the same public route, the answer (the card, or the
+ * answer's) handed back on `port`. The card is asked once per form for the page session (prototypeCardCache.ts: the
+ * route's throttle is every form's).
+ */
+function forwardCard(message: { readonly type: 'card' | 'answer'; readonly formId: string; readonly requestId: string;
+                                readonly body: unknown }, port: MessagePort | null): void {
+  const send = () => api.submitPrototypePin(message.formId, message.body)
+  void (message.type === 'card' ? cachedCard(message.formId, send) : send()).then(
+    (answer) => postToWidget(port, cardResultMessage(message.type, message.requestId, true,
+      message.type === 'card' && isRecord(answer) ? answer['card'] : undefined)),
+    () => postToWidget(port, cardResultMessage(message.type, message.requestId, false)),
+  )
 }
 
 /**
@@ -86,12 +103,7 @@ export function usePinBridge(frameRef: RefObject<HTMLIFrameElement | null>, opti
       // never asked and must not be told.
       const port = portRef.current
       if (message.type === 'card' || message.type === 'answer') {
-        // The validation card (7.68.00): the same public route, its answer (the card, or the answer's) handed back.
-        void api.submitPrototypePin(message.formId, message.body).then(
-          (answer) => postToWidget(port, cardResultMessage(message.type, message.requestId, true,
-            message.type === 'card' && isRecord(answer) ? answer['card'] : undefined)),
-          () => postToWidget(port, cardResultMessage(message.type, message.requestId, false)),
-        )
+        forwardCard(message, port)
         return
       }
       void api.submitPrototypePin(message.formId, message.body).then(

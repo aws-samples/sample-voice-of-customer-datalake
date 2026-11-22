@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import ExitStack
 from typing import Any
@@ -24,6 +26,7 @@ from moto_helpers import pk_sk_table, rest_event, workspace_route_call
 from test_feedback_form_workspace import wire_form_handler
 
 import feedback_form_handler as h
+from shared import forms_v2_import as fimp
 from shared.import_runs import _put_rows as write_run_rows
 from shared.ingest_schemas import IngestMessage
 from shared.test.source_profile_fixtures import seeded_source_profiles
@@ -263,6 +266,66 @@ class TestInAWorkspace:
         head = world['s3'].head_object(Bucket=BUCKET, Key=key)
         assert head['ContentType'].startswith('application/vnd.openxmlformats')
         assert answer['raw_s3_key'].endswith(key)
+
+
+class CountingComprehend:
+    """A Comprehend stand-in that counts its calls, keeps what each was sent and how many ran at once."""
+
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+        self.in_flight = self.most_at_once = 0
+        self._lock = threading.Lock()
+
+    def detect_pii_entities(self, **request: str) -> dict:
+        text = request['Text']
+        with self._lock:
+            self.texts.append(text)
+            self.in_flight += 1
+            self.most_at_once = max(self.most_at_once, self.in_flight)
+        time.sleep(0.005)  # long enough for the next row's call to start beside it when rows run at once
+        with self._lock:
+            self.in_flight -= 1
+        start = text.find('Ana Kowalska')
+        return {'Entities': [{'Type': 'NAME', 'Score': 0.99, 'BeginOffset': start, 'EndOffset': start + 12}]
+                if start >= 0 else []}
+
+
+class TestARedactedWorkspaceImport:
+    """A workspace that saved no feedback_form profile redacts (its default) and, with ``PII_COMPREHEND=1``, each free
+    text is one Comprehend call: only free text is sent, several rows at once, and a call holds at most the budget."""
+
+    @staticmethod
+    def _rows(count: int) -> list[dict[str, str]]:
+        return [{'Response ID': f'r{n}', 'NPS': str(n % 11), 'Plan': 'Pro', 'Channel': 'email',
+                 'Why': f'Ana Kowalska says page {n} is slow'} for n in range(count)]
+
+    def _run(self, lambda_context: Any, monkeypatch: Any, rows: int) -> tuple[int, Any, CountingComprehend]:
+        monkeypatch.setenv('PII_COMPREHEND', '1')
+        comprehend = CountingComprehend()
+        form_id = _imported_form(lambda_context, claims=WS_ADMIN, ws=WS)
+        with seeded_source_profiles(workspaces={WS: []}), \
+                patch('shared.pii_redaction._comprehend', return_value=comprehend):
+            status, answer = _import(lambda_context, form_id, claims=WS_ADMIN, ws=WS, rows=self._rows(rows),
+                                     mapping={k: v for k, v in MAPPING.items() if k != 'Submitted'})
+        return status, answer, comprehend
+
+    def test_only_free_text_reaches_comprehend_several_rows_at_once(self, world, lambda_context, monkeypatch):
+        rows = fimp.MAX_REDACTED_TEXTS // 2  # each row: its text and its one open answer
+        status, answer, comprehend = self._run(lambda_context, monkeypatch, rows)
+        assert (status, answer['accepted']) == (200, rows), answer
+        assert len(comprehend.texts) == fimp.MAX_REDACTED_TEXTS
+        assert all('is slow' in text for text in comprehend.texts), 'never an id, a code, a channel or a form name'
+        assert comprehend.most_at_once > 1
+        messages = _messages(world)
+        assert {m['pii_policy_applied'] for m in messages.values()} == {'redact'}
+        assert messages['r1']['metadata']['form_answers']['q_why'] == '[NAME] says page 1 is slow'
+        assert messages['r1']['text'] == 'Why?\n[NAME] says page 1 is slow'
+        assert (messages['r1']['metadata']['form_hidden'], messages['r1']['s3_raw_uri']) == ({'channel': 'email'}, None)
+
+    def test_a_call_over_the_budget_is_refused_before_any_call(self, world, lambda_context, monkeypatch):
+        status, answer, comprehend = self._run(lambda_context, monkeypatch, fimp.MAX_REDACTED_TEXTS // 2 + 1)
+        assert (status, answer['code']) == (400, fimp.TOO_MANY_TEXTS)
+        assert (comprehend.texts, world['sqs'].send_message_batch.call_args_list) == ([], [])
 
 
 def test_a_send_failure_is_reported_by_row(world, lambda_context):

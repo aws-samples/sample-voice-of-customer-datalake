@@ -31,9 +31,15 @@ from shared.exceptions import ValidationError
 from shared.import_dates import DATE_ORDERS, DEFAULT_DATE_ORDER
 from shared.import_survey import ImportedRow, row_answers
 
-__all__ = ['ImportRequest', 'file_key_of', 'import_request', 'read_rows', 'response_message']
+__all__ = ['ImportRequest', 'check_redaction_budget', 'file_key_of', 'free_text_paths', 'import_request', 'read_rows',
+           'response_message']
 
 MAX_IMPORT_ROWS: Final = 5_000
+#: The free texts (each row's text, then each open answer) one call may hold under a redacting policy: each is one
+#: Comprehend call with ``PII_COMPREHEND=1`` (shared/pii_redaction.py), so a call stays well inside API Gateway's 29 s
+#: (the wizard sizes its calls by it: frontend wizardMapping.ts ``MAX_REDACTED_TEXTS``).
+MAX_REDACTED_TEXTS: Final = 250
+TOO_MANY_TEXTS: Final = 'too_many_texts'
 #: The original file a call carries: 2 MB, so the call (rows beside it, JSON-escaped twice in the Lambda event) stays
 #: inside Lambda's 6 MB synchronous payload.
 MAX_FILE_BYTES: Final = 2 * 1024 * 1024
@@ -184,12 +190,37 @@ def read_rows(definition: Mapping[str, Any], mapping: Mapping[str, str], request
 
 
 def message_id(form_id: str, imported: ImportedRow, number: int) -> str:
-    """A row's queue id: from the form and the row's own id, else its file row and its answers, so importing the same
-    file into the same form again names the same items (the processor's idempotency skips them)."""
+    """A row's queue id: from the form and the row's own id, else its file row, its own date (never the call's clock,
+    which a row without one is dated with) and its answers, so importing the same file into the same form again names
+    the same items (the processor's idempotency skips them)."""
     basis = ['form-import-v1', form_id, 'id', imported.row_id] if imported.row_id else [
-        'form-import-v1', form_id, 'row', str(number), imported.created_at,
+        'form-import-v1', form_id, 'row', str(number), imported.created_at if imported.dated else '',
         json.dumps(imported.response.answers, sort_keys=True, ensure_ascii=False)]
     return 'fimp_' + hashlib.sha256(json.dumps(basis, ensure_ascii=False).encode('utf-8')).hexdigest()[:32]
+
+
+def free_text_paths(definition: Mapping[str, Any]) -> frozenset[tuple[str, ...]]:
+    """Where a response's own words sit in its message's metadata: an open answer, a choice's "Other" (the only
+    metadata the redact policy's entity model reads, shared/source_policy.py ``FreeText``; never an id or a code)."""
+    paths: set[tuple[str, ...]] = set()
+    for question in definition.get('questions') or []:
+        if question['type'] == fv2.OPEN_TEXT:
+            paths.add(('form_answers', question['id']))
+        elif question['type'] in fv2.SELECT_TYPES:
+            paths.add(('form_answers', question['id'], 'other'))
+    return frozenset(paths)
+
+
+def check_redaction_budget(definition: Mapping[str, Any], accepted: Sequence[tuple[int, ImportedRow]]) -> None:
+    """Under a redacting policy: a 400 ``too_many_texts`` when the accepted rows hold more than
+    ``MAX_REDACTED_TEXTS`` free texts (each row's text and its open answers), before any is redacted."""
+    questions = {question['id']: question for question in definition.get('questions') or []}
+    texts = sum(1 + sum(1 for qid, answer in row.response.answers.items() if fresp.free_text(questions[qid], answer))
+                for _number, row in accepted)
+    if texts > MAX_REDACTED_TEXTS:
+        raise _fail(f'This source redacts personal data, so a call takes at most {MAX_REDACTED_TEXTS} texts (each '
+                    f"row's text and its open answers; these rows hold {texts}): send fewer rows a call",
+                    TOO_MANY_TEXTS)
 
 
 @dataclass(frozen=True)

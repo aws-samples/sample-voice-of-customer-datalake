@@ -4,7 +4,8 @@
  * - `detect`: `POST /scrapers/manual/detect`, what each column of a file's first 256 KB holds;
  * - `uploadReviews`: `POST /scrapers/manual/csv-upload` with the wizard's `mapping` (reviews or tickets);
  * - `createImportedForm`: `POST /feedback-forms` with `imported` (a survey export becomes an imported form, Off);
- * - `importRows`: `POST /feedback-forms/{id}/import`, at most 5,000 rows a call (the wizard sends 1,000).
+ * - `importRows`: `POST /feedback-forms/{id}/import`, at most 5,000 rows a call (the wizard sizes its calls:
+ *   ImportWizard/wizardMapping.ts `importCalls`).
  *
  * Every call goes to the current workspace (the client's `X-Workspace-Id`).
  *

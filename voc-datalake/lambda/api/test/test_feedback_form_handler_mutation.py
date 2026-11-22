@@ -258,6 +258,17 @@ class TestEveryRefusalNamesItsCause:
         table.put_item.assert_not_called()
         table.update_item.assert_not_called()
 
+    @pytest.mark.parametrize('enabled', ['false', 'true', 1, 0, None, []], ids=repr)
+    def test_an_enabled_that_is_not_true_or_false_is_refused_on_create_and_update(self, table, api_gateway_event,
+                                                                                  lambda_context, enabled):
+        """Review round 1 (Q22): a string "false" must never be stored, nor read as a live form."""
+        for method, path in (('POST', '/feedback-forms'), ('PUT', f'/feedback-forms/{FORM_ID}')):
+            response, payload = _route(api_gateway_event, lambda_context, method, path,
+                                       path_params={'form_id': FORM_ID}, body={'name': 'Form', 'enabled': enabled})
+            assert (response['statusCode'], payload['error']) == (400, 'enabled must be true or false')
+        table.put_item.assert_not_called()
+        table.update_item.assert_not_called()
+
     @pytest.mark.usefixtures('table')
     def test_a_link_at_the_limit_is_saved(self, api_gateway_event, lambda_context):
         response, payload = _route(api_gateway_event, lambda_context, 'POST', '/feedback-forms',
@@ -1208,8 +1219,9 @@ class TestEveryBoundAcceptsItsLimit:
     def test_every_editable_field_can_be_updated(self, table, api_gateway_event, lambda_context):
         table.update_item.return_value = {'Attributes': {}}
         body: dict[str, object] = {field: f'v-{field}' for field in h.UPDATABLE_FIELDS}
-        # The two label fields are validated (against an empty dimensions config here), the theme too.
-        body.update(dimension_defaults={}, tags=['t'], theme={'primary_color': '#8e48ff'})
+        # The two label fields are validated (against an empty dimensions config here), the theme too, and enabled is
+        # true or false.
+        body.update(dimension_defaults={}, tags=['t'], theme={'primary_color': '#8e48ff'}, enabled=False)
         table.get_item.side_effect = lambda **kwargs: {'Item': dict(V2_ITEM)} if kwargs['Key'] == FORM_KEY else {}
         _route(api_gateway_event, lambda_context, 'PUT', f'/feedback-forms/{FORM_ID}',
                path_params={'form_id': FORM_ID}, body=body)

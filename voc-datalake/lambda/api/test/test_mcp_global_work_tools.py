@@ -212,4 +212,4 @@ class TestTheLeadershipView:
 
     def test_its_call_carries_the_claim_the_route_admits_after_the_live_check(self):
         claims = h._claims_for(h.ToolCall(ADOPTION, {}, None), {**READ_ROW, 'minted_by_admin': True})
-        assert claims[h.MCP_AGENT_RUN_CLAIM] == 'true'
+        assert claims[h.MCP_AGENT_RUN_CLAIM] == 'insights_get_adoption'

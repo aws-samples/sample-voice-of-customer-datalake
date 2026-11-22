@@ -111,10 +111,11 @@ The token can only narrow that:
 `agents_run` (agent runs are admin-only) is offered only to a **write** token minted by
 an **admin**, and on every call the handler re-checks with `AdminListGroupsForUser`
 that the minter is *still* in `admins`. Only then does it add the claim
-`voc:mcp_agent_run=true`, which `agents_handler.run_agent` honours for an `mcp:`
-principal acting for a person (`project_access.delegated_agent_run_allowed`) — the
-credential is still not an admin anywhere else. `insights_get_adoption` (7.70.00) is gated the same way, on a read
-token too: its route, the leadership view, admits that claim for its read alone.
+`voc:mcp_agent_run`, set to the tool's ONE operation (`agents_run`), which `agents_handler.run_agent` honours for an
+`mcp:` principal acting for a person (`project_access.delegated_agent_run_allowed`, whose `MCP_ADMIN_OPS` are the two
+operations it admits) — the credential is still not an admin anywhere else. `insights_get_adoption` (7.70.00) is gated
+the same way, on a read token too: the claim then names `insights_get_adoption`, which its route, the leadership view,
+admits for its read alone, so a call cleared for one operation never passes for the other.
 
 The five `engineering_` tools (7.53.00, [Engineering runs](#engineering-runs-75300)) are gated the same way, with
 one more limit: they are offered only to a **write** token minted by an **admin** (even the three that only read),
@@ -134,10 +135,11 @@ roadmap), when to use it, its key arguments and, for a write, that it needs a wr
 confirmation. The names changed in 6.10.00 ([Renamed in 6.10.00](#renamed-in-61000)).
 
 **Budget.** The whole list (what an administrator's write token is shown: 43 tools) stays under an estimated
-10,000 tokens (`test_mcp_global_tools_budget.py`; 9,841 measured at 7.66.00, since 7.63.00's `forms_get_results`
-took the room `library_get` freed; about 9,880 since 7.68.00's `validation_plan` and `validation_report` steps, and
-about 9,994 since 7.70.00's `insights_get_adoption`, its description and `projects_generate`'s note on the Validate
-steps shortened to fit: the next tool needs room made first). Clients cache it: a 2026-07-28 client is
+10,000 tokens (`test_mcp_global_tools_budget.py`), and it is **effectively full**: about 9,994 of the 10,000 since
+7.70.00. It was 9,841 at 7.66.00 (7.63.00's `forms_get_results` took the room `library_get` freed); 7.68.00's
+`validation_plan` and `validation_report` steps and 7.70.00's `insights_get_adoption` took the rest, their
+descriptions and `projects_generate`'s note on the Validate steps shortened to fit. A new tool needs room made first:
+another removed, or descriptions shortened. Clients cache it: a 2026-07-28 client is
 told so by `tools/list` itself (`ttlMs` 5 minutes, `cacheScope: "private"`, [Protocol](#protocol)), a legacy
 client keeps it for the session, and a client that caches its prompt prefix pays for the list once per
 conversation, not on every turn. Past about 10,000 tokens a client is better served by searching tools on demand,

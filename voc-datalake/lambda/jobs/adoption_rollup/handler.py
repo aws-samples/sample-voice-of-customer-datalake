@@ -2,9 +2,9 @@
 shared/adoption.py, what is counted: shared/adoption_rollup.py).
 
 At 03:05 UTC (an EventBridge rule, ``{"mode": "scheduled"}``; an operator's async invoke does the same) it rebuilds, for
-the deployment and for every active workspace, the last ``HISTORY_MONTHS`` months, and writes one whole item per scope
-for the day (``ADOPTION#ROLLUP`` / ``WS#{ws}#ADOPTION#ROLLUP``, sort key the UTC day): a rerun the same day overwrites
-it with the same content, so a rebuild is idempotent and the newest item is always a complete picture.
+the deployment and for every active workspace, the last ``HISTORY_MONTHS`` months, and overwrites the scope's ONE item
+(``ADOPTION#ROLLUP`` / ``WS#{ws}#ADOPTION#ROLLUP``, sort key ``latest``: shared/adoption.py ``rollup_key``), so a rebuild
+is idempotent and the route reads it with one GetItem.
 
 It never Scans, and every read is a projected Query (lib/stacks/adoption-rollup-worker.ts holds its IAM to them):
 
@@ -21,8 +21,10 @@ It never Scans, and every read is a projected Query (lib/stacks/adoption-rollup-
   ``agent_runs_counted``).
 
 It reads no feedback and calls no model. A scope whose reads AWS refuses is not written (the others are), and the run
-raises once every scope was tried; the next day's run rebuilds it (no async retry). A scope cut short by the invocation's
-time is written with ``complete: false``, which the view shows.
+raises once every scope was tried; the next day's run rebuilds it (no async retry). Each scope gets its share of the
+time left (the time left over the scopes not done yet), so one large workspace never takes the others' time. A scope
+cut short is written with ``complete: false`` only where no complete item is stored: a complete one (the last full
+run's figures) is kept, and the view shows its ``as_of``.
 
 Env: ``AGGREGATES_TABLE``, ``PROJECTS_TABLE``, ``WORKSPACES_TABLE``, ``CONVERSATIONS_TABLE``, ``AGENTS_TABLE``.
 """
@@ -32,16 +34,16 @@ import os
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.adoption import ROLLUP_TTL_DAYS, rollup_partition
+from shared.adoption import rollup_key
 from shared.adoption_rollup import MonthBuckets, months_between, project_projection
 from shared.agents_store import AGENTS_GSI_PK, AGENTS_INDEX
-from shared.aws import get_dynamodb_resource
+from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.concurrency import ordered_map
 from shared.conversations import ASSISTANT_KIND, USER_PARTITION_PREFIX
 from shared.dynamo_paging import count_query, iter_query
@@ -163,14 +165,21 @@ def _months(now: datetime) -> tuple[str, str]:
 
 
 class _Clock:
-    """Whether the invocation still has time for another chunk of projects."""
+    """Whether the invocation still has time for another chunk of projects: the run's own deadline, and the scope's
+    share of what is left (``start_scope``)."""
 
     def __init__(self, rollup: Rollup) -> None:
         self._monotonic = rollup.monotonic
         self._deadline = rollup.monotonic() + rollup.remaining() - RESERVE_SECONDS
+        self._scope_deadline = self._deadline
+
+    def start_scope(self, scopes_left: int) -> None:
+        """A new scope's share: the time left over the ``scopes_left`` scopes not done yet (this one included)."""
+        now = self._monotonic()
+        self._scope_deadline = now + max(self._deadline - now, 0.0) / max(scopes_left, 1)
 
     def has_time(self) -> bool:
-        return self._monotonic() < self._deadline
+        return self._monotonic() < min(self._deadline, self._scope_deadline)
 
 
 def _scope_item(rollup: Rollup, scope: WorkspaceScope | None, clock: _Clock,
@@ -196,11 +205,27 @@ def _scope_item(rollup: Rollup, scope: WorkspaceScope | None, clock: _Clock,
     for started in agent_starts if scope is None else ():
         buckets.add_agent_run(started)
     return {
-        'pk': rollup_partition(scope), 'sk': now.date().isoformat(), 'schema': SCHEMA, 'rolled_up_at': now_iso(),
-        'first_month': first, 'last_month': last, 'months': buckets.stored(), 'projects': len(project_ids),
-        'projects_read': read, 'complete': complete, 'agent_runs_counted': scope is None,
-        'ttl': int((now + timedelta(days=ROLLUP_TTL_DAYS)).timestamp()),
+        **rollup_key(scope), 'schema': SCHEMA, 'rolled_up_at': now_iso(), 'first_month': first, 'last_month': last,
+        'months': buckets.stored(), 'projects': len(project_ids), 'projects_read': read, 'complete': complete,
+        'agent_runs_counted': scope is None,
     }
+
+
+def _write(rollup: Rollup, scope: WorkspaceScope | None, item: dict[str, Any]) -> bool:
+    """Overwrite the scope's item; an incomplete one only where no complete item is stored (the last full figures are
+    kept). True when it was written."""
+    view = table_view(scope, rollup.aggregates)
+    if item['complete']:
+        view.put_item(item)
+        return True
+    try:
+        view.put_item(item, ConditionExpression='attribute_not_exists(pk) OR #complete = :partial',
+                      ExpressionAttributeNames={'#complete': 'complete'}, ExpressionAttributeValues={':partial': False})
+    except ClientError as error:
+        if is_conditional_check_failure(error):
+            return False
+        raise
+    return True
 
 
 def _error_code(error: Exception) -> str:
@@ -217,23 +242,28 @@ def handle_event(event: dict, rollup: Rollup) -> dict[str, Any]:
     scopes: list[WorkspaceScope | None] = [None, *_active_workspaces(rollup.workspaces)]
     agent_starts = _agent_run_starts(rollup.agents)
     failed: dict[str, str] = {}
-    written = partial = 0
-    for scope in scopes:
+    written = partial = kept = 0
+    for index, scope in enumerate(scopes):
         name = 'deployment' if scope is None else scope.ws
+        clock.start_scope(len(scopes) - index)
         try:
             item = _scope_item(rollup, scope, clock, agent_starts)
-            table_view(scope, rollup.aggregates).put_item(item)
+            stored = _write(rollup, scope, item)
         except (ClientError, BotoCoreError, StuckQuery) as error:
             logger.exception('Adoption rollup of a scope failed', extra={'scope': name})
             failed[name] = _error_code(error)
             continue
+        if not stored:
+            # Cut short: the last complete figures stay (the view's as_of says when they were made).
+            kept += 1
+            continue
         written += 1
         partial += int(not item['complete'])
     logger.info('Adoption rollup done', extra={'scopes': len(scopes), 'written': written, 'partial': partial,
-                                               'failed': len(failed)})
+                                               'kept': kept, 'failed': len(failed)})
     if failed:
         raise RollupIncomplete(failed)
-    return {'scopes': len(scopes), 'written': written, 'partial': partial}
+    return {'scopes': len(scopes), 'written': written, 'partial': partial, 'kept': kept}
 
 
 def _tables() -> dict[str, Any]:

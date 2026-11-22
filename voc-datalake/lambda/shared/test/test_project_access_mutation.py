@@ -28,7 +28,7 @@ NO_USABLE_AGENT_ID = 'agent principal has no usable agent id'
 ONLY_AN_AGENT_NAMES_AN_OWNER = 'only an agent principal may name a project owner'
 NO_OWNER_TO_HAND_TO = 'agent principal has no owner to hand the project to'
 # The one shape delegated_agent_run_allowed clears, spelled with wire-name literals.
-CLEARED_RUN_CLAIMS = {'sub': 'mcp:tok_1', 'voc:mcp_agent_run': 'true', 'voc:acting_subject': 'admin-sub'}
+CLEARED_RUN_CLAIMS = {'sub': 'mcp:tok_1', 'voc:mcp_agent_run': 'agents_run', 'voc:acting_subject': 'admin-sub'}
 
 
 def _exact(message: str) -> str:
@@ -62,30 +62,36 @@ class TestClaimNamesAreTheWireContract:
 
 class TestDelegatedAgentRunIsExactlyOneShape:
     def test_the_cleared_shape_is_allowed(self):
-        assert pa.delegated_agent_run_allowed(CLEARED_RUN_CLAIMS) is True
+        assert pa.delegated_agent_run_allowed(CLEARED_RUN_CLAIMS, 'agents_run') is True
+        assert frozenset({'agents_run', 'insights_get_adoption'}) == pa.MCP_ADMIN_OPS
 
     @pytest.mark.parametrize(('override', 'reason'), [
         ({'sub': 'admin-sub'}, 'a person is not a delegated subject'),
         ({'sub': 'agent:ag_1'}, 'an agent is not an mcp subject'),
-        ({'voc:mcp_agent_run': 'True'}, 'the flag must be exactly lower-case true'),
-        ({'voc:mcp_agent_run': 'XXtrueXX'}, 'the flag must be exactly true'),
-        ({'voc:mcp_agent_run': ''}, 'a blank flag is not set'),
+        ({'voc:mcp_agent_run': 'true'}, 'the claim names its operation, never a bare true'),
+        ({'voc:mcp_agent_run': 'Agents_run'}, 'the claim must be exactly the operation'),
+        ({'voc:mcp_agent_run': 'insights_get_adoption'}, 'a claim for another operation does not run an agent'),
+        ({'voc:mcp_agent_run': ''}, 'a blank claim is not set'),
         ({'voc:acting_subject': ''}, 'the token must act for somebody'),
         ({'voc:acting_subject': 'mcp:other'}, 'the token cannot act for a credential'),
         ({'voc:acting_subject': 'agent:ag_1'}, 'the token cannot act for an agent'),
     ])
     def test_every_other_shape_is_refused(self, override, reason):
-        assert pa.delegated_agent_run_allowed({**CLEARED_RUN_CLAIMS, **override}) is False, reason
+        assert pa.delegated_agent_run_allowed({**CLEARED_RUN_CLAIMS, **override}, 'agents_run') is False, reason
+
+    def test_an_operation_outside_the_two_is_refused_whatever_the_claim(self):
+        claims = {**CLEARED_RUN_CLAIMS, 'voc:mcp_agent_run': 'runs_list'}
+        assert pa.delegated_agent_run_allowed(claims, 'runs_list') is False
 
     def test_a_missing_run_claim_is_refused_even_for_a_delegated_subject(self):
         claims = {'sub': 'mcp:tok_1', 'voc:acting_subject': 'admin-sub'}
 
-        assert pa.delegated_agent_run_allowed(claims) is False
+        assert pa.delegated_agent_run_allowed(claims, 'agents_run') is False
 
     def test_the_subject_key_is_sub(self):
-        claims = {'XXsubXX': 'mcp:tok_1', 'voc:mcp_agent_run': 'true', 'voc:acting_subject': 'admin-sub'}
+        claims = {'XXsubXX': 'mcp:tok_1', 'voc:mcp_agent_run': 'agents_run', 'voc:acting_subject': 'admin-sub'}
 
-        assert pa.delegated_agent_run_allowed(claims) is False
+        assert pa.delegated_agent_run_allowed(claims, 'agents_run') is False
 
 
 class TestAgentBoundsAcceptTheirLimit:

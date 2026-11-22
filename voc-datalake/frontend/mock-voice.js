@@ -9,9 +9,11 @@
 //   GET  /projects/voice/usage                               -> this month's voice minutes
 //
 // The fake session (handleVoiceUpgrade, the mock server's `upgrade` event): a minimal WebSocket (RFC 6455, no
-// dependency) that plays a scripted conversation: ready, the persona's greeting as captions (speculative, then final)
-// with a short 24 kHz tone as its "voice", a citation, the person's question, the persona's answer, usage every
-// 5 seconds; `{type: 'end'}` (or the browser closing) ends it with `ended`. Microphone frames are read and dropped.
+// dependency: the mock runs only in development, and the frontend has no `ws` package; the relay itself serves /ws
+// with `ws`, lambda/stream/src/voice/server.ts) that plays a scripted conversation: ready, the persona's greeting as
+// captions (speculative, then final) with a short 24 kHz tone as its "voice", a citation, the person's question, the
+// persona's answer, usage every 5 seconds; `{type: 'end'}` (or the browser closing) ends it with `ended`. Microphone
+// frames are read and dropped.
 import { hash } from 'node:crypto';
 
 const OFFER_ROUTE = /^\/projects\/([^/]+)\/personas\/([^/]+)\/voice-sessions$/;

@@ -2,11 +2,12 @@
 
 Two kinds of row, both in voc-aggregates, both per scope (the deployment's, and each workspace's under ``WS#{ws}#``):
 
-* the rollup (gold, rebuildable): ``ADOPTION#ROLLUP`` / ``{YYYY-MM-DD}``, ``WS#{ws}#ADOPTION#ROLLUP`` / ``{YYYY-MM-DD}``
-  in a workspace (``rollup_partition``): one whole item per scope and day, written by voc-adoption-rollup
-  (lambda/jobs/adoption_rollup/handler.py) from the scope's projects and holding every month it covers, so a rerun of
-  the same day overwrites the same item and the newest item is always a complete picture. Counts and day histograms
-  only, never a person, a name or a text; the items expire after ``ROLLUP_TTL_DAYS``. The hard delete sweeps a
+* the rollup (gold, rebuildable): ``ADOPTION#ROLLUP`` / ``latest``, ``WS#{ws}#ADOPTION#ROLLUP`` / ``latest`` in a
+  workspace (``rollup_key``): ONE whole item per scope, written by voc-adoption-rollup
+  (lambda/jobs/adoption_rollup/handler.py) from the scope's projects and holding every month it covers, overwritten by
+  each run, so the route reads it with one GetItem. A run cut short by its time never replaces a complete item: the
+  last complete figures stay until a run finishes the scope. Counts and day histograms only, never a person, a name or
+  a text; no ``ttl``, the item is replaced, never piled up. The hard delete sweeps a
   workspace's with its settings (jobs/workspace_delete/sweeps.py), and the export leaves them out (derived);
 * the baselines (``SETTINGS#adoption`` / ``config``, ``WS#{ws}#SETTINGS#adoption`` in a workspace, through
   shared/workspace_config.py): the hours a person takes to make each kind of artifact by hand, which the time-saved
@@ -30,15 +31,15 @@ from shared.request_body import require_known_change
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
-__all__ = ['ADOPTION_KIND', 'ARTIFACT_TYPES', 'DEPLOYMENT_KEY', 'REASON', 'ROLLUP_TTL_DAYS', 'baselines_of',
-           'config_view', 'merged_config', 'rollup_partition', 'stored_fields', 'validate_changes']
+__all__ = ['ADOPTION_KIND', 'ARTIFACT_TYPES', 'DEPLOYMENT_KEY', 'REASON', 'baselines_of', 'config_view',
+           'merged_config', 'rollup_key', 'rollup_partition', 'stored_fields', 'validate_changes']
 
 #: The rollup's family in a workspace's keys (``WS#{ws}#ADOPTION#ROLLUP``) and the deployment's partition.
 ADOPTION_FAMILY: Final = 'ADOPTION'
 _ROLLUP_PART: Final = 'ROLLUP'
 DEPLOYMENT_ROLLUP_PARTITION: Final = f'{ADOPTION_FAMILY}#{_ROLLUP_PART}'
-#: How long a day's rollup item is kept (only the newest is read; the rest are an "as of" trail).
-ROLLUP_TTL_DAYS: Final = 35
+#: The one rollup item's sort key in its scope's partition (each run overwrites it).
+ROLLUP_SORT_KEY: Final = 'latest'
 
 #: The settings kind (``WS#{ws}#SETTINGS#adoption``) and the deployment's row.
 ADOPTION_KIND: Final = 'adoption'
@@ -61,6 +62,11 @@ _FIELDS: Final = ('baselines', 'note')
 def rollup_partition(scope: WorkspaceScope | None) -> str:
     """The scope's rollup partition: ``ADOPTION#ROLLUP``, or ``WS#{ws}#ADOPTION#ROLLUP`` in a workspace."""
     return DEPLOYMENT_ROLLUP_PARTITION if scope is None else scope.key(ADOPTION_FAMILY, _ROLLUP_PART)
+
+
+def rollup_key(scope: WorkspaceScope | None) -> dict[str, str]:
+    """The scope's one rollup item: its partition, sort key ``latest``."""
+    return {'pk': rollup_partition(scope), 'sk': ROLLUP_SORT_KEY}
 
 
 def _hours(name: str, value: object) -> float:

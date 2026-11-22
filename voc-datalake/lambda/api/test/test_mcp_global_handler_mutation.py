@@ -673,7 +673,7 @@ class TestToolGating:
         base = {'sub': f'mcp:{TOKEN_ID}', 'cognito:groups': '', 'email': f'mcp:{TOKEN_ID}',
                 'voc:acting_subject': ALICE_SUB}
         assert h._claims_for(h.ToolCall(LIST, {}, None), _row()) == base
-        assert h._claims_for(h.ToolCall(RUN_AGENT, {}, None), _row()) == {**base, 'voc:mcp_agent_run': 'true'}
+        assert h._claims_for(h.ToolCall(RUN_AGENT, {}, None), _row()) == {**base, 'voc:mcp_agent_run': 'agents_run'}
 
 
 class TestResults:

@@ -3,7 +3,8 @@
 middleware has already gated the project in the path (GET is view, POST is edit: shared.project_access):
 
 - ``GET /projects/{id}/personas/{persona_id}/voice-sessions`` (view) — the offer: the persona's voice, the languages,
-  the month's minutes and the day's sessions left, the estimated cost per minute; ``{enabled: false}`` without voice;
+  the month's minutes and the day's sessions left, the estimated cost per minute; ``{enabled: false}`` without voice.
+  First its reader's sessions of the project that ended without End are saved (shared/voice_sessions.py ``offer``);
 - ``POST …/voice-sessions`` ``{consent: true, language?}`` (edit; a person, never an MCP credential or an agent) —
   201 ``{session_id, connect_url, expires_in: 60, …}``: the checks of shared/voice_sessions.py ``mint``;
 - ``GET …/voice-sessions/{session_id}`` (view) — its state; its starter's read of an ended session saves its
@@ -71,7 +72,8 @@ def finalize_work(config: dict) -> dict:
 @tracer.capture_method
 def voice_session_offer(project_id: str, persona_id: str) -> dict[str, Any]:
     caller = company_personas_routes.caller_of(app)
-    return voice_sessions.offer(_stores(), VoiceConfig.from_env(), project_id, persona_id, caller)
+    return voice_sessions.offer(_stores(), VoiceConfig.from_env(), project_id, persona_id, caller,
+                                start_finalize=_start_finalize(project_id))
 
 
 @app.post("/projects/<project_id>/personas/<persona_id>/voice-sessions")

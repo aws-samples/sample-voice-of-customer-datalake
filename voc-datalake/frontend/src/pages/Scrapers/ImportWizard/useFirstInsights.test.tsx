@@ -1,10 +1,10 @@
 /**
  * @fileoverview First insights' reads (useFirstInsights.ts): this import's items only (a reviews import's tag, a
  * survey's form channel), the summary polled until every row is analysed, then the sentiment split, the top three
- * categories, three quotes and a survey's NPS from its Results.
+ * categories, three quotes and a survey's NPS from its Results; none analysed in the window: imported before.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { createQueryWrapper } from '@test/query-client'
 
 type Read = (...args: unknown[]) => Promise<unknown>
@@ -63,6 +63,20 @@ describe('useFirstInsights', () => {
     expect(result.current).toMatchObject({ ready: false, nps: null })
     expect(getSummary).toHaveBeenCalledWith({ days: 7 }, 'manual_import', { tag: 'import-2026-11-21-abcd' })
     expect(getResults).not.toHaveBeenCalled()
+  })
+
+  it('says the rows were imported before when the window ends with none analysed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      getSummary.mockResolvedValue({ total_feedback: 0 })
+      const { result } = renderHook(() => useFirstInsights(REVIEWS), { wrapper: createQueryWrapper() })
+      await waitFor(() => expect(getSummary).toHaveBeenCalledWith({ days: 7 }, 'manual_import', { tag: 'import-2026-11-21-abcd' }))
+      expect(result.current).toMatchObject({ alreadyImported: false, ready: false })
+      act(() => { vi.advanceTimersByTime(5 * 60 * 1000) })
+      await waitFor(() => expect(result.current).toMatchObject({ alreadyImported: true, ready: false, slow: false }))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reads nothing more before the first row is analysed', async () => {

@@ -7,7 +7,8 @@
  * - `POST /projects/{id}/personas/{pid}/voice-sessions` `{consent: true, language}` → a session and its presigned
  *   `connect_url` (a `wss://` URL valid 60 s: the browser never holds AWS credentials);
  * - `GET  …/voice-sessions/{sid}` → its status, seconds, cost and, once the transcript is filed, its document;
- * - `POST …/voice-sessions/{sid}/end` → stops it and files the transcript (a `persona_interview` document);
+ * - `POST …/voice-sessions/{sid}/end` → stops it and files the transcript (a `persona_interview` document); sent with
+ *   `keepalive` as the page goes away, so the request outlives it;
  * - `GET  /projects/voice/usage` → this month's voice minutes for the deployment (administrators).
  *
  * Every answer is parsed leniently: a field the server drops or a later release adds never breaks the page.
@@ -117,8 +118,8 @@ export const voiceSessionsApi = {
   getSession: async (projectId: string, personaId: string, sessionId: string): Promise<VoiceSessionStatus> =>
     sessionSchema.parse(asRecord(await fetchApi<unknown>(sessionPath(projectId, personaId, sessionId))) ?? {}),
 
-  end: async (projectId: string, personaId: string, sessionId: string): Promise<z.infer<typeof endedSchema>> =>
-    endedSchema.parse(asRecord(await fetchApi<unknown>(`${sessionPath(projectId, personaId, sessionId)}/end`, post())) ?? {}),
+  end: async (projectId: string, personaId: string, sessionId: string, keepalive = false): Promise<z.infer<typeof endedSchema>> =>
+    endedSchema.parse(asRecord(await fetchApi<unknown>(`${sessionPath(projectId, personaId, sessionId)}/end`, { method: 'POST', keepalive })) ?? {}),
 
   getUsage: async (): Promise<VoiceUsage> =>
     usageSchema.parse(asRecord(await fetchApi<unknown>('/projects/voice/usage')) ?? {}),

@@ -61,6 +61,23 @@ class TestTheInferredForm:
         assert form.mapping['Email'] == 'ignore'
         assert form.problems == []
 
+    def test_a_second_date_or_id_column_is_left_out_so_the_mapping_always_passes(self):
+        # An export with a start and an end date: the first dates each response, the second is named and left out.
+        lines = SURVEY_EXPORT.splitlines()
+        text = '\n'.join([f'{lines[0]},Ended,Respondent ID'] + [f'{line},18/03/2026 1{n}:00,u{n}'
+                                                             for n, line in enumerate(lines[1:])]) + '\n'
+        table = parse_sample('csv', text)
+        columns = detect_columns(table)
+        assert [c.kind for c in columns if c.header in ('Ended', 'Respondent ID')] == ['date', 'id']
+        form = infer_form([ColumnChoice(c.header, c.kind, [row[c.header] for row in table.rows]) for c in columns], 'en')
+        assert check_mapping(form.definition, form.mapping) == form.mapping
+        assert (form.mapping['Submitted'], form.mapping['Ended'], form.mapping['Respondent ID']) == ('date', 'ignore', 'ignore')
+        assert form.problems == [{'header': 'Ended', 'code': 'extra_date'}, {'header': 'Respondent ID', 'code': 'extra_id'}]
+        second = infer_form([ColumnChoice('Q', 'csat'), ColumnChoice('Channel', 'channel'),
+                             ColumnChoice('Source', 'channel')], 'en')
+        assert (second.mapping['Source'], second.problems) == ('ignore', [{'header': 'Source', 'code': 'extra_channel'}])
+        assert len(second.definition['hidden_fields']) == 1
+
     def test_a_channel_column_is_a_hidden_field(self):
         form = infer_form([ColumnChoice('Q', 'nps_0_10'), ColumnChoice('Channel', 'channel')], 'pl')
         assert form.definition['hidden_fields'] == [{'id': 'channel', 'label': 'Channel'}]
@@ -204,6 +221,42 @@ class TestTheImportRequest:
         first = row_answers(form.definition, form.mapping, table.rows[1], default_at=NOW)
         assert fimp.message_id('ff_1', first, 2) == fimp.message_id('ff_1', first, 9)  # it has an id
         assert fimp.message_id('ff_1', first, 2) != fimp.message_id('ff_2', first, 2)
+
+    def test_a_row_without_an_id_is_the_same_item_whatever_the_calls_clock(self):
+        _table, form = _survey()
+        undated = {k: v for k, v in form.mapping.items() if v not in ('id', 'date')}
+        row = {'Which plan?': 'Pro', 'What could we improve?': 'Longer breaks'}
+        now, later = (row_answers(form.definition, undated, row, default_at=at) for at in (NOW, '2026-11-22T08:00:00+00:00'))
+        assert (now.dated, now.created_at) == (False, NOW)
+        assert fimp.message_id('ff_1', now, 3) == fimp.message_id('ff_1', later, 3)
+        assert fimp.message_id('ff_1', now, 3) != fimp.message_id('ff_1', now, 4)
+        dated = {**undated, 'Submitted': 'date'}
+        first, second = (row_answers(form.definition, dated, {**row, 'Submitted': day}, default_at=NOW)
+                         for day in ('14/03/2026', '15/03/2026'))
+        assert first.dated is True
+        assert fimp.message_id('ff_1', first, 3) != fimp.message_id('ff_1', second, 3)
+
+
+class TestTheRedactionBudget:
+    def _accepted(self, rows: int, text: str = 'Too slow') -> list:
+        _table, form = _survey()
+        mapping = {'Which plan?': form.mapping['Which plan?'], 'What could we improve?': form.mapping['What could we improve?']}
+        cells = {'Which plan?': 'Pro', 'What could we improve?': text}
+        return [(n, row_answers(form.definition, mapping, cells, default_at=NOW)) for n in range(rows)]
+
+    def test_each_row_holds_its_text_and_its_open_answers(self):
+        _table, form = _survey()
+        fimp.check_redaction_budget(form.definition, self._accepted(fimp.MAX_REDACTED_TEXTS // 2))
+        with pytest.raises(ValidationError) as caught:
+            fimp.check_redaction_budget(form.definition, self._accepted(fimp.MAX_REDACTED_TEXTS // 2 + 1))
+        assert caught.value.code == fimp.TOO_MANY_TEXTS
+        fimp.check_redaction_budget(form.definition, self._accepted(fimp.MAX_REDACTED_TEXTS, text=''))
+
+    def test_the_free_text_is_the_open_answers_and_a_choices_other(self):
+        _table, form = _survey()
+        assert fimp.free_text_paths(form.definition) == {
+            ('form_answers', 'q_what_could_we_improve'), ('form_answers', 'q_which_plan', 'other'),
+            ('form_answers', 'q_features_used', 'other')}
 
 
 class TestTheReviewsMapping:

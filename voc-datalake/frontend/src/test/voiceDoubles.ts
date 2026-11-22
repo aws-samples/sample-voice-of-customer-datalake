@@ -66,19 +66,20 @@ export interface FakeAudio extends VoiceAudio {
   readonly frames: { onFrame: ((pcm: ArrayBuffer) => void) | null; onLevel: ((level: number) => void) | null }
   readonly played: ArrayBuffer[]
   readonly flushes: { count: number }
-  readonly closed: { count: number }
+  /** How often it was closed, and the drain each close was given. */
+  readonly closed: { count: number; drains: number[] }
 }
 
 export function fakeAudio(): FakeAudio {
   const frames: FakeAudio['frames'] = { onFrame: null, onLevel: null }
   const played: ArrayBuffer[] = []
   const flushes = { count: 0 }
-  const closed = { count: 0 }
+  const closed: FakeAudio['closed'] = { count: 0, drains: [] }
   return {
     frames, played, flushes, closed,
     startCapture: (onFrame, onLevel) => { frames.onFrame = onFrame; frames.onLevel = onLevel },
     play: (pcm) => { played.push(pcm) },
     flush: () => { flushes.count += 1 },
-    close: () => { closed.count += 1; return Promise.resolve() },
+    close: (drainMs = 0) => { closed.count += 1; closed.drains.push(drainMs); return Promise.resolve() },
   }
 }

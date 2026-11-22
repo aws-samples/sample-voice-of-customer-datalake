@@ -48,8 +48,8 @@ from shared.test.agents_fixtures import AgentsEnv, agent_body
 from shared.test.instrumentation_fixtures import API_HANDLER_LAYERS, handler_layers
 
 DELEGATED_ADMIN = {'sub': 'mcp:tok', 'voc:acting_subject': 'admin-sub', 'cognito:groups': 'admins'}
-MCP_RUNNER = {**DELEGATED_ADMIN, 'voc:mcp_agent_run': 'true'}
-AGENT_PRINCIPAL = {'sub': 'agent:ag_0123456789ab', 'voc:acting_subject': 'admin-sub', 'voc:mcp_agent_run': 'true'}
+MCP_RUNNER = {**DELEGATED_ADMIN, 'voc:mcp_agent_run': 'agents_run'}
+AGENT_PRINCIPAL = {'sub': 'agent:ag_0123456789ab', 'voc:acting_subject': 'admin-sub', 'voc:mcp_agent_run': 'agents_run'}
 T0 = datetime(2026, 10, 5, 12, 0, 0, tzinfo=UTC)
 UNKNOWN_WORKFLOW = 'wf_0123456789ab'
 RAW_WORKFLOW = 'wf_abcdefabcdef'

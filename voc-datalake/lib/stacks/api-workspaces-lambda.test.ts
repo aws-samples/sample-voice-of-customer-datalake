@@ -133,39 +133,31 @@ describe('the voc-workspaces-api Lambda', () => {
     expect(JSON.stringify(statements())).not.toMatch(/voc\/ws/);
   });
 
-  it('holds only DynamoDB, Cognito, KMS, its log and trace writes, the export routes\' S3 read and invoke, and a trial\'s schedule', () => {
+  it('holds only DynamoDB, Cognito, KMS, its log and trace writes, and the export routes\' S3 read and invoke', () => {
     const services = new Set(statements().flatMap((s) => s.actions).map((action) => action.split(':')[0]));
-    expect([...services].filter((service) => !['dynamodb', 'cognito-idp', 'kms', 'logs', 'xray', 's3', 'lambda',
-      'scheduler', 'iam'].includes(service ?? ''))).toStrictEqual([]);
+    expect([...services].filter((service) => !['dynamodb', 'cognito-idp', 'kms', 'logs', 'xray', 's3', 'lambda']
+      .includes(service ?? ''))).toStrictEqual([]);
   });
 
-  // A trial workspace (7.71.00, lib/stacks/trial-expiry.ts): one schedule per trial end, created only.
-  it('creates a trial\'s schedules in the trials group only, and passes the scheduler\'s role to Scheduler only', () => {
-    expect(withPrefix('scheduler:').map(({ actions, condition }) => ({ actions, condition }))).toStrictEqual([
-      { actions: ['scheduler:CreateSchedule'], condition: undefined }]);
-    expect(withPrefix('scheduler:')[0]?.resource).toMatch(/schedule\/voc-trials-.*\/voc-trial-\*/);
-    const pass = withPrefix('iam:');
-    expect(pass.map(({ actions, condition }) => ({ actions, condition }))).toStrictEqual([{
-      actions: ['iam:PassRole'], condition: { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } } }]);
-    expect(pass[0]?.resource).toMatch(/role\/voc-trial-scheduler-/);
+  // A trial workspace (7.71.00, lib/stacks/trial-expiry.ts): nothing scheduled, the expiry's hourly tick reads the ends.
+  it('schedules nothing and passes no role (a trial\'s end is read by the expiry\'s hourly tick)', () => {
+    expect([...withPrefix('scheduler:'), ...withPrefix('iam:')]).toStrictEqual([]);
+    expect(Object.keys(environment()).filter((name) => name.startsWith('TRIAL_'))).toStrictEqual([]);
   });
 
-  it('is told the trials group, the scheduler\'s role and the job by the names VocProcessingStack gives them', () => {
-    const env = environment();
-    expect([env.TRIAL_SCHEDULE_GROUP, env.TRIAL_SCHEDULER_ROLE_ARN, env.TRIAL_EXPIRY_FUNCTION_ARN].map((value) => JSON.stringify(value)))
-      .toStrictEqual([expect.stringMatching(/voc-trials-/), expect.stringMatching(/role\/voc-trial-scheduler-/),
-        expect.stringMatching(/function:voc-trial-expiry-/)]);
-  });
-
-  it('turns a paused trial\'s forms back on through `enabled` and its stamps alone, in a workspace\'s forms partition', () => {
+  it('reads a paused trial\'s forms and turns them back on through `enabled` and its stamps alone, in a workspace\'s forms partition', () => {
     const forms = withPrefix('dynamodb:').filter((s) => JSON.stringify(s.condition ?? {}).includes('#FEEDBACK_FORM'));
-    expect(forms.map(({ actions, condition }) => ({ actions, condition }))).toStrictEqual([{
-      actions: ['dynamodb:UpdateItem'], condition: {
-        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`WS#ws_${'?'.repeat(26)}#FEEDBACK_FORM`] },
+    const partition = { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`WS#ws_${'?'.repeat(26)}#FEEDBACK_FORM`] } };
+    expect(forms.map(({ actions, condition }) => ({ actions, condition }))).toStrictEqual([
+      // The publish rules asked again before a form is turned back on (lambda/shared/trial_pause.py publish_problem).
+      { actions: ['dynamodb:GetItem'], condition: partition },
+      { actions: ['dynamodb:UpdateItem'], condition: {
+        ...partition,
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['enabled', 'pk', 'sk', 'updated_at', 'updated_by', 'write_count'] },
         StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] } } }]);
-    expect(forms[0]?.resource).toMatch(/ExportsOutputFnGetAttAggregates/);
+    expect(forms.every((s) => /ExportsOutputFnGetAttAggregates/.test(s.resource))).toBe(true);
   });
+
 });
 
 // DELETE /users/{username} removes the user's memberships first (lambda/shared/workspace_members.py

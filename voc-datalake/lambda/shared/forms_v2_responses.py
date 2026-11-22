@@ -52,6 +52,7 @@ __all__ = [
     'answer_category',
     'check_envelope',
     'contact_of',
+    'free_text',
     'headline_of',
     'is_v2_response',
     'item_rating',
@@ -429,7 +430,7 @@ def _answers(definition: Mapping[str, Any], raw: Mapping[str, Any]) -> dict[str,
     return answers
 
 
-def _free_text(question: Mapping[str, Any], answer: object) -> str | None:
+def free_text(question: Mapping[str, Any], answer: object) -> str | None:
     """The customer's own words in an answer: an open text, or a choice's "Other"."""
     if question['type'] == OPEN_TEXT and isinstance(answer, str):
         return answer
@@ -454,7 +455,7 @@ def _check_amount(questions: Mapping[str, Mapping[str, Any]], answers: Mapping[s
     """At least one answer, and at most ``MAX_RESPONSE_TEXT_CHARS`` of free text together."""
     if not answers:
         raise _fail('Answer at least one question', EMPTY_RESPONSE)
-    total = sum(len(text) for qid, answer in answers.items() if (text := _free_text(questions[qid], answer)))
+    total = sum(len(text) for qid, answer in answers.items() if (text := free_text(questions[qid], answer)))
     if total > MAX_RESPONSE_TEXT_CHARS:
         raise _fail(f'the answers hold more than {MAX_RESPONSE_TEXT_CHARS} characters of text together', RESPONSE_TOO_LONG)
 
@@ -558,7 +559,7 @@ def response_text(definition: Mapping[str, Any], response: Response) -> str:
     primary = str(definition.get('language'))
     questions = {question['id']: question for question in definition.get('questions') or []}
     answered = [(questions[qid], response.answers[qid]) for qid in response.path if qid in response.answers]
-    blocks = [f'{headline_of(q, primary)}\n{text}' for q, a in answered if (text := _free_text(q, a))]
+    blocks = [f'{headline_of(q, primary)}\n{text}' for q, a in answered if (text := free_text(q, a))]
     if blocks:
         return '\n\n'.join(blocks)
     return '\n'.join(line for q, a in answered for line in _summary_lines(q, a, primary))

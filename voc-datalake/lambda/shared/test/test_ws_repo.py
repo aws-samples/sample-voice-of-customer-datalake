@@ -9,10 +9,12 @@ from moto import mock_aws
 from shared import feedback_partitions as partitions
 from shared.batch_get import BATCH_GET_ATTEMPTS
 from shared.test.moto_tables import create_pk_sk_table
+from shared.trial_state import PAUSED_AT, TRIAL
 from shared.workspace import WorkspaceContext
 from shared.ws_repo import (
     MAX_TRANSACT_ITEMS,
     PARTITION_ATTRIBUTES,
+    UNPAUSED_CHECK,
     WATERMARK_PARTITION,
     OutOfScopeError,
     UnprocessedKeysError,
@@ -739,6 +741,22 @@ class TestTheMultiItemCalls:
             TransactItems=[{'Put': {'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)',
                                     'TableName': 'voc-feedback'}}],
             ClientRequestToken='request-1', ReturnConsumedCapacity='TOTAL')
+
+    def test_an_unpaused_check_is_the_views_own_workspaces_meta_and_comes_last(self):
+        """7.71.00 (review round 1, S5): a write that puts something live checks its own workspace's ``META`` in
+        voc-workspaces in the same transaction; the layer builds the key, so it names no other workspace."""
+        backing, workspaces = _backing(), MagicMock()
+        workspaces.name = 'voc-workspaces'
+        item = {**_key(A, 'f1'), 'gsi4pk': feedback_id_pk(A, 'f1')}
+
+        ws_table(A, backing).transact_write_items([{'Put': {'Item': item}}], unpaused_in=workspaces)
+
+        sent = backing.meta.client.transact_write_items.call_args.kwargs['TransactItems']
+        assert sent[-1] == {'ConditionCheck': {
+            'TableName': 'voc-workspaces', 'Key': {'pk': f'WS#{WS}', 'sk': 'META'}, 'ConditionExpression': UNPAUSED_CHECK,
+            'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, '#paused_at': PAUSED_AT},
+            'ExpressionAttributeValues': {':active': 'active'}}}
+        assert len(sent) == 2
 
     def test_a_batch_get_sends_at_most_100_keys_a_request(self):
         backing = _backing()

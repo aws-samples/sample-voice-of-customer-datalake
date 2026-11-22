@@ -2,9 +2,9 @@
  * @fileoverview Create a trial (7.71.00; docs/multi-workspace.md "Trial workspaces"), for platform admins at the end
  * of a workshop: a name, an address and a length (14, 30 or 60 days, 30 by default), the people to add (email, role
  * and a suggested role playbook), and a starter pack (forms from the workshop and in-app feedback templates, Off, and
- * the sample categories). One step: `POST /platform/workspaces` with `trial` (its schedule first, so the trial is never
- * left without its end), then the pack as ordinary creates in the new workspace with the admin's own credentials
- * (trialPack.ts), then the way into its import wizard.
+ * the sample categories). One step: `POST /platform/workspaces` with `trial` (its end on the workspace's own rows, which
+ * the expiry's hourly tick reads), then the pack as ordinary creates in the new workspace with the admin's own
+ * credentials (trialPack.ts), then the way into its import wizard.
  *
  * It says plainly what the end does: the trial PAUSES (plugins and live forms stop, nothing is deleted, reads and the
  * export keep working) until a platform admin extends or converts it; it never deletes itself.

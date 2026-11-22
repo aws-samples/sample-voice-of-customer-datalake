@@ -4,13 +4,15 @@
  * values and the CSV written for a JSON or workbook file. Made-up data only.
  */
 import { describe, expect, it } from 'vitest'
+import { textFile } from '@test/textFiles'
 import {
   SAMPLE_BYTES, distinctValues, formatOf, headersOf, parseDelimited, pickProblem, readWizardFile, sampleOf, tableOf,
   textSample, toCsv,
 } from './wizardFile'
 import type { WizardFile } from './wizardFile'
 
-const file = (format: WizardFile['format'], content: string): WizardFile => ({ name: `x.${format}`, format, size: content.length, content })
+const file = (format: WizardFile['format'], content: string): WizardFile =>
+  ({ name: `x.${format}`, format, size: content.length, content, legacyEncoding: false })
 
 describe('formats and limits', () => {
   it('reads a format from the extension', () => {
@@ -25,13 +27,34 @@ describe('formats and limits', () => {
   })
 
   it('reads a text file as text and a workbook as base64', async () => {
-    const text = new File(['a,b\n1,2\n'], 'r.csv')
-    Object.defineProperty(text, 'text', { value: () => Promise.resolve('a,b\n1,2\n') })
-    expect(await readWizardFile(text)).toStrictEqual({ name: 'r.csv', format: 'csv', size: 8, content: 'a,b\n1,2\n' })
+    expect(await readWizardFile(textFile('a,b\n1,2\n', 'r.csv'))).toStrictEqual(
+      { name: 'r.csv', format: 'csv', size: 8, content: 'a,b\n1,2\n', legacyEncoding: false })
     const bytes = new Uint8Array([80, 75, 3, 4])
     const workbook = new File([bytes], 'r.xlsx')
     Object.defineProperty(workbook, 'arrayBuffer', { value: () => Promise.resolve(bytes.buffer) })
     expect((await readWizardFile(workbook)).content).toBe('UEsDBA==')
+  })
+})
+
+/** A picked file of exactly `bytes`. */
+function bytesFile(bytes: Uint8Array<ArrayBuffer>, name: string): File {
+  const picked = new File([bytes], name)
+  Object.defineProperty(picked, 'arrayBuffer', { value: () => Promise.resolve(bytes.buffer) })
+  return picked
+}
+
+describe('the text encoding', () => {
+  it('reads UTF-8 strictly, its byte-order mark dropped', async () => {
+    const bytes = new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('Comentario;Opinión\n')])
+    expect(await readWizardFile(bytesFile(bytes, 'utf8.csv'))).toMatchObject(
+      { content: 'Comentario;Opinión\n', legacyEncoding: false })
+  })
+
+  it('reads a file that is not UTF-8 as Windows-1252, and says so', async () => {
+    // "Opinión;Precio €" as a Windows-1252 export writes it: ó is 0xF3 and € 0x80, neither valid UTF-8 there.
+    const bytes = new Uint8Array([...new TextEncoder().encode('Opini'), 0xf3, ...new TextEncoder().encode('n;Precio '), 0x80, 0x0a])
+    expect(await readWizardFile(bytesFile(bytes, 'legacy.csv'))).toMatchObject(
+      { content: 'Opinión;Precio €\n', legacyEncoding: true })
   })
 })
 

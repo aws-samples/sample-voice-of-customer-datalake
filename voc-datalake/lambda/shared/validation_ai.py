@@ -226,8 +226,8 @@ def run_personas(personas: Sequence[Mapping[str, Any]], tasks: Sequence[Mapping[
 
 _SUMMARY_SYSTEM: Final = (
     'You write the summary of a prototype validation report for a product team, from results already computed. '
-    'Say which success criteria real testers met, which they did not and which lack data, and what testers said '
-    'was missing. Synthetic persona results are labelled synthetic: mention them only as such, never as evidence '
+    'Say which success criteria real testers met, which they did not and which lack data. '
+    'Synthetic persona results are labelled synthetic: mention them only as such, never as evidence '
     'that a criterion is met. State no number the results do not hold. Plain text, at most '
     + str(MAX_SUMMARY_CHARS) + ' characters, no headings. ' + DATA_NOTICE
 )

@@ -103,6 +103,7 @@ const role = z.string().catch('');
 
 const outputSchema = z.object({
   event: z.object({
+    completionStart: z.object({}).optional(),
     contentStart: z.object({
       contentId: z.string().catch(''), role, type: z.string().catch(''),
       additionalModelFields: z.string().optional().catch(undefined),
@@ -125,6 +126,8 @@ export interface TokenTotals {
 }
 
 export type SonicOutput =
+  /** The model began a response (to the person's turn, or to a text turn the relay sent). */
+  | { kind: 'completionStart' }
   | { kind: 'contentStart'; contentId: string; role: string; type: string; stage: 'speculative' | 'final' }
   | { kind: 'text'; contentId: string; role: string; content: string }
   | { kind: 'audio'; contentId: string; content: string }
@@ -159,6 +162,7 @@ export function parseOutput(bytes: Uint8Array): SonicOutput {
   const parsed = outputSchema.safeParse(decoded(bytes));
   if (!parsed.success) return { kind: 'other' };
   const body = parsed.data.event;
+  if (body.completionStart) return { kind: 'completionStart' };
   if (body.contentStart) {
     const { contentId, role: speaker, type, additionalModelFields } = body.contentStart;
     return { kind: 'contentStart', contentId, role: speaker, type, stage: stageOf(additionalModelFields) };

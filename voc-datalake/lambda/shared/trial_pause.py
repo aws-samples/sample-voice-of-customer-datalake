@@ -1,6 +1,12 @@
 """A trial's pause and its resume (7.71.00; shared/trials.py, docs/multi-workspace.md "Trial workspaces").
 
-The pause, ``pause`` (voc-trial-expiry, at the trial's end), in this order:
+Which trials are due, ``due_trials`` (voc-trial-expiry's hourly tick): one paged Query of the platform listing
+(``WORKSPACES``, whose rows carry each trial's map, written in the same transaction as ``META``'s), keeping the trials
+that are not converted, whose ``expires_at`` has passed, and that are not paused yet (or paused within the last
+``REVISIT``, so a pause cut short is finished by the next tick). A trial whose ``expires_at`` does not parse is never
+due: it is skipped and logged, and ``pause`` refuses it too (``NO_EXPIRY``).
+
+The pause, ``pause`` (once a trial is due), in this order:
 
 1. ``trial.paused_at`` set first (``save_trial``, conditional on the ``rev`` read): from then on no plugin enable and no
    form put live can land (shared/trial_state.py);
@@ -12,7 +18,8 @@ The pause, ``pause`` (voc-trial-expiry, at the trial's end), in this order:
 5. each plugin turned off by the existing audited change (shared/workspace_plugin_settings.py ``set_trial_plugin``: its
    own ``plugin_disabled`` row, reason ``trial_paused``), and each form set ``enabled`` false (one conditional UpdateItem
    of ``enabled``, its save counter one up so an editor's stale copy cannot turn it on again, ``updated_at`` and
-   ``updated_by``).
+   ``updated_by``);
+6. the live forms read once more: one put live while the pause ran is recorded and turned off the same way.
 
 Nothing is deleted but the plugins' own ``PLUGIN#{plugin}`` / ``WS#{ws}`` rows, which ARE the existing disable (a
 present row means enabled; the ingestors' tick fans out over them). No form, response, feedback item, project, file or
@@ -20,25 +27,32 @@ audit row is touched, and the workspace stays ``active``: reads and the export k
 
 The resume, ``resume`` (an extension or a conversion, the workspaces API, a platform admin): each plugin of
 ``trial.paused`` the deployment still offers turned back on (``plugin_enabled``, the platform admin's, reason the
-route's) and each form of it set ``enabled`` true while it is still there and still off. An imported form is never live,
-so it is never paused, and a form someone deleted meanwhile stays deleted.
+route's) and each form of it set ``enabled`` true while it is still there, still off and still publishable: a form
+whose theme is unreadable or whose texts show a placeholder as written (an edit while it was paused) stays off, and
+the answer names it (``skipped``, its id and the publish rule's code) for its editors to fix and publish. An imported
+form is never live, so it is never paused, and a form someone deleted meanwhile stays deleted.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from shared import forms_v2 as fv2
 from shared.aws import is_conditional_check_failure
+from shared.dynamo_paging import iter_query
+from shared.exceptions import ConflictError, ValidationError
 from shared.logging import logger
 from shared.onboarding import forms_partition
-from shared.timestamps import now_iso
-from shared.trial_state import PAUSED, PAUSED_AT, at_second, is_paused
+from shared.platform_workspaces import LISTING_PK
+from shared.timestamps import now_iso, parse_iso
+from shared.trial_state import PAUSED, PAUSED_AT, TRIAL, at_second, is_paused
 from shared.trials import TRIAL_PAUSED_KIND, audit_trial, expiry_of, is_converted, read_meta, save_trial
 from shared.workspace import ACTIVE
+from shared.workspace_ids import is_workspace_id
 from shared.workspace_plugin_settings import set_trial_plugin, workspace_ceiling, workspace_plugins
 from shared.ws_repo import WorkspaceScope, WorkspaceTable, scope_from_message
 
@@ -53,6 +67,10 @@ NOT_ACTIVE: Final = 'not_active'
 CONVERTED: Final = 'converted'
 NOT_DUE: Final = 'not_due'
 ALREADY_PAUSED: Final = 'already_paused'
+NO_EXPIRY: Final = 'no_expiry'
+#: How long after its pause a trial is still visited by the hourly tick (a pause cut short is finished; a finished one
+#: is answered ``ALREADY_PAUSED`` and writes nothing).
+REVISIT: Final = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -79,6 +97,36 @@ def live_forms(forms: WorkspaceTable, scope: WorkspaceScope) -> list[str]:
                             ExpressionAttributeValues={':form': _FORM_PREFIX})
     return [str(row['sk']).removeprefix(_FORM_PREFIX) for row in rows
             if row.get('enabled') is True and isinstance(row.get('sk'), str) and row['sk'].startswith(_FORM_PREFIX)]
+
+
+def _listing_trials(table: Any) -> Iterator[tuple[object, Mapping[str, Any]]]:
+    """Every ``(workspace_id, trial)`` of the platform listing's rows that carry a trial (paged, strongly consistent)."""
+    rows = iter_query(table, {
+        'KeyConditionExpression': 'pk = :pk', 'FilterExpression': 'attribute_exists(#trial)',
+        'ProjectionExpression': 'workspace_id, #trial', 'ExpressionAttributeNames': {'#trial': TRIAL},
+        'ExpressionAttributeValues': {':pk': LISTING_PK}, 'ConsistentRead': True,
+    })
+    for row in rows:
+        trial = row.get(TRIAL)
+        if isinstance(trial, Mapping):
+            yield row.get('workspace_id'), trial
+
+
+def due_trials(table: Any, now: datetime) -> list[str]:
+    """The ids of the trials to pause now (see the module docstring), read from the platform listing of voc-workspaces
+    (``table``)."""
+    due: list[str] = []
+    for ws, trial in _listing_trials(table):
+        if not is_workspace_id(ws) or is_converted(trial):
+            continue
+        expiry = expiry_of(trial)
+        if expiry is None:
+            logger.warning('Trial with no readable expires_at: not paused', extra={'workspace_id': ws})
+            continue
+        paused_at = parse_iso(trial.get(PAUSED_AT)) if is_paused(trial) else None
+        if expiry <= now and (not is_paused(trial) or (paused_at is not None and now - paused_at < REVISIT)):
+            due.append(str(ws))
+    return due
 
 
 def set_form_live(forms: WorkspaceTable, scope: WorkspaceScope, form_id: str, live: bool, actor: str, at: str) -> bool:
@@ -110,7 +158,7 @@ def _enabled_plugins(tables: PauseTables, ws: str) -> list[str]:
     return [entry['id'] for entry in workspace_plugins(tables.workspaces, ws, tables.ceiling) if entry['enabled']]
 
 
-def _due(meta: Mapping[str, Any], trial: object, now: datetime) -> str | None:
+def _due(ws: str, meta: Mapping[str, Any], trial: object, now: datetime) -> str | None:
     """Why there is nothing to pause, or None when the trial is due."""
     if not isinstance(trial, Mapping):
         return NOT_A_TRIAL
@@ -119,8 +167,13 @@ def _due(meta: Mapping[str, Any], trial: object, now: datetime) -> str | None:
     if is_converted(trial):
         return CONVERTED
     expiry = expiry_of(trial)
-    if expiry is not None and expiry > now:
-        # An older schedule, run after an extension moved the end.
+    if expiry is None:
+        # A trial whose end does not parse is never paused: its plugins and forms stay on until a platform admin
+        # fixes it (an extension writes a new end).
+        logger.warning('Trial with no readable expires_at: not paused', extra={'workspace_id': ws})
+        return NO_EXPIRY
+    if expiry > now:
+        # An extension moved the end since the listing was read.
         return NOT_DUE
     return None
 
@@ -129,7 +182,7 @@ def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
     """Pause trial ``ws`` if it is due (see the module docstring); what was done, ``outcome`` saying which case."""
     meta = read_meta(tables.workspaces, ws)
     trial = meta.get('trial')
-    reason = _due(meta, trial, now)
+    reason = _due(ws, meta, trial, now)
     if reason is not None or not isinstance(trial, Mapping):
         return {'outcome': reason or NOT_A_TRIAL}
     trial = dict(trial)
@@ -156,13 +209,37 @@ def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
     plugins_off = sum(set_trial_plugin(tables.workspaces, ws, plugin, False, actor, TRIAL_PAUSED_KIND)
                       for plugin in plugins)
     forms_off = sum(set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at) for form_id in live)
+    # Once more: a form put live between the read above and paused_at's commit (its publish read the trial first) is
+    # recorded and turned off too.
+    late = [form_id for form_id in live_forms(forms, scope) if form_id not in live]
+    if late:
+        live = [*live, *late]
+        save_trial(tables.workspaces, ws, {**meta, 'trial': trial}, {**trial, PAUSED: {'plugins': plugins, 'forms': live}})
+        forms_off += sum(set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at) for form_id in late)
     logger.info('Trial paused', extra={'workspace_id': ws, 'plugins': plugins_off, 'forms': forms_off})
     return {'outcome': PAUSED_NOW, 'plugins': plugins_off, 'forms': forms_off}
 
 
-def resume(tables: PauseTables, ws: str, trial: Mapping[str, Any], actor: str, reason: str) -> dict[str, int]:
+def publish_problem(forms: WorkspaceTable, scope: WorkspaceScope, form_id: str) -> str | None:
+    """Why form ``form_id`` may not be put live again (the publish rules of any write that turns a form live,
+    shared/forms_v2.py ``validate_publishable`` and ``validate_placeholders``): the rule's code, ``gone`` for a form
+    deleted meanwhile, or None when it may."""
+    item = forms.get_item({'pk': forms_partition(scope), 'sk': f'{_FORM_PREFIX}{form_id}'},
+                          ConsistentRead=True).get('Item')
+    if not isinstance(item, Mapping):
+        return 'gone'
+    try:
+        fv2.validate_publishable(item.get('theme'), live=True)
+        fv2.validate_placeholders(fv2.definition_of(item), live=True)
+    except (ValidationError, ConflictError) as exc:
+        return exc.code or 'not_publishable'
+    return None
+
+
+def resume(tables: PauseTables, ws: str, trial: Mapping[str, Any], actor: str, reason: str) -> dict[str, Any]:
     """Turn back on what the pause recorded (see the module docstring): each plugin the deployment still offers, each
-    form still there and still off, as ``actor`` (a platform admin) for ``reason``; how many of each were turned on."""
+    form still there, still off and still publishable, as ``actor`` (a platform admin) for ``reason``; how many of each
+    were turned on, and the forms left off (``skipped``: ``[{form_id, code}]``)."""
     stored = trial.get(PAUSED)
     recorded: Mapping[str, Any] = stored if isinstance(stored, Mapping) else {}
     offered = set(workspace_ceiling(tables.ceiling))
@@ -173,6 +250,14 @@ def resume(tables: PauseTables, ws: str, trial: Mapping[str, Any], actor: str, r
     scope = workspace_scope(ws)
     forms = tables.forms(scope)
     at = now_iso()
-    forms_on = sum(set_form_live(forms, scope, form_id, True, actor, at) for form_id in form_ids)
-    logger.info('Trial resumed', extra={'workspace_id': ws, 'plugins': plugins_on, 'forms': forms_on})
-    return {'plugins': plugins_on, 'forms': forms_on}
+    skipped: list[dict[str, str]] = []
+    forms_on = 0
+    for form_id in form_ids:
+        problem = publish_problem(forms, scope, form_id)
+        if problem is None:
+            forms_on += set_form_live(forms, scope, form_id, True, actor, at)
+        elif problem != 'gone':
+            skipped.append({'form_id': form_id, 'code': problem})
+    logger.info('Trial resumed', extra={'workspace_id': ws, 'plugins': plugins_on, 'forms': forms_on,
+                                        'skipped': len(skipped)})
+    return {'plugins': plugins_on, 'forms': forms_on, 'skipped': skipped}

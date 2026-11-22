@@ -44,6 +44,14 @@ describe('trial-pack --dry-run', () => {
       { name: 'Workshop feedback', template: { id: 'workshop', version: 1 }, enabled: false }, { categories: PACK.categories }]));
   });
 
+  it('names a template once in the pack when two forms come from it (review round 1)', async () => {
+    writeFileSync(path.join(dir, 'again.json'), JSON.stringify({ name: 'Day 2 feedback', template: { id: 'workshop', version: 1 } }));
+    const requests = RequestsSchema.parse(JSON.parse((await run('node', [...args('--dry-run'), '--form',
+      path.join(dir, 'again.json')])).stdout));
+    expect(requests[0]?.body).toMatchObject({ trial: { pack: { forms: ['workshop'] } } });
+    expect(requests.filter((r) => r.path === '/feedback-forms')).toHaveLength(2);
+  });
+
   it('refuses a length the API does not take, and a person who is no email', async () => {
     await expect(run('node', [...args('--dry-run'), '--days', '45'])).rejects.toThrow(/--days must be 14, 30 or 60/);
     writeFileSync(path.join(dir, 'people.csv'), 'ana,admin\n');

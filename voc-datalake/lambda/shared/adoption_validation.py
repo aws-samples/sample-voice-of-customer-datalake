@@ -4,7 +4,7 @@ name it reads, and the tolerant readers the rollup uses (shared/adoption_rollup.
 The names match 7.68.00 as shipped (shared/project_validation.py, shared/validation_documents.py; checked on the
 integrated 7.67.00-7.71.00 stack):
 
-* the project ``META``'s ``validation`` map, of which the rollup reads ``report_document_id`` and ``status``;
+* the project ``META``'s ``validation`` map, of which the rollup reads ``report_document_id``;
 * the project documents of type ``validation_plan``, ``validation_report`` and ``validation_run`` (``PLAN_TYPE``,
   ``REPORT_TYPE``, ``RUN_TYPE``); a run is always stored with ``synthetic: true`` and never counts as met;
 * a report's per-criterion results, ``results[i]``, each with its ``outcome`` (``met`` / ``not_met`` /

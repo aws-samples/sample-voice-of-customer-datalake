@@ -54,15 +54,19 @@ class TestRevoke:
 
 class TestDelegatedAgentRunClaim:
     def test_requires_an_mcp_subject_the_claim_and_a_person(self):
-        allowed = {'sub': 'mcp:tok_1', project_access.MCP_AGENT_RUN_CLAIM: 'true',
+        allowed = {'sub': 'mcp:tok_1', project_access.MCP_AGENT_RUN_CLAIM: 'agents_run',
                    project_access.ACTING_SUBJECT_CLAIM: 'human-sub'}
-        assert project_access.delegated_agent_run_allowed(allowed)
-        assert not project_access.delegated_agent_run_allowed({**allowed, 'sub': 'human-sub'})
-        assert not project_access.delegated_agent_run_allowed({**allowed, project_access.MCP_AGENT_RUN_CLAIM: 'True'})
+        run = 'agents_run'
+        assert project_access.delegated_agent_run_allowed(allowed, run)
+        assert not project_access.delegated_agent_run_allowed({**allowed, 'sub': 'human-sub'}, run)
+        assert not project_access.delegated_agent_run_allowed({**allowed, project_access.MCP_AGENT_RUN_CLAIM: 'true'},
+                                                              run)
         assert not project_access.delegated_agent_run_allowed(
-            {**allowed, project_access.ACTING_SUBJECT_CLAIM: 'agent:a1'})
+            {**allowed, project_access.ACTING_SUBJECT_CLAIM: 'agent:a1'}, run)
         assert not project_access.delegated_agent_run_allowed({'sub': 'agent:a1', **{
-            k: v for k, v in allowed.items() if k != 'sub'}})
+            k: v for k, v in allowed.items() if k != 'sub'}}, run)
+        # Cleared for one operation, never for the other (review round 1, S4).
+        assert not project_access.delegated_agent_run_allowed(allowed, 'insights_get_adoption')
 
     def test_the_agents_route_refuses_a_delegated_call_without_the_claim(self, world):
         claims = {'sub': 'mcp:tok_1', project_access.ACTING_SUBJECT_CLAIM: world.subs['root']}

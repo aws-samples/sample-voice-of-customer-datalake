@@ -933,6 +933,7 @@
       "live": "La carte est active sur le formulaire de retours du prototype (révision {{revision, number}}).",
       "closed": "La carte est enregistrée mais pas affichée.",
       "stale": "Les critères ou les tâches ont changé depuis l'enregistrement de la carte : enregistrez-la de nouveau.",
+      "newerVersion": "Une version plus récente du prototype n’affiche pas de carte : enregistrez la carte pour l’y déplacer (elle se ferme sur cette version).",
       "oldWidget": "Cette version du prototype est antérieure à la carte : son widget ne peut pas l'afficher. Enregistrez sa visite guidée ou reconstruisez-le, puis enregistrez la carte."
     },
     "synthetic": {

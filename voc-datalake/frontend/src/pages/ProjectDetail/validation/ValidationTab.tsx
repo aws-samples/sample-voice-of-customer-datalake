@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ClipboardCheck, FileText, FlaskConical, Save, Scale, Sparkles } from 'lucide-react'
 import MethodologyGaps from '../../../components/MethodologyGaps/MethodologyGaps'
+import { forgetPrototypeCards } from '../../../components/PrototypePins/prototypeCardCache'
 import { formatDate } from '../../../utils/dateUtils'
 import { projectKey } from '../../../api/projectQueryKeys'
 import { validationApi, validationKeys } from '../../../api/validationApi'
@@ -58,6 +59,8 @@ function useValidationActions(projectId: string) {
     mutationFn: (args: { rows: EditorRow[]; open: boolean; revision: number }) => validationApi.saveCard(projectId, {
       tasks: toTasks(args.rows), open: args.open, language, expectedRevision: args.revision,
     }),
+    // A prototype framed in this session shows the card as saved, not the one it was handed before.
+    onSuccess: forgetPrototypeCards,
     onSettled: settle,
   })
   const report = useMutation({ mutationFn: () => validationApi.writeReport(projectId, language), onSettled: settle })
@@ -173,6 +176,7 @@ function CardSection({ view, actions }: Readonly<{ view: ValidationView; actions
         </p>
       )}
       {form?.stale === true ? <p className="text-sm text-warn">{t('validation.card.stale')}</p> : null}
+      {form?.newer_version == null ? null : <p className="text-sm text-warn">{t('validation.card.newerVersion')}</p>}
       {form !== null && !saved.card_in_prototype ? <p className="text-sm text-warn">{t('validation.card.oldWidget')}</p> : null}
       <button type="button" className="btn btn-primary btn-sm"
         disabled={busy || saved.criteria.length === 0 || !rowsValid(rows, false)}

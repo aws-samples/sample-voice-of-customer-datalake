@@ -479,8 +479,9 @@ def _claims_for(call: ToolCall, row: Mapping[str, Any]) -> dict[str, str]:
         # for itself alone (project_access.delegated_engineering_allowed); never the agents_run claim.
         claims[MCP_ENGINEERING_CLAIM] = call.tool.engineering_op
     elif call.tool.admin_only:
-        # Only after _check_allowed's live Cognito check (see project_access).
-        claims[MCP_AGENT_RUN_CLAIM] = 'true'
+        # Only after _check_allowed's live Cognito check (see project_access): the ONE admin-only operation the tool
+        # is, which its route admits for itself alone (project_access.delegated_agent_run_allowed, MCP_ADMIN_OPS).
+        claims[MCP_AGENT_RUN_CLAIM] = call.tool.name
     return claims
 
 

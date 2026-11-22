@@ -1,132 +1,141 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Server } from 'node:http';
 
-import { createRelayServer, SCOPE_HEADER, SESSION_HEADER, type ConnectionIds, type RelayHost } from './server.js';
-import type { WsConnection } from './ws-connection.js';
-import { OPCODE } from './ws-frames.js';
-import { closed, connect, listening, maskedFrame, serverFrames, type Client } from './ws-fixtures.js';
-import { settle } from './voice-fixtures.js';
+import type { RawData, WebSocket } from 'ws';
 
-/** A host that echoes every message back, records what it was given, and can be made busy. */
+import { createRelayServer, SCOPE_HEADER, SESSION_HEADER, type ConnectionIds, type RelayHost } from './server.js';
+import { closedAfterEach, connect, httpJson, listening, until, upgradeStatus, type Client } from './ws-fixtures.js';
+
+/** RFC 6455's sample nonce (section 1.3), built here so no key-shaped literal sits in the source. */
+const SAMPLE_NONCE = Buffer.from('the sample nonce').toString('base64');
+
+const START_MS = 1_763_726_400_000;
+const HEADERS = { [SESSION_HEADER]: 'sid-1', [SCOPE_HEADER]: 'proj_1' };
+
+/** A host that echoes every message back (text as `echo:<text>`), records what it was given, and can be made busy. */
 class EchoHost implements RelayHost {
   readonly ids: ConnectionIds[] = [];
   readonly texts: string[] = [];
+  readonly sizes: number[] = [];
   closes = 0;
   live = false;
-  connection: WsConnection | undefined;
+  socket: WebSocket | undefined;
 
   busy(): boolean {
     return this.live;
   }
 
-  connect(connection: WsConnection, ids: ConnectionIds, head: Buffer): void {
+  connect(socket: WebSocket, ids: ConnectionIds): void {
     this.ids.push(ids);
-    this.connection = connection;
-    connection.attach({
-      onText: (text) => { this.texts.push(text); connection.sendText(`echo:${text}`); },
-      onBinary: (data) => { connection.sendBinary(data); },
-      onClose: () => { this.closes += 1; },
-    }, head);
+    this.socket = socket;
+    socket.on('message', (data: RawData, isBinary: boolean) => {
+      if (!Buffer.isBuffer(data)) return;
+      this.sizes.push(data.length);
+      if (isBinary) socket.send(data);
+      else {
+        this.texts.push(data.toString('utf8'));
+        socket.send(`"echo:${data.toString('utf8')}"`);
+      }
+    });
+    socket.on('error', () => { /* its close follows */ });
+    socket.on('close', () => { this.closes += 1; });
   }
 }
 
-const servers: Server[] = [];
-const clients: Client[] = [];
-afterEach(async () => {
-  for (const client of clients.splice(0)) client.socket.destroy();
-  await Promise.all(servers.splice(0).map(closed));
-});
+const { servers, clients } = closedAfterEach();
 
-async function serving(host: RelayHost): Promise<Server> {
-  const server = await listening(createRelayServer(host, () => 1_763_726_400_000));
+async function serving(host: RelayHost, clock: () => number = () => START_MS): Promise<Server> {
+  const server = await listening(createRelayServer(host, clock));
   servers.push(server);
   return server;
 }
 
-async function ping(server: Server): Promise<unknown> {
-  const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : 0;
-  const response = await fetch(`http://127.0.0.1:${port}/ping`);
-  return response.json();
-}
-
 async function opened(host: EchoHost): Promise<Client> {
-  const client = await connect(await serving(host), { [SESSION_HEADER]: 'sid-1', [SCOPE_HEADER]: 'proj_1' });
+  const client = await connect(await serving(host), HEADERS);
   clients.push(client);
   return client;
 }
 
-describe('relay server', () => {
-  it('answers /ping Healthy, and HealthyBusy while a conversation is live', async () => {
+describe('relay server: the HTTP contract', () => {
+  it('answers /ping Healthy, then HealthyBusy, dated when the status changed and never by the ping itself', async () => {
     const host = new EchoHost();
-    const server = await serving(host);
-    const idle = await ping(server);
+    const clock = { now: START_MS };
+    const server = await serving(host, () => clock.now);
+    clock.now += 30_000;
+    const idle = await httpJson(server, 'GET', '/ping');
     host.live = true;
-    expect([idle, await ping(server)]).toStrictEqual([
-      { status: 'Healthy', time_of_last_update: 1_763_726_400 }, { status: 'HealthyBusy', time_of_last_update: 1_763_726_400 },
+    const busy = await httpJson(server, 'GET', '/ping');
+    clock.now += 60_000;
+    const stillBusy = await httpJson(server, 'GET', '/ping');
+    expect([idle.body, busy.body, stillBusy.body]).toStrictEqual([
+      { status: 'Healthy', time_of_last_update: 1_763_726_400 },
+      { status: 'HealthyBusy', time_of_last_update: 1_763_726_430 },
+      { status: 'HealthyBusy', time_of_last_update: 1_763_726_430 },
+    ]);
+  });
+
+  it('answers POST /invocations 400 (the relay talks over /ws only) and any other route 404', async () => {
+    const server = await serving(new EchoHost());
+    const answers = await Promise.all([
+      httpJson(server, 'POST', '/invocations'), httpJson(server, 'GET', '/invocations'), httpJson(server, 'GET', '/'),
+    ]);
+    expect(answers).toStrictEqual([
+      { status: 400, body: { error: 'use /ws' } }, { status: 404, body: null }, { status: 404, body: null },
     ]);
   });
 
   it('upgrades /ws with AgentCore\'s session and scope headers', async () => {
     const host = new EchoHost();
-    const client = await opened(host);
-    expect(client.status).toBe(101);
+    await opened(host);
     expect(host.ids).toStrictEqual([{ sessionId: 'sid-1', scope: 'proj_1' }]);
   });
 
-  it('refuses another path with 404 and a bad upgrade with 400', async () => {
+  it('refuses another path with 404 and an upgrade that is not a WebSocket handshake with 400', async () => {
     const host = new EchoHost();
     const server = await serving(host);
-    const elsewhere = await connect(server, {}, '/other');
-    const old = await connect(server, { 'Sec-WebSocket-Version': '8' });
-    clients.push(elsewhere, old);
-    expect([elsewhere.status, old.status]).toStrictEqual([404, 400]);
+    const statuses = await Promise.all([
+      upgradeStatus(server, { Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': SAMPLE_NONCE }, '/other'),
+      upgradeStatus(server, { Upgrade: 'websocket', 'Sec-WebSocket-Version': '13' }),
+      upgradeStatus(server, { Upgrade: 'websocket', 'Sec-WebSocket-Version': '7', 'Sec-WebSocket-Key': SAMPLE_NONCE }),
+    ]);
+    expect(statuses).toStrictEqual([404, 400, 400]);
     expect(host.ids).toStrictEqual([]);
   });
 });
 
-describe('relay connection', () => {
-  it('delivers text and binary messages, a fragmented one whole, and answers ping with pong', async () => {
+describe('relay server: the WebSocket', () => {
+  it('delivers text and binary messages of each length form, a fragmented one whole, and answers a ping once', async () => {
     const host = new EchoHost();
     const client = await opened(host);
-    client.socket.write(Buffer.concat([
-      maskedFrame(OPCODE.text, Buffer.from('hel'), false), maskedFrame(OPCODE.continuation, Buffer.from('lo')),
-      maskedFrame(OPCODE.binary, Buffer.from([1, 2])), maskedFrame(OPCODE.ping, Buffer.from('p')),
-      maskedFrame(OPCODE.pong, Buffer.from('q')),
-    ]));
-    await settle();
+    client.socket.send('hel', { fin: false });
+    client.socket.send('lo', { fin: true });
+    client.socket.send(Buffer.from([1, 2]));
+    client.socket.send(Buffer.alloc(300, 7));
+    client.socket.ping('p');
+    await until(() => client.binaries.length === 2 && client.pongs.length === 1);
     expect(host.texts).toStrictEqual(['hello']);
-    expect(serverFrames(client.received())).toStrictEqual([
-      { opcode: OPCODE.text, payload: Buffer.from('echo:hello') }, { opcode: OPCODE.binary, payload: Buffer.from([1, 2]) },
-      { opcode: OPCODE.pong, payload: Buffer.from('p') },
-    ]);
+    expect([client.texts, client.binaries]).toStrictEqual([['echo:hello'], [2, 300]]);
+    expect(client.pongs).toStrictEqual([Buffer.from('p')]);
   });
 
-  it('answers a close with a close, then reports the close once and drops later sends', async () => {
+  it('answers a close with a close, reports it once and drops a send after it', async () => {
     const host = new EchoHost();
     const client = await opened(host);
-    client.socket.write(maskedFrame(OPCODE.close, Buffer.from([0x03, 0xe8])));
-    await settle();
-    host.connection?.sendText('late');
-    host.connection?.close(1000);
-    expect(serverFrames(client.received())).toStrictEqual([{ opcode: OPCODE.close, payload: Buffer.from([0x03, 0xe8]) }]);
-    expect(host.closes).toBe(1);
+    client.socket.close(1000);
+    await until(() => host.closes === 1);
+    host.socket?.send('"late"');
+    host.socket?.close(1000);
+    expect([await client.closed, client.texts, host.closes]).toStrictEqual([1000, [], 1]);
   });
 
-  it('closes with 1009 on a frame over 32 KB and with 1002 on a continuation that starts nothing', async () => {
-    const big = await opened(new EchoHost());
-    big.socket.write(maskedFrame(OPCODE.binary, Buffer.alloc(40_000)).subarray(0, 4));
-    const stray = await opened(new EchoHost());
-    stray.socket.write(maskedFrame(OPCODE.continuation, Buffer.from('x')));
-    await settle();
-    expect(serverFrames(big.received())[0]?.payload.readUInt16BE(0)).toBe(1009);
-    expect(serverFrames(stray.received())[0]?.payload.readUInt16BE(0)).toBe(1002);
-  });
-
-  it('closes with 1002 on an unknown opcode', async () => {
-    const client = await opened(new EchoHost());
-    client.socket.write(maskedFrame(3, Buffer.from('x')));
-    await settle();
-    expect(serverFrames(client.received())[0]?.payload.readUInt16BE(0)).toBe(1002);
+  it('closes with 1009 on a message over 32 KB, in one frame or in fragments, and sends only valid close codes', async () => {
+    const host = new EchoHost();
+    const whole = await opened(host);
+    whole.socket.send(Buffer.alloc(40_000));
+    const fragments = await opened(host);
+    fragments.socket.send(Buffer.alloc(20_000), { fin: false });
+    fragments.socket.send(Buffer.alloc(20_000), { fin: true });
+    expect([await whole.closed, await fragments.closed]).toStrictEqual([1009, 1009]);
+    expect([host.sizes, whole.errors, fragments.errors]).toStrictEqual([[], [], []]);
   });
 });

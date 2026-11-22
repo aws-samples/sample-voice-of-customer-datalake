@@ -52,6 +52,24 @@ def test_csv_redact_source_redacts_drops_author_and_archives_nothing(wired, api_
     wired.s3.put_object.assert_not_called()
 
 
+def test_a_large_csv_upload_under_a_redacting_source_calls_no_entity_model(wired, api_gateway_event, lambda_context,
+                                                                           monkeypatch):
+    """Review round 1 (the csv-upload sibling of Q1): a reviews or tickets row names no language, so its redaction is
+    the patterns alone, never Comprehend, even with PII_COMPREHEND=1: no per-call text budget is needed here (the
+    survey import's rows do name their form's language, hence its 250-text bound)."""
+    from shared import pii_redaction
+
+    monkeypatch.setenv('PII_COMPREHEND', '1')
+    rows = '\n'.join(f'"Ticket {n}: call +49 30 1234{n:04d}",Jane,app,vip,pro,2026-01-02' for n in range(1000))
+    with patch.object(pii_redaction, '_redact_entities', side_effect=AssertionError('Comprehend called')) as model:
+        response, body = _upload(api_gateway_event, lambda_context, '/scrapers/manual/csv-upload',
+                                 {'csv_text': f'Body,Customer,Product,Labels,Plan,date\n{rows}\n',
+                                  'source_id': 'support_tickets', 'column_map': MAP})
+    assert (response['statusCode'], body['imported_count']) == (200, 1000)
+    model.assert_not_called()
+    assert all('[PHONE]' in message['text'] for message in _sent(wired))
+
+
 def test_csv_retention_source_archives_per_item(wired, api_gateway_event, lambda_context):
     _upload(api_gateway_event, lambda_context, '/scrapers/manual/csv-upload',
             {'csv_text': CSV, 'source_id': 'sales_csv', 'column_map': MAP})

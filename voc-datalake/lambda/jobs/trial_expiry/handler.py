@@ -1,13 +1,14 @@
 """voc-trial-expiry: a trial workspace's end (7.71.00; docs/multi-workspace.md "Trial workspaces"; the pause:
 shared/trial_pause.py).
 
-One way in: ``{"action": "trial_expiry", "workspace_id", "expires_at"}``, from the trial's one-time EventBridge Scheduler
-schedule (shared/trial_schedule.py), which deletes itself once it has run. The job reads the trial from the workspace's
-``META`` (the stored ``expires_at`` decides, never the event's) and, when it is due, pauses it: ``paused_at`` first,
-then the workspace's plugins (the existing audited disable) and its live forms turned off, everything recorded on the
-trial and in a ``trial_paused`` audit row. Nothing else: a trial that is converted, not active (being deleted), not
-due yet (an extension moved its end; a newer schedule waits for that) or no trial at all is answered as such. Running
-it again finishes a pause a failed attempt left half done and changes nothing once it is done.
+One way in: ``{"action": "trial_expiry"}``, the hourly EventBridge rule's input (lib/stacks/trial-expiry.ts). Each tick
+reads the platform listing once (``WORKSPACES``, the rows that carry a trial: shared/trial_pause.py ``due_trials``) and
+pauses each trial that is due: not converted, its ``expires_at`` passed, not paused yet (or paused within the last day,
+so a pause a failed attempt left half done is finished). The pause reads the trial from the workspace's ``META`` again
+(the stored ``expires_at`` decides) and sets ``paused_at`` first, then turns the workspace's plugins (the existing
+audited disable) and its live forms off, everything recorded on the trial and in a ``trial_paused`` audit row. A trial
+whose ``expires_at`` does not parse is never paused (skipped and logged). So a trial pauses within the hour after its
+end, and an extension or a conversion needs nothing but its own write.
 
 It never deletes anything but the plugins' own enable rows (``PLUGIN#{plugin}`` / ``WS#{ws}``, which ARE the existing
 disable): no workspace, form, response, feedback item, project, file or audit row. A whole-workspace delete stays the
@@ -18,23 +19,28 @@ Env: ``WORKSPACES_TABLE``, ``AGGREGATES_TABLE`` (the workspace's forms), ``ENABL
 from __future__ import annotations
 
 import os
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from shared.aws import get_dynamodb_resource
 from shared.enabled_sources import enabled_plugin_ids
-from shared.exceptions import ConfigurationError
+from shared.exceptions import ConfigurationError, ConflictError
 from shared.ingest_tables import ingest_table
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
-from shared.trial_pause import PauseTables, pause
-from shared.trial_schedule import EXPIRY_ACTION
+from shared.trial_pause import PauseTables, due_trials, pause
 from shared.warm_init import warm_at_init
-from shared.workspace_ids import is_workspace_id
 
 WORKSPACES_TABLE: Final = os.environ.get('WORKSPACES_TABLE', '')
 AGGREGATES_TABLE: Final = os.environ.get('AGGREGATES_TABLE', '')
 IGNORED: Final = 'ignored'
+#: The rule's input (lib/stacks/trial-expiry.ts TRIAL_EXPIRY_INPUT).
+EXPIRY_ACTION: Final = 'trial_expiry'
+SWEPT: Final = 'swept'
+PAUSE_FAILED: Final = 'failed'
 
 
 def _tables() -> PauseTables:
@@ -49,15 +55,23 @@ def _tables() -> PauseTables:
 
 
 def handle_event(event: object, tables: PauseTables, now: datetime) -> dict[str, Any]:
-    """The schedule's event: the trial's pause when it is due (shared/trial_pause.py ``pause``), or why not."""
-    if not isinstance(event, dict) or event.get('action') != EXPIRY_ACTION or not is_workspace_id(event.get('workspace_id')):
-        # Only its own schedules invoke it: anything else is logged and left alone.
+    """The hourly tick: every due trial paused (shared/trial_pause.py ``pause``); how many trials ended in each
+    outcome. One trial that fails is logged and left for the next tick, never stopping the others."""
+    if not isinstance(event, dict) or event.get('action') != EXPIRY_ACTION:
+        # Only its own rule invokes it: anything else is logged and left alone.
         logger.warning('trial_expiry ignored an event it does not take')
         return {'outcome': IGNORED}
-    ws = str(event['workspace_id'])
-    outcome = pause(tables, ws, now)
-    logger.info('trial_expiry', extra={'workspace_id': ws, **outcome})
-    return outcome
+    outcomes: Counter[str] = Counter()
+    for ws in due_trials(tables.workspaces, now):
+        try:
+            outcome = pause(tables, ws, now)
+        except (ClientError, BotoCoreError, ConflictError):
+            logger.exception('trial_expiry could not pause a trial', extra={'workspace_id': ws})
+            outcomes[PAUSE_FAILED] += 1
+            continue
+        logger.info('trial_expiry', extra={'workspace_id': ws, **outcome})
+        outcomes[str(outcome['outcome'])] += 1
+    return {'outcome': SWEPT, **outcomes}
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

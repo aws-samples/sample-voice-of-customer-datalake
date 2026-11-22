@@ -31,7 +31,8 @@ exported.
 * ``deleting``, ``deletion_started_at``: a project delete's fence (a live project never holds it);
 * a voice session's own row, its project's pointer to it, its scratch evidence and its counters (7.69.00,
   shared/voice_sessions.py): ``session_id``, ``starter_sub``, ``connect_by``, ``consent_at``, ``language``,
-  ``model_id``, ``voice_gender``, ``session_seconds``, ``monthly_seconds``, ``minutes_left``, ``usage_key``,
+  ``model_id``, ``voice_gender``, ``session_seconds``, ``monthly_seconds``, ``session_cost_cap_microusd``,
+  ``monthly_cost_cap_microusd`` (the cost caps, 7.71.00 review round 1), ``minutes_left``, ``usage_key``,
   ``evidence_key``, ``persona``, ``seconds``, ``streams``, ``transcript_parts``, ``end_reason``, ``ended_at``,
   ``finalize_job_id``, ``finalized_at``, ``transcript_document_id``, ``live``, ``sessions``: a session's state and
   meter, not the project's content (its transcript is a ``persona_interview`` document, exported as one). The scratch
@@ -59,6 +60,7 @@ EXCLUDED: Final = frozenset({
     'session_id', 'starter_sub', 'connect_by', 'consent_at', 'language', 'model_id', 'voice_gender', 'session_seconds',
     'monthly_seconds', 'minutes_left', 'usage_key', 'evidence_key', 'persona', 'seconds', 'streams', 'transcript_parts',
     'end_reason', 'ended_at', 'finalize_job_id', 'finalized_at', 'transcript_document_id', 'live', 'sessions',
+    'session_cost_cap_microusd', 'monthly_cost_cap_microusd',
 })
 
 EXPORTED: Final = frozenset({

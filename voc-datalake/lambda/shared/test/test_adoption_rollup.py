@@ -85,6 +85,19 @@ def test_artifacts_tell_ai_made_from_hand_written_and_skip_edits_and_copies():
                                               'research': {'ai': 1}}
 
 
+@pytest.mark.parametrize('edit_kind', ['edit', 'restore'])
+def test_a_research_document_or_persona_edited_in_place_is_still_counted_once(edit_kind):
+    """Review round 1 (Q5): an edit or a restore is no new artifact only on a versioned series' version row; an
+    unmanaged row (research, a persona) is the artifact itself."""
+    months = folded([
+        meta('2026-11-01T00:00:00+00:00'),
+        doc('RESEARCH#r', 'research', '2026-11-02T00:00:00+00:00', edit_kind=edit_kind),
+        doc('PERSONA#p', None, '2026-11-02T00:00:00+00:00', edit_kind=edit_kind),
+        doc('PROTOTYPE#v2', 'prototype', '2026-11-03T00:00:00+00:00', edit_kind=edit_kind),
+    ])
+    assert months['2026-11']['artifacts'] == {'research': {'ai': 1}, 'personas': {'ai': 1}}
+
+
 def test_decisions_by_verdict_and_validated_only_with_a_met_real_criterion():
     months = folded([
         meta('2026-10-01T00:00:00+00:00'),
@@ -120,7 +133,7 @@ def test_a_project_without_any_validation_data_is_not_validated():
 
 
 def test_a_meta_naming_its_report_counts_the_project_with_a_validation():
-    months = folded([meta('2026-11-01T00:00:00+00:00', validation={'report_document_id': 'rep_1', 'status': 'done'})])
+    months = folded([meta('2026-11-01T00:00:00+00:00', validation={'report_document_id': 'rep_1'})])
     assert months['2026-11']['with'] == {'validation': 1}
 
 
@@ -162,7 +175,7 @@ def test_the_projection_reads_no_text_of_a_decision_or_a_report():
     assert '#dec.#verdict' in projection
     assert 'results[0].#outcome' in projection
     assert set(names.values()) - set(ar.PROJECT_ATTRIBUTES) == {
-        'verdict', 'decided_at', 'evidence', 'document_ids', 'report_document_id', 'status', 'outcome'}
+        'verdict', 'decided_at', 'evidence', 'document_ids', 'report_document_id', 'outcome'}
     assert not {'rationale', 'content', 'title', 'quotes', 'text'} & set(names.values())
 
 

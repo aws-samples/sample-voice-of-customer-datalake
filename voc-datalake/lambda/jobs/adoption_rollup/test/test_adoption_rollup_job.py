@@ -100,11 +100,13 @@ def _written(tables: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {item['pk']: item for item in tables['aggregates'].scan()['Items']}
 
 
-def test_one_item_per_active_scope_for_the_day(tables):
-    assert handle_event({'mode': 'scheduled'}, _rollup(tables)) == {'scopes': 3, 'written': 3, 'partial': 0}
+def test_one_item_per_active_scope_under_its_fixed_key_with_no_ttl(tables):
+    assert handle_event({'mode': 'scheduled'}, _rollup(tables)) == {'scopes': 3, 'written': 3, 'partial': 0,
+                                                                   'kept': 0}
     written = _written(tables)
     assert set(written) == {'ADOPTION#ROLLUP', f'WS#{ACME}#ADOPTION#ROLLUP', f'WS#{BIRCH}#ADOPTION#ROLLUP'}
-    assert {item['sk'] for item in written.values()} == {'2026-11-21'}
+    assert {item['sk'] for item in written.values()} == {'latest'}
+    assert not any('ttl' in item for item in written.values())
 
 
 def test_the_deployment_counts_its_live_projects_conversations_and_agent_runs(tables):
@@ -200,6 +202,29 @@ def test_out_of_time_a_scope_is_written_partial(tables):
     complete = {item['pk']: item['complete'] for item in _written(tables).values()}
     assert complete == {'ADOPTION#ROLLUP': False, f'WS#{ACME}#ADOPTION#ROLLUP': False,
                         f'WS#{BIRCH}#ADOPTION#ROLLUP': True}
+
+
+def test_a_run_cut_short_keeps_the_last_complete_figures(tables):
+    """Review round 1 (F4, Q20): a partial run never replaces a complete item; the next full run does."""
+    handle_event({}, _rollup(tables))
+    before = _written(tables)
+    with patch.object(handler, 'RESERVE_SECONDS', 0.0):
+        outcome = handle_event({}, _rollup(tables, remaining=lambda: 0.0))
+    assert (outcome['kept'], outcome['written']) == (2, 1)
+    after = _written(tables)
+    assert after['ADOPTION#ROLLUP'] == before['ADOPTION#ROLLUP']
+    assert after['ADOPTION#ROLLUP']['complete'] is True
+
+
+def test_each_scope_gets_its_share_of_the_time_left():
+    """Q20: one large scope never takes the time of the scopes after it."""
+    ticks = iter([0.0, 0.0, 30.0, 61.0])
+    rollup = Rollup(aggregates=None, projects=None, workspaces=None, conversations=None, agents=None,
+                    remaining=lambda: 180.0 + handler.RESERVE_SECONDS, monotonic=lambda: next(ticks))
+    clock = handler._Clock(rollup)
+    clock.start_scope(3)       # 180 s left over 3 scopes: 60 s for this one
+    assert clock.has_time()     # at 30 s
+    assert not clock.has_time()  # at 61 s: its share is spent, the run's own deadline is not
 
 
 def test_the_handler_needs_every_table(monkeypatch):

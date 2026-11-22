@@ -9,7 +9,8 @@ platform admin extends or converts the trial, nothing turns them back on:
 * a plugin's enable (``PUT /me/workspaces/current/plugins/{id}``, shared/workspace_plugin_settings.py) commits only
   while ``paused_at`` is absent (a condition in its own transaction, so a pause landing meanwhile still wins);
 * a form put live (``POST /feedback-forms`` or ``PUT /feedback-forms/{id}`` with ``enabled: true`` in a workspace,
-  lambda/api/feedback_form_handler.py) is refused after one strongly consistent read of ``trial`` (``require_live``).
+  lambda/api/feedback_form_handler.py) commits only while ``paused_at`` is absent too (a ConditionCheck of ``META`` in
+  the save's own transaction, shared/ws_repo.py ``unpaused_in``).
 
 Both answer 409 with ``TRIAL_PAUSED`` and the code ``trial_paused``. Everything else (reads, edits, the export, a form
 turned off, a plugin turned off) works as in any workspace. This module imports none of the trial's writers, so the
@@ -24,7 +25,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from shared.dynamo_values import plain, text_field
-from shared.exceptions import ConflictError, ValidationError
+from shared.exceptions import ValidationError
 from shared.request_body import reject_unknown_fields
 from shared.workspace_ids import ws_key
 
@@ -59,12 +60,6 @@ def stored_trial(table: Any, ws: str) -> dict[str, Any] | None:
                            ProjectionExpression='#trial', ExpressionAttributeNames={'#trial': TRIAL}).get('Item')
     trial = found.get(TRIAL) if isinstance(found, Mapping) else None
     return dict(trial) if isinstance(trial, Mapping) else None
-
-
-def require_live(table: Any, ws: str) -> None:
-    """409 ``TRIAL_PAUSED`` (code ``trial_paused``) while workspace ``ws`` is a paused trial."""
-    if is_paused(stored_trial(table, ws)):
-        raise ConflictError(TRIAL_PAUSED, code=TRIAL_PAUSED_CODE)
 
 
 @dataclass(frozen=True)

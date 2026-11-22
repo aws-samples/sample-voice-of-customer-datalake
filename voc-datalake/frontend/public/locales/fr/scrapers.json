@@ -597,6 +597,7 @@
       "rows_one": "{{count, number}} ligne, {{columns}} colonnes",
       "rows_many": "{{count, number}} lignes, {{columns}} colonnes",
       "rows_other": "{{count, number}} lignes, {{columns}} colonnes",
+      "legacyEncoding": "Ce fichier n’est pas en UTF-8 : il a été lu en Windows-1252 (Europe occidentale). Vérifiez dans l’aperçu que les lettres accentuées s’affichent bien avant de continuer.",
       "problems": {
         "format": "Ce type de fichier ne peut pas être importé. Choisissez un fichier CSV, TSV, JSON ou Excel (.xlsx).",
         "tooLarge": "Ce fichier dépasse 10 MB. Divisez-le et importez les parties une par une.",
@@ -698,7 +699,10 @@
         "too_many_options": "« {{header}} » a plus de 50 réponses différentes : la colonne est exclue. Passez-la en texte libre pour la garder.",
         "matrix_too_large": "« {{header}} » est une grille de plus de 20 lignes ou 10 réponses : la colonne est exclue.",
         "no_values": "« {{header}} » n’a aucune réponse à transformer en options : la colonne est exclue.",
-        "too_many_questions": "« {{header}} » est exclue : un formulaire compte au plus 30 questions."
+        "too_many_questions": "« {{header}} » est exclue : un formulaire compte au plus 30 questions.",
+        "extra_date": "« {{header}} » est exclue : chaque réponse est datée par la première colonne de date.",
+        "extra_id": "« {{header}} » est exclue : chaque réponse est identifiée par la première colonne d’identifiant.",
+        "extra_channel": "« {{header}} » est exclue : la première colonne de canal donne le canal de chaque réponse."
       }
     },
     "insights": {
@@ -711,6 +715,8 @@
       "refusedRow": "Ligne {{row}} : {{reason}}",
       "processing": "Analyse : {{done, number}} sur {{total, number}}…",
       "slow": "Analyse toujours en cours. Un gros fichier peut prendre quelques minutes.",
+      "alreadyImported": "Rien de nouveau à analyser : ces lignes ont déjà été importées.",
+      "alreadyImportedLink": "Les voir dans le tableau de bord",
       "ready_one": "{{count, number}} retour analysé. Voici ce qu’il dit :",
       "ready_many": "{{count, number}} retours analysés. Voici ce qu’ils disent :",
       "ready_other": "{{count, number}} retours analysés. Voici ce qu’ils disent :",

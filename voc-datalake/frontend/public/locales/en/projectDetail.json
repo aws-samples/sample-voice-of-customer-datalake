@@ -899,6 +899,7 @@
       "live": "The card is live on the prototype's own feedback form (revision {{revision, number}}).",
       "closed": "The card is saved but not shown.",
       "stale": "The criteria or tasks changed since the card was saved: save it again.",
+      "newerVersion": "A newer version of the prototype shows no card: save the card to move it there (it closes on this version).",
       "oldWidget": "This prototype version was made before the card existed, so its widget cannot show it: save its walkthrough or build it again, then save the card."
     },
     "synthetic": {

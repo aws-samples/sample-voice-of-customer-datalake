@@ -66,6 +66,11 @@ describe('parseOutput', () => {
       .toStrictEqual({ kind: 'toolUse', toolName: 'cite', toolUseId: 'u', content: '{}' });
   });
 
+  it('reads the start of a response', () => {
+    expect(parseOutput(bytes({ event: { completionStart: { completionId: 'c-1', sessionId: 's' } } })))
+      .toStrictEqual({ kind: 'completionStart' });
+  });
+
   it('reads the usage totals, and anything else as other', () => {
     const usage = { details: { total: { input: { speechTokens: 157, textTokens: 953 }, output: { speechTokens: 143, textTokens: 41 } } } };
     expect(parseOutput(bytes({ event: { usageEvent: usage } }))).toStrictEqual({ kind: 'usage', totals: { speech_in: 157, speech_out: 143, text_in: 953, text_out: 41 } });

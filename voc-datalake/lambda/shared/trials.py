@@ -17,7 +17,7 @@ The trial is ONE map, ``trial``, the same on the workspace's ``META`` row and on
     paused_at      set by voc-trial-expiry when the trial paused (absent while it runs)
     paused         {plugins: [ids], forms: [ids]}: what the pause turned off, so an extension or a conversion turns
                    exactly that back on (shared/trial_pause.py)
-    converted_at, converted_by   a conversion: a regular workspace from then on (its pending schedule does nothing)
+    converted_at, converted_by   a conversion: a regular workspace from then on (the expiry's tick passes it by)
 
 No new workspace status (a paused trial is ``active``, so every reader, writer, the export and the hard delete treat it
 as any workspace). Its audit rows, in ``AUDIT#WS#{ws}`` under the audit-row guard: ``trial_created`` (in the creation's
@@ -39,7 +39,6 @@ from shared.exceptions import ConflictError, NotFoundError
 from shared.persona_save import cancellation_codes
 from shared.platform_workspaces import LISTING_PK, listing_sort_key
 from shared.timestamps import now_iso, parse_iso
-from shared.trial_schedule import TrialSchedule
 from shared.trial_state import (
     CONVERTED_AT,
     PAUSED,
@@ -147,23 +146,22 @@ def audit_trial(table: Any, ws: str, kind: str, actor: str, fields: Mapping[str,
 
 
 #: Turns a paused trial's plugins and forms back on (shared/trial_pause.py ``resume``, bound by the handler):
-#: ``(ws, trial, actor, reason)`` -> ``{plugins: n, forms: n}`` turned on.
-Resume = Callable[[str, Mapping[str, Any], str, str], dict[str, int]]
+#: ``(ws, trial, actor, reason)`` -> ``{plugins: n, forms: n, skipped: [{form_id, code}]}``.
+Resume = Callable[[str, Mapping[str, Any], str, str], dict[str, Any]]
 
 
 def _without_pause(trial: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in trial.items() if key not in (PAUSED_AT, PAUSED)}
 
 
-def extend_trial(table: Any, ws: object, days: int, actor: str, *, schedule: TrialSchedule, resume: Resume,
-                 now: datetime) -> dict[str, Any]:
+def extend_trial(table: Any, ws: object, days: int, actor: str, *, resume: Resume, now: datetime) -> dict[str, Any]:
     """Extend the trial by ``days`` from its end, or from now when it already ended; the trial's view.
 
-    In order: the ``trial_extended`` audit row; the new end's schedule (the old one still runs and does nothing); a
-    paused trial's plugins and forms turned back on (``resume``); then the map (the new ``expires_at``, the history,
-    the pause removed). 409 for a converted trial, past ``MAX_EXTENSIONS``, or a trial changed meanwhile; a failure after
-    the audit row leaves the trial as it was or resumed but still marked paused, and the same extension again finishes
-    it (its end counted from the same stored end)."""
+    In order: the ``trial_extended`` audit row; a paused trial's plugins and forms turned back on (``resume``); then
+    the map (the new ``expires_at``, the history, the pause removed). The expiry's hourly tick reads the new end from
+    the listing, so nothing is scheduled. 409 for a converted trial, past ``MAX_EXTENSIONS``, or a trial changed
+    meanwhile; a failure after the audit row leaves the trial as it was or resumed but still marked paused, and the
+    same extension again finishes it (its end counted from the same stored end)."""
     workspace, meta, trial = trial_workspace(table, ws)
     if is_converted(trial):
         raise ConflictError(TRIAL_ALREADY_CONVERTED, code='trial_converted')
@@ -175,7 +173,6 @@ def extend_trial(table: Any, ws: object, days: int, actor: str, *, schedule: Tri
     paused = is_paused(trial)
     at = audit_trial(table, workspace, TRIAL_EXTENDED, actor, {'days': days, 'expires_at': at_second(expires_at),
                                                            'was_paused': paused, 'platform_admin': True})
-    schedule.create(workspace, expires_at)
     entry: dict[str, Any] = {'at': at, 'by': actor, 'days': days, 'expires_at': at_second(expires_at)}
     if paused:
         entry['resumed'] = resume(workspace, trial, actor, TRIAL_EXTENDED)
@@ -187,8 +184,8 @@ def extend_trial(table: Any, ws: object, days: int, actor: str, *, schedule: Tri
 def convert_trial(table: Any, ws: object, actor: str, *, resume: Resume) -> dict[str, Any]:
     """Convert the trial into a regular workspace (no end any more); the trial's view. A converted one is answered as
     it is (nothing written). In order: the ``trial_converted`` audit row, a paused trial's plugins and forms turned
-    back on, then the map (``converted_at``, ``converted_by``, the pause removed). Its pending schedule still runs once
-    and does nothing."""
+    back on, then the map (``converted_at``, ``converted_by``, the pause removed); the expiry's tick passes a converted
+    trial by."""
     workspace, meta, trial = trial_workspace(table, ws)
     if is_converted(trial):
         return trial_view(trial) or {}

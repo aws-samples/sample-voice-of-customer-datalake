@@ -565,6 +565,7 @@
       "preview_other": "Die ersten {{count, number}} Zeilen",
       "rows_one": "{{count, number}} Zeile, {{columns}} Spalten",
       "rows_other": "{{count, number}} Zeilen, {{columns}} Spalten",
+      "legacyEncoding": "Diese Datei ist nicht in UTF-8, daher wurde sie als Windows-1252 (Westeuropäisch) gelesen. Prüfen Sie in der Vorschau, ob Umlaute und Akzente stimmen, bevor Sie fortfahren.",
       "problems": {
         "format": "Dieser Dateityp kann nicht importiert werden. Wählen Sie eine Datei im Format CSV, TSV, JSON oder Excel (.xlsx).",
         "tooLarge": "Diese Datei ist größer als 10 MB. Teilen Sie sie auf und importieren Sie die Teile nacheinander.",
@@ -663,7 +664,10 @@
         "too_many_options": "„{{header}}“ hat mehr als 50 verschiedene Antworten: Die Spalte wird weggelassen. Machen Sie sie zu Freitext, um sie zu behalten.",
         "matrix_too_large": "„{{header}}“ ist eine Matrix mit mehr als 20 Zeilen oder 10 Antworten: Die Spalte wird weggelassen.",
         "no_values": "„{{header}}“ hat keine Antworten, aus denen Optionen werden können: Die Spalte wird weggelassen.",
-        "too_many_questions": "„{{header}}“ wird weggelassen: Ein Formular hat höchstens 30 Fragen."
+        "too_many_questions": "„{{header}}“ wird weggelassen: Ein Formular hat höchstens 30 Fragen.",
+        "extra_date": "„{{header}}“ wird weggelassen: Jede Antwort erhält das Datum der ersten Datumsspalte.",
+        "extra_id": "„{{header}}“ wird weggelassen: Jede Antwort wird über die erste ID-Spalte erkannt.",
+        "extra_channel": "„{{header}}“ wird weggelassen: Die erste Kanalspalte ist der Kanal jeder Antwort."
       }
     },
     "insights": {
@@ -674,6 +678,8 @@
       "refusedRow": "Zeile {{row}}: {{reason}}",
       "processing": "Wird analysiert: {{done, number}} von {{total, number}}…",
       "slow": "Die Analyse läuft noch. Eine große Datei kann einige Minuten dauern.",
+      "alreadyImported": "Nichts Neues zu analysieren: Diese Zeilen wurden bereits importiert.",
+      "alreadyImportedLink": "Im Dashboard ansehen",
       "ready_one": "{{count, number}} Feedback analysiert. Das sagt es:",
       "ready_other": "{{count, number}} Feedbacks analysiert. Das sagen sie:",
       "sentiment": "Stimmung",

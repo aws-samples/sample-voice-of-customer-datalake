@@ -1,8 +1,8 @@
 /**
  * A live voice session in its dialog, on a hand-driven socket and audio: the synthetic label, captions of both sides
  * (the persona's unspoken text muted, then final), a citation, the clock and cost, a notice, End asking the relay,
- * the end posted once, the filed transcript linked and saved to the Library, and each failure said in words. While it
- * runs, Escape does not close the dialog.
+ * the end posted once, the filed transcript linked and saved to the Library, and each failure said in words (an end
+ * that could not be recorded after its retries, with Try again). While it runs, Escape does not close the dialog.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, within } from '@testing-library/react'
@@ -48,6 +48,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -98,14 +100,38 @@ describe('VoiceSessionModal', () => {
     expect(screen.getByText('The session reached its time limit.')).toBeInTheDocument()
   })
 
-  it.each([
-    ['the end could not be recorded', { [`POST ${SESSION}/end`]: () => { throw new Error('API Error: 500') } }, /could not be recorded/],
-    ['the transcript could not be filed', { [`GET ${SESSION}`]: () => ({ ...FILED, status: 'failed', transcript_document_id: null }) }, /could not be filed/],
-  ])('says when %s', async (_label, routes, message) => {
-    serve(routes)
+  it('says when the transcript could not be filed', async () => {
+    serve({ [`GET ${SESSION}`]: () => ({ ...FILED, status: 'failed', transcript_document_id: null }) })
     const { socket } = renderSession()
     relay(socket, { type: 'ended', reason: 'error' })
-    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(await screen.findByText(/could not be filed/)).toBeInTheDocument()
+  })
+
+  it('retries an end that fails, says when none was recorded, and Try again records it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const answers = ['fail', 'fail', 'fail']
+    serve({ [`POST ${SESSION}/end`]: () => {
+      if (answers.shift() === 'fail') throw new Error('API Error: 500')
+      return { success: true, status: 'finalizing', job_id: 'job_1' }
+    } })
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) })
+    const { socket } = renderSession()
+    relay(socket, { type: 'ended', reason: 'error' })
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(await screen.findByText(/could not be recorded/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('link', { name: 'Open transcript' })).toBeInTheDocument()
+    expect(fetchApi.mock.calls.filter(([path]) => path === `${SESSION}/end`)).toHaveLength(4)
+    vi.useRealTimers()
+  })
+
+  it('sends the end with keepalive when the page goes away during the session', () => {
+    serve()
+    renderSession()
+    act(() => { globalThis.dispatchEvent(new Event('pagehide')) })
+    const sent = fetchApi.mock.calls.filter(([path]) => path === `${SESSION}/end`)
+    expect(sent.map(([, init]) => init?.keepalive)).toStrictEqual([true])
   })
 
   it('keeps the dialog open on Escape while the session runs, and says a dropped connection', async () => {

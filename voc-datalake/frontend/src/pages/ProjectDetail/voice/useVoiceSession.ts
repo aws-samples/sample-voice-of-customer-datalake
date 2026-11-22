@@ -2,10 +2,11 @@
  * @fileoverview A live voice session for the modal (docs/voice-personas.md): its connection (voiceConnection.ts),
  * the state folded from the relay's messages (voiceSessionState.ts), the microphone's level, a clock that runs while
  * the session is live, and, once it is over, the projects API's end (`POST …/voice-sessions/{sid}/end`, which files
- * the transcript) and the session's status until the transcript document is there.
+ * the transcript: voiceSessionEnd.ts) and the session's status until the transcript document is there.
  *
- * The end is posted once, whatever ended the session (End, the relay's limit, a dropped connection, the page
- * closing), so no session is left for the person to clean up.
+ * The end is posted whatever ended the session (End, the relay's limit, a dropped connection), retried, and sent once
+ * more with `keepalive` when the page goes away first (`pagehide`), so no session is left for the person to clean up;
+ * after every attempt failed, `retryEnd` posts it again.
  *
  * @module pages/ProjectDetail/voice/useVoiceSession
  */
@@ -16,6 +17,8 @@ import { voiceKeys, voiceSessionsApi } from '../../../api/voiceSessionsApi'
 import type { StartedVoiceSession, VoiceSessionStatus } from '../../../api/voiceSessionsApi'
 import { createVoiceConnection } from './voiceConnection'
 import type { VoiceAudio } from './voiceAudio'
+import { createEndRecorder } from './voiceSessionEnd'
+import type { EndState } from './voiceSessionEnd'
 import { endVoice, initialVoiceState, reduceVoice } from './voiceSessionState'
 import type { VoiceState } from './voiceSessionState'
 
@@ -56,7 +59,9 @@ export interface VoiceSessionTarget {
 export function useVoiceSession({ projectId, personaId, started, audio }: VoiceSessionTarget) {
   const [state, dispatch] = useReducer(reducer, undefined, () => initialVoiceState(started.session_minutes * 60, started.minutes_left))
   const [level, setLevel] = useState(0)
-  const [posted, setPosted] = useState<'no' | 'yes' | 'failed'>('no')
+  const [posted, setPosted] = useState<EndState>('no')
+  const [recorder] = useState(() => createEndRecorder(
+    (keepalive) => voiceSessionsApi.end(projectId, personaId, started.session_id, keepalive), setPosted))
   const [connection] = useState(() => createVoiceConnection(started.connect_url, audio, {
     onMessage: (message) => dispatch({ kind: 'relay', message }),
     onLevel: setLevel,
@@ -64,18 +69,17 @@ export function useVoiceSession({ projectId, personaId, started, audio }: VoiceS
     onClosed: (reason) => {
       dispatch({ kind: 'closed', reason })
       setLevel(0)
-      voiceSessionsApi.end(projectId, personaId, started.session_id)
-        .then(() => setPosted('yes'))
-        .catch((error: unknown) => {
-          console.warn('Voice session: the end could not be recorded', error)
-          setPosted('failed')
-        })
+      recorder.record()
     },
   }))
   useEffect(() => {
     connection.connect()
     return connection.release
   }, [connection])
+  useEffect(() => {
+    globalThis.addEventListener('pagehide', recorder.pageHidden)
+    return () => globalThis.removeEventListener('pagehide', recorder.pageHidden)
+  }, [recorder])
   const status = useQuery({
     queryKey: voiceKeys.session(started.session_id),
     queryFn: () => voiceSessionsApi.getSession(projectId, personaId, started.session_id),
@@ -87,5 +91,5 @@ export function useVoiceSession({ projectId, personaId, started, audio }: VoiceS
     dispatch({ kind: 'ending' })
     connection.end()
   }
-  return { state, level, elapsed, status: status.data, endFailed: posted === 'failed', end }
+  return { state, level, elapsed, status: status.data, endFailed: posted === 'failed', retryEnd: recorder.record, end }
 }

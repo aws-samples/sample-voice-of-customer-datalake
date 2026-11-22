@@ -10,7 +10,9 @@ it archives anything and before it queues the message, and archives only what
   ``shared.pii_redaction`` (a query string can carry an email), ``author`` (and
   the author's avatar URL) are dropped, every string metadata value is redacted
   — at any depth, inside nested maps such as ``custom_fields`` and inside lists
-  — and no raw copy is archived (the redacted message is the only copy that exists).
+  — and no raw copy is archived (the redacted message is the only copy that exists). A caller that names its
+  messages' free text (``quiet_policy``'s ``free_text``: a form import's open answers) sends only that, the text and
+  the title to the entity model; their ids, codes and URLs get the patterns alone.
 - ``summary_only``: the same redaction; the processor then stores derived
   fields only (``shared.source_profiles`` contract).
 
@@ -23,7 +25,7 @@ of that source deletes (``shared/retention.py``).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any, Final
 
 from shared.ingest_schemas import MAX_METADATA_VALUE_LENGTH, MAX_TEXT_LENGTH, MAX_URL_LENGTH
@@ -35,9 +37,11 @@ from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope
 __all__ = [
     'ARCHIVE_FILE',
     'ARCHIVE_ITEM',
+    'FreeText',
     'apply_source_policy',
     'archive_mode',
     'policy_message',
+    'quiet_policy',
     'raw_archive_allowed',
 ]
 
@@ -59,6 +63,10 @@ _MAX_TITLE_LENGTH: Final = 500
 _URL_FIELDS: Final = ('url', 'source_url')
 # The metadata keys an erasure by email matches (``shared.retention``): stored lower-cased.
 EMAIL_METADATA_FIELDS: Final = ('email', 'submitter_email')
+#: The metadata paths (keys from ``metadata`` down, a list's items under their list's path) of a message's free text:
+#: only those, beside ``text`` and ``title``, reach the entity model (``shared.pii_redaction``'s Comprehend pass);
+#: every other string (an id, a code, a URL) gets the pattern pass only. None: every string reaches it.
+FreeText = Collection[tuple[str, ...]] | None
 
 
 def _bounded(text: str, limit: int) -> str:
@@ -87,14 +95,17 @@ def archive_mode(profile: Mapping[str, Any]) -> str:
     return ARCHIVE_ITEM if profile.get('retention_days') is not None else ARCHIVE_FILE
 
 
-def _redacted(value: object, language: str | None) -> object:
-    """``value`` with every string redacted: recursing into maps and lists, author keys dropped."""
+def _redacted(value: object, language: str | None, free_text: FreeText = None, path: tuple[str, ...] = ()) -> object:
+    """``value`` with every string redacted: recursing into maps and lists, author keys dropped; a string off
+    ``free_text``'s paths by the patterns alone."""
     if isinstance(value, str):
-        return _bounded(redact_text(value, language).text, MAX_METADATA_VALUE_LENGTH)
+        model_language = language if free_text is None or path in free_text else None
+        return _bounded(redact_text(value, model_language).text, MAX_METADATA_VALUE_LENGTH)
     if isinstance(value, Mapping):
-        return {key: _redacted(item, language) for key, item in value.items() if key not in _AUTHOR_METADATA_FIELDS}
+        return {key: _redacted(item, language, free_text, (*path, str(key))) for key, item in value.items()
+                if key not in _AUTHOR_METADATA_FIELDS}
     if isinstance(value, list | tuple):
-        return [_redacted(item, language) for item in value]
+        return [_redacted(item, language, free_text, path) for item in value]
     return value
 
 
@@ -108,7 +119,7 @@ def _lower_cased_emails(message: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _redact_message(message: Mapping[str, Any]) -> dict[str, Any]:
+def _redact_message(message: Mapping[str, Any], free_text: FreeText = None) -> dict[str, Any]:
     language = message.get('language') if isinstance(message.get('language'), str) else None
     out = {key: value for key, value in message.items()
            if key not in _AUTHOR_FIELDS and key not in _RAW_FIELDS}
@@ -118,9 +129,27 @@ def _redact_message(message: Mapping[str, Any]) -> dict[str, Any]:
         out['title'] = _bounded(redact_text(message['title'], language).text, _MAX_TITLE_LENGTH)
     for field in _URL_FIELDS:
         if isinstance(message.get(field), str):
-            out[field] = _bounded(redact_text(message[field], language).text, MAX_URL_LENGTH)
+            out[field] = _bounded(redact_text(message[field], language if free_text is None else None).text,
+                                  MAX_URL_LENGTH)
     if 'metadata' in message:
-        out['metadata'] = _redacted(message['metadata'], language)
+        out['metadata'] = _redacted(message['metadata'], language, free_text)
+    return out
+
+
+def quiet_policy(message: Mapping[str, Any], profile: Mapping[str, Any], *,
+                 free_text: FreeText = None) -> dict[str, Any] | None:
+    """``apply_source_policy`` without its metric, for a caller that applies the policy to many messages on worker
+    threads (shared/ingest_archive.py ``policy_applied``) and counts them itself, once, on its own thread.
+    ``free_text`` (``FreeText``): the metadata paths that hold a person's own words, the only metadata the entity
+    model reads (None: all of it)."""
+    pii = _pii(profile)
+    message = {key: value for key, value in _lower_cased_emails(message).items() if key != WORKSPACE_FIELD}
+    if pii == PII_ALLOW:
+        return {**message, 'pii_policy_applied': PII_ALLOW}
+    if not isinstance(message.get('text'), str) or not message['text'].strip():
+        return None
+    out = _redact_message(message, free_text)
+    out['pii_policy_applied'] = pii
     return out
 
 
@@ -136,15 +165,9 @@ def apply_source_policy(message: Mapping[str, Any], profile: Mapping[str, Any]) 
     policy (``BaseIngestor.send_to_queue``). A producer's content (a request body, a source payload) can never
     choose it.
     """
-    pii = _pii(profile)
-    message = {key: value for key, value in _lower_cased_emails(message).items() if key != WORKSPACE_FIELD}
-    if pii == PII_ALLOW:
-        return {**message, 'pii_policy_applied': PII_ALLOW}
-    if not isinstance(message.get('text'), str) or not message['text'].strip():
-        return None
-    out = _redact_message(message)
-    out['pii_policy_applied'] = pii
-    metrics.add_metric(name='PiiPolicyApplied', unit='Count', value=1)
+    out = quiet_policy(message, profile)
+    if out is not None and out['pii_policy_applied'] != PII_ALLOW:
+        metrics.add_metric(name='PiiPolicyApplied', unit='Count', value=1)
     return out
 
 

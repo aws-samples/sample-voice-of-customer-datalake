@@ -18,6 +18,7 @@ tenet 2): the session, the transcript document and the export all say so.
 - [Data and retention](#data-and-retention)
 - [Security review](#security-review)
 - [What to check on a live deployment](#what-to-check-on-a-live-deployment)
+- [Roadmap](#roadmap)
 
 ## What a session is
 
@@ -69,6 +70,9 @@ documents; a session row and its counters stay as they are (a few hundred bytes 
 | A session | 15 minutes (`voiceSessionMinutes`) | the relay's timer; the runtime's 20-minute lifetime above it |
 | A person | 5 sessions a day, 3 starts a minute | the projects API, at the start (`VOICEDAY#`, `VOICERATE#` counters, kept 2 days) |
 | The deployment | 300 minutes a month (`voiceMonthlyMinutes`) | the projects API at the start (at least one minute must be left), the relay every minute |
+| The deployment's cost | 5 cents a minute of its month (`MAX_CENTS_PER_MINUTE`, shared/voice_sessions.py): $15 for 300 minutes | the projects API at the start (the month's minutes count as used up), the relay every minute (`budget`) |
+| A session's cost | 5 cents a minute of its limit: 75 cents for 15 minutes | the relay, at every usage event of the model (`budget`) |
+| The microphone | 1.5 times real time (16 kHz PCM16, 48,000 bytes a second, plus a second's head start) | the relay: frames past it are dropped and counted (`dropped_frames` in its `session_ended` log line) |
 | Streams at once | 8 (`voiceMaxConcurrent`) | the projects API, at the start (a live set, `VOICEUSE#LIVE`); "Voice is busy" past it |
 
 **Cost, no fixed cost** (tenet 7). By default nothing is built. With the flag:
@@ -77,7 +81,8 @@ documents; a session row and its counters stay as they are (a few hundred bytes 
   out $0.002651 (the AWS Price List, read 2026-11-21). The microphone streams for the whole session (about 20 speech
   tokens a second), and the persona's speech is about 25 a second, so a conversation minute costs about 1 to 3 cents,
   typically 1.5 to 2. The consent dialog shows 2 cents a minute; the session's own cost is metered from the model's
-  usage events, not from the clock. 300 minutes a month cost at most about $9.
+  usage events, not from the clock. 300 minutes a month cost about $9 at most, and never more than the month's cost
+  cap of $15 (the table above), whatever a session does.
 - AgentCore Runtime bills each session per second while it lives (CPU is not billed while it waits on I/O): at most
   about $0.001 a minute, so at most about $0.30 for 300 minutes. Nothing runs between sessions.
 - The summary is one model call over the transcript: under a cent.
@@ -112,7 +117,7 @@ browser ──HTTPS──▶ projects API (/projects/{proxy+})  ── checks, e
    (`X-Amzn-Bedrock-AgentCore-Runtime-Session-Id`, `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Voc-Scope`). No AWS call
    is made to mint it. The browser holds no AWS credentials.
 3. **The relay** (`voc-datalake/lambda/stream/src/voice/`, Node 22, direct code on AgentCore Runtime, PUBLIC network
-   mode) accepts the first connection for its session: it moves the row `minted → live` with a condition (the URL is
+   mode; its WebSocket server on `/ws` is the `ws` package) accepts the first connection for its session: it moves the row `minted → live` with a condition (the URL is
    single use), reads the evidence (which must name this session and the signed project), and opens Nova Sonic's
    bidirectional stream: the persona's prompt (its identity, a short spoken style, the voice's gender, the person's
    language, the evidence as data) and one tool, `cite`, which the persona calls silently to name the reviews it
@@ -128,8 +133,13 @@ browser ──HTTPS──▶ projects API (/projects/{proxy+})  ── checks, e
    adds them to the month's row; the month's new total is the budget check.
 7. **The end:** End sends `{type: 'end'}`; the relay closes the stream, writes the last transcript part and the usage,
    marks the row `ended` and answers `ended`; then the browser calls `POST …/voice-sessions/{session}/end`, which stops
-   the runtime session if it still runs and starts the transcript job. A session whose browser closed is saved the
-   next time its starter reads it (`GET …/voice-sessions/{session}`); a URL never used ends a minute after it was made.
+   the runtime session if it still runs and starts the transcript job. The browser retries that call (three attempts,
+   then **Try again**), and sends it once more with `keepalive` when the page goes away first (a closed tab: the
+   relay's last unsaved turn may then be missing, as the call stops the runtime). A session whose End never arrived is
+   saved the next time its starter reads it (`GET …/voice-sessions/{session}`) or opens the Talk dialog of any persona
+   of its project (the offer saves the starter's five newest sessions there that ended without End, through the
+   project's pointers); a URL never used ends a minute after it was made. At the time limit or the budget the persona's
+   goodbye, already sent, plays out (at most 10 seconds) before the browser releases the audio.
 
 **Routes** (all on `/projects/{proxy+}`; no API Gateway resource was added):
 
@@ -221,10 +231,16 @@ the person's words, treated as data: redacted, bounded, its citations kept to th
 and read other sessions' evidence (review quotes the person who started each one could already see), and nothing else.
 
 **The container** listens on `0.0.0.0:8080` (AgentCore's proxy reaches it over the microVM's interface): in PUBLIC
-mode it is reachable only through AgentCore's endpoint, never directly. It refuses any frame or message over 32 KB
-(close 1009), logs ids and counts only (never audio, transcript text, the prompt or the evidence), and has no
-dependency beyond the stream package's own (the WebSocket server is a small RFC 6455 implementation in
-`ws-frames.ts`).
+mode it is reachable only through AgentCore's endpoint, never directly. It answers AgentCore's HTTP contract:
+`GET /ping` (`Healthy`, or `HealthyBusy` while a conversation is live, dated when that status last changed, so the
+runtime's 2-minute idle timeout ends a microVM whose conversation is over), `POST /invocations` (400: the relay talks
+over its WebSocket only) and `/ws`. `/ws` is served by the [`ws`](https://github.com/websockets/ws) package
+(8.23.0, MIT, no dependencies; approved by the owner on 2026-11-22, [dependencies.md](dependencies.md)): the
+handshake, the framing, the close handshake and the answer to a WebSocket ping are ws's, and the repository holds no
+hand-written RFC 6455 code. It takes messages of at most 32 KB (close 1009), no compression (`perMessageDeflate`
+off), and only valid close codes leave it. ws's optional native add-ons (`bufferutil`, `utf-8-validate`) are left out
+of `relay.js`. The relay logs ids and counts only (never audio, transcript text, the prompt or the evidence), and
+holds the microphone to 1.5 times real time (frames past it are dropped).
 
 **The browser.** With the flag, the SPA's response headers allow `microphone=(self)` (only its own origin, never the
 public widget, which keeps `microphone=()`) and add `wss://bedrock-agentcore.<region>.amazonaws.com` to `connect-src`.
@@ -234,15 +250,21 @@ Without the flag both are exactly as before. The capture worklet is a same-origi
 (evidence as data, a short spoken style), the evidence-only `cite` tool, the transcript's PII redaction and the
 synthetic labels. Every generated audio carries the model's inaudible watermark.
 
-**Abuse and spend** are bounded by the limits above: the month's budget (checked at the start and every minute, with a
-hard stop), the per-person day and minute, the concurrent streams, and the 15-minute session.
+**Abuse and spend** are bounded by the limits above: the month's minutes and its cost cap (checked at the start and
+every minute, with a hard stop), each session's cost cap (checked at every usage event), the microphone held to 1.5
+times real time (so a browser that sends faster than it speaks can neither grow the model stream's queue nor its
+cost), the per-person day and minute, the concurrent streams, and the 15-minute session. A session whose project is
+deleted while it runs ends (`error`) at its next write: the relay's updates of its row hold only while the row exists,
+so they never make it again.
 
 **The refusals the tests pin** (shared/test/test_voice_sessions.py, the relay's specs, lib/stacks/voice-relay.test.ts):
-no consent; an MCP credential or an agent; a company persona; the budget used; a fourth start in a minute; a sixth
-session in a day; a busy deployment; a URL whose session id or scope was changed (a different signature); a second
-connection to a live session (1008); an activation that fails its condition (1008); evidence naming another session or
-project (1008); a frame over 32 KB (1009); the flag refused outside the four Regions, for any other model id or a
-profile id.
+no consent; an MCP credential or an agent; a company persona; the budget used, in minutes or in cost; a fourth start
+in a minute; a sixth session in a day; a busy deployment; a URL whose session id or scope was changed (a different
+signature); a second connection to a live session (1008); an activation that fails its condition (1008); evidence
+naming another session or project (1008); a message over 32 KB, in one frame or in fragments (1009); a microphone
+faster than real time (dropped); a session past its cost cap (`budget`); a deleted session row (`error`); the flag
+refused outside the four Regions, for any other model id or a profile id. `lib/stacks/voice-relay.test.ts` also runs
+the built `relay.js` and checks that it answers `/ping` and a `/ws` handshake.
 
 **Not verified without a deployment** (see below): that AgentCore refuses an expired URL, an edited query and another
 deployment's runtime ARN; that an established connection outlives the URL's 60 seconds; that the signed custom header
@@ -266,3 +288,14 @@ Deploy to a test account first (us-west-2), then:
 7. **A 15-minute session** rolls over at about 7 minutes without a noticeable gap, and its meter counts both streams.
 8. **Tokens per minute** against the estimate, from the session row's `tokens` and the `bedrock_usage` line.
 9. **The budget stop:** with `-c voiceMonthlyMinutes=1`, the persona says goodbye and the session ends.
+10. **The idle end:** after a conversation ends, its runtime session ends about 2 minutes later (the idle timeout:
+    `/ping` dates its status by its last change), not at the 20-minute `maxLifetime`.
+11. **A closed tab:** closing the page mid-session files the transcript (the `keepalive` End), and a session whose End
+    never arrived is filed when its starter next opens Talk in the project.
+
+## Roadmap
+
+- The relay may move to Python on Strands' `BidiAgent` once AWS's Python Bedrock streaming SDK
+  (`aws-sdk-bedrock-runtime`) leaves pre-alpha, or to Strands TypeScript's bidirectional agent if its pull request
+  #5063 merges: either would replace the relay's own Nova Sonic stream and rollover code (`bedrock-stream.ts`,
+  `voice-session.ts`).

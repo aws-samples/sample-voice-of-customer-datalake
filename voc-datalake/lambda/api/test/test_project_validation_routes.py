@@ -13,10 +13,12 @@ import pytest
 from moto import mock_aws
 from prototype_pins_fixtures import call_projects_api
 
+from shared import forms_v2 as fv2
 from shared import project_validation as pv
 from shared import project_validation_routes as routes
-from shared import prototype_pins
+from shared import prototype_pins, validation_ai
 from shared import prototype_validation as proto
+from shared.prompt_safety import DATA_NOTICE
 from shared.prototype_pins import PIN_SUBMIT_URL_METADATA_KEY, inject_pin_widget, pin_form_id, pin_submit_url
 from shared.prototypes import prototype_s3_key
 from shared.test.moto_tables import _create_pk_sk_table_with_index, create_pk_sk_table
@@ -210,7 +212,7 @@ class TestThePlan:
         assert 'Ana: And monthly?' in document['content']
         block = tables.block()
         assert [t['text'] for t in block['tasks']] == ['Find the March invoice']
-        assert (block['prototype_document_id'], block['status']) == (DOC, pv.STATUS_PLANNED)
+        assert (block['prototype_document_id'], 'status' in block) == (DOC, False)
 
 
 class TestTheCard:
@@ -222,7 +224,7 @@ class TestTheCard:
                                                             'language': 'es'})
         assert status == 200, body
         assert body['form'] == {'form_id': FORM, 'revision': 2, 'open': True, 'questions': 4, 'has_responses': False,
-                                'stale': False}
+                                'stale': False, 'newer_version': None}
         form = proto.read_pin_form(tables.aggregates, FORM)
         assert form['language'] == 'es'
         assert proto.asks_questions(form)
@@ -232,8 +234,7 @@ class TestTheCard:
         assert after['Metadata'][PIN_SUBMIT_URL_METADATA_KEY] == pin_submit_url(FORM, API_BASE), (
             'the CSP keeps its one connect-src: the same form, the same submit URL')
         block = tables.block()
-        assert (block['form_id'], block['form_open'], block['status'], block['card_in_prototype']) == (
-            FORM, True, pv.STATUS_TESTING, True)
+        assert (block['form_id'], block['form_open'], block['card_in_prototype']) == (FORM, True, True)
 
     def test_a_version_made_before_the_card_is_said_to_need_a_new_one(self, call, tables):
         _criteria(tables, 'Quick')
@@ -259,6 +260,42 @@ class TestTheCard:
         call(EDITOR, 'PUT', f'{BASE}/criteria', {'criteria': [{'text': 'Clear'}]})
         assert call(EDITOR, 'GET', BASE)[1]['form']['stale'] is True
 
+    def test_a_block_write_in_between_is_a_409_and_the_card_still_matches_the_block(self, call, tables):
+        _criteria(tables, 'Quick')
+        tables.add_prototype()
+        call(EDITOR, 'PUT', f'{BASE}/form', {'tasks': [{'text': 'Pay'}], 'open': True})
+        revision = tables.block()['revision']
+        real_read, reads = pv.read_meta, []
+
+        def read_then_a_job_finishes(table: Any, project_id: str) -> dict:
+            meta = real_read(table, project_id)
+            reads.append(project_id)
+            if len(reads) == 1:  # the save's own read: a job finishing writes the block just after it
+                pv.update_block(tables.projects, PROJECT, lambda _s: {'run_document_id': 'doc_run'},
+                                actor={'sub': 'job', 'kind': 'user'}, reason='seed')
+            return meta
+
+        with patch.object(pv, 'read_meta', side_effect=read_then_a_job_finishes):
+            status, body = call(EDITOR, 'PUT', f'{BASE}/form', {'tasks': [{'text': 'Refund'}], 'open': True,
+                                                                'expected_revision': revision})
+        assert (status, body.get('code')) == (409, pv.CHANGED_CODE)
+        asked = [q['headline'] for q in fv2.definition_of(proto.read_pin_form(tables.aggregates, FORM))['questions']
+                 if q['id'].startswith(proto.TASK_PREFIX)]
+        assert asked == [{'en': task['text']} for task in tables.block()['tasks']] == [{'en': 'Pay'}]
+
+    def test_a_newer_version_is_flagged_and_moving_the_card_there_closes_the_old_one(self, call, tables):
+        _criteria(tables, 'Quick')
+        tables.add_prototype()
+        call(EDITOR, 'PUT', f'{BASE}/form', {'tasks': [{'text': 'Pay'}], 'open': True})
+        tables.add_prototype(doc_suffix='_v2')
+        view = call(EDITOR, 'GET', BASE)[1]
+        assert (view['form']['form_id'], view['form']['newer_version']) == (FORM, f'{DOC}_v2')
+        status, body = call(EDITOR, 'PUT', f'{BASE}/form', {'tasks': [{'text': 'Pay'}], 'open': True})
+        assert (status, body['form']['form_id'], body['form']['newer_version']) == (200, pin_form_id(f'{DOC}_v2'), None)
+        old = proto.read_pin_form(tables.aggregates, FORM)
+        assert (old['validation_open'], proto.asks_questions(old)) == (False, False)
+        assert proto.asks_questions(proto.read_pin_form(tables.aggregates, pin_form_id(f'{DOC}_v2')))
+
     @pytest.mark.parametrize(('body', 'status'), [
         ({'tasks': [{'text': 'Pay'}]}, 400), ({'tasks': [], 'open': True}, 400),
         ({'tasks': [{'text': 'Pay'}], 'open': True, 'language': 'xx'}, 400),
@@ -280,6 +317,11 @@ def _answer(tables, feedback_id: str, answers: dict, at: str) -> None:
         'pk': 'SOURCE#feedback_form', 'sk': f'FEEDBACK#{feedback_id}', 'gsi5pk': f'CHANNEL#form_{FORM}', 'gsi1sk': at,
         'feedback_id': feedback_id, 'source_platform': 'feedback_form', 'category': 'billing',
         'source_created_at': at, 'metadata': {'form_answers': answers, 'form_revision': 2, 'form_path': list(answers)}})
+
+
+def _restating_model(**kwargs: Any) -> str:
+    """A model that restates every line of the data it was given (what one told to restate the data would do)."""
+    return str(kwargs['prompt']).split(DATA_NOTICE, 1)[1].split('</validation_results>', 1)[0].strip()
 
 
 class TestSyntheticAndReal:
@@ -328,16 +370,18 @@ class TestSyntheticAndReal:
         assert status == 202
         assert body['methodology']['step'] == 'validation'
         config = call.started.args[2]
-        with patch('shared.validation_ai.converse', return_value='Testers met the criterion.') as model:
+        with patch('shared.validation_ai.converse', side_effect=_restating_model) as model:
             result = routes._report_work({**config, 'actor': {'sub': 'editor-sub', 'kind': 'user'}})
-        assert 'An export button' in model.call_args.kwargs['prompt']
+        assert 'An export button' not in model.call_args.kwargs['prompt']
+        assert 'missing' not in validation_ai._SUMMARY_SYSTEM
         document = tables.document(result['document_id'])
         assert document['document_type'] == 'validation_report'
+        assert 'Testers who said what was missing: 5' in document['content'], 'the summary restates what it was given'
         assert 'An export button' not in document['content'], 'a tester is quoted live, never in the document'
         assert sorted(document['input_feedback_ids']) == [f'f{i}' for i in range(5)]
         assert document['results'][0]['outcome'] == pv.MET
         assert result['decision_prefill']['evidence']['document_ids'] == [result['document_id']]
-        assert tables.block()['status'] == pv.STATUS_REPORTED
+        assert tables.block()['report_document_id'] == result['document_id']
 
     def test_the_report_reads_as_its_starter(self, call, tables):
         criterion, _task = self._ready(call, tables)

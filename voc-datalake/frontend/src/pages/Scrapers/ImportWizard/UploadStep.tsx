@@ -1,6 +1,7 @@
 /**
  * @fileoverview The wizard's Upload step: choose (or drop) a CSV, TSV, JSON or Excel file; the server reads its
- * first 256 KB and says what each column holds; the first 20 rows are shown before going on.
+ * first 256 KB and says what each column holds; the first 20 rows are shown before going on (with a warning when the
+ * file was not UTF-8 and was read as Windows-1252).
  *
  * @module pages/Scrapers/ImportWizard/UploadStep
  */
@@ -79,6 +80,7 @@ export default function UploadStep({ wizard }: Readonly<{ wizard: ImportWizardSt
             <span className="font-medium text-text-strong">{detected.file.name}</span>{' · '}
             {t('importWizard.upload.rows', { count: detected.table.rows.length, columns: detected.table.headers.length })}
           </p>
+          {detected.file.legacyEncoding && <p role="status" className="text-sm text-warn">{t('importWizard.upload.legacyEncoding')}</p>}
           <PreviewTable table={detected.table} />
           <StickyActionBar variant="footer" className="flex justify-end">
             <button type="button" className="btn btn-primary" onClick={() => wizard.setStep('map')}>{t('importWizard.continue')}</button>

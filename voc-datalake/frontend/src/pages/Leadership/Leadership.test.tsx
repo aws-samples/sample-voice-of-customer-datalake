@@ -86,8 +86,9 @@ describe('Leadership', () => {
     await user.clear(prd)
     await user.type(prd, '12')
     await user.click(within(sheet).getByRole('button', { name: 'Save baselines' }))
+    // Only the type the admin changed (review round 1, Q19): a type at its default stays unset.
     await waitFor(() => expect(sentFetchApiBody('/settings/adoption', 'PUT')).toStrictEqual({
-      baselines: { personas: 1.5, research: 6, prfaq: 4, prd: 12, prototype: 16 }, note: '=From our survey' }))
+      baselines: { prd: 12 }, note: '=From our survey' }))
   })
 
   it('refuses a baseline out of range before it is sent', async () => {

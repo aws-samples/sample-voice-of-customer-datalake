@@ -22,11 +22,13 @@ from shared.trial_pause import (
     ALREADY_PAUSED,
     CONVERTED,
     EXPIRY_ACTOR,
+    NO_EXPIRY,
     NOT_A_TRIAL,
     NOT_ACTIVE,
     NOT_DUE,
     PAUSED_NOW,
     PauseTables,
+    due_trials,
     pause,
     resume,
 )
@@ -207,7 +209,8 @@ def test_the_resume_turns_back_on_exactly_what_the_pause_turned_off(world):
     # Meanwhile a form was deleted by its owner: it stays deleted.
     world.aggregates.delete_item(Key={'pk': FORMS, 'sk': 'FORM#legacy'})
     trial = read_meta(world.workspaces, WS)['trial']
-    assert resume(world.tables, WS, trial, 'sub-platform', 'trial_extended') == {'plugins': 2, 'forms': 1}
+    assert resume(world.tables, WS, trial, 'sub-platform', 'trial_extended') == {'plugins': 2, 'forms': 1,
+                                                                                 'skipped': []}
     assert _enabled(world) == ['webscraper', 'app_reviews_ios']
     assert (_form(world, 'live')['enabled'], _form(world, 'live')['updated_by']) == (True, 'sub-platform')
     assert _form(world, 'off')['enabled'] is False
@@ -236,3 +239,59 @@ def test_a_prototypes_pin_form_and_its_validation_card_are_left_working(world):
     assert trial['paused']['forms'] == ['legacy', 'live']
     resume(world.tables, WS, trial, 'sub-platform', 'trial_extended')
     assert world.aggregates.get_item(Key={'pk': FORMS_PARTITION, 'sk': 'FORM#pf_proto1'})['Item'] == pin
+
+
+def _set_trial(world, **fields):
+    meta = read_meta(world.workspaces, WS)
+    return save_trial(world.workspaces, WS, meta, {**meta['trial'], **fields})
+
+
+def test_a_trial_with_no_readable_end_is_never_paused(world):
+    """Review round 1: an ``expires_at`` that does not parse pauses nothing (logged); the hourly tick skips it too."""
+    _set_trial(world, expires_at='the end of the workshop')
+    before = (_keys(world.workspaces), _keys(world.aggregates))
+    with patch.object(trial_pause.logger, 'warning') as warned:
+        assert pause(world.tables, WS, AFTER_END) == {'outcome': NO_EXPIRY}
+        assert due_trials(world.workspaces, AFTER_END) == []
+    assert warned.call_count == 2
+    assert (_keys(world.workspaces), _keys(world.aggregates)) == before
+
+
+def test_the_hourly_tick_lists_a_trial_once_its_end_passed_and_for_a_day_after_its_pause(world):
+    assert due_trials(world.workspaces, START + timedelta(days=29)) == []
+    assert due_trials(world.workspaces, AFTER_END) == [WS]
+    pause(world.tables, WS, AFTER_END)
+    # Paused: visited again for a day (a pause cut short is finished), then left alone.
+    assert due_trials(world.workspaces, AFTER_END + timedelta(hours=23)) == [WS]
+    assert due_trials(world.workspaces, AFTER_END + timedelta(days=2)) == []
+    _set_trial(world, converted_at=START.isoformat())
+    assert due_trials(world.workspaces, AFTER_END) == []
+
+
+def test_a_form_put_live_while_the_pause_ran_is_recorded_and_turned_off(world):
+    reads = []
+    real = trial_pause.live_forms
+
+    def first_read_misses_one(forms, scope):
+        found = real(forms, scope)
+        if not reads:
+            # Published between the pause's read and paused_at's commit (its publish read the trial first).
+            world.aggregates.put_item(Item={'pk': FORMS, 'sk': 'FORM#late', 'enabled': True, 'write_count': 0})
+        reads.append(found)
+        return found
+
+    with patch.object(trial_pause, 'live_forms', side_effect=first_read_misses_one):
+        assert pause(world.tables, WS, AFTER_END) == {'outcome': PAUSED_NOW, 'plugins': 2, 'forms': 3}
+    assert read_meta(world.workspaces, WS)['trial']['paused']['forms'] == ['legacy', 'live', 'late']
+    assert _form(world, 'late')['enabled'] is False
+
+
+def test_the_resume_leaves_off_a_form_no_longer_publishable_and_says_so(world):
+    pause(world.tables, WS, AFTER_END)
+    # Edited while paused: its text now under 3:1 on white.
+    world.aggregates.update_item(Key={'pk': FORMS, 'sk': 'FORM#live'}, UpdateExpression='SET theme = :t',
+                                 ExpressionAttributeValues={':t': {'text_color': '#9ca3af'}})
+    trial = read_meta(world.workspaces, WS)['trial']
+    answer = resume(world.tables, WS, trial, 'sub-platform', 'trial_extended')
+    assert answer == {'plugins': 2, 'forms': 1, 'skipped': [{'form_id': 'live', 'code': 'theme_unreadable'}]}
+    assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (False, True)

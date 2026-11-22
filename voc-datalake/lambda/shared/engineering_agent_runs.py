@@ -218,6 +218,10 @@ def token_warning(row: Mapping[str, Any] | None, today: date | None = None, *, p
             'it under Agents → Connections before then, or the run\'s push is refused.')
 
 
+#: The 409 code of a start whose fine-grained token expired or is not set (the heartbeat skips on it).
+EXPIRED_CONNECTION_CODE: Final = 'token_expired'
+
+
 def run_connection(row: Mapping[str, Any] | None, issue: int | None = None,
                    today: date | None = None, *, pushes: bool) -> dict[str, Any]:
     """The run's ``repo`` (as its reports and the spend ledger group it) and ``default_branch``: the stored
@@ -231,7 +235,7 @@ def run_connection(row: Mapping[str, Any] | None, issue: int | None = None,
     left = token_days_left(row, today) if pushes else None
     if left is not None and left <= 0:
         raise ConflictError("The connection's fine-grained token has expired (or is not set): its owner replaces it "
-                            'under Agents → Connections (Replace token), then the run starts.')
+                            'under Agents → Connections (Replace token), then the run starts.', code=EXPIRED_CONNECTION_CODE)
     run: dict[str, Any] = {'repo': str(row.get('repository', '')), 'default_branch': str(row.get('default_branch', ''))}
     if issue is not None:
         run.update(issue=issue, host=connection_host(row))

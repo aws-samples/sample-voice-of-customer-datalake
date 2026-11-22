@@ -18,7 +18,12 @@ The projects API (shared/voice_session_routes.py) decides everything about a ses
   accepts the URL once (``status: minted -> live``).
 * **The end** (``end``): the relay ends a session itself (End, the time or budget limit, a disconnect); the person's
   End also stops the runtime session and marks the row, then the transcript is saved by an assist job
-  (shared/voice_transcripts.py). **Audio is never stored**, by either side.
+  (shared/voice_transcripts.py). A session whose End never came (a closed tab, an End that failed) is saved by its
+  starter's next read of it or of the project's offer (``_save_left_sessions``). **Audio is never stored**, by either
+  side.
+* **Spend:** the month's minutes and a cost cap (``MAX_CENTS_PER_MINUTE`` a minute of them), and each session's own
+  cost cap at the same rate, are checked at the start and by the relay (every minute for the month, at every usage
+  event for the session).
 
 Projects are the deployment's until phase 3 (docs/multi-workspace.md), so every key here is the deployment's: a
 session's partition, the month's usage and the live set have no ``WS#`` variant yet, and ``require_deployment``
@@ -44,6 +49,7 @@ from shared import persona_grounding
 from shared.aws import get_agentcore_client, is_conditional_check_failure
 from shared.category_access import CategoryScope
 from shared.company_personas import is_company_container
+from shared.dynamo_paging import query_all
 from shared.dynamo_values import as_count, plain
 from shared.engagement_common import conditional_write
 from shared.exceptions import (
@@ -86,6 +92,15 @@ CREATES_PER_MINUTE: Final = 3
 #: What the consent dialog shows before a session (Nova 2.5 Sonic in us-west-2, the S-15 spike's measured mix); the
 #: session's own cost is the relay's, from the model's usage events.
 ESTIMATED_CENTS_PER_MINUTE: Final = 2
+#: The cost caps' rate: 2.5 times the estimate, which a conversation does not reach (the microphone is held to real
+#: time, the persona speaks at most the whole minute). A session's cap is its minutes at this rate (75 cents for 15
+#: minutes), the month's its minutes at it ($15 for 300); at either the relay ends the session (``budget``) and the
+#: month refuses a start.
+MAX_CENTS_PER_MINUTE: Final = 5
+MICRO_USD_PER_CENT: Final = 10_000
+#: The caller's newest sessions of a project an offer saves when they ended without End (every start reads the offer
+#: first, so a session left unsaved is among them).
+LEFT_SESSIONS: Final = DAILY_SESSIONS
 #: A live-set entry outlives its session by this much (the relay removes it at the end; this covers a relay that died).
 LIVE_SLACK_SECONDS: Final = 120
 #: How long the counters are kept: a day's and a minute's for 2 days, a month's usage for 400 days.
@@ -280,13 +295,41 @@ def _project_persona(stores: Stores, project_id: str, persona_id: str) -> dict[s
     return persona
 
 
-def _seconds_used(stores: Stores, now: datetime) -> int:
-    item = stores.aggregates.get_item(Key=usage_key(now), ConsistentRead=True).get('Item') or {}
-    return as_count(item.get('seconds'))
+@dataclass(frozen=True)
+class _Month:
+    """The deployment's month so far: its seconds and its cost."""
+
+    seconds: int
+    cost_microusd: int
 
 
-def _minutes_left(config: VoiceConfig, used_seconds: int) -> float:
-    return round(max(0, config.monthly_minutes * 60 - used_seconds) / 60, 1)
+def _month_of(item: Mapping[str, Any]) -> _Month:
+    return _Month(seconds=as_count(item.get('seconds')), cost_microusd=as_count(item.get('cost_microusd')))
+
+
+def _month_used(stores: Stores, now: datetime) -> _Month:
+    return _month_of(stores.aggregates.get_item(Key=usage_key(now), ConsistentRead=True).get('Item') or {})
+
+
+def _monthly_cost_cap(config: VoiceConfig) -> int:
+    """The month's cost cap in micro-dollars: its minutes at ``MAX_CENTS_PER_MINUTE``."""
+    return config.monthly_minutes * MAX_CENTS_PER_MINUTE * MICRO_USD_PER_CENT
+
+
+def _session_cost_cap(session_seconds: int) -> int:
+    """One session's cost cap in micro-dollars: its minutes at ``MAX_CENTS_PER_MINUTE``."""
+    return session_seconds * MAX_CENTS_PER_MINUTE * MICRO_USD_PER_CENT // 60
+
+
+def _seconds_left(config: VoiceConfig, month: _Month) -> int:
+    """The month's seconds left: none once its cost reached the cap."""
+    if month.cost_microusd >= _monthly_cost_cap(config):
+        return 0
+    return max(0, config.monthly_minutes * 60 - month.seconds)
+
+
+def _minutes_left(config: VoiceConfig, month: _Month) -> float:
+    return round(_seconds_left(config, month) / 60, 1)
 
 
 def _sessions_today(stores: Stores, subject: str, now: datetime) -> int:
@@ -301,17 +344,19 @@ def _require_person(caller: Caller) -> str:
 
 
 def offer(stores: Stores, config: VoiceConfig | None, project_id: str, persona_id: str, caller: Caller, *,
-          workspace: WorkspaceScope | None = None) -> dict[str, Any]:
-    """What a session with this persona would be (the consent dialog's figures), or ``{enabled: false}``."""
+          start_finalize: StartFinalize, workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+    """What a session with this persona would be (the consent dialog's figures), or ``{enabled: false}``; first the
+    caller's sessions of this project that ended without End are saved (``start_finalize`` starts each one's job)."""
     require_deployment(workspace, PROJECT_GATE_STORE)
     if config is None:
         return {'enabled': False}
     persona = _project_persona(stores, project_id, persona_id)
     now = stores.now()
     voice = persona_voice(persona)
+    _save_left_sessions(stores, project_id, caller, start_finalize)
     return {
         'enabled': True, 'voice_id': voice, 'voice_gender': VOICES[voice], 'languages': languages(),
-        'session_minutes': config.session_minutes, 'minutes_left': _minutes_left(config, _seconds_used(stores, now)),
+        'session_minutes': config.session_minutes, 'minutes_left': _minutes_left(config, _month_used(stores, now)),
         'sessions_left_today': max(0, DAILY_SESSIONS - _sessions_today(stores, caller.subject, now)),
         'estimated_cents_per_minute': ESTIMATED_CENTS_PER_MINUTE,
     }
@@ -431,6 +476,8 @@ def _write_scratch_and_rows(stores: Stores, config: VoiceConfig, project_id: str
         'voice_id': start.voice_id, 'voice_gender': VOICES[start.voice_id], 'language': start.language,
         'session_seconds': start.session_seconds, 'monthly_seconds': config.monthly_minutes * 60,
         'minutes_left': start.minutes_left, 'usage_key': usage['pk'],
+        'session_cost_cap_microusd': _session_cost_cap(start.session_seconds),
+        'monthly_cost_cap_microusd': _monthly_cost_cap(config),
     }
     stores.s3.put_object(Bucket=stores.bucket, Key=evidence_key(sid), ContentType='application/json',
                          Body=json.dumps(plain(evidence)).encode('utf-8'))
@@ -464,7 +511,8 @@ def mint(stores: Stores, config: VoiceConfig, project_id: str, persona_id: str, 
     language = _language(body.get('language'))
     persona = _project_persona(stores, project_id, persona_id)
     now = stores.now()
-    remaining = config.monthly_minutes * 60 - _seconds_used(stores, now)
+    month = _month_used(stores, now)
+    remaining = _seconds_left(config, month)
     if remaining < 60:
         raise ConflictError('This month\'s voice minutes are used up', code='budget_exhausted')
     _count_once(stores.aggregates, _rate_key(subject, now), CREATES_PER_MINUTE, now, 'rate_limited',
@@ -474,7 +522,7 @@ def mint(stores: Stores, config: VoiceConfig, project_id: str, persona_id: str, 
                 f'You have had today\'s {DAILY_SESSIONS} voice sessions. Try again tomorrow.')
     start = _Start(session_id=stores.new_id(), subject=subject, voice_id=persona_voice(persona), language=language,
                    session_seconds=min(config.session_minutes * 60, remaining),
-                   minutes_left=_minutes_left(config, config.monthly_minutes * 60 - remaining), now=now)
+                   minutes_left=_minutes_left(config, month), now=now)
     try:
         _claim_stream(stores, config, start.session_id, start.session_seconds, now)
     except TooManyRequestsError:
@@ -595,6 +643,31 @@ def status(stores: Stores, project_id: str, persona_id: str, session_id: str, ca
     return view(row)
 
 
+def _save_left_sessions(stores: Stores, project_id: str, caller: Caller, start_finalize: StartFinalize) -> None:
+    """Save the caller's sessions of this project whose End never came (a closed tab, an End that failed): the relay
+    marked them ended, or their URL expired unused, and nothing asked for their transcript. Through the project's own
+    pointers, the newest ``LEFT_SESSIONS`` of the caller's, each as its starter's read of it (``status``). For a person
+    acting for themselves only; never raises (the offer is answered either way)."""
+    if caller.delegated or caller.agent_id or not caller.subject:
+        return
+    try:
+        pointers = query_all(stores.projects, {
+            'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :voice)', 'FilterExpression': 'starter_sub = :sub',
+            'ProjectionExpression': 'session_id, persona_id, created_at',
+            'ExpressionAttributeValues': {':pk': project_pk(project_id), ':voice': SESSION_PREFIX, ':sub': caller.subject},
+        })
+    except Exception:  # noqa: BLE001 - the next offer tries again
+        logger.warning('The voice sessions left unsaved could not be listed', extra={'project_id': project_id})
+        return
+    newest = sorted(pointers, key=lambda pointer: str(pointer.get('created_at') or ''), reverse=True)[:LEFT_SESSIONS]
+    for pointer in newest:
+        session_id = str(pointer.get('session_id') or '')
+        try:
+            status(stores, project_id, str(pointer.get('persona_id') or ''), session_id, caller, start_finalize)
+        except Exception:  # noqa: BLE001 - one session's failure leaves the others and the offer alone
+            logger.warning('A voice session left unsaved could not be saved', extra={'session_id': session_id})
+
+
 def usage(stores: Stores, config: VoiceConfig | None) -> dict[str, Any]:
     """The deployment's month (``GET /projects/voice/usage``, admins): minutes, sessions, cost, the live streams."""
     if config is None:
@@ -603,11 +676,11 @@ def usage(stores: Stores, config: VoiceConfig | None) -> dict[str, Any]:
     month = stores.aggregates.get_item(Key=usage_key(now), ConsistentRead=True).get('Item') or {}
     live = (stores.aggregates.get_item(Key=dict(LIVE_KEY), ConsistentRead=True).get('Item') or {}).get('live')
     epoch = int(now.timestamp())
-    seconds = as_count(month.get('seconds'))
+    used = _month_of(month)
     return {
-        'enabled': True, 'month': f'{now:%Y-%m}', 'minutes_used': round(seconds / 60, 1),
-        'monthly_minutes': config.monthly_minutes, 'minutes_left': _minutes_left(config, seconds),
-        'sessions': as_count(month.get('sessions')), 'cost_cents': round(as_count(month.get('cost_microusd')) / 10_000, 2),
+        'enabled': True, 'month': f'{now:%Y-%m}', 'minutes_used': round(used.seconds / 60, 1),
+        'monthly_minutes': config.monthly_minutes, 'minutes_left': _minutes_left(config, used),
+        'sessions': as_count(month.get('sessions')), 'cost_cents': round(used.cost_microusd / MICRO_USD_PER_CENT, 2),
         'live_sessions': sum(1 for expires in (live if isinstance(live, dict) else {}).values()
                              if as_count(expires) > epoch),
         'max_concurrent': config.max_concurrent, 'session_minutes': config.session_minutes,

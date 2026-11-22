@@ -330,8 +330,11 @@ describe('FeedbackFormLambdaRole routes a workspace\'s forms', () => {
     expect(shapes).toStrictEqual(expect.arrayContaining([
       { actions: ['dynamodb:GetItem'], condition: keys(['FORM#*']) },
       { actions: ['dynamodb:DeleteItem', 'dynamodb:PutItem'], condition: keys(['FORM#*']) },
+      // A form put live in a workspace checks its trial in the write's own transaction (7.71.00, review round 1 S5):
+      // a ConditionCheck of META, which writes nothing.
+      { actions: ['dynamodb:ConditionCheckItem'], condition: keys(['WS#*']) },
     ]));
-    expect(shapes).toHaveLength(2);
+    expect(shapes).toHaveLength(3);
     const policies = Object.keys(apiTemplate().findResources('AWS::IAM::ManagedPolicy'))
       .filter((id) => id.startsWith(WORKSPACE_RESOLUTION_POLICY_ID));
     const attached = JSON.stringify(Object.entries(apiTemplate().findResources('AWS::IAM::Role'))

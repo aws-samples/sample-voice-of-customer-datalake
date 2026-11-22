@@ -118,12 +118,6 @@ def heal(table: Any, agent: Mapping[str, Any], run: Mapping[str, Any], now: date
     return False
 
 
-def _token_expired(connection: Mapping[str, Any]) -> bool:
-    """Whether the connection's fine-grained token expired or is not set (``token_days_left``: 0 or fewer)."""
-    left = eng_runs.token_days_left(connection)
-    return left is not None and left <= 0
-
-
 def start(table: Any, agent: Mapping[str, Any], prepared: Ready, start_with: eng_runs.AgentStart,
           now: datetime) -> str:
     """Start the agent's run (``start_agent_run``); the tick's outcome for the agent. An expired or unset
@@ -137,9 +131,9 @@ def start(table: Any, agent: Mapping[str, Any], prepared: Ready, start_with: eng
                                            now=now)
     except store.IssueClaimed:
         return 'issue_claimed'   # (another tick or agent took the issue meanwhile: the next tick takes the next one)
-    except ConflictError:
-        if _token_expired(prepared.connection):
-            return store.record_skip(table, agent, 'token_expired')
+    except ConflictError as exc:
+        if exc.code == eng_runs.EXPIRED_CONNECTION_CODE:
+            return store.record_skip(table, agent, eng_runs.EXPIRED_CONNECTION_CODE)
         raise
     if started.run is None or started.answer is None:
         return 'lock_or_cap'

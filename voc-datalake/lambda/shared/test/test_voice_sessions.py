@@ -267,19 +267,101 @@ class TestLimits:
         assert _item(store.aggregates, 'VOICEDAY#sub-ada#2026-11-21', 'COUNT')['count'] == 0
 
 
+def _no_job(_row: Mapping[str, Any]) -> str:
+    return 'job'
+
+
+def _recorded_jobs() -> tuple[list[str], voice.StartFinalize]:
+    """A job starter that records the sessions it was started for."""
+    jobs: list[str] = []
+
+    def start(row: Mapping[str, Any]) -> str:
+        jobs.append(str(row['session_id']))
+        return 'job-left'
+
+    return jobs, start
+
+
 class TestOffer:
     def test_without_voice_is_disabled(self, stores):
         store, _ = stores
-        assert voice.offer(store, None, 'p1', 'persona_1', PERSON) == {'enabled': False}
+        assert voice.offer(store, None, 'p1', 'persona_1', PERSON, start_finalize=_no_job) == {'enabled': False}
 
     def test_answers_the_consent_dialog_s_figures(self, stores):
         store, _ = stores
-        offer = voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON)
+        offer = voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job)
         assert {k: offer[k] for k in ('enabled', 'session_minutes', 'minutes_left', 'sessions_left_today',
                                       'estimated_cents_per_minute')} == {
             'enabled': True, 'session_minutes': 15, 'minutes_left': 300.0, 'sessions_left_today': 5,
             'estimated_cents_per_minute': 2}
         assert offer['languages']['unsupported'] == ['ja', 'ko', 'pl', 'zh']
+
+
+class TestCostCaps:
+    def test_the_session_and_the_month_caps_reach_the_relay(self, stores):
+        store, _ = stores
+        sid = _mint(store)['session_id']
+        evidence = json.loads(store.s3.get_object(Bucket='raw', Key=f'scratch/voice/{sid}/evidence.json')['Body'].read())
+        # 15 minutes and 300 minutes at 5 cents a minute, in micro-dollars.
+        assert (evidence['session_cost_cap_microusd'], evidence['monthly_cost_cap_microusd']) == (750_000, 15_000_000)
+
+    def test_the_month_s_cost_cap_refuses_a_start_and_leaves_no_minutes(self, stores):
+        store, _ = stores
+        store.aggregates.put_item(Item={'pk': 'VOICEUSE#DEPLOYMENT#2026-11', 'sk': 'USAGE', 'seconds': 600,
+                                        'cost_microusd': 15_000_000})
+        with pytest.raises(ConflictError) as refused:
+            _mint(store)
+        assert refused.value.code == 'budget_exhausted'
+        assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job)['minutes_left'] == 0
+        assert voice.usage(store, CONFIG)['minutes_left'] == 0
+
+
+class TestSessionsLeftUnsaved:
+    """Q3: a session whose End never came (a closed tab, an End that failed) is saved by its starter's next offer."""
+
+    @staticmethod
+    def _relay_ended(store: voice.Stores, sid: str) -> None:
+        """What the relay's own end writes (lambda/stream/src/voice/store.ts markEnded): no End route is called."""
+        store.projects.update_item(Key=voice.session_key(sid), UpdateExpression='SET #s = :ended, end_reason = :reason',
+                                   ExpressionAttributeNames={'#s': 'status'},
+                                   ExpressionAttributeValues={':ended': 'ended', ':reason': 'disconnected'})
+
+    def test_the_offer_saves_a_session_the_relay_ended_with_no_end_call(self, stores):
+        store, _ = stores
+        sid = _mint(store)['session_id']
+        self._relay_ended(store, sid)
+        jobs, start = _recorded_jobs()
+        voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=start)
+        row = _item(store.projects, f'VOICE#{sid}', 'SESSION')
+        assert (jobs, row['status'], row['finalize_job_id']) == ([sid], 'finalizing', 'job-left')
+        voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=start)
+        assert jobs == [sid]
+
+    def test_only_the_caller_s_own_sessions_and_only_a_person_s_read(self, stores):
+        store, _ = stores
+        sid = _mint(store)['session_id']
+        self._relay_ended(store, sid)
+        jobs, start = _recorded_jobs()
+        for caller in (OTHER, Caller(subject='sub-ada', delegated=True), Caller(subject='sub-ada', agent_id='agent-1')):
+            voice.offer(store, CONFIG, 'p1', 'persona_1', caller, start_finalize=start)
+        assert (jobs, _item(store.projects, f'VOICE#{sid}', 'SESSION')['status']) == ([], 'ended')
+
+    def test_an_unused_url_is_ended_and_saved_and_a_failing_job_leaves_the_offer_answered(self, stores):
+        store, clock = stores
+        unused = _mint(store)['session_id']
+        clock['now'] = NOW + timedelta(seconds=90)
+
+        def failing(_row: Mapping[str, Any]) -> str:
+            raise RuntimeError('lambda invoke refused')
+
+        assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=failing)['enabled'] is True
+        row = _item(store.projects, f'VOICE#{unused}', 'SESSION')
+        assert (row['status'], row['end_reason']) == ('ended', 'disconnected')
+
+    def test_a_listing_that_fails_leaves_the_offer_answered(self, stores):
+        store, _ = stores
+        with patch.object(voice, 'query_all', side_effect=RuntimeError('throttled')):
+            assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job)['enabled'] is True
 
 
 class TestEndAndStatus:

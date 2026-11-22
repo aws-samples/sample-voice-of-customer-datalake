@@ -565,6 +565,7 @@
       "preview_other": "前 {{count, number}} 行",
       "rows_one": "{{count, number}} 行，{{columns}} 列",
       "rows_other": "{{count, number}} 行，{{columns}} 列",
+      "legacyEncoding": "此文件不是 UTF-8 编码，因此按 Windows-1252（西欧）读取。继续之前，请在预览中检查带重音的字母是否显示正确。",
       "problems": {
         "format": "无法导入此文件类型。请选择 CSV、TSV、JSON 或 Excel (.xlsx) 文件。",
         "tooLarge": "此文件超过 10 MB。请将其拆分，然后逐一导入各部分。",
@@ -663,7 +664,10 @@
         "too_many_options": "“{{header}}”有超过 50 个不同的答案：已排除。将其设为开放文本即可保留。",
         "matrix_too_large": "“{{header}}”是超过 20 行或 10 个答案的矩阵：已排除。",
         "no_values": "“{{header}}”没有可生成选项的答案：已排除。",
-        "too_many_questions": "“{{header}}”已排除：一个表单最多 30 个问题。"
+        "too_many_questions": "“{{header}}”已排除：一个表单最多 30 个问题。",
+        "extra_date": "“{{header}}”已排除：每条回复的日期取自第一个日期列。",
+        "extra_id": "“{{header}}”已排除：每条回复由第一个 ID 列标识。",
+        "extra_channel": "“{{header}}”已排除：第一个渠道列即为每条回复的渠道。"
       }
     },
     "insights": {
@@ -674,6 +678,8 @@
       "refusedRow": "第 {{row}} 行：{{reason}}",
       "processing": "正在分析：{{done, number}} / {{total, number}}…",
       "slow": "仍在分析。大文件可能需要几分钟。",
+      "alreadyImported": "没有新的内容可分析：这些行之前已导入。",
+      "alreadyImportedLink": "在仪表板中查看",
       "ready_one": "已分析 {{count, number}} 条。结果如下：",
       "ready_other": "已分析 {{count, number}} 条。结果如下：",
       "sentiment": "情感",

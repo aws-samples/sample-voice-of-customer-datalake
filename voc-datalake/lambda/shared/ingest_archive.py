@@ -30,7 +30,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared.api import decimal_default
 from shared.concurrency import ordered_map
 from shared.exceptions import ValidationError
-from shared.logging import logger
+from shared.logging import logger, metrics
 from shared.raw_versions import (
     Connector,
     app_connector,
@@ -42,8 +42,8 @@ from shared.raw_versions import (
     raw_root,
     version_key,
 )
-from shared.source_policy import ARCHIVE_FILE, ARCHIVE_ITEM, apply_source_policy, archive_mode
-from shared.source_profiles import SOURCE_ID_RE, SourceProfilesUnavailable, load_source_profiles, profile_for
+from shared.source_policy import ARCHIVE_FILE, ARCHIVE_ITEM, FreeText, archive_mode, quiet_policy
+from shared.source_profiles import PII_ALLOW, SOURCE_ID_RE, SourceProfilesUnavailable, load_source_profiles, profile_for
 from shared.ws_repo import WorkspaceScope
 
 __all__ = [
@@ -55,6 +55,9 @@ __all__ = [
 
 DEFAULT_UPLOAD_SOURCE: Final = 'manual_import'
 _ARCHIVE_WORKERS: Final = 16
+#: Messages redacted at once: a redact policy with ``PII_COMPREHEND=1`` makes one Comprehend call per free text, so
+#: one after another a large upload outlasted API Gateway's 29 s (7.67.00's form import).
+_POLICY_WORKERS: Final = 8
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
 
@@ -80,13 +83,16 @@ def upload_profile(table: Any, raw_source_id: object, scope: WorkspaceScope | No
     return profile_for(profiles, source_id, workspace=scope is not None)
 
 
-def policy_applied(messages: list[dict[str, Any]], profile: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Every message under ``profile``'s PII policy; a redact message without text is dropped."""
-    out: list[dict[str, Any]] = []
-    for message in messages:
-        applied = apply_source_policy(message, profile)
-        if applied is not None:
-            out.append(applied)
+def policy_applied(messages: list[dict[str, Any]], profile: Mapping[str, Any], *,
+                   free_text: FreeText = None) -> list[dict[str, Any]]:
+    """Every message under ``profile``'s PII policy, several at once and in order; a redact message without text is
+    dropped. ``free_text``: the metadata paths the entity model reads (shared/source_policy.py ``FreeText``)."""
+    applied = ordered_map(lambda message: quiet_policy(message, profile, free_text=free_text), messages,
+                          max_workers=_POLICY_WORKERS)
+    out = [message for message in applied if message is not None]
+    redacted = sum(1 for message in out if message['pii_policy_applied'] != PII_ALLOW)
+    if redacted:
+        metrics.add_metric(name='PiiPolicyApplied', unit='Count', value=redacted)
     return out
 
 
@@ -161,17 +167,18 @@ def stamp_file_archive(
 def prepare_messages(
     s3: Any, bucket: str, messages: list[dict[str, Any]], profile: Mapping[str, Any], now: datetime,
     rewrite_uris: Mapping[str, str] | None = None, *, connector_id: str = DEFAULT_UPLOAD_SOURCE,
-    scope: WorkspaceScope | None = None,
+    scope: WorkspaceScope | None = None, free_text: FreeText = None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Apply the policy, archive per item when the profile asks for it; ``(messages, archive mode)``.
 
     With mode ``file`` nothing is archived here: the caller keeps (or writes)
     its whole-request archive and stamps its URI itself. With ``none`` every
     ``s3_raw_uri`` is cleared. ``connector_id`` is the writer recorded on each archive. ``scope``: the workspace an
-    upload acts in (its archives under ``ws/{ws}/raw/``).
+    upload acts in (its archives under ``ws/{ws}/raw/``). ``free_text``: the metadata paths of the messages' free text,
+    the only metadata the entity model reads (None: all of it).
     """
     mode = archive_mode(profile)
-    out = policy_applied(messages, profile)
+    out = policy_applied(messages, profile, free_text=free_text)
     if mode == ARCHIVE_ITEM:
         archive_per_item(s3, bucket, str(profile.get('id') or DEFAULT_UPLOAD_SOURCE), out, now, rewrite_uris,
                          connector_id=connector_id, scope=scope)

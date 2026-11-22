@@ -51,7 +51,6 @@ const blockSchema = z.object({
   form_language: maybeText,
   /** Whether the version the card was saved on draws it (its widget is from 7.68.00 on). */
   card_in_prototype: z.boolean().catch(true),
-  status: z.string().catch('not_started'),
   revision: count,
   updated_at: maybeText,
 })
@@ -87,6 +86,8 @@ const realSchema = z.object({
 const formSchema = z.object({
   form_id: z.string(), revision: count, open: z.boolean().catch(false), questions: count,
   has_responses: z.boolean().catch(false), stale: z.boolean().catch(false),
+  /** The newest prototype version when the card is on an older one: its testers see no card. */
+  newer_version: maybeText,
 })
 
 const prefillSchema = z.object({

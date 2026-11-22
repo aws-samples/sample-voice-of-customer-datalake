@@ -205,7 +205,7 @@ def _require_run_permission(caller: Caller) -> None:
     (`project_access.delegated_agent_run_allowed`).
     """
     if caller.delegated and not caller.agent_id and project_access.delegated_agent_run_allowed(
-        project_access.claims_from_event(app.current_event.raw_event),
+        project_access.claims_from_event(app.current_event.raw_event), 'agents_run',
     ):
         return
     require_admin_caller(caller)

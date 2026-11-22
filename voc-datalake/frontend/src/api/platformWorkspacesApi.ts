@@ -77,7 +77,7 @@ export const platformWorkspacesApi = {
   /** 409 when the slug is taken (nothing written). */
   create: async (name: string, slug: string): Promise<CreatedWorkspace> =>
     CreatedSchema.parse(await fetchApi<unknown>('/platform/workspaces', post({ name, slug }))).workspace,
-  /** A trial workspace of `days` days: its one schedule is made first, then the workspace (the caller its admin). */
+  /** A trial workspace of `days` days, the caller its admin (voc-trial-expiry's hourly tick pauses it after its end). */
   createTrial: async (name: string, slug: string, days: TrialDays, pack: TrialPackRequest): Promise<CreatedWorkspace> =>
     CreatedSchema.parse(await fetchApi<unknown>('/platform/workspaces', post({ name, slug, trial: { days, pack } }))).workspace,
   /** `days` more from its end (or from now once it ended); a paused trial's plugins and forms are turned back on. */

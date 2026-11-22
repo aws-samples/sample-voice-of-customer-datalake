@@ -4,8 +4,9 @@
  * the projects API's session input.
  */
 import { InputQueue, type SonicTransport } from './bedrock-stream.js';
+import { SessionGoneError } from './store.js';
 import type { RelayMessage, VoiceEndReason } from './protocol.js';
-import type { SessionUsage, VoiceStore } from './store.js';
+import type { MonthTotals, SessionUsage, VoiceStore } from './store.js';
 import type { ClientChannel, Clock } from './voice-session.js';
 
 export const SESSION_ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -66,8 +67,13 @@ export class FakeStore implements VoiceStore {
   activation = true;
   input: unknown = undefined;
   monthTotal = 0;
+  monthCost = 0;
+  /** The session row is gone: its updates fail as the real store's do. */
+  gone = false;
   /** Activation waits for it (a spec's race with the browser leaving). */
   gate: Promise<void> = Promise.resolve();
+  /** The session row's usage write waits for it (a spec's race of a minute's meter with the end). */
+  usageGate: Promise<void> = Promise.resolve();
 
   async activate(sessionId: string): Promise<boolean> {
     this.calls.push(`activate:${sessionId}`);
@@ -88,18 +94,20 @@ export class FakeStore implements VoiceStore {
 
   recordParts(_sessionId: string, parts: number): Promise<void> {
     this.calls.push(`recordParts:${parts}`);
-    return Promise.resolve();
+    return this.gone ? Promise.reject(new SessionGoneError()) : Promise.resolve();
   }
 
-  recordUsage(_sessionId: string, usage: SessionUsage): Promise<void> {
+  async recordUsage(_sessionId: string, usage: SessionUsage): Promise<void> {
     this.usage.push(usage);
-    return Promise.resolve();
+    await this.usageGate;
+    if (this.gone) throw new SessionGoneError();
   }
 
-  addMonthly(key: string, seconds: number, cost: number): Promise<number> {
+  addMonthly(key: string, seconds: number, cost: number): Promise<MonthTotals> {
     this.monthly.push({ key, seconds, cost });
     this.monthTotal += seconds;
-    return Promise.resolve(this.monthTotal);
+    this.monthCost += cost;
+    return Promise.resolve({ seconds: this.monthTotal, costMicroUsd: this.monthCost });
   }
 
   markEnded(_sessionId: string, reason: VoiceEndReason): Promise<void> {
@@ -224,6 +232,8 @@ export function sessionInput(overrides: Record<string, unknown> = {}): Record<st
     monthly_seconds: 18_000,
     minutes_left: 250,
     usage_key: 'VOICEUSE#DEPLOYMENT#2026-11',
+    session_cost_cap_microusd: 750_000,
+    monthly_cost_cap_microusd: 15_000_000,
     ...overrides,
   };
 }

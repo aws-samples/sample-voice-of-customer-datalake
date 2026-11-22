@@ -13,13 +13,11 @@ from shared.platform_workspaces import LISTING_PK, NewWorkspace, create_workspac
 from shared.test.moto_tables import create_pk_sk_table
 from shared.trial_state import (
     DEFAULT_TRIAL_DAYS,
-    TRIAL_PAUSED_CODE,
     NewTrial,
     is_paused,
     new_trial,
     parse_extension,
     parse_trial,
-    require_live,
     trial_summary,
 )
 from shared.trials import (
@@ -149,14 +147,12 @@ def test_the_views_read_dynamodbs_numbers_and_say_what_the_pause_turned_off(tabl
 
 # ── extend ───────────────────────────────────────────────────────────────────
 
-def test_an_extension_counts_from_the_end_audits_first_and_schedules_the_new_end(table):
+def test_an_extension_counts_from_the_end_and_audits_first(table):
     trial = _create(table)
-    schedule = MagicMock()
     now = START + timedelta(days=10)
     before = _all_rows(table)
-    view = extend_trial(table, WS, 14, PAT, schedule=schedule, resume=_no_resume, now=now)
+    view = extend_trial(table, WS, 14, PAT, resume=_no_resume, now=now)
     assert view['expires_at'] == '2027-01-04T09:00:00+00:00'  # 30 + 14 days from the start
-    schedule.create.assert_called_once_with(WS, datetime(2027, 1, 4, 9, 0, tzinfo=UTC))
     [entry] = view['extended']
     assert {key: entry[key] for key in ('by', 'days', 'expires_at')} == {
         'by': PAT, 'days': 14, 'expires_at': '2027-01-04T09:00:00+00:00'}
@@ -172,7 +168,7 @@ def test_an_extension_counts_from_the_end_audits_first_and_schedules_the_new_end
 def test_an_ended_trial_is_extended_from_now(table):
     _create(table, days=14)
     now = START + timedelta(days=40)
-    view = extend_trial(table, WS, 30, PAT, schedule=MagicMock(), resume=_no_resume, now=now)
+    view = extend_trial(table, WS, 30, PAT, resume=_no_resume, now=now)
     assert view['expires_at'] == (now + timedelta(days=30)).replace(microsecond=0).isoformat()
 
 
@@ -183,7 +179,7 @@ def test_extending_a_paused_trial_turns_back_on_what_it_paused_and_clears_the_pa
               'paused': {'plugins': ['webscraper'], 'forms': ['f1']}}
     save_trial(table, WS, meta, paused)
     resume = MagicMock(return_value={'plugins': 1, 'forms': 1})
-    view = extend_trial(table, WS, 30, PAT, schedule=MagicMock(), resume=resume, now=START + timedelta(days=31))
+    view = extend_trial(table, WS, 30, PAT, resume=resume, now=START + timedelta(days=31))
     trial_arg = resume.call_args.args[1]
     assert resume.call_args.args[::2] == (WS, PAT)
     assert trial_arg['paused'] == paused['paused']
@@ -199,11 +195,11 @@ def test_a_converted_trial_or_one_extended_too_often_is_not_extended(table):
     entries = [{'at': 'x', 'by': PAT, 'days': 14, 'expires_at': trial['expires_at']}] * MAX_EXTENSIONS
     save_trial(table, WS, meta, {**meta['trial'], 'extended': entries})
     with pytest.raises(ConflictError) as raised:
-        extend_trial(table, WS, 14, PAT, schedule=MagicMock(), resume=_no_resume, now=START)
+        extend_trial(table, WS, 14, PAT, resume=_no_resume, now=START)
     assert raised.value.code == 'trial_extensions'
     convert_trial(table, WS, PAT, resume=_no_resume)
     with pytest.raises(ConflictError) as raised:
-        extend_trial(table, WS, 14, PAT, schedule=MagicMock(), resume=_no_resume, now=START)
+        extend_trial(table, WS, 14, PAT, resume=_no_resume, now=START)
     assert raised.value.code == 'trial_converted'
 
 
@@ -211,7 +207,7 @@ def test_a_converted_trial_or_one_extended_too_often_is_not_extended(table):
 def test_a_workspace_that_is_no_trial_answers_one_404(table, ws):
     create_workspace(table, NewWorkspace(name='Plain', slug='plain'), PAT, ws=OTHER)
     with pytest.raises(NotFoundError, match=TRIAL_NOT_FOUND):
-        extend_trial(table, ws, 14, PAT, schedule=MagicMock(), resume=_no_resume, now=START)
+        extend_trial(table, ws, 14, PAT, resume=_no_resume, now=START)
     with pytest.raises(NotFoundError, match=TRIAL_NOT_FOUND):
         convert_trial(table, ws, PAT, resume=_no_resume)
 
@@ -269,17 +265,3 @@ def test_a_listing_row_that_moved_meanwhile_is_a_409(table):
     with pytest.raises(ConflictError):
         save_trial(table, WS, {**meta, 'name': 'Renamed meanwhile'}, {**meta['trial'], 'days': 60})
     assert read_meta(table, WS)['trial']['days'] == 30
-
-
-# ── shared/trial_state.py require_live ────────────────────────────────────────
-
-def test_only_a_paused_trial_refuses_a_form_put_live(table):
-    _create(table)
-    require_live(table, WS)  # running: nothing refused
-    create_workspace(table, NewWorkspace(name='Plain', slug='plain'), PAT, ws=OTHER)
-    require_live(table, OTHER)  # no trial at all
-    meta = read_meta(table, WS)
-    save_trial(table, WS, meta, {**meta['trial'], 'paused_at': '2026-12-21T09:00:00+00:00'})
-    with pytest.raises(ConflictError) as raised:
-        require_live(table, WS)
-    assert raised.value.code == TRIAL_PAUSED_CODE

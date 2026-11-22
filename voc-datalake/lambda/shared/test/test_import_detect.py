@@ -175,6 +175,11 @@ class TestColumns:
         assert _kinds(SPANISH) == {'Fecha': 'date', 'Valoración': 'rating_1_5', 'Comentario': 'open_text',
                                    'Nombre': 'name'}
 
+    def test_an_excel_serial_is_a_date_only_under_a_date_header(self):
+        # Five-digit ids and counts fall in the serials' range (20,000 to 80,000): only a date header makes them dates.
+        assert _kinds('Ticket ID,Order,Fecha\n45001,45100,45231\n45002,45230,45232\n45003,45231,45233\n') == {
+            'Ticket ID': 'id', 'Order': 'id', 'Fecha': 'date'}
+
     def test_a_bom_semicolons_and_excel_dates(self):
         columns = detect_columns(parse_sample('csv', BOM_SEMICOLONS))
         assert [(c.kind, c.reasons[0]['code']) for c in columns][:2] == [('date', 'excel_serial'),

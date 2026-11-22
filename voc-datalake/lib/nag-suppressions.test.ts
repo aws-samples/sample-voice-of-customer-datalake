@@ -321,8 +321,11 @@ describe('cdk-nag acknowledgements', () => {
       // relay's role (voice-relay.ts): a session's evidence and transcript parts and its runtime's log groups and streams.
       // 150 -> 151 (7.67.00, counted on the wave's integrated stack): the manual-import API's write-once archives of an
       // import in a workspace, `ws/{one id}/raw/*` (ManualImportLambdaRole), a finding of VocApiStack's objects'
-      // acknowledgement. 7.70.00's and 7.71.00's grants add none.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 151, used: 151 });
+      // acknowledgement. 7.70.00's grants add none.
+      // 151 -> 150 (7.71.00, review round 1, F1): the count above held 7.71.00's own trial schedules' AwsSolutions-IAM5
+      // on WorkspacesLambdaRole (`scheduler:CreateSchedule` on the trials group's `voc-trial-*` names), gone with the
+      // per-trial schedules: the expiry's hourly rule reads the ends from the listing.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 150, used: 150 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

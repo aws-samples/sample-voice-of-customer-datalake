@@ -1,7 +1,8 @@
 /**
  * @fileoverview The wizard's First insights: how many rows were imported (and why any were not), how many are
  * analysed so far, then the sentiment split, the top categories, a survey's NPS and three quotes, with a link to the
- * dashboard filtered to the source (and to the form's results for a survey).
+ * dashboard filtered to the source (and to the form's results for a survey). Rows none of which is analysed in the
+ * polling window were imported before: it says so, with the dashboard's link.
  *
  * @module pages/Scrapers/ImportWizard/InsightsStep
  */
@@ -15,6 +16,11 @@ import { useFirstInsights } from './useFirstInsights'
 import type { ImportOutcome, ImportWizardState } from './useImportWizard'
 
 const SHOWN_REFUSALS = 5
+
+/** The dashboard filtered to the import's source. */
+function dashboardPath(outcome: ImportOutcome): string {
+  return `/dashboard?source=${encodeURIComponent(outcome.source)}`
+}
 const SENTIMENTS = ['positive', 'neutral', 'negative', 'mixed'] as const
 
 function Refusals({ outcome }: Readonly<{ outcome: ImportOutcome }>) {
@@ -36,6 +42,14 @@ function Refusals({ outcome }: Readonly<{ outcome: ImportOutcome }>) {
 function Figures({ outcome }: Readonly<{ outcome: ImportOutcome }>) {
   const { t } = useTranslation('scrapers')
   const insights = useFirstInsights(outcome)
+  if (insights.alreadyImported) {
+    return (
+      <p role="status" className="text-sm text-text">
+        {t('importWizard.insights.alreadyImported')}{' '}
+        <Link className="link" to={dashboardPath(outcome)}>{t('importWizard.insights.alreadyImportedLink')}</Link>
+      </p>
+    )
+  }
   if (!insights.ready) {
     return (
       <div role="status" className="space-y-1">
@@ -93,7 +107,7 @@ export default function InsightsStep({ wizard }: Readonly<{ wizard: ImportWizard
       <Refusals outcome={outcome} />
       {outcome.accepted > 0 && <Figures outcome={outcome} />}
       <div className="flex flex-wrap gap-2">
-        <Link className="btn btn-primary" to={`/dashboard?source=${encodeURIComponent(outcome.source)}`}>{t('importWizard.insights.openDashboard')}</Link>
+        <Link className="btn btn-primary" to={dashboardPath(outcome)}>{t('importWizard.insights.openDashboard')}</Link>
         {outcome.formId !== undefined && (
           <Link className="btn btn-secondary" to={`/feedback-forms/${encodeURIComponent(outcome.formId)}/results`}>{t('importWizard.insights.openResults')}</Link>
         )}

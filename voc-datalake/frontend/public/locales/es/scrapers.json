@@ -597,6 +597,7 @@
       "rows_one": "{{count, number}} fila, {{columns}} columnas",
       "rows_many": "{{count, number}} filas, {{columns}} columnas",
       "rows_other": "{{count, number}} filas, {{columns}} columnas",
+      "legacyEncoding": "Este archivo no está en UTF-8, así que se leyó como Windows-1252 (Europa occidental). Compruebe en la vista previa que las letras con tilde se ven bien antes de continuar.",
       "problems": {
         "format": "Este tipo de archivo no se puede importar. Elige un archivo CSV, TSV, JSON o Excel (.xlsx).",
         "tooLarge": "Este archivo supera los 10 MB. Divídelo e importa las partes una a una.",
@@ -698,7 +699,10 @@
         "too_many_options": "«{{header}}» tiene más de 50 respuestas distintas: se deja fuera. Conviértela en texto libre para conservarla.",
         "matrix_too_large": "«{{header}}» es una cuadrícula de más de 20 filas o 10 respuestas: se deja fuera.",
         "no_values": "«{{header}}» no tiene respuestas con las que crear opciones: se deja fuera.",
-        "too_many_questions": "«{{header}}» se deja fuera: un formulario tiene como máximo 30 preguntas."
+        "too_many_questions": "«{{header}}» se deja fuera: un formulario tiene como máximo 30 preguntas.",
+        "extra_date": "«{{header}}» se deja fuera: cada respuesta toma la fecha de la primera columna de fecha.",
+        "extra_id": "«{{header}}» se deja fuera: cada respuesta se identifica con la primera columna de id.",
+        "extra_channel": "«{{header}}» se deja fuera: la primera columna de canal es el canal de cada respuesta."
       }
     },
     "insights": {
@@ -711,6 +715,8 @@
       "refusedRow": "Fila {{row}}: {{reason}}",
       "processing": "Analizando: {{done, number}} de {{total, number}}…",
       "slow": "Seguimos analizando. Un archivo grande puede tardar unos minutos.",
+      "alreadyImported": "Nada nuevo que analizar: estas filas ya se importaron antes.",
+      "alreadyImportedLink": "Verlas en el panel",
       "ready_one": "{{count, number}} analizada. Esto es lo que dice:",
       "ready_many": "{{count, number}} analizadas. Esto es lo que dicen:",
       "ready_other": "{{count, number}} analizadas. Esto es lo que dicen:",

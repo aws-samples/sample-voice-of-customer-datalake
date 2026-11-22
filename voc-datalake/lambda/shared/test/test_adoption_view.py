@@ -1,7 +1,7 @@
 """shared/adoption_view.py and shared/adoption.py: the range, the periods, the medians and the labelled estimate."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -36,6 +36,19 @@ def test_a_day_reads_as_its_month_and_a_quarter_widens_to_whole_quarters_up_to_n
     chosen = parse_range({'from': '2026-08-14', 'to': '2026-11', 'grain': 'quarter'}, TODAY)
     assert chosen.months == ['2026-07', '2026-08', '2026-09', '2026-10', '2026-11']
     assert [label for label, _ in chosen.periods()] == ['2026-Q3', '2026-Q4']
+
+
+@pytest.mark.parametrize('day', [date(2026, month, 15) for month in range(1, 13)], ids=str)
+@pytest.mark.parametrize('back', [6, 12, 24])
+def test_a_range_of_up_to_24_months_widened_to_quarters_stays_within_24(day, back):
+    """Review round 1: "Last 24 months" by quarter on a mid-quarter day loses its first quarter, never answers a 400."""
+    first = date(day.year, day.month, 1)
+    for _ in range(back - 1):
+        first = (first - timedelta(days=1)).replace(day=1)
+    chosen = parse_range({'from': first.strftime('%Y-%m'), 'to': day.strftime('%Y-%m'), 'grain': 'quarter'}, day)
+    assert len(chosen.months) <= MAX_RANGE_MONTHS
+    assert (int(chosen.months[0][5:]) - 1) % 3 == 0
+    assert chosen.months[-1] == day.strftime('%Y-%m')
 
 
 @pytest.mark.parametrize(('params', 'message'), [

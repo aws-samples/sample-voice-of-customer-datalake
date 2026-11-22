@@ -72,10 +72,10 @@ export function isPluginNotEnabled(error: unknown): boolean {
   return apiErrorStatus(error) === 409 && serverReason(error) === PLUGIN_NOT_ENABLED
 }
 
-/** The refusals of `PUT /me/workspaces/current/plugins/{plugin_id}` (workspace_plugin_settings.py, workspace.py). */
 /** A paused trial's refusal of a plugin's enable or a form put live (`TRIAL_PAUSED`, lambda/shared/trial_state.py). */
 export const TRIAL_PAUSED = 'This trial workspace is paused: a platform admin extends or converts it to turn its plugins and forms back on. Nothing was deleted, and reads and the export still work'
 
+/** The refusals of `PUT /me/workspaces/current/plugins/{plugin_id}` (workspace_plugin_settings.py, workspace.py). */
 export const PLUGIN_REFUSALS: readonly Refusal[] = [
   { status: 409, reason: "The workspace's plugins changed meanwhile: reload them and try again", messageKey: 'common:workspaces.errors.pluginsChangedMeanwhile' },
   { status: 409, reason: TRIAL_PAUSED, messageKey: 'common:workspaces.trial.pausedPlugins' },

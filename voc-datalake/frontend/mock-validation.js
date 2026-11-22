@@ -25,21 +25,13 @@ const nowIso = () => new Date().toISOString();
 const newId = (prefix) => `${prefix}${randomBytes(3).toString('hex')}`;
 
 function stateOf(projectId) {
-  if (!states.has(projectId)) states.set(projectId, { block: { criteria: [], tasks: [], revision: 0, status: 'not_started' }, run: null });
+  if (!states.has(projectId)) states.set(projectId, { block: { criteria: [], tasks: [], revision: 0 }, run: null });
   return states.get(projectId);
-}
-
-function statusOf(block) {
-  if (block.report_document_id) return 'reported';
-  if (block.form_open) return 'testing';
-  if (block.plan_document_id) return 'planned';
-  return block.criteria.length > 0 ? 'criteria' : 'not_started';
 }
 
 function write(state, changes, reason, shared) {
   state.block = { ...state.block, ...changes, revision: state.block.revision + 1, updated_at: nowIso(),
     updated_by: { sub: shared.mockCaller.sub, kind: 'user' }, reason };
-  state.block.status = statusOf(state.block);
   return state.block;
 }
 
@@ -78,7 +70,8 @@ function view(detail, state) {
   const criteria = criteriaResults(state, real);
   const verdict = criteria.length > 0 && criteria.every((c) => c.outcome === 'met') ? 'pursue' : 'park';
   const form = state.block.form_id ? { form_id: state.block.form_id, revision: 2, open: Boolean(state.block.form_open),
-    questions: state.block.tasks.length + state.block.criteria.length + 2, has_responses: Boolean(real), stale: false } : null;
+    questions: state.block.tasks.length + state.block.criteria.length + 2, has_responses: Boolean(real), stale: false,
+    newer_version: null } : null;
   const hasPrototype = detail.documents.some((d) => d.document_type === 'prototype');
   return [200, {
     success: true, validation: state.block, form,

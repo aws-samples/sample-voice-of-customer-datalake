@@ -94,13 +94,16 @@ def parse_range(params: Mapping[str, Any], today: date) -> AdoptionRange:
         raise ValidationError('to must not be after the current month (UTC)')
     if first > last:
         raise ValidationError('from must not be after to')
+    if len(months_between(first, last)) > MAX_RANGE_MONTHS:
+        raise ValidationError(f'A range covers at most {MAX_RANGE_MONTHS} months')
     if grain == 'quarter':
         first = _quarter_start(first)
         last = min(_shift(_quarter_start(last), 2), current)
-    months = months_between(first, last)
-    if len(months) > MAX_RANGE_MONTHS:
-        raise ValidationError(f'A range covers at most {MAX_RANGE_MONTHS} months')
-    return AdoptionRange(months, grain)
+        # Widened to whole quarters, a range of up to MAX_RANGE_MONTHS may pass it: its first quarters go, so the
+        # answer stays within the bound (review round 1: "Last 24 months" by quarter).
+        while len(months_between(first, last)) > MAX_RANGE_MONTHS:
+            first = _shift(first, 3)
+    return AdoptionRange(months_between(first, last), grain)
 
 
 def _counts(value: object) -> Counter[str]:

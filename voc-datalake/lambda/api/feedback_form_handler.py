@@ -20,7 +20,8 @@ Two paths (docs/multi-workspace.md, "Public and non-user entry points"; docs/fee
   ``ws/{ws}/raw/…``) and the run in the import history;
 * in a paused trial workspace (7.71.00, shared/trial_state.py) a form is not put live: a create or a save with
   ``enabled: true`` is a 409 ``trial_paused`` until a platform admin extends or converts the trial (which turns back
-  on the forms the pause turned off); every other save, turning one off included, works;
+  on the forms the pause turned off), the check a condition of the write's own transaction (shared/ws_repo.py
+  ``unpaused_in``), so a pause that commits first always wins; every other save, turning one off included, works;
 * the public widget routes (config, iframe, submit, events) never read the header: they look the form id up
   (``_public_form``). A form with a lookup row is its workspace's (the row's workspace, which must be ``active``):
   its config is served from the workspace's form, and a submission is queued with that ``workspace_id``
@@ -104,13 +105,14 @@ from shared.import_survey import check_mapping
 from shared.ingest_archive import prepare_messages, stamp_file_archive
 from shared.ingest_tables import table_view
 from shared.onboarding import forms_partition as _forms_partition
+from shared.persona_save import cancellation_codes
 from shared.project_gate import caller_from_event
 from shared.raw_versions import app_connector, put_raw_version, raw_root
 from shared.request_workspace import require_settings_admin
 from shared.scoped_query import SortRange, iter_partition, query_partition
 from shared.source_profiles import PII_ALLOW
 from shared.tables import configured_table, get_workspaces_table
-from shared.trial_state import require_live
+from shared.trial_state import TRIAL_PAUSED, TRIAL_PAUSED_CODE
 from shared.workspace import EDITING_ROLES, WorkspaceContext, audit_key, audit_sort_key
 from shared.workspace_request import RequestWorkspace
 from shared.workspace_routing import (
@@ -131,7 +133,7 @@ from shared.logging import logger, metrics, tracer
 from shared.producer_labels import clean_dimensions, message_labels, normalise_label_fields
 from shared.request_body import json_body_value, json_object_body, optional_field, validated_text
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
-from shared.source_policy import apply_source_policy
+from shared.source_policy import apply_source_policy, raw_archive_allowed
 from shared.source_profiles import cached_source_profile_strict
 from shared.sqs_batches import send_batches
 from shared.timestamps import now_iso
@@ -212,10 +214,28 @@ def _request_scope(*, write: bool = False) -> WorkspaceScope | None:
     return scope_of(context)
 
 
-def _refuse_live_in_paused_trial(body: Mapping[str, Any], scope: WorkspaceScope | None) -> None:
-    """A form put live (``enabled: true``) in a paused trial workspace: 409 ``trial_paused`` (shared/trial_state.py)."""
-    if scope is not None and body.get('enabled') is True:
-        require_live(configured_table(get_workspaces_table(), 'Workspaces'), scope.ws)
+class _LostRace(Exception):
+    """A conditional save's own condition failed inside its transaction (the revision or save count moved)."""
+
+
+def _publishes_in_workspace(item_or_body: Mapping[str, Any], scope: WorkspaceScope | None) -> bool:
+    return scope is not None and item_or_body.get('enabled') is True
+
+
+def _write_unpaused(scope: WorkspaceScope, entry: dict[str, Any]) -> None:
+    """``entry`` (one ``Put`` or ``Update`` of a form put live in a workspace) in ONE transaction with the check that
+    the workspace has no paused trial (shared/ws_repo.py ``unpaused_in``): a pause that committed first wins, a 409
+    ``trial_paused`` (shared/trial_state.py), whatever the order of the reads. ``_LostRace`` when the entry's own
+    condition failed."""
+    try:
+        _forms(scope).write_unpaused(entry, configured_table(get_workspaces_table(), 'Workspaces'))
+    except ClientError as exc:
+        codes = cancellation_codes(exc)
+        if len(codes) > 1 and codes[1] == 'ConditionalCheckFailed':
+            raise ConflictError(TRIAL_PAUSED, code=TRIAL_PAUSED_CODE) from exc
+        if codes and codes[0] == 'ConditionalCheckFailed':
+            raise _LostRace from exc
+        raise
 
 
 def _resolved_context() -> WorkspaceContext | None:
@@ -677,6 +697,12 @@ def _body_definition(body: Mapping[str, Any]) -> dict[str, Any]:
     return fv2.migrate_v1({**fv2.V1_DEFAULTS, **v1}, DEFAULT_FORM_LANGUAGE)
 
 
+def _require_boolean_enabled(body: Mapping[str, Any]) -> None:
+    """400 for an ``enabled`` that is not true or false: a string ``"false"`` must never read as a live form."""
+    if 'enabled' in body and not isinstance(body['enabled'], bool):
+        raise ValidationError('enabled must be true or false')
+
+
 def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScope | None = None,
                     actor: str = '') -> dict:
     """Build DynamoDB item from request body with defaults (a workspace's form under its own partition).
@@ -687,6 +713,7 @@ def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScop
     """
     validate_link_fields(body)
     validate_theme(body)
+    _require_boolean_enabled(body)
     definition = fv2.validate_definition(_body_definition(body))
     # Created live: its text must be readable and no text may show a placeholder as written (shared/forms_v2.py); a
     # form created Off is always stored.
@@ -1080,7 +1107,6 @@ def create_form():
     scope = _request_scope(write=True)
     body = json_object_body(app)
     _validate_form_labels(body, scope, app_feedback=_made_for_app_feedback(body))
-    _refuse_live_in_paused_trial(body, scope)
     # Link fields and the definition are validated inside build_form_item, structurally.
     item = build_form_item(body, scope=scope, actor=get_caller_subject(app.current_event.raw_event))
 
@@ -1089,6 +1115,8 @@ def create_form():
             _forms_table().put_item(Item=item)
         else:
             _create_workspace_form(item, scope)
+    except ConflictError:
+        raise
     except Exception as e:
         logger.exception(f"Error creating form: {e}")
         raise ServiceError('Failed to create form') from e
@@ -1105,7 +1133,11 @@ def _create_workspace_form(item: dict, scope: WorkspaceScope) -> None:
     routing = configured_table(get_workspaces_table(), 'Workspaces')
     claim_lookup(routing, form_id, scope, item['created_at'])
     try:
-        _forms(scope).put_item(item, ConditionExpression='attribute_not_exists(pk)')
+        if _publishes_in_workspace(item, scope):
+            # Created live: conditional on the trial in the same transaction (a paused trial's 409 trial_paused).
+            _write_unpaused(scope, {'Put': {'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}})
+        else:
+            _forms(scope).put_item(item, ConditionExpression='attribute_not_exists(pk)')
     except Exception:
         try:
             release_lookup(routing, form_id, scope)
@@ -1250,6 +1282,7 @@ def _require_update_fields(body: Mapping[str, Any]) -> None:
     count = body.get('expected_write_count')
     if count is not None and (isinstance(count, bool) or not isinstance(count, int)):
         raise ValidationError('expected_write_count must be a whole number')
+    _require_boolean_enabled(body)
 
 
 def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
@@ -1363,7 +1396,6 @@ def update_form(form_id: str):
     # (the reserved tag is judged on the stored form's template, below)
     _validate_form_labels(body, scope, app_feedback=True)
     _require_update_fields(body)
-    _refuse_live_in_paused_trial(body, scope)
     if scope is None:
         _refuse_a_workspaces_id(form_id, 'Failed to update form')
     stored = _read_form(form_id, 'Failed to update form', scope)
@@ -1376,9 +1408,18 @@ def update_form(form_id: str):
     try:
         if plan.snapshot is not None:
             _put_revision(form_id, scope, *plan.snapshot)
-        response = _forms(scope).update_item(_form_key(form_id, scope), **_update_request(stored, plan))
+        request = _update_request(stored, plan)
+        if scope is not None and _publishes_in_workspace(body, scope):
+            # Put live in a workspace: conditional on the trial in the save's own transaction (S5, review round 1).
+            _write_unpaused(scope, {'Update': {'Key': _form_key(form_id, scope),
+                                               **{k: v for k, v in request.items() if k != 'ReturnValues'}}})
+            response = {'Attributes': _read_form(form_id, 'Failed to update form', scope)}
+        else:
+            response = _forms(scope).update_item(_form_key(form_id, scope), **request)
+    except ConflictError:
+        raise
     except Exception as e:
-        if _is_conditional_check_failure(e):
+        if _is_conditional_check_failure(e) or isinstance(e, _LostRace):
             current = _read_form(form_id, 'Failed to update form', scope)  # the 404 when it was deleted meanwhile
             raise ConflictError(fv2.CHANGED_MEANWHILE, code='revision_conflict', details=_saved_by(current)) from e
         logger.exception(f"Error updating form: {e}")
@@ -2465,7 +2506,9 @@ def import_form_responses(form_id: str):
     logic (owner decision: it followed the other tool's), and queued as a response dated with its own date, under
     the form's brand partition, so Results, Report and Compare read it. NPS stays in ``form_answers``, never the
     rating. Answers ``{accepted, refused: [{row, code, question_id?}] (the first 200), refused_count, run_id,
-    raw_s3_key}``; a dry run checks the rows and writes nothing. A form that was not imported is a 409.
+    raw_s3_key}``; a dry run checks the rows and writes nothing. A form that was not imported is a 409. Under a
+    redacting policy (a workspace's default) a call holds at most ``fimp.MAX_REDACTED_TEXTS`` texts (400
+    ``too_many_texts``): each is one Comprehend call, and the rows are redacted several at once.
     """
     scope = _request_scope(write=True)
     _require_import_admin()
@@ -2483,13 +2526,18 @@ def import_form_responses(form_id: str):
                           default_at=now.replace(microsecond=0).isoformat(), form_id=form_id)
     answer: dict[str, Any] = {'success': True, 'dry_run': request.dry_run, 'accepted': len(read.accepted),
                               'refused': read.refused[:fimp.MAX_REFUSALS], 'refused_count': len(read.refused)}
-    if request.dry_run or not read.accepted:
+    if not read.accepted:
         return answer
     profile = cached_source_profile_strict(FEEDBACK_FORM_SOURCE, scope)
+    if not raw_archive_allowed(profile):
+        fimp.check_redaction_budget(form.definition, read.accepted)
+    if request.dry_run:
+        return answer
+    # Several rows redacted at once, and only their own words read by the entity model (never an id or a code).
     messages, mode = prepare_messages(
         s3, RAW_DATA_BUCKET, [fimp.response_message(form, number, row, _row_routing(form, row, scope))
                               for number, row in read.accepted], profile, now,
-        connector_id=fimp.IMPORT_WRITER, scope=scope)
+        connector_id=fimp.IMPORT_WRITER, scope=scope, free_text=fimp.free_text_paths(form.definition))
     uri = stamp_file_archive(messages, mode, _kept_file(form_id, scope, run_id, request))
     sent, errors = _queue_batches(messages, _resolved_context())
     if sent:

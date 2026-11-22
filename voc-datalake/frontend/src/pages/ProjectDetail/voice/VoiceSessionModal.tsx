@@ -14,7 +14,7 @@ import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
-import { AudioLines, FileText, Library, Loader2, PhoneOff } from 'lucide-react'
+import { AudioLines, FileText, Library, Loader2, PhoneOff, RefreshCw } from 'lucide-react'
 import DialogClose from '../../../components/DialogClose/DialogClose'
 import ModalShell from '../../../components/ModalShell/ModalShell'
 import { CitationChip } from '../../../assistant/components/focusGroupParts'
@@ -109,14 +109,24 @@ function Meters({ state, elapsed }: Readonly<{ state: VoiceState; elapsed: numbe
   )
 }
 
-function TranscriptOutcome({ projectId, status, endFailed }: Readonly<{
-  projectId: string; status: VoiceSessionStatus | undefined; endFailed: boolean
+function TranscriptOutcome({ projectId, status, endFailed, onRetryEnd }: Readonly<{
+  projectId: string; status: VoiceSessionStatus | undefined; endFailed: boolean; onRetryEnd: () => void
 }>) {
   const { t } = useTranslation('projectDetail')
   const documentId = status?.transcript_document_id ?? null
   const library = useSaveInterviewToLibrary(projectId, documentId)
-  if (endFailed || status?.status === 'failed') {
-    return <p role="alert" className="text-sm text-danger">{t(endFailed ? 'voice.session.endFailed' : 'voice.session.filedFailed')}</p>
+  if (endFailed) {
+    return (
+      <div className="flex flex-wrap items-center gap-2" role="alert">
+        <p className="text-sm text-danger">{t('voice.session.endFailed')}</p>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onRetryEnd}>
+          <RefreshCw size={14} aria-hidden />{t('loadFailed.retry', { ns: 'common' })}
+        </button>
+      </div>
+    )
+  }
+  if (status?.status === 'failed') {
+    return <p role="alert" className="text-sm text-danger">{t('voice.session.filedFailed')}</p>
   }
   if (documentId === null) {
     return <p role="status" className="flex items-center gap-1.5 text-sm text-muted"><Loader2 size={14} className="animate-spin motion-reduce:animate-none" aria-hidden />{t('voice.session.filing')}</p>
@@ -163,7 +173,7 @@ export default function VoiceSessionModal({ target, name, onClose }: Readonly<{
         {over ? null : <MicMeter level={session.level} />}
         <Captions captions={state.captions} name={name} />
         <Meters state={state} elapsed={session.elapsed} />
-        {over ? <TranscriptOutcome projectId={target.projectId} status={session.status} endFailed={session.endFailed} /> : null}
+        {over ? <TranscriptOutcome projectId={target.projectId} status={session.status} endFailed={session.endFailed} onRetryEnd={session.retryEnd} /> : null}
       </div>
       <div className="dialog-footer">
         {over ? (

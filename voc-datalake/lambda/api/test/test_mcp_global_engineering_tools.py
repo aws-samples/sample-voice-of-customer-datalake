@@ -180,7 +180,7 @@ class TestEveryCallIsGated:
 
     def test_agents_run_keeps_its_claim_and_never_gets_an_engineering_one(self):
         claims = h._claims_for(h.ToolCall(TOOLS_BY_NAME['agents_run'], {}, None), _row())
-        assert (claims.get('voc:mcp_agent_run'), 'voc:mcp_engineering' in claims) == ('true', False)
+        assert (claims.get('voc:mcp_agent_run'), 'voc:mcp_engineering' in claims) == ('agents_run', False)
         for tool in ENGINEERING_TOOLS:
             claims = h._claims_for(h.ToolCall(tool, {}, None), _row())
             assert (claims['voc:mcp_engineering'], 'voc:mcp_agent_run' in claims) == (tool.engineering_op, False)

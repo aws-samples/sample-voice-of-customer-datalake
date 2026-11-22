@@ -9,7 +9,9 @@ and a validation report's outcomes: never a text, a name or a person), and folds
   is ``with.prototype / projects_started``);
 * ``artifacts``: per type (shared/adoption.py ``ARTIFACT_TYPES``) the artifacts made in the month, ``ai`` (generated,
   revised by the AI, built by the prototype builder) or ``human`` (written by hand from a blank template, imported
-  personas); an edit or a restore of a version, and a copied persona, are no new artifact;
+  personas); an edit or a restore that made a new version of a versioned series (a PR/FAQ, a PRD, a prototype), and a
+  copied persona, are no new artifact, while a persona or research document edited or restored in place is still the
+  one artifact it was;
 * ``decisions`` by verdict (by ``decided_at``), ``validated_decisions``: those citing a validation report of the
   project with at least one criterion met by real results (shared/adoption_validation.py);
 * ``validation_reports`` and ``validation_runs`` (``synthetic`` apart: a run with the personas never counts as met);
@@ -31,6 +33,7 @@ from typing import Any, Final
 from shared import adoption_validation as av
 from shared.adoption import ARTIFACT_TYPES
 from shared.decision_records import DECISION_DOCUMENT_TYPE, VERDICTS
+from shared.document_versions import VERSIONED_DOCUMENT_TYPES
 
 __all__ = ['COHORT_STEPS', 'CYCLES', 'MonthBuckets', 'month_of', 'months_between', 'project_projection']
 
@@ -44,7 +47,9 @@ PROJECT_ATTRIBUTES: Final = ('pk', 'sk', 'document_type', 'document_id', 'create
                              'imported_from', 'copied_from', av.SYNTHETIC_FIELD, 'decision',
                              av.META_VALIDATION_FIELD, av.REPORT_RESULTS_FIELD)
 _SECONDS_PER_DAY: Final = 86400
-#: The edits that make a new version of an artifact without making a new one (shared/document_history.py).
+#: The edits that make a new version of an artifact without making a new one (shared/document_history.py): only on a
+#: versioned series' version rows (shared/document_versions.py VERSIONED_DOCUMENT_TYPES); an unmanaged row (personas,
+#: research) is the artifact itself, whatever its last edit was.
 _NOT_NEW: Final = frozenset({'edit', 'restore'})
 _AI_REVISION: Final = 'revise'
 _LEGACY_PREFIX: Final = (('PERSONA#', 'personas'), ('RESEARCH#', 'research'), ('PRFAQ#', 'prfaq'), ('PRD#', 'prd'),
@@ -54,14 +59,13 @@ _LEGACY_PREFIX: Final = (('PERSONA#', 'personas'), ('RESEARCH#', 'research'), ('
 def project_projection() -> tuple[str, dict[str, str]]:
     """The ``ProjectionExpression`` of a project partition's Query and its ``ExpressionAttributeNames``: the top-level
     attributes of ``PROJECT_ATTRIBUTES``, but of a decision only its verdict, date and evidence document ids, of the
-    ``META``'s validation only its report id and status, and of a report only each criterion's outcome."""
+    ``META``'s validation only its report id, and of a report only each criterion's outcome."""
     names = {'#sk': 'sk', '#dt': 'document_type', '#did': 'document_id', '#ca': 'created_at', '#origin': 'origin',
              '#ek': 'edit_kind', '#imp': 'imported_from', '#cop': 'copied_from', '#syn': av.SYNTHETIC_FIELD,
              '#dec': 'decision', '#verdict': 'verdict', '#dat': 'decided_at', '#ev': 'evidence',
-             '#dids': 'document_ids', '#val': av.META_VALIDATION_FIELD, '#rdid': 'report_document_id',
-             '#vstatus': 'status'}
+             '#dids': 'document_ids', '#val': av.META_VALIDATION_FIELD, '#rdid': 'report_document_id'}
     paths = ['#sk', '#dt', '#did', '#ca', '#origin', '#ek', '#imp', '#cop', '#syn', '#dec.#verdict', '#dec.#dat',
-             '#dec.#ev.#dids', '#val.#rdid', '#val.#vstatus', *av.report_projection(names)]
+             '#dec.#ev.#dids', '#val.#rdid', *av.report_projection(names)]
     return ', '.join(paths), names
 
 
@@ -104,10 +108,10 @@ def _artifact_type(row: Mapping[str, Any]) -> str | None:
 
 
 def _made_with_ai(row: Mapping[str, Any], kind: str) -> bool | None:
-    """True for an artifact the AI made, False for one made by hand, None for no new artifact (an edit or a restore of
-    a version, a copied persona)."""
+    """True for an artifact the AI made, False for one made by hand, None for no new artifact (an edit or a restore that
+    made a new version of a versioned series, a copied persona)."""
     edit_kind = row.get('edit_kind')
-    if edit_kind in _NOT_NEW:
+    if edit_kind in _NOT_NEW and kind in VERSIONED_DOCUMENT_TYPES:
         return None
     if edit_kind == _AI_REVISION:
         return True

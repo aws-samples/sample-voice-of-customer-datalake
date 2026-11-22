@@ -231,6 +231,9 @@ ALLOWED_OPTIONS: Final[Mapping[str, frozenset[str]]] = {
 MAX_TRANSACT_ITEMS: Final = 100
 #: The entries a TransactWriteItems takes, and the options passed on (every other one is refused).
 _TRANSACT_ACTIONS: Final = ('Put', 'Update', 'Delete', 'ConditionCheck')
+#: The condition of ``WorkspaceTable.transact_write_items``'s ``unpaused_in`` check on the workspace's ``META`` (the
+#: names ``trial`` and ``paused_at`` are shared/trial_state.py's TRIAL and PAUSED_AT, held equal by test_ws_repo).
+UNPAUSED_CHECK: Final = '#status = :active AND attribute_not_exists(#trial.#paused_at)'
 _TRANSACT_WRITE_OPTIONS: Final = frozenset({'ClientRequestToken', 'ReturnConsumedCapacity',
                                             'ReturnItemCollectionMetrics'})
 _BATCH_GET_OPTIONS: Final = frozenset({'ProjectionExpression', 'ExpressionAttributeNames', 'ConsistentRead'})
@@ -1662,7 +1665,7 @@ class WorkspaceTable:
         return response
 
     def transact_write_items(self, items: Sequence[Mapping[str, Any]], *, outside: OutsideEntry | None = None,
-                             **kwargs: Any) -> dict:
+                             unpaused_in: Any | None = None, **kwargs: Any) -> dict:
         """One ``TransactWriteItems`` on this table: 1 to 100 entries, each ``{'Put': {'Item': …}}``,
         ``{'Update': {'Key': …, 'UpdateExpression': …}}``, ``{'Delete': {'Key': …}}`` or
         ``{'ConditionCheck': {'Key': …, 'ConditionExpression': …}}`` (plain Python values, no ``TableName``).
@@ -1677,17 +1680,40 @@ class WorkspaceTable:
         put first (``OUTSIDE_ENTRY_INDEX``, counted in the 100) and only if absent, so it is written with the rows it
         belongs to or not at all. One for another workspace, or anything but an ``OutsideEntry``, is refused; a
         caller's own entry outside the workspace stays refused.
+
+        ``unpaused_in``: voc-workspaces (its table handle): the transaction also checks this view's OWN workspace's
+        ``META`` there (``UNPAUSED_CHECK``, last, counted in the 100): still active and no paused trial
+        (shared/trial_state.py), so a write that puts something live cannot land once a trial's pause committed. The
+        layer builds the key from its own scope; a caller names no key and no condition.
         """
         options = _checked_options('TransactWriteItems', kwargs, _TRANSACT_WRITE_OPTIONS)
         entries = list(items)
         claimed = [] if outside is None else [self._outside_entry(outside)]
-        if not 1 <= len(entries) + len(claimed) <= MAX_TRANSACT_ITEMS:
+        live = [] if unpaused_in is None else [self._unpaused_check(unpaused_in)]
+        if not 1 <= len(entries) + len(claimed) + len(live) <= MAX_TRANSACT_ITEMS:
             raise ValueError(f'a TransactWriteItems takes 1 to {MAX_TRANSACT_ITEMS} entries, '
-                             f'not {len(entries) + len(claimed)}')
+                             f'not {len(entries) + len(claimed) + len(live)}')
         checked = [self._checked_write(entry) for entry in entries]
         self._refuse_duplicates('TransactWriteItems',
                                 [body.get('Key') or body['Item'] for entry in checked for body in entry.values()])
-        return self._unscoped_table.meta.client.transact_write_items(TransactItems=[*claimed, *checked], **options)
+        return self._unscoped_table.meta.client.transact_write_items(TransactItems=[*claimed, *checked, *live],
+                                                                     **options)
+
+    def write_unpaused(self, entry: Mapping[str, Any], workspaces: Any) -> dict:
+        """One ``Put`` or ``Update`` (``entry``, as ``transact_write_items`` takes it) committed only while this view's
+        own workspace has no paused trial: one transaction with the ``unpaused_in`` check of its ``META`` in
+        voc-workspaces (``workspaces``). A cancelled transaction's error propagates: its reasons name the entry
+        (index 0) or the check (index 1)."""
+        return self.transact_write_items([entry], unpaused_in=workspaces)
+
+    def _unpaused_check(self, workspaces: Any) -> dict[str, Any]:
+        """The ConditionCheck of this view's own workspace's ``META`` in voc-workspaces (``workspaces``, a table
+        handle): active, and no ``trial.paused_at``."""
+        return {'ConditionCheck': {
+            'TableName': workspaces.name, 'Key': {'pk': ws_key(self.scope.ws), 'sk': 'META'},
+            'ConditionExpression': UNPAUSED_CHECK,
+            'ExpressionAttributeNames': {'#status': 'status', '#trial': 'trial', '#paused_at': 'paused_at'},
+            'ExpressionAttributeValues': {':active': ACTIVE}}}
 
     def _outside_entry(self, outside: object) -> dict[str, Any]:
         """The outside entry's Put, built here from its kind, id, time and expiry and this view's own workspace and

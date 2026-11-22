@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_CAPTION_CHARS, MAX_CITED_IDS } from './protocol.js';
 import { Transcript } from './transcript.js';
 
 const AT = '2026-11-21T12:00:00.000Z';
@@ -34,6 +35,15 @@ describe('Transcript turns', () => {
     expect(talk.take(true)[0]?.feedback_ids).toStrictEqual(['fb1', 'fb2']);
   });
 
+  it('never says more than the wire schema takes: a clipped caption with its ellipsis, ten ids at a time', () => {
+    const ids = Array.from({ length: 14 }, (_, at) => `fb${at}`);
+    const talk = new Transcript(new Set(ids), () => AT);
+    const markers = ids.map((id) => `[fb:${id}]`).join(' ');
+    const said = talk.assistantText(`${'a'.repeat(5000)} ${markers}`, 'final');
+    expect([said?.text.length, said?.text.endsWith('…'), said?.cited.length]).toStrictEqual([MAX_CAPTION_CHARS, true, MAX_CITED_IDS]);
+    expect(talk.cite(ids)?.cited).toStrictEqual(['fb10', 'fb11', 'fb12', 'fb13']);
+  });
+
   it('opens the persona\'s turn when it cites before it speaks', () => {
     const talk = transcript();
     talk.userText('Why?');
@@ -61,6 +71,21 @@ describe('Transcript parts', () => {
     }
     expect(talk.userText('More')).toBeUndefined();
     expect(talk.lastTurn()).toBe(400);
+  });
+});
+
+describe('Transcript at a rollover', () => {
+  it('keeps the persona\'s planned segments its FINAL text did not cover, never those the person spoke over', () => {
+    const talk = transcript();
+    talk.assistantText('First.', 'speculative');
+    talk.assistantText('First.', 'final');
+    talk.assistantText('Second.', 'speculative');
+    talk.keepPartial();
+    talk.userText('Stop');
+    talk.assistantText('Never said.', 'speculative');
+    talk.interrupt();
+    talk.keepPartial();
+    expect(talk.take(true).map((turn) => turn.text)).toStrictEqual(['First. Second.', 'Stop', 'Never said.']);
   });
 });
 

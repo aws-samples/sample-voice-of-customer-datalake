@@ -983,6 +983,7 @@
       "live": "Karta działa w formularzu opinii samego prototypu (wersja {{revision, number}}).",
       "closed": "Karta jest zapisana, ale niewidoczna.",
       "stale": "Kryteria lub zadania zmieniły się od zapisania karty: zapisz ją ponownie.",
+      "newerVersion": "Nowsza wersja prototypu nie pokazuje karty: zapisz kartę, aby ją tam przenieść (w tej wersji zostanie zamknięta).",
       "oldWidget": "Ta wersja prototypu powstała przed kartą, więc jej widżet nie może jej pokazać: zapisz jej przewodnik lub zbuduj go ponownie, a potem zapisz kartę."
     },
     "synthetic": {

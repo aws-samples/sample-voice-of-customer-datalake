@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
 
 import type { SignedRequest } from '../lib/sigv4.js';
-import { createVoiceStore, ObjectStoreError, type StoreDeps } from './store.js';
+import { createVoiceStore, ObjectStoreError, SessionGoneError, type StoreDeps } from './store.js';
 import { SESSION_ID } from './voice-fixtures.js';
 
 const NOW = new Date('2026-11-21T12:00:00.000Z');
@@ -39,14 +39,23 @@ describe('voice store: the session row', () => {
     await expect(failing.store.activate(SESSION_ID, NOW)).rejects.toThrow('AccessDeniedException');
   });
 
-  it('records usage and parts with SET only', async () => {
+  it('records usage and parts with SET only, only on a row that exists', async () => {
     const run = store();
     await run.store.recordUsage(SESSION_ID, { seconds: 61, tokens: { speech_in: 1, speech_out: 2, text_in: 3, text_out: 4 }, costMicroUsd: 99, streams: 2 });
     await run.store.recordParts(SESSION_ID, 3);
     expect(run.update.mock.calls.map(([input]) => input.UpdateExpression)).toStrictEqual([
       'SET seconds = :seconds, tokens = :tokens, cost_microusd = :cost, streams = :streams', 'SET transcript_parts = :parts',
     ]);
-    expect(run.update.mock.calls.map(([input]) => input.Key)).toStrictEqual([SESSION_KEY.Key, SESSION_KEY.Key]);
+    expect(run.update.mock.calls.map(([input]) => [input.Key, input.ConditionExpression])).toStrictEqual([
+      [SESSION_KEY.Key, 'attribute_exists(pk)'], [SESSION_KEY.Key, 'attribute_exists(pk)']]);
+  });
+
+  it('says the row is gone when its condition fails (a deleted project), and lets any other failure through', async () => {
+    const gone = store({ update: () => Promise.reject(named('ConditionalCheckFailedException')) });
+    const failing = store({ update: () => Promise.reject(named('ProvisionedThroughputExceededException')) });
+    await expect(gone.store.recordParts(SESSION_ID, 1)).rejects.toThrow(new SessionGoneError());
+    await expect(failing.store.recordUsage(SESSION_ID, { seconds: 1, tokens: { speech_in: 0, speech_out: 0, text_in: 0, text_out: 0 }, costMicroUsd: 0, streams: 1 }))
+      .rejects.toThrow('ProvisionedThroughputExceededException');
   });
 
   it('marks it ended only while live, keeping a reason the API wrote first', async () => {
@@ -62,16 +71,16 @@ describe('voice store: the session row', () => {
 });
 
 describe('voice store: the month and the live set', () => {
-  it('adds the month\'s seconds and cost and answers its new total', async () => {
+  it('adds the month\'s seconds and cost and answers its new totals', async () => {
     const run = store();
     run.update.mockResolvedValueOnce({ seconds: 4200, cost_microusd: 10 });
-    await expect(run.store.addMonthly('VOICEUSE#DEPLOYMENT#2026-11', 60, 900, NOW)).resolves.toBe(4200);
+    await expect(run.store.addMonthly('VOICEUSE#DEPLOYMENT#2026-11', 60, 900, NOW)).resolves.toStrictEqual({ seconds: 4200, costMicroUsd: 10 });
     expect(run.update).toHaveBeenCalledWith({
       TableName: 'voc-aggregates', Key: { pk: 'VOICEUSE#DEPLOYMENT#2026-11', sk: 'USAGE' },
       UpdateExpression: 'ADD seconds :seconds, cost_microusd :cost SET updated_at = :now',
       ExpressionAttributeValues: { ':seconds': 60, ':cost': 900, ':now': '2026-11-21T12:00:00.000Z' }, ReturnValues: 'UPDATED_NEW',
     });
-    await expect(run.store.addMonthly('VOICEUSE#DEPLOYMENT#2026-11', 0, 0, NOW)).resolves.toBe(0);
+    await expect(run.store.addMonthly('VOICEUSE#DEPLOYMENT#2026-11', 0, 0, NOW)).resolves.toStrictEqual({ seconds: 0, costMicroUsd: 0 });
   });
 
   it('leaves the deployment\'s live set', async () => {

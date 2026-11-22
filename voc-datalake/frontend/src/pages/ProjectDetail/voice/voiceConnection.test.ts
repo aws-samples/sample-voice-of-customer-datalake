@@ -1,7 +1,8 @@
 /**
  * The voice session's WebSocket: opened once per connection (the presigned URL is single-use), the persona's voice
  * played, the microphone started on `ready`, barge-in flushed, End asked of the relay and enforced after a grace,
- * a development double-mount kept alive and a real unmount ending it, the close reported once.
+ * a development double-mount kept alive and a real unmount ending it, the close reported once, and the persona's
+ * goodbye left to play out after a time or budget end (silenced at once after any other).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSocket, fakeAudio, stubWebSocket } from '@test/voiceDoubles'
@@ -79,6 +80,17 @@ describe('createVoiceConnection', () => {
     const second = connected()
     second.socket.close()
     expect(second.events.onClosed.mock.calls).toStrictEqual([['disconnected']])
+  })
+
+  it('lets the queued goodbye play out after the time limit or the budget, and silences it after any other end', () => {
+    const ends = ['session_limit', 'budget', 'ended_by_person', 'error'].map((reason) => {
+      const { audio, socket } = connected()
+      socket.receive({ type: 'ended', reason })
+      return audio.closed.drains
+    })
+    const dropped = connected()
+    dropped.socket.close()
+    expect([...ends, dropped.audio.closed.drains]).toStrictEqual([[10_000], [10_000], [0], [0], [0]])
   })
 
   it('ends at once when the socket never opened', () => {

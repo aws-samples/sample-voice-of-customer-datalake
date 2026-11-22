@@ -106,18 +106,6 @@ class TestJudging:
         assert 'Synthetic persona runs are not counted' in prefill['rationale']
 
 
-class TestStatus:
-    @pytest.mark.parametrize(('block', 'status'), [
-        ({}, pv.STATUS_NOT_STARTED),
-        ({'criteria': [{'id': 'c1'}]}, pv.STATUS_CRITERIA),
-        ({'criteria': [{'id': 'c1'}], 'plan_document_id': 'd'}, pv.STATUS_PLANNED),
-        ({'plan_document_id': 'd', 'form_open': True}, pv.STATUS_TESTING),
-        ({'form_open': True, 'report_document_id': 'r'}, pv.STATUS_REPORTED),
-    ])
-    def test_where_the_step_stands(self, block, status):
-        assert pv.status_of(block) == status
-
-
 @pytest.fixture
 def table():
     with mock_aws():
@@ -133,8 +121,9 @@ class TestTheBlock:
                                 reason=pv.REASON_CRITERIA_EDITED)
         stored = pv.block_of(pv.read_meta(table, 'p1'))
         assert stored == {**block, 'criteria': [{'id': criteria[0]['id'], 'text': 'Fast', 'target': 4.5}]}
-        assert (stored['revision'], stored['updated_by'], stored['reason'], stored['status']) == (
-            1, ACTOR, 'criteria_edited', pv.STATUS_CRITERIA)
+        # (no stored status: review round 1, F3)
+        assert (stored['revision'], stored['updated_by'], stored['reason'], 'status' in stored) == (
+            1, ACTOR, 'criteria_edited', False)
 
     def test_a_stale_editor_is_a_409_and_writes_nothing(self, table):
         pv.update_block(table, 'p1', lambda _s: {'criteria': []}, actor=ACTOR, reason='x')

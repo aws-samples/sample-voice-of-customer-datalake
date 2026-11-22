@@ -50,6 +50,13 @@ Exact pins worth knowing (not holds; Dependabot still proposes their minor and p
   taken deliberately, its changelog's security entries read (most are hardenings against crafted PDFs), and
   `lambda/shared/test/test_library_extract.py` run on it. It sits in the projects API's own layer (VocApiStack has no
   room for another); `lib/utils/dependency-layers.test.ts` pins that layer's two requirements.
+- `ws` (`voc-datalake/lambda/stream/package.json`, MIT, 7.71.00, with `@types/ws` as a development dependency) is
+  pinned exactly. **Approved by the owner on 2026-11-22**: the voice relay's WebSocket server on AgentCore Runtime's
+  `/ws` ([voice-personas.md](voice-personas.md#security-review)), in place of a hand-written RFC 6455 server. It has no
+  dependencies; its two optional native add-ons, `bufferutil` and `utf-8-validate`, are never installed and are
+  external to the esbuild bundle (`lib/stacks/voice-relay.ts`), so ws runs its JavaScript fallbacks. It parses frames
+  from the network, so a release is taken deliberately: read its changelog, then run the relay's specs
+  (`src/voice/*.test.ts` in the stream package) and `lib/stacks/voice-relay.test.ts`, which runs the built `relay.js`.
 - `cdk-nag` (`voc-datalake/package.json`) is pinned exactly: `lib/utils/nag-ack.ts` renders finding ids the way
   cdk-nag 3.0.2's (unexported) `flattenCfnReference` does; `lib/nag-suppressions.test.ts` fails if a release
   renders them differently.
