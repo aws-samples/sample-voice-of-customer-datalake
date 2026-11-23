@@ -440,6 +440,7 @@
       "convertTitle": "Convert {{name}}?",
       "convertMessage": "It becomes a regular workspace with no end.",
       "convertPausedMessage": "It becomes a regular workspace with no end, and the plugins and forms its pause turned off are turned back on.",
+      "resumeIncomplete": "The last extension or conversion did not finish: Extend or Convert again to finish.",
       "stayedOff": {
         "title": "These forms stayed off: as they are, they can no longer be published. Their editors fix them, then publish them again.",
         "themeUnreadable": "{{name}}: its text is too hard to read on its background.",

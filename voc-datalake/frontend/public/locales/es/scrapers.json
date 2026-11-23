@@ -717,6 +717,7 @@
       "slow": "Seguimos analizando. Un archivo grande puede tardar unos minutos.",
       "alreadyImported": "Nada nuevo que analizar: estas filas ya se importaron antes.",
       "alreadyImportedLink": "Verlas en el panel",
+      "stillProcessing": "Todavía se está procesando: consulte los resultados del formulario más tarde.",
       "ready_one": "{{count, number}} analizada. Esto es lo que dice:",
       "ready_many": "{{count, number}} analizadas. Esto es lo que dicen:",
       "ready_other": "{{count, number}} analizadas. Esto es lo que dicen:",

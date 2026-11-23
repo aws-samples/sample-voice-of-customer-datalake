@@ -1078,11 +1078,13 @@
       "ended": {
         "byPerson": "Zakończono sesję.",
         "sessionLimit": "Sesja osiągnęła limit czasu.",
+        "costLimit": "Ta sesja osiągnęła limit kosztów.",
         "budget": "Minuty głosowe na ten miesiąc zostały wykorzystane.",
         "busy": "Głos jest teraz zajęty. Spróbuj ponownie za kilka minut.",
         "error": "Sesja została przerwana z powodu błędu.",
         "disconnected": "Połączenie zostało utracone.",
-        "refused": "Link do sesji wygasł lub został już użyty. Rozpocznij nową sesję."
+        "refused": "Link do sesji wygasł lub został już użyty. Rozpocznij nową sesję.",
+        "expired": "Link do sesji wygasł przed nawiązaniem połączenia. Rozpocznij nową sesję."
       },
       "filing": "Zapisywanie transkrypcji…",
       "filed": "Transkrypcja została zapisana jako dokument tego projektu.",

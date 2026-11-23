@@ -3,8 +3,11 @@
  * voice_transcripts.py reads them at finalize), the captions' text, and the history a rollover replays.
  *
  * - A turn is the person's words (the model's ASR of them) or the persona's answer. The persona's text comes twice:
- *   SPECULATIVE before it is spoken, FINAL for what was actually said (it follows playback). The turn's text is the
- *   FINAL text, else the SPECULATIVE text (a turn cut short by barge-in may never get its FINAL): `interrupted` says so.
+ *   SPECULATIVE before it is spoken, FINAL for what was actually said (it follows playback, one FINAL segment for each
+ *   SPECULATIVE one). The turn's text is its FINAL segments, then the SPECULATIVE ones those have not covered yet
+ *   (7.71.02: a turn's last sentences may never get their FINAL text before the turn closes or the session ends, as on
+ *   the b- deployment), else its SPECULATIVE text alone. A turn the person spoke over (`interrupted`) keeps only what
+ *   was said: its FINAL segments (its SPECULATIVE ones only when none came). The FINAL caption carries that text.
  * - Citations: the ids the persona's `cite` named, kept only when the evidence pack holds them (the focus groups'
  *   rule: an answer can only cite a review the pack held). A `[fb:<id>]` the model writes in its text anyway is moved
  *   to the turn's citations the same way and removed from the text (`keepCitations`), so no id is read aloud or shown.
@@ -55,8 +58,15 @@ function joined(words: readonly string[]): string {
   return clip(words.join(' ').replaceAll(/\s+/gu, ' ').trim(), MAX_CAPTION_CHARS - 1);
 }
 
+/** The turn's words as said (see the module docstring): its FINAL segments and, unless the person spoke over it, the
+ *  SPECULATIVE segments past them. */
+function spoken(turn: Turn): readonly string[] {
+  if (turn.final.length === 0) return turn.speculative;
+  return turn.interrupted ? turn.final : [...turn.final, ...turn.speculative.slice(turn.final.length)];
+}
+
 function textOf(turn: Turn): string {
-  return joined(turn.final.length > 0 ? turn.final : turn.speculative);
+  return joined(spoken(turn));
 }
 
 export class Transcript {
@@ -93,7 +103,7 @@ export class Transcript {
     const spoken = keepCitations(text, new Set());
     if (stage === 'final') turn.final.push(spoken);
     else turn.speculative.push(spoken);
-    return { turn: turn.turn, text: joined(stage === 'final' ? turn.final : turn.speculative), cited };
+    return { turn: turn.turn, text: stage === 'final' ? textOf(turn) : joined(turn.speculative), cited };
   }
 
   /** A `cite` call's ids: the pack's ones, on the persona's current turn (a new one when it cites before speaking). */
@@ -116,8 +126,9 @@ export class Transcript {
     return this.turns.at(-1)?.turn;
   }
 
-  /** A rollover: the persona's latest turn keeps the SPECULATIVE segments its FINAL text has not covered (unless the
-   *  person spoke over it: those were never said). */
+  /** A rollover: the persona's latest turn keeps the SPECULATIVE segments its FINAL text has not covered as FINAL
+   *  (unless the person spoke over it: those were never said), so a new stream's segments of the same turn line up
+   *  with its own. */
   keepPartial(): void {
     const last = this.turns.at(-1);
     if (last?.role !== 'assistant' || last.interrupted) return;

@@ -20,11 +20,15 @@ import type { CursorPage } from './cursorPage'
 /** `NAME_MAX_CHARS` in lambda/shared/platform_workspaces.py. */
 export const WORKSPACE_NAME_MAX = 80
 
+/** A trial as the console lists it (lambda/shared/trial_state.py `trial_summary`): the members' summary, and whether an
+ * extension's or a conversion's resume was cut short (`resume_incomplete`: the same request again finishes it). */
+const ConsoleTrialSchema = TrialSummarySchema.extend({ resume_incomplete: z.boolean().catch(false) })
+
 // A slug that could not be a base path could never be entered, so it is not listed.
 const PlatformWorkspaceSchema = WorkspaceIdentitySchema.extend({
   status: z.string().catch(''),
   created_at: z.string().catch(''),
-  trial: TrialSummarySchema.nullable().catch(null),
+  trial: ConsoleTrialSchema.nullable().catch(null),
 })
 export type PlatformWorkspace = z.infer<typeof PlatformWorkspaceSchema>
 

@@ -104,27 +104,12 @@ class _Rendezvous:
                 self.alone.append(record_id)
 
 
-class _Writes:
-    """The fake ``write_to_dynamodb``: each item recorded under a lock, and a plain ``True`` back. Never a MagicMock:
-    the records run on several threads, and a MagicMock's first ``__bool__`` (``if not write_to_dynamodb(…)``) is not
-    thread-safe (unittest.mock sets the method on the type before its return value, so a thread in between gets a
-    MagicMock back and the record fails with "__bool__ should return bool, returned MagicMock"), nor is its call
-    count."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self.items: list[dict] = []
-
-    def __call__(self, item: dict, _scope: object = None) -> bool:
-        with self._lock:
-            self.items.append(item)
-        return True
-
-
 @contextmanager
 def _fake_enrichment(gauge: _Gauge, throttle_ids: frozenset[str] = frozenset(),
-                     rendezvous: _Rendezvous | None = None) -> Generator[_Writes, None, None]:
-    """Every AWS stage stubbed with a sleep; the model call is gauged. Yields the writes."""
+                     rendezvous: _Rendezvous | None = None) -> Generator[MagicMock, None, None]:
+    """Every AWS stage stubbed with a sleep; the model call is gauged. Yields the write, which answers a plain ``True``
+    (a MagicMock's own first ``__bool__`` is not thread-safe, and the records run on several threads): its items are its
+    ``call_args_list`` (``_written``), in whichever order the records finished."""
     def sentiment(_text: str, _lang: str) -> dict:
         time.sleep(FAKE_COMPREHEND_S)
         return {'label': 'neutral', 'score': 0.0}
@@ -150,8 +135,13 @@ def _fake_enrichment(gauge: _Gauge, throttle_ids: frozenset[str] = frozenset(),
          patch('processor.handler.get_comprehend_sentiment', side_effect=sentiment), \
          patch('processor.handler.invoke_bedrock_llm', side_effect=llm), \
          patch('processor.handler.log_processing_error'), \
-         patch('processor.handler.write_to_dynamodb', new=_Writes()) as write:
+         patch('processor.handler.write_to_dynamodb', return_value=True) as write:
         yield write
+
+
+def _written(write: MagicMock) -> list[dict]:
+    """The items the fake write was called with."""
+    return [written.args[0] for written in write.call_args_list]
 
 
 def _timed(fn, event: dict) -> tuple[float, dict]:
@@ -190,7 +180,7 @@ class TestBatchEnrichmentBenchmark:
             sys.stdout.write(f'\n[processor benchmark] {BATCH} records, fake model {FAKE_BEDROCK_S}s: '
                              f'serial {before:.2f}s → concurrent {after:.2f}s (informational)\n')
         assert before_response == after_response == {'batchItemFailures': []}
-        assert len(write.items) == BATCH
+        assert len(_written(write)) == BATCH
         # Serial: no model call ever had company. Concurrent: every call met a full wave.
         assert sorted(serial_meeting.alone) == sorted(f'src-{n}' for n in range(BATCH))
         assert concurrent_meeting.alone == []
@@ -217,7 +207,7 @@ class TestPartialBatchSemanticsUnderConcurrency:
             response = handler.lambda_handler(_event([_body(n) for n in range(BATCH)]), _context())
 
         assert response == {'batchItemFailures': [{'itemIdentifier': 'm2'}, {'itemIdentifier': 'm7'}]}
-        written = sorted(item['source_id'] for item in write.items)
+        written = sorted(item['source_id'] for item in _written(write))
         assert written == sorted(f'src-{n}' for n in range(BATCH) if n not in (2, 7))
 
     def test_every_processed_record_is_counted_once(self):

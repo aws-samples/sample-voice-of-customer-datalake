@@ -680,6 +680,7 @@
       "slow": "まだ分析中です。大きなファイルは数分かかることがあります。",
       "alreadyImported": "新しく分析するものはありません。これらの行は以前にインポート済みです。",
       "alreadyImportedLink": "ダッシュボードで見る",
+      "stillProcessing": "まだ処理中です。後でフォームの結果をご覧ください。",
       "ready_one": "{{count, number}} 件を分析しました。わかったことは次のとおりです:",
       "ready_other": "{{count, number}} 件を分析しました。わかったことは次のとおりです:",
       "sentiment": "感情",

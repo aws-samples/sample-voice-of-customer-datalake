@@ -74,6 +74,36 @@ describe('Transcript parts', () => {
   });
 });
 
+describe('Transcript when a FINAL text falls short (L5, 7.71.02)', () => {
+  it('keeps both of two SPECULATIVE sentences when the FINAL text covers the first, at the turn\'s close and at the end', () => {
+    const talk = transcript();
+    talk.assistantText('First.', 'speculative');
+    expect(talk.assistantText('Second.', 'speculative')?.text).toBe('First. Second.');
+    // The FINAL caption says both: the second's FINAL text may never come.
+    expect(talk.assistantText('First.', 'final')?.text).toBe('First. Second.');
+    talk.userText('And then?');
+    expect(talk.take(false).map((turn) => turn.text)).toStrictEqual(['First. Second.']);
+    talk.assistantText('Third.', 'speculative');
+    talk.assistantText('Fourth.', 'speculative');
+    talk.assistantText('Third.', 'final');
+    expect(talk.take(true).map((turn) => turn.text)).toStrictEqual(['And then?', 'Third. Fourth.']);
+  });
+
+  it('keeps nothing past the FINAL text of a turn the person spoke over, and one FINAL segment for each', () => {
+    const talk = transcript();
+    talk.assistantText('One.', 'speculative');
+    talk.assistantText('Two.', 'speculative');
+    talk.assistantText('One.', 'final');
+    talk.assistantText('Two.', 'final');
+    talk.userText('Next');
+    talk.assistantText('Three.', 'speculative');
+    talk.assistantText('Never said.', 'speculative');
+    talk.assistantText('Three.', 'final');
+    talk.interrupt();
+    expect(talk.take(true).map((turn) => turn.text)).toStrictEqual(['One. Two.', 'Next', 'Three.']);
+  });
+});
+
 describe('Transcript at a rollover', () => {
   it('keeps the persona\'s planned segments its FINAL text did not cover, never those the person spoke over', () => {
     const talk = transcript();

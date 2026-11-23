@@ -5,7 +5,8 @@
  * is analysed (or five minutes pass); then the sentiment split, the top categories, three quotes and, for a survey,
  * the NPS from the form's Results. Five minutes with none of a reviews import analysed means the rows were imported
  * before (the processor skips an item it already holds): `alreadyImported`. A survey's rows are always new items (a new
- * imported form each time, whose id their ids name), so a survey that slow only says so (`slow`).
+ * imported form each time, whose id their ids name), so a survey with none analysed by then is still being processed
+ * (`stillProcessing`, 7.71.02: no spinner, and the polling has stopped; the form's Results show them later).
  *
  * @module pages/Scrapers/ImportWizard/useFirstInsights
  */
@@ -30,6 +31,9 @@ interface FirstInsights {
   readonly slow: boolean
   /** The polling window ended with none of a reviews import's rows analysed: they were imported before. */
   readonly alreadyImported: boolean
+  /** The polling window ended with none of a survey's rows analysed: still processing, its form's Results show them
+   *  later (nothing is polled any more). */
+  readonly stillProcessing: boolean
   readonly sentiment: Readonly<Record<string, number>>
   readonly categories: readonly (readonly [string, number])[]
   readonly quotes: readonly { readonly id: string; readonly text: string }[]
@@ -49,12 +53,14 @@ function usePollingClock(): PollPhase {
   return phase
 }
 
-/** Where the analysis stands: every row analysed (or the window over with some), still going, or none of a reviews
- * import in the window (a survey's rows are never imported before: it stays slow). */
+/** Where the analysis stands: every row analysed (or the window over with some), still going, or none in the window:
+ * a reviews import's were imported before, a survey's (never imported before) are still being processed. */
 function analysisState(processed: number, outcome: ImportOutcome, phase: PollPhase) {
   const ready = processed > 0 && (processed >= outcome.accepted || phase === 'over')
-  const alreadyImported = outcome.target === 'reviews' && processed === 0 && phase === 'over'
-  return { ready, alreadyImported, slow: !ready && !alreadyImported && phase !== 'polling' }
+  const noneInTheWindow = processed === 0 && phase === 'over'
+  const alreadyImported = outcome.target === 'reviews' && noneInTheWindow
+  const stillProcessing = outcome.target === 'survey' && noneInTheWindow
+  return { ready, alreadyImported, stillProcessing, slow: !ready && !noneInTheWindow && phase !== 'polling' }
 }
 
 export function useFirstInsights(outcome: ImportOutcome): FirstInsights {

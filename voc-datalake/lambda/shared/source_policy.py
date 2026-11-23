@@ -13,8 +13,9 @@ it archives anything and before it queues the message, and archives only what
   — and no raw copy is archived (the redacted message is the only copy that exists). A caller that names its
   messages' free text (``quiet_policy``'s ``free_text``: a form import's open answers and hidden values) sends only
   that, the text and the title to the entity model; their ids, codes and URLs get the patterns alone. With
-  ``strict`` (a redacting import, shared/ingest_archive.py) a text the entity model should have read and could not
-  raises ``EntityModelFailed`` instead of keeping its pattern-only redaction.
+  ``strict`` (every redacting upload, shared/ingest_archive.py) a text the entity model should have read and could not
+  raises ``EntityModelFailed`` instead of keeping its pattern-only redaction; one live record (``apply_source_policy``:
+  a form's submission, an edit, a voice transcript) keeps the pattern result.
 - ``summary_only``: the same redaction; the processor then stores derived
   fields only (``shared.source_profiles`` contract).
 

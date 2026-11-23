@@ -5,7 +5,8 @@
   (``Submission ID``, ``Submitted On`` in ISO 8601 UTC, ``Locale``, ``Tags``, the hidden fields by label, then one
   column per question by its primary-language headline, a matrix one per row and a contact question one per field it
   shows), choices joined with ``;`` and an "Other" text as ``Other: …``; ``ids`` adds a second header row of ids.
-- ``detailed``: 7.55.00's layout, kept unchanged for the scripts that read it (no BOM; two header rows).
+- ``detailed``: 7.55.00's layout, kept for the scripts that read it (no BOM; two header rows; since 7.71.02 its
+  headlines read their placeholders as ``[id]`` too, as the familiar layout's).
 
 Every cell, a header included, is kept from starting a spreadsheet formula (``csv_cell``). A headline's placeholders
 read ``[id]`` (shared/forms_recall.py), never a respondent's value. Pure: the rows come in, the text goes out.
@@ -90,8 +91,7 @@ def detailed_csv(definition: Mapping[str, Any], rows: Sequence[ResultRow]) -> st
     hidden_ids = [field_['id'] for field_ in definition.get('hidden_fields') or []]
     fixed = ['created_at', 'response_id', 'is_test', 'revision', 'language', 'ending_id']
     # The header rows are the author's text (a headline): no cell of the file, header or answer, is ever a formula.
-    labels = [*fixed, *(fv2.text_in(q.get('headline'), primary, primary) for q in questions),
-              *(f'hidden: {hid}' for hid in hidden_ids)]
+    labels = [*fixed, *(headline_of(q, primary) for q in questions), *(f'hidden: {hid}' for hid in hidden_ids)]
     lines: list[Sequence[object]] = [labels, [*fixed, *(q['id'] for q in questions),
                                               *(f'hidden.{hid}' for hid in hidden_ids)]]
     lines.extend([row.created_at, row.response_id, str(row.is_test).lower(), row.revision, row.language,

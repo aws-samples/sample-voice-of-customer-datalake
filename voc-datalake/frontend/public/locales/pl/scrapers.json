@@ -754,6 +754,7 @@
       "slow": "Analiza wciąż trwa. Duży plik może zająć kilka minut.",
       "alreadyImported": "Nie ma nic nowego do analizy: te wiersze zostały już wcześniej zaimportowane.",
       "alreadyImportedLink": "Zobacz je na pulpicie",
+      "stillProcessing": "Nadal trwa przetwarzanie: sprawdź wyniki formularza później.",
       "ready_one": "Przeanalizowano {{count, number}} opinię. Oto co mówi:",
       "ready_few": "Przeanalizowano {{count, number}} opinie. Oto co mówią:",
       "ready_many": "Przeanalizowano {{count, number}} opinii. Oto co mówią:",

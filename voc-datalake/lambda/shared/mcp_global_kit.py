@@ -85,9 +85,9 @@ class GlobalTool:
     board_route: bool = False
     # Reaches data of every project the minter can view (not one project): refused to a project-pinned token.
     workspace_wide: bool = False
-    # (7.53.00) The engineering run operation the tool serves (project_access.MCP_ENGINEERING_OPS), '' for none. Such a
-    # tool is ``admin_only`` and needs a write token even to read (``needs_write_token``); its delegated call carries
-    # that one operation as ``voc:mcp_op`` (an admin-only tool without one: its own name).
+    # (7.53.00) The engineering run operation the tool serves (one of project_access.MCP_DELEGATED_OPS), '' for none.
+    # Such a tool is ``admin_only`` and needs a write token even to read (``needs_write_token``); its delegated call
+    # carries that one operation as ``voc:mcp_op`` (an admin-only tool without one: its own name).
     engineering_op: str = ''
 
     @property

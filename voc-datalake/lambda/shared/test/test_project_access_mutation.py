@@ -63,10 +63,9 @@ class TestClaimNamesAreTheWireContract:
 class TestADelegatedOperationIsExactlyOneShape:
     def test_the_cleared_shape_is_allowed(self):
         assert pa.delegated_op_allowed(CLEARED_RUN_CLAIMS, 'agents_run') is True
-        assert frozenset({'agents_run', 'insights_get_adoption'}) == pa.MCP_ADMIN_OPS
-        # F7 (7.71.01): one claim and one set for the admin-only and the engineering operations, sharing no name.
-        assert pa.MCP_DELEGATED_OPS == pa.MCP_ADMIN_OPS | pa.MCP_ENGINEERING_OPS
-        assert pa.MCP_ADMIN_OPS.isdisjoint(pa.MCP_ENGINEERING_OPS)
+        # F7 (7.71.01): one claim and one set for the admin-only and the engineering operations (one literal, 7.71.02).
+        assert frozenset({'agents_run', 'insights_get_adoption', 'runs_list', 'run_get', 'run_analysis', 'run_steer',
+                          'run_request'}) == pa.MCP_DELEGATED_OPS
 
     @pytest.mark.parametrize(('override', 'reason'), [
         ({'sub': 'admin-sub'}, 'a person is not a delegated subject'),

@@ -440,6 +440,7 @@
       "convertTitle": "{{name}} umwandeln?",
       "convertMessage": "Er wird zu einem regulären Workspace ohne Ende.",
       "convertPausedMessage": "Er wird zu einem regulären Workspace ohne Ende, und die Plugins und Formulare, die die Pause ausgeschaltet hat, werden wieder eingeschaltet.",
+      "resumeIncomplete": "Die letzte Verlängerung oder Umwandlung wurde nicht abgeschlossen: Wählen Sie erneut Verlängern oder Umwandeln, um sie abzuschließen.",
       "stayedOff": {
         "title": "Diese Formulare bleiben aus: So können sie nicht mehr veröffentlicht werden. Ihre Bearbeiter korrigieren sie und veröffentlichen sie dann erneut.",
         "themeUnreadable": "{{name}}: Der Text ist auf seinem Hintergrund zu schwer lesbar.",

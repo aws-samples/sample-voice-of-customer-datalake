@@ -6,6 +6,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/errors'
+import { createAppQueryClient } from '../../api/queryPolicies'
 import { createTestQueryClient, renderWithQueryClient } from '../../test/query-client'
 import { hideMessage, parseWidgetMessage, showMessage } from './pinMessages'
 import PrototypePinsReview from './PrototypePinsReview'
@@ -75,8 +76,9 @@ function renderReview(canEdit: boolean, client = createTestQueryClient()) {
 
 const cardMessage = (requestId: string) => ({ source: 'voc-pin-widget', type: 'card', formId: FORM_ID, requestId, body: { answers: {} } })
 
-/** Two frame loads, each asking for the card on its own port; what each port was answered. */
-async function askTwice(client = createTestQueryClient({ gcTime: 60_000 })) {
+/** Two frame loads, each asking for the card on its own port; what each port was answered. The app's own query client:
+ * the card is kept for its `prototype-card` family's five minutes, and its retries are the card's own. */
+async function askTwice(client = createAppQueryClient()) {
   renderReview(false, client)
   const answers = []
   for (const requestId of ['v1', 'v2']) {
@@ -141,6 +143,7 @@ describe('the bridge', () => {
     mocks.submit.mockRejectedValueOnce(new ApiError(429, 'Too many requests'))
       .mockRejectedValueOnce(new ApiError(400, 'Invalid response', 'answer_invalid'))
     expect(await askTwice()).toStrictEqual(['v1', 'v2'].map((requestId) => ({ source: 'voc-pin-host', type: 'card', requestId, ok: false })))
+    // Q5 (7.71.02): one request per frame load, never the app's retry of a 429 on the shared public throttle.
     expect(mocks.submit).toHaveBeenCalledTimes(2)
   })
 

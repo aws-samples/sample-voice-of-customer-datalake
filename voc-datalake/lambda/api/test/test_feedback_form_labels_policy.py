@@ -4,9 +4,11 @@ from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 from handler_events_fixtures import call_route
 
 import feedback_form_handler as h
+from shared import pii_redaction
 from shared.source_profiles import SourceProfilesUnavailable
 from shared.test.source_profile_fixtures import no_source_profiles, seeded_source_profiles
 
@@ -116,6 +118,23 @@ def test_a_redact_profile_redacts_the_submission_before_it_is_queued(table, sqs,
     assert (record['text'], record['pii_policy_applied']) == ('mail me at [EMAIL]', 'redact')
     assert record['metadata']['submitter_email'] == '[EMAIL]'
     assert 'submitter_name' not in record['metadata']
+
+
+def test_a_live_submission_keeps_the_pattern_redaction_of_a_text_comprehend_could_not_read(
+        table, sqs, api_gateway_event, lambda_context):
+    """F1 (7.71.02): a live record of one keeps the pattern fallback (only an upload refuses what Comprehend could not
+    read): the submission is queued, its text redacted by the patterns alone, once Comprehend failed on it."""
+    table.get_item.return_value = {'Item': FORM}
+    comprehend = MagicMock()
+    comprehend.detect_pii_entities.side_effect = ClientError({'Error': {'Code': 'ThrottlingException'}},
+                                                              'DetectPiiEntities')
+    with seeded_source_profiles([{'id': 'feedback_form', 'pii': 'redact'}]), \
+            patch.object(pii_redaction, 'comprehend_language', return_value='en'), \
+            patch.object(pii_redaction, '_comprehend', return_value=comprehend):
+        response, _ = _submit(api_gateway_event, lambda_context, {'text': 'mail me at ann@x.example'})
+    assert response['statusCode'] == 200
+    assert (_queued(sqs)['text'], _queued(sqs)['pii_policy_applied']) == ('mail me at [EMAIL]', 'redact')
+    comprehend.detect_pii_entities.assert_called()
 
 
 def test_create_validates_and_normalises_labels(table, api_gateway_event, lambda_context):

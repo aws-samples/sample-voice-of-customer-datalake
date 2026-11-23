@@ -14,7 +14,8 @@ import ResultsFilterBar from './ResultsFilterBar'
 const FORM: FormV2 = {
   ...RESULTS_FORM,
   languages: ['en', 'pl'],
-  endings: [{ id: 'end_thanks', title: { en: 'Thank you' } }, { id: 'end_sorry', title: {} }],
+  endings: [{ id: 'end_thanks', title: { en: 'Thank you' } }, { id: 'end_sorry', title: {} },
+    { id: 'end_event', title: { en: 'See you at {{event|the next one}}' } }],
   hidden_fields: [{ id: 'user_id', label: 'User' }, { id: 'app_version' }],
 }
 
@@ -40,6 +41,13 @@ describe('ResultsFilterBar', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...CLEAR_FILTERS, language: 'pl' })
     await user.selectOptions(screen.getByRole('combobox', { name: 'Ending' }), 'end_sorry')
     expect(onChange).toHaveBeenLastCalledWith({ ...CLEAR_FILTERS, ending: 'end_sorry' })
+  })
+
+  it('shows an ending\'s recall placeholder as [id], as a headline reads (L2, 7.71.02)', () => {
+    renderBar()
+    const ending = within(screen.getByRole('combobox', { name: 'Ending' }))
+    expect(ending.getAllByRole('option').map((option) => option.textContent)).toStrictEqual(
+      ['All endings', 'Thank you', 'end_sorry', 'See you at [event]'])
   })
 
   it('adds a hidden field filter: the field picked, the value typed', async () => {

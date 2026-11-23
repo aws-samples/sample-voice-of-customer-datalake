@@ -102,6 +102,15 @@ describe('VoiceSessionModal', () => {
     expect(screen.getByText('The session reached its time limit.')).toBeInTheDocument()
   })
 
+  it.each([
+    ['cost_limit', 'This session reached its cost limit.'],
+    ['expired', 'The session link expired before it connected. Start a new session.'],
+  ])('words the relay\'s %s end (7.71.02)', async (reason, words) => {
+    const { socket } = renderSession()
+    relay(socket, { type: 'ended', reason })
+    expect(await screen.findByText(words)).toBeInTheDocument()
+  })
+
   it('says when the transcript could not be filed', async () => {
     serve({ [`GET ${SESSION}`]: () => ({ ...FILED, status: 'failed', transcript_document_id: null }) })
     const { socket } = renderSession()

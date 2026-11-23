@@ -23,9 +23,10 @@ It never Scans, and every read is a projected Query (lib/stacks/adoption-rollup-
 It reads no feedback and calls no model. A scope whose reads AWS refuses is not written (the others are), and the run
 raises once every scope was tried; the next day's run rebuilds it (no async retry). The run has one deadline, the
 invocation's time less ``RESERVE_SECONDS``: the deployment, the only scope with projects until projects move into
-workspaces (docs/multi-workspace.md, phase 3), comes first and may take all of it. A scope cut short is written with
-``complete: false`` only where no complete item is stored: a complete one (the last full run's figures) is kept, and
-the view shows its ``as_of``.
+workspaces (docs/multi-workspace.md, phase 3), comes first and may take all of it but the last ``WORKSPACE_SECONDS``,
+kept for the workspace scopes when there are any (their reads are only counts until then). A scope cut short is
+written with ``complete: false`` only where no complete item is stored: a complete one (the last full run's figures)
+is kept, and the view shows its ``as_of``.
 
 Env: ``AGGREGATES_TABLE``, ``PROJECTS_TABLE``, ``WORKSPACES_TABLE``, ``CONVERSATIONS_TABLE``, ``AGENTS_TABLE``.
 """
@@ -64,6 +65,9 @@ from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
 HISTORY_MONTHS: Final = 24
 #: Seconds kept back at the end of the invocation for the writes and the outcome's log line.
 RESERVE_SECONDS: Final = 60.0
+#: Seconds of the run's end kept for the workspace scopes when there are any: the deployment's walk stops this much
+#: before the run's deadline (7.71.02), so a long one never leaves every workspace cut short.
+WORKSPACE_SECONDS: Final = 60.0
 #: Projects read at once, and how many between two looks at the clock.
 PROJECT_READERS: Final = 8
 PROJECT_CHUNK: Final = 40
@@ -166,11 +170,20 @@ def _months(now: datetime) -> tuple[str, str]:
 
 
 class _Clock:
-    """Whether the invocation still has time for another chunk of projects: the run's own deadline."""
+    """Whether the invocation still has time for another chunk of projects: a deadline on the run's monotonic clock."""
 
-    def __init__(self, rollup: Rollup) -> None:
-        self._monotonic = rollup.monotonic
-        self._deadline = rollup.monotonic() + rollup.remaining() - RESERVE_SECONDS
+    def __init__(self, monotonic: Callable[[], float], deadline: float) -> None:
+        self._monotonic = monotonic
+        self._deadline = deadline
+
+    @classmethod
+    def of_run(cls, rollup: Rollup) -> _Clock:
+        """The run's own deadline: the invocation's time less ``RESERVE_SECONDS``."""
+        return cls(rollup.monotonic, rollup.monotonic() + rollup.remaining() - RESERVE_SECONDS)
+
+    def earlier(self, seconds: float) -> _Clock:
+        """The same clock, its deadline ``seconds`` sooner."""
+        return _Clock(self._monotonic, self._deadline - seconds)
 
     def has_time(self) -> bool:
         return self._monotonic() < self._deadline
@@ -232,15 +245,18 @@ def handle_event(event: dict, rollup: Rollup) -> dict[str, Any]:
     """Roll up every scope (``event`` takes no option but ``mode``); raises ``RollupIncomplete`` at the end when a
     scope was not written."""
     logger.info('Adoption rollup started', extra={'mode': str(event.get('mode', 'manual'))[:20]})
-    clock = _Clock(rollup)
-    scopes: list[WorkspaceScope | None] = [None, *_active_workspaces(rollup.workspaces)]
+    run = _Clock.of_run(rollup)
+    workspaces = _active_workspaces(rollup.workspaces)
+    scopes: list[WorkspaceScope | None] = [None, *workspaces]
+    # The deployment first, but never into the last minute: that is the workspaces' (their reads are counts only).
+    deployment = run.earlier(WORKSPACE_SECONDS) if workspaces else run
     agent_starts = _agent_run_starts(rollup.agents)
     failed: dict[str, str] = {}
     written = partial = kept = 0
     for scope in scopes:
         name = 'deployment' if scope is None else scope.ws
         try:
-            item = _scope_item(rollup, scope, clock, agent_starts)
+            item = _scope_item(rollup, scope, deployment if scope is None else run, agent_starts)
             stored = _write(rollup, scope, item)
         except (ClientError, BotoCoreError, StuckQuery) as error:
             logger.exception('Adoption rollup of a scope failed', extra={'scope': name})

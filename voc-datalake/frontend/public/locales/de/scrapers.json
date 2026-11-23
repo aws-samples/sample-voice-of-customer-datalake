@@ -680,6 +680,7 @@
       "slow": "Die Analyse läuft noch. Eine große Datei kann einige Minuten dauern.",
       "alreadyImported": "Nichts Neues zu analysieren: Diese Zeilen wurden bereits importiert.",
       "alreadyImportedLink": "Im Dashboard ansehen",
+      "stillProcessing": "Wird noch verarbeitet: Sehen Sie sich die Ergebnisse des Formulars später an.",
       "ready_one": "{{count, number}} Feedback analysiert. Das sagt es:",
       "ready_other": "{{count, number}} Feedbacks analysiert. Das sagen sie:",
       "sentiment": "Stimmung",

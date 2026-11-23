@@ -30,7 +30,8 @@ interface FormTab {
 const FORM_TABS: readonly FormTab[] = [
   { name: 'Questions', segment: 'questions', shows: (m) => m.getByRole('button', { name: 'Improve with AI', exact: true }) },
   { name: 'Flow', segment: 'flow', shows: (m) => m.getByRole('list', { name: 'Questions and their rules' }) },
-  { name: 'Languages', segment: 'languages', shows: (m) => m.getByRole('combobox', { name: 'Add language' }) },
+  // (a menu button since 7.55.01: RowActionsMenu, its items the languages)
+  { name: 'Languages', segment: 'languages', shows: (m) => m.getByRole('button', { name: 'Add language' }) },
   { name: 'Hidden fields', segment: 'hidden-fields', shows: (m) => m.getByRole('heading', { name: 'Hidden fields', level: 2 }) },
   { name: 'Test', segment: 'test', shows: (m) => m.getByRole('switch', { name: 'Test link' }) },
   { name: 'Share', segment: 'share', shows: (m) => m.getByRole('group', { name: 'Show the live or the test link' }) },

@@ -1,7 +1,8 @@
 /**
  * A trial's row in the platform console (7.71.00): its state as a badge, Extend by 14, 30 or 60 days, and Convert after
  * a confirmation (which says a paused trial's plugins and forms come back); the forms either left off, with why
- * (7.71.01); a refusal said in words; nothing for a converted trial or a workspace that is no trial.
+ * (7.71.01); a resume cut short (7.71.02); a refusal said in words; nothing for a converted trial or a workspace that is
+ * no trial.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -17,7 +18,8 @@ import type { PlatformWorkspace } from '../../../api/platformWorkspacesApi'
 import { PLATFORM_ACME } from '../../../test/workspaceFixtures'
 import TrialActions, { TrialBadge } from './TrialActions'
 
-const TRIAL = { days: 30, expires_at: '2026-12-21T09:00:00+00:00', paused_at: null, converted_at: null, paused: null }
+const TRIAL = { days: 30, expires_at: '2026-12-21T09:00:00+00:00', paused_at: null, converted_at: null, paused: null,
+  resume_incomplete: false }
 const ROW: PlatformWorkspace = { ...PLATFORM_ACME, trial: TRIAL }
 const EXTEND = `/platform/workspaces/${ROW.id}/trial/extend`
 const CONVERT = `/platform/workspaces/${ROW.id}/trial/convert`
@@ -86,6 +88,13 @@ describe('TrialActions', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Extend' }))
     await vi.waitFor(() => { expect(sentFetchApiBody(EXTEND, 'POST')).toStrictEqual({ days: 30 }) })
     expect(screen.queryByText(/These forms stayed off/)).not.toBeInTheDocument()
+  })
+
+  it('says that Extend or Convert again finishes a resume that was cut short, and nothing of it otherwise', () => {
+    const row = renderRow({ ...ROW, trial: { ...PAUSED, resume_incomplete: true } })
+    expect(screen.getByText('The last extension or conversion did not finish: Extend or Convert again to finish.')).toBeInTheDocument()
+    row.rerender({ ...ROW, trial: PAUSED })
+    expect(screen.queryByText(/did not finish/)).not.toBeInTheDocument()
   })
 
   it('says a refusal in words', async () => {

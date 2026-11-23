@@ -84,6 +84,12 @@ class TestTheDetailedLayout:
         assert table[2][8] == 'Laboratorium: Świetnie'
         assert table[2][6] == "'=Szybkość; Cena; other: Kolor"
 
+    def test_a_headline_reads_its_placeholders_as_ids_as_in_the_familiar_layout(self):
+        """L2 (7.71.02): the detailed header's headline is the familiar one's (shared/forms_v2_responses.py
+        ``headline_of``): ``[event]``, never ``{{event|tu}}``."""
+        table = list(csv.reader(io.StringIO(fcsv.detailed_csv(DEFINITION, [ANSWERED]))))
+        assert table[0][6:8] == ['Dlaczego [event]?', 'Jedno']
+
 
 @pytest.mark.parametrize(('value', 'expected'), [
     ('2026-11-20T10:30:00+01:00', '2026-11-20T09:30:00Z'), ('2026-11-20T10:30:00', '2026-11-20T10:30:00Z'),

@@ -21,7 +21,7 @@ and the text's language is one Comprehend supports for PII (``en``, ``es``:
 raises: when Comprehend fails, the pattern result stands and the
 ``PiiComprehendFailures`` metric counts it. A caller that must not keep a
 pattern-only result of a text the model should have read asks for
-``strict=True`` and gets ``EntityModelFailed`` instead (a redacting import
+``strict=True`` and gets ``EntityModelFailed`` instead (every redacting upload
 refuses that row, shared/ingest_archive.py).
 
 One Comprehend client, with adaptive retries (a throttle backs off instead of

@@ -433,6 +433,7 @@
       "convertTitle": "Przekształcić {{name}}?",
       "convertMessage": "Stanie się zwykłą przestrzenią roboczą bez końca.",
       "convertPausedMessage": "Stanie się zwykłą przestrzenią roboczą bez końca, a wtyczki i formularze wyłączone przez wstrzymanie zostaną ponownie włączone.",
+      "resumeIncomplete": "Ostatnie przedłużenie lub przekształcenie nie zostało dokończone: wybierz ponownie Przedłuż lub Przekształć, aby je dokończyć.",
       "stayedOff": {
         "title": "Te formularze pozostają wyłączone: w obecnej postaci nie można ich już opublikować. Ich redaktorzy je poprawiają, a potem publikują ponownie.",
         "themeUnreadable": "{{name}}: tekst jest zbyt trudny do odczytania na swoim tle.",

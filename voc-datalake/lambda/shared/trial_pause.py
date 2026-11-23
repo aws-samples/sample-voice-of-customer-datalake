@@ -3,8 +3,9 @@
 Which trials are due, ``due_trials`` (voc-trial-expiry's hourly tick): one paged Query of the platform listing
 (``WORKSPACES``, whose rows carry each trial's map, written in the same transaction as ``META``'s), keeping the trials
 that are not converted, whose ``expires_at`` has passed, and that are not paused yet (or paused within the last
-``REVISIT``, so a pause cut short is finished by the next tick). A trial whose ``expires_at`` does not parse is never
-due: it is skipped and logged, and ``pause`` refuses it too (``NO_EXPIRY``).
+``REVISIT``, so a pause cut short is finished by the next tick, or carrying a stale ``resuming_at`` mark, see below). A
+trial whose ``expires_at`` does not parse is never due: it is skipped and logged, and ``pause`` refuses it too
+(``NO_EXPIRY``).
 
 The pause, ``pause`` (once a trial is due), in this order:
 
@@ -12,8 +13,10 @@ The pause, ``pause`` (once a trial is due), in this order:
    form put live can land (shared/trial_state.py);
 2. what is on now: the plugins of the deployment's ceiling the workspace enabled (one GetItem each) and its live
    forms (one paged Query of its forms partition, the ``FORM#`` rows' ``enabled``);
-3. those lists, joined to any an earlier attempt recorded, stored as ``trial.paused``: a retry after a partial pause
-   still turns everything back on later;
+3. those lists, joined to any an earlier attempt recorded (read through shared/trial_state.py ``paused_lists``), stored
+   as ``trial.paused``, always, and conditional on the ``rev`` read: a retry after a partial pause still turns
+   everything back on later, and an extension or a conversion that marked the trial meanwhile makes this write fail
+   (409 ``trial_changed``) before anything is turned off;
 4. the ``trial_paused`` audit row (actor ``trial-expiry``, kind ``schedule``, the lists);
 5. each plugin turned off by the existing audited change (shared/workspace_plugin_settings.py ``set_trial_plugin``: its
    own ``plugin_disabled`` row, reason ``trial_paused``), and each form set ``enabled`` false (one conditional UpdateItem
@@ -22,7 +25,9 @@ The pause, ``pause`` (once a trial is due), in this order:
 
 No form is put live once step 1 committed (the publish's own transaction checks ``paused_at``), so the forms read in
 step 2 are all there are. A trial an extension or a conversion is resuming (``resuming_at``, shared/trials.py) is not
-due: its resume is not undone.
+due while the mark is fresh (``RESUMING_FRESH``): its resume is not undone. An older mark is a resume that failed and
+was not repeated: the trial is due again, and its pause turns off what that resume turned on and removes the mark in
+step 3's write.
 
 Nothing is deleted but the plugins' own ``PLUGIN#{plugin}`` / ``WS#{ws}`` rows, which ARE the existing disable (a
 present row means enabled; the ingestors' tick fans out over them). No form, response, feedback item, project, file or
@@ -53,7 +58,16 @@ from shared.logging import logger
 from shared.onboarding import forms_partition
 from shared.platform_workspaces import LISTING_PK
 from shared.timestamps import now_iso, parse_iso
-from shared.trial_state import PAUSED, PAUSED_AT, RESUMING_AT, TRIAL, at_second, is_paused
+from shared.trial_state import (
+    PAUSED,
+    PAUSED_AT,
+    RESUMING_AT,
+    TRIAL,
+    at_second,
+    is_paused,
+    paused_lists,
+    resume_incomplete,
+)
 from shared.trials import TRIAL_PAUSED_KIND, audit_trial, expiry_of, is_converted, read_meta, save_trial
 from shared.workspace import ACTIVE
 from shared.workspace_ids import is_workspace_id
@@ -75,6 +89,9 @@ NO_EXPIRY: Final = 'no_expiry'
 #: How long after its pause a trial is still visited by the hourly tick (a pause cut short is finished; a finished one
 #: is answered ``ALREADY_PAUSED`` and writes nothing).
 REVISIT: Final = timedelta(days=1)
+#: How long a ``resuming_at`` mark holds the pause off: an extension or a conversion is one API request (29 s at most),
+#: so a mark older than this is a resume that failed, and the trial is paused again.
+RESUMING_FRESH: Final = timedelta(minutes=15)
 
 
 @dataclass(frozen=True)
@@ -116,6 +133,23 @@ def _listing_trials(table: Any) -> Iterator[tuple[object, Mapping[str, Any]]]:
             yield row.get('workspace_id'), trial
 
 
+def _resuming(trial: Mapping[str, Any], now: datetime) -> bool:
+    """Whether an extension or a conversion is resuming ``trial`` now: its ``resuming_at`` mark is less than
+    ``RESUMING_FRESH`` old (a mark that does not parse holds nothing off)."""
+    marked = parse_iso(trial.get(RESUMING_AT))
+    return marked is not None and now - marked < RESUMING_FRESH
+
+
+def _visited(trial: Mapping[str, Any], now: datetime) -> bool:
+    """Whether the hourly tick visits a trial whose end passed: not paused yet, paused within ``REVISIT``, or left
+    marked by a resume that failed (a stale mark)."""
+    if not is_paused(trial):
+        return True
+    paused_at = parse_iso(trial.get(PAUSED_AT))
+    recently = paused_at is not None and now - paused_at < REVISIT
+    return recently or (resume_incomplete(trial) and not _resuming(trial, now))
+
+
 def due_trials(table: Any, now: datetime) -> list[str]:
     """The ids of the trials to pause now (see the module docstring), read from the platform listing of voc-workspaces
     (``table``)."""
@@ -127,8 +161,7 @@ def due_trials(table: Any, now: datetime) -> list[str]:
         if expiry is None:
             logger.warning('Trial with no readable expires_at: not paused', extra={'workspace_id': ws})
             continue
-        paused_at = parse_iso(trial.get(PAUSED_AT)) if is_paused(trial) else None
-        if expiry <= now and (not is_paused(trial) or (paused_at is not None and now - paused_at < REVISIT)):
+        if expiry <= now and _visited(trial, now):
             due.append(str(ws))
     return due
 
@@ -176,7 +209,7 @@ def _due(ws: str, meta: Mapping[str, Any], trial: object, now: datetime) -> str 
         # fixes it (an extension writes a new end).
         logger.warning('Trial with no readable expires_at: not paused', extra={'workspace_id': ws})
         return NO_EXPIRY
-    if expiry > now or isinstance(trial.get(RESUMING_AT), str):
+    if expiry > now or _resuming(trial, now):
         # An extension moved the end since the listing was read, or one (or a conversion) is turning the trial back on.
         return NOT_DUE
     return None
@@ -189,23 +222,25 @@ def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
     reason = _due(ws, meta, trial, now)
     if reason is not None or not isinstance(trial, Mapping):
         return {'outcome': reason or NOT_A_TRIAL}
-    trial = dict(trial)
+    # Due with a mark left: a stale one (a resume that failed); this pause turns off what it turned on and removes it.
+    stale = resume_incomplete(trial)
+    trial = {key: value for key, value in trial.items() if key != RESUMING_AT}
     was_paused = is_paused(trial)
     if not was_paused:
         trial = save_trial(tables.workspaces, ws, meta, {**trial, PAUSED_AT: at_second(now)})
         meta = {**meta, 'trial': trial}
     scope = workspace_scope(ws)
     forms = tables.forms(scope)
-    stored = trial.get(PAUSED)
-    recorded: Mapping[str, Any] = stored if isinstance(stored, Mapping) else {}
+    recorded = paused_lists(trial)
     still_on, still_live = _enabled_plugins(tables, ws), live_forms(forms, scope)
-    if was_paused and isinstance(stored, Mapping) and not still_on and not still_live:
+    if was_paused and not stale and not still_on and not still_live:
         # A run again of a pause that finished (a retried invoke): nothing is on, so nothing is written.
         return {'outcome': ALREADY_PAUSED}
-    plugins = _union(recorded.get('plugins') or [], still_on)
-    live = _union(recorded.get('forms') or [], still_live)
-    if recorded.get('plugins') != plugins or recorded.get('forms') != live:
-        trial = save_trial(tables.workspaces, ws, meta, {**trial, PAUSED: {'plugins': plugins, 'forms': live}})
+    plugins = _union(recorded['plugins'], still_on)
+    live = _union(recorded['forms'], still_live)
+    # Always, and conditional on the rev read (Q1, 7.71.02): a mark an extension or a conversion committed since the
+    # read fails this write (409), so nothing it turned on is turned off.
+    trial = save_trial(tables.workspaces, ws, meta, {**trial, PAUSED: {'plugins': plugins, 'forms': live}})
     at = audit_trial(tables.workspaces, ws, TRIAL_PAUSED_KIND, EXPIRY_ACTOR,
                 {'actor_kind': EXPIRY_ACTOR_KIND, 'expires_at': trial.get('expires_at'), 'plugins': plugins,
                  'forms': live})
@@ -232,11 +267,9 @@ def resume(tables: PauseTables, ws: str, trial: Mapping[str, Any], actor: str, r
     """Turn back on what the pause recorded (see the module docstring): each plugin the deployment still offers, each
     form still there, still off and still publishable, as ``actor`` (a platform admin) for ``reason``; how many of each
     were turned on, and the forms left off (``skipped``: ``[{form_id, name, code}]``)."""
-    stored = trial.get(PAUSED)
-    recorded: Mapping[str, Any] = stored if isinstance(stored, Mapping) else {}
+    recorded = paused_lists(trial)
     offered = set(workspace_ceiling(tables.ceiling))
-    plugins = [plugin for plugin in recorded.get('plugins') or [] if isinstance(plugin, str) and plugin in offered]
-    form_ids = [form for form in recorded.get('forms') or [] if isinstance(form, str)]
+    plugins = [plugin for plugin in recorded['plugins'] if plugin in offered]
     who = {'actor': actor, 'platform_admin': True}
     plugins_on = sum(set_trial_plugin(tables.workspaces, ws, plugin, True, who, reason) for plugin in plugins)
     scope = workspace_scope(ws)
@@ -244,7 +277,7 @@ def resume(tables: PauseTables, ws: str, trial: Mapping[str, Any], actor: str, r
     at = now_iso()
     skipped: list[dict[str, str]] = []
     forms_on = 0
-    for form_id in form_ids:
+    for form_id in recorded['forms']:
         item = forms.get_item({'pk': forms_partition(scope), 'sk': f'{_FORM_PREFIX}{form_id}'},
                               ConsistentRead=True).get('Item')
         if not isinstance(item, Mapping):

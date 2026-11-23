@@ -680,6 +680,7 @@
       "slow": "Still analysing. A large file can take a few minutes.",
       "alreadyImported": "Nothing new to analyse: these rows were imported before.",
       "alreadyImportedLink": "See them on the dashboard",
+      "stillProcessing": "Still processing: see the form's Results later.",
       "ready_one": "{{count, number}} analysed. Here is what it says:",
       "ready_other": "{{count, number}} analysed. Here is what they say:",
       "sentiment": "Sentiment",

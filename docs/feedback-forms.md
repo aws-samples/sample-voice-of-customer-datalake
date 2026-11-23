@@ -307,8 +307,9 @@ shows it through the widget's own preview (since 7.63.00: no second copy of the 
   a text keeps serving (the widget shows an unknown placeholder as nothing) but cannot be re-enabled, or saved live,
   until it is fixed. The builder's Problems list shows the same texts and Publish (and Update live form) waits for
   them; Save never does.
-- **Results and exports** show a text with placeholders as `[id]` (a CSV header, a question's headline in Results,
-  the item's text for the processor), never a respondent's value.
+- **Results and exports** show a text with placeholders as `[id]` (a CSV header of either layout, a question's
+  headline and an ending's title in Results, its Ending filter included, the item's text for the processor), never a
+  respondent's value.
 - **The builder** offers "Insert a value" in each recall text (the hidden fields, then the earlier questions it may
   recall) and previews the text with each value named ("Respondents see: How was ‹Event›?"); the widget preview beside
   it shows the text as respondents read it without the value.
@@ -1109,8 +1110,9 @@ responses (the newest 10,000) as a CSV file, the Results tab's **Download**, in 
   `<question id>.<field>`). The file is named `<form-name-slug>-responses-<yyyy-mm-dd>.csv` (the date in UTC; the
   form id when the name gives no slug).
 - **`detailed`**: 7.55.00's layout, unchanged for the scripts that read it (no BOM): the time, ids, `is_test`,
-  revision, language and ending, one column per question (headlines in the first header row, ids in the second;
-  choices by their labels; a matrix as `row: column` pairs) and one per hidden field, named `<form id>-responses.csv`.
+  revision, language and ending, one column per question (headlines in the first header row, a placeholder shown as
+  `[id]` since 7.71.02, ids in the second; choices by their labels; a matrix as `row: column` pairs) and one per hidden
+  field, named `<form id>-responses.csv`.
   A script that read `format=csv` before 7.61.00 asks for `layout=detailed`.
 
 The Results tab's **Download** takes the familiar file with the view's filters; its menu also offers "Detailed CSV

@@ -1,7 +1,8 @@
 /**
  * @fileoverview First insights' reads (useFirstInsights.ts): this import's items only (a reviews import's tag, a
  * survey's form channel), the summary polled until every row is analysed, then the sentiment split, the top three
- * categories, three quotes and a survey's NPS from its Results; none analysed in the window: imported before.
+ * categories, three quotes and a survey's NPS from its Results; none analysed in the window: a reviews import's
+ * imported before, a survey's still processing.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -73,20 +74,28 @@ describe('useFirstInsights', () => {
       await waitFor(() => expect(getSummary).toHaveBeenCalledWith({ days: 7 }, 'manual_import', { tag: 'import-2026-11-21-abcd' }))
       expect(result.current).toMatchObject({ alreadyImported: false, ready: false })
       act(() => { vi.advanceTimersByTime(5 * 60 * 1000) })
-      await waitFor(() => expect(result.current).toMatchObject({ alreadyImported: true, ready: false, slow: false }))
+      await waitFor(() => expect(result.current).toMatchObject({ alreadyImported: true, stillProcessing: false, ready: false,
+        slow: false }))
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('keeps saying a survey is slow when the window ends with none analysed: its rows are never imported before (Q33)', async () => {
+  it('says a survey with none analysed when the window ends is still processing, and stops asking (Q33, Q3)', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       getSummary.mockResolvedValue({ total_feedback: 0 })
       const { result } = renderHook(() => useFirstInsights(SURVEY), { wrapper: createQueryWrapper() })
       await waitFor(() => expect(getSummary).toHaveBeenCalledWith({ days: 7 }, 'feedback_form', { channel: 'form_ff_1' }))
-      act(() => { vi.advanceTimersByTime(5 * 60 * 1000) })
-      await waitFor(() => expect(result.current).toMatchObject({ alreadyImported: false, ready: false, slow: true }))
+      act(() => { vi.advanceTimersByTime(3 * 60 * 1000) })
+      await waitFor(() => expect(result.current).toMatchObject({ stillProcessing: false, slow: true }))
+      act(() => { vi.advanceTimersByTime(2 * 60 * 1000) })
+      // Its rows are never imported before: not alreadyImported, and no longer slow (no spinner: nothing polls).
+      await waitFor(() => expect(result.current).toMatchObject({ stillProcessing: true, alreadyImported: false, ready: false,
+        slow: false }))
+      const asked = getSummary.mock.calls.length
+      act(() => { vi.advanceTimersByTime(60 * 1000) })
+      expect(getSummary).toHaveBeenCalledTimes(asked)
     } finally {
       vi.useRealTimers()
     }

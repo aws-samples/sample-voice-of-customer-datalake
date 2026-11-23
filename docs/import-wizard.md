@@ -26,10 +26,11 @@ go straight into it. A paused trial still takes imports: only its plugins and li
    builder's type chips, plus the columns that cannot become a question and why. For reviews, which columns are the
    text, the rating, the date and the id, and which are left out.
 4. **First insights.** How many rows were imported (and why any were not), how many are analysed so far, then the
-   sentiment split, the top categories, a survey's NPS and three quotes. Links open the dashboard filtered to the
-   source and, for a survey, the form's Results. Five minutes with none of a reviews import analysed: the rows were
-   imported before. A survey's rows are new items each time (the wizard makes a new form for each import), so a slow
-   survey only says it is slow.
+   sentiment split, the top categories (by the dashboard's labels: a category's configured name), a survey's NPS and
+   three quotes. Links open the dashboard filtered to the source and, for a survey, the form's Results. Five minutes
+   with none of a reviews import analysed: the rows were imported before. A survey's rows are new items each time (the
+   wizard makes a new form for each import), so a survey with none analysed by then says it is still processing and
+   that the form's Results show them later; it stops asking (7.71.02).
 
 ## Detection
 
@@ -137,7 +138,7 @@ that call, into the same form:
   the hidden values: a column mapped to a hidden field may hold a name) reach Comprehend; their ids and option codes
   get the patterns alone. A row one of whose texts Comprehend could not read (a throttle that outlasted the retries,
   or any other failure) is refused, `redaction_unavailable`, which First insights names: it is never kept with the
-  patterns' redaction alone (7.71.01).
+  patterns' redaction alone (7.71.01; every upload since 7.71.02, [source-policies.md](source-policies.md)).
 - **Dry run.** `dry_run: true` checks every row and writes nothing.
 - **Who.** Admins acting as themselves only: the workspace's admins in one, never a delegated caller (an MCP token,
   an agent or a plan step). A form that was not imported is a 409 `not_imported`.

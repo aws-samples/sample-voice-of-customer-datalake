@@ -102,16 +102,14 @@ ACTING_SUBJECT_CLAIM: Final = 'voc:acting_subject'
 # Gateway never produces either from a JWT. One claim for every such tool since 7.71.01 (before: `voc:mcp_agent_run`
 # for the admin-only actions and `voc:mcp_engineering` for the engineering ones).
 MCP_OP_CLAIM: Final = 'voc:mcp_op'
-#: The admin-only MCP actions: Run now on an agent (POST /agents/{id}/run) and the leadership view (GET
-#: /metrics/adoption, the deployment's only).
-MCP_ADMIN_OPS: Final = frozenset({'agents_run', 'insights_get_adoption'})
-# The engineering operations a global-MCP write token may reach (7.53.00, "MCP for runs"), and nothing else of the
-# engineering routes: list the runs, read one run and its retrospective, steer it through its orchestrator, ask for a
-# Run now (which waits for an administrator's confirm in the app). Never a signal, a go, a restart, a Stop, an approval,
-# the registry, the connections, the dial or a request's confirm or decline.
-MCP_ENGINEERING_OPS: Final = frozenset({'runs_list', 'run_get', 'run_analysis', 'run_steer', 'run_request'})
-#: Every operation ``MCP_OP_CLAIM`` may name (the two sets share no name).
-MCP_DELEGATED_OPS: Final = MCP_ADMIN_OPS | MCP_ENGINEERING_OPS
+#: Every operation ``MCP_OP_CLAIM`` may name. The admin-only MCP actions: Run now on an agent (``agents_run``, POST
+#: /agents/{id}/run) and the leadership view (``insights_get_adoption``, GET /metrics/adoption, the deployment's only).
+#: The engineering operations a global-MCP write token may reach (7.53.00, "MCP for runs"), and nothing else of the
+#: engineering routes: list the runs, read one run and its retrospective, steer it through its orchestrator, ask for a
+#: Run now (which waits for an administrator's confirm in the app). Never a signal, a go, a restart, a Stop, an approval,
+#: the registry, the connections, the dial or a request's confirm or decline.
+MCP_DELEGATED_OPS: Final = frozenset({
+    'agents_run', 'insights_get_adoption', 'runs_list', 'run_get', 'run_analysis', 'run_steer', 'run_request'})
 ADMIN_GROUP: Final = 'admins'
 
 # The autonomous-agent principal (see the module docstring). Like the MCP

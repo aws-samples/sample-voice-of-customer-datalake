@@ -622,7 +622,8 @@ def convert_workspace_trial(ws: str) -> dict:
     require_platform_admin(event)
     require_live_platform_admin(event, FAILED_CONVERT_TRIAL)
     try:
-        trial = convert_trial(get_workspaces_table(), ws, get_caller_subject(event), resume=_resume)
+        trial = convert_trial(get_workspaces_table(), ws, get_caller_subject(event), resume=_resume,
+                              now=datetime.now(UTC))
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Error converting a trial')
         raise ServiceError(FAILED_CONVERT_TRIAL) from exc

@@ -443,6 +443,7 @@
       "convertTitle": "Convertir {{name}} ?",
       "convertMessage": "Il devient un espace de travail standard, sans fin.",
       "convertPausedMessage": "Il devient un espace de travail standard, sans fin, et les plugins et formulaires que la pause a désactivés sont réactivés.",
+      "resumeIncomplete": "La dernière prolongation ou conversion n'a pas abouti : choisissez à nouveau Prolonger ou Convertir pour la terminer.",
       "stayedOff": {
         "title": "Ces formulaires restent désactivés : en l'état, ils ne peuvent plus être publiés. Leurs éditeurs les corrigent, puis les publient à nouveau.",
         "themeUnreadable": "{{name}} : son texte est trop difficile à lire sur son arrière-plan.",

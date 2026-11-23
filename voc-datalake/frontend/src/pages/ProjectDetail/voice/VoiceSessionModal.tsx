@@ -37,11 +37,13 @@ const NOTICE_KEYS = {
 const ENDED_KEYS = {
   ended_by_person: 'voice.session.ended.byPerson',
   session_limit: 'voice.session.ended.sessionLimit',
+  cost_limit: 'voice.session.ended.costLimit',
   budget: 'voice.session.ended.budget',
   busy: 'voice.session.ended.busy',
   error: 'voice.session.ended.error',
   disconnected: 'voice.session.ended.disconnected',
   refused: 'voice.session.ended.refused',
+  expired: 'voice.session.ended.expired',
 } as const
 const PHASE_KEYS = {
   connecting: 'voice.session.connecting',

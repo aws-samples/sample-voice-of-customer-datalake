@@ -8,6 +8,8 @@
  *   browser leaving. A socket error is logged by name; its close follows.
  * - A connection while a conversation is live is refused: `ended {refused}` and close 1008. One after the
  *   conversation ended gets a session of its own, which its activation refuses (the row is no longer `minted`).
+ * - Every end, a refusal or a session's, goes on the wire in wire-end.ts's order: `ended`, then the close, never
+ *   before the connection is a second old (AgentCore's proxy lost a refusal sent right after the upgrade).
  * - It listens on 0.0.0.0:8080 because AgentCore's proxy reaches the container over its network interface; the
  *   container is never reachable from outside AgentCore, whose endpoint checks every request's SigV4 signature.
  */
@@ -20,10 +22,11 @@ import { ConfigurationError } from '../lib/errors.js';
 import { bedrockTransport } from './bedrock-stream.js';
 import { logEvent } from './log.js';
 import { Meter, pricesFor } from './meter.js';
-import { MAX_VOICE_FRAME_BYTES, VOICE_CLOSE, type RelayMessage } from './protocol.js';
+import { MAX_VOICE_FRAME_BYTES, VOICE_CLOSE, type RelayMessage, type VoiceEndReason } from './protocol.js';
 import { createRelayServer, type RelayHost } from './server.js';
 import { awsStoreDeps, createVoiceStore } from './store.js';
 import { VoiceSession, type ClientChannel, type Clock, type SessionDeps } from './voice-session.js';
+import { END_WAITS, endConnection, type EndWaits } from './wire-end.js';
 
 const DEFAULT_PORT = 8080;
 const REQUIRED = ['VOICE_MODEL_ID', 'VOICE_REGION', 'PROJECTS_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET'] as const;
@@ -43,8 +46,23 @@ function sendJson(socket: WebSocket, message: RelayMessage): void {
   sendOn(socket, JSON.stringify(message));
 }
 
-/** The browser's side of a connection; audio longer than a frame may carry goes as several frames. */
-function channelOf(socket: WebSocket): ClientChannel {
+export const systemClock: Clock = {
+  now: () => Date.now(),
+  after(ms, run) {
+    const handle = setTimeout(run, ms);
+    return () => { clearTimeout(handle); };
+  },
+};
+
+/** How a connection ends on the wire: the waits and the clock that times them (wire-end.ts). */
+interface Wire {
+  readonly waits: EndWaits;
+  readonly clock: Clock;
+}
+
+/** The browser's side of a connection; audio longer than a frame may carry goes as several frames; `end` is
+ *  wire-end.ts's. */
+function channelOf(socket: WebSocket, end: (reason: VoiceEndReason, code: number) => void): ClientChannel {
   return {
     json: (message) => { sendJson(socket, message); },
     audio: (pcm) => {
@@ -53,24 +71,28 @@ function channelOf(socket: WebSocket): ClientChannel {
         sendOn(socket, pcm.subarray(index * MAX_VOICE_FRAME_BYTES, (index + 1) * MAX_VOICE_FRAME_BYTES));
       }
     },
-    close: (code) => { socket.close(code); },
+    end,
   };
 }
 
-/** The host of one microVM's conversations. */
-export function relayHost(deps: SessionDeps): RelayHost {
+/** The host of one microVM's conversations; `wire` times every connection's end (a spec's shorter waits). */
+export function relayHost(deps: SessionDeps, wire: Wire = { waits: END_WAITS, clock: systemClock }): RelayHost {
   const state: { current: VoiceSession | undefined } = { current: undefined };
   return {
     busy: () => state.current !== undefined && !state.current.isOver,
     connect(socket, ids) {
       // An 'error' with no listener would throw out of the process: every socket gets one, its close follows.
       socket.on('error', (error: Error) => { logEvent('socket_error', { session_id: ids.sessionId, error: errorName(error) }); });
+      const openedAt = wire.clock.now();
+      const end = (reason: VoiceEndReason, code: number): void => {
+        const ended: RelayMessage = { type: 'ended', reason };
+        endConnection(socket, openedAt, JSON.stringify(ended), code, wire.waits, wire.clock);
+      };
       if (state.current !== undefined && !state.current.isOver) {
-        sendJson(socket, { type: 'ended', reason: 'refused' });
-        socket.close(VOICE_CLOSE.policy);
+        end('refused', VOICE_CLOSE.policy);
         return;
       }
-      const session = new VoiceSession(deps, ids, channelOf(socket));
+      const session = new VoiceSession(deps, ids, channelOf(socket, end));
       state.current = session;
       socket.on('message', (data: RawData, isBinary: boolean) => {
         if (isBinary) session.audio(bytesOf(data));
@@ -81,14 +103,6 @@ export function relayHost(deps: SessionDeps): RelayHost {
     },
   };
 }
-
-export const systemClock: Clock = {
-  now: () => Date.now(),
-  after(ms, run) {
-    const handle = setTimeout(run, ms);
-    return () => { clearTimeout(handle); };
-  },
-};
 
 /** Read the environment, build the AWS clients and start listening. */
 export function startRelay(env: Readonly<Record<string, string | undefined>>): Server {

@@ -4,7 +4,9 @@
  *
  * - Start: the session row goes `minted` → `live` once (store.ts `activate`: the presigned URL is single use and
  *   lasts a minute), then the projects API's input is read and must name this session and its signed scope; any
- *   refusal is `ended {refused}` and close 1008. Then the first stream opens and the browser hears `ready`.
+ *   refusal is `ended {refused}` and close 1008, a first connection after the URL's minute (and 10 s for the clocks)
+ *   `ended {expired}` and 1008 (its row marked so, and it leaves the live set). Then the first stream opens and the
+ *   browser hears `ready`.
  * - Rollover: a Bedrock stream lasts at most 8 minutes, so at the persona's first finished turn after 7:00 of a
  *   stream's life (or at 7:45 whatever it is doing) a new stream opens with the same prompt and the conversation so far
  *   as its chat history (transcript.ts `history`, within Nova Sonic's 200 KB), the microphone moves to it, the old one
@@ -13,8 +15,8 @@
  *   first, whose new totals are the budget check (so a session row that is gone still adds its time and cost to the
  *   month), then the session row's seconds, tokens and cost. At or over the month's minutes or its cost cap the
  *   persona says goodbye and the session ends (`budget`); with a minute left, a notice. The session's own limits end
- *   it the same way as `session_limit`, never `budget` (the browser says that one as the month's minutes used up):
- *   its cost cap, checked at every usage event, and its time limit, with a notice a minute before.
+ *   it the same way, never as `budget` (the browser says that one as the month's minutes used up): its time limit as
+ *   `session_limit`, with a notice a minute before, and its cost cap, checked at every usage event, as `cost_limit`.
  * - The microphone: frames past a real-time budget (16 kHz PCM16, 1.5 times real time since the session went live,
  *   plus a second's head start) are dropped, so a browser sending faster than it speaks cannot grow the stream's
  *   queue or its cost.
@@ -51,7 +53,8 @@ export interface Clock {
 export interface ClientChannel {
   json(message: RelayMessage): void;
   audio(pcm: Buffer): void;
-  close(code: number): void;
+  /** `ended {reason}`, then the close `code`, in that order on the wire (relay-host.ts: wire-end.ts's waits). */
+  end(reason: VoiceEndReason, code: number): void;
 }
 
 export interface SessionDeps {
@@ -81,6 +84,7 @@ interface Failure {
 }
 
 const refused: Failure = { reason: 'refused', code: VOICE_CLOSE.policy };
+const expired: Failure = { reason: 'expired', code: VOICE_CLOSE.policy };
 
 export class VoiceSession {
   private input: SessionInput | undefined;
@@ -169,7 +173,13 @@ export class VoiceSession {
     const { sessionId, scope } = this.ids;
     try {
       if (!SESSION_ID.test(sessionId) || !SCOPE_ID.test(scope)) return refused;
-      this.activated = await this.deps.store.activate(sessionId, new Date(this.deps.clock.now()));
+      const activation = await this.deps.store.activate(sessionId, new Date(this.deps.clock.now()));
+      if (activation === 'expired') {
+        // Its row is ended (store.ts): its place in the live set is freed now, as the projects API frees one never used.
+        await this.attempt('live', () => this.deps.store.leaveLive(sessionId));
+        return expired;
+      }
+      this.activated = activation === 'live';
       if (!this.activated) return refused;
       this.startedAt = this.deps.clock.now();
       const input = parseSessionInput(await this.deps.store.loadInput(sessionId), sessionId, scope);
@@ -244,8 +254,8 @@ export class VoiceSession {
     if (event.kind === 'usage') {
       this.meter.record(stream.index, event.totals);
       this.sendUsage();
-      // The session's own cap: its limit, not the month's budget.
-      if (this.input !== undefined && this.meter.costMicroUsd() >= this.input.sessionCostCapMicroUsd) this.wrapUp('session_limit');
+      // The session's own cost cap: its own reason, never the month's budget nor the time limit.
+      if (this.input !== undefined && this.meter.costMicroUsd() >= this.input.sessionCostCapMicroUsd) this.wrapUp('cost_limit');
       return;
     }
     if (stream !== this.stream || this.ending !== undefined) return;
@@ -401,8 +411,7 @@ export class VoiceSession {
       session_id: sessionId, reason, parts: this.parts, streams: this.streams, seconds: this.elapsedSeconds(),
       dropped_frames: this.droppedFrames,
     });
-    this.channel.json({ type: 'ended', reason });
-    this.channel.close(code);
+    this.channel.end(reason, code);
     this.over = true;
   }
 }

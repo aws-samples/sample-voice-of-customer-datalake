@@ -51,13 +51,14 @@ export function trialSummary(trial) {
   const paused = isPaused(trial);
   return { days: trial.days, expires_at: trial.expires_at, paused_at: paused ? trial.paused_at : null,
     converted_at: trial.converted_at,
-    paused: paused ? { plugins: trial.paused.plugins.length, forms: trial.paused.forms.length } : null };
+    paused: paused ? { plugins: trial.paused.plugins.length, forms: trial.paused.forms.length } : null,
+    resume_incomplete: false };
 }
 
 /** The platform console's view (trials.py `trial_view`), or null. */
 export function trialView(trial) {
   if (!trial) return null;
-  return { ...trial, paused: isPaused(trial) ? trial.paused : null };
+  return { ...trial, paused: isPaused(trial) ? trial.paused : null, resume_incomplete: false };
 }
 
 /** What resuming `trial` turns back on (trial_pause.py `resume`), or null when it is not paused. */

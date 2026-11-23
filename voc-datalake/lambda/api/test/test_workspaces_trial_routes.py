@@ -186,7 +186,10 @@ def test_an_extension_refused_by_a_trial_changed_meanwhile_finishes_when_retried
         tables = PauseTables(world.workspaces, lambda scope: workspaces_handler.ingest_table(scope, world.resource,
                                                                                             'aggregates'),
                              ('webscraper', 'app_reviews_ios'))
-        assert pause(tables, ws, datetime.now(UTC) + timedelta(days=15))['outcome'] == 'not_due'
+        # A tick past the trial's end while the mark is fresh (its 15 minutes stretched over the 15 days here; a stale
+        # mark's pause: shared/test/test_trial_pause.py).
+        with patch('shared.trial_pause.RESUMING_FRESH', timedelta(days=16)):
+            assert pause(tables, ws, datetime.now(UTC) + timedelta(days=15))['outcome'] == 'not_due'
         status, body = _call(world, lambda_context, 'POST', f'/platform/workspaces/{ws}/trial/extend', body={'days': 14})
     assert status == 200
     assert body['trial']['paused'] is None

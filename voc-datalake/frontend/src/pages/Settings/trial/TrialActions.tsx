@@ -3,7 +3,8 @@
  * its state (running until its end, paused since, or converted), and, until it is converted, Extend (14, 30 or 60 more
  * days: a paused trial's plugins and forms are turned back on) and Convert (a regular workspace from then on, after a
  * confirmation). After either, the forms the resume left off are named with why (7.71.01: `resumed.skipped`), so
- * their editors can fix and publish them. Neither deletes anything, and nor does the trial's end: it only pauses.
+ * their editors can fix and publish them; one whose resume was cut short says that the same action again finishes it
+ * (7.71.02: `resume_incomplete`). Neither deletes anything, and nor does the trial's end: it only pauses.
  *
  * @module pages/Settings/trial/TrialActions
  */
@@ -89,6 +90,7 @@ export default function TrialActions({ workspace }: Readonly<{ workspace: Platfo
           {t('workspaces.trial.convert')}
         </button>
       </div>
+      {trial.resume_incomplete && <p role="status" className="text-xs text-warn">{t('workspaces.trial.resumeIncomplete')}</p>}
       <RefusalAlert error={extend.error ?? convert.error} refusals={TRIAL_REFUSALS} />
       <StayedOff resumed={resumed} />
       <ConfirmModal isOpen={confirming} variant="warning" title={t('workspaces.trial.convertTitle', { name: workspace.name })}

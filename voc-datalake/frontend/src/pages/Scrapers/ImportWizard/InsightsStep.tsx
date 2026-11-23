@@ -1,9 +1,10 @@
 /**
  * @fileoverview The wizard's First insights: how many rows were imported (and why any were not), how many are
  * analysed so far, then the sentiment split, the top categories, a survey's NPS and three quotes, with a link to the
- * dashboard filtered to the source (and to the form's results for a survey). A reviews import none of whose rows is
- * analysed in the polling window was imported before: it says so, with the dashboard's link (a survey only says it is
- * slow: its rows are new items each time).
+ * dashboard filtered to the source (and to the form's results for a survey). The categories read as the dashboard's
+ * do (hooks/useDisplayLabels: their configured names). A reviews import none of whose rows is analysed in the polling
+ * window was imported before: it says so, with the dashboard's link; a survey's rows are new items each time, so it
+ * says they are still being processed and that the form's Results show them later (no spinner: nothing polls).
  *
  * @module pages/Scrapers/ImportWizard/InsightsStep
  */
@@ -12,6 +13,7 @@ import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import type { RowRefusal } from '../../../api/importWizardSchema'
+import { useDisplayLabels } from '../../../hooks/useDisplayLabels'
 import { signedScore } from '../../FeedbackForms/results/scoreMath'
 import { useFirstInsights } from './useFirstInsights'
 import type { ImportOutcome, ImportWizardState } from './useImportWizard'
@@ -43,6 +45,10 @@ function Refusals({ outcome }: Readonly<{ outcome: ImportOutcome }>) {
 function Figures({ outcome }: Readonly<{ outcome: ImportOutcome }>) {
   const { t } = useTranslation('scrapers')
   const insights = useFirstInsights(outcome)
+  const labels = useDisplayLabels()
+  if (insights.stillProcessing) {
+    return <p role="status" className="text-sm text-text">{t('importWizard.insights.stillProcessing')}</p>
+  }
   if (insights.alreadyImported) {
     return (
       <p role="status" className="text-sm text-text">
@@ -75,7 +81,7 @@ function Figures({ outcome }: Readonly<{ outcome: ImportOutcome }>) {
         </div>
         <div className="rounded-md border border-border p-3">
           <h3 className="text-xs font-semibold uppercase tracking-[.08em] text-muted mb-1">{t('importWizard.insights.topCategories')}</h3>
-          <ol className="text-sm space-y-0.5">{insights.categories.map(([name, count]) => <li key={name}>{name} ({count})</li>)}</ol>
+          <ol className="text-sm space-y-0.5">{insights.categories.map(([name, count]) => <li key={name}>{labels.category(name)} ({count})</li>)}</ol>
         </div>
         {insights.nps !== null && (
           <div className="rounded-md border border-border p-3">

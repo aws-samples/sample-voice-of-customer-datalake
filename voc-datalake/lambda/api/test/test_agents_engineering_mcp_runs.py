@@ -25,9 +25,11 @@ from engineering_run_workspace_fixture import Bus, Lambdas, reached
 from engineering.learning.loop import CHOSEN_SK
 from engineering.test import run_workspace_world as world
 from shared.agents_engineering_run_routes import CROSS_RUN_UNAVAILABLE, MCP_STEER_MARK
-from shared.project_access import MCP_ENGINEERING_OPS
+from shared.mcp_global_tools_engineering import ENGINEERING_TOOLS
 
 BASE = f'/agents/engineering/{world.RUN}'
+#: The engineering operations a global-MCP tool serves (each tool's one, shared/mcp_global_tools_engineering.py).
+ENGINEERING_OPS = frozenset(tool.engineering_op for tool in ENGINEERING_TOOLS)
 #: Each operation's route, as its tool calls it.
 OWN: dict[str, tuple[str, str, Any]] = {
     'runs_list': ('GET', '/agents/engineering/runs', None),
@@ -76,7 +78,7 @@ def test_each_route_admits_the_mcp_tool_of_its_own_operation_only(lambda_context
     method, path, body = OWN[op]
     status, answer = _call(lambda_context, method, path, claims=mcp(op), body=body)
     assert status in (200, 202), answer
-    for other in sorted(MCP_ENGINEERING_OPS - {op}):
+    for other in sorted(ENGINEERING_OPS - {op}):
         assert _call(lambda_context, method, path, claims=mcp(other), body=body)[0] == 403, other
     for claims in (mcp(None), mcp('agents_run'), mcp(None, **{'voc:mcp_agent_run': 'true'}),
                    mcp(None, **{'voc:mcp_engineering': op}), mcp(op, sub='agent:ag_1'),
@@ -89,7 +91,7 @@ def test_each_route_admits_the_mcp_tool_of_its_own_operation_only(lambda_context
 @pytest.mark.parametrize(('method', 'path', 'body'), NEVER, ids=[f'{m} {p}' for m, p, _ in NEVER])
 def test_no_signal_go_restart_stop_answer_or_other_route_is_reachable(lambda_context: Any, method: str, path: str,
                                                                     body: Any) -> None:
-    for op in sorted(MCP_ENGINEERING_OPS):
+    for op in sorted(ENGINEERING_OPS):
         status, answer = _call(lambda_context, method, path, claims=mcp(op), body=body)
         assert status == 403, (op, answer)
 

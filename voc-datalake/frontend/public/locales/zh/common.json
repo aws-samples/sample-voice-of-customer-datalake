@@ -440,6 +440,7 @@
       "convertTitle": "转换 {{name}}？",
       "convertMessage": "它将成为没有结束日期的常规工作区。",
       "convertPausedMessage": "它将成为没有结束日期的常规工作区，暂停时关闭的插件和表单会重新开启。",
+      "resumeIncomplete": "上次的延长或转换未完成：再次选择“延长”或“转换”即可完成。",
       "stayedOff": {
         "title": "以下表单仍保持关闭：按现状已无法发布。请其编辑者修正后重新发布。",
         "themeUnreadable": "{{name}}：其文字在背景上太难阅读。",

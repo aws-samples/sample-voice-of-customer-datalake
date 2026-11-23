@@ -53,6 +53,11 @@ explorer. This is `shared/source_policy.apply_source_policy`.
     `[NAME]` / `[ADDRESS]`. This runs only when `PII_COMPREHEND=1` (set on every ingestion
     Lambda) and only for a language Comprehend PII supports: **English and Spanish**. Text
     in any other language gets the regex rules only.
+  - When Comprehend fails on a text it should have read (after its retries), every upload (a manual review
+    import, a CSV or JSON upload, a form import) refuses that row and counts it with the skipped rows of its import
+    history, never keeping the regex result alone (`shared/ingest_archive.py`, 7.71.02). One live record (a form
+    submission, a Data Explorer or field edit, a voice transcript) keeps the regex result, counted by the
+    `PiiComprehendFailures` metric.
 - **`summary_only`**:
   - The same redaction is applied, and then the processor stores **derived fields only**.
   - `original_text` becomes the (already redacted) `problem_summary`, or `[withheld]`.

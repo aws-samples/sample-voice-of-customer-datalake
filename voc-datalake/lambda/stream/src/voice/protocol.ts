@@ -70,9 +70,11 @@ export const VOICES: readonly VoiceSpec[] = [
  *  does not (lambda/shared/voice_sessions.py UNSUPPORTED_LANGUAGES). */
 export const VOICE_LANGUAGES = ['en', 'de', 'es', 'fr', 'pt'] as const;
 
-/** Why a session ended, as the relay says in `ended` and the session row's `end_reason` records it. */
+/** Why a session ended, as the relay says in `ended` and the session row's `end_reason` records it: `session_limit`
+ *  its time limit, `cost_limit` its own cost cap (7.71.02), `budget` the month's minutes or cost, `refused` a used or
+ *  ended session (or a second connection), `expired` a first connection after the URL's minute (7.71.02). */
 export const VOICE_END_REASONS = [
-  'ended_by_person', 'session_limit', 'budget', 'busy', 'error', 'disconnected', 'refused',
+  'ended_by_person', 'session_limit', 'cost_limit', 'budget', 'busy', 'error', 'disconnected', 'refused', 'expired',
 ] as const;
 export type VoiceEndReason = (typeof VOICE_END_REASONS)[number];
 

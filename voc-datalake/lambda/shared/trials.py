@@ -18,7 +18,9 @@ The trial is ONE map, ``trial``, the same on the workspace's ``META`` row and on
     paused         {plugins: [ids], forms: [ids]}: what the pause turned off, so an extension or a conversion turns
                    exactly that back on (shared/trial_pause.py)
     resuming_at    set by an extension or a conversion of a paused trial before it turns anything back on, removed
-                   with the pause: the hourly pause leaves the trial alone meanwhile
+                   with the pause: the hourly pause leaves the trial alone meanwhile, for 15 minutes at most (a mark
+                   left by a resume that failed goes stale, and the next tick pauses the trial again); the console
+                   says so (``resume_incomplete``)
     converted_at, converted_by   a conversion: a regular workspace from then on (the expiry's tick passes it by)
 
 No new workspace status (a paused trial is ``active``, so every reader, writer, the export and the hard delete treat it
@@ -51,6 +53,7 @@ from shared.trial_state import (
     at_second,
     is_paused,
     paused_lists,
+    resume_incomplete,
 )
 from shared.workspace import ACTIVE, audit_key, audit_sort_key, consistent_row, is_workspace_id, ws_key
 
@@ -78,8 +81,9 @@ def is_converted(trial: Mapping[str, Any]) -> bool:
 
 
 def trial_view(trial: object) -> dict[str, Any] | None:
-    """The platform console's view of a stored ``trial`` (every field but ``rev`` and the resume's own marks), or None
-    for no trial."""
+    """The platform console's view of a stored ``trial`` (every field but ``rev``; of the resume's mark, only that one
+    was left, ``resume_incomplete``: the extension or the conversion that set it failed, and the same request again
+    finishes it), or None for no trial."""
     if not isinstance(trial, Mapping):
         return None
     view = {field: text_field(trial, field) for field in ('created_at', 'created_by', 'expires_at', PAUSED_AT,
@@ -88,7 +92,7 @@ def trial_view(trial: object) -> dict[str, Any] | None:
     extended = trial.get('extended')
     return {**view, 'days': plain(trial.get('days')), 'pack': plain(pack) if isinstance(pack, Mapping) else {},
             'extended': plain(extended) if isinstance(extended, list) else [],
-            PAUSED: paused_lists(trial) if is_paused(trial) else None}
+            PAUSED: paused_lists(trial) if is_paused(trial) else None, 'resume_incomplete': resume_incomplete(trial)}
 
 
 def read_meta(table: Any, ws: str) -> dict[str, Any]:
@@ -159,12 +163,14 @@ def _without_pause(trial: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _resumed(table: Any, ws: str, meta: Mapping[str, Any], trial: dict[str, Any], *, resume: Resume, actor: str,
-             reason: str, at: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """A paused trial resumed: marked ``resuming_at`` first (``save_trial``), so the hourly pause, which leaves a
-    trial being resumed alone (shared/trial_pause.py), cannot turn off what ``resume`` turns on before the caller's
-    own write removes the pause; then ``resume``. The ``META`` and trial that write is conditional on, and what the
-    resume did. A failure leaves the trial marked and still paused: the same request again finishes it."""
-    marked = save_trial(table, ws, meta, {**trial, RESUMING_AT: at})
+             reason: str, now: datetime) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """A paused trial resumed: marked ``resuming_at`` (the request's time) first (``save_trial``), so the hourly
+    pause, which leaves a trial being resumed alone while the mark is fresh (shared/trial_pause.py), cannot turn off
+    what ``resume`` turns on before the caller's own write removes the pause; then ``resume``. The ``META`` and trial
+    that write is conditional on, and what the resume did. A failure leaves the trial marked and still paused
+    (``resume_incomplete``): the same request again finishes it, or the hourly pause pauses it again once the mark is
+    stale."""
+    marked = save_trial(table, ws, meta, {**trial, RESUMING_AT: at_second(now)})
     return {**meta, TRIAL: marked}, marked, resume(ws, marked, actor, reason)
 
 
@@ -192,13 +198,13 @@ def extend_trial(table: Any, ws: object, days: int, actor: str, *, resume: Resum
     entry: dict[str, Any] = {'at': at, 'by': actor, 'days': days, 'expires_at': at_second(expires_at)}
     if paused:
         meta, trial, entry['resumed'] = _resumed(table, workspace, meta, trial, resume=resume, actor=actor,
-                                                 reason=TRIAL_EXTENDED, at=at)
+                                                 reason=TRIAL_EXTENDED, now=now)
     saved = save_trial(table, workspace, meta, {**_without_pause(trial), 'expires_at': at_second(expires_at),
                                                 'extended': [*history, entry]})
     return {**(trial_view(saved) or {}), 'resumed': entry.get('resumed')}
 
 
-def convert_trial(table: Any, ws: object, actor: str, *, resume: Resume) -> dict[str, Any]:
+def convert_trial(table: Any, ws: object, actor: str, *, resume: Resume, now: datetime) -> dict[str, Any]:
     """Convert the trial into a regular workspace (no end any more); the trial's view, with what this conversion
     resumed (``resumed``, None for a trial that was not paused). A converted one is answered as it is (nothing
     written, nothing resumed). In order: the ``trial_converted`` audit row, a paused trial marked ``resuming_at`` and
@@ -212,7 +218,7 @@ def convert_trial(table: Any, ws: object, actor: str, *, resume: Resume) -> dict
     resumed: dict[str, Any] | None = None
     if paused:
         meta, trial, resumed = _resumed(table, workspace, meta, trial, resume=resume, actor=actor,
-                                        reason=TRIAL_CONVERTED, at=at)
+                                        reason=TRIAL_CONVERTED, now=now)
     converted: dict[str, Any] = {**_without_pause(trial), CONVERTED_AT: at, 'converted_by': actor}
     if resumed is not None:
         converted['resumed'] = resumed

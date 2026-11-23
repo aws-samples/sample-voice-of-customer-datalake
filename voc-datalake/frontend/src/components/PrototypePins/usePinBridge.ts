@@ -63,12 +63,12 @@ export const prototypeCardKeys = {
   all: ['prototype-card'] as const,
   form: (formId: string) => ['prototype-card', formId] as const,
 }
-const CARD_STALE_MS = 5 * 60 * 1000
 /** The submit route's answer to a card request on a form that asks no validation questions: "no card", kept too. */
 const NO_CARD = { status: 400, code: 'validation_closed' } as const
 
 /** The card of `formId`, or null when the form asks none; a failure that is not that refusal (no network, a 5xx, a
- * 429) is not kept, so the next frame load asks again. */
+ * 429) is not kept and not retried (the next frame load asks again: a retry would be one more request on the shared
+ * public throttle). Kept for the `prototype-card` family's five minutes (api/queryPolicies.ts). */
 function cardOf(queryClient: QueryClient, formId: string, body: unknown): Promise<unknown> {
   return queryClient.query({
     queryKey: prototypeCardKeys.form(formId),
@@ -81,7 +81,7 @@ function cardOf(queryClient: QueryClient, formId: string, body: unknown): Promis
         throw error
       }
     },
-    staleTime: CARD_STALE_MS,
+    retry: false,
   })
 }
 

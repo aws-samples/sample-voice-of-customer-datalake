@@ -20,22 +20,32 @@ function store(answer: Partial<StoreDeps> = {}) {
 }
 
 describe('voice store: the session row', () => {
-  it('activates a minted session once, within its minute, in its own partition', async () => {
+  it('activates a minted session once, within its minute and 10 s for the clocks, in its own partition', async () => {
     const run = store();
-    await expect(run.store.activate(SESSION_ID, NOW)).resolves.toBe(true);
-    expect(run.update).toHaveBeenCalledWith({
+    await expect(run.store.activate(SESSION_ID, NOW)).resolves.toBe('live');
+    expect(run.update).toHaveBeenCalledExactlyOnceWith({
       ...SESSION_KEY,
       UpdateExpression: 'SET #status = :live, connected_at = :now',
-      ConditionExpression: '#status = :minted AND connect_by >= :epoch',
+      ConditionExpression: '#status = :minted AND connect_by >= :latest',
       ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: { ':live': 'live', ':minted': 'minted', ':now': '2026-11-21T12:00:00.000Z', ':epoch': 1_795_262_400 },
+      ExpressionAttributeValues: { ':live': 'live', ':minted': 'minted', ':now': '2026-11-21T12:00:00.000Z', ':latest': 1_795_262_390 },
     });
   });
 
-  it('answers false for a used, ended or expired session, and lets any other failure through', async () => {
+  it('marks a session still minted past its minute ended as expired (L4), and answers used for any other', async () => {
+    const expired = store();
+    expired.update.mockRejectedValueOnce(named('ConditionalCheckFailedException'));
+    await expect(expired.store.activate(SESSION_ID, NOW)).resolves.toBe('expired');
+    expect(expired.update).toHaveBeenLastCalledWith({
+      ...SESSION_KEY,
+      UpdateExpression: 'SET #status = :ended, ended_at = if_not_exists(ended_at, :now), end_reason = if_not_exists(end_reason, :expired)',
+      ConditionExpression: '#status = :minted',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: { ':ended': 'ended', ':minted': 'minted', ':now': '2026-11-21T12:00:00.000Z', ':expired': 'expired' },
+    });
     const used = store({ update: () => Promise.reject(named('ConditionalCheckFailedException')) });
     const failing = store({ update: () => Promise.reject(named('AccessDeniedException')) });
-    await expect(used.store.activate(SESSION_ID, NOW)).resolves.toBe(false);
+    await expect(used.store.activate(SESSION_ID, NOW)).resolves.toBe('used');
     await expect(failing.store.activate(SESSION_ID, NOW)).rejects.toThrow('AccessDeniedException');
   });
 

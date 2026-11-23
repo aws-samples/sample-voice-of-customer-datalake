@@ -69,13 +69,22 @@ describe('VoiceSession start', () => {
     expect(run.transport.stream(0).bodies('textInput')[0]?.content).toContain('You are "Maria"');
   });
 
-  it('refuses a session the store does not activate (used, ended or expired) and writes nothing', async () => {
+  it('refuses a session the store does not activate (used, ended or gone) and writes nothing', async () => {
     const run = harness();
-    run.store.activation = false;
+    run.store.activation = 'used';
     await run.session.start();
     expect(run.channel.messages).toStrictEqual([{ type: 'ended', reason: 'refused' }]);
     expect(run.channel.closedWith).toBe(1008);
     expect(run.store.ended).toBeUndefined();
+    expect(run.transport.streams).toHaveLength(0);
+  });
+
+  it('ends a first connection after the URL\'s minute as expired, freeing its place in the live set (L4)', async () => {
+    const run = harness();
+    run.store.activation = 'expired';
+    await run.session.start();
+    expect([run.channel.messages, run.channel.closedWith]).toStrictEqual([[{ type: 'ended', reason: 'expired' }], 1008]);
+    expect(run.store.calls).toStrictEqual([`activate:${SESSION_ID}`, `leaveLive:${SESSION_ID}`]);
     expect(run.transport.streams).toHaveLength(0);
   });
 
@@ -278,7 +287,7 @@ describe('VoiceSession limits', () => {
 describe('VoiceSession cost caps', () => {
   const usage = (speech: number) => ({ details: { total: { input: { speechTokens: 0, textTokens: 0 }, output: { speechTokens: speech, textTokens: 0 } } } });
 
-  it('wraps up with session_limit, never the month\'s budget, once the session\'s cost reaches its cap', async () => {
+  it('wraps up with cost_limit, never the month\'s budget nor the time limit, once the session\'s cost reaches its cap', async () => {
     const run = await started(sessionInput({ session_cost_cap_microusd: 12_000 }));
     run.transport.stream(0).emit('usageEvent', usage(900));
     await settle();
@@ -287,8 +296,9 @@ describe('VoiceSession cost caps', () => {
     run.transport.stream(0).emit('usageEvent', usage(1000));
     await personaSays(run, 'Goodbye!');
     expect(run.channel.of('notice')).toStrictEqual([{ type: 'notice', code: 'wrapping_up' }]);
-    // The browser words `budget` as this month's minutes used up: the session's own cap is its limit.
-    expect(run.channel.of('ended')).toStrictEqual([{ type: 'ended', reason: 'session_limit' }]);
+    // Q4 (7.71.02): the session's own cost cap has its own reason (the browser words `budget` as this month's minutes
+    // used up, and `session_limit` as the time limit).
+    expect(run.channel.of('ended')).toStrictEqual([{ type: 'ended', reason: 'cost_limit' }]);
   });
 
   it('stops the month on its cost cap as well as its minutes', async () => {

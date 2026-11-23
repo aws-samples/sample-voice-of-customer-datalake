@@ -717,6 +717,7 @@
       "slow": "Analyse toujours en cours. Un gros fichier peut prendre quelques minutes.",
       "alreadyImported": "Rien de nouveau à analyser : ces lignes ont déjà été importées.",
       "alreadyImportedLink": "Les voir dans le tableau de bord",
+      "stillProcessing": "Toujours en cours de traitement : consultez les résultats du formulaire plus tard.",
       "ready_one": "{{count, number}} retour analysé. Voici ce qu’il dit :",
       "ready_many": "{{count, number}} retours analysés. Voici ce qu’ils disent :",
       "ready_other": "{{count, number}} retours analysés. Voici ce qu’ils disent :",

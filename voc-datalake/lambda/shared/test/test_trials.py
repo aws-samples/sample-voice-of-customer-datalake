@@ -133,12 +133,19 @@ def test_the_views_read_dynamodbs_numbers_and_say_what_the_pause_turned_off(tabl
     assert _present(trial_view(stored))['days'] == 30
     assert isinstance(_present(trial_view(stored))['days'], int)
     assert trial_summary(stored) == {'days': 30, 'expires_at': stored['expires_at'], 'paused_at': None,
-                                     'converted_at': None, 'paused': None}
+                                     'converted_at': None, 'paused': None, 'resume_incomplete': False}
     paused = {**stored, 'paused_at': '2026-12-21T09:00:00+00:00', 'paused': {'plugins': ['webscraper'], 'forms': ['f1', 'f2']}}
     assert _present(trial_summary(paused))['paused'] == {'plugins': 1, 'forms': 2}
     assert _present(trial_view(paused))['paused'] == {'plugins': ['webscraper'], 'forms': ['f1', 'f2']}
     assert 'rev' not in _present(trial_view(paused))
     assert 'created_by' not in _present(trial_summary(paused))
+    # A resume cut short (its mark left): the console says so, from the listing (summary) and the routes (view).
+    marked = {**paused, 'resuming_at': '2026-12-22T09:00:00+00:00'}
+    assert (_present(trial_summary(marked))['resume_incomplete'], _present(trial_view(marked))['resume_incomplete'],
+            _present(trial_view(paused))['resume_incomplete']) == (True, True, False)
+    # A recorded list that is not one reads as none (7.71.02, F2: the pause and the resume read only these lists).
+    assert _present(trial_summary({**paused, 'paused': {'plugins': 7, 'forms': ['f1', 3]}}))['paused'] == {
+        'plugins': 0, 'forms': 1}
     assert trial_view(None) is None
     assert trial_summary('not a map') is None
     # A converted trial is never paused, whatever it once recorded.
@@ -183,8 +190,9 @@ def test_extending_a_paused_trial_turns_back_on_what_it_paused_and_clears_the_pa
     trial_arg = resume.call_args.args[1]
     assert resume.call_args.args[::2] == (WS, PAT)
     assert trial_arg['paused'] == paused['paused']
-    # Q26 (7.71.01): marked resuming (stored) before the resume, so the hourly pause leaves it alone meanwhile.
-    assert trial_arg['resuming_at'] == view['extended'][-1]['at']
+    # Q26 (7.71.01): marked resuming (stored) before the resume, so the hourly pause leaves it alone meanwhile; the
+    # mark is the request's own time (7.71.02: the pause judges it fresh or stale by it).
+    assert trial_arg['resuming_at'] == (START + timedelta(days=31)).replace(microsecond=0).isoformat()
     assert resume.call_args.args[3] == 'trial_extended'
     assert (view['paused_at'], view['paused']) == (None, None)
     assert view['extended'][-1]['resumed'] == view['resumed'] == {'plugins': 1, 'forms': 1}
@@ -201,7 +209,7 @@ def test_a_converted_trial_or_one_extended_too_often_is_not_extended(table):
     with pytest.raises(ConflictError) as raised:
         extend_trial(table, WS, 14, PAT, resume=_no_resume, now=START)
     assert raised.value.code == 'trial_extensions'
-    convert_trial(table, WS, PAT, resume=_no_resume)
+    convert_trial(table, WS, PAT, resume=_no_resume, now=START)
     with pytest.raises(ConflictError) as raised:
         extend_trial(table, WS, 14, PAT, resume=_no_resume, now=START)
     assert raised.value.code == 'trial_converted'
@@ -213,7 +221,7 @@ def test_a_workspace_that_is_no_trial_answers_one_404(table, ws):
     with pytest.raises(NotFoundError, match=TRIAL_NOT_FOUND):
         extend_trial(table, ws, 14, PAT, resume=_no_resume, now=START)
     with pytest.raises(NotFoundError, match=TRIAL_NOT_FOUND):
-        convert_trial(table, ws, PAT, resume=_no_resume)
+        convert_trial(table, ws, PAT, resume=_no_resume, now=START)
 
 
 def test_a_deleting_trial_is_not_found(table):
@@ -221,7 +229,7 @@ def test_a_deleting_trial_is_not_found(table):
     table.update_item(Key={'pk': f'WS#{WS}', 'sk': 'META'}, UpdateExpression='SET #s = :d',
                       ExpressionAttributeNames={'#s': 'status'}, ExpressionAttributeValues={':d': 'deleting'})
     with pytest.raises(NotFoundError):
-        convert_trial(table, WS, PAT, resume=_no_resume)
+        convert_trial(table, WS, PAT, resume=_no_resume, now=START)
 
 
 # ── convert ──────────────────────────────────────────────────────────────────
@@ -229,13 +237,13 @@ def test_a_deleting_trial_is_not_found(table):
 def test_a_conversion_is_audited_first_and_ends_the_trial_for_good(table):
     _create(table)
     before = _all_rows(table)
-    view = convert_trial(table, WS, PAT, resume=_no_resume)
+    view = convert_trial(table, WS, PAT, resume=_no_resume, now=START)
     assert view['converted_by'] == PAT
     assert view['converted_at'] is not None
     assert [row['kind'] for row in _audits(table) if row['kind'] == 'trial_converted'] == ['trial_converted']
     assert _listing_trial(table)['converted_at'] == view['converted_at']
     # Converting again writes nothing (no second audit row) and answers the same.
-    assert convert_trial(table, WS, PAT, resume=_no_resume) == view
+    assert convert_trial(table, WS, PAT, resume=_no_resume, now=START) == view
     assert len(_all_rows(table)) == len(before) + 1
     assert set(before) < set(_all_rows(table))
 
@@ -245,7 +253,7 @@ def test_converting_a_paused_trial_resumes_it(table):
     meta = read_meta(table, WS)
     save_trial(table, WS, meta, {**meta['trial'], 'paused_at': 'x', 'paused': {'plugins': [], 'forms': ['f1']}})
     resume = MagicMock(return_value={'plugins': 0, 'forms': 1})
-    view = convert_trial(table, WS, PAT, resume=resume)
+    view = convert_trial(table, WS, PAT, resume=resume, now=START)
     assert resume.call_args.args[3] == 'trial_converted'
     assert 'resuming_at' in resume.call_args.args[1]
     assert view['paused'] is None

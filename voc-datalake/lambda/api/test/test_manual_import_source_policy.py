@@ -4,9 +4,11 @@ from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 from handler_events_fixtures import call_route
 
 import manual_import_handler as h
+from shared import pii_redaction
 
 QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789012/q'
 _PROFILES = [{'id': 'support_tickets', 'pii': 'redact', 'retention_days': 365},
@@ -99,3 +101,33 @@ def test_json_upload_carries_dimensions_tags_and_the_source(wired, api_gateway_e
     assert response['statusCode'] == 200
     assert (message['source_platform'], message['dimensions'], message['tags']) == \
         ('sales_csv', {'product': 'web'}, ['a'])
+
+
+def _comprehend_failing_on(word: str) -> MagicMock:
+    """A Comprehend client that throttles (past its retries) on a text with ``word`` and finds nothing elsewhere."""
+    def detect(**request: str) -> dict:
+        if word in request['Text']:
+            raise ClientError({'Error': {'Code': 'ThrottlingException'}}, 'DetectPiiEntities')
+        return {'Entities': []}
+
+    client = MagicMock()
+    client.detect_pii_entities.side_effect = detect
+    return client
+
+
+def test_a_redacting_upload_refuses_a_row_comprehend_could_not_read_and_counts_it_skipped(wired, api_gateway_event,
+                                                                                         lambda_context):
+    """F1 (7.71.02): every redacting upload's redaction is strict, as the form import's: a row whose text Comprehend
+    should have read and could not (every text read as English here, as a row that named its language would be) is
+    refused and counted with the skipped rows, never queued with the patterns' redaction alone; the others are."""
+    items = [{'id': f'i{n}', 'text': text, 'source': 'web', 'timestamp': '2026-01-02T00:00:00Z'}
+             for n, text in enumerate(['Call +49 30 12345678', 'unreadable by the model'])]
+    with patch.object(pii_redaction, 'comprehend_language', return_value='en'), \
+            patch.object(pii_redaction, '_comprehend', return_value=_comprehend_failing_on('unreadable')), \
+            patch.object(h, '_record_run') as recorded:
+        response, body = _upload(api_gateway_event, lambda_context, '/scrapers/manual/json-upload',
+                                 {'items': items, 'source_id': 'support_tickets'})
+    assert (response['statusCode'], body['imported_count'], body['total_items']) == (200, 1, 2)
+    assert [(message['id'], message['text']) for message in _sent(wired)] == [('i0', 'Call [PHONE]')]
+    counts = recorded.call_args.args[3]
+    assert (counts.received, counts.imported, counts.skipped) == (2, 1, 1)

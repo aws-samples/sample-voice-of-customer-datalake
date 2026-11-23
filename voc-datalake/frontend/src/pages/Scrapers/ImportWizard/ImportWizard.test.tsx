@@ -19,13 +19,18 @@ import ImportWizard from './ImportWizard'
 
 vi.mock('../../../hooks/useDimensions', () => ({
   useDimensionsConfig: () => ({ data: { dimensions: [{ key: 'product', label: 'Product', infer: false, values: [] }] } }),
+  useSourceProfiles: () => ({ data: [] }),
+}))
+vi.mock('../../../hooks/useCategories', () => ({
+  useCategoriesConfig: () => ({ data: { categories: [{ name: 'customer_support', description: 'Support desk' }] } }),
 }))
 const mockAfterIngest = vi.fn()
 vi.mock('../../../api/invalidateFeedbackData', () => ({ useInvalidateFeedbackData: () => mockAfterIngest }))
 const importRight = { allowed: true }
 vi.mock('./useCanImport', () => ({ useCanImport: () => importRight.allowed }))
-const READY = { processed: 2, ready: true, slow: false, alreadyImported: false, sentiment: { positive: 50, negative: 50 },
-  categories: [['delivery', 2]], quotes: [{ id: 'f1', text: 'Fast delivery' }], nps: 20 }
+const READY = { processed: 2, ready: true, slow: false, alreadyImported: false, stillProcessing: false,
+  sentiment: { positive: 50, negative: 50 }, categories: [['customer_support', 2], ['delivery_speed', 1]],
+  quotes: [{ id: 'f1', text: 'Fast delivery' }], nps: 20 }
 const insights = { now: READY }
 vi.mock('./useFirstInsights', () => ({ useFirstInsights: () => insights.now }))
 
@@ -161,6 +166,16 @@ describe('ImportWizard: reviews or tickets', () => {
     await importReviews(await upload(REVIEWS, 'reviews.csv'))
     expect(screen.getByRole('link', { name: 'Open the dashboard' })).toHaveAttribute('href', '/dashboard?source=manual_import')
     expect(screen.getByText('Fast delivery')).toBeInTheDocument()
+    // L6 (7.71.02): the categories by the dashboard's labels (a configured name, else the id in words), never a key.
+    expect(screen.getByRole('heading', { name: 'Top categories' }).nextElementSibling).toHaveTextContent(
+      'Support desk (2)Delivery speed (1)')
+  })
+
+  it('says rows none of which was analysed in the window (a survey\'s, Q3) are still processing, without a spinner', async () => {
+    insights.now = { ...READY, processed: 0, ready: false, stillProcessing: true }
+    await importReviews(await upload(REVIEWS, 'reviews.csv'))
+    expect(screen.getByRole('status')).toHaveTextContent("Still processing: see the form's Results later.")
+    expect(document.querySelector('.animate-spin')).toBeNull()
   })
 
   it('says when the rows were imported before, with the link to the dashboard', async () => {

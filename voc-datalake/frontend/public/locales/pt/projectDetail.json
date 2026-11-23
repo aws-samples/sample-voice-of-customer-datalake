@@ -1028,11 +1028,13 @@
       "ended": {
         "byPerson": "Você encerrou a sessão.",
         "sessionLimit": "A sessão atingiu o limite de tempo.",
+        "costLimit": "Esta sessão atingiu o limite de custo.",
         "budget": "Os minutos de voz deste mês acabaram.",
         "busy": "A voz está ocupada agora. Tente novamente em alguns minutos.",
         "error": "A sessão parou por causa de um erro.",
         "disconnected": "A conexão foi perdida.",
-        "refused": "O link da sessão expirou ou já foi usado. Inicie uma nova sessão."
+        "refused": "O link da sessão expirou ou já foi usado. Inicie uma nova sessão.",
+        "expired": "O link da sessão expirou antes de conectar. Inicie uma nova sessão."
       },
       "filing": "Arquivando a transcrição…",
       "filed": "A transcrição foi salva como documento deste projeto.",

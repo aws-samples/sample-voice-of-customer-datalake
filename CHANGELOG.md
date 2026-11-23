@@ -17,16 +17,96 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.71.02] - 2026-11-23
+
+The non-blocking findings 7.71.01's review gate deferred, and what the live test of the b- deployment found: a trial's
+resume left unfinished no longer holds its pause off for good, and the console says so; the leadership rollup keeps a
+minute for the workspaces; every redacting upload refuses a row Comprehend could not read; the voice relay's refusals
+are sent in an order AgentCore's proxy should forward, a late first connection ends as expired, the session's cost cap
+has its own end, and a persona's last sentence is no longer cut from its caption and transcript; First insights, the
+forms' exports and Results, the prototype card and an e2e selector each get a small fix.
+
+### Fixed
+
+- **A trial's resume cut short no longer holds its pause off for good** (`shared/trial_pause.py`, `shared/trials.py`):
+  the `resuming_at` mark an extension or a conversion leaves when its resume fails holds the hourly pause off for 15
+  minutes only (the mark is the request's own time). After that the trial is due again, even past the day a pause is
+  revisited, and the tick turns off what that resume turned on and removes the mark. While the mark is there the
+  platform console's row says "Extend or Convert again to finish" (`resume_incomplete` on the listing's trial and on
+  the trial routes' answers; nine locales) ([multi-workspace.md](docs/multi-workspace.md#trial-workspaces)).
+- **The hourly pause never turns off what an extension turned on meanwhile**: a pause that revisits a paused trial
+  writes what it turns off first, always, conditional on the trial it read, so an extension or a conversion that
+  marked the trial after that read makes the pause fail (409, counted failed by the tick) before anything is turned
+  off. The pause and the resume read the recorded lists only through one reader, so a recorded list that is not one is
+  read as none and the trial is still paused (it failed that trial before).
+- **The leadership rollup keeps the last minute for the workspaces** (`lambda/jobs/adoption_rollup/handler.py`): the
+  deployment's walk still comes first under the run's one deadline, but stops 60 seconds before it when there are
+  workspaces, whose reads are only counts until projects move into them, so a long walk no longer leaves every
+  workspace cut short ([leadership-view.md](docs/leadership-view.md)).
+- **Every redacting upload refuses a row Comprehend could not read** (`shared/ingest_archive.py`): a manual reviews
+  import, a CSV upload and a JSON upload now follow the form import's rule (7.71.01): under a redacting policy a row
+  one of whose texts Comprehend should have read and could not, after its retries, is never kept with the patterns'
+  redaction alone; it is left out and counted with the import's skipped rows. One live record keeps the patterns'
+  result as before: a form submission, a Data Explorer or field edit, a voice transcript
+  ([source-policies.md](docs/source-policies.md)).
+- **The import wizard reads a form's language as the server does** (`wizardMapping.ts`): `en-US` or `EN` is English,
+  so such a survey's calls are sized for Comprehend's 250 texts instead of being refused `too_many_texts`.
+- **First insights**: a survey with none of its rows analysed when the five minutes end says it is still processing
+  and that the form's Results show them later, without a spinner, and asks no more; its top categories read as the
+  dashboard's labels (a configured name, never a key such as `customer_support`; nine locales)
+  ([import-wizard.md](docs/import-wizard.md)).
+- **A recall placeholder reads `[id]` in the detailed CSV header and in Results' Ending filter**, as
+  [feedback-forms.md](docs/feedback-forms.md#recall) says (both printed `{{event|the event}}`): the detailed layout's
+  headlines and every ending title in Results use the familiar layout's helper.
+- **A framed prototype's validation card is not retried** (`usePinBridge.ts`): a failed ask is one request on the
+  public submit route's shared throttle, and the next frame load asks again; the card is kept for its query family's
+  five minutes, with no constant of its own.
+- **The voice relay's refusals are ordered for AgentCore's proxy** (`lambda/stream/src/voice/wire-end.ts`): on the b-
+  deployment a second or reused connection opened, heard nothing and was dropped with 1006 thirty seconds later,
+  though the relay had refused it: the refusal (`ended`, then close 1008) went out within milliseconds of the upgrade,
+  the proxy forwarded neither, and `ws` waited its 30-second close timeout. Every end now waits until the connection is
+  a second old, sends `ended`, closes once the frame is written (a second at most) and terminates a socket whose close
+  handshake has not finished five seconds later. The session stays single use. To verify on a live deployment
+  ([voice-personas.md](docs/voice-personas.md#what-to-check-on-a-live-deployment)).
+- **A late first voice connection ends as expired**: AgentCore accepted a URL 65.8 seconds after it was signed for 60;
+  the relay now ends a first connection more than 70 seconds after the session's mint (its `connect_by` and 10 seconds
+  for the clocks) with its own reason, `expired` ("The session link expired before it connected"), marks the row
+  ended so and frees its place in the live set.
+- **A voice session's own cost cap ends it as `cost_limit`** ("This session reached its cost limit."), no longer as
+  `session_limit`, which the browser words as the time limit; the persona's goodbye still plays out. Nine locales.
+- **A persona's last sentence stays in its caption and its transcript** (`lambda/stream/src/voice/transcript.ts`): a
+  FINAL text that covered the first of two SPECULATIVE sentences kept only the first, since the second's FINAL text
+  never came before the turn closed or the session ended. A turn's text is now its FINAL segments then the SPECULATIVE
+  ones they have not covered, at every turn close and at the end, except for a turn the person spoke over.
+- Tests: the in-page tabs e2e spec looks for the Languages tab's "Add language" menu button (a menu since 7.55.01, so
+  the walk stopped there); the processor's concurrent-batch fake write is `patch(..., return_value=True)` read through
+  its `call_args_list`.
+- `MCP_DELEGATED_OPS` is one literal of the seven delegated operations (`shared/project_access.py`): the two sets that
+  only fed it are gone; each route still admits only its own operation.
+- Docs: 7.71.01's summary line reworded.
+
+### Upgrade notes
+
+- **Every redacting upload is strict now.** With `PII_COMPREHEND=1`, a manual reviews import, a CSV or a JSON upload
+  leaves out a row one of whose texts Comprehend failed on (counted as skipped in the import history) instead of
+  queueing it with the patterns' redaction. Today these rows name no language, so Comprehend never reads them and
+  nothing changes; a row that names English or Spanish later is held to the rule. Send a refused row again once
+  Comprehend answers.
+- **Two new voice end reasons**, `cost_limit` and `expired`, in the relay's `ended` message and the session row's
+  `end_reason` (the SPA words both): a client that reads `end_reason` takes them. Deploy VocProcessingStack (the
+  relay) and the SPA together: an older SPA reads an unknown reason as none.
+- No new resource, IAM statement, route or flag.
+
 ## [7.71.01] - 2026-11-23
 
-The review gate's deferred findings on 7.67.00–7.71.00, fixed before b- is deployed: the hourly pause of a trial
-never undoes an extension's or a conversion's resume, and the console names the forms a resume left off; under a
-redacting policy an imported survey's hidden values reach Comprehend, and a row Comprehend could not read is refused
-instead of kept with the patterns alone; a survey in a language Comprehend does not read imports in a few large calls;
-the voice relay counts a session whose row is gone to the month, ends a session at its own cost cap as its limit, and
-a page closed mid-session leaves the relay to finish; the leadership rollup has one deadline; the report counts every
-tester who said what was missing; the MCP Lambda's delegated calls carry one claim. 7.67.00–7.71.00 are now dated
-2026-11-23, the day they ship.
+The findings the review gate deferred on 7.67.00–7.71.00, fixed before the release went to the b- test deployment:
+the hourly pause of a trial never undoes an extension's or a conversion's resume, and the console names the forms a
+resume left off; under a redacting policy an imported survey's hidden values reach Comprehend, and a row Comprehend
+could not read is refused instead of kept with the patterns alone; a survey in a language Comprehend does not read
+imports in a few large calls; the voice relay counts a session whose row is gone to the month, ends a session at its
+own cost cap as its limit, and a page closed mid-session leaves the relay to finish; the leadership rollup has one
+deadline; the report counts every tester who said what was missing; the MCP Lambda's delegated calls carry one claim.
+7.67.00–7.71.00 are now dated 2026-11-23, the day they ship.
 
 ### Fixed
 
@@ -57,7 +137,8 @@ tester who said what was missing; the MCP Lambda's delegated calls carry one cla
   Comprehend failed on; that row is refused (`redaction_unavailable`, which First insights names) and the others are
   imported. The Comprehend client is built once, before the redacting workers start (they could each build one at
   once), with adaptive retries (five attempts), so a throttle backs off before a text counts as unreadable. Every other
-  caller of the redaction keeps the pattern result on a failure, as before.
+  caller of the redaction keeps the pattern result on a failure, as before (until 7.71.02, which holds every upload to
+  this rule).
 - **A survey in a language Comprehend does not read imports in a few large calls**: the 250-text bound holds only for
   rows in a language Comprehend reads for personal data (en, es, with `PII_COMPREHEND=1`), and the wizard sizes its
   calls the same way: a row's text, its open answers and its hidden values, nothing for another language (a German

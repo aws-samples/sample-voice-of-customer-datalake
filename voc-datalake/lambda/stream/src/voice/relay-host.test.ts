@@ -8,6 +8,8 @@ import { closedAfterEach, connect, httpJson, listening, until, whenListening, ty
 import { FakeStore, FakeTransport, ManualClock, PROJECT_ID, SESSION_ID, sessionInput } from './voice-fixtures.js';
 
 const { servers, clients } = closedAfterEach();
+/** An end's waits on the wire (wire-end.ts), short for a spec: a tenth of a second's settle. */
+const WAITS = { settleMs: 100, sentWaitMs: 200, closeWaitMs: 1000 };
 
 /** The relay host behind a real server, with the store, the model and the clock as doubles. */
 async function relay(store = new FakeStore()) {
@@ -15,7 +17,7 @@ async function relay(store = new FakeStore()) {
   const transport = new FakeTransport();
   const prices = pricesFor('amazon.nova-2-5-sonic', 'us-west-2');
   const clock = new ManualClock();
-  const host = relayHost({ store, transport, clock, meter: () => new Meter(prices) });
+  const host = relayHost({ store, transport, clock, meter: () => new Meter(prices) }, { waits: WAITS, clock: systemClock });
   const server = await listening(createRelayServer(host, () => clock.now()));
   servers.push(server);
   return { store, transport, host, server };
@@ -38,9 +40,21 @@ describe('relayHost', () => {
     expect((await httpJson(run.server, 'GET', '/ping')).body).toMatchObject({ status: 'HealthyBusy' });
   });
 
+  it('sends a refusal no sooner than the settle after the upgrade, ended then 1008 (L3)', async () => {
+    const run = await relay();
+    run.store.activation = 'used';
+    const opened = Date.now();
+    const browser = await client(run.server);
+    const heard = new Promise<number>((resolve) => { browser.socket.once('message', () => { resolve(Date.now()); }); });
+    expect(await browser.closed).toBe(1008);
+    expect(browser.texts).toStrictEqual([{ type: 'ended', reason: 'refused' }]);
+    // (a timer may fire a millisecond early by the wall clock)
+    expect(await heard - opened).toBeGreaterThanOrEqual(WAITS.settleMs - 5);
+  });
+
   it('gives a connection after the conversation ended a session of its own', async () => {
     const run = await relay();
-    run.store.activation = false;
+    run.store.activation = 'used';
     const first = await client(run.server);
     await first.closed;
     const second = await client(run.server);

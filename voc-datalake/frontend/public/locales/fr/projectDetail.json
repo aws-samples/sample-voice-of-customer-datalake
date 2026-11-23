@@ -1028,11 +1028,13 @@
       "ended": {
         "byPerson": "Vous avez terminé la session.",
         "sessionLimit": "La session a atteint sa durée maximale.",
+        "costLimit": "Cette session a atteint sa limite de coût.",
         "budget": "Les minutes vocales de ce mois-ci sont épuisées.",
         "busy": "La voix est saturée pour le moment. Réessayez dans quelques minutes.",
         "error": "La session s’est arrêtée à cause d’une erreur.",
         "disconnected": "La connexion a été perdue.",
-        "refused": "Le lien de la session avait expiré ou avait déjà servi. Lancez une nouvelle session."
+        "refused": "Le lien de la session avait expiré ou avait déjà servi. Lancez une nouvelle session.",
+        "expired": "Le lien de la session a expiré avant la connexion. Lancez une nouvelle session."
       },
       "filing": "Classement de la transcription…",
       "filed": "La transcription est enregistrée comme document de ce projet.",

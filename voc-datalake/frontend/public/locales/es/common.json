@@ -443,6 +443,7 @@
       "convertTitle": "¿Convertir {{name}}?",
       "convertMessage": "Pasa a ser un espacio de trabajo normal, sin fin.",
       "convertPausedMessage": "Pasa a ser un espacio de trabajo normal, sin fin, y se vuelven a activar los plugins y formularios que desactivó la pausa.",
+      "resumeIncomplete": "La última ampliación o conversión no terminó: vuelva a elegir Ampliar o Convertir para terminarla.",
       "stayedOff": {
         "title": "Estos formularios siguen desactivados: tal como están, ya no se pueden publicar. Sus editores los corrigen y luego los vuelven a publicar.",
         "themeUnreadable": "{{name}}: su texto es demasiado difícil de leer sobre su fondo.",

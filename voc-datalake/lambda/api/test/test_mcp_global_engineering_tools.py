@@ -34,7 +34,7 @@ from shared.mcp_delegate import DomainResult
 from shared.mcp_global_tools import TOOLS, TOOLS_BY_NAME, InvalidToolArgument
 from shared.mcp_global_tools_engineering import ENGINEERING_TOOLS, MODEL_TEXT_LABEL, REQUEST_NEXT
 from shared.mcp_tokens import mint_token
-from shared.project_access import MCP_ENGINEERING_OPS
+from shared.project_access import MCP_DELEGATED_OPS
 
 T0 = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
 POOL = 'us-east-1_pool'
@@ -110,7 +110,7 @@ class TestTheToolList:
     def test_five_engineering_tools_each_one_operation_admin_only_and_needing_a_write_token(self):
         engineering = [tool for tool in TOOLS if tool.name.startswith('engineering_')]
         assert tuple(tool.name for tool in engineering) == NAMES == tuple(tool.name for tool in ENGINEERING_TOOLS)
-        assert {tool.engineering_op for tool in engineering} == MCP_ENGINEERING_OPS
+        assert {tool.engineering_op for tool in engineering} == set(ROUTES) < MCP_DELEGATED_OPS
         assert all(tool.admin_only and tool.needs_write_token for tool in engineering)
         assert [tool.name for tool in engineering if tool.write] == ['engineering_run_steer', 'engineering_run_request']
         assert all(not tool.project_scoped and not tool.board_route for tool in engineering)
@@ -136,7 +136,7 @@ class TestTheToolList:
 
 
 class TestEveryCallIsGated:
-    @pytest.mark.parametrize('op', sorted(MCP_ENGINEERING_OPS))
+    @pytest.mark.parametrize('op', sorted(ROUTES))
     def test_an_admins_write_token_reaches_the_one_route_with_its_one_operation(self, rig: Rig, lambda_context: Any,
                                                                                op: str):
         tool = next(tool for tool in ENGINEERING_TOOLS if tool.engineering_op == op)
@@ -195,7 +195,7 @@ class TestNoOtherEngineeringRouteIsReachable:
     FORBIDDEN = re.compile(r'/(signals|go|restart|stop|messages|board|reactions|decision|confirm|decline|connections|'
                            r'skills|settings|github-apps|setup|spend|run)(/|$)')
 
-    @pytest.mark.parametrize('op', sorted(MCP_ENGINEERING_OPS))
+    @pytest.mark.parametrize('op', sorted(ROUTES))
     def test_the_route_of_each_operation(self, op: str):
         tool = next(tool for tool in ENGINEERING_TOOLS if tool.engineering_op == op)
         request = tool.build(ARGS[op], None)

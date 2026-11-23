@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
-from shared.dynamo_values import plain, text_field
+from shared.dynamo_values import mapping_or_empty, plain, string_list, text_field
 from shared.exceptions import ValidationError
 from shared.request_body import reject_unknown_fields
 from shared.workspace_ids import ACTIVE, ws_key
@@ -36,7 +36,9 @@ TRIAL: Final = 'trial'
 #: Set by the pause, removed by an extension or a conversion.
 PAUSED_AT: Final = 'paused_at'
 #: Set by an extension or a conversion of a paused trial before its resume, removed with the pause: the hourly pause
-#: leaves a trial being resumed alone.
+#: leaves a trial being resumed alone while the mark is fresh (shared/trial_pause.py ``RESUMING_FRESH``). A mark left
+#: by a resume that failed is shown to the platform console (``resume_incomplete``) until the trial is extended or
+#: converted again, or the hourly pause pauses it again once the mark is stale.
 RESUMING_AT: Final = 'resuming_at'
 CONVERTED_AT: Final = 'converted_at'
 #: What the pause turned off: ``{plugins: [ids], forms: [ids]}``.
@@ -135,20 +137,29 @@ def new_trial(trial: NewTrial, creator: str, now: datetime) -> dict[str, Any]:
             'expires_at': at_second(now + timedelta(days=trial.days)), 'pack': trial.pack, 'extended': []}
 
 
+def resume_incomplete(trial: Mapping[str, Any]) -> bool:
+    """Whether an extension's or a conversion's resume of ``trial`` was cut short: its ``resuming_at`` mark is still
+    there (the request that finishes it removes it with the pause)."""
+    return isinstance(trial.get(RESUMING_AT), str)
+
+
 def paused_lists(trial: Mapping[str, Any]) -> dict[str, list[str]]:
-    paused = trial.get(PAUSED)
-    found = paused if isinstance(paused, Mapping) else {}
-    return {kind: [item for item in found.get(kind) or [] if isinstance(item, str)] for kind in ('plugins', 'forms')}
+    """What the pause recorded it turned off, ``{plugins, forms}``: the ids of each list, nothing else (a list that
+    is not one, or an entry that is no string, reads as none)."""
+    found = mapping_or_empty(trial.get(PAUSED))
+    return {kind: string_list(found.get(kind)) for kind in ('plugins', 'forms')}
 
 
 def trial_summary(trial: object) -> dict[str, Any] | None:
     """What every member reads of a trial (``GET /me/workspaces/current``) and the platform console lists of it (``GET
     /platform/workspaces``, from the listing row's copy): when it ends, whether and since when it is
-    paused (and how many plugins and forms the pause turned off), whether it was converted; never who did what."""
+    paused (and how many plugins and forms the pause turned off), whether an extension or a conversion left its resume
+    unfinished (``resume_incomplete``), whether it was converted; never who did what."""
     if not isinstance(trial, Mapping):
         return None
     lists = paused_lists(trial)
     paused = is_paused(trial)
     return {'days': plain(trial.get('days')), 'expires_at': text_field(trial, 'expires_at'),
             PAUSED_AT: text_field(trial, PAUSED_AT) if paused else None, CONVERTED_AT: text_field(trial, CONVERTED_AT),
-            PAUSED: {kind: len(items) for kind, items in lists.items()} if paused else None}
+            PAUSED: {kind: len(items) for kind, items in lists.items()} if paused else None,
+            'resume_incomplete': resume_incomplete(trial)}

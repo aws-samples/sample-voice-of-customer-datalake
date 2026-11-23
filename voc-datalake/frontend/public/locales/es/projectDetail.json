@@ -1028,11 +1028,13 @@
       "ended": {
         "byPerson": "Has finalizado la sesión.",
         "sessionLimit": "La sesión alcanzó su límite de tiempo.",
+        "costLimit": "Esta sesión alcanzó su límite de coste.",
         "budget": "Se han agotado los minutos de voz de este mes.",
         "busy": "La voz está ocupada ahora mismo. Inténtalo de nuevo en unos minutos.",
         "error": "La sesión se detuvo por un error.",
         "disconnected": "Se perdió la conexión.",
-        "refused": "El enlace de la sesión había caducado o ya se había usado. Inicia una nueva sesión."
+        "refused": "El enlace de la sesión había caducado o ya se había usado. Inicia una nueva sesión.",
+        "expired": "El enlace de la sesión caducó antes de conectarse. Inicia una nueva sesión."
       },
       "filing": "Archivando la transcripción…",
       "filed": "La transcripción se ha guardado como documento de este proyecto.",

@@ -680,6 +680,7 @@
       "slow": "仍在分析。大文件可能需要几分钟。",
       "alreadyImported": "没有新的内容可分析：这些行之前已导入。",
       "alreadyImportedLink": "在仪表板中查看",
+      "stillProcessing": "仍在处理中：请稍后查看表单结果。",
       "ready_one": "已分析 {{count, number}} 条。结果如下：",
       "ready_other": "已分析 {{count, number}} 条。结果如下：",
       "sentiment": "情感",

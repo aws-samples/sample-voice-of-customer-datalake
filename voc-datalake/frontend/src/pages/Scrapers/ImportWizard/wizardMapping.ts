@@ -20,8 +20,13 @@ const MAX_ROWS_PER_CALL = 5000
  * inside the API's 29 s. */
 const MAX_REDACTED_TEXTS = 250
 /** The languages whose texts reach Comprehend (lambda/shared/pii_redaction.py `COMPREHEND_PII_LANGUAGES`): a form in
- * another one sends none, so its calls are bound by their size alone. */
+ * another one sends none, so its calls are bound by their size alone. A language is read as the server reads it
+ * (`comprehend_language`: `en-US` and `EN` are `en`). */
 const COMPREHEND_LANGUAGES: ReadonlySet<string> = new Set(['en', 'es'])
+
+function comprehendCode(language: string): string {
+  return (language.split('-')[0] ?? '').toLowerCase()
+}
 /** A call's body as its Lambda event carries it (its JSON escaped once more, as the event's `body`): Lambda takes 6 MB
  * a synchronous call, headers and request context included, so a call stays under 4 MB. */
 const MAX_CALL_BYTES = 4 * 1024 * 1024
@@ -95,7 +100,7 @@ interface CallSizes {
  * field; none for a form in a language Comprehend does not read. */
 export function redactedTextsPerRow(form: InferredForm): number {
   const { language, hidden_fields: hidden } = form.definition
-  if (typeof language !== 'string' || !COMPREHEND_LANGUAGES.has(language)) return 0
+  if (typeof language !== 'string' || !COMPREHEND_LANGUAGES.has(comprehendCode(language))) return 0
   const openText = inferredQuestions(form).filter((question) => question.type === 'open_text').length
   return 1 + openText + (Array.isArray(hidden) ? hidden.length : 0)
 }

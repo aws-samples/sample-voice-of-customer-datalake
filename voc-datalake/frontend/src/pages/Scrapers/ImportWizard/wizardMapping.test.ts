@@ -63,6 +63,9 @@ describe('sending', () => {
     const questions = [question('q_why', 'open_text'), question('q_more', 'open_text')]
     expect(redactedTextsPerRow(survey('es', questions, [{ id: 'channel' }]))).toBe(4)
     expect(redactedTextsPerRow(survey('de', questions, [{ id: 'channel' }]))).toBe(0)
+    // C4 (7.71.02): read as the server reads a language (its code before any `-`, lower-cased).
+    expect(['en-US', 'EN', 'Es-mx', 'de-DE'].map((language) => redactedTextsPerRow(survey(language, questions))))
+      .toStrictEqual([3, 3, 3, 0])
     const rows = Array.from({ length: 6000 }, (_unused, index) => ({ id: String(index) }))
     // A German survey: only the 5,000 rows a call takes (and its size) split it.
     expect(importCalls(rows, { first: 0, later: 0, textsPerRow: 0 }).map((call) => call.items.length)).toStrictEqual([5000, 1000])

@@ -3,7 +3,6 @@ the listing and nothing else reaches it; one trial that fails leaves the others 
 nothing (its one delete is the plugins' existing disable, in shared/workspace_plugin_settings.py, pinned with the pause
 by lambda/shared/test/test_trial_pause.py)."""
 import ast
-from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -68,40 +67,51 @@ def test_each_tick_pauses_the_trials_whose_stored_end_passed():
         assert 'paused_at' not in read_meta(workspaces, OTHER)['trial']
 
 
-def _throttled(_workspaces):
-    """The pause of trial ``WS`` throttled by DynamoDB."""
+def _failing(error: Exception):
+    """The pause of trial ``WS`` fails with ``error``; the others run as they do."""
     real = handler.pause
 
-    def throttled_once(tables, ws, now):
+    def failing_once(tables, ws, now):
         if ws == WS:
-            raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'UpdateItem')
+            raise error
         return real(tables, ws, now)
 
-    return patch.object(handler, 'pause', side_effect=throttled_once)
+    return patch.object(handler, 'pause', side_effect=failing_once)
 
 
-def _poisoned(workspaces):
-    """Trial ``WS``'s stored map one the pause does not expect: a ``paused`` list that is a number (a TypeError)."""
-    meta = read_meta(workspaces, WS)
-    recently = (START + timedelta(days=30, hours=12)).isoformat()
-    save_trial(workspaces, WS, meta, {**meta['trial'], 'paused_at': recently, 'paused': {'plugins': 7}})
-    return nullcontext()
-
-
-@pytest.mark.parametrize('failing', [_throttled, _poisoned], ids=['aws-error', 'any-other-error'])
-def test_a_trial_that_fails_is_counted_and_left_for_the_next_tick_and_the_others_are_paused(failing):
+@pytest.mark.parametrize('error', [
+    ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'UpdateItem'),
+    TypeError('a bug of ours'),
+], ids=['aws-error', 'any-other-error'])
+def test_a_trial_that_fails_is_counted_and_left_for_the_next_tick_and_the_others_are_paused(error):
     """Any error of one trial (7.71.01's commit review: not only an AWS one) is logged and counted, and the tick goes
     on to the others."""
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
         workspaces = _world(resource)
-        fault = failing(workspaces)
         first, second, third, fourth = _patched(resource)
-        with first, second, third, fourth, fault, patch.object(handler.logger, 'exception') as logged:
+        with first, second, third, fourth, _failing(error), patch.object(handler.logger, 'exception') as logged:
             outcome = handler.handle_event(EVENT, handler._tables(), START + timedelta(days=31))
         assert outcome == {'outcome': handler.SWEPT, 'failed': 1, 'paused': 1}
         assert 'paused_at' in read_meta(workspaces, OTHER)['trial']
         assert logged.call_args.kwargs['extra'] == {'workspace_id': WS}
+
+
+def test_a_recorded_list_that_is_not_one_reads_as_none_and_the_trial_is_paused():
+    """F2 (7.71.02): the pause reads ``trial.paused`` only through trial_state.paused_lists, so a stored map it does not
+    expect (``paused.plugins`` a number) no longer fails the trial: it is read as nothing recorded, and the trial is
+    paused like the others."""
+    with mock_aws():
+        resource = boto3.resource('dynamodb', region_name='us-east-1')
+        workspaces = _world(resource)
+        meta = read_meta(workspaces, WS)
+        recently = (START + timedelta(days=30, hours=12)).isoformat()
+        save_trial(workspaces, WS, meta, {**meta['trial'], 'paused_at': recently, 'paused': {'plugins': 7}})
+        first, second, third, fourth = _patched(resource)
+        with first, second, third, fourth:
+            outcome = handler.handle_event(EVENT, handler._tables(), START + timedelta(days=31))
+        assert outcome == {'outcome': handler.SWEPT, 'paused': 2}
+        assert read_meta(workspaces, WS)['trial']['paused'] == {'plugins': ['webscraper'], 'forms': []}
 
 
 def test_it_needs_both_tables():
