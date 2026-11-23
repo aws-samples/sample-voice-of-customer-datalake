@@ -162,7 +162,15 @@ def _checkout(*steps: str) -> list[Command]:
     return [Command(argv=(sys.executable, '-c', step), timeout_seconds=30, repository_code=False) for step in steps]
 
 
+def _chained(world: World) -> None:
+    """A boot wait for a test of boot commands chained within one tick (the world's supervisor has none), its polls
+    50 ms apart rather than a second."""
+    world.supervisor.boot_wait = 10.0
+    world.supervisor.sleep = lambda _seconds: time.sleep(0.05)
+
+
 def test_a_sessions_checkout_commands_follow_each_other_within_one_tick_then_its_harness_starts(world: World):
+    _chained(world)
     world.supervisor.checkout = lambda *_: _checkout("open('one', 'w')", "open('two', 'w')", "open('three', 'w')")
     world.launch(code="import os; assert all(map(os.path.exists, ('one', 'two', 'three')))")
     world.supervisor.tick(1000)
@@ -178,6 +186,7 @@ def test_with_no_boot_wait_each_checkout_command_waits_for_the_next_tick(world: 
     assert (world.session().status, world.session().boot_index) == ('booting', 0)
 
 
+@pytest.mark.timing
 def test_a_tick_waits_for_a_boot_only_as_long_as_its_boot_wait(world: World):
     world.supervisor.boot_wait = 1.5
     world.supervisor.checkout = lambda *_: _checkout('import time; time.sleep(30)', "open('two', 'w')")
@@ -190,6 +199,7 @@ def test_a_tick_waits_for_a_boot_only_as_long_as_its_boot_wait(world: World):
 
 
 def test_a_checkout_command_that_fails_within_the_tick_still_ends_the_agent_failed(world: World):
+    _chained(world)
     world.supervisor.checkout = lambda *_: _checkout("open('one', 'w')", 'import sys; sys.exit(128)', 'pass')
     world.launch()
     world.supervisor.tick(1000)

@@ -1,4 +1,5 @@
 """moto's S3 and voc-agents, fakes of the ports the runtime does not own, and a supervisor on the local fake."""
+import functools
 import json
 import sys
 from collections.abc import Iterator, Mapping, Sequence
@@ -164,6 +165,19 @@ class ReadyCache:
         return Found('ready', READY_GENERATION, READY_GENERATION, refusal=f'{connection} {repository}')
 
 
+#: The supervisor every test builds: no boot wait (7.71.02's ``BOOT_WAIT_SECONDS``, 40 s in production, is wall-clock
+#: time, so a tick whose fake boot command never ends waited for it), each boot command polled on the next tick as
+#: before 7.71.02. A test of the wait, or of a boot's commands chained within one tick, sets its own ``boot_wait``.
+QuickSupervisor = functools.partial(Supervisor, boot_wait=0)
+
+
+@pytest.fixture(autouse=True)
+def no_boot_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The handler's own supervisor (``handler._supervisor``) is a ``QuickSupervisor`` in every test here."""
+    from engineering.runtime import handler
+    monkeypatch.setattr(handler, 'Supervisor', QuickSupervisor)
+
+
 def quick_checkout(_commit: str, _paths: Sequence[str], _generation: int) -> list[Command]:
     """A checkout that needs no cache: one command that writes the file a harness can look for."""
     return [Command(argv=(sys.executable, '-c', "open('checked-out', 'w')"), timeout_seconds=30, repository_code=False)]
@@ -303,7 +317,7 @@ def world(aws: tuple[Any, Any]) -> World:
     runs.start(RUN, caps=RunCaps(max_tasks=50), now=0)
     runtime, store, sts = LocalAgentRuntime(), SessionStore(table, runs), FakeSts()
     board, bus, control = FakeBoard(), FakeBus(), FakeControl()
-    supervisor = Supervisor(runtime=runtime, sessions=store, board=board, bus=bus, control=control,
-                            launcher=Launcher(sts, ROLE_ARNS), checkpoints=CheckpointReader(s3, BUCKET),
-                            bucket=BUCKET, workspace_bucket=BUCKET, timings=Timings(), checkout=quick_checkout)
+    supervisor = QuickSupervisor(runtime=runtime, sessions=store, board=board, bus=bus, control=control,
+                                launcher=Launcher(sts, ROLE_ARNS), checkpoints=CheckpointReader(s3, BUCKET),
+                                bucket=BUCKET, workspace_bucket=BUCKET, timings=Timings(), checkout=quick_checkout)
     return World(supervisor, runtime, store, board, bus, control, sts, s3, runs)

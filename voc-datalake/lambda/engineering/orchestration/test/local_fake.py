@@ -196,9 +196,10 @@ def _wired(work: Path) -> Generator[pytest.MonkeyPatch]:
     with mock_aws(), pytest.MonkeyPatch.context() as patched:
         for name, value in environment:
             patched.setenv(name, value)
+        # (the handler's supervisor waits for no boot command within a tick: runtime/test/conftest.py QuickSupervisor)
         for name, value in (('_runtime', LocalAgentRuntime), ('_checkout_cache', runtime_world.ReadyCache),
                             ('_own_credentials', runtime_world.FakeCredentials), ('_supervisor_cache', None),
-                            ('_learning_cache', None)):
+                            ('_learning_cache', None), ('Supervisor', runtime_world.QuickSupervisor)):
             patched.setattr(handler, name, value)
         patched.setattr(reactions_broker, '_OPENER', runtime_world.NoPullRequest())
         for client in ('_dynamodb_resource', '_dynamodb_client', '_s3_client', '_lambda_client', '_eventbridge_client'):

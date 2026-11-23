@@ -1197,8 +1197,9 @@ def test_run_health_reports_counts_and_spend(world: World):
     world.launch(code=SLEEP)
     world.supervisor.tick(1000)
     health = [event for event in world.bus.events if event['kind'] == 'run.health'][-1]
-    # (7.71.02: its checkout ended within the tick's boot wait, so its harness started in the same tick)
-    assert health['summary'] == '1 working'
+    # (the tests' supervisor has no boot wait: its harness starts on the next tick; the chained boot's own test is in
+    # test_engineering_supervisor_ends.py)
+    assert health['summary'] == '1 booting'
     # No inbox backlog: the inbox has no read state (an agent reads after its cursor).
     assert health['refs'] == {'tokens': '0', 'cost_usd': '0.00'}
 

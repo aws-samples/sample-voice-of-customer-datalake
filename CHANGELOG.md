@@ -19,12 +19,16 @@ the platform package version.
 
 ## [7.71.02] - 2026-11-23
 
-The non-blocking findings 7.71.01's review gate deferred, and what the live test of the b- deployment found: a trial's
-resume left unfinished no longer holds its pause off for good, and the console says so; the leadership rollup keeps a
-minute for the workspaces; every redacting upload refuses a row Comprehend could not read; the voice relay's refusals
-are sent in an order AgentCore's proxy should forward, a late first connection ends as expired, the session's cost cap
-has its own end, and a persona's last sentence is no longer cut from its caption and transcript; First insights, the
-forms' exports and Results, the prototype card and an e2e selector each get a small fix.
+The non-blocking findings 7.71.01's review gate deferred, what the live test of the b- deployment found, and the
+engineering agents fixed from the first live Bug fixer run on b-: its committer and PR author wrote nothing and ended
+done, and the run never ended; the harness now fills in a writer's identifiers, a writer that wrote nothing goes to a
+person, a run whose flow finished ends done, the run's issue is written on once, every token is counted, and an
+agent's boot takes one tick. Also: a trial's resume left unfinished no longer holds its pause off for good, and the
+console says so; the leadership rollup keeps a minute for the workspaces; every redacting upload refuses a row
+Comprehend could not read; the voice relay's refusals are sent in an order AgentCore's proxy should forward, a late
+first connection ends as expired, the session's cost cap has its own end, and a persona's last sentence is no longer
+cut from its caption and transcript; First insights, the forms' exports and Results, the prototype card and an e2e
+selector each get a small fix.
 
 ### Fixed
 
@@ -78,6 +82,50 @@ forms' exports and Results, the prototype card and an e2e selector each get a sm
   FINAL text that covered the first of two SPECULATIVE sentences kept only the first, since the second's FINAL text
   never came before the turn closed or the session ended. A turn's text is now its FINAL segments then the SPECULATIVE
   ones they have not covered, at every turn close and at the end, except for a turn the person spoke over.
+- **The committer and the PR author are told what their write names, and the harness fills it in**
+  (`runtime/harness/role_tools.py`, `main.py`, `converse_loop.py`): the first live Bug fixer run's committer was shown
+  only "Commit the fixer's submitted patch, the tree the gate's GO names, to the run's branch", with no patch key, tree
+  or branch, so it and the PR author made broker reads only and finished. The committer's checkout now has its task's
+  submitted patch applied and hashed as a gate's has, and `push_commit` takes only `{message}`: the harness sends the
+  task's patch, that tree and the run's own branch `voc-agent/<run id>/fix` (`role_tools.run_branch`); the broker still
+  checks the GO and rebuilds the tree. `open_draft_pr` takes only `{title, body}` and opens from that branch, and the PR
+  author reads the gate record its description quotes (`read_gate_record`). Each opening names what the harness fills
+  in. The committer's (`committer@4`) and the PR author's (`pr-author@5`) skills no longer ask for them; the bundle and
+  the Kiro configs are recompiled.
+- **A writer that wrote nothing goes to a person** (`runtime/harness/review_tools.py` `ending`): a committer whose push,
+  or a PR author whose pull request, the broker never answered as made (refused, never asked, its outcome unknown)
+  finishes `needs_human`, saying which write is missing, instead of `done`; the conductor reads the step blocked and the
+  supervisor sends the run to `flow:commit` or `flow:pr_author`. The writes made are kept in the checkpoint, so a
+  continuation counts its earlier session's.
+- **Every role's opening names the run's issue, and an agent's sub-task finds its board step**
+  (`board/api.py`, `board/flow_guard.py`, `runtime/harness/board_client.py`): a claim now answers the run's facts from
+  its META (`run: {issue, pull_request}`), which the brief keeps and the opening of every role that reads the issue
+  names ("The run starts from issue #N"); the first live run's understander, told no number, tried issue 1. A hunter's
+  or builder's `post_subtask` that names no step goes to the one live board step that takes its posts (the hunters'
+  posts were refused "name the ready step"); the hunter's skill (`hunter@5`) no longer asks for a step.
+- **The PR author says what META says** (`role_tools.py`): its opening and `open_draft_pr`'s progress line on the task
+  say the pull request opens ready for review (META `pull_request: ready`, a flow with no `pr`) or as a draft, whatever
+  the task's own words say; a pre-7.50 stored flow's steps still say "draft".
+- **A run whose flow finished ends done** (`runtime/supervisor.py` `_coordinator_done`, `runs.TableRunControl.end`):
+  no code ended a run done, so the first live run stayed `active`, the rule ticking every minute, with no
+  retrospective, triage end or scorecards, and its engineering agent's run `running` with its lock held. Once the
+  newest coordinator session ended done, nothing of the run is live and the coordinate task ended done, the next tick
+  ends the run done when its flow finished (its `RUNLOG#` row the supervisor's), and settling releases it, starts its
+  retrospective and switches the rule off; the heartbeat then completes the agent's run and frees its lock. A
+  coordinator that finished on a flow that did not goes to a person (`coordinator`).
+- **The run's issue is commented on and labelled once** (`connectors/broker.py` `issue_write_key`): the claim of a
+  comment on the run's issue and of its labels is the run's and the issue's (`issue#<n>#post_comment`,
+  `issue#<n>#label_issue`), not the agent's, attempt's and text's, so a second understander of the run gets the first's
+  URL and labels back; the first live run's two understanders each commented and labelled.
+- **Every token a session used is counted** (`runtime/supervisor.py` `_last_count`): a session that ends or is
+  continued has its harness's status read once more first. A harness that exited between two ticks was ended without
+  that read (the tick reads only a session still working), so workers' rows had `tokens: {}`, and the run counted about
+  49% of its roughly 858k tokens; its token and cost caps and its health message understated its spend.
+- **An agent boots in one tick** (`runtime/supervisor.py` `_boot`): a tick polls a booting session's checkout command
+  every second while its boot wait lasts (`BOOT_WAIT_SECONDS`, 40 s for all its booting sessions together) and starts
+  the next as soon as one ends, the harness last; a failed command is handled as before. Each command used to wait for
+  the next tick, so every agent waited about 4 minutes 20 seconds before its harness started (about 50 of the run's
+  55 minutes).
 - Tests: the in-page tabs e2e spec looks for the Languages tab's "Add language" menu button (a menu since 7.55.01, so
   the walk stopped there); the processor's concurrent-batch fake write is `patch(..., return_value=True)` read through
   its `call_args_list`.
@@ -95,6 +143,19 @@ forms' exports and Results, the prototype card and an e2e selector each get a sm
 - **Two new voice end reasons**, `cost_limit` and `expired`, in the relay's `ended` message and the session row's
   `end_reason` (the SPA words both): a client that reads `end_reason` takes them. Deploy VocProcessingStack (the
   relay) and the SPA together: an older SPA reads an unknown reason as none.
+- **The stored Bug fixer flow on b- is a pre-7.50 "triage + bug hunt" flow** (its run's copy: memory, classify,
+  locate, hunt, a board whose claimers include the understander, gate, commit, pr_author "Open a draft pull request
+  for each fix", and a stop titled "Draft pull request"). Re-saving it from the current Bug hunt and fix template is a
+  data change for the owner, not made by this release. It would: drop the memory step (recall becomes the flow's own
+  `memory` setting), the classify (understander) and locate (hunter) steps, and the understander from the board's
+  claimers, so a run has one hunter and no second understander; pin the gate's runner and final go; add `pr: ready`,
+  Learn, the template's budget (50 USD a month, a 3M token cap, 40 tasks), its inputs and the steps' assertions; and
+  replace the PR author's instructions with the template's ("Open the pull request for the fix: … the test that proves
+  it, the gate record and the feedback ids it cites; say Fixes #N for the run's issue") and the stop's title with "Pull
+  request". Until then the run's META still says `pull_request: ready`, and the PR author's opening says so whatever
+  the step's words.
+- **The owner re-saves b-'s Bug fixer flow from the current Bug hunt and fix template after this deploy**, so its runs
+  take the template's steps, budget and pull request mode.
 - No new resource, IAM statement, route or flag.
 
 ## [7.71.01] - 2026-11-23
