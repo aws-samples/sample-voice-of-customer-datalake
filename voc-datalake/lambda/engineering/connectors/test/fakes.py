@@ -244,7 +244,9 @@ class FakeWrites:
     claims: dict[tuple[str, str], WriteClaim] = field(default_factory=dict)
 
     def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:
-        if f'#{operation}#' not in key:
+        # (an agent's write, ``<agent>#<attempt>#<operation>#<digest>``; 7.71.02, a write on the run's issue,
+        # ``issue#<n>#<operation>``)
+        if f'#{operation}#' not in key and not (key.startswith('issue#') and key.endswith(f'#{operation}')):
             raise ValueError(f'{key} is not a key of {operation}')
         earlier = self.claims.get((run_id, key))
         if earlier is not None and earlier.state != WRITE_REFUSED:

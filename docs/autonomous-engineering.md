@@ -559,10 +559,10 @@ branch, being refused:
 | Role | Operations |
 |---|---|
 | every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token; since 7.52.00 the run's connection's accepted tenets (`read` of kind `tenets`, target `accepted`: the store's, never the repository's file) |
-| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
-| issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per attempt; no dial: a label changes no code) |
-| committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`) |
-| PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`); on a fork connection (7.57.00) it goes on to the run's upstream pull request, and `open_upstream_pr` is that step on its own ([Any public repository](#any-public-repository-75700)) |
+| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record); on the issue once per run since 7.71.02 (its claim is `issue#<n>#post_comment`, no agent, attempt or digest: a second understander of the run gets the first comment's URL back, where the first live Bug fixer run's two understanders each commented) |
+| issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per run since 7.71.02, `issue#<n>#label_issue`: a later call gets the first labels back; no dial: a label changes no code) |
+| committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`; since 7.71.02 the harness fills in the patch, the tree and the run's branch `voc-agent/<run id>/fix`, and the model gives the message: [The flow a run follows](#the-flow-a-run-follows)) |
+| PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`), from the run's branch, which the harness fills in since 7.71.02; on a fork connection (7.57.00) it goes on to the run's upstream pull request, and `open_upstream_pr` is that step on its own ([Any public repository](#any-public-repository-75700)) |
 | voc-engineering-start (no agent) | `head` (7.47.00: a connection's default branch's head and an issue's state, read only) and `push_approved_docs` (7.52.00: the approved knowledge docs or tenets, at an administrator's request: [The knowledge docs pull request](#the-knowledge-docs-pull-request-75200)) |
 
 Every operation goes through the connector's rules, which refuse, before the host would: a push to any branch but
@@ -1245,10 +1245,10 @@ The tools are exactly what each job needs, and a role is never offered one beyon
 | Bug hunter | `read_issue`, `run`, `install_dependencies`, `write_findings` (a `voc-finding/1` shard), `post_subtask` (a fix task) | Sonnet 5.5 |
 | Fixer | `read_issue`, `write_file`, `run`, `install_dependencies`, `submit_work` | Sonnet 5.5 |
 | Feature builder | `write_file`, `run`, `install_dependencies`, `submit_work`, `post_subtask` (a sub-build) | Sonnet 5.5 |
-| Committer | `read_issue`, `push_commit` (the broker's push of the patch a fixer or builder submitted, after the gate's GO) | Sonnet 5.5 |
+| Committer | `read_issue`, `push_commit` (the broker's push of the patch a fixer or builder submitted, after the gate's GO; since 7.71.02 the model gives the message, the harness the patch, the tree and the run's branch) | Sonnet 5.5 |
 | Commit reviewer | `read_patch` (7.54.00: the submitted patch its task names, as data, in pages; the harness applied it to its checkout, so `read_file` shows the changed files), `write_findings`, `write_review` (a `voc-review/1` verdict: `approve`, `request_changes` or `could_not_review`) | Sonnet 5.5 |
 | Gate runner | `run_gate` (7.50.00: the packs detect the checkout's languages, plan their checks and run each one in the sandbox), `write_gate_record` (on the submitted patch the harness applied: the tree it hashed, the checks `run_gate` saw end, its plan's packs and, since 7.52.00, the versions `run_gate` found of their tools, `tool_versions`; a GO only after `run_gate`, never a final go) | Haiku 5.5 |
-| PR author | `read_issue`, `open_draft_pr` (the broker's pull request: ready for review, or a draft when the run's flow says `pr: draft`) | Sonnet 5.5 |
+| PR author | `read_issue`, `read_gate_record` (7.71.02: the record its description quotes), `open_draft_pr` (the broker's pull request from the run's branch: ready for review, or a draft when the run's flow says `pr: draft`, as its opening says) | Sonnet 5.5 |
 | PR reviewer | `read_patch` (when its task names a submitted patch), `write_findings`, `post_comment` (on the run's pull request), `write_review` (the run's record of its verdict, never the host's) | Sonnet 5.5 |
 | Final go | `read_patch` (the submitted patch it judges, 7.54.00), `read_gate_record` (the gate runners' records of the tree it judges), `read_findings` (the run's findings at its commit), `write_gate_record` (its verdict; the harness writes the tree it hashed from the same patch and its final go section, the record the GO ledger reads) | Opus 5.5 |
 
@@ -1799,6 +1799,22 @@ The gate judges the patch a fixer or builder submitted, and the committer pushes
 GO (6.29.00: the templates' commit step follows the gate): the broker pushes only the tree the GO names, so what is
 pushed is exactly what the gate passed.
 
+**The writers' identifiers (7.71.02).** The harness fills in what a writer's one write names, as it does a gate
+record's tree, and the model writes only the words: the committer's checkout has its task's submitted patch applied
+and hashed as a gate's has, and `push_commit {message}` pushes that patch, for that tree, to the run's own branch
+`voc-agent/<run id>/fix` (`role_tools.run_branch`); the PR author's `open_draft_pr {title, body}` opens from that branch,
+and it reads the gate record its description quotes (`read_gate_record`). Each one's opening names what the harness
+fills in; a brief also carries the run's issue and how its pull request opens, which the board's claim reads from
+META (`issue`, `pull_request`), so the opening of every role that reads the issue names its number, and the PR
+author's says "ready for review" or "a draft" as META says, whatever the task's own words say. A committer or PR author
+whose write the broker never answered as made (refused, never asked, its outcome unknown) finishes to a person
+(`needs_human`, saying which write is missing), the conductor reads its step blocked, and the supervisor sends the
+run to that step's decision point (`flow:commit`, `flow:pr_author`). Before, the first live Bug fixer run's committer
+and PR author were shown none of their identifiers, read the broker, wrote nothing and ended done, and the run's
+flow went on to its end (01M83JQWMKAYK9GJB8FBAVZV7E, 2026-11-23). A hunter's or builder's `post_subtask` that names no
+step goes to the one live board step that takes its posts (`board/flow_guard.py`): its task never names one, and that
+run's hunters had every post refused.
+
 **Evidence (tenets 1 and 2).** A flow that starts from customer feedback keeps the feedback ids it used, and the PR
 description lists them. **No customer text leaves the data lake**: every write to the host carries feedback ids at
 most, and the connector refuses a write that contains, verbatim, a sentence of a review the run cited (the reviews
@@ -2029,9 +2045,17 @@ called flow's steps carry theirs). The step's own shape is the rules'
   (an administrator's) answers the flat flow a run of that revision would follow, with `expansion`, `calls` and
   `steps`, or 409 `{error, node_id}` with the refusal.
 
+*Built* (7.71.02): the run's end when its flow finishes. Once the run's newest coordinator session ended done, nothing
+of the run is live or moving and its coordinate task ended done, the supervisor's next tick ends the run done when its
+flow finished (`Supervisor._coordinator_done`, `RunControl.end`: its `RUNLOG#` row the supervisor's), and settling
+then releases it, starts its retrospective (triage end, scorecards) and, with nothing listed, switches the rule off;
+the agents' heartbeat then ends an engineering agent's run completed and frees its lock. A coordinator that finished
+on a flow that did not (still running, at a person, or no flow) sends the run to a person (`coordinator`). Before, no
+code ended a run done: the first live Bug fixer run stayed active, the rule ticking every minute, its agent's lock
+held.
+
 *Planned*: the conductor reading the dial itself (AI-assisted: a person's go after the plan; Human-driven: the flow
-stops at the proposal), the run's end when its flow finishes (today the coordinator finishes its task and the run
-stays open for a person to end), the memory steps, the learning loop and self-improvement as flow steps, shard
+stops at the proposal), the memory steps, the learning loop and self-improvement as flow steps, shard
 sources for a repository's history and a pull request's pages, and a person's Resume at a step saying which decision it is (today one
 Resume is one decision).
 
@@ -2778,7 +2802,11 @@ wait closes.
   voc-engineering-start) sends the signed-in person's, so a run started there names who started it; no caller of
   `end_run` sends one yet, so an end is `unattributed` until one does. A decision point asked for again, for the same reason (the supervisor asks on every
   tick while a budget stays spent), changes nothing and writes no row. An agent's tokens are those of every session
-  it ran in, not only the current one's.
+  it ran in, not only the current one's. A session that ends or is continued has its harness's status read once more
+  first (7.71.02, `Supervisor._last_count`), so the tokens it used since the tick before are on its row, priced, and
+  in the run's spend that the caps and `run.health` read; before, a harness that exited between two ticks lost them
+  (the tick reads the status only of a session still working), and the first live Bug fixer run counted about 49% of
+  its roughly 858k tokens.
 - **Sessions.** One row per agent of a run, the board's own `AGENT#<agent>` row in the run's partition: ids, times,
   the session's id and its runtime's ARN (`vm_id`, `endpoint`), the boot step, the continuation count, the checkpoint it restored from, the run
   monitor's inspection data, the live cost counters and what the reports read (role, model, skill version, session
@@ -2812,6 +2840,14 @@ wait closes.
   running agent as above, ends finished ones, continues paused and crashed ones, restarts a run coordinator that
   stopped answering or crashed, honours a run's end and a stop (a person's, an agent's kill switch, and the 30-day
   stop, which opens a human decision point offering only "stop"): every session of the run ended at once, without waiting for the agents.
+  Since 7.71.02 it also ends a run done once its coordinator finished on a finished flow ([The flow a run
+  follows](#the-flow-a-run-follows)). A boot's commands follow each other within one tick (7.71.02): the tick polls a
+  booting session's checkout command every second while its boot wait lasts (`supervisor.BOOT_WAIT_SECONDS`, 40 s for
+  all its booting sessions together, well inside the tick's minute and its function's 5-minute limit) and starts the
+  next as soon as one ends, the harness last; a command still running when the wait is spent is polled again by the
+  next tick, and a failed one is handled as before. Before, each command waited for the next tick: with the
+  checkout's four commands and the harness, every agent waited about 4 minutes 20 seconds before its harness
+  started, about 50 of the first live Bug fixer run's 55 minutes.
   It reads each task's lease from the board's store (`runtime/board_bus.py`: the holder, its heartbeat, its last
   progress, whether it waits, the task's attempt, and whether the task has ended, which its harness is then to
   exit on: never judged a crash) and re-posts a stalled or crashed agent's task through the board (`repost_task`:
@@ -3005,7 +3041,9 @@ reaches the model as `<redacted>`.
   `static.rust-lang.org`). The harness records each check as it ended and the plan's packs, which the gate record
   takes; a gate runner's GO needs `run_gate` (a free-form command's exit is no gate), across a continuation too.
 - `read_gate_record` and `read_findings` (final go): the gate runners' records of the tree it judges, and the run's
-  findings at its commit, read through its role's own run prefix (`ReadCacheAndRun`, `ListRun`), as data.
+  findings at its commit, read through its role's own run prefix (`ReadCacheAndRun`, `ListRun`), as data. Since
+  7.71.02 the PR author reads the gate records too (`read_gate_record`, every one at the run's commit), for the section
+  its pull request's description quotes.
 
 ### The skills library (7.56.00)
 

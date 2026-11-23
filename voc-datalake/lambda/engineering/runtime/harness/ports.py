@@ -36,6 +36,11 @@ class TaskBrief:
     patch: str = ''
     #: The child run's seed the task starts from (7.51.00, its spec's ``seed_key``: ``harness/seed.py``); '' for none.
     seed_key: str = ''
+    #: (7.71.02) The run's own facts, as the board's claim read them from its META: the number of the issue it starts
+    #: from (0 for none) and how its pull request opens (``outputs.PULL_REQUEST_READY`` or ``_DRAFT``; '' when not
+    #: known). The opening names them, so no tool's argument is a model's guess.
+    issue: int = 0
+    pull_request: str = ''
 
 
 @dataclass(frozen=True)
@@ -228,7 +233,7 @@ class Broker(Protocol):
 
     def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
         """The broker's ``label_issue`` (7.50.00, the understander's): ``labels`` (``outputs.TRIAGE_LABELS`` only) on
-        the run's own issue ``number``, once per attempt."""
+        the run's own issue ``number``, once per run (7.71.02: a later caller gets the first labels back)."""
         ...
 
 

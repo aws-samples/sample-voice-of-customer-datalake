@@ -93,6 +93,9 @@ class FakeControl:
     filling: set[str] = field(default_factory=set)
     #: The decision point each run's flow waits at (``flow_stop``): none by default.
     flow_points: dict[str, str] = field(default_factory=dict)
+    #: (7.71.02) The runs whose flow finished (``flow_finished``), and each run ended and how (``end``).
+    finished_flows: set[str] = field(default_factory=set)
+    ended: dict[str, str] = field(default_factory=dict)
 
     def budget(self, run_id: str) -> Budget:
         assert run_id
@@ -111,8 +114,15 @@ class FakeControl:
             self.details[run_id] = detail
 
     def is_active(self, run_id: str) -> bool:
-        """Active until stopped or sent to a person (a Resume is the test's to model)."""
-        return run_id not in self.stops and all(run != run_id for run, _reason in self.humans)
+        """Active until stopped, ended or sent to a person (a Resume is the test's to model)."""
+        return (run_id not in self.stops and run_id not in self.ended
+                and all(run != run_id for run, _reason in self.humans))
+
+    def end(self, run_id: str, status: str) -> None:
+        self.ended[run_id] = status
+
+    def flow_finished(self, run_id: str) -> bool:
+        return run_id in self.finished_flows
 
     def flow_stop(self, run_id: str) -> FlowStop | None:
         """The decision point a test's flow waits at (``flow_points``), waiting there once the run was sent to it,

@@ -10,7 +10,8 @@ task of a live step (a person's own task, posted with no step, too), and (7.51.0
 and records the steps it does itself (``step``: an agent step of its own role, a board it closes, a map's shards).
 So the model cannot skip a step or take them out of order: what it may do next is the conductor's, from the record.
 
-A run without a flow is as before: a post or launch names no step, and the coordinator plans from its goal.
+A run without a flow is as before: a post or launch names no step, and the coordinator plans from its goal. Since
+7.71.02 an agent's post that names no step goes to the one live board step that takes its posts (``_poster_board``).
 """
 from __future__ import annotations
 
@@ -79,6 +80,16 @@ def _judges_the_checked_patch(tasks: Sequence[Task], run_id: str, step: str, spe
                                     "step's last gate runner task is done with a GO, naming that task's patch")
 
 
+def _poster_board(plan: Plan, role: str, poster: str) -> str:
+    """The step a post that names none goes to (7.71.02): for an agent other than the coordinator, the one live board
+    step that names it a poster and takes ``role``'s tasks; '' for none or more than one (the post must name it then).
+    A hunter's or builder's task never names its board step, and the first live Bug fixer run's hunters had each
+    ``post_subtask`` refused for want of one."""
+    found = [state.step for state in plan.live() if plan.flow.steps[state.step].type == 'board'
+             and poster in (plan.flow.steps[state.step].params.get('posters') or ()) and role in state.roles]
+    return found[0] if len(found) == 1 else ''
+
+
 def _path(path: str) -> str:
     try:
         return check_sparse_path(path)
@@ -133,9 +144,11 @@ class FlowGuard:
         tasks = self.store.tasks(WORKSPACE, run_id)
         plan = self.record.plan_of(flow, WORKSPACE, run_id, tasks, self.store.meta(WORKSPACE, run_id),
                                    read=self.read)
+        if not step and person and not shard:
+            return PostFields()
+        if not step and poster != COORDINATOR and not person:
+            step = _poster_board(plan, role, poster)
         if not step:
-            if person and not shard:
-                return PostFields()
             raise BoardError('invalid', "this run follows its flow: name the ready step the task is for (read the "
                                         'flow)')
         shard = _path(shard) if shard else ''

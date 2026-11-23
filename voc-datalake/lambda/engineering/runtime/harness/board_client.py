@@ -30,7 +30,10 @@ from engineering.runtime.harness.ports import (
     TaskSummary,
 )
 from engineering.runtime.interface import FUNCTION_URL_RE
+from engineering.runtime.outputs import PULL_REQUEST_DRAFT, PULL_REQUEST_READY
 
+#: How a run's pull request may open, as a brief takes it (META's ``pull_request``).
+PULL_REQUEST_MODES: Final = frozenset({PULL_REQUEST_READY, PULL_REQUEST_DRAFT})
 #: The board API's own limit on a page of the inbox.
 PAGE: Final = 50
 #: Pages read per ``take`` at most: the rest waits for the next one (a tool call, a turn).
@@ -150,6 +153,16 @@ def signed_post(url: str, region: str, credentials: Any, body: dict[str, Any]) -
                                   headers=dict(request.headers.items()))
 
 
+def run_facts(raw: object) -> dict[str, Any]:
+    """The run's facts a brief takes (7.71.02, ``TaskBrief.issue`` and ``pull_request``), from the board's claim
+    answer or a checkpoint's saved brief: an issue's number from 1, a pull request mode the broker knows; anything
+    else is left out (none: the opening names nothing)."""
+    facts = raw if isinstance(raw, dict) else {}
+    issue, mode = facts.get('issue'), facts.get('pull_request')
+    return {**({'issue': issue} if type(issue) is int and issue > 0 else {}),
+            **({'pull_request': mode} if mode in PULL_REQUEST_MODES else {})}
+
+
 def board_url(url: str) -> str:
     """A platform function URL (the board's, the broker's), as the runtime hands it: https, a function URL's own host,
     nothing else."""
@@ -174,18 +187,21 @@ class BoardHttp:
         if (run_id, task_id) != (self.run_id, self.task_id):
             raise ValueError('the harness reaches its own task only')
 
-    def _claim(self) -> tuple[dict[str, Any], int]:
-        """The holder's claim: the task, and the lease's epoch (kept for the lease's calls)."""
-        task = self.transport.post({'op': 'claim', 'task_id': self.task_id}).get('task')
+    def _claim(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The holder's claim: the task (the lease's epoch kept for the lease's calls) and the run's facts the board
+        read with it (7.71.02: ``run``, its issue and how its pull request opens; ``{}`` when it sent none)."""
+        answer = self.transport.post({'op': 'claim', 'task_id': self.task_id})
+        task = answer.get('task')
         lease = task.get('lease') if isinstance(task, dict) else None
         if not isinstance(task, dict) or not isinstance(lease, dict) or not isinstance(lease.get('epoch'), int):
             raise BoardRefused(502, 'the claim answered no lease')
         self.epoch = int(lease['epoch'])
-        return task, self.epoch
+        run = answer.get('run')
+        return task, run if isinstance(run, dict) else {}
 
     def brief(self, *, run_id: str, task_id: str) -> TaskBrief:
         self._own(run_id, task_id)
-        task, _ = self._claim()
+        task, run = self._claim()
         if task.get('state') == 'claimed':
             # Briefed: the work starts (a continuation reads its brief in its checkpoint, and claims nothing).
             self.move(run_id, task_id, to_state='in_progress')
@@ -199,7 +215,7 @@ class BoardHttp:
                          instructions=instructions if isinstance(instructions, str) else json.dumps(spec,
                                                                                                     sort_keys=True),
                          patch=patch if isinstance(patch, str) else '',
-                         seed_key=seeded if isinstance(seeded, str) else '')
+                         seed_key=seeded if isinstance(seeded, str) else '', **run_facts(run))
 
     def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None:
         del agent_id  # the board takes the agent from the caller's session

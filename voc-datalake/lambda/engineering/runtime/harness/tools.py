@@ -13,7 +13,7 @@
   its agents still work on the run (7.54.00: ``waiting.finish_refusal``), which it waits for with ``wait_for_agents``.
   A reviewer's is refused until it recorded its review, and a task whose own record says it could not do its job (a
   review that could not review, a gate that stopped) goes to a person instead of done (7.54.00,
-  ``review_tools.ending``).
+  ``review_tools.ending``), as does (7.71.02) a committer's or PR author's that the broker made no write for.
 
 The agents that run no repository code (the writers, the reviewers, the coordinator) get no ``run``,
 ``install_dependencies``, ``write_file`` or ``submit_work``. A role with a skill record (``skills.py``: every
@@ -143,6 +143,10 @@ class AgentContext:
     gate_tree: str = ''
     #: Whether this process moved the task to done (the model's ``finish``).
     finished: bool = False
+    #: (7.71.02) The broker writes made for this task that the broker answered as made (``push_commit``,
+    #: ``open_draft_pr``): a committer or PR author that finishes without its write goes to a person
+    #: (``review_tools.ending``); kept in the checkpoint, so a continuation knows its earlier session's.
+    host_writes: set[str] = field(default_factory=set)
     #: This session's fence (7.50.00): every DATA block a tool returns closes only with it (``as_data``), a random
     #: nonce no repository text knows (the CLI's tool server takes the harness's, ``VOC_FENCE``).
     fence: str = field(default_factory=nonce)

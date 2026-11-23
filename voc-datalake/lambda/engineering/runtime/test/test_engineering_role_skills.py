@@ -3,7 +3,7 @@ its skill's tools, within its role's; each output lands where its reader reads i
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,7 +18,9 @@ from engineering.connectors import patches
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.connectors.patches import PatchRefused, parse
 from engineering.connectors.write_policy import AGENT_BRANCH_PREFIX
+from engineering.flow.conductor import BoardState, Flow, StepTask, conduct
 from engineering.flow.ledger import GATE_RECORD, newest_final_go
+from engineering.flow.test.fixtures import TEMPLATES
 from engineering.knowledge import notes
 from engineering.knowledge.notes import CitationRules, parse_notes
 from engineering.quality_gate import record as gate_record
@@ -26,11 +28,17 @@ from engineering.quality_gate.review import SEVERITIES
 from engineering.runtime import outputs
 from engineering.runtime.harness import role_tools, skills
 from engineering.runtime.harness.board_client import BoardRefused
+from engineering.runtime.harness.converse_loop import opening
 from engineering.runtime.harness.main import _restore
-from engineering.runtime.harness.ports import HarnessPortNotWired, PendingHarnessPorts
+from engineering.runtime.harness.ports import (
+    BrokerRefused,
+    HarnessPortNotWired,
+    PendingHarnessPorts,
+    WriteOutcomeUnknown,
+)
 from engineering.runtime.harness.tools import CODE_TOOLS, ToolBox, role_specs
 from engineering.runtime.interface import CODE_ROLES
-from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, world
+from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, FakeBroker, world
 from engineering.runtime.test.test_engineering_coordinator import FakePlanner
 from engineering.skills import model as store_model
 from engineering.workspace import findings, layout
@@ -474,22 +482,67 @@ def test_a_board_refusal_of_a_subtask_is_a_result_and_its_5xx_a_crash(tmp_path):
 FIXERS = f'ws/default/runs/{RUN_ID}/fixer-3/commits/{HARNESS_COMMIT}/_patches/attempt-1/task-2-0a1b2c3d.diff'
 
 
-def test_the_committer_pushes_the_fixers_submitted_patch_through_the_broker(tmp_path):
+def _committer(tmp_path: Path, patch: str = FIXERS) -> Any:
+    """A committer's session whose task names ``patch``, the tree the harness hashed from it ``TREE``."""
     w = world(tmp_path, role='committer')
-    answer = json.loads(w.session.tools.call('push_commit', {'branch': BRANCH, 'tree_hash': TREE, 'patch': FIXERS,
-                                                             'message': 'Keep a slug exactly max_length long'}).text)
+    w.session.context.brief = replace(w.session.context.brief, patch=patch)
+    w.session.context.gate_tree = TREE if patch else ''
+    return w
+
+
+def test_the_committer_pushes_the_fixers_submitted_patch_the_harness_names_through_the_broker(tmp_path):
+    w = _committer(tmp_path)
+    # (7.71.02) The model writes the message alone: the patch, the tree and the branch are the harness's, and a
+    # branch, patch or tree the model names anyway is never taken.
+    answer = json.loads(w.session.tools.call('push_commit', {'message': 'Keep a slug exactly max_length long',
+                                                             'branch': 'main', 'tree_hash': 'abc'}).text)
     operation, run_id, agent, sent = w.broker.writes[0]
+    branch = role_tools.run_branch(RUN_ID)
     assert (operation, run_id, agent, sent['branch'], sent['tree_hash'], sent['patch'], answer['broker']) == (
-        'push_bundle', RUN_ID, 'fixer-1', BRANCH, TREE, FIXERS, {'branch': BRANCH, 'tree_hash': TREE})
-    # Never a snapshot of its own checkout, nor a patch another run, another commit or a checkpoint made.
+        'push_bundle', RUN_ID, 'fixer-1', branch, TREE, FIXERS, {'branch': branch, 'tree_hash': TREE})
+    assert (branch, answer['branch'], answer['tree_hash'], w.session.context.host_writes) == (
+        f'voc-agent/{RUN_ID}/fix', branch, TREE, {'push_commit'})
+    # Never a snapshot of its own checkout, nor anything written under its keys.
     assert (w.runner.calls, w.store.objects) == ([], {})
-    for wrong in ({'branch': 'main'}, {'branch': 'voc-agent/01OTHERRUN/x'}, {'tree_hash': 'abc'}, {'message': ''},
-                  {'patch': FIXERS.replace('fixer-3', 'hunter-2')}, {'patch': FIXERS.replace(RUN_ID, 'OTHER')},
-                  {'patch': FIXERS.replace(HARNESS_COMMIT, 'd' * 40)},
-                  {'patch': FIXERS.replace('task-2-', 'checkpoint-000001-')}, {'patch': ''}):
-        assert w.session.tools.call('push_commit', {'branch': BRANCH, 'tree_hash': TREE, 'message': 'm',
-                                                    'patch': FIXERS, **wrong}).error, wrong
+    assert w.session.tools.call('push_commit', {'message': ''}).error
     assert len(w.broker.writes) == 1
+
+
+@pytest.mark.parametrize('patch', ['', FIXERS.replace('fixer-3', 'hunter-2'), FIXERS.replace(RUN_ID, 'OTHER'),
+                                   FIXERS.replace(HARNESS_COMMIT, 'd' * 40),
+                                   FIXERS.replace('task-2-', 'checkpoint-000001-')],
+                         ids=['none', 'a-hunters', 'another-run', 'another-commit', 'a-checkpoint'])
+def test_a_committer_whose_task_names_no_submitted_patch_pushes_nothing(tmp_path, patch: str):
+    w = _committer(tmp_path, patch)
+    refused = w.session.tools.call('push_commit', {'message': 'm'})
+    assert (refused.error, w.broker.writes, w.session.context.host_writes) == (True, [], set())
+    if not patch:
+        assert 'your task names no submitted patch, so there is nothing to push' in refused.text
+
+
+def test_the_writers_opening_names_what_the_harness_fills_in(tmp_path):
+    w = _committer(tmp_path)
+    w.session.context.brief = replace(w.session.context.brief, issue=7)
+    [_, issue, _, push] = role_tools.writer_parts(w.session.context)
+    assert issue == 'The run starts from issue #7: that is the number read_issue takes.'
+    assert all(name in push for name in (FIXERS, TREE, role_tools.run_branch(RUN_ID), 'only your commit message'))
+    assert role_tools.writer_parts(_committer(tmp_path / 'none', '').session.context)[-1].startswith(
+        'Note: your task names no submitted patch')
+    author = world(tmp_path / 'author', role='pr-author')
+    for mode, said in (('ready', 'ready for review (the run\'s flow sets no draft)'),
+                       ('draft', 'as a draft (the run\'s flow says pr: draft)'), ('', 'or as a draft')):
+        author.session.context.brief = replace(author.session.context.brief, pull_request=mode)
+        [_, opens] = role_tools.writer_parts(author.session.context)
+        assert (role_tools.run_branch(RUN_ID) in opens, said in opens, 'read_gate_record' in opens) == (True, True, True)
+    # The opening says it (7.71.02: the first live run's understander, told no number, tried issue 1).
+    understander = world(tmp_path / 'understander', role='understander')
+    understander.session.context.brief = replace(understander.session.context.brief, issue=7)
+    assert 'The run starts from issue #7: that is the number read_issue takes.' in opening(understander.session)
+    # (a role that reads no issue, or a run with none, is told of none)
+    reviewer = world(tmp_path / 'reviewer', role='pr-reviewer')
+    reviewer.session.context.brief = replace(reviewer.session.context.brief, issue=7)
+    assert (role_tools.writer_parts(reviewer.session.context),
+            role_tools.writer_parts(world(tmp_path / 'fixer', role='fixer').session.context)) == ([], [])
 
 
 #: The fixer's submitted patch, as git wrote it.
@@ -591,22 +644,89 @@ def reviewer_commented(tmp_path: Path) -> Any:
     assert reviewer.broker.writes[0][3] == {'on': 'pull_request', 'number': 7, 'body': 'One blocking finding.'}
     return reviewer
 
-def test_the_pr_author_opens_a_draft_and_the_pr_reviewer_comments_through_the_broker(tmp_path):
+def test_the_pr_author_opens_the_pull_request_and_the_pr_reviewer_comments_through_the_broker(tmp_path):
     author = world(tmp_path / 'author', role='pr-author')
-    opened = json.loads(author.session.tools.call('open_draft_pr', {'branch': BRANCH, 'title': 'Keep long slugs',
+    author.session.context.brief = replace(author.session.context.brief, pull_request='ready')
+    # (7.71.02: from the run's own branch, whatever branch the model names, said as META's pull_request says)
+    opened = json.loads(author.session.tools.call('open_draft_pr', {'title': 'Keep long slugs', 'branch': 'main',
                                                                     'body': 'Fixes the slug cut.'}).text)
     assert (opened['broker']['number'], author.broker.writes[0][0]) == (7, 'open_or_update_draft_pr')
-    assert author.session.tools.call('open_draft_pr', {'branch': 'main', 'title': 't', 'body': 'b'}).error
+    assert author.broker.writes[0][3]['branch'] == role_tools.run_branch(RUN_ID)
+    assert (author.board.progress_seen[-1][3], author.session.context.host_writes) == (
+        'opened the pull request, ready for review', {'open_draft_pr'})
+    assert author.session.tools.call('open_draft_pr', {'title': '', 'body': 'b'}).error
+    draft = world(tmp_path / 'draft', role='pr-author')
+    draft.session.context.brief = replace(draft.session.context.brief, pull_request='draft')
+    assert not draft.session.tools.call('open_draft_pr', {'title': 't', 'body': 'b'}).error
+    assert draft.board.progress_seen[-1][3] == 'opened the pull request, a draft'
     reviewer = reviewer_commented(tmp_path)
     for number in (0, '7', True):
         assert reviewer.session.tools.call('post_comment', {'number': number, 'body': 'b'}).error
+
+
+@dataclass
+class _Refusing(FakeBroker):
+    """The broker refusing every write, or (``unknown``) never answering one."""
+
+    unknown: bool = False
+
+    def push(self, run_id: str, agent_id: str, *, branch: str, patch_key: str, tree_hash: str,
+             message: str) -> dict[str, Any]:
+        del run_id, agent_id, branch, patch_key, tree_hash, message
+        raise WriteOutcomeUnknown if self.unknown else BrokerRefused(409, 'no final-go GO for this tree')
+
+    def open_draft_pr(self, run_id: str, agent_id: str, *, branch: str, title: str, body: str) -> dict[str, Any]:
+        del run_id, agent_id, branch, title, body
+        raise WriteOutcomeUnknown if self.unknown else BrokerRefused(409, 'the run waits for a person\'s go')
+
+
+@pytest.mark.parametrize(('role', 'write'), [('committer', 'push_commit'), ('pr-author', 'open_draft_pr')])
+@pytest.mark.parametrize('broker', ['none asked', 'refused', 'unknown'])
+def test_a_writer_that_finishes_without_its_write_goes_to_a_person(tmp_path, role: str, write: str, broker: str):
+    w = _committer(tmp_path) if role == 'committer' else world(tmp_path, role=role)
+    if broker != 'none asked':
+        w.session.context.broker = _Refusing(unknown=broker == 'unknown')
+        assert w.session.tools.call(write, {'message': 'm', 'title': 't', 'body': 'b'}).error
+    done = w.session.tools.call('finish', {'summary': 'committed, and a draft PR was opened'})
+    said = {'committer': 'finished without pushing', 'pr-author': 'finished without opening the pull request'}[role]
+    assert (w.board.moves[-1][2], said in done.text, done.finished is not None) == ('needs_human', True, True)
+    assert w.board.progress_seen[-1][3].endswith(': a person decides')
+
+
+@pytest.mark.parametrize(('role', 'write'), [('committer', 'push_commit'), ('pr-author', 'open_draft_pr')])
+def test_a_writer_whose_write_was_made_finishes_done_a_continuation_too(tmp_path, role: str, write: str):
+    w = _committer(tmp_path) if role == 'committer' else world(tmp_path, role=role)
+    assert not w.session.tools.call(write, {'message': 'm', 'title': 't', 'body': 'b'}).error
+    # (a continuation's toolbox starts afresh: the write is known from the checkpoint, main._restore)
+    _restore(w.session, cast(Any, w.store), '000002-a.json',
+             {'position': {'writes': sorted(w.session.context.host_writes)}})
+    assert (ToolBox(w.session.context).call('finish', {'summary': 'done'}).text, w.board.moves[-1][2]) == (
+        'finished', 'done')
+
+
+@pytest.mark.parametrize(('role', 'step'), [('committer', 'commit'), ('pr-author', 'pr_author')])
+def test_a_writers_finish_without_its_write_blocks_its_flow_step_for_a_person(tmp_path, role: str, step: str):
+    # The first live Bug fixer run's committer and PR author finished with nothing written, and the run's flow went
+    # on as done to its end. Now the task goes to a person: the conductor reads the step blocked, so the supervisor
+    # sends the run to that step's decision point (``flow:<step>``).
+    w = _committer(tmp_path) if role == 'committer' else world(tmp_path, role=role)
+    w.session.tools.call('finish', {'summary': 'committed, and a draft PR was opened'})
+    [(_, _, ended)] = w.board.moves
+    before = [('hunt', 'hunter'), ('board', 'fixer'), ('gate', 'gate-runner'), ('gate', 'final-go'),
+              *([('commit', 'committer')] if step == 'pr_author' else [])]
+    tasks = (*(StepTask(f'task-{n}', at, by, 'done') for n, (at, by) in enumerate(before, 1)),
+             StepTask('task-9', step, role, ended))
+    plan = conduct(Flow.from_definition(TEMPLATES['bug-hunt-and-fix']),
+                   BoardState(tasks, completed=frozenset({'board'}), verdicts={'gate': 'go'}))
+    assert (ended, plan.steps[step].status, plan.decision_point, plan.steps['pr'].status) == (
+        'needs_human', 'blocked', f'flow:{step}', 'waiting')
 
 
 def test_a_broker_with_no_url_stops_the_session_rather_than_guess(tmp_path):
     w = world(tmp_path, role='pr-author')
     w.session.context.broker = PendingHarnessPorts()
     with pytest.raises(HarnessPortNotWired, match=r'broker\.open_draft_pr'):
-        w.session.tools.call('open_draft_pr', {'branch': BRANCH, 'title': 't', 'body': 'b'})
+        w.session.tools.call('open_draft_pr', {'title': 't', 'body': 'b'})
     pending = PendingHarnessPorts()
     for call in (lambda: pending.push(RUN_ID, 'committer-2', branch=BRANCH, patch_key='k', tree_hash=TREE,
                                       message='m'),

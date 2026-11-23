@@ -27,7 +27,10 @@ bounded) and a patch that does not apply must still be readable; the apply besid
 context are not the file.
 
 ``ending`` is also where a gate runner's STOPPED record (its setup failed, it checked nothing) sends its task to a
-person: a stopped gate says nothing about the code, so it is never a reason to revise the fix.
+person: a stopped gate says nothing about the code, so it is never a reason to revise the fix. Since 7.71.02 it also
+sends a writer's task to a person when the broker made no write for it: the first live Bug fixer run's committer and
+PR author read the broker and finished, their tasks done with nothing pushed and no pull request opened
+(01M83JQWMKAYK9GJB8FBAVZV7E, 2026-11-23).
 """
 from __future__ import annotations
 
@@ -282,11 +285,22 @@ def review_record(context: Built, arguments: Mapping[str, Any]) -> bytes:
                       sort_keys=True).encode()
 
 
+#: (7.71.02) Each writer's one write, and what its finish without it says: the broker answered none as made.
+WRITERS: Final[Mapping[str, tuple[str, str]]] = {
+    'committer': ('push_commit', 'finished without pushing: the broker made no push of the submitted patch'),
+    'pr-author': ('open_draft_pr', 'finished without opening the pull request: the broker opened none'),
+}
+
+
 def ending(context: Built) -> tuple[str, str]:
     """Where a session's ``finish`` moves its task: ``('done', '')``, or ``('needs_human', why)`` when its own record
     says it could not do its job: a reviewer's ``could_not_review`` (7.54.00), a gate runner's STOPPED (its setup
-    failed, it checked nothing: never a reason to revise the code). ``ValueError`` for a reviewer that recorded no
-    review: its finish waits for one."""
+    failed, it checked nothing: never a reason to revise the code), and (7.71.02) a committer or PR author whose one
+    write the broker never answered as made (``AgentContext.host_writes``: refused, never asked, or its outcome
+    unknown). ``ValueError`` for a reviewer that recorded no review: its finish waits for one."""
+    write = WRITERS.get(context.role)
+    if write is not None and write[0] not in context.host_writes:
+        return 'needs_human', write[1]
     if context.role in REVIEW_ROLES:
         verdict, reason = review_verdict(own_record(context, 'review', REVIEW_FILE))
         if not verdict:

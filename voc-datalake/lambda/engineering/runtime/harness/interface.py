@@ -188,10 +188,16 @@ class AgentSession:
                                     'gate': {'ran': context.gate_ran, 'packs': list(context.gate_packs),
                                              'tool_versions': dict(context.gate_tool_versions),
                                              'stop': context.gate_stop},
-                                    # The brief, so a continuation needs no claim of a task it holds already.
+                                    # The brief, so a continuation needs no claim of a task it holds already
+                                    # (7.71.02: the run's facts its claim read too).
                                     'brief': {'title': context.brief.title[:500],
                                               'instructions': context.brief.instructions[:MAX_BRIEF],
-                                              'patch': context.brief.patch[:MAX_PATCH_KEY]}}
+                                              'patch': context.brief.patch[:MAX_PATCH_KEY],
+                                              'issue': context.brief.issue,
+                                              'pull_request': context.brief.pull_request},
+                                    # (7.71.02) The host writes the broker made for this task (a writer's finish
+                                    # reads them: ``review_tools.ending``).
+                                    'writes': sorted(context.host_writes)}
         if context.runs_code and not clean:
             try:
                 # None: the working tree is clean (every change undone), and so is the continuation's.

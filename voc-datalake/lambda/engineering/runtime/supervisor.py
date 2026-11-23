@@ -27,6 +27,10 @@ launcher renews none of their sessions. A spent budget opens a human decision po
 monthly budget (``run.budget_alert``: measured, never a stop). It never switches its own schedule: the handler does, around the runs (``handler.start_run``, and its settling
 after an ``end_run`` and after each tick).
 
+A run whose coordinator finished with nothing of it live ends done when its flow finished, and goes to a person
+otherwise (7.71.02, ``_coordinator_done``). A session that ends, or is continued, has its harness's status read once
+more first (7.71.02, ``_last_count``), so the tokens it used since the tick before are counted, the caps' too.
+
 ``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
 held for a person), Resume (a held agent continued from its checkpoint; refused for a stopped run or a spent
 budget), Shut down (checkpoint, then stopped; stopped anyway when no checkpoint comes), Stop now (ended at
@@ -39,6 +43,8 @@ run: it restarts from its checkpoint).
 from __future__ import annotations
 
 import contextlib
+import functools
+import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
@@ -97,6 +103,11 @@ COORDINATOR_LAUNCH_SECONDS: Final = CLAIM_SECONDS + 60
 COORDINATOR_FILL_LAUNCH_INVOCATIONS: Final = 4
 #: The window when a fill began since the start or Resume (the run's ``cache_fill_at``): that chain, and a minute.
 COORDINATOR_FILL_LAUNCH_SECONDS: Final = COORDINATOR_FILL_LAUNCH_INVOCATIONS * CLAIM_SECONDS + 60
+#: (7.71.02) How long one tick waits, all its booting sessions together, for their checkout commands to end, so the
+#: next starts in the same tick (``Supervisor._boot_wait``); well inside the tick's minute and the function's
+#: ``CLAIM_SECONDS``. And how often a command is polled meanwhile.
+BOOT_WAIT_SECONDS: Final = 40.0
+BOOT_POLL_SECONDS: Final = 1.0
 
 
 class SessionCallFailed(RuntimeError):
@@ -181,12 +192,26 @@ class Supervisor:
     #: tests' default keeps the session's own.
     continuation_generation: Callable[[AgentSession], int | None] = field(
         default=lambda session: session.cache_generation)
+    #: (7.71.02) How long a tick waits for its booting sessions' checkout commands (``BOOT_WAIT_SECONDS``; 0: each
+    #: command waits for the next tick, as before), on the clock and the sleep it waits with.
+    boot_wait: float = BOOT_WAIT_SECONDS
+    clock: Callable[[], float] = time.monotonic
+    sleep: Callable[[float], None] = time.sleep
     #: Runs whose agents are held, as of their last tick (a spent budget, or the flow waiting at a person): no new
     #: session starts for them.
     _held: set[str] = field(default_factory=set, init=False, repr=False)
+    #: When this tick's boot wait ends (``clock``'s time; 0 outside a tick: a signal's move never waits).
+    _boot_until: float = field(default=0.0, init=False, repr=False)
 
     def tick(self, now: int) -> dict[str, int]:
         """One pass over every live session; the number of sessions in each status afterwards."""
+        self._boot_until = self.clock() + self.boot_wait
+        try:
+            return self._tick(now)
+        finally:
+            self._boot_until = 0.0
+
+    def _tick(self, now: int) -> dict[str, int]:
         by_run: dict[str, list[AgentSession]] = {}
         for run_id, every, holds in self.sessions.watched_with_holds():
             # (a session whose stop failed too: every tick stops it again)
@@ -201,6 +226,7 @@ class Supervisor:
             try:
                 self._coordinator_lost(run_id, every, now)
                 self._coordinator_never_launched(run_id, every, holds, now)
+                self._coordinator_done(run_id, every, now)
             except Exception:
                 logger.exception('engineering supervisor: a run\'s coordinator could not be checked',
                                  extra={'run_id': run_id})
@@ -226,11 +252,38 @@ class Supervisor:
             return
         newest = max(coordinators, key=lambda session: (session.task_attempt, session.started_at))
         if newest.status != 'failed':
-            return   # (done, or a person's Shut down or Stop now: never replaced, the run stays theirs)
+            # (done: _coordinator_done's; a person's Shut down or Stop now: never replaced, the run stays theirs)
+            return
         lease = self.board.lease(run_id, newest.task_id)
         if lease is None or lease.attempt != newest.task_attempt or lease.final_state:
             return
         if self.control.is_active(run_id):
+            self.control.needs_human(run_id, 'coordinator')
+
+    def _coordinator_done(self, run_id: str, sessions: list[AgentSession], now: int) -> None:
+        """End the run its coordinator finished (7.71.02): the newest coordinator session ended ``done``, nothing of the
+        run is live or moving, the coordinate task ended done at that coordinator's attempt, and the run is still
+        active. On a finished flow the run ends done (``RunControl.end``; the handler's settling then releases it,
+        starts its retrospective and, with nothing listed, switches the rule off); on any other (a flow still running,
+        one at a person, a run without a flow) it goes to a person (``coordinator``). Never a run left active with
+        nobody planning it and the rule ticking every minute (the first live Bug fixer run, 01M83JQWMKAYK9GJB8FBAVZV7E,
+        whose engineering agent's run never ended, so its lock was never freed). From the sessions the tick read
+        already, then one read of the coordinate task's lease, of the run's row and of its flow's plan."""
+        coordinators = [session for session in sessions if session.role == 'coordinator']
+        if not coordinators or any(session.status in LIVE_STATUSES or session.stop_pending
+                                   or (session.claimed_until or 0) >= now for session in sessions):
+            return
+        newest = max(coordinators, key=lambda session: (session.task_attempt, session.started_at))
+        if newest.status != 'done':
+            return
+        lease = self.board.lease(run_id, newest.task_id)
+        if (lease is None or lease.attempt != newest.task_attempt or lease.final_state != 'done'
+                or not self.control.is_active(run_id)):
+            return
+        if self.control.flow_finished(run_id):
+            logger.info('engineering supervisor: the run\'s flow finished: the run is done', extra={'run_id': run_id})
+            self.control.end(run_id, 'done')
+        else:
             self.control.needs_human(run_id, 'coordinator')
 
     def _coordinator_never_launched(self, run_id: str, sessions: list[AgentSession], holds: dict[str, int],
@@ -568,21 +621,46 @@ class Supervisor:
         return [*self.checkout(session.commit, session.paths, session.cache_generation), harness]
 
     def _boot(self, session: AgentSession, now: int, lease: Lease | None = None) -> AgentSession:
+        """The next boot command once the one running has ended, each checkout command after the other within the
+        tick while its boot wait lasts (7.71.02, ``_boot_wait``), the harness last; a failed command as before."""
         if now - session.started_at >= self.timings.boot_deadline:
             return self._crashed(replace(session, inspect={**session.inspect, 'last_failure': 'the boot took too long'}),
                                  now)
         commands = self._boot_commands(session)
-        vm, running = session.vm, session.exec_id
-        if running is not None:
-            result = self._vm_call(lambda: self.runtime.poll_exec(vm, running))
-            if result is None:
+        while True:
+            if session.exec_id is not None:
+                result = self._vm_call(functools.partial(self.runtime.poll_exec, session.vm, session.exec_id))
+                if result is None:
+                    if self._boot_wait():
+                        continue
+                    return session
+                if not result.ok:
+                    # (every command polled here is the checkout's: the boot's last, the harness, makes it working)
+                    if refused_by_its_tool(result):
+                        return self._checkout_failed(session, commands[session.boot_index], result, now)
+                    return self._crashed(self._with_exit(session, result), now)
+                session = replace(session, boot_index=session.boot_index + 1, exec_id=None)
+            session = self._boot_next(session, commands, now, lease)
+            if session.status != 'booting' or not self._boot_wait():
+                # (its harness started, its task is not its own any more, or the tick's boot wait is spent: the next
+                # tick polls the command it started)
                 return session
-            if not result.ok:
-                # (every command polled here is the checkout's: the boot's last, the harness, makes the agent working)
-                if refused_by_its_tool(result):
-                    return self._checkout_failed(session, commands[session.boot_index], result, now)
-                return self._crashed(self._with_exit(session, result), now)
-            session = replace(session, boot_index=session.boot_index + 1, exec_id=None)
+
+    def _boot_wait(self) -> bool:
+        """Wait ``BOOT_POLL_SECONDS`` for a booting session's command, when the tick's boot wait has that long left
+        (``boot_wait``, from the tick's start: a tick never runs past it for the boots, however many there are). Before
+        7.71.02 each boot command waited for the next tick, so every agent waited about 4 minutes 20 seconds before its
+        harness started (the first live Bug fixer run: about 50 of its 55 minutes). False when it is spent (the next
+        tick polls the command again), and outside a tick."""
+        if self.clock() + BOOT_POLL_SECONDS > self._boot_until:
+            return False
+        self.sleep(BOOT_POLL_SECONDS)
+        return True
+
+    def _boot_next(self, session: AgentSession, commands: list[Command], now: int,
+                   lease: Lease | None) -> AgentSession:
+        """Start the session's next boot command; the harness's (the last) on a lease of its own."""
+        vm = session.vm
         command = commands[session.boot_index]
         last = session.boot_index == len(commands) - 1
         if last and lease is not None and lease.agent_id and not self._refreshed(session):
@@ -734,7 +812,7 @@ class Supervisor:
                           'A Resume of the run fills it, then continues its agents.')
             self.control.needs_human(session.run_id, CHECKOUT_CACHE_POINT)
             return self._end(session, 'paused', now)
-        session = replace(session, cache_generation=generation)
+        session = replace(self._last_count(session), cache_generation=generation)
         if not self._terminate(session):
             # Never a second session beside one still running: the stop is tried again on the next move.
             raise SessionCallFailed('the old session could not be stopped')
@@ -855,9 +933,26 @@ class Supervisor:
         tries the stop again (``_retry_stop``) and counts its time meanwhile (it may still run: its runner says busy)."""
         if session.stop_pending:
             return self._retry_stop(session, now)
+        session = self._last_count(session)
         stopped = self._terminate(session)
         return self._save(replace(session, status=status, exec_id=None, suspended=False, stop_pending=not stopped,
                                   **self._counted(session, now), last_tick_at=now))
+
+    def _last_count(self, session: AgentSession) -> AgentSession:
+        """The session's tokens with its harness's last report (7.71.02), read before its session ends: a harness
+        that exits between two ticks was never read after its last calls (``_observe`` reads only a session still
+        working), and the first live Bug fixer run counted about half of its 858k tokens so, its caps and its health
+        message too. Only a session whose harness started and that runs (a held one runs nothing since it was read);
+        a read that fails is logged and the tokens stay as last read, never keeping the session from its end."""
+        if session.status not in WITH_SESSION or session.harness_at is None or session.suspended:
+            return session
+        try:
+            status = self.runtime.status(session.vm)
+        except Exception:
+            logger.exception('engineering supervisor: a session\'s last tokens could not be read',
+                             extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+            return session
+        return replace(session, tokens=session.reported(status.tokens))
 
     def _retry_stop(self, session: AgentSession, now: int) -> AgentSession:
         """Stop again a session whose stop failed; its time since the last tick is counted either way."""

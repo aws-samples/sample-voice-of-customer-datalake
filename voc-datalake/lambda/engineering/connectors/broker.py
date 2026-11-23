@@ -18,15 +18,18 @@ state) with a plain reason for the run journal.
 Each write is made once per key, the caller's run, agent and attempt, the operation and a digest of what it writes
 (``_once``, 7.02.00): a claim row (``records.WriteClaims``) is taken just before the host call and closed with its outcome, so a repeat of a write
 its caller never heard back from answers the first outcome and is never made twice; a host error leaves the outcome
-unknown (``OutcomeUnknown``, 502), and the write is not made again for that attempt.
+unknown (``OutcomeUnknown``, 502), and the write is not made again for that attempt. A comment on the run's issue and
+its labels are made once per run and issue (7.71.02, ``issue_write_key``: no agent, attempt or digest), so a second
+understander of the run gets the first one's answer back: the first live Bug fixer run's two understanders each
+commented on and labelled its issue.
 
 A pull request opens ready for review (7.50.00, the owner's decision: a person approves it without a "Ready for
 review" click), or as a draft when the run's flow says ``pr: draft`` (META's ``pull_request``, ``RunRecord.draft_pr``);
 an update changes only its title and body, never whether it is a draft, and there is no operation that marks one
 ready, approves it or merges it, in any mode: a person approves and merges on the host, and the body the broker sends
 says so (``MERGE_IS_HUMAN``). Since 7.50.00 the understander also labels its run's issue (``label_issue``: the triage
-labels of ``outputs.TRIAGE_LABELS`` only, at most one kind and one severity, once per attempt; no dial, since a label
-changes no code). Since 7.47.00 a run started from an issue (META's
+labels of ``outputs.TRIAGE_LABELS`` only, at most one kind and one severity, once per run since 7.71.02; no dial, since
+a label changes no code). Since 7.47.00 a run started from an issue (META's
 ``issue``) comments on that issue alone, and its pull request's body names it, ``Fixes #N`` (GitLab: ``Closes #N``)
 added when the agent's body does not reference it (``closing_body``); and voc-engineering-start reads a connection's
 default branch's head and an issue's state (``head``, its operation alone) for a start that resolves its commit. Since 7.09.00, a pull request the host answered
@@ -401,23 +404,22 @@ class Broker:
         _require_branch(branch, run, caller.run_id)
         return connector, run, _ci_record(run, _require_ci(connector, run, branch)), token
 
-    def _first_outcome(self, caller: Caller, operation: str, attempt: int,
-                       *arguments: object) -> dict[str, object] | None:
-        """A repeat's first outcome, before the run's, the dial's and the board's checks (as the runtime answers a
-        repeated launch): a write made answers its answer even after the run moved on, and one whose outcome is not
-        known is ``OutcomeUnknown``; None when there is none (never asked, or refused with nothing written). The
-        role's permission and the connection still come first."""
+    def _first_outcome(self, caller: Caller, operation: str, key: str) -> dict[str, object] | None:
+        """A repeat's first outcome (its write's ``key``: ``write_key``, ``issue_write_key``), before the run's, the
+        dial's and the board's checks (as the runtime answers a repeated launch): a write made answers its answer even
+        after the run moved on, and one whose outcome is not known is ``OutcomeUnknown``; None when there is none
+        (never asked, or refused with nothing written). The role's permission and the connection still come first."""
         if not permitted(caller.role, operation):
             raise NotPermitted(f'The {caller.role} role may not {operation.replace("_", " ")}.')
         if self._connector is None:
             raise NoConnection(NO_CONNECTION)
-        earlier = self._connector.writes.earlier(caller.run_id, write_key(caller, attempt, operation, *arguments))
+        earlier = self._connector.writes.earlier(caller.run_id, key)
         if earlier is None or earlier.state == WRITE_REFUSED:
             return None
         if earlier.state == WRITE_DONE and earlier.result is not None:
-            _repeated(caller, operation, attempt)
+            _repeated(caller, operation, key)
             return earlier.result
-        raise OutcomeUnknown(EARLIER_UNKNOWN)
+        raise OutcomeUnknown(_unknown(key))
 
     def read(self, caller: Caller, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
         connector, run = self._open(caller, READ)
@@ -425,9 +427,12 @@ class Broker:
         return connector.host.read(run.connection_id, kind, target, cursor, run.default_branch)
 
     def post_comment(self, caller: Caller, on: CommentTarget, number: int, body: str, attempt: int = 1) -> str:
-        """Post ``body`` on the run's own issue or pull request; the comment's URL. Once per ``attempt``
-        (``_once``)."""
-        first = self._first_outcome(caller, POST_COMMENT, attempt, on, number, body)
+        """Post ``body`` on the run's own issue or pull request; the comment's URL. Once per ``attempt`` (``_once``) on
+        the pull request; once per run on its issue (7.71.02, ``issue_write_key``: a later caller, another
+        understander, gets the first comment's URL back)."""
+        key = (issue_write_key(number, POST_COMMENT) if on == 'issue'
+               else write_key(caller, attempt, POST_COMMENT, on, number, body))
+        first = self._first_outcome(caller, POST_COMMENT, key)
         if first is not None:
             return str(first['url'])
         connector, run = self._open(caller, POST_COMMENT)
@@ -443,17 +448,20 @@ class Broker:
             _wrote(caller, POST_COMMENT, run, on=on, number=number)
             return {'url': url}
 
-        return str(_once(connector, caller, POST_COMMENT, attempt, comment, on, number, body)['url'])
+        return str(_once(connector, caller, POST_COMMENT, key, comment)['url'])
 
     def label_issue(self, caller: Caller, number: int, labels: tuple[str, ...], attempt: int = 1) -> tuple[str, ...]:
         """Put the triage ``labels`` on the run's own issue ``number`` (the understander's, 7.50.00): the labels
         added. Only ``TRIAGE_LABELS``, one or two, at most one kind (``voc-triage/*``) and one severity
         (``voc-severity/*``); the run active, as every operation; no dial (a label changes no code) and no CI check.
-        Once per ``attempt`` (``_once``)."""
+        Once per run and issue (7.71.02, ``issue_write_key``; before, once per ``attempt``): a later caller gets the
+        labels the first one put."""
+        del attempt   # (the run's, whoever asks: never once per attempt)
         if not permitted(caller.role, LABEL_ISSUE):   # (the role first, before what it asks is judged)
             raise NotPermitted(f'The {caller.role} role may not {LABEL_ISSUE.replace("_", " ")}.')
         asked = _triage_labels(labels)
-        first = self._first_outcome(caller, LABEL_ISSUE, attempt, number, list(asked))
+        key = issue_write_key(number, LABEL_ISSUE)
+        first = self._first_outcome(caller, LABEL_ISSUE, key)
         if first is not None:
             return tuple(str(label) for label in _listed(first.get('labels')))
         connector, run = self._open(caller, LABEL_ISSUE)
@@ -465,7 +473,7 @@ class Broker:
             _wrote(caller, LABEL_ISSUE, run, on='issue', number=number, labels=list(added))
             return {'number': number, 'labels': list(added)}
 
-        done = _once(connector, caller, LABEL_ISSUE, attempt, label, number, list(asked))
+        done = _once(connector, caller, LABEL_ISSUE, key, label)
         return tuple(str(label) for label in _listed(done.get('labels')))
 
     def push_bundle(self, caller: Caller, branch: str, patch: str, tree_hash: str, message: str,
@@ -473,7 +481,8 @@ class Broker:
         """Push the caller's submitted ``patch`` (its key in the workspace) as one commit with ``message`` to one of
         the run's branches, for the tree the board's GO names; the pushed tree's hash. The host moves the branch only
         when the tree it rebuilt from the patch is ``tree_hash``. Once per ``attempt`` (``_once``)."""
-        first = self._first_outcome(caller, PUSH_BUNDLE, attempt, branch, patch, tree_hash, message)
+        key = write_key(caller, attempt, PUSH_BUNDLE, branch, patch, tree_hash, message)
+        first = self._first_outcome(caller, PUSH_BUNDLE, key)
         if first is not None:
             return str(first['tree_hash'])
         connector, run, ci, token = self._open_write(caller, PUSH_BUNDLE, branch)
@@ -503,7 +512,7 @@ class Broker:
             _wrote(caller, PUSH_BUNDLE, run, branch=branch, tree_hash=tree_hash, commits=len(contents.commits))
             return {'branch': branch, 'tree_hash': tree_hash, 'ci': ci, **used}
 
-        return str(_once(connector, caller, PUSH_BUNDLE, attempt, push, branch, patch, tree_hash, message)['tree_hash'])
+        return str(_once(connector, caller, PUSH_BUNDLE, key, push)['tree_hash'])
 
     def open_or_update_draft_pr(self, caller: Caller, branch: str, title: str, body: str,
                                 attempt: int = 1) -> PullRequestRef:
@@ -511,7 +520,8 @@ class Broker:
         ``attempt`` (``_once``). On a fork connection (7.57.00) it goes on to the run's upstream pull request
         (``_upstream_after``): the answer's ``upstream`` says what came of it, and a refusal leaves the run with the
         fork's pull request."""
-        first = self._first_outcome(caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, branch, title, body)
+        key = write_key(caller, attempt, OPEN_OR_UPDATE_DRAFT_PR, branch, title, body)
+        first = self._first_outcome(caller, OPEN_OR_UPDATE_DRAFT_PR, key)
         if first is not None:
             return self._upstream_after(caller, branch, _pull_request(first))
         connector, run, ci, token = self._open_write(caller, OPEN_OR_UPDATE_DRAFT_PR, branch)
@@ -547,8 +557,7 @@ class Broker:
             return {'number': ref.number, 'url': ref.url, 'head': ref.head, 'base': ref.base, 'host': ref.host,
                     'ci': ci, **used}
 
-        done = _pull_request(_once(connector, caller, OPEN_OR_UPDATE_DRAFT_PR, attempt, open_draft, branch, title,
-                                   body))
+        done = _pull_request(_once(connector, caller, OPEN_OR_UPDATE_DRAFT_PR, key, open_draft))
         return self._upstream_after(caller, branch, done) if fork else done
 
     def _upstream_after(self, caller: Caller, branch: str, ref: PullRequestRef) -> PullRequestRef:
@@ -961,14 +970,18 @@ def _pull_request(done: Mapping[str, object]) -> PullRequestRef:
     return PullRequestRef(number=number if isinstance(number, int) else 0, url=str(done['url']))
 
 
-def _repeated(caller: Caller, operation: str, attempt: int) -> None:
+def _repeated(caller: Caller, operation: str, key: str) -> None:
     logger.info('broker write repeated', extra={'operation': operation, 'run_id': caller.run_id,
-                                                 'agent': caller.agent_index, 'attempt': attempt})
+                                                 'agent': caller.agent_index, 'key': key})
 
 
 #: A repeat of a write whose first outcome is not known: never made again.
 EARLIER_UNKNOWN: Final = ('An earlier call of this write, by this agent at this attempt, has no known outcome, so it is '
                           'not made again: the outcome stays unknown until a person checks the host.')
+#: The same for a write made once per run and issue (7.71.02, ``issue_write_key``), whoever made the earlier call.
+EARLIER_ISSUE_UNKNOWN: Final = ("An earlier call of this write on the run's issue, by an agent of this run, has no "
+                                 'known outcome, so it is not made again: the outcome stays unknown until a person '
+                                 'checks the host.')
 #: What the host refused or never reached: nothing written, so the key may be claimed again (a rate limit included:
 #: the host answered it instead of the write, and the broker answers 503 with its Retry-After).
 _NOTHING_WRITTEN: Final = (WriteRefused, NoConnection, NotFound, InvalidTarget, HostBusy)
@@ -982,14 +995,27 @@ def write_key(caller: Caller, attempt: int, operation: str, *arguments: object) 
     return f'{agent_id(caller)}#{attempt}#{operation}#{digest}'
 
 
-def _once(connector: Connector, caller: Caller, operation: str, attempt: int,
-          write: Callable[[], dict[str, object]], *arguments: object) -> dict[str, object]:
-    """``write`` (the host call, after every check) once per key (``write_key``: the caller's run, agent and
-    ``attempt``, the operation and what it writes). The claim is taken before the host call and closed with its
-    outcome: a repeat of a done write answers its first answer, a repeat of one whose outcome is unknown is
-    ``OutcomeUnknown`` (and is not made), and only a refusal that wrote nothing lets the key be claimed again."""
-    return _claimed(connector.writes, caller.run_id, write_key(caller, attempt, operation, *arguments), operation,
-                    write, lambda: _repeated(caller, operation, attempt))
+def issue_write_key(number: int, operation: str) -> str:
+    """The key a write on the run's issue is made once for (7.71.02): the issue and the operation alone (its run is
+    the claim's partition), never the agent, its attempt or what it writes, so the run comments on and labels its issue
+    once, whichever of its agents asks first."""
+    return f'issue#{number}#{operation}'
+
+
+def _unknown(key: str) -> str:
+    """What a repeat of the write at ``key`` whose first outcome is not known is answered."""
+    return EARLIER_ISSUE_UNKNOWN if key.startswith('issue#') else EARLIER_UNKNOWN
+
+
+def _once(connector: Connector, caller: Caller, operation: str, key: str,
+          write: Callable[[], dict[str, object]]) -> dict[str, object]:
+    """``write`` (the host call, after every check) once per ``key`` (``write_key``: the caller's run, agent and
+    attempt, the operation and what it writes; ``issue_write_key``: the run's issue and the operation). The claim is
+    taken before the host call and closed with its outcome: a repeat of a done write answers its first answer, a repeat
+    of one whose outcome is unknown is ``OutcomeUnknown`` (and is not made), and only a refusal that wrote nothing lets
+    the key be claimed again."""
+    return _claimed(connector.writes, caller.run_id, key, operation, write,
+                    lambda: _repeated(caller, operation, key))
 
 
 def _claimed(ledger: WriteLedger, partition: str, key: str, operation: str, write: Callable[[], dict[str, object]],
@@ -1001,7 +1027,7 @@ def _claimed(ledger: WriteLedger, partition: str, key: str, operation: str, writ
         if earlier.state == WRITE_DONE and earlier.result is not None:
             repeated()
             return earlier.result
-        raise OutcomeUnknown(EARLIER_UNKNOWN)
+        raise OutcomeUnknown(_unknown(key))
     try:
         result = write()
     except _NOTHING_WRITTEN:

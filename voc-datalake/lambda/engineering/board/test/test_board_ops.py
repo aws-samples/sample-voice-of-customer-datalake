@@ -266,6 +266,20 @@ def test_the_holder_claiming_again_reads_its_task_and_epoch_until_it_ends(run: B
     assert call(run, FIXER, op='claim', task_id=task_id)[0] == 409   # (an ended task)
 
 
+def test_a_claim_answers_the_runs_issue_and_how_its_pull_request_opens_from_its_meta(run: Board) -> None:
+    # (7.71.02) Its META as the run's start writes them: the issue it starts from, and its pull request's mode.
+    task_id = fixer_task(run)
+    status, body = call(run, FIXER, op='claim', task_id=task_id)
+    assert (status, 'run' in body, body['run']) == (200, True, {})   # (a run with neither: nothing to name)
+    run.client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': 'META'}},
+                           UpdateExpression='SET issue = :issue, pull_request = :mode',
+                           ExpressionAttributeValues={':issue': {'M': {'number': {'N': '7'}, 'host': {'S': 'github'}}},
+                                                      ':mode': {'S': 'ready'}})
+    assert call(run, FIXER, op='claim', task_id=task_id)[1]['run'] == {'issue': 7, 'pull_request': 'ready'}
+    # (only a claim answers them)
+    assert 'run' not in call(run, FIXER, op='renew', task_id=task_id, epoch=1)[1]
+
+
 # --- the claim and the launch recorded on the task --------------------------------------------------------------
 
 def _launch(run: Board, task_id: str) -> str:

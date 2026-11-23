@@ -32,6 +32,13 @@ handed that patch's key (``PATCH_KEY_ENV``) for ``read_patch`` (``review_tools.p
 7.58.01: a model call in flight counts as liveness: the heartbeat reports each request of the Converse loop's call
 that has run a minute, once (``model_wait.py``), and the Bedrock client's timeouts keep a request inside the stall
 rule's window after that line (``BEDROCK_READ_TIMEOUT``).
+
+7.71.02: the committer's checkout has its task's submitted patch applied and hashed as a gate's has
+(``role_tools.JUDGED_ROLES``), so its push names that patch, that tree and the run's own branch with no model's word,
+and its tool server is handed the patch's key (``PATCH_HANDED``). A brief carries the run's issue and how its pull
+request opens (``TaskBrief.issue``, ``pull_request``: the board's claim), which the checkpoint keeps with the host
+writes made (a writer's finish reads them, ``review_tools.ending``), and the tool server takes the pull request's
+mode (``PULL_REQUEST_ENV``).
 """
 from __future__ import annotations
 
@@ -57,6 +64,7 @@ from engineering.runtime.harness.board_client import (
     InboxHttp,
     SignedTransport,
     board_url,
+    run_facts,
 )
 from engineering.runtime.harness.broker_client import BrokerHttp, SignedBroker
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
@@ -74,8 +82,8 @@ from engineering.runtime.harness.ports import (
     Planner,
     TaskBrief,
 )
-from engineering.runtime.harness.review_tools import show_submitted_patch
-from engineering.runtime.harness.role_tools import GATE_ROLES, MAX_RESULT_KEYS, judge_submitted_patch
+from engineering.runtime.harness.review_tools import WRITERS, show_submitted_patch
+from engineering.runtime.harness.role_tools import JUDGED_ROLES, MAX_RESULT_KEYS, judge_submitted_patch
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.seed import MAX_SEED_BYTES, SeedError, check_seed_key
 from engineering.runtime.harness.seed import parse as parse_seed
@@ -96,6 +104,11 @@ FENCE_ENV: Final = 'VOC_FENCE'
 #: The submitted patch a patch reader's task names (7.54.00: ``read_patch``), handed to the CLI's tool server the same
 #: way (it reads no brief), taken only as a submitted patch of the session's run at its commit.
 PATCH_KEY_ENV: Final = 'VOC_PATCH_KEY'
+#: (7.71.02) The roles whose tool server is handed that key: the patch readers, and the committer, which pushes it.
+PATCH_HANDED: Final = PATCH_READERS | {'committer'}
+#: (7.71.02) How the run's pull request opens, as the harness's brief has it (``TaskBrief.pull_request``), handed to
+#: the tool server the same way, for the PR author's ``open_draft_pr``.
+PULL_REQUEST_ENV: Final = 'VOC_PULL_REQUEST'
 _FENCE: Final = re.compile(r'[0-9a-f]{16}\Z')
 HEARTBEAT_SECONDS: Final = 60.0
 #: The run coordinator's role (its stop without ``finish`` is a crash: ``_finished``).
@@ -158,7 +171,8 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
     context = AgentContext(
         run_id=run_id, agent_id=agent_id, task_id=check_id('task_id', task_id), role=env['VOC_ROLE'],
         brief=saved or (ports.board.brief(run_id=run_id, task_id=task_id) if restore
-                        else TaskBrief(task_id, '', '', patch=_handed_patch(env, run_id, commit))),
+                        else TaskBrief(task_id, '', '', patch=_handed_patch(env, run_id, commit),
+                                       **run_facts({'pull_request': env.get(PULL_REQUEST_ENV)}))),
         workspace=Workspace(checkout), runner=runner,
         board=ports.board, broker=ports.broker, store=store, status=StatusReport(home),
         patch_dir=os.path.join(home, '.voc', 'patches'), own_prefix=prefix,
@@ -175,10 +189,11 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         # (a continuation's brief is its checkpoint's, which kept what it recalled in its notes)
         context.brief = replace(context.brief, memory=_recalled(ports.board, context))
     session = AgentSession(context=context, tools=ToolBox(context, skill), inbox=ports.inbox, store=store)
-    if context.role in GATE_ROLES:
+    if context.role in JUDGED_ROLES:
         # A gate judges the submitted patch its task names: applied and hashed by the harness before anything runs
-        # (a continuation's working tree is a patch on that tree, so it goes back on after). The CLI's tool server
-        # shares the checkout the harness set up and takes the tree the harness hashed (``VOC_GATE_TREE``).
+        # (a continuation's working tree is a patch on that tree, so it goes back on after); so does (7.71.02) the
+        # committer, whose push names that tree. The CLI's tool server shares the checkout the harness set up and
+        # takes the tree the harness hashed (``VOC_GATE_TREE``).
         tree = env.get(GATE_TREE_ENV, '')
         context.gate_tree = judge_submitted_patch(context, store) if restore else tree if SHA.fullmatch(tree) else ''
     elif restore:
@@ -195,6 +210,10 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         # names a newer version (``AgentSession.read_direction``).
         session.read_direction()
     return session
+
+
+#: The host writes a checkpoint may name as made (``AgentContext.host_writes``): the writers' own.
+WRITE_TOOLS: Final = frozenset(tool for tool, _ in WRITERS.values())
 
 
 def _handed_patch(env: Mapping[str, str], run_id: str, commit: str) -> str:
@@ -311,7 +330,7 @@ def _saved_brief(restored: tuple[str, dict[str, Any]] | None, task_id: str) -> T
         return None
     patch = brief.get('patch')
     return TaskBrief(task_id=task_id, title=brief['title'], instructions=brief['instructions'],
-                     patch=patch if isinstance(patch, str) else '')
+                     patch=patch if isinstance(patch, str) else '', **run_facts(brief))
 
 
 def _restore(session: AgentSession, store: S3Store, name: str, state: dict[str, Any]) -> None:
@@ -329,6 +348,9 @@ def _restore(session: AgentSession, store: S3Store, name: str, state: dict[str, 
     session.patch_refused = str(refused) if refused else None
     # The outputs written before (role_tools): still recorded on the task when it finishes, never written again.
     results = position.get('results') if isinstance(position, dict) else None
+    # (7.71.02) The host writes made before: a writer's finish counts them as its own (``review_tools.ending``).
+    writes = position.get('writes') if isinstance(position, dict) else None
+    context.host_writes = {name for name in writes if name in WRITE_TOOLS} if isinstance(writes, list) else set()
     context.result_keys = [key for key in results if isinstance(key, str) and key.startswith(context.own_prefix)
                            ][:MAX_RESULT_KEYS] if isinstance(results, list) else []
     # The checks it ran before (a gate record's), as the harness recorded them, never as anything else said them.
@@ -474,7 +496,7 @@ def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
 #: What the tool server a CLI or kiro-cli starts gets of the harness's environment (its ids, its session, its fence).
 TOOL_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT',
                    'VOC_ATTEMPT', 'VOC_BOARD_URL', 'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, FENCE_ENV,
-                   PATCH_KEY_ENV, 'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
+                   PATCH_KEY_ENV, PULL_REQUEST_ENV, 'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
 #: How long the harness's Bedrock client waits for a Converse answer, which comes once the whole reply is written (a
 #: reply of ``converse_loop.MAX_TOKENS`` tokens, thinking included, at 54 tokens a second or more), and for its
 #: connection. 7.58.01: 600 s (900 in 7.58.00, which outlasted the stall rule), so that a request outlives the line the
@@ -567,15 +589,7 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         _start_flusher(session, stop)
         _started(session, args)
         _begun(session)
-        # The tool server's tree is the one this harness hashed, and its patch the one this harness's brief names,
-        # never one the session's start named.
-        tool_env = {name: value for name, value in env.items() if name not in (GATE_TREE_ENV, FENCE_ENV, PATCH_KEY_ENV)}
-        if session.context.gate_tree:
-            tool_env[GATE_TREE_ENV] = session.context.gate_tree
-        if session.context.role in PATCH_READERS and session.context.brief.patch:
-            tool_env[PATCH_KEY_ENV] = session.context.brief.patch
-        tool_env[FENCE_ENV] = session.context.fence
-        ending = adapter_for(args, tool_env, bedrock or _bedrock).run(session)
+        ending = adapter_for(args, _tool_environment(env, session.context), bedrock or _bedrock).run(session)
         if ending == 'done':
             _finished(session)
     except BaseException as error:
@@ -587,6 +601,22 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         if session is not None:
             _ended(session, ending)
     return DONE_EXIT_CODE if ending == 'done' else PAUSED_EXIT_CODE
+
+
+def _tool_environment(env: Mapping[str, str], context: AgentContext) -> dict[str, str]:
+    """What the session's tool server is started with: the harness's environment, with the tree this harness hashed,
+    the patch and the pull request's mode its brief names (7.71.02) and its fence, never ones the session's start
+    named."""
+    tool_env = {name: value for name, value in env.items()
+                if name not in (GATE_TREE_ENV, FENCE_ENV, PATCH_KEY_ENV, PULL_REQUEST_ENV)}
+    if context.gate_tree:
+        tool_env[GATE_TREE_ENV] = context.gate_tree
+    if context.role in PATCH_HANDED and context.brief.patch:
+        tool_env[PATCH_KEY_ENV] = context.brief.patch
+    if context.brief.pull_request:
+        tool_env[PULL_REQUEST_ENV] = context.brief.pull_request
+    tool_env[FENCE_ENV] = context.fence
+    return tool_env
 
 
 def session_model(args: argparse.Namespace) -> str:

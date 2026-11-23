@@ -336,8 +336,9 @@ def test_a_gates_patch_that_does_not_apply_stops_the_session_before_anything_run
     assert [call['repository_code'] for call in runner.calls] == [False, False]
 
 
-def test_the_clis_tool_server_takes_the_tree_its_harness_hashed_and_nothing_else(aws, tmp_path, monkeypatch):
-    s3, _ = aws
+def _tool_servers_handed(s3: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[str, list[dict[str, str]]]:
+    """A fixer's submitted patch stored in the run's workspace, and the environments the adapter is handed for its
+    tool server from now on (the adapter itself the Converse one)."""
     submitted = f'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-3/commits/{"c" * 40}/_patches/attempt-1/t-1.diff'
     s3.put_object(Bucket=BUCKET, Key=submitted, Body=b'diff --git a/x b/x\n')
     handed: list[dict[str, str]] = []
@@ -348,6 +349,12 @@ def test_the_clis_tool_server_takes_the_tree_its_harness_hashed_and_nothing_else
         return harness_main.ConverseAdapter(bedrock(), 'model-a')
 
     monkeypatch.setattr(harness_main, 'adapter_for', adapter)
+    return submitted, handed
+
+
+def test_the_clis_tool_server_takes_the_tree_its_harness_hashed_and_nothing_else(aws, tmp_path, monkeypatch):
+    s3, _ = aws
+    submitted, handed = _tool_servers_handed(s3, monkeypatch)
     env = _env(tmp_path, VOC_ROLE='gate-runner', VOC_AGENT_ID='gate-runner-2', VOC_GATE_TREE='f' * 40)
     main(['run', '--adapter', 'converse', '--model', 'model-a'], env, s3=s3,
          ports=Ports(board=GateBoard(patch=submitted), inbox=FakeInbox(), broker=FakeBroker()),
@@ -359,6 +366,35 @@ def test_the_clis_tool_server_takes_the_tree_its_harness_hashed_and_nothing_else
     assert server.context.gate_tree == 'b' * 40
     assert build_session({**env, 'VOC_GATE_TREE': 'not-a-tree'}, s3=s3, ports=_ports(), runner=FakeRunner(),
                          checkout=str(tmp_path), restore=False).context.gate_tree == ''
+
+
+def test_a_committers_tool_server_pushes_the_patch_and_tree_its_harness_judged_to_the_runs_branch(
+        aws, tmp_path, monkeypatch):
+    # (7.71.02) The committer's checkout has its task's patch applied and hashed as a gate's has; its CLI's or Kiro's
+    # tool server reads no brief, so it is handed that patch, that tree and the pull request's mode, never the ones the
+    # session's start named, and its push names them with the model's message alone.
+    s3, _ = aws
+    submitted, handed = _tool_servers_handed(s3, monkeypatch)
+
+    class Briefed(GateBoard):
+        def brief(self, *, run_id: str, task_id: str) -> TaskBrief:
+            return replace(super().brief(run_id=run_id, task_id=task_id), pull_request='ready')
+
+    env = _env(tmp_path, VOC_ROLE='committer', VOC_AGENT_ID='committer-7', VOC_GATE_TREE='f' * 40,
+               VOC_PATCH_KEY='planted', VOC_PULL_REQUEST='draft')
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], env, s3=s3,
+         ports=Ports(board=Briefed(patch=submitted), inbox=FakeInbox(), broker=FakeBroker()),
+         runner=FakeRunner(tree='b' * 40), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    assert ((handed[0]['VOC_GATE_TREE'], handed[0]['VOC_PATCH_KEY'], handed[0]['VOC_PULL_REQUEST'])
+            == ('b' * 40, submitted, 'ready'))
+    broker = FakeBroker()
+    server = build_session({**env, **handed[0]}, s3=s3, ports=Ports(board=FakeBoard(), inbox=FakeInbox(),
+                                                                    broker=broker),
+                           runner=FakeRunner(), checkout=str(tmp_path), restore=False)
+    assert not server.tools.call('push_commit', {'message': 'Divide with true division'}).error
+    [(_, _, _, pushed)] = broker.writes
+    assert (pushed['patch'], pushed['tree_hash'], pushed['branch'], server.context.brief.pull_request) == (
+        submitted, 'b' * 40, 'voc-agent/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fix', 'ready')
 
 
 def test_a_working_tree_that_does_not_apply_is_a_crash_never_a_silent_loss(aws, tmp_path):
@@ -924,9 +960,18 @@ def test_a_continuation_reads_its_brief_in_its_checkpoint_and_claims_nothing(aws
 
 def test_a_checkpoint_saves_the_brief_for_its_continuation(aws, tmp_path):
     s3, _ = aws
-    key = _session(s3, tmp_path).checkpoint(turn=1)
+    session = _session(s3, tmp_path)
+    # (7.71.02: the run's facts its claim read, and the host writes the broker made, go with it)
+    session.context.brief = replace(session.context.brief, issue=7, pull_request='draft')
+    session.context.host_writes.add('open_draft_pr')
+    key = session.checkpoint(turn=1)
     saved = json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())
-    assert saved['position']['brief'] == {'title': BRIEF.title, 'instructions': BRIEF.instructions, 'patch': ''}
+    assert saved['position']['brief'] == {'title': BRIEF.title, 'instructions': BRIEF.instructions, 'patch': '',
+                                          'issue': 7, 'pull_request': 'draft'}
+    continued = build_session(_env(tmp_path, VOC_ROLE='pr-author', VOC_RESTORE_KEY=key), s3=s3, ports=_ports(),
+                              runner=FakeRunner(), checkout=str(tmp_path))
+    assert (continued.context.brief.issue, continued.context.brief.pull_request, continued.context.host_writes) == (
+        7, 'draft', {'open_draft_pr'})
 
 
 def test_a_fresh_start_saves_its_brief_in_a_first_checkpoint_at_once(aws, tmp_path):
@@ -938,7 +983,7 @@ def test_a_fresh_start_saves_its_brief_in_a_first_checkpoint_at_once(aws, tmp_pa
     saved = json.loads(s3.get_object(Bucket=BUCKET, Key=first)['Body'].read())
     # A continuation after a crash before any save of the agent's restores it: no claim of a task it holds.
     assert (first.removeprefix(CHECKPOINTS)[:6], saved['position']['turn'], set(saved['position']['brief'])) == (
-        '000001', 0, {'title', 'instructions', 'patch'})
+        '000001', 0, {'title', 'instructions', 'patch', 'issue', 'pull_request'})
 
 
 def test_a_session_ending_without_finish_sends_its_task_to_a_person_never_done(aws, tmp_path):

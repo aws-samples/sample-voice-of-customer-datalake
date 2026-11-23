@@ -117,6 +117,18 @@ def test_a_checkpoint_keeps_every_done_id_its_continuation_can_meet_again_and_no
     assert len(cursor['done']) <= KEPT_SEEN
 
 
+@pytest.mark.parametrize(('run', 'facts'), [
+    ({'issue': 7, 'pull_request': 'ready'}, (7, 'ready')), ({'pull_request': 'draft'}, (0, 'draft')),
+    ({'issue': 0, 'pull_request': 'merged'}, (0, '')), ({'issue': True}, (0, '')), ({'issue': '7'}, (0, '')),
+    ('not facts', (0, '')), (None, (0, ''))],
+    ids=['both', 'no-issue', 'off', 'a-bool', 'text', 'not-an-object', 'none'])
+def test_the_brief_takes_the_runs_issue_and_pull_request_mode_from_the_claim(run: object, facts: tuple[int, str]):
+    # (7.71.02: the board's claim answers them from META, and the opening names them)
+    claimed = {**_claimed(), **({'run': run} if run is not None else {})}
+    brief = BoardHttp(Board([claimed]), RUN, 'task-1', 3).brief(run_id=RUN, task_id='task-1')
+    assert (brief.issue, brief.pull_request) == facts
+
+
 def test_a_spec_without_instructions_is_shown_whole_as_the_brief():
     board = Board([_claimed(spec={'issue': 7})])
     assert BoardHttp(board, RUN, 'task-1', 3).brief(run_id=RUN, task_id='task-1').instructions == '{"issue": 7}'

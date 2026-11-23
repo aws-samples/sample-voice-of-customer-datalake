@@ -3,7 +3,8 @@
 Reached through a Lambda function URL with IAM authentication: the caller's role, run and agent come from its
 assumed-role identity (``engineering.connectors.identity``), never from the body. Operations
 (a JSON body with ``op``): ``post`` (a task for a role the caller may post for, within the run's caps), ``claim``
-(an open task of the caller's own role), ``renew`` (the heartbeat: the lease's expiry moves on), ``progress`` (the
+(an open task of the caller's own role; 7.71.02: answered with the run's issue and how its pull request opens,
+``run``), ``renew`` (the heartbeat: the lease's expiry moves on), ``progress`` (the
 holder's progress report: ``{task_id, epoch, step, waiting?}``, published as ``task.progress``), ``move`` (the
 lease holder moves its task on), ``inbox`` (the caller's notices after a seq, ``board/inbox.py``: its own, its
 role's, and the conductor's for the coordinator; it reads, it changes nothing) and ``knowledge`` (``{task_id, package}``: the
@@ -172,6 +173,17 @@ def _person_event(task: Task, run_id: str, subject: str, action: str) -> Message
                    sender=Party('human', subject), to=Party('run', run_id), type=kind,
                    summary=_summary(f'{task.title} ({task.state}): {action} by a person'),
                    at=at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
+
+
+def _run_facts(meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    """What a claim answers of the run beside its task (7.71.02), from its META: the number of the issue it starts from
+    (``issue``, when it has one) and how its pull request opens (``pull_request``: ``ready`` or ``draft``, as its start
+    wrote it). The harness's opening names them, so the understander's ``read_issue`` and the PR author's wording never
+    rest on a model's guess (the first live Bug fixer run's understander tried issue 1, its task naming none)."""
+    row = meta or {}
+    number = row.get('issue', {}).get('M', {}).get('number', {}).get('N', '')
+    mode = row.get('pull_request', {}).get('S', '')
+    return {**({'issue': int(number)} if number.isdigit() else {}), **({'pull_request': mode} if mode else {})}
 
 
 def _worker(task: Task) -> str | None:
@@ -379,6 +391,8 @@ class Outcome:
     duplicate: bool = False
     #: The event that tells of it, when it is not the task's last change (a progress report).
     event: Message | None = None
+    #: (7.71.02) The run's facts a claim answers beside its task (``_run_facts``): none for any other operation.
+    run: Mapping[str, Any] | None = None
 
 
 class BoardApi:
@@ -687,7 +701,8 @@ class BoardApi:
         task_id = _text(body, 'task_id')
         agent = agent_id(caller)
         if op == 'claim':
-            return Outcome(self.store.claim(WORKSPACE, caller.run_id, task_id, role=caller.role, agent=agent))
+            return Outcome(self.store.claim(WORKSPACE, caller.run_id, task_id, role=caller.role, agent=agent),
+                           run=_run_facts(self.store.meta(WORKSPACE, caller.run_id)))
         epoch = _int(body, 'epoch', 0)
         if op == 'renew':
             return Outcome(self.store.renew(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch),
@@ -751,7 +766,8 @@ class BoardApi:
             except PublishError:   # (refused, or the bus's call failed: EventBridgePublisher.publish)
                 logger.exception('board: the bus refused an event', extra={'task_id': task.task_id})
                 return _answer(503, {'error': 'the board changed but its event was not published: retry'})
-        return _answer(200, {'task': task.view(), 'agent': agent_id(caller), 'duplicate': outcome.duplicate})
+        return _answer(200, {'task': task.view(), 'agent': agent_id(caller), 'duplicate': outcome.duplicate,
+                             **({'run': dict(outcome.run)} if outcome.run is not None else {})})
 
 
 @dataclass(frozen=True)

@@ -49,7 +49,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from engineering.board.model import Task
 from engineering.board.store import BoardStore
 from engineering.connectors.identity import WORKSPACE
-from engineering.flow.conductor import DECISION_PREFIX, GO, NO_GO, Flow, FlowError, Plan, conduct
+from engineering.flow.conductor import DECISION_PREFIX, FINISHED, GO, NO_GO, Flow, FlowError, Plan, conduct
 from engineering.flow.ledger import FINAL_GO_ROLE, ReadRecord, newest_ended
 from engineering.flow.record import (
     CACHED_FLOWS,
@@ -69,6 +69,7 @@ from engineering.run_links import issue_link
 from engineering.runtime.checkout import COMMIT_RE
 from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
+from engineering.runtime.outputs import PULL_REQUEST_DRAFT, PULL_REQUEST_READY
 from engineering.runtime.ports import Budget, BudgetAlert, FlowStop
 from engineering.spend import (
     ALERT_CLAIM_SECONDS,
@@ -98,6 +99,8 @@ MAX_TASKS_LIMIT: Final = 10_000
 UNATTRIBUTED: Final = 'unattributed'
 #: The supervisor, as the actor of the decision points it sets.
 SUPERVISOR: Final = 'supervisor'
+#: Why the supervisor ends a run done (7.71.02), on its ``RUNLOG#`` row.
+FLOW_FINISHED: Final = 'the flow finished and its coordinator with it'
 MAX_ACTOR: Final = 200
 #: How often a status change is tried when another write of META races it (a transaction conflict).
 STATUS_TRIES: Final = 3
@@ -283,12 +286,6 @@ def _history(run_id: str, *, status: str, actor: str, now: int, reason: str = ''
         item['via'] = dict(via)
     return item
 
-
-#: How the run's pull request opens (7.50.00, META's ``pull_request``): ready for review unless its flow says
-#: ``pr: draft`` (the flow's settings, its start step's ``data.params``); the broker reads it at the open
-#: (connectors/records.py ``RunRecord.draft_pr``).
-PULL_REQUEST_READY: Final = 'ready'
-PULL_REQUEST_DRAFT: Final = 'draft'
 
 
 def pull_request_mode(definition: str) -> str:
@@ -924,6 +921,14 @@ class TableRunControl:
         """Active, and not stopping (a person's Stop under way never sends the run back to a person)."""
         run = self._runs.get(run_id)
         return run is not None and run.status == 'active' and not run.stopping
+
+    def end(self, run_id: str, status: str) -> None:
+        """The run ended as ``status`` by the supervisor (7.71.02: its flow finished), its ``RUNLOG#`` row saying so."""
+        self._runs.end(run_id, status, now=int(self._clock()), actor=SUPERVISOR, reason=FLOW_FINISHED)
+
+    def flow_finished(self, run_id: str) -> bool:
+        plan = self._runs.flow_plan(run_id)
+        return plan is not None and plan.outcome == FINISHED
 
     def flow_stop(self, run_id: str) -> FlowStop | None:
         """The decision point the run's flow waits at (``flow:<step>``: a human decision point reached, a step blocked

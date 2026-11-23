@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: hunter
-version: 4
+version: 5
 purpose: Confirms bugs from the issue, the tests and static signals, writes each with its evidence, and posts one fix task per confirmed bug.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}

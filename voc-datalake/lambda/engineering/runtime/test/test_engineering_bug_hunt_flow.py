@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -50,6 +51,7 @@ from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import AgentSession
 from engineering.runtime.harness.library_tools import own, with_library
 from engineering.runtime.harness.ports import BrokerRefused
+from engineering.runtime.harness.role_tools import run_branch
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.skills import SKILLS, Skill, harness_argv
 from engineering.runtime.test.broker_stub import AgentSessions, FunctionUrl
@@ -74,8 +76,9 @@ BRANCH = f'voc-agent/{RUN}/fix-slug'
 SLUGS = 'def slugify(text, max_length):\n    words, slug = text.lower().split(), ""\n'
 FIXED = SLUGS.replace('""', '""  # <= max_length')
 #: The agents whose session runs on real git (a checkout of the fixture repository): the fixer, whose submitted patch
-#: is the change, the commit reviewer, which reviews it on its checkout (7.54.00), and the gate's two, which judge it.
-ON_GIT = ('fixer', 'commit-reviewer', 'gate-runner', 'final-go')
+#: is the change, the commit reviewer, which reviews it on its checkout (7.54.00), the gate's two, which judge it, and
+#: (7.71.02) the committer, whose push names the tree its harness hashes from it.
+ON_GIT = ('fixer', 'commit-reviewer', 'gate-runner', 'final-go', 'committer')
 #: The person who started the run (a person's subject), whose way of working the broker's dial reads: AI-driven.
 STARTER = 'person-sub-1'
 #: The aggregates table's stand-in, where the people's ways of working are.
@@ -211,15 +214,25 @@ FINDING = {'file': 'slugs.py', 'line': 2, 'severity': 'blocking', 'rule': 'off-b
            'title': 'A slug exactly max_length long loses its last word', 'evidence': 'the length check uses <'}
 
 
-class ScriptedModel(FakeBedrock):
-    """One agent's Converse model, scripted: its turns in order (each the tool calls it answers with), then text
-    only. Each call must be for the skill's own model, with the skill as its system prompt and exactly its tools."""
+#: One scripted turn: the tool calls it answers with, or (7.71.02) a function of the session's opening, its first
+#: message, that answers them: what a model knows is what it was told.
+Turn = list[dict[str, Any]] | Callable[[str], list[dict[str, Any]]]
 
-    def __init__(self, skill: Skill, turns: list[list[dict[str, Any]]]) -> None:
-        super().__init__(turns)
+
+class ScriptedModel(FakeBedrock):
+    """One agent's Converse model, scripted: its turns in order (each the tool calls it answers with, or a function of
+    the opening that answers them), then text only. Each call must be for the skill's own model, with the skill as
+    its system prompt and exactly its tools."""
+
+    def __init__(self, skill: Skill, turns: Sequence[Turn]) -> None:
+        super().__init__([])
         self.skill = skill
+        self.turns = list(turns)
 
     def converse(self, **request: Any) -> dict[str, Any]:
+        if self.turns:
+            turn = self.turns.pop(0)
+            self._answers.append(turn(str(request['messages'][0]['content'][0]['text'])) if callable(turn) else turn)
         assert request['modelId'] == self.skill.model
         # The platform's rules (the harness's own, or the bundle's as the board served them; the session's fence in
         # them), then the skill's own instructions and examples, then (7.56.00) its role's library skills' list.
@@ -300,7 +313,7 @@ class BugHunt:
             BROKER_URL, True)
         return session.harness, env
 
-    def run_agent(self, agent_id: str, turns: list[list[dict[str, Any]]], monkeypatch: pytest.MonkeyPatch) -> int:
+    def run_agent(self, agent_id: str, turns: Sequence[Turn], monkeypatch: pytest.MonkeyPatch) -> int:
         """The agent's whole session through the harness's entry, with the argv its session row records."""
         argv, env = self.environment(agent_id)
         # (the gate runner's packs: the test's own, one Python root's unit tests)
@@ -410,6 +423,81 @@ def _fixed_tree(flow: BugHunt) -> str:
     return run_git('-C', str(clone), 'write-tree')
 
 
+#: What a writer's opening names (7.71.02, ``role_tools.writer_parts``), as a model reads it: the submitted patch's
+#: key, the tree and the run's branch for the committer; the branch and how its pull request opens for the PR author.
+PATCH_NAMED = re.compile(r'(ws/default/runs/\S+/_patches/\S+\.diff)')
+TREE_NAMED = re.compile(r'\btree ([0-9a-f]{40})\b')
+BRANCH_NAMED = re.compile(r'\b(voc-agent/[^\s,]+)')
+OPENS_NAMED = re.compile(r'\b(ready for review|as a draft)\b')
+
+
+def told(opening: str, **named: re.Pattern[str]) -> dict[str, str]:
+    """What the opening names of each pattern, as a model takes it from its first message; a value it does not name
+    fails the session (the first live run's committer was named none of them)."""
+    found = {name: pattern.search(opening) for name, pattern in named.items()}
+    missing = [name for name, match in found.items() if match is None]
+    assert not missing, f'the opening names no {", ".join(missing)}:\n{opening}'
+    return {name: match.group(1) for name, match in found.items() if match is not None}
+
+
+def _committing(pushed: dict[str, str]) -> Turn:
+    """The committer's first turn: what its opening names of its push (kept in ``pushed``), then the push with its
+    message alone."""
+    def turn(opening: str) -> list[dict[str, Any]]:
+        pushed.update(told(opening, patch=PATCH_NAMED, tree=TREE_NAMED, branch=BRANCH_NAMED))
+        return [use('push_commit', message='Keep a slug exactly max_length long')]
+    return turn
+
+
+def _authoring(opened: dict[str, str]) -> Turn:
+    """The PR author's first turn: what its opening names of its pull request (kept in ``opened``), then the gate
+    record its description quotes."""
+    def turn(opening: str) -> list[dict[str, Any]]:
+        opened.update(told(opening, branch=BRANCH_NAMED, opens=OPENS_NAMED))
+        return [use('read_gate_record')]
+    return turn
+
+
+def _commit_and_open(flow: BugHunt, coordinator: AgentSession, patch: str, tree: str,
+                     monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, str], dict[str, str]]:
+    """After the GO: the committer pushes the fixer's submitted patch, for the tree the gate judged, to the run's
+    branch, and the PR author opens the pull request from it. Each knows them only from its opening (7.71.02: the
+    harness fills them in; the first live run's committer and PR author were told none, and wrote nothing), and the
+    model gives the message, the title and the body alone. What each opening named."""
+    coordinate(coordinator, _post_and_launch('committer', 'commit', 'task-6', 'Commit the slug fix', patch=patch))
+    pushed: dict[str, str] = {}
+    flow.run_agent('committer-7', [_committing(pushed), _done('pushed')], monkeypatch)
+    assert (pushed, statuses(flow.plan())['pr_author']) == ({'patch': patch, 'tree': tree,
+                                                             'branch': run_branch(RUN)}, 'ready')
+    coordinate(coordinator, _post_and_launch('pr-author', 'pr_author', 'task-7', 'Open the draft pull request'))
+    opened: dict[str, str] = {}
+    flow.run_agent('pr-author-8', [
+        _authoring(opened), [use('open_draft_pr', title='Keep a slug exactly max_length long',
+                                 body='Fixes the slug cut (slugs.py:2), tested; the gate said GO.')],
+        _done('#7 opened')], monkeypatch)
+    # (7.71.02: the run's META says ready, whatever the task's own words say, "draft" included)
+    assert opened == {'branch': run_branch(RUN), 'opens': 'ready for review'}
+    assert [json.loads(text.split('\n', 1)[1].rsplit('\n', 1)[0])[0]['tree_hash']
+            for text in flow.results('pr-author-8', '<<<DATA gate-records ')] == [tree]
+    return pushed, opened
+
+
+def _the_run_ends_done_at_the_next_tick(flow: BugHunt) -> None:
+    """The coordinator finished on a finished flow: once its session and every other has ended (the supervisor ends
+    each as its harness exits; the test runs each harness in process, never through its session), the next tick ends
+    the run done and settling no longer lists it (7.71.02: no code ended a run done before, so the first live run
+    stayed active, the rule ticking every minute, its engineering agent's lock held)."""
+    sessions = handler._supervisor().sessions
+    for agent_id in ['coordinator-1', *flow.launcher.launched]:
+        session = sessions.get(RUN, agent_id)
+        assert session is not None
+        sessions.save(replace(session, status='done', exec_id=None))
+    handler.lambda_handler({'action': 'tick'}, None)
+    runs = handler._runs()
+    meta = runs.get(RUN)
+    assert (meta.status if meta else None, RUN in runs.listed()) == ('done', False)
+
+
 def _post_and_launch(role: str, step: str, task: str, title: str, **extra: str) -> list[list[dict[str, Any]]]:
     """The coordinator's two turns for one task of a live step: post it (``extra``: a gate's patch), then launch its
     agent."""
@@ -443,10 +531,11 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     assert flow.run_agent('hunter-2', [
         [use('list_files', path='')], [use('run', argv=['python3', '-m', 'unittest'])],
         [use('write_findings', package='.', shard='slugs', findings=[FINDING])],
+        # (7.71.02: its task names no board step, and the board takes its fix on the one that takes its posts)
         [use('post_subtask', title='Fix the slug cut', instructions='slugs.py:2 uses < where <= is meant.',
-             paths=['slugs.py'], step='board')],
+             paths=['slugs.py'])],
         _done('one bug, one fix posted')], monkeypatch) == 0
-    assert statuses(flow.plan())['hunt'] == 'done'
+    assert (statuses(flow.plan())['hunt'], flow.api.store.task('default', RUN, 'task-2').flow_step) == ('done', 'board')
 
     coordinate(coordinator, [[use('read_board')], [use('launch_agent', task_id='task-2', role='fixer',
                                                        language='python')]])
@@ -504,18 +593,8 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
                for task in ('task-4', 'task-5')]
     assert [(record['verdict'], record['tree_hash']) for record in records] == [('GO', tree), ('GO', tree)]
 
-    # After the GO: the committer pushes the fixer's submitted patch, for the tree the gate judged.
-    coordinate(coordinator, _post_and_launch('committer', 'commit', 'task-6', 'Commit the slug fix', patch=patch))
-    flow.run_agent('committer-7', [
-        [use('push_commit', branch=BRANCH, patch=patch, tree_hash=tree, message='Keep a slug exactly max_length long')],
-        _done('pushed')], monkeypatch)
-    assert statuses(flow.plan())['pr_author'] == 'ready'
-    coordinate(coordinator, _post_and_launch('pr-author', 'pr_author', 'task-7', 'Open the draft pull request'))
-    flow.run_agent('pr-author-8', [
-        [use('open_draft_pr', branch=BRANCH, title='Keep a slug exactly max_length long',
-             body='Fixes the slug cut (slugs.py:2), tested; the gate said GO.')], _done('draft #7 opened')],
-        monkeypatch)
-    assert coordinate(coordinator, [[use('read_flow')], _done('the flow reached its draft pull request')]) == 'done'
+    pushed, opened = _commit_and_open(flow, coordinator, patch, tree, monkeypatch)
+    assert coordinate(coordinator, [[use('read_flow')], _done('the flow reached its pull request')]) == 'done'
 
     # Every step's agent was launched by the board through the runtime, with its role's skill's argv and label.
     assert flow.launcher.launched == ['hunter-2', 'fixer-3', 'commit-reviewer-4', 'gate-runner-5', 'final-go-6',
@@ -542,11 +621,13 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     assert tasks['task-2'].result_keys == (patch,)
     review = next(key for key in tasks['task-3'].result_keys if key.endswith('/_review/attempt-1/review.json'))
     assert json.loads(flow.s3.get_object(Bucket=WORKSPACE_BUCKET, Key=review)['Body'].read())['verdict'] == 'approve'
-    assert flow.host.writes == [('push_bundle', BRANCH, tree), ('open_or_update_draft_pr', BRANCH, tree)]
+    assert flow.host.writes == [('push_bundle', pushed['branch'], pushed['tree']),
+                                ('open_or_update_draft_pr', opened['branch'], tree)]
     assert flow.broker_calls() == [(f'{RUN}.9', 'push_bundle', 409), (f'{RUN}.3', 'push_bundle', 403),
                                    (f'{RUN}.7', 'push_bundle', 200), (f'{RUN}.8', 'open_or_update_draft_pr', 200)]
-    assert [json.loads(text)['broker'] for text in flow.results('pr-author-8', '{"broker"')] == [
+    assert [json.loads(text)['broker'] for text in flow.results('pr-author-8', '{"branch"')] == [
         {'number': PULL_REQUEST.number, 'url': PULL_REQUEST.url}]
+    _the_run_ends_done_at_the_next_tick(flow)
 
 
 def test_an_agent_that_stops_without_finishing_takes_the_run_to_a_person(bug_hunt: BugHunt,

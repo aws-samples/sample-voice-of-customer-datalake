@@ -41,7 +41,7 @@ READ: Final = 'read'
 POST_COMMENT: Final = 'post_comment'
 PUSH_BUNDLE: Final = 'push_bundle'
 OPEN_OR_UPDATE_DRAFT_PR: Final = 'open_or_update_draft_pr'
-#: The understander's labels on its run's issue (7.50.00): ``outputs.TRIAGE_LABELS`` only, once per attempt.
+#: The understander's labels on its run's issue (7.50.00): ``outputs.TRIAGE_LABELS`` only, once per run (7.71.02).
 LABEL_ISSUE: Final = 'label_issue'
 #: The PR author's pull request on a fork's upstream (7.57.00, ``upstream_pr.py``), as the fork connection's owner;
 #: its open of the fork's pull request goes on to it too.

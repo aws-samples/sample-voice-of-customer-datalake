@@ -119,6 +119,40 @@ def test_the_broker_claims_a_write_on_the_table_and_a_repeat_is_never_posted_twi
     assert f'WRITE#{first_key}' in {row['sk']['S'] for row in rows}
 
 
+def test_two_understanders_of_a_run_comment_on_and_label_its_issue_once_the_second_gets_the_first_answer(client: Any):
+    # (7.71.02) The first live Bug fixer run's two understanders each commented on its issue and labelled it: the key
+    # was the agent's. A write on the run's issue is the run's, once, whoever asks first.
+    host = FakeHost()
+    broker = Broker(connector(host=host, writes=WriteClaims(client, TABLE)))
+    first, second = Caller('understander', RUN, 2), Caller('understander', RUN, 5)
+    url = broker.post_comment(first, 'issue', 42, 'A bug: the refund total drops the tax.')
+    assert broker.label_issue(first, 42, ('voc-triage/bug', 'voc-severity/s2')) == ('voc-triage/bug',
+                                                                                     'voc-severity/s2')
+    # The second's own words and labels, at another attempt: nothing is written again, its answer is the first's.
+    assert broker.post_comment(second, 'issue', 42, 'The refund total is wrong.', attempt=2) == url
+    assert broker.label_issue(second, 42, ('voc-triage/bug', 'voc-severity/s3'), attempt=2) == (
+        'voc-triage/bug', 'voc-severity/s2')
+    assert host.writes() == ['post_comment', 'label_issue']
+    rows = client.scan(TableName=TABLE)['Items']
+    assert sorted((row['sk']['S'], row['state']['S']) for row in rows) == [
+        ('WRITE#issue#42#label_issue', WRITE_DONE), ('WRITE#issue#42#post_comment', WRITE_DONE)]
+    # A comment on the run's pull request is still each agent's own, once per attempt and text.
+    reviewer = Caller('pr-reviewer', RUN, 6)
+    broker.post_comment(reviewer, 'pull_request', 7, 'One nit.')
+    broker.post_comment(reviewer, 'pull_request', 7, 'Another nit.')
+    assert host.writes() == ['post_comment', 'label_issue', 'post_comment', 'post_comment']
+
+
+def test_a_second_understanders_write_on_an_issue_whose_first_outcome_is_unknown_is_never_made():
+    writes = FakeWrites()
+    host = FakeHost()
+    broker = Broker(connector(host=host, writes=writes))
+    writes.claims[(RUN, 'issue#42#post_comment')] = WriteClaim(WRITE_UNKNOWN)
+    with pytest.raises(OutcomeUnknown, match="on the run's issue, by an agent of this run"):
+        broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.')
+    assert host.writes() == []
+
+
 def test_a_rate_limited_write_wrote_nothing_is_answered_503_and_may_be_asked_again(client: Any):
     class BusyOnce(FakeHost):
         busy: bool = True

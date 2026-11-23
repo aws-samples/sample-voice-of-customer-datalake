@@ -80,7 +80,6 @@ Out = Callable[[str], None]
 #: An agent's whole session, run while the coordinator waits: the errors it was handed.
 Agent = Callable[[], list[str]]
 RUN = bug_hunt.RUN
-BRANCH = f'voc-agent/{RUN}/fix'
 #: The flow's steps whose work this script plays, in order (the flow's own ids).
 STEPS = ('hunt', 'board', 'gate', 'commit', 'pr_author')
 INSTALLED_NOTHING = ('(the local run installs nothing: the dependency step needs the registries; the test interpreter '
@@ -265,13 +264,14 @@ class LocalRun:
                         pushes=pushes, pull_requests=tuple(self.host.pull_requests), reviews=tuple(reviews),
                         issue=self.issue, pr_setting=str(flow_settings(self.flow['definition'])['pr']))
 
-    def agent(self, agent_id: str, turns: list[list[dict[str, Any]]]) -> list[str]:
+    def agent(self, agent_id: str, turns: Sequence[bug_hunt.Turn]) -> list[str]:
         """``agent_id``'s whole session through the harness's entry on its real checkout; the errors it was handed."""
         argv, env = self.world.environment(agent_id)
         role = env['VOC_ROLE']
-        # (read before the model takes its turns: it answers them one by one, off the list)
-        summary = next((block['toolUse']['input'].get('summary', '') for turn in turns for block in turn
-                        if block.get('toolUse', {}).get('name') == 'finish'), '')
+        # (read before the model takes its turns: it answers them one by one, off the list; a turn that answers from
+        # the opening is not known yet)
+        summary = next((block['toolUse']['input'].get('summary', '') for turn in turns if not callable(turn)
+                        for block in turn if block.get('toolUse', {}).get('name') == 'finish'), '')
         # (the role's bundled template: the skill the runtime's launch resolved and the board's skill op serves)
         template = bundled().skill(role)
         if template is None:
@@ -479,17 +479,33 @@ def _gate(run: LocalRun) -> str:
 
 
 def _deliver(run: LocalRun, tree: str) -> None:
+    """The commit and the pull request. The committer and the PR author know their write's patch, tree and branch only
+    from their opening (7.71.02: the harness fills them in), and write the message, the title and the body alone."""
     patch, title = _patch(run), str(run.case.record['title'])[:200]
+    told: dict[str, str] = {}
+
+    def committing(opening: str) -> list[dict[str, Any]]:
+        told.update(bug_hunt.told(opening, patch=bug_hunt.PATCH_NAMED, tree=bug_hunt.TREE_NAMED,
+                                  branch=bug_hunt.BRANCH_NAMED))
+        return [use('push_commit', message=title)]
+
     run.coordinate(_post('committer', 'commit', 'task-6', 'Commit the fix', patch=patch), ('committer-7', lambda: run.agent(
-        'committer-7', [[use('push_commit', branch=BRANCH, patch=patch, tree_hash=tree, message=title)],
-                        _finish('pushed')])))
+        'committer-7', [committing, _finish('pushed')])))
+    named = ("the fixer's patch and the gate's tree" if (told.get('patch'), told.get('tree')) == (patch, tree)
+             else 'another patch or tree')
+    run.out(f'    the committer was told {named}, on the branch {told.get("branch", "(none)")}')
     run.step_done('commit')
     body = f'{run.case.record["task"]}\n\nTested by the new test; the quality gate said GO.'
     if run.issue is not None:
         body += f'\n\nFixes #{run.issue}'
+
+    def authoring(opening: str) -> list[dict[str, Any]]:
+        told.update(bug_hunt.told(opening, opens=bug_hunt.OPENS_NAMED))
+        return [use('open_draft_pr', title=title, body=body)]
+
     run.coordinate(_post('pr-author', 'pr_author', 'task-7', 'Open the pull request'), ('pr-author-8', lambda: run.agent(
-        'pr-author-8', [[use('open_draft_pr', branch=BRANCH, title=title, body=body)],
-                        _finish('the pull request is open')])))
+        'pr-author-8', [authoring, _finish('the pull request is open')])))
+    run.out(f'    the PR author was told its pull request opens {told.get("opens", "(unsaid)")}')
     run.step_done('pr_author')
 
 

@@ -318,7 +318,10 @@ class TestLockHeal:
             assert failed is not None
             assert failed['status'] == 'failed'
 
-    @pytest.mark.parametrize(('status', 'ended'), [('failed', 'failed'), ('stopped', 'cancelled')])
+    # (7.71.02: ``done``, which the supervisor now ends a run with once its coordinator finished its flow: before, no
+    # run ended done, so an engineering agent's run stayed running and its lock was never freed)
+    @pytest.mark.parametrize(('status', 'ended'), [('done', 'completed'), ('failed', 'failed'),
+                                                   ('stopped', 'cancelled')])
     def test_an_ended_engineering_run_ends_the_agents_run_even_when_disabled(self, status: str, ended: str) -> None:
         with _env() as (env, _feedback, _):
             agent = _agent(env, triggers=[])

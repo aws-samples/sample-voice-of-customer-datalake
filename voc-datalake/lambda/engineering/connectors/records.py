@@ -78,7 +78,7 @@ from engineering.run_links import (
     stored_link,
     writes_pk,
 )
-from engineering.runtime.runs import PULL_REQUEST_DRAFT
+from engineering.runtime.outputs import PULL_REQUEST_DRAFT
 from engineering.workspace.store import WorkspaceStore
 
 _UNREADABLE: Final = "The run's record could not be read; retry."

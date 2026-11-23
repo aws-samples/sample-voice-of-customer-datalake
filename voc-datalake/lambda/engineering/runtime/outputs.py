@@ -28,6 +28,11 @@ GATE_VERDICTS: Final = frozenset({'GO', 'NO-GO', 'STOPPED'})
 FINDING_FILE: Final = re.compile(r'[A-Za-z0-9_./+-]{1,300}\Z')
 #: The branches an agent's push may name: ``voc-agent/<run id>/<name>``.
 AGENT_BRANCH_PREFIX: Final = 'voc-agent/'
+#: How the run's pull request opens (7.50.00, META's ``pull_request``): ready for review unless its flow says
+#: ``pr: draft`` (the flow's settings, its start step's ``data.params``); the broker reads it at the open
+#: (connectors/records.py ``RunRecord.draft_pr``), and since 7.71.02 the PR author's opening says it.
+PULL_REQUEST_READY: Final = 'ready'
+PULL_REQUEST_DRAFT: Final = 'draft'
 #: A gate record's plain names (a gate pack's, a reviewer's) and a STOPPED record's reason, as the harness writes
 #: them and quality_gate/record.py reads them back.
 PLAIN_NAME: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z')

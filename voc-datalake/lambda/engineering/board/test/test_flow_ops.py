@@ -109,6 +109,20 @@ def test_the_hunter_posts_its_fixes_on_the_board_while_it_hunts_within_who_posts
     assert call(bugs, HUNTER, op='post', role='fixer', flow_step='hunt', **fix)[0] == 403
 
 
+def test_a_hunters_fix_that_names_no_step_goes_on_the_board_that_takes_its_posts(bugs: Board) -> None:
+    # (7.71.02) Its task never names the board step: the first live Bug fixer run's hunters had every post refused.
+    fix = {'title': 'Fix the paging bug', 'spec': {'instructions': 'Fix it.'}}
+    status, body = call(bugs, HUNTER, op='post', role='fixer', **fix)
+    assert (status, body['task']['flow_step']) == (200, 'board')
+    # The same post again is the same task (the step it went to is part of what it is).
+    again = call(bugs, HUNTER, op='post', role='fixer', **fix)[1]
+    assert (again['duplicate'], again['task']['task_id']) == (True, body['task']['task_id'])
+    # Only for the role it posts for (the board's own rule still holds), and never the coordinator's posts: the
+    # coordinator plans the flow, so it names its step.
+    assert call(bugs, HUNTER, op='post', role='understander', **fix)[0] == 403
+    assert post(bugs, role='fixer')[0] == 400
+
+
 def test_a_launch_is_only_for_a_task_of_a_live_step(bugs: Board) -> None:
     hunt = post(bugs, role='hunter', flow_step='hunt')[1]['task']['task_id']
     status, answer = call(bugs, COORDINATOR, op='launch', task_id=hunt, role='hunter', language='python')

@@ -950,6 +950,8 @@ def test_a_tick_reads_the_board_and_reports_the_runs_health_on_the_bus_as_the_su
         return original(**kwargs)
 
     monkeypatch.setattr(publisher.client, 'put_events', recording)
+    # (one boot command this tick, 7.71.02: its checkout's clone, from a cache this machine has not, would fail in it)
+    monkeypatch.setattr(handler._supervisor(), 'boot_wait', 0)
     before = handler._supervisor().sessions.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
     handler.lambda_handler({'action': 'tick'}, None)
     after = handler._supervisor().sessions.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')

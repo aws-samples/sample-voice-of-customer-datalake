@@ -12,11 +12,18 @@ these and the tools its skill names, whatever a record says.
   hashed (``AgentContext.gate_tree``): the run's commit with the patch the task names applied, the tree every check
   ran on; the model never types it;
 - ``post_subtask`` (the hunter, the builder): one task on the board, for the one role each posts for (the board's own
-  rule, board/api.py ``POSTERS``: a hunter's fixes, a builder's sub-builds);
+  rule, board/api.py ``POSTERS``: a hunter's fixes, a builder's sub-builds), on the board step it names, else
+  (7.71.02) the one board step that takes the poster's posts (board/flow_guard.py);
 - ``push_commit`` (the committer), ``open_draft_pr`` (the PR author: the run's pull request, ready for review or a draft
   as the run's flow says), ``post_comment`` (the PR reviewer, on the run's pull request; the understander, on the run's
   issue, its lines code spans: ``issues.issue_comment``): the broker's writes, which check the run, the dial, the
-  GO and the write rules first (the understander's comment and labels are on its issue: no dial, 7.50.00);
+  GO and the write rules first (the understander's comment and labels are on its issue: no dial, 7.50.00). Since
+  7.71.02 the harness fills in a writer's identifiers, as ``write_gate_record`` does its tree: the committer's patch
+  is its task's (``TaskBrief.patch``), its tree the one the harness applied that patch to and hashed
+  (``AgentContext.gate_tree``) and its branch the run's own (``run_branch``), the PR author's branch that one
+  too; the model writes only the message, the title and the body (the first live Bug fixer run's committer was shown
+  none of them and pushed nothing). A writer that finishes without its write goes to a person
+  (``review_tools.ending``);
 - the issue's tools (``issues.py``: ``read_issue``, ``write_triage``, ``label_issue``) and the gate's
   (``gate_tools.py``: ``run_gate``, ``read_gate_record``, ``read_findings``), 7.50.00;
 - the tenets' (``tenets_tools.py``: ``read_tenets``, ``write_tenets``), 7.52.00;
@@ -54,6 +61,8 @@ from engineering.runtime.outputs import (
     NOTE_KINDS,
     NOTE_SCHEMA,
     PLAIN_NAME,
+    PULL_REQUEST_DRAFT,
+    PULL_REQUEST_READY,
     SEVERITIES,
     STOP_REASON,
     encode_package,
@@ -74,7 +83,8 @@ ROLE_TOOLS: Final[Mapping[str, frozenset[str]]] = {
     'write_triage': frozenset({'understander'}),
     'label_issue': frozenset({'understander'}),
     'run_gate': frozenset({'gate-runner'}),
-    'read_gate_record': frozenset({'final-go'}),
+    # (7.71.02: the PR author quotes the gate record's section in the pull request it opens)
+    'read_gate_record': frozenset({'final-go', 'pr-author'}),
     'read_findings': frozenset({'final-go'}),
     # (7.52.00: the accepted tenets a triage may cite, and the Tenets flow's draft of them)
     'read_tenets': frozenset({'understander'}),
@@ -96,6 +106,8 @@ MAX_REASON: Final = 400
 #: The roles whose record names the tree the gate judged: the harness applies their task's submitted patch to their
 #: checkout before anything runs and hashes that tree itself (``main.judge_submitted_patch``).
 GATE_ROLES: Final = frozenset({'gate-runner', 'final-go'})
+#: (7.71.02) The roles whose session judges that tree so: the gate's, and the committer, whose push names it.
+JUDGED_ROLES: Final = GATE_ROLES | {'committer'}
 MAX_CLAIM: Final = 400
 MAX_CITATIONS: Final = 8
 #: Lines one shard holds at most (a reader's ``MAX_NOTES``; findings alike).
@@ -268,18 +280,17 @@ def specs(tool_spec: Callable[..., Built], role: str) -> tuple[Built, ...]:
                    'stop_reason': {'type': 'string', 'description': 'Why a STOPPED record stopped (a_reason).'},
                    'reasons': {'type': 'array', 'items': text, 'description': 'The final go\'s reasons.'}},
                   ('verdict',)),
-        tool_spec('post_subtask', f'Post one task on the board for a {POSTS_FOR.get(role, "")} (your task names the '
-                  'board step).', {'title': text, 'instructions': text, 'paths': paths,
-                                   'step': {'type': 'string', 'description': 'The board step your task names.'}},
+        tool_spec('post_subtask', f'Post one task on the board for a {POSTS_FOR.get(role, "")}: the board takes it '
+                  'on the board step that takes your posts.', {
+                      'title': text, 'instructions': text, 'paths': paths,
+                      'step': {'type': 'string', 'description': 'The board step, only when your task names one.'}},
                   ('title', 'instructions')),
-        tool_spec('push_commit', 'Have the broker push the patch a fixer or builder submitted (its key, from your '
-                  'task) as one commit to one of the run\'s branches, for the tree the gate\'s GO names.',
-                  {'branch': {'type': 'string', 'description': f'{AGENT_BRANCH_PREFIX}<run id>/<name>'},
-                   'patch': {'type': 'string', 'description': 'The submitted patch\'s key (…/_patches/….diff).'},
-                   'tree_hash': text, 'message': text}, ('branch', 'patch', 'tree_hash', 'message')),
-        tool_spec('open_draft_pr', 'Have the broker open (or update) the run\'s pull request from a branch: ready for '
-                  'review, or a draft when the run\'s flow says pr: draft.',
-                  {'branch': text, 'title': text, 'body': text}, ('branch', 'title', 'body')),
+        tool_spec('push_commit', 'Have the broker push your task\'s submitted patch as one commit, with your '
+                  'message, to the run\'s branch, for the tree the harness applied it to (your opening names all '
+                  'three).', {'message': text}, ('message',)),
+        tool_spec('open_draft_pr', 'Have the broker open (or update) the run\'s pull request from the run\'s branch, '
+                  'ready for review or a draft as your opening says: you give its title and body.',
+                  {'title': text, 'body': text}, ('title', 'body')),
         tool_spec('post_comment', 'Post a short summary of your triage on the run\'s issue (each line shown as '
                   'written).' if role == 'understander' else 'Post your review as a comment on the run\'s pull '
                   'request.', {'number': {'type': 'integer'}, 'body': text}, ('number', 'body')),
@@ -288,13 +299,6 @@ def specs(tool_spec: Callable[..., Built], role: str) -> tuple[Built, ...]:
             *issues.specs(tool_spec, role, ROLE_TOOLS), *gate_tools.specs(tool_spec, role, ROLE_TOOLS),
             *tenets_tools.specs(tool_spec, role, ROLE_TOOLS), *review_tools.specs(tool_spec, role),
             *library_tools.specs(tool_spec, role))
-
-
-def _branch(context: Built, arguments: Mapping[str, Any]) -> str:
-    branch = bounded(arguments, 'branch', MAX_NAME)
-    if not branch.startswith(f'{AGENT_BRANCH_PREFIX}{context.run_id}/'):
-        raise ValueError(f'a branch of this run is {AGENT_BRANCH_PREFIX}{context.run_id}/<name>')
-    return branch
 
 
 def _number(arguments: Mapping[str, Any]) -> int:
@@ -461,26 +465,76 @@ def judge_submitted_patch(context: Built, store: Built) -> str:
     return tree
 
 
+#: (7.71.02) How the PR author's opening and its tool say the pull request opens, by META's ``pull_request``.
+OPENS_AS: Final[Mapping[str, str]] = {
+    PULL_REQUEST_READY: 'ready for review (the run\'s flow sets no draft): call it ready for review, never a draft, '
+                        'whatever the task\'s words say',
+    PULL_REQUEST_DRAFT: 'as a draft (the run\'s flow says pr: draft)',
+}
+#: What the committer is told when its task names no submitted patch (its opening, and ``push_commit``'s refusal).
+NO_PUSH: Final = ('your task names no submitted patch, so there is nothing to push: finish, and say so (your task then '
+                  'goes to a person)')
+#: The tool's own words for it (``open_draft_pr``'s progress line on the task).
+OPENED_AS: Final[Mapping[str, str]] = {PULL_REQUEST_READY: 'ready for review', PULL_REQUEST_DRAFT: 'a draft'}
+
+
+def run_branch(run_id: str) -> str:
+    """The run's own branch (7.71.02): the one the committer's push and the PR author's pull request name,
+    ``voc-agent/<run id>/fix``. The harness fills it in; the model never types it."""
+    return f'{AGENT_BRANCH_PREFIX}{run_id}/fix'
+
+
+def _push_target(context: Built) -> tuple[str, str, str]:
+    """The committer's push, as the harness fills it in (7.71.02): its task's submitted patch, the tree the harness
+    applied it to and hashed (``judge_submitted_patch``) and the run's own branch; ``ValueError`` when the task names
+    no patch, so there is nothing to push."""
+    if not context.brief.patch or not context.gate_tree:
+        raise ValueError(NO_PUSH)
+    return submitted_patch(context, context.brief.patch), context.gate_tree, run_branch(context.run_id)
+
+
+def writer_parts(context: Built) -> list[str]:
+    """What a writer's opening says of the write the harness fills in (7.71.02), and of the run's issue for a role
+    that reads it; no part for another role."""
+    parts: list[str] = []
+    if context.brief.issue and context.role in ROLE_TOOLS['read_issue']:
+        parts += ['', f'The run starts from issue #{context.brief.issue}: that is the number read_issue takes.']
+    if context.role == 'committer':
+        try:
+            key, tree, branch = _push_target(context)
+        except ValueError:
+            return [*parts, '', f'Note: {NO_PUSH}.']
+        parts += ['', (f'The harness fills in your push: the submitted patch {key}, applied to the run\'s commit, '
+                       f'makes the tree {tree}, which the broker pushes as one commit to the run\'s branch {branch}, '
+                       'once the gate\'s GO names that tree. push_commit takes only your commit message.')]
+    elif context.role == 'pr-author':
+        opens = OPENS_AS.get(context.brief.pull_request, 'ready for review or as a draft, as the run\'s flow says')
+        parts += ['', (f'The broker opens the run\'s pull request from the run\'s branch '
+                       f'{run_branch(context.run_id)}, {opens}. open_draft_pr takes only its title and body; '
+                       'read_gate_record reads the gate record your description quotes.')]
+    return parts
+
+
 def _writer_handlers(context: Built, result: Callable[..., Built]) -> dict[str, Tool]:
-    """The broker's one write of each writer."""
+    """The broker's one write of each writer; each made write is kept on the session (``AgentContext.host_writes``),
+    which its finish reads."""
 
     def push_commit(arguments: Mapping[str, Any]) -> Built:
-        branch, tree = _branch(context, arguments), bounded(arguments, 'tree_hash', 64)
-        if not SHA.fullmatch(tree):
-            raise ValueError('tree_hash is the full git tree id the gate\'s GO names')
-        key = submitted_patch(context, bounded(arguments, 'patch', MAX_NAME))
-        message = bounded(arguments, 'message', MAX_TEXT)
+        key, tree, branch = _push_target(context)
         answer = context.broker.push(context.run_id, context.agent_id, branch=branch, patch_key=key, tree_hash=tree,
-                                     message=message)
+                                     message=bounded(arguments, 'message', MAX_TEXT))
+        context.host_writes.add('push_commit')
         context.written(f'pushed {branch}')   # (made: a board that fails now never crashes the session)
-        return result(json.dumps({'patch': key, 'broker': answer}))
+        return result(json.dumps({'branch': branch, 'patch': key, 'tree_hash': tree, 'broker': answer}))
 
     def open_draft_pr(arguments: Mapping[str, Any]) -> Built:
-        answer = context.broker.open_draft_pr(context.run_id, context.agent_id, branch=_branch(context, arguments),
+        answer = context.broker.open_draft_pr(context.run_id, context.agent_id, branch=run_branch(context.run_id),
                                               title=bounded(arguments, 'title', MAX_NAME),
                                               body=bounded(arguments, 'body', MAX_TEXT))
-        context.written('opened the draft pull request')
-        return result(json.dumps({'broker': answer}))
+        context.host_writes.add('open_draft_pr')
+        opened = OPENED_AS.get(context.brief.pull_request, '')
+        context.written(f'opened the pull request{f", {opened}" if opened else ""}')
+        return result(json.dumps({'branch': run_branch(context.run_id), 'broker': answer}))
 
     def post_comment(arguments: Mapping[str, Any]) -> Built:
         body = bounded(arguments, 'body', MAX_TEXT)

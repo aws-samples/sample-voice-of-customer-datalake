@@ -7,7 +7,7 @@ import http.client
 import io
 import json
 import urllib.error
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from email.message import Message
 from typing import Any, Final
 
@@ -462,22 +462,33 @@ def test_the_fixers_submit_work_reaches_the_broker_client_and_a_refusal_is_a_res
     committer.session.context.agent_id = 'committer-1'
     committer.session.context.broker = BrokerHttp(SignedBroker(URL, 'us-east-1', Credentials(), opener=Replies(409)),
                                                   RUN_ID, 'committer-1', HARNESS_COMMIT)
-    refused = committer.session.tools.call('push_commit', {
-        'branch': f'voc-agent/{RUN_ID}/fix', 'patch': submitted['patch'], 'tree_hash': TREE, 'message': 'Fix it'})
+    # (7.71.02: its task names the patch, and the harness hashed the tree it makes: the model gives the message)
+    committer.session.context.brief = replace(committer.session.context.brief, patch=submitted['patch'])
+    committer.session.context.gate_tree = TREE
+    refused = committer.session.tools.call('push_commit', {'message': 'Fix it'})
     assert (refused.error, refused.text) == (True, 'push_commit refused: the broker refused (409): Forbidden')
 
 
+def _writer(tmp_path: Any, role: str) -> Any:
+    """A writer's session as its broker client sees it: a committer's task names a fixer's patch, and the harness
+    hashed the tree it makes (7.71.02: its push names both, never the model's word)."""
+    w = world(tmp_path, role=role)
+    w.session.context.agent_id = f'{role}-1'
+    if role == 'committer':
+        w.session.context.brief = replace(
+            w.session.context.brief, patch=f'{artifact_prefix(RUN_ID, "fixer-2", HARNESS_COMMIT, 1, "patches")}t.diff')
+        w.session.context.gate_tree = TREE
+    return w
+
+
 @pytest.mark.parametrize(('role', 'tool', 'arguments'), [
-    ('committer', 'push_commit', {'branch': f'voc-agent/{RUN_ID}/fix', 'tree_hash': TREE, 'message': 'Fix it'}),
-    ('pr-author', 'open_draft_pr', {'branch': f'voc-agent/{RUN_ID}/fix', 'title': 't', 'body': 'b'}),
+    ('committer', 'push_commit', {'message': 'Fix it'}),
+    ('pr-author', 'open_draft_pr', {'title': 't', 'body': 'b'}),
     ('pr-reviewer', 'post_comment', {'number': 7, 'body': 'One nit.'}),
 ])
 def test_a_write_whose_outcome_is_unknown_is_told_as_unknown_never_refused_never_a_crash(
         tmp_path, role: str, tool: str, arguments: dict[str, Any]):
-    w = world(tmp_path, role=role)
-    w.session.context.agent_id = f'{role}-1'
-    if tool == 'push_commit':
-        arguments = {**arguments, 'patch': f'{artifact_prefix(RUN_ID, "fixer-2", HARNESS_COMMIT, 1, "patches")}t.diff'}
+    w = _writer(tmp_path, role)
     for reply in (TimeoutError(), CUT, (504, b'')):
         w.session.context.broker = BrokerHttp(SignedBroker(URL, 'us-east-1', Credentials(), opener=Replies(reply)),
                                               RUN_ID, f'{role}-1', HARNESS_COMMIT)
@@ -497,20 +508,17 @@ class FailingBoard(FakeBoard):
 
 
 @pytest.mark.parametrize(('role', 'tool', 'arguments', 'made'), [
-    ('committer', 'push_commit', {'branch': f'voc-agent/{RUN_ID}/fix', 'tree_hash': TREE, 'message': 'Fix it'},
+    ('committer', 'push_commit', {'message': 'Fix it'},
      {'result': {'branch': f'voc-agent/{RUN_ID}/fix', 'tree_hash': TREE}}),
-    ('pr-author', 'open_draft_pr', {'branch': f'voc-agent/{RUN_ID}/fix', 'title': 't', 'body': 'b'},
+    ('pr-author', 'open_draft_pr', {'title': 't', 'body': 'b'},
      {'result': {'number': 7, 'url': 'https://code.example.com/pull/7'}}),
     ('pr-reviewer', 'post_comment', {'number': 7, 'body': 'One nit.'},
      {'result': {'url': 'https://code.example.com/pull/7#comment-1'}}),
 ])
 def test_a_board_that_fails_after_a_write_never_crashes_the_session(tmp_path, role: str, tool: str,
                                                                      arguments: dict[str, Any], made: Any):
-    w = world(tmp_path, role=role)
-    w.session.context.agent_id = f'{role}-1'
+    w = _writer(tmp_path, role)
     w.session.context.board = board = FailingBoard()
-    if tool == 'push_commit':
-        arguments = {**arguments, 'patch': f'{artifact_prefix(RUN_ID, "fixer-2", HARNESS_COMMIT, 1, "patches")}t.diff'}
     for reply, error in ((TimeoutError(), True), (made, False)):   # an unknown outcome, then a write made
         w.session.context.broker = BrokerHttp(SignedBroker(URL, 'us-east-1', Credentials(), opener=Replies(reply)),
                                               RUN_ID, f'{role}-1', HARNESS_COMMIT)

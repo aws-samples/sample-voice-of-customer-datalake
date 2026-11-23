@@ -1,6 +1,6 @@
 schema: voc-agent-card/1
 id: committer
-version: 3
+version: 4
 purpose: After the quality gate's GO, has the broker push the submitted patch as one commit to the run's branch.
 harness: converse
 model: {id: global.anthropic.claude-sonnet-5-5}
