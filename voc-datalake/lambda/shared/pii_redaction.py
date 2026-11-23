@@ -16,9 +16,18 @@ code, or matches the grouped US (``555-123-4567``) or Spanish mobile
 
 Names and postal addresses need a model: Amazon Comprehend ``DetectPiiEntities``
 runs on top of the patterns only when the env var ``PII_COMPREHEND`` is ``1``
-and the text's language is one Comprehend supports for PII (``en``, ``es``). An
-unknown language skips it. ``redact_text`` never raises: when Comprehend fails,
-the pattern result stands and the ``PiiComprehendFailures`` metric counts it.
+and the text's language is one Comprehend supports for PII (``en``, ``es``:
+``comprehend_language``). An unknown language skips it. ``redact_text`` never
+raises: when Comprehend fails, the pattern result stands and the
+``PiiComprehendFailures`` metric counts it. A caller that must not keep a
+pattern-only result of a text the model should have read asks for
+``strict=True`` and gets ``EntityModelFailed`` instead (a redacting import
+refuses that row, shared/ingest_archive.py).
+
+One Comprehend client, with adaptive retries (a throttle backs off instead of
+failing at once): a caller that redacts on several threads builds it first,
+``prepare_comprehend``, so the threads share it (boto3 does not build clients
+safely from several threads at once).
 """
 
 from __future__ import annotations
@@ -31,12 +40,16 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 import boto3
+from botocore.config import Config
 
 from shared.logging import logger, metrics
 
 __all__ = [
+    'EntityModelFailed',
+    'comprehend_language',
     'has_pattern_pii',
     'is_payment_card',
+    'prepare_comprehend',
     'redact_text',
 ]
 
@@ -52,6 +65,13 @@ COMPREHEND_PII_LANGUAGES: Final = frozenset({'en', 'es'})
 _COMPREHEND_MAX_BYTES: Final = 100_000
 _COMPREHEND_TYPES: Final = {'NAME': 'NAME', 'ADDRESS': 'ADDRESS'}
 _COMPREHEND_MIN_SCORE: Final = 0.5
+#: Adaptive retries: the client paces itself after a throttle, so the redacting workers of one import back off together
+#: (botocore's default is 3 legacy attempts).
+_COMPREHEND_ATTEMPTS: Final = 5
+
+
+class EntityModelFailed(Exception):
+    """Comprehend could not read a text a strict redaction needed it for (``redact_text(..., strict=True)``)."""
 
 _EMAIL_RE: Final = re.compile(r'(?<![\w.%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24}\b')
 # Country code, check digits, then 4-character groups (optionally space separated)
@@ -203,12 +223,22 @@ _comprehend_client: list[Any] = []
 
 def _comprehend() -> Any:
     if not _comprehend_client:
-        _comprehend_client.append(boto3.client('comprehend'))
+        # A Config of its own: botocore rewrites a Config's retries when it builds a client from it.
+        _comprehend_client.append(boto3.client('comprehend', config=Config(
+            retries={'mode': 'adaptive', 'max_attempts': _COMPREHEND_ATTEMPTS})))
     return _comprehend_client[0]
 
 
-def _comprehend_language(language: str | None) -> str | None:
-    """The Comprehend PII language code for ``language`` ('en-US' -> 'en'), or None."""
+def prepare_comprehend() -> None:
+    """Build the Comprehend client now when the entity pass is on (``PII_COMPREHEND=1``): before a pool of redacting
+    threads, so they share one client instead of building it at once."""
+    if os.environ.get('PII_COMPREHEND') == '1':
+        _comprehend()
+
+
+def comprehend_language(language: str | None) -> str | None:
+    """The Comprehend PII language code for ``language`` ('en-US' -> 'en'), or None when no text in it reaches
+    Comprehend (the entity pass off, or a language it does not take for PII)."""
     if os.environ.get('PII_COMPREHEND') != '1' or not language:
         return None
     code = language.partition('-')[0].lower()
@@ -246,24 +276,28 @@ def _redact_entities(text: str, language: str, counts: dict[str, int]) -> str:
     return ''.join(pieces)
 
 
-def _with_entities(text: str, language: str | None, counts: dict[str, int]) -> str:
-    code = _comprehend_language(language)
+def _with_entities(text: str, language: str | None, counts: dict[str, int], *, strict: bool) -> str:
+    code = comprehend_language(language)
     if code is None or not text.strip() or len(text.encode('utf-8')) > _COMPREHEND_MAX_BYTES:
         return text
     entity_counts: dict[str, int] = {}
     try:
         redacted = _redact_entities(text, code, entity_counts)
-    except Exception:
-        logger.exception('Comprehend PII detection failed; keeping the pattern redaction')
+    except Exception as exc:
         metrics.add_metric(name='PiiComprehendFailures', unit='Count', value=1)
+        if strict:
+            logger.warning(f'Comprehend PII detection failed ({type(exc).__name__}); the text is not kept')
+            raise EntityModelFailed from exc
+        logger.exception('Comprehend PII detection failed; keeping the pattern redaction')
         return text
     for kind, count in entity_counts.items():
         counts[kind] = counts.get(kind, 0) + count
     return redacted
 
 
-def redact_text(text: str | None, language: str | None = None) -> RedactionResult:
-    """``text`` with personal data replaced by placeholders; never raises.
+def redact_text(text: str | None, language: str | None = None, *, strict: bool = False) -> RedactionResult:
+    """``text`` with personal data replaced by placeholders; never raises, but with ``strict``, where Comprehend
+    should have read it and failed: ``EntityModelFailed`` (see the module docstring).
 
     ``None`` or an empty string comes back as ``''`` with no counts.
     """
@@ -276,4 +310,4 @@ def redact_text(text: str | None, language: str | None = None) -> RedactionResul
         # Defensive: a pattern bug must not let the unredacted text through.
         logger.exception('Pattern PII redaction failed; withholding the text')
         return RedactionResult('[withheld]', {'WITHHELD': 1})
-    return RedactionResult(_with_entities(redacted, language, counts), counts)
+    return RedactionResult(_with_entities(redacted, language, counts, strict=strict), counts)

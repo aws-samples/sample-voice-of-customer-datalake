@@ -74,8 +74,8 @@ guarded against spreadsheet formulas.
 **MCP.** `insights_get_adoption` (`from`/`to` as `YYYY-MM`, by month) calls `GET /metrics/adoption` as the token's
 minter. It is `admin_only`, like `agents_run`: offered only to a token an administrator minted (never a project-pinned
 one) and checked live on every call, after which the MCP Lambda adds the claim naming `insights_get_adoption`, which
-the route admits for its read alone (`project_access.delegated_agent_run_allowed`: a call cleared for `agents_run`
-never reads the view). It reads the deployment's view: inside a workspace a credential is
+the route admits for its read alone (`project_access.delegated_op_allowed`: the one claim, `voc:mcp_op`, names one
+operation, so a call cleared for `agents_run` or an engineering operation never reads the view). It reads the deployment's view: inside a workspace a credential is
 never an admin, so the route refuses it ([mcp.md](mcp.md)).
 
 ## Data
@@ -96,10 +96,11 @@ VocProcessingStack, `lambda/jobs/adoption_rollup/handler.py`, 512 MB, at most 15
 no async retry. An EventBridge rule runs it at **03:05 UTC** (pay per use: no fixed cost); an operator's async invoke
 does the same. Each run rebuilds the last 24 months for the deployment and every active workspace and overwrites the
 scope's one item: the rebuild is idempotent. A scope whose reads AWS refuses is not written (the others are) and the
-run fails after them; the next day rebuilds it. Each scope gets its share of the time left (that time over the scopes
-not done yet), so one large workspace never takes the others' time. A scope cut short is written with
-`complete: false` only where no complete item is stored; otherwise the last complete figures stay, and the page shows
-their `as_of`.
+run fails after them; the next day rebuilds it. The run has one deadline (its 15 minutes less a minute for the writes):
+the deployment comes first and may take all of it, as it is the only scope with projects until projects move into
+workspaces ([multi-workspace.md → Phases](multi-workspace.md#phases), phase 3), so no scope is given a share of the
+time (7.71.01). A scope cut short is written with `complete: false` only where no complete item is stored; otherwise
+the last complete figures stay, and the page shows their `as_of`.
 
 **It never Scans**, reads no feedback and calls no model. Every read is a Query (`lib/stacks/adoption-rollup-worker.ts`
 holds the role to them, and `adoption-rollup-worker.test.ts` pins every statement and what is refused):

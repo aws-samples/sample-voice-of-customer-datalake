@@ -5,8 +5,9 @@
  * the transcript: voiceSessionEnd.ts) and the session's status until the transcript document is there.
  *
  * The end is posted whatever ended the session (End, the relay's limit, a dropped connection), retried, and sent once
- * more with `keepalive` when the page goes away first (`pagehide`), so no session is left for the person to clean up;
- * after every attempt failed, `retryEnd` posts it again.
+ * more with `keepalive` when the page goes away (`pagehide`) after the connection ended but before the end was
+ * recorded; a session still live when the page goes is left to the relay's own finish and the projects API's next offer
+ * (voiceSessionEnd.ts). After every attempt failed, `retryEnd` posts it again.
  *
  * @module pages/ProjectDetail/voice/useVoiceSession
  */

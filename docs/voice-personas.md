@@ -71,7 +71,7 @@ documents; a session row and its counters stay as they are (a few hundred bytes 
 | A person | 5 sessions a day, 3 starts a minute | the projects API, at the start (`VOICEDAY#`, `VOICERATE#` counters, kept 2 days) |
 | The deployment | 300 minutes a month (`voiceMonthlyMinutes`) | the projects API at the start (at least one minute must be left), the relay every minute |
 | The deployment's cost | 5 cents a minute of its month (`MAX_CENTS_PER_MINUTE`, shared/voice_sessions.py): $15 for 300 minutes | the projects API at the start (the month's minutes count as used up), the relay every minute (`budget`) |
-| A session's cost | 5 cents a minute of its limit: 75 cents for 15 minutes | the relay, at every usage event of the model (`budget`) |
+| A session's cost | 5 cents a minute of its limit: 75 cents for 15 minutes | the relay, at every usage event of the model (`session_limit`, as its time limit: never `budget`, which the browser says as the month's minutes used up) |
 | The microphone | 1.5 times real time (16 kHz PCM16, 48,000 bytes a second, plus a second's head start) | the relay: frames past it are dropped and counted (`dropped_frames` in its `session_ended` log line) |
 | Streams at once | 8 (`voiceMaxConcurrent`) | the projects API, at the start (a live set, `VOICEUSE#LIVE`); "Voice is busy" past it |
 
@@ -129,16 +129,19 @@ browser ──HTTPS──▶ projects API (/projects/{proxy+})  ── checks, e
    turn (at 7:45 whatever it is doing), the relay opens a new stream with the same prompt and the conversation so far
    as its chat history (at most 200 KB, oldest turns dropped first), moves the microphone to it and closes the old
    one. The meter sums every stream.
-6. **The meter:** every minute and at the end the relay writes the session's seconds, tokens and cost to its row and
-   adds them to the month's row; the month's new total is the budget check.
+6. **The meter:** every minute and at the end the relay adds the session's seconds and cost since the last write to
+   the month's row, whose new total is the budget check, then writes its seconds, tokens and cost to the session's row
+   (the month first: a session whose row is gone still counts its time and cost to the month).
 7. **The end:** End sends `{type: 'end'}`; the relay closes the stream, writes the last transcript part and the usage,
    marks the row `ended` and answers `ended`; then the browser calls `POST …/voice-sessions/{session}/end`, which stops
    the runtime session if it still runs and starts the transcript job. The browser retries that call (three attempts,
-   then **Try again**), and sends it once more with `keepalive` when the page goes away first (a closed tab: the
-   relay's last unsaved turn may then be missing, as the call stops the runtime). A session whose End never arrived is
-   saved the next time its starter reads it (`GET …/voice-sessions/{session}`) or opens the Talk dialog of any persona
-   of its project (the offer saves the starter's five newest sessions there that ended without End, through the
-   project's pointers); a URL never used ends a minute after it was made. At the time limit or the budget the persona's
+   then **Try again**), and sends it once more with `keepalive` when the page goes away after the session ended but
+   before its End was recorded. A page that goes away while the session is still live sends no End (since 7.71.01):
+   its WebSocket closes, and the relay finishes on its own (the last turns, the meter, the row marked ended), which an
+   End stopping the runtime could cut short mid-write. A session whose End never arrived is saved the next time its
+   starter reads it (`GET …/voice-sessions/{session}`) or opens the Talk dialog of any persona of its project (the
+   offer saves the starter's five newest sessions there that ended without End, through the project's pointers); a URL
+   never used ends a minute after it was made. At the time limit or the budget the persona's
    goodbye, already sent, plays out (at most 10 seconds) before the browser releases the audio.
 
 **Routes** (all on `/projects/{proxy+}`; no API Gateway resource was added):
@@ -236,8 +239,8 @@ mode it is reachable only through AgentCore's endpoint, never directly. It answe
 runtime's 2-minute idle timeout ends a microVM whose conversation is over), `POST /invocations` (400: the relay talks
 over its WebSocket only) and `/ws`. `/ws` is served by the [`ws`](https://github.com/websockets/ws) package
 (8.23.0, MIT, no dependencies; approved by the owner on 2026-11-22, [dependencies.md](dependencies.md)): the
-handshake, the framing, the close handshake and the answer to a WebSocket ping are ws's, and the repository holds no
-hand-written RFC 6455 code. It takes messages of at most 32 KB (close 1009), no compression (`perMessageDeflate`
+handshake, the framing, the close handshake and the answer to a WebSocket ping are ws's, and the relay holds no
+hand-written RFC 6455 code; the dev mock (`frontend/mock-voice.js`, development only) keeps its own framing. It takes messages of at most 32 KB (close 1009), no compression (`perMessageDeflate`
 off), and only valid close codes leave it. ws's optional native add-ons (`bufferutil`, `utf-8-validate`) are left out
 of `relay.js`. The relay logs ids and counts only (never audio, transcript text, the prompt or the evidence), and
 holds the microphone to 1.5 times real time (frames past it are dropped).
@@ -262,7 +265,8 @@ no consent; an MCP credential or an agent; a company persona; the budget used, i
 in a minute; a sixth session in a day; a busy deployment; a URL whose session id or scope was changed (a different
 signature); a second connection to a live session (1008); an activation that fails its condition (1008); evidence
 naming another session or project (1008); a message over 32 KB, in one frame or in fragments (1009); a microphone
-faster than real time (dropped); a session past its cost cap (`budget`); a deleted session row (`error`); the flag
+faster than real time (dropped); a session past its cost cap (`session_limit`); a deleted session row (`error`, its
+time and cost still added to the month); the flag
 refused outside the four Regions, for any other model id or a profile id. `lib/stacks/voice-relay.test.ts` also runs
 the built `relay.js` and checks that it answers `/ping` and a `/ws` handshake.
 
@@ -290,8 +294,9 @@ Deploy to a test account first (us-west-2), then:
 9. **The budget stop:** with `-c voiceMonthlyMinutes=1`, the persona says goodbye and the session ends.
 10. **The idle end:** after a conversation ends, its runtime session ends about 2 minutes later (the idle timeout:
     `/ping` dates its status by its last change), not at the 20-minute `maxLifetime`.
-11. **A closed tab:** closing the page mid-session files the transcript (the `keepalive` End), and a session whose End
-    never arrived is filed when its starter next opens Talk in the project.
+11. **A closed tab:** closing the page mid-session lets the relay finish the session (its row `ended`, the last turns
+    written), and the transcript is filed when its starter next opens Talk in the project (or reads the session);
+    closing it after the session ended but before its End was recorded files it through the `keepalive` End.
 
 ## Roadmap
 

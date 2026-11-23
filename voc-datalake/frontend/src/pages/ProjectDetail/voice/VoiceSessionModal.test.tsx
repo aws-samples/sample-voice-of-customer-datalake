@@ -2,7 +2,9 @@
  * A live voice session in its dialog, on a hand-driven socket and audio: the synthetic label, captions of both sides
  * (the persona's unspoken text muted, then final), a citation, the clock and cost, a notice, End asking the relay,
  * the end posted once, the filed transcript linked and saved to the Library, and each failure said in words (an end
- * that could not be recorded after its retries, with Try again). While it runs, Escape does not close the dialog.
+ * that could not be recorded after its retries, with Try again). While it runs, Escape does not close the dialog, and
+ * the page's going sends no End (the relay finishes the session); once it ended, an End not yet recorded is sent with
+ * keepalive.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, within } from '@testing-library/react'
@@ -126,12 +128,23 @@ describe('VoiceSessionModal', () => {
     vi.useRealTimers()
   })
 
-  it('sends the end with keepalive when the page goes away during the session', () => {
+  it('leaves a session still live to the relay when the page goes away: no End is sent then', () => {
     serve()
     renderSession()
     act(() => { globalThis.dispatchEvent(new Event('pagehide')) })
+    expect(fetchApi.mock.calls.filter(([path]) => path === `${SESSION}/end`)).toStrictEqual([])
+  })
+
+  it('sends the end with keepalive when the page goes away after the session ended, before the end was recorded', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    serve({ [`POST ${SESSION}/end`]: () => { throw new Error('API Error: 503') } })
+    const { socket } = renderSession()
+    relay(socket, { type: 'ended', reason: 'ended_by_person' })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    act(() => { globalThis.dispatchEvent(new Event('pagehide')) })
     const sent = fetchApi.mock.calls.filter(([path]) => path === `${SESSION}/end`)
-    expect(sent.map(([, init]) => init?.keepalive)).toStrictEqual([true])
+    expect(sent.map(([, init]) => init?.keepalive ?? false)).toStrictEqual([false, true])
   })
 
   it('keeps the dialog open on Escape while the session runs, and says a dropped connection', async () => {

@@ -2,6 +2,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from shared import pii_redaction
 from shared.pii_redaction import RedactionResult, redact_text
@@ -147,12 +148,50 @@ def test_comprehend_is_skipped_for_text_over_its_byte_limit(monkeypatch):
     factory.assert_not_called()
 
 
-def test_comprehend_client_is_built_once(monkeypatch):
+def test_comprehend_client_is_built_once_with_adaptive_retries(monkeypatch):
+    """S7 (7.71.01): a throttle backs off (adaptive retries, five attempts) before a text counts as unreadable."""
     monkeypatch.setenv('PII_COMPREHEND', '1')
     with patch.object(pii_redaction.boto3, 'client', return_value=_client([])) as factory:
         redact_text('one', 'en')
         redact_text('two', 'en')
-    factory.assert_called_once_with('comprehend')
+    factory.assert_called_once()
+    assert factory.call_args.args == ('comprehend',)
+    assert factory.call_args.kwargs['config'].retries == {'mode': 'adaptive', 'max_attempts': 5}
+
+
+def test_prepare_comprehend_builds_the_client_only_with_the_flag(monkeypatch):
+    with patch.object(pii_redaction.boto3, 'client', return_value=_client([])) as factory:
+        monkeypatch.delenv('PII_COMPREHEND', raising=False)
+        pii_redaction.prepare_comprehend()
+        factory.assert_not_called()
+        monkeypatch.setenv('PII_COMPREHEND', '1')
+        pii_redaction.prepare_comprehend()
+        redact_text('one', 'en')
+    factory.assert_called_once()
+
+
+def test_a_strict_redaction_raises_where_comprehend_failed_and_keeps_no_pattern_result(monkeypatch):
+    """S7: a throttle that outlasted the retries (or any failure) is ``EntityModelFailed`` under ``strict``; a text
+    Comprehend never reads (another language) is redacted by the patterns as before, strict or not."""
+    monkeypatch.setenv('PII_COMPREHEND', '1')
+    client = MagicMock()
+    client.detect_pii_entities.side_effect = ClientError(
+        {'Error': {'Code': 'ThrottlingException', 'Message': 'Rate exceeded'}}, 'DetectPiiEntities')
+    with patch.object(pii_redaction.boto3, 'client', return_value=client), \
+            patch.object(pii_redaction.metrics, 'add_metric') as add_metric, \
+            pytest.raises(pii_redaction.EntityModelFailed):
+        redact_text('Juan Pérez, juan@example.es', 'es', strict=True)
+    add_metric.assert_called_once_with(name='PiiComprehendFailures', unit='Count', value=1)
+    with patch.object(pii_redaction.boto3, 'client', return_value=client):
+        assert redact_text('Jana Nowak, jana@example.de', 'de', strict=True).text == 'Jana Nowak, [EMAIL]'
+
+
+@pytest.mark.parametrize(('language', 'code'), [('en', 'en'), ('es-MX', 'es'), ('de', None), (None, None)])
+def test_comprehend_language_names_what_reaches_comprehend(monkeypatch, language, code):
+    monkeypatch.setenv('PII_COMPREHEND', '1')
+    assert pii_redaction.comprehend_language(language) == code
+    monkeypatch.delenv('PII_COMPREHEND')
+    assert pii_redaction.comprehend_language(language) is None
 
 
 

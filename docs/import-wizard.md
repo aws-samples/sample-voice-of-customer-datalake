@@ -27,7 +27,9 @@ go straight into it. A paused trial still takes imports: only its plugins and li
    text, the rating, the date and the id, and which are left out.
 4. **First insights.** How many rows were imported (and why any were not), how many are analysed so far, then the
    sentiment split, the top categories, a survey's NPS and three quotes. Links open the dashboard filtered to the
-   source and, for a survey, the form's Results. Five minutes with none analysed: the rows were imported before.
+   source and, for a survey, the form's Results. Five minutes with none of a reviews import analysed: the rows were
+   imported before. A survey's rows are new items each time (the wizard makes a new form for each import), so a slow
+   survey only says it is slow.
 
 ## Detection
 
@@ -110,11 +112,13 @@ Confirm step, so the inferred mapping always passes the import's own check. The 
 - can still be renamed and its questions' wording edited. Its answers lock as any answered form's does.
 
 Its rows are imported by `POST /feedback-forms/{form_id}/import`. The route takes at most 5,000 rows a call, and
-under a redacting source profile (a workspace's default) at most 250 texts: each row's text and its open answers,
-each one Comprehend call with `PII_COMPREHEND=1` (400 `too_many_texts` above it, before any is redacted). The wizard
-sizes its calls by both and by their size: each call's body, as its Lambda event carries it (escaped once more),
-stays under 4 MB of Lambda's 6 MB, the first call with the whole file. A call that fails stops the import; **Import**
-again resumes at that call, into the same form:
+under a redacting source profile (a workspace's default), for a form in a language Comprehend reads (en, es), at most
+250 texts: each row's text, its open answers (a choice's "Other" too) and its hidden values, each one Comprehend call
+with `PII_COMPREHEND=1` (400 `too_many_texts` above it, before any is redacted). A form in another language sends no
+text to Comprehend, so it has no such bound: a German survey goes in a few large calls. The wizard sizes its calls the
+same way and by their size: each call's body, as its Lambda event carries it (escaped once more), stays under 4 MB of
+Lambda's 6 MB, the first call with the whole file. A call that fails stops the import; **Import** again resumes at
+that call, into the same form:
 
 - **Checks.** Each row is checked for its types and ranges like any response: option codes, scales, grid rows and
   columns, the character limits and declared hidden fields. The logic path is **not** enforced and no answer is
@@ -127,10 +131,13 @@ again resumes at that call, into the same form:
   headlines, else `headline: answer` lines. Its metadata names the run (`form_import_run`).
 - **Idempotent.** A row's id is derived from the form and the row's own id (else its file row, its own date and its
   answers, never the call's clock), so importing the same file into the same form again names the same items, and the
-  processor skips them. First insights then finds none analysed: after five minutes it says the rows were imported
-  before, with the dashboard's link.
-- **Redaction.** Under a redacting profile the rows are redacted several at once, and only their own words (the text,
-  the open answers, a choice's "Other") reach Comprehend: their ids, codes and hidden values get the patterns alone.
+  processor skips them.
+- **Redaction.** Under a redacting profile the rows are redacted several at once (one Comprehend client with adaptive
+  retries, built before the workers), and only their own words (the text, the open answers, a choice's "Other", and
+  the hidden values: a column mapped to a hidden field may hold a name) reach Comprehend; their ids and option codes
+  get the patterns alone. A row one of whose texts Comprehend could not read (a throttle that outlasted the retries,
+  or any other failure) is refused, `redaction_unavailable`, which First insights names: it is never kept with the
+  patterns' redaction alone (7.71.01).
 - **Dry run.** `dry_run: true` checks every row and writes nothing.
 - **Who.** Admins acting as themselves only: the workspace's admins in one, never a delegated caller (an MCP token,
   an agent or a plan step). A form that was not imported is a 409 `not_imported`.
@@ -174,7 +181,7 @@ refusals ([import-history.md](import-history.md)).
   rows (to be measured).
 - **Speed.** "About two minutes" to the first insights depends on the processor's concurrency (to be measured on a
   test deployment).
-- **Timeouts.** Each call stays far inside the API's 29 s: at most 250 texts to redact a call, several at once, and
-  the rows sent to the queue ten at a time.
+- **Timeouts.** Each call stays far inside the API's 29 s: at most 250 texts for Comprehend a call, several at once,
+  and the rows sent to the queue ten at a time.
 - **Not included.** Live Google Sheets, a store API (the app review plugins exist), and de-duplication across
   datasets beyond `csv-row-v2`.

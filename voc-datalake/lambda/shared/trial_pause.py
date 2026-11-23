@@ -18,8 +18,11 @@ The pause, ``pause`` (once a trial is due), in this order:
 5. each plugin turned off by the existing audited change (shared/workspace_plugin_settings.py ``set_trial_plugin``: its
    own ``plugin_disabled`` row, reason ``trial_paused``), and each form set ``enabled`` false (one conditional UpdateItem
    of ``enabled``, its save counter one up so an editor's stale copy cannot turn it on again, ``updated_at`` and
-   ``updated_by``);
-6. the live forms read once more: one put live while the pause ran is recorded and turned off the same way.
+   ``updated_by``).
+
+No form is put live once step 1 committed (the publish's own transaction checks ``paused_at``), so the forms read in
+step 2 are all there are. A trial an extension or a conversion is resuming (``resuming_at``, shared/trials.py) is not
+due: its resume is not undone.
 
 Nothing is deleted but the plugins' own ``PLUGIN#{plugin}`` / ``WS#{ws}`` rows, which ARE the existing disable (a
 present row means enabled; the ingestors' tick fans out over them). No form, response, feedback item, project, file or
@@ -29,8 +32,9 @@ The resume, ``resume`` (an extension or a conversion, the workspaces API, a plat
 ``trial.paused`` the deployment still offers turned back on (``plugin_enabled``, the platform admin's, reason the
 route's) and each form of it set ``enabled`` true while it is still there, still off and still publishable: a form
 whose theme is unreadable or whose texts show a placeholder as written (an edit while it was paused) stays off, and
-the answer names it (``skipped``, its id and the publish rule's code) for its editors to fix and publish. An imported
-form is never live, so it is never paused, and a form someone deleted meanwhile stays deleted.
+the answer names it (``skipped``, its id, its name and the publish rule's code) for its editors to fix and publish.
+The extend and convert routes answer it (``resumed``), and the console shows it. An imported form is never live, so it
+is never paused, and a form someone deleted meanwhile stays deleted.
 """
 from __future__ import annotations
 
@@ -49,7 +53,7 @@ from shared.logging import logger
 from shared.onboarding import forms_partition
 from shared.platform_workspaces import LISTING_PK
 from shared.timestamps import now_iso, parse_iso
-from shared.trial_state import PAUSED, PAUSED_AT, TRIAL, at_second, is_paused
+from shared.trial_state import PAUSED, PAUSED_AT, RESUMING_AT, TRIAL, at_second, is_paused
 from shared.trials import TRIAL_PAUSED_KIND, audit_trial, expiry_of, is_converted, read_meta, save_trial
 from shared.workspace import ACTIVE
 from shared.workspace_ids import is_workspace_id
@@ -172,8 +176,8 @@ def _due(ws: str, meta: Mapping[str, Any], trial: object, now: datetime) -> str 
         # fixes it (an extension writes a new end).
         logger.warning('Trial with no readable expires_at: not paused', extra={'workspace_id': ws})
         return NO_EXPIRY
-    if expiry > now:
-        # An extension moved the end since the listing was read.
+    if expiry > now or isinstance(trial.get(RESUMING_AT), str):
+        # An extension moved the end since the listing was read, or one (or a conversion) is turning the trial back on.
         return NOT_DUE
     return None
 
@@ -209,25 +213,13 @@ def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
     plugins_off = sum(set_trial_plugin(tables.workspaces, ws, plugin, False, actor, TRIAL_PAUSED_KIND)
                       for plugin in plugins)
     forms_off = sum(set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at) for form_id in live)
-    # Once more: a form put live between the read above and paused_at's commit (its publish read the trial first) is
-    # recorded and turned off too.
-    late = [form_id for form_id in live_forms(forms, scope) if form_id not in live]
-    if late:
-        live = [*live, *late]
-        save_trial(tables.workspaces, ws, {**meta, 'trial': trial}, {**trial, PAUSED: {'plugins': plugins, 'forms': live}})
-        forms_off += sum(set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at) for form_id in late)
     logger.info('Trial paused', extra={'workspace_id': ws, 'plugins': plugins_off, 'forms': forms_off})
     return {'outcome': PAUSED_NOW, 'plugins': plugins_off, 'forms': forms_off}
 
 
-def publish_problem(forms: WorkspaceTable, scope: WorkspaceScope, form_id: str) -> str | None:
-    """Why form ``form_id`` may not be put live again (the publish rules of any write that turns a form live,
-    shared/forms_v2.py ``validate_publishable`` and ``validate_placeholders``): the rule's code, ``gone`` for a form
-    deleted meanwhile, or None when it may."""
-    item = forms.get_item({'pk': forms_partition(scope), 'sk': f'{_FORM_PREFIX}{form_id}'},
-                          ConsistentRead=True).get('Item')
-    if not isinstance(item, Mapping):
-        return 'gone'
+def _publish_problem(item: Mapping[str, Any]) -> str | None:
+    """Why the stored form ``item`` may not be put live again (the publish rules of any write that turns a form live,
+    shared/forms_v2.py ``validate_publishable`` and ``validate_placeholders``): the rule's code, or None when it may."""
     try:
         fv2.validate_publishable(item.get('theme'), live=True)
         fv2.validate_placeholders(fv2.definition_of(item), live=True)
@@ -239,7 +231,7 @@ def publish_problem(forms: WorkspaceTable, scope: WorkspaceScope, form_id: str) 
 def resume(tables: PauseTables, ws: str, trial: Mapping[str, Any], actor: str, reason: str) -> dict[str, Any]:
     """Turn back on what the pause recorded (see the module docstring): each plugin the deployment still offers, each
     form still there, still off and still publishable, as ``actor`` (a platform admin) for ``reason``; how many of each
-    were turned on, and the forms left off (``skipped``: ``[{form_id, code}]``)."""
+    were turned on, and the forms left off (``skipped``: ``[{form_id, name, code}]``)."""
     stored = trial.get(PAUSED)
     recorded: Mapping[str, Any] = stored if isinstance(stored, Mapping) else {}
     offered = set(workspace_ceiling(tables.ceiling))
@@ -253,11 +245,16 @@ def resume(tables: PauseTables, ws: str, trial: Mapping[str, Any], actor: str, r
     skipped: list[dict[str, str]] = []
     forms_on = 0
     for form_id in form_ids:
-        problem = publish_problem(forms, scope, form_id)
+        item = forms.get_item({'pk': forms_partition(scope), 'sk': f'{_FORM_PREFIX}{form_id}'},
+                              ConsistentRead=True).get('Item')
+        if not isinstance(item, Mapping):
+            # Deleted meanwhile: it stays deleted.
+            continue
+        problem = _publish_problem(item)
         if problem is None:
             forms_on += set_form_live(forms, scope, form_id, True, actor, at)
-        elif problem != 'gone':
-            skipped.append({'form_id': form_id, 'code': problem})
+        else:
+            skipped.append({'form_id': form_id, 'name': str(item.get('name') or '')[:200], 'code': problem})
     logger.info('Trial resumed', extra={'workspace_id': ws, 'plugins': plugins_on, 'forms': forms_on,
                                         'skipped': len(skipped)})
     return {'plugins': plugins_on, 'forms': forms_on, 'skipped': skipped}

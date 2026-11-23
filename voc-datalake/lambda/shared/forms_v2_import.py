@@ -30,16 +30,21 @@ from shared import forms_v2_responses as fresp
 from shared.exceptions import ValidationError
 from shared.import_dates import DATE_ORDERS, DEFAULT_DATE_ORDER
 from shared.import_survey import ImportedRow, row_answers
+from shared.pii_redaction import comprehend_language
 
 __all__ = ['ImportRequest', 'check_redaction_budget', 'file_key_of', 'free_text_paths', 'import_request', 'read_rows',
-           'response_message']
+           'refuse_unredacted', 'response_message']
 
 MAX_IMPORT_ROWS: Final = 5_000
-#: The free texts (each row's text, then each open answer) one call may hold under a redacting policy: each is one
-#: Comprehend call with ``PII_COMPREHEND=1`` (shared/pii_redaction.py), so a call stays well inside API Gateway's 29 s
-#: (the wizard sizes its calls by it: frontend wizardMapping.ts ``MAX_REDACTED_TEXTS``).
+#: The free texts (each row's text, its open answers and a choice's Other, its hidden values) one call may hold under a
+#: redacting policy in a language Comprehend reads: each is one Comprehend call with ``PII_COMPREHEND=1``
+#: (shared/pii_redaction.py), so a call stays well inside API Gateway's 29 s (the wizard sizes its calls by it:
+#: frontend wizardMapping.ts ``MAX_REDACTED_TEXTS``). A form in another language makes no Comprehend call: no bound.
 MAX_REDACTED_TEXTS: Final = 250
 TOO_MANY_TEXTS: Final = 'too_many_texts'
+#: A row refused because Comprehend could not read one of its texts under a redacting policy (after its retries): it
+#: is never kept with the patterns' redaction alone (the same row sent again to the same form is taken then).
+REDACTION_UNAVAILABLE: Final = 'redaction_unavailable'
 #: The original file a call carries: 2 MB, so the call (rows beside it, JSON-escaped twice in the Lambda event) stays
 #: inside Lambda's 6 MB synchronous payload.
 MAX_FILE_BYTES: Final = 2 * 1024 * 1024
@@ -200,27 +205,56 @@ def message_id(form_id: str, imported: ImportedRow, number: int) -> str:
 
 
 def free_text_paths(definition: Mapping[str, Any]) -> frozenset[tuple[str, ...]]:
-    """Where a response's own words sit in its message's metadata: an open answer, a choice's "Other" (the only
-    metadata the redact policy's entity model reads, shared/source_policy.py ``FreeText``; never an id or a code)."""
+    """Where a response's own words may sit in its message's metadata: an open answer, a choice's "Other", a hidden
+    value (an export's column mapped to a hidden field may hold a name) — the only metadata the redact policy's entity
+    model reads (shared/source_policy.py ``FreeText``; never an option code, an id the form made or its name)."""
     paths: set[tuple[str, ...]] = set()
     for question in definition.get('questions') or []:
         if question['type'] == fv2.OPEN_TEXT:
             paths.add(('form_answers', question['id']))
         elif question['type'] in fv2.SELECT_TYPES:
             paths.add(('form_answers', question['id'], 'other'))
+    for hidden in definition.get('hidden_fields') or []:
+        paths.add(('form_hidden', str(hidden['id'])))
     return frozenset(paths)
 
 
+def _row_texts(questions: Mapping[str, Mapping[str, Any]], row: ImportedRow) -> int:
+    """The texts of one row the entity model reads: its text, each free answer (``fresp.free_text``) and each
+    hidden value."""
+    answers = sum(1 for qid, answer in row.response.answers.items() if fresp.free_text(questions[qid], answer))
+    # (a response's hidden values are never blank: shared/forms_v2_responses.py drops those)
+    return 1 + answers + len(row.response.hidden)
+
+
 def check_redaction_budget(definition: Mapping[str, Any], accepted: Sequence[tuple[int, ImportedRow]]) -> None:
-    """Under a redacting policy: a 400 ``too_many_texts`` when the accepted rows hold more than
-    ``MAX_REDACTED_TEXTS`` free texts (each row's text and its open answers), before any is redacted."""
+    """Under a redacting policy: a 400 ``too_many_texts`` when the accepted rows, in a language Comprehend reads
+    (shared/pii_redaction.py ``comprehend_language``), hold more than ``MAX_REDACTED_TEXTS`` free texts (each row's
+    text, its free answers and its hidden values), before any is redacted. Rows in another language make no
+    Comprehend call, so they are not bound."""
     questions = {question['id']: question for question in definition.get('questions') or []}
-    texts = sum(1 + sum(1 for qid, answer in row.response.answers.items() if fresp.free_text(questions[qid], answer))
-                for _number, row in accepted)
+    texts = sum(_row_texts(questions, row) for _number, row in accepted
+                if comprehend_language(row.response.language) is not None)
     if texts > MAX_REDACTED_TEXTS:
         raise _fail(f'This source redacts personal data, so a call takes at most {MAX_REDACTED_TEXTS} texts (each '
-                    f"row's text and its open answers; these rows hold {texts}): send fewer rows a call",
-                    TOO_MANY_TEXTS)
+                    f"row's text, its open answers and its hidden values; these rows hold {texts}): send fewer rows a "
+                    'call', TOO_MANY_TEXTS)
+
+
+def refuse_unredacted(read: ReadRows, form_id: str, unreadable: Sequence[str]) -> None:
+    """Move each accepted row whose message (by its id) the entity model could not redact (shared/ingest_archive.py
+    ``policy_applied``'s ``unreadable``) to the refusals, as ``REDACTION_UNAVAILABLE``, the refusals in file order."""
+    if not unreadable:
+        return
+    left_out = set(unreadable)
+    kept: list[tuple[int, ImportedRow]] = []
+    for number, row in read.accepted:
+        if message_id(form_id, row, number) in left_out:
+            read.refused.append({'row': number, 'code': REDACTION_UNAVAILABLE})
+        else:
+            kept.append((number, row))
+    read.accepted = kept
+    read.refused.sort(key=lambda entry: entry['row'])
 
 
 @dataclass(frozen=True)

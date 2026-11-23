@@ -108,7 +108,7 @@ class TestReadOnlyToken:
         assert claims['sub'].startswith('mcp:tok_')
         assert claims['voc:acting_subject'] == world.subs['root']
         assert claims['cognito:groups'] == ''
-        assert 'voc:mcp_agent_run' not in claims
+        assert 'voc:mcp_op' not in claims
         assert 'Authorization' not in event['headers']
 
 

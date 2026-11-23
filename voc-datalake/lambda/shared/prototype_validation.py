@@ -401,7 +401,9 @@ def _question(tally: Mapping[str, Any], question_id: str) -> Mapping[str, Any]:
 def real_summary(definition: Mapping[str, Any], rows: Iterable[ResultRow], revisions: Mapping[int, Mapping[str, Any]],
                  tasks: Sequence[Mapping[str, Any]], criteria: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """``{responses, last_response_at, tasks: {id: {n, yes, no, rate}}, ces: {n, average, score}, criteria: {id:
-    {n, average, histogram}}, missing: [{text, at, response_id}], feedback_ids}`` over the real rows."""
+    {n, average, histogram}}, missing: [{text, at, response_id}], missing_count, feedback_ids}`` over the real rows:
+    ``missing`` the newest answers to "What was missing?" (at most the tally's ``LATEST_ANSWERS``), ``missing_count``
+    how many answered it."""
     kept = list(rows)
     tally = tally_results(definition, kept, revisions=revisions)
     task_out: dict[str, Any] = {}
@@ -416,7 +418,8 @@ def real_summary(definition: Mapping[str, Any], rows: Iterable[ResultRow], revis
         criteria_out[criterion['id']] = {'n': int(question.get('answered') or 0), 'average': question.get('average'),
                                          'histogram': question.get('histogram') or {}}
     ces = _question(tally, CES_ID)
-    missing = _question(tally, MISSING_ID).get('latest') or []
+    missing_question = _question(tally, MISSING_ID)
+    missing = missing_question.get('latest') or []
     return {
         'responses': tally['responses'], 'last_response_at': tally['last_response_at'], 'tasks': task_out,
         'ces': {'n': int(ces.get('answered') or 0), 'average': ces.get('average'),
@@ -424,5 +427,6 @@ def real_summary(definition: Mapping[str, Any], rows: Iterable[ResultRow], revis
         'criteria': criteria_out,
         'missing': [{'text': entry.get('value'), 'at': entry.get('created_at'), 'response_id': entry.get('response_id')}
                     for entry in missing],
+        'missing_count': int(missing_question.get('count') or 0),
         'feedback_ids': [row.response_id for row in kept if row.response_id],
     }

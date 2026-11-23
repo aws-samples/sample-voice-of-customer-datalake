@@ -23,11 +23,9 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from botocore.exceptions import BotoCoreError, ClientError
-
 from shared.aws import get_dynamodb_resource
 from shared.enabled_sources import enabled_plugin_ids
-from shared.exceptions import ConfigurationError, ConflictError
+from shared.exceptions import ConfigurationError
 from shared.ingest_tables import ingest_table
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
@@ -56,7 +54,8 @@ def _tables() -> PauseTables:
 
 def handle_event(event: object, tables: PauseTables, now: datetime) -> dict[str, Any]:
     """The hourly tick: every due trial paused (shared/trial_pause.py ``pause``); how many trials ended in each
-    outcome. One trial that fails is logged and left for the next tick, never stopping the others."""
+    outcome. One trial that fails, whatever the error, is logged, counted ``PAUSE_FAILED`` and left for the next tick,
+    never stopping the others."""
     if not isinstance(event, dict) or event.get('action') != EXPIRY_ACTION:
         # Only its own rule invokes it: anything else is logged and left alone.
         logger.warning('trial_expiry ignored an event it does not take')
@@ -65,7 +64,9 @@ def handle_event(event: object, tables: PauseTables, now: datetime) -> dict[str,
     for ws in due_trials(tables.workspaces, now):
         try:
             outcome = pause(tables, ws, now)
-        except (ClientError, BotoCoreError, ConflictError):
+        except Exception:
+            # Any error of one trial (AWS, a write that lost a race, a stored map the code does not expect): the
+            # others are still paused, and the next tick tries this one again.
             logger.exception('trial_expiry could not pause a trial', extra={'workspace_id': ws})
             outcomes[PAUSE_FAILED] += 1
             continue

@@ -1,7 +1,7 @@
 """The Connect page's token API (api/mcp_tokens_handler.py) and the policy
 change the global MCP endpoint needed in another domain:
 ``POST /agents/{id}/run`` accepts a delegated ``mcp:`` call only with the
-admin-cleared run claim (``project_access.delegated_agent_run_allowed``).
+admin-cleared operation claim (``project_access.delegated_op_allowed``).
 
 The token API's refusal wording, DynamoDB call shapes, ordering and cursor
 validation are pinned in ``test_mcp_tokens_handler_mutation.py``, and the
@@ -54,19 +54,19 @@ class TestRevoke:
 
 class TestDelegatedAgentRunClaim:
     def test_requires_an_mcp_subject_the_claim_and_a_person(self):
-        allowed = {'sub': 'mcp:tok_1', project_access.MCP_AGENT_RUN_CLAIM: 'agents_run',
+        allowed = {'sub': 'mcp:tok_1', project_access.MCP_OP_CLAIM: 'agents_run',
                    project_access.ACTING_SUBJECT_CLAIM: 'human-sub'}
         run = 'agents_run'
-        assert project_access.delegated_agent_run_allowed(allowed, run)
-        assert not project_access.delegated_agent_run_allowed({**allowed, 'sub': 'human-sub'}, run)
-        assert not project_access.delegated_agent_run_allowed({**allowed, project_access.MCP_AGENT_RUN_CLAIM: 'true'},
-                                                              run)
-        assert not project_access.delegated_agent_run_allowed(
+        assert project_access.delegated_op_allowed(allowed, run)
+        assert not project_access.delegated_op_allowed({**allowed, 'sub': 'human-sub'}, run)
+        assert not project_access.delegated_op_allowed({**allowed, project_access.MCP_OP_CLAIM: 'true'}, run)
+        assert not project_access.delegated_op_allowed(
             {**allowed, project_access.ACTING_SUBJECT_CLAIM: 'agent:a1'}, run)
-        assert not project_access.delegated_agent_run_allowed({'sub': 'agent:a1', **{
+        assert not project_access.delegated_op_allowed({'sub': 'agent:a1', **{
             k: v for k, v in allowed.items() if k != 'sub'}}, run)
-        # Cleared for one operation, never for the other (review round 1, S4).
-        assert not project_access.delegated_agent_run_allowed(allowed, 'insights_get_adoption')
+        # Cleared for one operation, never for another (review round 1, S4; one claim since 7.71.01, F7).
+        assert not project_access.delegated_op_allowed(allowed, 'insights_get_adoption')
+        assert not project_access.delegated_op_allowed(allowed, 'runs_list')
 
     def test_the_agents_route_refuses_a_delegated_call_without_the_claim(self, world):
         claims = {'sub': 'mcp:tok_1', project_access.ACTING_SUBJECT_CLAIM: world.subs['root']}

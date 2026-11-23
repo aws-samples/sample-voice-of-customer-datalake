@@ -97,22 +97,21 @@ DELEGATED_SUBJECT_PREFIX: Final = 'mcp:'
 ACTING_SUBJECT_CLAIM: Final = 'voc:acting_subject'
 # Claim the GLOBAL MCP Lambda (api/mcp_global_handler.py) adds to the call of an admin-only tool, after it has
 # verified, per call, that the token is a write token minted by an administrator who is STILL an administrator in
-# Cognito: its value is the ONE operation the tool serves, one of MCP_ADMIN_OPS (`agents_run`, and since 7.70.00
-# `insights_get_adoption`), so a route admits the call for its own operation only. Honoured only beside a delegated
-# `mcp:` subject acting for a person (see delegated_agent_run_allowed) — API Gateway never produces either from a JWT.
-MCP_AGENT_RUN_CLAIM: Final = 'voc:mcp_agent_run'
-#: The admin-only MCP operations the claim may name: Run now on an agent (POST /agents/{id}/run) and the leadership
-#: view (GET /metrics/adoption, the deployment's only).
+# Cognito: its value is the ONE operation the tool serves, one of MCP_DELEGATED_OPS, so a route admits the call for its
+# own operation only (delegated_op_allowed). Honoured only beside a delegated `mcp:` subject acting for a person — API
+# Gateway never produces either from a JWT. One claim for every such tool since 7.71.01 (before: `voc:mcp_agent_run`
+# for the admin-only actions and `voc:mcp_engineering` for the engineering ones).
+MCP_OP_CLAIM: Final = 'voc:mcp_op'
+#: The admin-only MCP actions: Run now on an agent (POST /agents/{id}/run) and the leadership view (GET
+#: /metrics/adoption, the deployment's only).
 MCP_ADMIN_OPS: Final = frozenset({'agents_run', 'insights_get_adoption'})
-# Claim the GLOBAL MCP Lambda adds to an engineering tool's call (7.53.00, "MCP for runs"), after the same per-call
-# check as `agents_run` (a write token minted by an administrator who is STILL one): its value is the ONE engineering
-# operation the tool serves, so a route admits the call only for its own operation (delegated_engineering_allowed).
-MCP_ENGINEERING_CLAIM: Final = 'voc:mcp_engineering'
-# The engineering operations a global-MCP write token may reach, and nothing else of the engineering routes: list the
-# runs, read one run and its retrospective, steer it through its orchestrator, ask for a Run now (which waits for an
-# administrator's confirm in the app). Never a signal, a go, a restart, a Stop, an approval, the registry, the
-# connections, the dial or a request's confirm or decline.
+# The engineering operations a global-MCP write token may reach (7.53.00, "MCP for runs"), and nothing else of the
+# engineering routes: list the runs, read one run and its retrospective, steer it through its orchestrator, ask for a
+# Run now (which waits for an administrator's confirm in the app). Never a signal, a go, a restart, a Stop, an approval,
+# the registry, the connections, the dial or a request's confirm or decline.
 MCP_ENGINEERING_OPS: Final = frozenset({'runs_list', 'run_get', 'run_analysis', 'run_steer', 'run_request'})
+#: Every operation ``MCP_OP_CLAIM`` may name (the two sets share no name).
+MCP_DELEGATED_OPS: Final = MCP_ADMIN_OPS | MCP_ENGINEERING_OPS
 ADMIN_GROUP: Final = 'admins'
 
 # The autonomous-agent principal (see the module docstring). Like the MCP
@@ -259,35 +258,20 @@ def _human_sub(value: str) -> str:
     return '' if not value or is_synthetic_subject(value) else value
 
 
-def delegated_agent_run_allowed(claims: Mapping[str, Any], op: str) -> bool:
-    """True for a global-MCP call of admin-only operation ``op`` the MCP Lambda has cleared: ``agents_run`` (Run now on
-    an agent) or ``insights_get_adoption`` (the deployment's leadership view), the two of ``MCP_ADMIN_OPS``.
+def delegated_op_allowed(claims: Mapping[str, Any], op: str) -> bool:
+    """True for a global-MCP call the MCP Lambda has cleared for exactly operation ``op``, one of
+    ``MCP_DELEGATED_OPS``: an admin-only action (``agents_run``, ``insights_get_adoption``) or an engineering run
+    operation (7.53.00).
 
-    The delegated path to those two admin-only actions, and deliberately narrow: an ``mcp:`` subject, acting for a
-    real person, carrying ``MCP_AGENT_RUN_CLAIM`` equal to ``op`` (a call cleared for one never passes for the other).
-    The claim is never forwarded from a request; the MCP Lambda adds it from the stored token row after its own
-    per-call admin check. The principal is still not an admin anywhere else.
+    The delegated path to those operations, and deliberately narrow: an ``mcp:`` subject, acting for a real person,
+    carrying ``MCP_OP_CLAIM`` equal to ``op`` (a call cleared for one operation never passes for another). The claim is
+    never forwarded from a request; the MCP Lambda adds it from the stored token row after its own per-call admin check.
+    The principal is still not an admin: a route that admits it does so for its one operation, and records who it is.
     """
     return (
-        op in MCP_ADMIN_OPS
+        op in MCP_DELEGATED_OPS
         and claim_text(claims, 'sub').startswith(DELEGATED_SUBJECT_PREFIX)
-        and claim_text(claims, MCP_AGENT_RUN_CLAIM) == op
-        and bool(_human_sub(claim_text(claims, ACTING_SUBJECT_CLAIM)))
-    )
-
-
-def delegated_engineering_allowed(claims: Mapping[str, Any], op: str) -> bool:
-    """True for a global-MCP engineering call the MCP Lambda has cleared for exactly ``op`` (7.53.00).
-
-    As narrow as ``delegated_agent_run_allowed``: an ``mcp:`` subject acting for a real person, carrying
-    ``MCP_ENGINEERING_CLAIM`` equal to ``op``, one of ``MCP_ENGINEERING_OPS``. The claim is never forwarded from a
-    request; the MCP Lambda adds it from the stored token row after its own per-call admin check. The principal is
-    still not an admin: a route that admits it does so for its one operation, and records who it is.
-    """
-    return (
-        op in MCP_ENGINEERING_OPS
-        and claim_text(claims, 'sub').startswith(DELEGATED_SUBJECT_PREFIX)
-        and claim_text(claims, MCP_ENGINEERING_CLAIM) == op
+        and claim_text(claims, MCP_OP_CLAIM) == op
         and bool(_human_sub(claim_text(claims, ACTING_SUBJECT_CLAIM)))
     )
 

@@ -440,6 +440,12 @@
       "convertTitle": "{{name}} umwandeln?",
       "convertMessage": "Er wird zu einem regulären Workspace ohne Ende.",
       "convertPausedMessage": "Er wird zu einem regulären Workspace ohne Ende, und die Plugins und Formulare, die die Pause ausgeschaltet hat, werden wieder eingeschaltet.",
+      "stayedOff": {
+        "title": "Diese Formulare bleiben aus: So können sie nicht mehr veröffentlicht werden. Ihre Bearbeiter korrigieren sie und veröffentlichen sie dann erneut.",
+        "themeUnreadable": "{{name}}: Der Text ist auf seinem Hintergrund zu schwer lesbar.",
+        "unresolvedPlaceholder": "{{name}}: Ein Text zeigt einen Platzhalter so, wie er geschrieben ist.",
+        "other": "{{name}}: So kann es nicht mehr veröffentlicht werden."
+      },
       "banner": {
         "running": "Dies ist ein Test-Workspace bis {{date}}. Danach wird er pausiert: Plugins und live geschaltete Formulare stoppen, und nichts wird gelöscht. Ein Plattform-Admin kann ihn verlängern oder umwandeln.",
         "paused": "Diese Testphase ist seit {{date}} pausiert: {{plugins}} Plugins und {{forms}} live geschaltete Formulare wurden ausgeschaltet. Nichts wurde gelöscht: Lesen und der Export funktionieren weiter. Bitten Sie einen Plattform-Admin, sie zu verlängern oder umzuwandeln."

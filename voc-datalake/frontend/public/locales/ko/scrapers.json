@@ -703,6 +703,7 @@
       "duplicate_row": "중복된 행",
       "response_too_long": "텍스트가 너무 김",
       "hidden_invalid": "값이 너무 김",
+      "redaction_unavailable": "개인 정보를 확인하지 못해 제외되었습니다",
       "selection_count": "선택 수가 너무 많거나 적음",
       "other": "허용되지 않음"
     },

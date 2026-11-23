@@ -1,8 +1,9 @@
 /**
  * @fileoverview The wizard's First insights: how many rows were imported (and why any were not), how many are
  * analysed so far, then the sentiment split, the top categories, a survey's NPS and three quotes, with a link to the
- * dashboard filtered to the source (and to the form's results for a survey). Rows none of which is analysed in the
- * polling window were imported before: it says so, with the dashboard's link.
+ * dashboard filtered to the source (and to the form's results for a survey). A reviews import none of whose rows is
+ * analysed in the polling window was imported before: it says so, with the dashboard's link (a survey only says it is
+ * slow: its rows are new items each time).
  *
  * @module pages/Scrapers/ImportWizard/InsightsStep
  */

@@ -9,11 +9,12 @@
  *   stream's life (or at 7:45 whatever it is doing) a new stream opens with the same prompt and the conversation so far
  *   as its chat history (transcript.ts `history`, within Nova Sonic's 200 KB), the microphone moves to it, the old one
  *   closes. The meter sums every stream's usage.
- * - The meter, every minute and at the end, one write after another: the session row's seconds, tokens and cost, and
- *   the month's (the deployment's) seconds and cost, whose new totals are the budget check: at or over the month's
- *   minutes or its cost cap the persona says goodbye and the session ends (`budget`); with a minute left, a notice.
- *   The session's own cost cap (checked at every usage event) ends it the same way (`budget`), and its time limit
- *   (`session_limit`), with a notice a minute before.
+ * - The meter, every minute and at the end, one write after another: the month's (the deployment's) seconds and cost
+ *   first, whose new totals are the budget check (so a session row that is gone still adds its time and cost to the
+ *   month), then the session row's seconds, tokens and cost. At or over the month's minutes or its cost cap the
+ *   persona says goodbye and the session ends (`budget`); with a minute left, a notice. The session's own limits end
+ *   it the same way as `session_limit`, never `budget` (the browser says that one as the month's minutes used up):
+ *   its cost cap, checked at every usage event, and its time limit, with a notice a minute before.
  * - The microphone: frames past a real-time budget (16 kHz PCM16, 1.5 times real time since the session went live,
  *   plus a second's head start) are dropped, so a browser sending faster than it speaks cannot grow the stream's
  *   queue or its cost.
@@ -243,7 +244,8 @@ export class VoiceSession {
     if (event.kind === 'usage') {
       this.meter.record(stream.index, event.totals);
       this.sendUsage();
-      if (this.input !== undefined && this.meter.costMicroUsd() >= this.input.sessionCostCapMicroUsd) this.wrapUp('budget');
+      // The session's own cap: its limit, not the month's budget.
+      if (this.input !== undefined && this.meter.costMicroUsd() >= this.input.sessionCostCapMicroUsd) this.wrapUp('session_limit');
       return;
     }
     if (stream !== this.stream || this.ending !== undefined) return;
@@ -322,18 +324,19 @@ export class VoiceSession {
     return this.meterWrites;
   }
 
-  /** The session row's usage, then the month's: the seconds and the cost since the last record, its new totals back. */
+  /** The month's usage (the seconds and the cost since the last record, its new totals back), then the session row's:
+   *  the month first, so a session row that is gone (`SessionGoneError`) still leaves its time and cost counted. */
   private async writeMeter(): Promise<void> {
     const input = this.input;
     if (input === undefined) return;
     const seconds = this.elapsedSeconds();
     const cost = this.meter.costMicroUsd();
-    await this.deps.store.recordUsage(this.ids.sessionId, { seconds, tokens: this.meter.tokens(), costMicroUsd: cost, streams: this.streams });
     const total = await this.deps.store.addMonthly(input.usageKey, seconds - this.reported.seconds,
       cost - this.reported.cost, new Date(this.deps.clock.now()));
     this.reported = { seconds, cost };
     this.minutesLeft = Math.max(0, (input.monthlySeconds - total.seconds) / 60);
     this.monthCost = total.costMicroUsd;
+    await this.deps.store.recordUsage(this.ids.sessionId, { seconds, tokens: this.meter.tokens(), costMicroUsd: cost, streams: this.streams });
   }
 
   private wrapUp(reason: VoiceEndReason): void {

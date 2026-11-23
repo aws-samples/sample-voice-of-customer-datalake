@@ -47,7 +47,7 @@ from shared.persona_save import cancellation_codes
 from shared.plugin_identity import S3_IMPORT_SOURCE, is_valid_plugin_identifier
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
-from shared.trial_state import PAUSED_AT, TRIAL, TRIAL_PAUSED, TRIAL_PAUSED_CODE, is_paused, stored_trial
+from shared.trial_state import TRIAL_PAUSED, TRIAL_PAUSED_CODE, is_paused, stored_trial, unpaused_check
 from shared.workspace import ACTIVE, NOT_FOUND, WorkspaceContext, audit_key, audit_sort_key, ws_key
 from shared.workspace_members import NO_LONGER_ADMIN
 from shared.workspace_plugins import plugin_partition
@@ -127,16 +127,13 @@ def workspace_plugins(table: Any, ws: str, ceiling: Sequence[str]) -> list[dict[
 
 
 def _active_check(table_name: str, ws: str, *, unpaused: bool) -> dict[str, Any]:
-    """The workspace is still active (and, with ``unpaused``, no paused trial: shared/trial_state.py)."""
-    if not unpaused:
-        return {'ConditionCheck': {
-            'TableName': table_name, 'Key': {'pk': ws_key(ws), 'sk': 'META'},
-            'ConditionExpression': '#status = :active', 'ExpressionAttributeNames': {'#status': 'status'},
-            'ExpressionAttributeValues': {':active': ACTIVE}}}
+    """The workspace is still active (and, with ``unpaused``, no paused trial: shared/trial_state.py
+    ``unpaused_check``)."""
+    if unpaused:
+        return unpaused_check(table_name, ws)
     return {'ConditionCheck': {
         'TableName': table_name, 'Key': {'pk': ws_key(ws), 'sk': 'META'},
-        'ConditionExpression': '#status = :active AND attribute_not_exists(#trial.#paused_at)',
-        'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, '#paused_at': PAUSED_AT},
+        'ConditionExpression': '#status = :active', 'ExpressionAttributeNames': {'#status': 'status'},
         'ExpressionAttributeValues': {':active': ACTIVE}}}
 
 

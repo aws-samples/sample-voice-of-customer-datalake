@@ -14,7 +14,6 @@ from shared.workspace import WorkspaceContext
 from shared.ws_repo import (
     MAX_TRANSACT_ITEMS,
     PARTITION_ATTRIBUTES,
-    UNPAUSED_CHECK,
     WATERMARK_PARTITION,
     OutOfScopeError,
     UnprocessedKeysError,
@@ -744,7 +743,8 @@ class TestTheMultiItemCalls:
 
     def test_an_unpaused_check_is_the_views_own_workspaces_meta_and_comes_last(self):
         """7.71.00 (review round 1, S5): a write that puts something live checks its own workspace's ``META`` in
-        voc-workspaces in the same transaction; the layer builds the key, so it names no other workspace."""
+        voc-workspaces in the same transaction; the layer names the key, so it names no other workspace. The check is
+        shared/trial_state.py ``unpaused_check``, the plugin enable's too (7.71.01, F10)."""
         backing, workspaces = _backing(), MagicMock()
         workspaces.name = 'voc-workspaces'
         item = {**_key(A, 'f1'), 'gsi4pk': feedback_id_pk(A, 'f1')}
@@ -753,7 +753,8 @@ class TestTheMultiItemCalls:
 
         sent = backing.meta.client.transact_write_items.call_args.kwargs['TransactItems']
         assert sent[-1] == {'ConditionCheck': {
-            'TableName': 'voc-workspaces', 'Key': {'pk': f'WS#{WS}', 'sk': 'META'}, 'ConditionExpression': UNPAUSED_CHECK,
+            'TableName': 'voc-workspaces', 'Key': {'pk': f'WS#{WS}', 'sk': 'META'},
+            'ConditionExpression': '#status = :active AND attribute_not_exists(#trial.#paused_at)',
             'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, '#paused_at': PAUSED_AT},
             'ExpressionAttributeValues': {':active': 'active'}}}
         assert len(sent) == 2

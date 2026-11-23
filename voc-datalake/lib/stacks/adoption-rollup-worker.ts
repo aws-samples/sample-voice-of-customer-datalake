@@ -3,7 +3,8 @@
  * handler lambda/jobs/adoption_rollup/handler.py). Built like voc-cost-rollup (cost-rollup-worker.ts).
  *
  * At 03:05 UTC (an EventBridge rule: pay per use, no fixed cost) it rebuilds, for the deployment and every active
- * workspace, the last 24 months from the projects, and writes one whole item per scope and day.
+ * workspace, the last 24 months from the projects, and overwrites each scope's one whole item (sort key `latest`, no
+ * TTL).
  *
  * Least privilege (lib/stacks/adoption-rollup-worker.test.ts pins every statement, and what the role may not do):
  *   - every read is a Query (never a Scan, a GetItem or a batch read), each one held to its partitions and, but for

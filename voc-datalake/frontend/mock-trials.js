@@ -2,9 +2,10 @@
 // lambda/shared/trials.py and lambda/shared/trial_state.py (docs/multi-workspace.md, "Trial workspaces"):
 //   POST /platform/workspaces {name, slug, trial: {days?, pack?}}   (mock-workspaces.js) → the workspace with `trial`
 //   POST /platform/workspaces/{ws}/trial/extend {days}  → {trial}: 14, 30 or 60 more days from its end (or from now
-//        once it ended); a paused trial is resumed (its pause cleared). 400 for other days, 404 'Trial not found' for a
-//        workspace that is no trial, 409 for a converted one
-//   POST /platform/workspaces/{ws}/trial/convert        → {trial}: converted (a converted one is answered as it is)
+//        once it ended); a paused trial is resumed (its pause cleared, `trial.resumed` what came back: the mock leaves
+//        no form off). 400 for other days, 404 'Trial not found' for a workspace that is no trial, 409 for a converted one
+//   POST /platform/workspaces/{ws}/trial/convert        → {trial}: converted, `trial.resumed` as above (a converted one is
+//        answered as it is, `resumed` null)
 //   GET  /me/workspaces/current  (mock-workspaces.js) → `trial` (trialSummary) and `playbook`
 // Platform admins only (403 otherwise), like the server. The mock never schedules or pauses on its own: the dev switch
 // `PUT /__mock/workspaces {"enabled": true, "trial": "running" | "paused"}` makes Acme Outfitters a trial in that
@@ -59,23 +60,28 @@ export function trialView(trial) {
   return { ...trial, paused: isPaused(trial) ? trial.paused : null };
 }
 
+/** What resuming `trial` turns back on (trial_pause.py `resume`), or null when it is not paused. */
+const resumedOf = (trial) => (isPaused(trial)
+  ? { plugins: trial.paused.plugins.length, forms: trial.paused.forms.length, skipped: [] } : null);
+
 function extend(workspace, body, send, caller) {
   const { trial } = workspace;
   if (!TRIAL_DAYS.includes(body?.days)) return send(400, { success: false, error: 'days must be 14, 30 or 60' });
   if (trial.converted_at) return send(409, { success: false, error: TRIAL_ALREADY_CONVERTED, code: 'trial_converted' });
   const now = Date.now();
   const expires = atSecond(Math.max(Date.parse(trial.expires_at), now) + body.days * DAY_MS);
-  const entry = { at: atSecond(now), by: caller, days: body.days, expires_at: expires,
-    ...(isPaused(trial) ? { resumed: { plugins: trial.paused.plugins.length, forms: trial.paused.forms.length } } : {}) };
+  const resumed = resumedOf(trial);
+  const entry = { at: atSecond(now), by: caller, days: body.days, expires_at: expires, ...(resumed ? { resumed } : {}) };
   workspace.trial = { ...trial, expires_at: expires, extended: [...trial.extended, entry], paused_at: null, paused: null };
-  return send(200, { trial: trialView(workspace.trial) });
+  return send(200, { trial: { ...trialView(workspace.trial), resumed } });
 }
 
 function convert(workspace, send, caller) {
+  const resumed = workspace.trial.converted_at ? null : resumedOf(workspace.trial);
   if (!workspace.trial.converted_at) {
     workspace.trial = { ...workspace.trial, converted_at: atSecond(Date.now()), converted_by: caller, paused_at: null, paused: null };
   }
-  return send(200, { trial: trialView(workspace.trial) });
+  return send(200, { trial: { ...trialView(workspace.trial), resumed } });
 }
 
 /**

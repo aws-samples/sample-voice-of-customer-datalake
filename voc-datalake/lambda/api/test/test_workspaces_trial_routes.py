@@ -153,6 +153,8 @@ def test_a_paused_trial_refuses_a_plugins_enable_until_it_is_extended(world, lam
     assert status == 200
     assert body['trial']['paused'] is None
     assert body['trial']['extended'][-1]['resumed'] == {'plugins': 2, 'forms': 1, 'skipped': []}
+    # Q27 (7.71.01): the answer says what this extension resumed, the forms it left off included.
+    assert body['trial']['resumed'] == {'plugins': 2, 'forms': 1, 'skipped': []}
     form = world.aggregates.get_item(Key={'pk': f'WS#{ws}#FEEDBACK_FORM', 'sk': 'FORM#f1'})['Item']
     assert form['enabled'] is True
     listed = _call(world, lambda_context, 'GET', '/me/workspaces/current/plugins', ws=ws)[1]['plugins']
@@ -161,7 +163,8 @@ def test_a_paused_trial_refuses_a_plugins_enable_until_it_is_extended(world, lam
 
 def test_an_extension_refused_by_a_trial_changed_meanwhile_finishes_when_retried(world, lambda_context):
     """The 409 of a trial changed between the read and the write (here: right after the resume) leaves it resumed but
-    still marked paused; the same extension again finishes it, its end counted from the same stored end."""
+    still marked paused (and ``resuming_at``, so the hourly tick turns nothing off meanwhile); the same extension again
+    finishes it, its end counted from the same stored end."""
     ws = _create(world, lambda_context)['id']
     world.aggregates.put_item(Item={'pk': f'WS#{ws}#FEEDBACK_FORM', 'sk': 'FORM#f1', 'enabled': True,
                                     'write_count': 0})
@@ -171,7 +174,8 @@ def test_an_extension_refused_by_a_trial_changed_meanwhile_finishes_when_retried
 
     def changed_meanwhile(*args, **kwargs):
         calls.append(1)
-        if len(calls) == 1:
+        if len(calls) == 2:
+            # The write after the resume (the first marks the trial resuming).
             raise ConflictError('The trial changed meanwhile: reload it and try again', code='trial_changed')
         return save_trial(*args, **kwargs)
 
@@ -179,6 +183,10 @@ def test_an_extension_refused_by_a_trial_changed_meanwhile_finishes_when_retried
         first = _call(world, lambda_context, 'POST', f'/platform/workspaces/{ws}/trial/extend', body={'days': 14})
         assert (first[0], first[1]['code']) == (409, 'trial_changed')
         assert read_meta(world.workspaces, ws)['trial']['paused_at'] == before['paused_at']
+        tables = PauseTables(world.workspaces, lambda scope: workspaces_handler.ingest_table(scope, world.resource,
+                                                                                            'aggregates'),
+                             ('webscraper', 'app_reviews_ios'))
+        assert pause(tables, ws, datetime.now(UTC) + timedelta(days=15))['outcome'] == 'not_due'
         status, body = _call(world, lambda_context, 'POST', f'/platform/workspaces/{ws}/trial/extend', body={'days': 14})
     assert status == 200
     assert body['trial']['paused'] is None
@@ -195,6 +203,7 @@ def test_a_conversion_resumes_a_paused_trial_and_ends_it(world, lambda_context):
     assert status == 200
     assert body['trial']['converted_by'] == 'sub-pat'
     assert body['trial']['paused'] is None
+    assert body['trial']['resumed'] == {'plugins': 2, 'forms': 0, 'skipped': []}
     assert _call(world, lambda_context, 'PUT', '/me/workspaces/current/plugins/webscraper', ws=ws,
                  body={'enabled': False})[0] == 200
     assert _call(world, lambda_context, 'POST', f'/platform/workspaces/{ws}/trial/extend', body={'days': 14})[0] == 409

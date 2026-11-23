@@ -703,6 +703,7 @@
       "duplicate_row": "dieselbe Zeile noch einmal",
       "response_too_long": "zu viel Text",
       "hidden_invalid": "ein Wert ist zu lang",
+      "redaction_unavailable": "ihre personenbezogenen Daten konnten nicht geprüft werden, daher wurde sie ausgelassen",
       "selection_count": "zu viele oder zu wenige Auswahlen",
       "other": "nicht angenommen"
     },

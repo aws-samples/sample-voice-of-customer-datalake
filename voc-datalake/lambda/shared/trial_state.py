@@ -12,7 +12,9 @@ platform admin extends or converts the trial, nothing turns them back on:
   lambda/api/feedback_form_handler.py) commits only while ``paused_at`` is absent too (a ConditionCheck of ``META`` in
   the save's own transaction, shared/ws_repo.py ``unpaused_in``).
 
-Both answer 409 with ``TRIAL_PAUSED`` and the code ``trial_paused``. Everything else (reads, edits, the export, a form
+Both checks are ``unpaused_check``'s, the one spelling of that condition. Both answer 409 with ``TRIAL_PAUSED`` and the
+code ``trial_paused``. An extension or a conversion of a paused trial marks it ``resuming_at`` before it turns anything
+back on (shared/trials.py), so the hourly pause leaves it alone meanwhile (shared/trial_pause.py). Everything else (reads, edits, the export, a form
 turned off, a plugin turned off) works as in any workspace. This module imports none of the trial's writers, so the
 request paths (and shared/platform_workspaces.py, which the writers import) take it alone.
 """
@@ -27,12 +29,15 @@ from typing import Any, Final
 from shared.dynamo_values import plain, text_field
 from shared.exceptions import ValidationError
 from shared.request_body import reject_unknown_fields
-from shared.workspace_ids import ws_key
+from shared.workspace_ids import ACTIVE, ws_key
 
 #: The map's attribute on ``META`` and on the listing row.
 TRIAL: Final = 'trial'
 #: Set by the pause, removed by an extension or a conversion.
 PAUSED_AT: Final = 'paused_at'
+#: Set by an extension or a conversion of a paused trial before its resume, removed with the pause: the hourly pause
+#: leaves a trial being resumed alone.
+RESUMING_AT: Final = 'resuming_at'
 CONVERTED_AT: Final = 'converted_at'
 #: What the pause turned off: ``{plugins: [ids], forms: [ids]}``.
 PAUSED: Final = 'paused'
@@ -51,6 +56,16 @@ def is_paused(trial: object) -> bool:
     """Whether ``trial`` (the stored map, or anything else) is paused and not converted."""
     return (isinstance(trial, Mapping) and isinstance(trial.get(PAUSED_AT), str)
             and not isinstance(trial.get(CONVERTED_AT), str))
+
+
+def unpaused_check(table_name: str, ws: str) -> dict[str, Any]:
+    """The ConditionCheck of workspace ``ws``'s ``META`` in voc-workspaces (``table_name``) that a write turning
+    something live commits beside: the workspace still active and no ``trial.paused_at``."""
+    return {'ConditionCheck': {
+        'TableName': table_name, 'Key': {'pk': ws_key(ws), 'sk': 'META'},
+        'ConditionExpression': '#status = :active AND attribute_not_exists(#trial.#paused_at)',
+        'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, '#paused_at': PAUSED_AT},
+        'ExpressionAttributeValues': {':active': ACTIVE}}}
 
 
 def stored_trial(table: Any, ws: str) -> dict[str, Any] | None:

@@ -1,14 +1,15 @@
 /**
  * @fileoverview Project → Validate (7.68.00): editors only (its results quote testers); the criteria saved with the
  * revision the editor loaded; the results judged on real testers with the personas' figure beside them, labelled
- * synthetic; a newer prototype version without the card is said; Create decision once a report exists, prefilled
- * from it.
+ * synthetic; a newer prototype version without the card is said; saving the card forgets the one framed prototypes
+ * were handed; Create decision once a report exists, prefilled from it.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { renderWithQueryClient } from '@test/query-client'
+import { createTestQueryClient, renderWithQueryClient } from '@test/query-client'
+import { prototypeCardKeys } from '../../../components/PrototypePins/usePinBridge'
 import { makeDocument } from '../project-detail-fixtures'
 import ValidationTab from './ValidationTab'
 import type { ValidationView } from '../../../api/validationApi'
@@ -50,11 +51,12 @@ function view(overrides: Partial<ValidationView> = {}): ValidationView {
 
 const PROTOTYPE = makeDocument({ document_id: 'proto_1', document_type: 'prototype', title: 'Checkout' })
 
-function renderTab(canEdit = true) {
+function renderTab(canEdit = true, client = createTestQueryClient()) {
   renderWithQueryClient(
     <MemoryRouter>
       <ValidationTab projectId="proj_1" canEdit={canEdit} documents={[PROTOTYPE]} onSelectDoc={vi.fn()} />
     </MemoryRouter>,
+    client,
   )
 }
 
@@ -129,6 +131,16 @@ describe('the Validate tab', () => {
                                              has_responses: true, stale: false, newer_version: 'proto_2' } }))
     renderTab()
     expect(await screen.findByText(/A newer version of the prototype shows no card/u)).toBeInTheDocument()
+  })
+
+  it("forgets the card a framed prototype was handed once the card is saved (F8: the query cache's card key)", async () => {
+    const client = createTestQueryClient({ gcTime: 60_000 })
+    client.setQueryData(prototypeCardKeys.form('pf_0123456789abcdef'), { revision: 1 })
+    api.saveCard.mockResolvedValue({})
+    renderTab(true, client)
+    await userEvent.click(await screen.findByRole('button', { name: 'Save the card' }))
+    await vi.waitFor(() => { expect(client.getQueryCache().findAll({ queryKey: prototypeCardKeys.all })).toStrictEqual([]) })
+    expect(api.saveCard).toHaveBeenCalledExactlyOnceWith('proj_1', expect.objectContaining({ expectedRevision: 3 }))
   })
 
   it('has no Create decision before the report', async () => {

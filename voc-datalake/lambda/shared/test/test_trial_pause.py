@@ -1,9 +1,11 @@
 """shared/trial_pause.py (7.71.00): a trial's pause at its end (the plugins' existing audited disable, the live forms
-turned off, all recorded) and its resume; a paused trial refuses a plugin's enable; and NOTHING is deleted but the
-plugins' own enable rows, which are the existing disable (moto-backed, every DynamoDB call recorded)."""
+turned off, all recorded) and its resume, which the hourly pause never undoes (7.71.01); a paused trial refuses a
+plugin's enable; and NOTHING is deleted but the plugins' own enable rows, which are the existing disable (moto-backed,
+every DynamoDB call recorded)."""
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any
 from unittest.mock import patch
 
@@ -33,7 +35,7 @@ from shared.trial_pause import (
     resume,
 )
 from shared.trial_state import TRIAL_PAUSED_CODE, NewTrial, new_trial
-from shared.trials import read_meta, save_trial
+from shared.trials import convert_trial, extend_trial, read_meta, save_trial
 from shared.workspace import WorkspaceContext
 from shared.workspace_plugin_settings import set_plugin_enabled, workspace_plugins
 
@@ -268,24 +270,6 @@ def test_the_hourly_tick_lists_a_trial_once_its_end_passed_and_for_a_day_after_i
     assert due_trials(world.workspaces, AFTER_END) == []
 
 
-def test_a_form_put_live_while_the_pause_ran_is_recorded_and_turned_off(world):
-    reads = []
-    real = trial_pause.live_forms
-
-    def first_read_misses_one(forms, scope):
-        found = real(forms, scope)
-        if not reads:
-            # Published between the pause's read and paused_at's commit (its publish read the trial first).
-            world.aggregates.put_item(Item={'pk': FORMS, 'sk': 'FORM#late', 'enabled': True, 'write_count': 0})
-        reads.append(found)
-        return found
-
-    with patch.object(trial_pause, 'live_forms', side_effect=first_read_misses_one):
-        assert pause(world.tables, WS, AFTER_END) == {'outcome': PAUSED_NOW, 'plugins': 2, 'forms': 3}
-    assert read_meta(world.workspaces, WS)['trial']['paused']['forms'] == ['legacy', 'live', 'late']
-    assert _form(world, 'late')['enabled'] is False
-
-
 def test_the_resume_leaves_off_a_form_no_longer_publishable_and_says_so(world):
     pause(world.tables, WS, AFTER_END)
     # Edited while paused: its text now under 3:1 on white.
@@ -293,5 +277,55 @@ def test_the_resume_leaves_off_a_form_no_longer_publishable_and_says_so(world):
                                  ExpressionAttributeValues={':t': {'text_color': '#9ca3af'}})
     trial = read_meta(world.workspaces, WS)['trial']
     answer = resume(world.tables, WS, trial, 'sub-platform', 'trial_extended')
-    assert answer == {'plugins': 2, 'forms': 1, 'skipped': [{'form_id': 'live', 'code': 'theme_unreadable'}]}
+    assert answer == {'plugins': 2, 'forms': 1, 'skipped': [
+        {'form_id': 'live', 'name': 'Workshop feedback', 'code': 'theme_unreadable'}]}
     assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (False, True)
+
+
+@pytest.mark.parametrize('route', ['extend', 'convert'])
+def test_an_hourly_pause_landing_inside_the_resume_leaves_the_trial_resumed(world, route):
+    """Q26 (7.71.01): the hourly tick can run between an extension's (or a conversion's) resume and its own write of
+    the map. The trial is marked ``resuming_at`` before the resume, so that pause is not due and turns nothing off."""
+    pause(world.tables, WS, AFTER_END)
+    later = AFTER_END + timedelta(hours=1)
+    ticks = []
+
+    def resume_then_tick(ws, trial, actor, reason):
+        done = resume(world.tables, ws, trial, actor, reason)
+        ticks.append(pause(world.tables, ws, later))
+        return done
+
+    if route == 'extend':
+        view = extend_trial(world.workspaces, WS, 30, 'sub-platform', resume=resume_then_tick, now=later)
+    else:
+        view = convert_trial(world.workspaces, WS, 'sub-platform', resume=resume_then_tick)
+    assert ticks == [{'outcome': NOT_DUE}]
+    assert _enabled(world) == ['webscraper', 'app_reviews_ios']
+    assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (True, True)
+    assert (view['paused_at'], view['resumed']['forms']) == (None, 2)
+    assert 'resuming_at' not in read_meta(world.workspaces, WS)['trial']
+
+
+def test_a_resume_cut_short_is_left_alone_by_the_tick_and_finished_by_the_same_extension(world):
+    """Q26: a resume that fails half way leaves the trial marked and still paused; the hourly tick leaves what it
+    turned on, and the same extension again finishes it."""
+    pause(world.tables, WS, AFTER_END)
+    later = AFTER_END + timedelta(hours=1)
+
+    def plugins_then_fail(ws, trial, actor, reason):
+        with patch.object(trial_pause, 'set_form_live', side_effect=RuntimeError('throttled')):
+            return resume(world.tables, ws, trial, actor, reason)
+
+    with pytest.raises(RuntimeError):
+        extend_trial(world.workspaces, WS, 30, 'sub-platform', resume=plugins_then_fail, now=later)
+    stored = read_meta(world.workspaces, WS)['trial']
+    assert (stored['paused_at'], stored['resuming_at'] is not None) == (AFTER_END.isoformat(), True)
+    assert pause(world.tables, WS, later) == {'outcome': NOT_DUE}
+    assert _enabled(world) == ['webscraper', 'app_reviews_ios']
+    retry = partial(resume, world.tables)
+    view = extend_trial(world.workspaces, WS, 30, 'sub-platform', resume=retry, now=later)
+    # Counted from the same stored end (passed: from now), once.
+    assert (view['paused_at'], view['expires_at'], len(view['extended'])) == (
+        None, (later + timedelta(days=30)).isoformat(), 1)
+    assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (True, True)
+    assert 'resuming_at' not in read_meta(world.workspaces, WS)['trial']

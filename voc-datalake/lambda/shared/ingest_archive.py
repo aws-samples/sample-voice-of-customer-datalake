@@ -31,6 +31,7 @@ from shared.api import decimal_default
 from shared.concurrency import ordered_map
 from shared.exceptions import ValidationError
 from shared.logging import logger, metrics
+from shared.pii_redaction import EntityModelFailed, prepare_comprehend
 from shared.raw_versions import (
     Connector,
     app_connector,
@@ -42,7 +43,7 @@ from shared.raw_versions import (
     raw_root,
     version_key,
 )
-from shared.source_policy import ARCHIVE_FILE, ARCHIVE_ITEM, FreeText, archive_mode, quiet_policy
+from shared.source_policy import ARCHIVE_FILE, ARCHIVE_ITEM, FreeText, archive_mode, quiet_policy, raw_archive_allowed
 from shared.source_profiles import PII_ALLOW, SOURCE_ID_RE, SourceProfilesUnavailable, load_source_profiles, profile_for
 from shared.ws_repo import WorkspaceScope
 
@@ -83,13 +84,32 @@ def upload_profile(table: Any, raw_source_id: object, scope: WorkspaceScope | No
     return profile_for(profiles, source_id, workspace=scope is not None)
 
 
-def policy_applied(messages: list[dict[str, Any]], profile: Mapping[str, Any], *,
-                   free_text: FreeText = None) -> list[dict[str, Any]]:
+def policy_applied(messages: list[dict[str, Any]], profile: Mapping[str, Any], *, free_text: FreeText = None,
+                   unreadable: list[str] | None = None) -> list[dict[str, Any]]:
     """Every message under ``profile``'s PII policy, several at once and in order; a redact message without text is
-    dropped. ``free_text``: the metadata paths the entity model reads (shared/source_policy.py ``FreeText``)."""
-    applied = ordered_map(lambda message: quiet_policy(message, profile, free_text=free_text), messages,
-                          max_workers=_POLICY_WORKERS)
-    out = [message for message in applied if message is not None]
+    dropped. ``free_text``: the metadata paths the entity model reads (shared/source_policy.py ``FreeText``).
+
+    ``unreadable`` given: the redaction is strict, so a message one of whose texts the entity model should have read
+    and could not (Comprehend failed after its retries) is left out and its id appended there, never kept with a
+    pattern-only redaction. The Comprehend client is built before the workers start, so they share it."""
+    strict = unreadable is not None
+    if not raw_archive_allowed(profile):
+        prepare_comprehend()
+
+    def one(message: dict[str, Any]) -> dict[str, Any] | EntityModelFailed | None:
+        try:
+            return quiet_policy(message, profile, free_text=free_text, strict=strict)
+        except EntityModelFailed as failed:
+            return failed
+
+    applied = ordered_map(one, messages, max_workers=_POLICY_WORKERS)
+    out: list[dict[str, Any]] = []
+    for message, result in zip(messages, applied, strict=True):  # pragma: no mutate  one result per input
+        if isinstance(result, EntityModelFailed):
+            if unreadable is not None:
+                unreadable.append(str(message.get('id')))
+        elif result is not None:
+            out.append(result)
     redacted = sum(1 for message in out if message['pii_policy_applied'] != PII_ALLOW)
     if redacted:
         metrics.add_metric(name='PiiPolicyApplied', unit='Count', value=redacted)
@@ -167,7 +187,7 @@ def stamp_file_archive(
 def prepare_messages(
     s3: Any, bucket: str, messages: list[dict[str, Any]], profile: Mapping[str, Any], now: datetime,
     rewrite_uris: Mapping[str, str] | None = None, *, connector_id: str = DEFAULT_UPLOAD_SOURCE,
-    scope: WorkspaceScope | None = None, free_text: FreeText = None,
+    scope: WorkspaceScope | None = None, free_text: FreeText = None, unreadable: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Apply the policy, archive per item when the profile asks for it; ``(messages, archive mode)``.
 
@@ -175,10 +195,11 @@ def prepare_messages(
     its whole-request archive and stamps its URI itself. With ``none`` every
     ``s3_raw_uri`` is cleared. ``connector_id`` is the writer recorded on each archive. ``scope``: the workspace an
     upload acts in (its archives under ``ws/{ws}/raw/``). ``free_text``: the metadata paths of the messages' free text,
-    the only metadata the entity model reads (None: all of it).
+    the only metadata the entity model reads (None: all of it). ``unreadable``: a strict redaction, the ids of the
+    messages left out because the entity model could not read them (``policy_applied``).
     """
     mode = archive_mode(profile)
-    out = policy_applied(messages, profile, free_text=free_text)
+    out = policy_applied(messages, profile, free_text=free_text, unreadable=unreadable)
     if mode == ARCHIVE_ITEM:
         archive_per_item(s3, bucket, str(profile.get('id') or DEFAULT_UPLOAD_SOURCE), out, now, rewrite_uris,
                          connector_id=connector_id, scope=scope)

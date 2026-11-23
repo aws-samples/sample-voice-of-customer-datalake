@@ -19,7 +19,7 @@ import { serverReason } from '../../../lib/errors'
 import { inferredQuestions } from './inferredQuestions'
 import { MAX_SURVEY_BYTES, distinctValues, pickProblem, readWizardFile, sampleOf, tableOf, toCsv } from './wizardFile'
 import type { FilePickProblem, Table, WizardFile } from './wizardFile'
-import { eventBytes, formName, importCalls, importTag, wizardMappingProblem, reviewsMapping } from './wizardMapping'
+import { eventBytes, formName, importCalls, importTag, redactedTextsPerRow, wizardMappingProblem, reviewsMapping } from './wizardMapping'
 import type { MappingProblem } from './wizardMapping'
 
 export type WizardStep = 'upload' | 'map' | 'confirm' | 'insights'
@@ -191,7 +191,7 @@ export function useImportWizard() {
     const fields = { mapping: inferred.mapping, date_order: dateOrder, offset: total, rows: [] }
     const calls = importCalls(current.table.rows, {
       first: eventBytes({ ...fields, file }), later: eventBytes({ ...fields, file_key: 'k'.repeat(KEPT_KEY_CHARS) }),
-      textsPerRow: 1 + inferredQuestions(inferred).filter((q) => q.type === 'open_text').length,
+      textsPerRow: redactedTextsPerRow(inferred),
     })
     // A failed call stops here; Import again sends the calls not yet answered, into the same form.
     for (const call of calls.slice(results.length)) {

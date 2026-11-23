@@ -21,10 +21,11 @@ It never Scans, and every read is a projected Query (lib/stacks/adoption-rollup-
   ``agent_runs_counted``).
 
 It reads no feedback and calls no model. A scope whose reads AWS refuses is not written (the others are), and the run
-raises once every scope was tried; the next day's run rebuilds it (no async retry). Each scope gets its share of the
-time left (the time left over the scopes not done yet), so one large workspace never takes the others' time. A scope
-cut short is written with ``complete: false`` only where no complete item is stored: a complete one (the last full
-run's figures) is kept, and the view shows its ``as_of``.
+raises once every scope was tried; the next day's run rebuilds it (no async retry). The run has one deadline, the
+invocation's time less ``RESERVE_SECONDS``: the deployment, the only scope with projects until projects move into
+workspaces (docs/multi-workspace.md, phase 3), comes first and may take all of it. A scope cut short is written with
+``complete: false`` only where no complete item is stored: a complete one (the last full run's figures) is kept, and
+the view shows its ``as_of``.
 
 Env: ``AGGREGATES_TABLE``, ``PROJECTS_TABLE``, ``WORKSPACES_TABLE``, ``CONVERSATIONS_TABLE``, ``AGENTS_TABLE``.
 """
@@ -165,21 +166,14 @@ def _months(now: datetime) -> tuple[str, str]:
 
 
 class _Clock:
-    """Whether the invocation still has time for another chunk of projects: the run's own deadline, and the scope's
-    share of what is left (``start_scope``)."""
+    """Whether the invocation still has time for another chunk of projects: the run's own deadline."""
 
     def __init__(self, rollup: Rollup) -> None:
         self._monotonic = rollup.monotonic
         self._deadline = rollup.monotonic() + rollup.remaining() - RESERVE_SECONDS
-        self._scope_deadline = self._deadline
-
-    def start_scope(self, scopes_left: int) -> None:
-        """A new scope's share: the time left over the ``scopes_left`` scopes not done yet (this one included)."""
-        now = self._monotonic()
-        self._scope_deadline = now + max(self._deadline - now, 0.0) / max(scopes_left, 1)
 
     def has_time(self) -> bool:
-        return self._monotonic() < min(self._deadline, self._scope_deadline)
+        return self._monotonic() < self._deadline
 
 
 def _scope_item(rollup: Rollup, scope: WorkspaceScope | None, clock: _Clock,
@@ -243,9 +237,8 @@ def handle_event(event: dict, rollup: Rollup) -> dict[str, Any]:
     agent_starts = _agent_run_starts(rollup.agents)
     failed: dict[str, str] = {}
     written = partial = kept = 0
-    for index, scope in enumerate(scopes):
+    for scope in scopes:
         name = 'deployment' if scope is None else scope.ws
-        clock.start_scope(len(scopes) - index)
         try:
             item = _scope_item(rollup, scope, clock, agent_starts)
             stored = _write(rollup, scope, item)

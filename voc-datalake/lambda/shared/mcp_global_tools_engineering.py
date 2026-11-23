@@ -16,8 +16,8 @@ existing authenticated Agents API, never a new endpoint, each tool calling ONE r
 
 Who gets them: only a write token minted by an administrator who still is one, re-checked in Cognito on every call
 (``admin_only`` and ``needs_write_token``), never a project-pinned one. The call is still not an admin: it carries
-``voc:mcp_engineering`` set to its one operation (``engineering_op``), and each route admits it for that operation
-alone (``project_access.delegated_engineering_allowed``), recording ``via: mcp:<token>`` and the minter. No tool
+``voc:mcp_op`` set to its one operation (``engineering_op``), and each route admits it for that operation
+alone (``project_access.delegated_op_allowed``), recording ``via: mcp:<token>`` and the minter. No tool
 reaches a signal, a go, a restart, a Stop, an approval, the registry, the connections, the dial, or a request's confirm
 or decline: those routes refuse every delegated credential.
 """

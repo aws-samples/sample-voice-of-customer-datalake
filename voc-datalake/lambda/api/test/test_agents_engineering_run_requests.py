@@ -34,7 +34,7 @@ REQUESTS = '/agents/engineering/requests'
 def mcp(op: str = 'run_request', minted: str = 'tok_1') -> dict[str, str]:
     """The claims the global MCP server sends for engineering_run_request (an admin's write token, never an admin)."""
     return {'sub': f'mcp:{minted}', 'cognito:groups': '', 'email': f'mcp:{minted}', 'voc:acting_subject': 'admin-sub',
-            'voc:mcp_engineering': op}
+            'voc:mcp_op': op}
 
 
 @pytest.fixture

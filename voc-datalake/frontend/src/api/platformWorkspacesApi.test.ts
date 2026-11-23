@@ -60,14 +60,15 @@ describe('platformWorkspacesApi trials', () => {
     expect(sentFetchApiBody('/platform/workspaces', 'POST')).toStrictEqual({ name: 'Acme Outfitters', slug: 'acme', trial: { days: 60, pack } })
   })
 
-  it('extends by its days and converts, each answering the trial', async () => {
+  it('extends by its days and converts, each answering the trial and what it resumed', async () => {
+    const resumed = { plugins: 1, forms: 0, skipped: [{ form_id: 'ff_1', name: 'Workshop', code: 'theme_unreadable' }] }
     routeFetchApi({
       [`POST /platform/workspaces/${ACME.id}/trial/extend`]: () => ({ trial: VIEW }),
-      [`POST /platform/workspaces/${ACME.id}/trial/convert`]: () => ({ trial: { ...VIEW, converted_at: '2026-12-01T09:00:00+00:00' } }),
+      [`POST /platform/workspaces/${ACME.id}/trial/convert`]: () => ({ trial: { ...VIEW, converted_at: '2026-12-01T09:00:00+00:00', resumed } }),
     })
-    await expect(platformWorkspacesApi.extendTrial(ACME.id, 14)).resolves.toStrictEqual(VIEW)
+    await expect(platformWorkspacesApi.extendTrial(ACME.id, 14)).resolves.toStrictEqual({ ...VIEW, resumed: null })
     expect(sentFetchApiBody(`/platform/workspaces/${ACME.id}/trial/extend`, 'POST')).toStrictEqual({ days: 14 })
-    await expect(platformWorkspacesApi.convertTrial(ACME.id)).resolves.toMatchObject({ converted_at: '2026-12-01T09:00:00+00:00' })
+    await expect(platformWorkspacesApi.convertTrial(ACME.id)).resolves.toMatchObject({ converted_at: '2026-12-01T09:00:00+00:00', resumed })
   })
 
   it('reads a length from a select, the default for anything else', () => {

@@ -202,7 +202,16 @@ class TestTheResults:
         assert summary['criteria']['c00aa11']['average'] == 4.0
         assert summary['ces'] == {'n': 1, 'average': 6.0, 'score': 100.0}
         assert summary['missing'] == [{'text': 'Export', 'at': '2026-11-20T10:00:00Z', 'response_id': 'f0'}]
+        assert summary['missing_count'] == 1
         assert summary['feedback_ids'] == ['f0', 'f1', 'f2']
+
+    def test_how_many_said_what_was_missing_is_counted_past_the_newest_ten(self):
+        """Q32 (7.71.01): the newest answers are capped at ten; ``missing_count`` is every one of the 37."""
+        definition = fv2.validate_definition(proto.definition_for(TASKS, CRITERIA, 'en'))
+        rows = [proto.ResultRow({'q_v_missing': f'Export {i}'}, ['q_v_missing'], 'end_thanks',
+                                f'2026-11-20T10:{i:02d}:00Z', response_id=f'f{i}', revision=2) for i in range(37)]
+        summary = proto.real_summary(definition, rows, {}, TASKS, CRITERIA)
+        assert (len(summary['missing']), summary['missing_count']) == (10, 37)
 
     def test_earlier_revisions_are_read_from_their_snapshots(self, forms):
         proto.save_questions(forms, FORM, proto.definition_for(TASKS, CRITERIA, 'en'), open_card=True,

@@ -65,7 +65,7 @@ Permissions:
   (the automations that run it, read as the agents are, and the flows that call it) is answered with it, and the
   save of a flow other automations run needs ``confirm_shared: true`` (409 ``shared_flow`` with them otherwise).
 - MCP for runs (7.53.00, docs/mcp.md): the global MCP server's five engineering tools reach five operations, and only
-  those, each admitted for itself (``_engineering_caller``, ``project_access.delegated_engineering_allowed``) for a
+  those, each admitted for itself (``_engineering_caller``, ``project_access.delegated_op_allowed``) for a
   write token whose minter is still an administrator, never as an admin: the runs list, a run's overview
   (``GET /agents/engineering/<run_id>``), its retrospective and its steering (shared/agents_engineering_run_routes.py),
   and a request for a Run now (``POST /agents/engineering/requests``, engineering/run_requests.py: a row that waits
@@ -202,9 +202,9 @@ def _require_run_permission(caller: Caller) -> None:
     group claim — the credential is still not an admin anywhere else — and it is
     honoured only for an `mcp:` principal (never an `agent:` one), with the claim
     the MCP Lambda adds after re-checking the minter in Cognito
-    (`project_access.delegated_agent_run_allowed`).
+    (`project_access.delegated_op_allowed`, for `agents_run` alone).
     """
-    if caller.delegated and not caller.agent_id and project_access.delegated_agent_run_allowed(
+    if caller.delegated and not caller.agent_id and project_access.delegated_op_allowed(
         project_access.claims_from_event(app.current_event.raw_event), 'agents_run',
     ):
         return
@@ -1487,9 +1487,9 @@ app.include_router(agents_engineering_knowledge_routes.app)
 
 def _engineering_caller(op: str | None = None) -> Caller:
     """An administrator acting for themselves, or, for ``op``, the global MCP server's engineering tool of that one
-    operation (7.53.00: never an admin, ``project_access.delegated_engineering_allowed``); 403 for anyone else."""
+    operation (7.53.00: never an admin, ``project_access.delegated_op_allowed``); 403 for anyone else."""
     caller = _caller()
-    if op is not None and caller.delegated and not caller.agent_id and project_access.delegated_engineering_allowed(
+    if op is not None and caller.delegated and not caller.agent_id and project_access.delegated_op_allowed(
             project_access.claims_from_event(app.current_event.raw_event), op):
         return caller
     require_admin_caller(caller)

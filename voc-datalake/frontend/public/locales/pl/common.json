@@ -433,6 +433,12 @@
       "convertTitle": "Przekształcić {{name}}?",
       "convertMessage": "Stanie się zwykłą przestrzenią roboczą bez końca.",
       "convertPausedMessage": "Stanie się zwykłą przestrzenią roboczą bez końca, a wtyczki i formularze wyłączone przez wstrzymanie zostaną ponownie włączone.",
+      "stayedOff": {
+        "title": "Te formularze pozostają wyłączone: w obecnej postaci nie można ich już opublikować. Ich redaktorzy je poprawiają, a potem publikują ponownie.",
+        "themeUnreadable": "{{name}}: tekst jest zbyt trudny do odczytania na swoim tle.",
+        "unresolvedPlaceholder": "{{name}}: tekst pokazuje symbol zastępczy dosłownie, tak jak go zapisano.",
+        "other": "{{name}}: w obecnej postaci nie można go już opublikować."
+      },
       "banner": {
         "running": "To jest próbna przestrzeń robocza do {{date}}. Potem zostanie wstrzymana: jej wtyczki i aktywne formularze przestaną działać, a nic nie zostanie usunięte. Administrator platformy może ją przedłużyć lub przekształcić.",
         "paused": "Ta wersja próbna jest wstrzymana od {{date}}: wyłączono wtyczki ({{plugins}}) i aktywne formularze ({{forms}}). Nic nie zostało usunięte: odczyt i eksport nadal działają. Poproś administratora platformy o jej przedłużenie lub przekształcenie."

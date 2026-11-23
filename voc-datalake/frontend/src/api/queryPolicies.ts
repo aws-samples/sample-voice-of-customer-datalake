@@ -153,6 +153,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'project': 'standard',
   'project-jobs': 'live',
   'projects': 'standard',
+  'prototype-card': 'feedbackData', // (7.68.00) a framed prototype's validation card, per form for five minutes (components/PrototypePins/usePinBridge: the public submit route's throttle is every form's); the Validate tab's save removes it
   'prototype-pins': 'live',
   'radar': 'feedbackData', // overview, detail, releases, compare, reviews; brands are config (below)
   'release-watch': 'feedbackData',

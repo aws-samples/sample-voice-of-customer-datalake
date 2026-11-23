@@ -216,15 +216,15 @@ def test_a_run_cut_short_keeps_the_last_complete_figures(tables):
     assert after['ADOPTION#ROLLUP']['complete'] is True
 
 
-def test_each_scope_gets_its_share_of_the_time_left():
-    """Q20: one large scope never takes the time of the scopes after it."""
-    ticks = iter([0.0, 0.0, 30.0, 61.0])
+def test_the_run_has_one_deadline_which_the_deployment_may_take_whole():
+    """F9 (7.71.01): no per-scope share of the time; the deployment, the only scope with projects until they move
+    into workspaces, may use the run's whole time, and the run's own deadline still stops it."""
+    ticks = iter([0.0, 150.0, 181.0])
     rollup = Rollup(aggregates=None, projects=None, workspaces=None, conversations=None, agents=None,
                     remaining=lambda: 180.0 + handler.RESERVE_SECONDS, monotonic=lambda: next(ticks))
     clock = handler._Clock(rollup)
-    clock.start_scope(3)       # 180 s left over 3 scopes: 60 s for this one
-    assert clock.has_time()     # at 30 s
-    assert not clock.has_time()  # at 61 s: its share is spent, the run's own deadline is not
+    assert clock.has_time()      # at 150 s of 180
+    assert not clock.has_time()  # at 181 s
 
 
 def test_the_handler_needs_every_table(monkeypatch):

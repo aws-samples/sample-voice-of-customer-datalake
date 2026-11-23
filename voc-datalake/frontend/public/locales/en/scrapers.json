@@ -703,6 +703,7 @@
       "duplicate_row": "the same row again",
       "response_too_long": "too much text",
       "hidden_invalid": "a value is too long",
+      "redaction_unavailable": "its personal data could not be checked, so it was left out",
       "selection_count": "too many or too few choices",
       "other": "not accepted"
     },

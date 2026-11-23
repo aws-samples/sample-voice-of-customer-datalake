@@ -1,12 +1,15 @@
 """`shared/ingest_archive.py`: upload source resolution, policy and per-item archive."""
 import hashlib
+import threading
+import time
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
 
-from shared.ingest_archive import archive_per_item, prepare_messages, stamp_file_archive, upload_profile
+from shared import pii_redaction
+from shared.ingest_archive import archive_per_item, policy_applied, prepare_messages, stamp_file_archive, upload_profile
 from shared.source_profiles import SourceProfilesUnavailable, profile_for
 
 NOW = datetime(2026, 1, 15, tzinfo=UTC)
@@ -132,3 +135,48 @@ def test_an_archive_that_is_not_the_items_own_is_never_a_correction_target(store
     s3 = MagicMock()
     prepare_messages(s3, 'bkt', _messages(), profile_for(_PROFILES, 'sales_csv'), NOW, {'b': stored})
     _key_of(s3, 'raw/sales_csv/2026/01/15/b/')
+
+
+class _SlowFactory:
+    """``boto3.client`` standing in for Comprehend: counts the clients built, and each call's text decides its answer
+    (a text with ``throttled`` fails as a throttle that outlasted the retries)."""
+
+    def __init__(self) -> None:
+        self.built = 0
+        self._lock = threading.Lock()
+
+    def __call__(self, *_args: object, **_kwargs: object) -> MagicMock:
+        with self._lock:
+            self.built += 1
+        time.sleep(0.01)  # a slow build: workers building their own would overlap here
+        client = MagicMock()
+
+        def detect(**request: str) -> dict:
+            if 'throttled' in request['Text']:
+                raise ClientError({'Error': {'Code': 'ThrottlingException'}}, 'DetectPiiEntities')
+            return {'Entities': []}
+
+        client.detect_pii_entities.side_effect = detect
+        return client
+
+
+def test_a_strict_redaction_shares_one_client_and_leaves_out_what_comprehend_could_not_read(monkeypatch):
+    """S7 (7.71.01): the Comprehend client is built once, before the workers; a message one of whose texts Comprehend
+    could not read is left out and named, never kept with the patterns' redaction alone. Without ``unreadable`` the
+    pattern result is kept, as before."""
+    monkeypatch.setenv('PII_COMPREHEND', '1')
+    messages = [{'id': f'm{n}', 'source_platform': 's', 'language': 'en',
+                 'text': 'throttled, call 555-123-4567' if n == 3 else f'fine {n}'} for n in range(12)]
+    factory = _SlowFactory()
+    pii_redaction._comprehend_client.clear()
+    try:
+        with patch.object(pii_redaction.boto3, 'client', factory):
+            unreadable: list[str] = []
+            out, _mode = prepare_messages(MagicMock(), 'bkt', messages, profile_for(_PROFILES, 'support_tickets'), NOW,
+                                          unreadable=unreadable)
+            kept = policy_applied(messages, profile_for(_PROFILES, 'support_tickets'))
+    finally:
+        pii_redaction._comprehend_client.clear()
+    assert factory.built == 1
+    assert (unreadable, [m['id'] for m in out]) == (['m3'], [f'm{n}' for n in range(12) if n != 3])
+    assert [m['text'] for m in kept if m['id'] == 'm3'] == ['throttled, call [PHONE]']

@@ -16,12 +16,12 @@ from test_settings_app_feedback import ADMIN, USER
 
 import metrics_handler
 import settings_handler
-from shared.project_access import ACTING_SUBJECT_CLAIM, MCP_AGENT_RUN_CLAIM
+from shared.project_access import ACTING_SUBJECT_CLAIM, MCP_OP_CLAIM
 from shared.test.moto_tables import create_pk_sk_table
 
 PLATFORM = {'sub': 'plat-sub', 'cognito:username': 'pat', 'cognito:groups': 'platform-admins'}
 DELEGATED = {'sub': 'mcp:tok_1', ACTING_SUBJECT_CLAIM: 'admin-sub', 'cognito:groups': 'admins'}
-CLEARED = {**DELEGATED, MCP_AGENT_RUN_CLAIM: 'insights_get_adoption'}
+CLEARED = {**DELEGATED, MCP_OP_CLAIM: 'insights_get_adoption'}
 ROLLUP = {'pk': 'ADOPTION#ROLLUP', 'sk': 'latest', 'rolled_up_at': '2026-11-20T03:05:00+00:00',
           'complete': True, 'first_month': '2024-12', 'agent_runs_counted': True,
           'months': {'2026-11': {'projects_started': 2, 'with': {'prototype': 1},
@@ -79,8 +79,9 @@ class TestTheView:
     def test_a_credential_reads_it_only_once_the_mcp_lambda_cleared_it(self, api_gateway_event, lambda_context):
         assert _view(api_gateway_event, lambda_context, claims=DELEGATED)[0] == 403
         assert _view(api_gateway_event, lambda_context, claims=CLEARED)[0] == 200
-        # A call cleared for Run now (agents_run) never reads the view (review round 1, S4).
-        assert _view(api_gateway_event, lambda_context, claims={**DELEGATED, MCP_AGENT_RUN_CLAIM: 'agents_run'})[0] == 403
+        # A call cleared for Run now (agents_run) or an engineering operation never reads the view (S4, F7).
+        for other in ('agents_run', 'runs_list'):
+            assert _view(api_gateway_event, lambda_context, claims={**DELEGATED, MCP_OP_CLAIM: other})[0] == 403
 
     def test_a_bad_range_is_a_400(self, api_gateway_event, lambda_context):
         assert _view(api_gateway_event, lambda_context, grain='week')[0] == 400

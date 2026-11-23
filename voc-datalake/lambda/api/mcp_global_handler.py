@@ -15,7 +15,7 @@ Amazon Quick, …) connect with a personal token minted on the Connect page
   ``agents_run`` (agent runs are admin-only) is offered only to a write token
   minted by an admin, re-checked against Cognito on every call; so are the five
   engineering tools (7.53.00, shared/mcp_global_tools_engineering.py), each
-  delegated with its one operation (``voc:mcp_engineering``), never as admin, and
+  delegated with its one operation (``voc:mcp_op``), never as admin, and
   the two that act (steering, a run request) within ``ENGINEERING_ACTS_PER_HOUR``;
 * the minter is re-checked on EVERY authenticated request (``AdminGetUser``): a
   disabled or deleted user's tokens stop working at once, and so does a token
@@ -83,7 +83,7 @@ from shared.mcp_global_tools import (
     resolve_tool,
 )
 from shared.mcp_tokens import parse_token, secret_matches
-from shared.project_access import ADMIN_GROUP, MCP_AGENT_RUN_CLAIM, MCP_ENGINEERING_CLAIM
+from shared.project_access import ADMIN_GROUP, MCP_OP_CLAIM
 from shared.tables import get_jobs_table, get_projects_table
 from shared.tracing import deferred_xray_provider
 from shared.warm_init import warm_at_init
@@ -474,14 +474,11 @@ def _claims_for(call: ToolCall, row: Mapping[str, Any]) -> dict[str, str]:
     if call.tool.board_route:
         # The app pool's issuer from this function's own environment, never the request (mcp_global_tools).
         claims = board_route_claims(claims, _minter_identity(row), os.environ.get('USER_POOL_ID', ''))
-    if call.tool.engineering_op:
-        # Only after _check_allowed's live Cognito check: the ONE operation the tool serves, which its route admits
-        # for itself alone (project_access.delegated_engineering_allowed); never the agents_run claim.
-        claims[MCP_ENGINEERING_CLAIM] = call.tool.engineering_op
-    elif call.tool.admin_only:
-        # Only after _check_allowed's live Cognito check (see project_access): the ONE admin-only operation the tool
-        # is, which its route admits for itself alone (project_access.delegated_agent_run_allowed, MCP_ADMIN_OPS).
-        claims[MCP_AGENT_RUN_CLAIM] = call.tool.name
+    if call.tool.engineering_op or call.tool.admin_only:
+        # Only after _check_allowed's live Cognito check (see project_access): the ONE operation the tool serves (an
+        # engineering tool's operation, else the admin-only tool's name), which its route admits for itself alone
+        # (project_access.delegated_op_allowed, MCP_DELEGATED_OPS).
+        claims[MCP_OP_CLAIM] = call.tool.engineering_op or call.tool.name
     return claims
 
 

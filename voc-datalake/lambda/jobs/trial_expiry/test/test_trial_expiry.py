@@ -3,6 +3,7 @@ the listing and nothing else reaches it; one trial that fails leaves the others 
 nothing (its one delete is the plugins' existing disable, in shared/workspace_plugin_settings.py, pinned with the pause
 by lambda/shared/test/test_trial_pause.py)."""
 import ast
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,7 +18,7 @@ from shared.exceptions import ConfigurationError
 from shared.platform_workspaces import NewWorkspace, create_workspace
 from shared.test.moto_tables import create_pk_sk_table
 from shared.trial_state import NewTrial, new_trial
-from shared.trials import read_meta
+from shared.trials import read_meta, save_trial
 
 WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 START = datetime(2026, 11, 21, 9, 0, tzinfo=UTC)
@@ -67,22 +68,40 @@ def test_each_tick_pauses_the_trials_whose_stored_end_passed():
         assert 'paused_at' not in read_meta(workspaces, OTHER)['trial']
 
 
-def test_a_trial_that_fails_is_left_for_the_next_tick_and_the_others_are_paused():
+def _throttled(_workspaces):
+    """The pause of trial ``WS`` throttled by DynamoDB."""
+    real = handler.pause
+
+    def throttled_once(tables, ws, now):
+        if ws == WS:
+            raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'UpdateItem')
+        return real(tables, ws, now)
+
+    return patch.object(handler, 'pause', side_effect=throttled_once)
+
+
+def _poisoned(workspaces):
+    """Trial ``WS``'s stored map one the pause does not expect: a ``paused`` list that is a number (a TypeError)."""
+    meta = read_meta(workspaces, WS)
+    recently = (START + timedelta(days=30, hours=12)).isoformat()
+    save_trial(workspaces, WS, meta, {**meta['trial'], 'paused_at': recently, 'paused': {'plugins': 7}})
+    return nullcontext()
+
+
+@pytest.mark.parametrize('failing', [_throttled, _poisoned], ids=['aws-error', 'any-other-error'])
+def test_a_trial_that_fails_is_counted_and_left_for_the_next_tick_and_the_others_are_paused(failing):
+    """Any error of one trial (7.71.01's commit review: not only an AWS one) is logged and counted, and the tick goes
+    on to the others."""
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
         workspaces = _world(resource)
+        fault = failing(workspaces)
         first, second, third, fourth = _patched(resource)
-        real = handler.pause
-
-        def throttled_once(tables, ws, now):
-            if ws == WS:
-                raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'UpdateItem')
-            return real(tables, ws, now)
-
-        with first, second, third, fourth, patch.object(handler, 'pause', side_effect=throttled_once):
+        with first, second, third, fourth, fault, patch.object(handler.logger, 'exception') as logged:
             outcome = handler.handle_event(EVENT, handler._tables(), START + timedelta(days=31))
         assert outcome == {'outcome': handler.SWEPT, 'failed': 1, 'paused': 1}
         assert 'paused_at' in read_meta(workspaces, OTHER)['trial']
+        assert logged.call_args.kwargs['extra'] == {'workspace_id': WS}
 
 
 def test_it_needs_both_tables():

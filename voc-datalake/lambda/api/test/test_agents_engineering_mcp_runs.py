@@ -1,9 +1,10 @@
 """MCP for runs (7.53.00) at the Agents API: the routes the global MCP server's engineering tools reach, with the claims
-that server sends (``voc:mcp_engineering`` = one operation, an ``mcp:`` subject acting for the minter, no group), on the
+that server sends (``voc:mcp_op`` = one operation, an ``mcp:`` subject acting for the minter, no group), on the
 run workspace's world (engineering/test/run_workspace_world.py).
 
 * each route admits the delegated call for its OWN operation only (runs list, overview, retrospective, steering), never
-  for another's, never with the ``agents_run`` claim, never without the claim, never for an ``agent:`` principal;
+  for another's (``agents_run`` included), never with an old claim's name, never without the claim, never for an
+  ``agent:`` principal;
 * the signals, go, restart, Stop, answers, board actions and every other engineering route refuse it whatever
   operation it carries;
 * its steering is the minter's ``msg.steer`` to the run's conductor, marked as sent over MCP, and logged with ``via``;
@@ -62,7 +63,7 @@ def mcp(op: str | None, **extra: str) -> dict[str, str]:
     claims = {'sub': 'mcp:tok_1', 'cognito:groups': '', 'email': 'mcp:tok_1', 'voc:acting_subject': 'admin-sub',
               **extra}
     if op is not None:
-        claims['voc:mcp_engineering'] = op
+        claims['voc:mcp_op'] = op
     return claims
 
 
@@ -77,7 +78,8 @@ def test_each_route_admits_the_mcp_tool_of_its_own_operation_only(lambda_context
     assert status in (200, 202), answer
     for other in sorted(MCP_ENGINEERING_OPS - {op}):
         assert _call(lambda_context, method, path, claims=mcp(other), body=body)[0] == 403, other
-    for claims in (mcp(None), mcp(None, **{'voc:mcp_agent_run': 'true'}), mcp(op, sub='agent:ag_1'),
+    for claims in (mcp(None), mcp('agents_run'), mcp(None, **{'voc:mcp_agent_run': 'true'}),
+                   mcp(None, **{'voc:mcp_engineering': op}), mcp(op, sub='agent:ag_1'),
                    mcp(op, **{'voc:acting_subject': ''}), mcp(op, **{'voc:acting_subject': 'mcp:tok_2'}),
                    mcp(f' {op}x')):
         assert _call(lambda_context, method, path, claims=claims, body=body)[0] == 403, claims

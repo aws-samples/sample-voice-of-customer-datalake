@@ -383,6 +383,21 @@ class TestSyntheticAndReal:
         assert result['decision_prefill']['evidence']['document_ids'] == [result['document_id']]
         assert tables.block()['report_document_id'] == result['document_id']
 
+    def test_the_report_counts_everyone_who_said_what_was_missing_not_only_the_newest_ten(self, call, tables):
+        """Q32 (7.71.01): 37 testers said what was missing; the view lists the newest ten, and the summary's data and
+        the report say 37."""
+        criterion, _task = self._ready(call, tables)
+        for index in range(37):
+            _answer(tables, f'f{index}', {f'q_vc_{criterion["id"]}': 4, 'q_v_missing': f'Thing {index}'},
+                    f'2026-11-20T10:{index:02d}:00Z')
+        status, view = call(EDITOR, 'GET', BASE)
+        assert (status, len(view['real']['missing']), view['real']['missing_count']) == (200, 10, 37)
+        call(EDITOR, 'POST', f'{BASE}/report', {})
+        with patch('shared.validation_ai.converse', side_effect=_restating_model) as model:
+            result = routes._report_work({**call.started.args[2], 'actor': {'sub': 'editor-sub', 'kind': 'user'}})
+        assert 'Testers who said what was missing: 37' in model.call_args.kwargs['prompt']
+        assert tables.document(result['document_id'])['report']['missing_count'] == 37
+
     def test_the_report_reads_as_its_starter(self, call, tables):
         criterion, _task = self._ready(call, tables)
         _answer(tables, 'f1', {f'q_vc_{criterion["id"]}': 5}, '2026-11-20T10:00:00Z')

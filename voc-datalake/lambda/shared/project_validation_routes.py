@@ -504,7 +504,7 @@ def results_text(view: Mapping[str, Any]) -> str:
                      f"synthetic personas' average {synthetic.get('average')} (synthetic, not evidence)")
     lines.extend(f"Task: {task['text']} | real success rate {task['real'].get('rate')} from "
                      f"{task['real'].get('n', 0)}" for task in view.get('tasks') or [])
-    lines.append(f"Testers who said what was missing: {len(real.get('missing') or [])}")
+    lines.append(f"Testers who said what was missing: {int(real.get('missing_count') or 0)}")
     return '\n'.join(lines)
 
 
@@ -518,7 +518,7 @@ def _report_work(config: dict[str, Any]) -> dict[str, Any]:
     summary = ai.report_summary(results_text(view), language=config.get('response_language'))
     real = view.get('real') or {}
     report = {'tasks': view['tasks'], 'ces': real.get('ces') or {},
-              'responses': int(real.get('responses') or 0), 'missing_count': len(real.get('missing') or []),
+              'responses': int(real.get('responses') or 0), 'missing_count': int(real.get('missing_count') or 0),
               'synthetic_run_id': (view.get('synthetic') or {}).get('document_id'),
               'form_id': (view.get('form') or {}).get('form_id'), 'form_revision': (view.get('form') or {}).get(
                   'revision'), 'summary': summary}

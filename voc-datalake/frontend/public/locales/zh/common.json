@@ -440,6 +440,12 @@
       "convertTitle": "转换 {{name}}？",
       "convertMessage": "它将成为没有结束日期的常规工作区。",
       "convertPausedMessage": "它将成为没有结束日期的常规工作区，暂停时关闭的插件和表单会重新开启。",
+      "stayedOff": {
+        "title": "以下表单仍保持关闭：按现状已无法发布。请其编辑者修正后重新发布。",
+        "themeUnreadable": "{{name}}：其文字在背景上太难阅读。",
+        "unresolvedPlaceholder": "{{name}}：某段文字按原样显示了占位符。",
+        "other": "{{name}}：按现状已无法发布。"
+      },
       "banner": {
         "running": "这是一个试用工作区，有效期至 {{date}}。之后会暂停：其插件和已上线的表单停止运行，不会删除任何内容。平台管理员可以延长或转换它。",
         "paused": "此试用自 {{date}} 起已暂停：已关闭 {{plugins}} 个插件和 {{forms}} 个已上线的表单。没有删除任何内容：读取和导出仍可正常使用。请联系平台管理员延长或转换它。"

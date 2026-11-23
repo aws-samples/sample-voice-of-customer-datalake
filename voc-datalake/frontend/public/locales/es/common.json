@@ -443,6 +443,12 @@
       "convertTitle": "¿Convertir {{name}}?",
       "convertMessage": "Pasa a ser un espacio de trabajo normal, sin fin.",
       "convertPausedMessage": "Pasa a ser un espacio de trabajo normal, sin fin, y se vuelven a activar los plugins y formularios que desactivó la pausa.",
+      "stayedOff": {
+        "title": "Estos formularios siguen desactivados: tal como están, ya no se pueden publicar. Sus editores los corrigen y luego los vuelven a publicar.",
+        "themeUnreadable": "{{name}}: su texto es demasiado difícil de leer sobre su fondo.",
+        "unresolvedPlaceholder": "{{name}}: un texto muestra un marcador de posición tal como está escrito.",
+        "other": "{{name}}: tal como está, ya no se puede publicar."
+      },
       "banner": {
         "running": "Este es un espacio de trabajo de prueba hasta el {{date}}. Después se pausa: sus plugins y formularios activos se detienen y no se borra nada. Un administrador de la plataforma puede ampliarlo o convertirlo.",
         "paused": "Esta prueba está en pausa desde el {{date}}: se desactivaron {{plugins}} plugins y {{forms}} formularios activos. No se borró nada: la lectura y la exportación siguen funcionando. Pida a un administrador de la plataforma que la amplíe o la convierta."

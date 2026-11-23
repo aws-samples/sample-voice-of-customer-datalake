@@ -1637,9 +1637,9 @@ pause turned off, whether it was converted; never who did what), and the app sho
 the hour after its `expires_at`**. Each tick reads the platform listing once (one Query of the `WORKSPACES` partition,
 whose rows carry each trial's map, written in the same transaction as `META`'s) and pauses every trial that is not
 converted, whose `expires_at` has passed and that is not paused yet; a trial paused within the last day is visited
-again, so a pause a failed attempt left half done is finished, and one trial that fails is left for the next tick
-without stopping the others. The pause reads the trial from `META` again (the stored `expires_at` decides): a trial
-extended meanwhile, converted, being deleted or no trial at all is left alone. A trial whose `expires_at` does not
+again, so a pause a failed attempt left half done is finished, and one trial that fails, whatever the error, is logged,
+counted and left for the next tick without stopping the others. The pause reads the trial from `META` again (the stored `expires_at` decides): a trial
+extended meanwhile, converted, being resumed, being deleted or no trial at all is left alone. A trial whose `expires_at` does not
 parse is never paused: the tick skips it and logs a warning, and the pause refuses it too, until a platform admin
 extends it. Creating, extending or converting a trial schedules nothing: the job's role may Query the listing
 partition, and the workspaces API holds no scheduler or `iam:PassRole` action. A due trial is paused
@@ -1653,8 +1653,10 @@ partition, and the workspaces API holds no scheduler or `iam:PassRole` action. A
    stored as `paused`;
 3. a `trial_paused` audit row (actor `trial-expiry`, kind `schedule`, the lists);
 4. each plugin turned off by the existing audited disable (its own `plugin_disabled` row, reason `trial_paused`) and
-   each live form set `enabled: false` (its save counter one up, `updated_by` `trial-expiry`);
-5. the live forms read once more: a form put live while the pause ran is recorded and turned off the same way.
+   each live form set `enabled: false` (its save counter one up, `updated_by` `trial-expiry`).
+
+No form is put live once step 1 committed (the publish's own transaction checks `paused_at`), so the live forms read in
+step 2 are all there are (7.71.01 dropped a second read that could never find one).
 
 **No new workspace status.** A paused trial is `active`, so every reader, writer, the export and the hard delete treat
 it as any workspace: reads, edits, chat, imports and the export keep working; what stops is its scheduled plugins and
@@ -1674,13 +1676,17 @@ project's card is a live form of that workspace and joins the pause and its `tri
 
 **Extend and convert** (`POST /platform/workspaces/{ws}/trial/extend` `{days}` and `…/convert`, platform admins only,
 live-checked; the console's row of a trial): each writes its audit row first (`trial_extended`, `trial_converted`),
-turns a paused trial's recorded plugins and forms back on (each plugin the deployment still offers, each form still
-there, still off and still publishable: a form edited while paused so that its theme is unreadable or a text shows a
-placeholder as written stays off, and the extension's history names it in `resumed.skipped` with the publish rule's
-code, for its editors to fix and publish), then writes the map without the pause. An extension counts from the stored
-end, or from now once it ended; the hourly tick reads the new end. A conversion ends the trial for good (the tick
-passes a converted trial by). A 409 `trial_changed` (the trial written meanwhile) after the resume leaves it resumed
-but still marked paused, and the same extension again finishes it, counted from the same stored end.
+marks a paused trial `resuming_at` (so the hourly pause, which leaves a trial being resumed alone, cannot turn off
+what the resume turns on before the route's own write), turns its recorded plugins and forms back on (each plugin the
+deployment still offers, each form still there, still off and still publishable: a form edited while paused so that
+its theme is unreadable or a text shows a placeholder as written stays off), then writes the map without the pause and
+the mark. The answer's `trial.resumed` says what came back and names each form left off in `skipped` (`{form_id, name,
+code}`, the publish rule's code; also kept in the extension's history), and the console's row shows them with why, for
+their editors to fix and publish (7.71.01). An extension counts from the stored end, or from now once it ended; the
+hourly tick reads the new end. A conversion ends the trial for good (the tick passes a converted trial by). A failure
+after the audit row (a 409 `trial_changed`, the trial written meanwhile, or an error of the resume) leaves it marked,
+(partly) resumed and still paused, and the same extension or conversion again finishes it (an extension counted from
+the same stored end).
 
 **Fixed cost: about none** (tenet 7): 720 ticks a month, each one Query of the listing partition (a few rows per
 workspace) and nothing more while no trial is due.

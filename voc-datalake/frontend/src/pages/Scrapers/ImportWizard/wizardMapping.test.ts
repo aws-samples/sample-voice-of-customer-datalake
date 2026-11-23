@@ -4,13 +4,19 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Dimension } from '../../../api/dimensionsSchema'
-import { dimensionFor, eventBytes, formName, importCalls, importTag, wizardMappingProblem, reviewsMapping } from './wizardMapping'
+import type { InferredForm } from '../../../api/importWizardSchema'
+import {
+  dimensionFor, eventBytes, formName, importCalls, importTag, redactedTextsPerRow, wizardMappingProblem, reviewsMapping,
+} from './wizardMapping'
 
 /** What a call holds at most: the texts a redacting source takes (lambda/shared/forms_v2_import.py), and 4 MB of event. */
 const MAX_REDACTED_TEXTS = 250
 const MAX_CALL_BYTES = 4 * 1024 * 1024
 
 const dimension = (key: string, label: string): Dimension => ({ key, label, infer: false, values: [] })
+const question = (id: string, type: string) => ({ id, type, headline: { en: id } })
+const survey = (language: string, questions: readonly unknown[], hidden: readonly unknown[] = []): InferredForm =>
+  ({ definition: { language, questions, hidden_fields: hidden }, mapping: {}, problems: [] })
 const DIMENSIONS = [dimension('product', 'Product line'), dimension('user_type', 'Type of user')]
 
 describe('a reviews file', () => {
@@ -43,6 +49,23 @@ describe('sending', () => {
     const calls = importCalls(rows, { first: 0, later: 0, textsPerRow: 2 })
     expect(calls.map((call) => [call.offset, call.items.length])).toStrictEqual([[0, 125], [125, 125], [250, 10]])
     expect(importCalls([], { first: 0, later: 0, textsPerRow: 1 })).toStrictEqual([])
+  })
+
+  it('sizes a survey by the texts each row sends to Comprehend: a 300-row survey with one open text goes as 125, 125, 50', () => {
+    const rows = Array.from({ length: 300 }, (_unused, index) => ({ id: String(index) }))
+    const form = survey('en', [question('q_nps', 'nps'), question('q_why', 'open_text'), question('q_plan', 'single_select')])
+    expect(redactedTextsPerRow(form)).toBe(2) // its text and its one open answer
+    const calls = importCalls(rows, { first: 0, later: 0, textsPerRow: redactedTextsPerRow(form) })
+    expect(calls.map((call) => call.items.length)).toStrictEqual([125, 125, 50])
+  })
+
+  it("counts a hidden field's value too, and nothing for a language Comprehend does not read (Q34)", () => {
+    const questions = [question('q_why', 'open_text'), question('q_more', 'open_text')]
+    expect(redactedTextsPerRow(survey('es', questions, [{ id: 'channel' }]))).toBe(4)
+    expect(redactedTextsPerRow(survey('de', questions, [{ id: 'channel' }]))).toBe(0)
+    const rows = Array.from({ length: 6000 }, (_unused, index) => ({ id: String(index) }))
+    // A German survey: only the 5,000 rows a call takes (and its size) split it.
+    expect(importCalls(rows, { first: 0, later: 0, textsPerRow: 0 }).map((call) => call.items.length)).toStrictEqual([5000, 1000])
   })
 
   it('keeps every call, the first with the whole file, under the Lambda payload as its event carries it', () => {

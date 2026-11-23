@@ -111,18 +111,20 @@ The token can only narrow that:
 `agents_run` (agent runs are admin-only) is offered only to a **write** token minted by
 an **admin**, and on every call the handler re-checks with `AdminListGroupsForUser`
 that the minter is *still* in `admins`. Only then does it add the claim
-`voc:mcp_agent_run`, set to the tool's ONE operation (`agents_run`), which `agents_handler.run_agent` honours for an
-`mcp:` principal acting for a person (`project_access.delegated_agent_run_allowed`, whose `MCP_ADMIN_OPS` are the two
-operations it admits) — the credential is still not an admin anywhere else. `insights_get_adoption` (7.70.00) is gated
-the same way, on a read token too: the claim then names `insights_get_adoption`, which its route, the leadership view,
-admits for its read alone, so a call cleared for one operation never passes for the other.
+`voc:mcp_op`, set to the tool's ONE operation (`agents_run`), which `agents_handler.run_agent` honours for an `mcp:`
+principal acting for a person (`project_access.delegated_op_allowed`, whose `MCP_DELEGATED_OPS` are the operations it
+admits) — the credential is still not an admin anywhere else. `insights_get_adoption` (7.70.00) is gated the same way,
+on a read token too: the claim then names `insights_get_adoption`, which its route, the leadership view, admits for its
+read alone, so a call cleared for one operation never passes for another.
 
 The five `engineering_` tools (7.53.00, [Engineering runs](#engineering-runs-75300)) are gated the same way, with
 one more limit: they are offered only to a **write** token minted by an **admin** (even the three that only read),
-never to a project-pinned one, and the minter is re-checked in `admins` on every call. The claim they carry is not
-`voc:mcp_agent_run` but `voc:mcp_engineering`, set to the tool's ONE operation (`runs_list`, `run_get`,
-`run_analysis`, `run_steer` or `run_request`); each Agents API route admits it for its own operation alone
-(`project_access.delegated_engineering_allowed`), and every other engineering route still refuses the credential.
+never to a project-pinned one, and the minter is re-checked in `admins` on every call. They carry the same claim,
+`voc:mcp_op`, set to the tool's ONE operation (`runs_list`, `run_get`, `run_analysis`, `run_steer` or `run_request`);
+each Agents API route admits it for its own operation alone (`project_access.delegated_op_allowed`), and every other
+engineering route still refuses the credential. Since 7.71.01 one claim, one set of operations (`MCP_DELEGATED_OPS`,
+the admin-only and the engineering ones, which share no name) and one check serve every such tool; before, the
+admin-only tools carried `voc:mcp_agent_run` and the engineering ones `voc:mcp_engineering`.
 
 ## Tools
 
@@ -231,7 +233,7 @@ public (`lambda/shared/mcp_global_tools_engineering.py`). The skill
 
 - **Who gets them.** A write token minted by an administrator who still is one, re-checked in Cognito on every call,
   never a read, a non-admin's or a project-pinned token ([Who a token acts as](#who-a-token-acts-as)). The principal
-  is never an admin: each route admits `voc:mcp_engineering` for its one operation, and records `via: mcp:<token>`
+  is never an admin: each route admits `voc:mcp_op` for its one operation, and records `via: mcp:<token>`
   and the minter in its log line.
 - **Reads.** `engineering_runs_list`, `engineering_run_get` and `engineering_run_analysis` are the runs list, the
   overview and the retrospective, each cut field by field by the tool: no transcript text, no diff. The analysis's

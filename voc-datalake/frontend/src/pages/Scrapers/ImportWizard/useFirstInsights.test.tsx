@@ -79,6 +79,19 @@ describe('useFirstInsights', () => {
     }
   })
 
+  it('keeps saying a survey is slow when the window ends with none analysed: its rows are never imported before (Q33)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      getSummary.mockResolvedValue({ total_feedback: 0 })
+      const { result } = renderHook(() => useFirstInsights(SURVEY), { wrapper: createQueryWrapper() })
+      await waitFor(() => expect(getSummary).toHaveBeenCalledWith({ days: 7 }, 'feedback_form', { channel: 'form_ff_1' }))
+      act(() => { vi.advanceTimersByTime(5 * 60 * 1000) })
+      await waitFor(() => expect(result.current).toMatchObject({ alreadyImported: false, ready: false, slow: true }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reads nothing more before the first row is analysed', async () => {
     getSummary.mockResolvedValue({ total_feedback: 0 })
     const { result } = renderHook(() => useFirstInsights(REVIEWS), { wrapper: createQueryWrapper() })

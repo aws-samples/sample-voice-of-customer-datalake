@@ -278,7 +278,7 @@ describe('VoiceSession limits', () => {
 describe('VoiceSession cost caps', () => {
   const usage = (speech: number) => ({ details: { total: { input: { speechTokens: 0, textTokens: 0 }, output: { speechTokens: speech, textTokens: 0 } } } });
 
-  it('wraps up with budget once the session\'s cost reaches its cap', async () => {
+  it('wraps up with session_limit, never the month\'s budget, once the session\'s cost reaches its cap', async () => {
     const run = await started(sessionInput({ session_cost_cap_microusd: 12_000 }));
     run.transport.stream(0).emit('usageEvent', usage(900));
     await settle();
@@ -287,7 +287,8 @@ describe('VoiceSession cost caps', () => {
     run.transport.stream(0).emit('usageEvent', usage(1000));
     await personaSays(run, 'Goodbye!');
     expect(run.channel.of('notice')).toStrictEqual([{ type: 'notice', code: 'wrapping_up' }]);
-    expect(run.channel.of('ended')).toStrictEqual([{ type: 'ended', reason: 'budget' }]);
+    // The browser words `budget` as this month's minutes used up: the session's own cap is its limit.
+    expect(run.channel.of('ended')).toStrictEqual([{ type: 'ended', reason: 'session_limit' }]);
   });
 
   it('stops the month on its cost cap as well as its minutes', async () => {
@@ -326,6 +327,15 @@ describe('VoiceSession wrap-up and the meter', () => {
     release.open?.();
     await settle();
     expect(run.store.monthly.map((month) => month.seconds)).toStrictEqual([60, 0]);
+  });
+
+  it('still adds the minute to the month when the session row is gone, then ends with error', async () => {
+    const run = await started();
+    run.store.gone = true;
+    run.clock.advance(MINUTE);
+    await settle();
+    expect(run.store.monthly.map((month) => month.seconds)).toStrictEqual([60, 0]);
+    expect(run.channel.of('ended')).toStrictEqual([{ type: 'ended', reason: 'error' }]);
   });
 
   it('ends with error when the session row is gone (its project deleted), and never makes it again', async () => {

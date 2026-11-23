@@ -403,9 +403,10 @@ read; a question an answered form keeps cannot change its type or range, 409 `an
 this?" (yes or no), one CES (1 to 7), a 1-to-5 rating per criterion and an open "What was missing?", in one of the nine
 languages (the card's own words; a task's and a criterion's text stay as written). `open` shows the card or hides it. The
 pin widget asks the form for the card with an empty response on the same public submit route and draws it beside
-**Feedback**, framed in the app (through the host, which asks once per form for the page session, five minutes at most
-and forgotten when the card is saved: the route's throttle is every form's) or opened on its own (once a page load: a
-sandboxed prototype has no storage). The form id does not change, so the prototype's
+**Feedback**, framed in the app (through the host, which asks once per form for the page session, kept in the app's
+query cache under the `prototype-card` key for five minutes at most, a form that asks none (400 `validation_closed`)
+kept as "no card", and removed when the card is saved: the route's throttle is every form's) or opened on its own
+(once a page load: a sandboxed prototype has no storage). The form id does not change, so the prototype's
 CSP keeps its single `connect-src`, its own submit URL: neither the prototype's object nor its metadata is written. The
 card targets the newest prototype version when saved, and the version it leaves stops offering it (its
 `validation_open` turned off); a version made before 7.68.00 carries the earlier widget, which draws no card

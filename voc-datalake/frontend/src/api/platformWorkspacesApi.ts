@@ -50,13 +50,24 @@ interface TrialPackRequest {
   readonly playbooks: boolean
 }
 
-/** The platform console's view of a trial (`trial_view`, lambda/shared/trials.py): its end and its history. */
+/** What an extension or a conversion turned back on (`resume`, lambda/shared/trial_pause.py): how many plugins and
+ * forms, and each form it left off with the publish rule's code (`theme_unreadable`, `unresolved_placeholder`, …). */
+const TrialResumedSchema = z.object({
+  plugins: z.number().catch(0),
+  forms: z.number().catch(0),
+  skipped: z.array(z.object({ form_id: z.string(), name: z.string().catch(''), code: z.string().catch('') })).catch([]),
+})
+export type TrialResumed = z.infer<typeof TrialResumedSchema>
+
+/** The platform console's view of a trial (`trial_view`, lambda/shared/trials.py): its end and its history, and what
+ * the extension or conversion that answered it resumed (`resumed`, null when the trial was not paused). */
 const TrialViewSchema = z.object({
   days: z.number().catch(30),
   expires_at: z.string().nullable().catch(null),
   paused_at: z.string().nullable().catch(null),
   converted_at: z.string().nullable().catch(null),
   extended: z.array(z.unknown()).catch([]),
+  resumed: TrialResumedSchema.nullable().catch(null),
 })
 type TrialView = z.infer<typeof TrialViewSchema>
 const TrialAnswerSchema = z.object({ trial: TrialViewSchema })

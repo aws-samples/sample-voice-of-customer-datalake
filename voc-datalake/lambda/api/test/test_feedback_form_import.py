@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 from moto_helpers import pk_sk_table, rest_event, workspace_route_call
 from test_feedback_form_workspace import wire_form_handler
@@ -269,7 +270,8 @@ class TestInAWorkspace:
 
 
 class CountingComprehend:
-    """A Comprehend stand-in that counts its calls, keeps what each was sent and how many ran at once."""
+    """A Comprehend stand-in that counts its calls, keeps what each was sent and how many ran at once; a text holding
+    ``throttled`` fails as a throttle that outlasted the client's retries."""
 
     def __init__(self) -> None:
         self.texts: list[str] = []
@@ -285,36 +287,52 @@ class CountingComprehend:
         time.sleep(0.005)  # long enough for the next row's call to start beside it when rows run at once
         with self._lock:
             self.in_flight -= 1
+        if 'throttled' in text:
+            raise ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'Rate exceeded'}}, 'DetectPiiEntities')
         start = text.find('Ana Kowalska')
         return {'Entities': [{'Type': 'NAME', 'Score': 0.99, 'BeginOffset': start, 'EndOffset': start + 12}]
                 if start >= 0 else []}
 
 
+def _german(value: Any) -> Any:
+    """``FORM``'s texts as a German form's (its language ``de``, every ``{'en': …}`` text under ``de``)."""
+    if isinstance(value, dict):
+        return {('de' if key == 'en' else key): _german(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_german(item) for item in value]
+    return 'de' if value == 'en' else value
+
+
 class TestARedactedWorkspaceImport:
     """A workspace that saved no feedback_form profile redacts (its default) and, with ``PII_COMPREHEND=1``, each free
-    text is one Comprehend call: only free text is sent, several rows at once, and a call holds at most the budget."""
+    text is one Comprehend call: only free text is sent (a hidden value too: it may hold a name), several rows at once,
+    and a call in a language Comprehend reads holds at most the budget; a row Comprehend could not read is refused."""
 
     @staticmethod
-    def _rows(count: int) -> list[dict[str, str]]:
-        return [{'Response ID': f'r{n}', 'NPS': str(n % 11), 'Plan': 'Pro', 'Channel': 'email',
+    def _rows(count: int, channel: str = 'email') -> list[dict[str, str]]:
+        return [{'Response ID': f'r{n}', 'NPS': str(n % 11), 'Plan': 'Pro', 'Channel': channel,
                  'Why': f'Ana Kowalska says page {n} is slow'} for n in range(count)]
 
-    def _run(self, lambda_context: Any, monkeypatch: Any, rows: int) -> tuple[int, Any, CountingComprehend]:
+    def _run(self, lambda_context: Any, monkeypatch: Any, rows: list[dict[str, str]] | int,
+             form: dict[str, Any] = FORM) -> tuple[int, Any, CountingComprehend]:
         monkeypatch.setenv('PII_COMPREHEND', '1')
         comprehend = CountingComprehend()
-        form_id = _imported_form(lambda_context, claims=WS_ADMIN, ws=WS)
+        status, created = _call(lambda_context, 'POST', '/feedback-forms', body=form, claims=WS_ADMIN, ws=WS)
+        assert status == 200, created
         with seeded_source_profiles(workspaces={WS: []}), \
                 patch('shared.pii_redaction._comprehend', return_value=comprehend):
-            status, answer = _import(lambda_context, form_id, claims=WS_ADMIN, ws=WS, rows=self._rows(rows),
+            status, answer = _import(lambda_context, created['form']['form_id'], claims=WS_ADMIN, ws=WS,
+                                     rows=self._rows(rows) if isinstance(rows, int) else rows,
                                      mapping={k: v for k, v in MAPPING.items() if k != 'Submitted'})
         return status, answer, comprehend
 
     def test_only_free_text_reaches_comprehend_several_rows_at_once(self, world, lambda_context, monkeypatch):
-        rows = fimp.MAX_REDACTED_TEXTS // 2  # each row: its text and its one open answer
+        rows = fimp.MAX_REDACTED_TEXTS // 3  # each row: its text, its one open answer and its hidden channel
         status, answer, comprehend = self._run(lambda_context, monkeypatch, rows)
         assert (status, answer['accepted']) == (200, rows), answer
-        assert len(comprehend.texts) == fimp.MAX_REDACTED_TEXTS
-        assert all('is slow' in text for text in comprehend.texts), 'never an id, a code, a channel or a form name'
+        assert len(comprehend.texts) == 3 * rows
+        assert {text for text in comprehend.texts if 'is slow' not in text} == {'email'}, \
+            'never an id, an option code, an NPS or the form name: the words, the open answers and the hidden values'
         assert comprehend.most_at_once > 1
         messages = _messages(world)
         assert {m['pii_policy_applied'] for m in messages.values()} == {'redact'}
@@ -322,10 +340,36 @@ class TestARedactedWorkspaceImport:
         assert messages['r1']['text'] == 'Why?\n[NAME] says page 1 is slow'
         assert (messages['r1']['metadata']['form_hidden'], messages['r1']['s3_raw_uri']) == ({'channel': 'email'}, None)
 
+    def test_a_name_mapped_to_a_hidden_field_is_read_by_comprehend(self, world, lambda_context, monkeypatch):
+        """S6 (7.71.01): a hidden field's value is free text: a name there gets Comprehend under a redacting
+        policy, never the patterns alone."""
+        status, answer, _comprehend = self._run(lambda_context, monkeypatch, self._rows(2, channel='Ana Kowalska'))
+        assert (status, answer['accepted']) == (200, 2), answer
+        assert {m['metadata']['form_hidden']['channel'] for m in _messages(world).values()} == {'[NAME]'}
+
     def test_a_call_over_the_budget_is_refused_before_any_call(self, world, lambda_context, monkeypatch):
-        status, answer, comprehend = self._run(lambda_context, monkeypatch, fimp.MAX_REDACTED_TEXTS // 2 + 1)
+        status, answer, comprehend = self._run(lambda_context, monkeypatch, fimp.MAX_REDACTED_TEXTS // 3 + 1)
         assert (status, answer['code']) == (400, fimp.TOO_MANY_TEXTS)
         assert (comprehend.texts, world['sqs'].send_message_batch.call_args_list) == ([], [])
+
+    def test_a_form_in_a_language_comprehend_does_not_read_takes_large_calls(self, world, lambda_context, monkeypatch):
+        """Q34 (7.71.01): a German survey's texts never reach Comprehend (it reads en and es only), so no 250-text
+        bound: 300 rows, 900 texts, go in one call, redacted by the patterns."""
+        status, answer, comprehend = self._run(lambda_context, monkeypatch, 300, form=_german(FORM))
+        assert (status, answer['accepted']) == (200, 300), answer
+        assert comprehend.texts == []
+        assert {m['pii_policy_applied'] for m in _messages(world).values()} == {'redact'}
+
+    def test_a_row_comprehend_could_not_read_is_refused_and_the_others_are_queued(self, world, lambda_context,
+                                                                                 monkeypatch):
+        """S7 (7.71.01): a throttle that outlasted the client's retries refuses that row (``redaction_unavailable``,
+        which the wizard shows): its text is never kept with the patterns' redaction alone."""
+        rows = self._rows(4)
+        rows[2]['Why'] = 'throttled: Ana Kowalska, call 555-123-4567'
+        status, answer, _comprehend = self._run(lambda_context, monkeypatch, rows)
+        assert (status, answer['accepted'], answer['refused_count']) == (200, 3, 1), answer
+        assert answer['refused'] == [{'row': 3, 'code': fimp.REDACTION_UNAVAILABLE}]
+        assert sorted(_messages(world)) == ['r0', 'r1', 'r3']
 
 
 def test_a_send_failure_is_reported_by_row(world, lambda_context):

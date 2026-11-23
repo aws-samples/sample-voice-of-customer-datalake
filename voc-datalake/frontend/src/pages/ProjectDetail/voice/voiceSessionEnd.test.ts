@@ -1,6 +1,7 @@
 /**
  * A voice session's end as the projects API records it: posted once, retried after a failure, reported failed after
- * the last attempt and posted again on Try again; and sent with keepalive as the page goes away, unless recorded.
+ * the last attempt and posted again on Try again; and sent with keepalive as the page goes away once the connection is
+ * over and the end not recorded, never while the session is live (the relay finishes that one).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEndRecorder } from './voiceSessionEnd'
@@ -45,13 +46,21 @@ describe('createEndRecorder', () => {
     expect([run.sent.length, run.states.at(-1)]).toStrictEqual([4, 'yes'])
   })
 
-  it('sends the end with keepalive as the page goes away, unless it was recorded', async () => {
-    const closing = recorder(['fail'])
-    closing.end.pageHidden()
+  it('sends the end with keepalive as the page goes away once the connection is over, unless it was recorded', async () => {
+    const failing = recorder(['fail', 'fail', 'fail', 'ok'])
+    failing.end.record()
+    await vi.advanceTimersByTimeAsync(6000)
+    failing.end.pageHidden()
     const recorded = recorder(['ok'])
     recorded.end.record()
     await vi.advanceTimersByTimeAsync(0)
     recorded.end.pageHidden()
-    expect([closing.sent, recorded.sent]).toStrictEqual([[true], [false]])
+    expect([failing.sent, recorded.sent]).toStrictEqual([[false, false, false, true], [false]])
+  })
+
+  it('sends nothing as the page goes away while the session is live: the relay finishes it (Q30)', () => {
+    const live = recorder(['ok'])
+    live.end.pageHidden()
+    expect([live.sent, live.states]).toStrictEqual([[], []])
   })
 })

@@ -741,6 +741,7 @@
       "duplicate_row": "la misma fila repetida",
       "response_too_long": "demasiado texto",
       "hidden_invalid": "un valor es demasiado largo",
+      "redaction_unavailable": "no se pudieron revisar sus datos personales, así que se dejó fuera",
       "selection_count": "demasiadas o muy pocas opciones",
       "other": "no aceptada"
     },

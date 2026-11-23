@@ -183,10 +183,14 @@ def test_extending_a_paused_trial_turns_back_on_what_it_paused_and_clears_the_pa
     trial_arg = resume.call_args.args[1]
     assert resume.call_args.args[::2] == (WS, PAT)
     assert trial_arg['paused'] == paused['paused']
+    # Q26 (7.71.01): marked resuming (stored) before the resume, so the hourly pause leaves it alone meanwhile.
+    assert trial_arg['resuming_at'] == view['extended'][-1]['at']
     assert resume.call_args.args[3] == 'trial_extended'
     assert (view['paused_at'], view['paused']) == (None, None)
-    assert view['extended'][-1]['resumed'] == {'plugins': 1, 'forms': 1}
-    assert not is_paused(read_meta(table, WS)['trial'])
+    assert view['extended'][-1]['resumed'] == view['resumed'] == {'plugins': 1, 'forms': 1}
+    stored = read_meta(table, WS)['trial']
+    assert not is_paused(stored)
+    assert 'resuming_at' not in stored
 
 
 def test_a_converted_trial_or_one_extended_too_often_is_not_extended(table):
@@ -243,8 +247,11 @@ def test_converting_a_paused_trial_resumes_it(table):
     resume = MagicMock(return_value={'plugins': 0, 'forms': 1})
     view = convert_trial(table, WS, PAT, resume=resume)
     assert resume.call_args.args[3] == 'trial_converted'
+    assert 'resuming_at' in resume.call_args.args[1]
     assert view['paused'] is None
-    assert read_meta(table, WS)['trial']['resumed'] == {'plugins': 0, 'forms': 1}
+    # Q27 (7.71.01): the conversion's answer says what it resumed.
+    assert read_meta(table, WS)['trial']['resumed'] == view['resumed'] == {'plugins': 0, 'forms': 1}
+    assert 'resuming_at' not in read_meta(table, WS)['trial']
 
 
 # ── save_trial ───────────────────────────────────────────────────────────────

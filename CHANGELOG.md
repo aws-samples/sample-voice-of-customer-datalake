@@ -17,7 +17,106 @@ the platform package version.
 
 ## [Unreleased]
 
-## [7.71.00] - 2026-11-21
+## [7.71.01] - 2026-11-23
+
+The review gate's deferred findings on 7.67.00–7.71.00, fixed before b- is deployed: the hourly pause of a trial
+never undoes an extension's or a conversion's resume, and the console names the forms a resume left off; under a
+redacting policy an imported survey's hidden values reach Comprehend, and a row Comprehend could not read is refused
+instead of kept with the patterns alone; a survey in a language Comprehend does not read imports in a few large calls;
+the voice relay counts a session whose row is gone to the month, ends a session at its own cost cap as its limit, and
+a page closed mid-session leaves the relay to finish; the leadership rollup has one deadline; the report counts every
+tester who said what was missing; the MCP Lambda's delegated calls carry one claim. 7.67.00–7.71.00 are now dated
+2026-11-23, the day they ship.
+
+### Fixed
+
+- **One trial's failure never stops the hourly tick** (`lambda/jobs/trial_expiry/handler.py`): any error of one trial,
+  not only an AWS one or a lost race (a stored map the pause does not expect, a bug), is logged, counted `failed` and
+  left for the next tick, and the other trials are still paused.
+- **The hourly pause never undoes a resume** (`shared/trials.py`, `shared/trial_pause.py`): it could run between an
+  extension's (or a conversion's) resume and its write of the map, find the trial still paused and past its end, and
+  turn everything back off with no pause recorded. A paused trial is now marked `resuming_at` before its resume, and
+  the pause answers `not_due` for a trial so marked; the map's write removes the mark with the pause. A failure leaves
+  the trial marked and still paused, and the same extension or conversion again finishes it
+  ([multi-workspace.md](docs/multi-workspace.md#trial-workspaces)).
+- **The pause reads the live forms once.** 7.71.00's second read after the disables could never find a form put live
+  meanwhile: a publish's own transaction checks `paused_at`, so none lands after the pause's first write.
+- **The console names the forms a resume left off, and why** (Administration → Workspaces, a trial's row): `POST
+  /platform/workspaces/{ws}/trial/extend` and `…/convert` answer `trial.resumed` (`{plugins, forms, skipped:
+  [{form_id, name, code}]}`, null when the trial was not paused; a conversion's never reached its answer before), and
+  the row lists each form left off with the publish rule it fails (its text too hard to read on its background, a
+  placeholder shown as written), after a conversion too. Nine locales.
+- The paused-trial check of a plugin enable and of a form put live is one builder (`shared/trial_state.py`
+  `unpaused_check`): the workspace layer's own spelling of it and its one-caller `write_unpaused` are gone, and the forms
+  handler calls the layer's transaction (`transact_write_items(…, unpaused_in=…)`) itself, within the raw-access counts.
+- **An imported survey's hidden values are free text** (`shared/forms_v2_import.py`): a column mapped to a hidden field
+  may hold a name, so under a redacting policy its values reach Comprehend like an open answer (they had the patterns
+  alone), and a call's 250-text bound counts them.
+- **A row Comprehend could not read is refused, never kept half redacted** (`shared/pii_redaction.py`,
+  `shared/ingest_archive.py`): under a redacting policy a form import no longer keeps the patterns' redaction of a text
+  Comprehend failed on; that row is refused (`redaction_unavailable`, which First insights names) and the others are
+  imported. The Comprehend client is built once, before the redacting workers start (they could each build one at
+  once), with adaptive retries (five attempts), so a throttle backs off before a text counts as unreadable. Every other
+  caller of the redaction keeps the pattern result on a failure, as before.
+- **A survey in a language Comprehend does not read imports in a few large calls**: the 250-text bound holds only for
+  rows in a language Comprehend reads for personal data (en, es, with `PII_COMPREHEND=1`), and the wizard sizes its
+  calls the same way: a row's text, its open answers and its hidden values, nothing for another language (a German
+  survey goes 5,000 rows a call, bound by size; a 300-row survey in English with one open-text column goes as 125, 125
+  and 50) ([import-wizard.md](docs/import-wizard.md#a-survey-export-an-imported-form)).
+- **"Imported before" is said of a reviews import only**: a survey's rows are new items each time (the wizard makes a
+  new form), so a survey whose rows are still not analysed after five minutes keeps saying it is slow.
+- **A voice session whose row is gone still counts to the month** (`lambda/stream/src/voice/voice-session.ts`): the
+  meter adds the seconds and the cost to the month's row first, then writes the session's, so a session whose project
+  was deleted while it ran still spends the month's minutes and cost.
+- **A voice session that reaches its own cost cap ends as `session_limit`** ("The session reached its time limit."),
+  never `budget`, which the browser says as this month's minutes used up.
+- **A page closed mid-session sends no End** (`voiceSessionEnd.ts`): the `keepalive` End on `pagehide` goes only once
+  the connection is over and its End not yet recorded. A live session is left to the relay's own finish (its last
+  turns, the meter, the row ended), which the End's stop of the runtime could cut short mid-write, and the projects
+  API's next offer of the project's personas files its transcript ([voice-personas.md](docs/voice-personas.md)).
+- **The adoption rollup has one deadline** (`lambda/jobs/adoption_rollup/handler.py`): each scope's share of the time
+  is gone, since the deployment, the only scope with projects until projects move into workspaces, comes first and may
+  use the whole run; a scope cut short still keeps its last complete figures
+  ([leadership-view.md](docs/leadership-view.md)).
+- **The validation report counts every tester who said what was missing**: `GET /projects/{id}/validation`'s `real`
+  carries `missing_count` (`missing` lists the newest ten), which the report's summary data and its `missing_count`
+  use: 37 answers read 37, not 10.
+- **A framed prototype's validation card is kept in the app's query cache** (the `prototype-card` key, five minutes,
+  `components/PrototypePins/usePinBridge.ts`), in place of its own cache module: a form that asks none (400
+  `validation_closed`) is kept as no card, any other failure is asked again, and the Validate tab's save removes it. The
+  prototype CSP's single `connect-src` is unchanged and no API resource is added.
+- **One delegated MCP claim** (`shared/project_access.py`, `api/mcp_global_handler.py`): an admin-only tool's call
+  carries `voc:mcp_op`, its one operation (an engineering tool's operation, else the tool's name: `agents_run`,
+  `insights_get_adoption`), and each route admits it for its own operation alone through one check
+  (`delegated_op_allowed`, over `MCP_DELEGATED_OPS`: the admin-only and the engineering operations, which share no
+  name). `voc:mcp_agent_run` and `voc:mcp_engineering` are gone; a call cleared for one operation passes for no other
+  ([mcp.md](docs/mcp.md#who-a-token-acts-as)).
+- Tests: the processor's concurrent-batch test of a key repeated in one batch failed now and then in a full run
+  (`TypeError: __bool__ should return bool, returned MagicMock`). It was a race, not a leak from another test: the
+  records run on several threads, and unittest.mock sets a mock's first `__bool__` on its type before its return value,
+  so a worker that read the mocked write's answer in between got a mock back (the same error, every time, once that
+  window is widened). The fake write is now a plain function that records each item under a lock and answers `True`
+  (`test_handler_concurrency.py`), and the sibling test of a failing record in a concurrent batch answers `True` too
+  and compares its writes in any order (`test_handler_mutation.py`).
+- Docs: 7.69.00 and [voice-personas.md](docs/voice-personas.md) say the relay, not the repository, holds no hand-written
+  RFC 6455 code: the dev mock (`frontend/mock-voice.js`, development only) keeps its own framing.
+  `adoption-rollup-worker.ts` says one `latest` item per scope.
+
+### Upgrade notes
+
+- **A redacting survey import refuses what Comprehend could not read.** With `PII_COMPREHEND=1`, a row in English or
+  Spanish one of whose texts Comprehend fails on after its retries is refused (`redaction_unavailable` in the answer's
+  `refused`, a skipped row in the import history) instead of being queued with the patterns' redaction alone; the rest
+  of the call is imported. Watch `PiiComprehendFailures`, and send the refused rows again to the same form
+  (`POST /feedback-forms/{form_id}/import`, the same items) once Comprehend answers. Without `PII_COMPREHEND=1`, or for
+  another language, nothing changes.
+- **The MCP claim merge: VocApiStack in one deploy.** The global MCP Lambda now sends `voc:mcp_op`, and the agents,
+  engineering and leadership routes read only that: an admin-only or engineering tool call that meets a Lambda of the
+  other version while the stack updates is refused once (403) and passes when sent again. No token, stored row or
+  client changes.
+- No new resource, IAM statement, route or flag.
+
+## [7.71.00] - 2026-11-23
 
 **A trial workspace, created at the end of the workshop** ([multi-workspace.md](docs/multi-workspace.md#trial-workspaces)).
 A platform admin creates a trial workspace for a customer in one step: its people, a starter pack (the workshop
@@ -79,7 +178,7 @@ no fixed cost.
   stays at 425, and no scheduler or `iam:PassRole` action.
 - **About no fixed cost:** 720 ticks a month, each one Query of the listing partition while no trial is due.
 
-## [7.70.00] - 2026-11-21
+## [7.70.00] - 2026-11-23
 
 **The leadership view**: Insights → Leadership shows on one page how the teams use the method, by month or quarter:
 projects started and taken to a prototype, validations and validated decisions, decisions by verdict, cycle times,
@@ -134,7 +233,7 @@ per-person view and no leaderboard. A new daily job builds it; no new route reso
 - "With AI" counts AI-assisted and AI-driven artifacts together: a document does not record which way of working its
   requester used. Agent runs are counted for the deployment only (the agents are not per workspace yet).
 
-## [7.69.00] - 2026-11-21
+## [7.69.00] - 2026-11-23
 
 **Talk to the personas by voice** (idea 15, behind `-c voicePersonas=true`, off by default): press Talk on a project
 persona and interview it out loud in your language through Amazon Nova 2.5 Sonic. It answers in its own synthetic
@@ -211,9 +310,9 @@ presigns; no API Gateway resource, no fixed cost ([voice-personas.md](docs/voice
   runtime takes SigV4 only; the browser's URL lives 60 seconds and signs one session id and one project scope; the
   relay accepts it once (close 1008 for a second connection or a failed activation) and refuses evidence of another
   session or project, and messages over 32 KB (1009). `/ws` is served by the `ws` package (8.23.0, MIT, no
-  dependencies; approved by the owner on 2026-11-22, [dependencies.md](docs/dependencies.md)), so the repository holds
-  no hand-written RFC 6455 code; ws's optional native add-ons (`bufferutil`, `utf-8-validate`) are left out of the
-  bundle.
+  dependencies; approved by the owner on 2026-11-22, [dependencies.md](docs/dependencies.md)), so the relay holds no
+  hand-written RFC 6455 code; the dev mock (`frontend/mock-voice.js`, development only) keeps its own framing. ws's
+  optional native add-ons (`bufferutil`, `utf-8-validate`) are left out of the bundle.
 - **Spend is capped in cost as well as minutes:** 5 cents a minute of the session's limit (75 cents for 15 minutes)
   and of the month's minutes ($15 for 300), checked by the projects API at the start and by the relay (the month every
   minute, the session at every usage event); the relay drops microphone frames past 1.5 times real time, so a client
@@ -245,7 +344,7 @@ presigns; no API Gateway resource, no fixed cost ([voice-personas.md](docs/voice
 - Not yet run against AWS: check the items of [voice-personas.md → What to check on a live
   deployment](docs/voice-personas.md#what-to-check-on-a-live-deployment) on a test account first.
 
-## [7.68.00] - 2026-11-21
+## [7.68.00] - 2026-11-23
 
 **A real Validate phase**: the methodology's last step (TENETS.md tenet 2's "review", labelled **Validate**) checks the
 prototype against the PRD's success criteria, first with your personas, then with real testers inside the prototype,
@@ -307,7 +406,7 @@ the lake, pins never are. No new API Gateway resource (the API stack stays at 42
 - The card shows in prototype versions made from 7.68.00 on (the widget is part of each version's HTML): save a
   walkthrough or build again to give an older prototype the card.
 
-## [7.67.00] - 2026-11-21
+## [7.67.00] - 2026-11-23
 
 **The import wizard: bring your own signals in minutes** ([import-wizard.md](docs/import-wizard.md)). Data sources →
 **Import a file** takes a CSV, TSV, JSON or Excel file (app store reviews, support tickets, or another survey tool's

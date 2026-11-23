@@ -1,7 +1,7 @@
 /**
  * @fileoverview The host half of the prototype pin widget AND of the walkthrough runtime: listens to the
  * prototype iframe, forwards a tester's pin (and, since 7.68.00, the validation card's request, asked once per form for
- * the page session, and answers) to the PUBLIC `POST /feedback-forms/{form_id}/submit` route and answers the widget with
+ * the page session through the query cache, and answers) to the PUBLIC `POST /feedback-forms/{form_id}/submit` route and answers the widget with
  * the result; hands the walkthrough's
  * messages to the page
  * (docs/prototype-builder.md Part 1). Framed, the widget always uses this bridge; only a prototype
@@ -15,10 +15,13 @@
  */
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { apiErrorStatus } from '../../api/apiErrorStatus'
+import { apiErrorCode } from '../../lib/errors'
 import { isRecord } from '../../lib/typeGuards'
 import { cardResultMessage, isPrototypeFrameOrigin, parseWidgetMessage, postToWidget, resultMessage } from './pinMessages'
-import { cachedCard } from './prototypeCardCache'
 import { parseWalkthroughMessage } from './walkthroughMessages'
 import type { WalkthroughMessage } from './walkthroughMessages'
 
@@ -50,16 +53,48 @@ function listen(port: MessagePort | undefined, handle: (message: WalkthroughMess
 }
 
 /**
- * The validation card (7.68.00): its request or an answer on the same public route, the answer (the card, or the
- * answer's) handed back on `port`. The card is asked once per form for the page session (prototypeCardCache.ts: the
- * route's throttle is every form's).
+ * The validation card a framed prototype asks for, per form, in the page's query cache (7.68.00; the `feedbackData`
+ * family's five minutes, api/queryPolicies.ts): every frame load asks the host for it, and each ask is a request on
+ * the PUBLIC submit route, whose throttle every form shares. The Validate tab's save removes them all, so the next
+ * frame load shows the card as saved. A prototype opened standalone asks its submit route itself, once a page load:
+ * its document is sandboxed to an opaque origin with no storage, and its CSP's single `connect-src` is that one URL.
  */
-function forwardCard(message: { readonly type: 'card' | 'answer'; readonly formId: string; readonly requestId: string;
-                                readonly body: unknown }, port: MessagePort | null): void {
-  const send = () => api.submitPrototypePin(message.formId, message.body)
-  void (message.type === 'card' ? cachedCard(message.formId, send) : send()).then(
-    (answer) => postToWidget(port, cardResultMessage(message.type, message.requestId, true,
-      message.type === 'card' && isRecord(answer) ? answer['card'] : undefined)),
+export const prototypeCardKeys = {
+  all: ['prototype-card'] as const,
+  form: (formId: string) => ['prototype-card', formId] as const,
+}
+const CARD_STALE_MS = 5 * 60 * 1000
+/** The submit route's answer to a card request on a form that asks no validation questions: "no card", kept too. */
+const NO_CARD = { status: 400, code: 'validation_closed' } as const
+
+/** The card of `formId`, or null when the form asks none; a failure that is not that refusal (no network, a 5xx, a
+ * 429) is not kept, so the next frame load asks again. */
+function cardOf(queryClient: QueryClient, formId: string, body: unknown): Promise<unknown> {
+  return queryClient.query({
+    queryKey: prototypeCardKeys.form(formId),
+    queryFn: async () => {
+      try {
+        const answer = await api.submitPrototypePin(formId, body)
+        return isRecord(answer) ? (answer['card'] ?? null) : null
+      } catch (error: unknown) {
+        if (apiErrorStatus(error) === NO_CARD.status && apiErrorCode(error) === NO_CARD.code) return null
+        throw error
+      }
+    },
+    staleTime: CARD_STALE_MS,
+  })
+}
+
+/**
+ * The validation card (7.68.00): its request (once per form for the page session, `cardOf`) or an answer on the same
+ * public route, the result (the card, or the answer's) handed back on `port`.
+ */
+function forwardCard(queryClient: QueryClient, message: { readonly type: 'card' | 'answer'; readonly formId: string;
+                       readonly requestId: string; readonly body: unknown }, port: MessagePort | null): void {
+  const asked = message.type === 'card' ? cardOf(queryClient, message.formId, message.body)
+    : api.submitPrototypePin(message.formId, message.body).then(() => null)
+  void asked.then(
+    (card) => postToWidget(port, cardResultMessage(message.type, message.requestId, true, card ?? undefined)),
     () => postToWidget(port, cardResultMessage(message.type, message.requestId, false)),
   )
 }
@@ -76,6 +111,7 @@ export function usePinBridge(frameRef: RefObject<HTMLIFrameElement | null>, opti
   })
   const portRef = useRef<MessagePort | null>(null)
   const walkthroughRef = useRef<MessagePort | null>(null)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -103,7 +139,7 @@ export function usePinBridge(frameRef: RefObject<HTMLIFrameElement | null>, opti
       // never asked and must not be told.
       const port = portRef.current
       if (message.type === 'card' || message.type === 'answer') {
-        forwardCard(message, port)
+        forwardCard(queryClient, message, port)
         return
       }
       void api.submitPrototypePin(message.formId, message.body).then(
@@ -120,7 +156,7 @@ export function usePinBridge(frameRef: RefObject<HTMLIFrameElement | null>, opti
       adoptPort(portRef, undefined)
       adoptPort(walkthroughRef, undefined)
     }
-  }, [frameRef])
+  }, [frameRef, queryClient])
 
   return portRef
 }

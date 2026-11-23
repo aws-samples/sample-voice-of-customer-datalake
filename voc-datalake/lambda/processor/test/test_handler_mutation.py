@@ -266,12 +266,15 @@ class TestLambdaHandler:
              patch('processor.handler.process_feedback',
                    # Keyed by record, not by call order: records run concurrently.
                    side_effect=_fail_b_by_id), \
-             patch('processor.handler.write_to_dynamodb') as write, \
+             patch('processor.handler.write_to_dynamodb', return_value=True) as write, \
              patch('processor.handler.log_processing_error'):
+            # (a plain True: the records run on several threads, and a MagicMock's first __bool__ is not thread-safe)
             response = handler.lambda_handler(event, context)
 
         assert response == {'batchItemFailures': [{'itemIdentifier': 'm2'}]}
-        assert write.call_args_list == [call({'feedback_id': 'fa'}, None), call({'feedback_id': 'fc'}, None)]
+        # Written in whichever order the records finished.
+        assert sorted(write.call_args_list, key=lambda written: written.args[0]['feedback_id']) == [
+            call({'feedback_id': 'fa'}, None), call({'feedback_id': 'fc'}, None)]
 
 
 # ============================================

@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ClipboardCheck, FileText, FlaskConical, Save, Scale, Sparkles } from 'lucide-react'
 import MethodologyGaps from '../../../components/MethodologyGaps/MethodologyGaps'
-import { forgetPrototypeCards } from '../../../components/PrototypePins/prototypeCardCache'
+import { prototypeCardKeys } from '../../../components/PrototypePins/usePinBridge'
 import { formatDate } from '../../../utils/dateUtils'
 import { projectKey } from '../../../api/projectQueryKeys'
 import { validationApi, validationKeys } from '../../../api/validationApi'
@@ -60,7 +60,7 @@ function useValidationActions(projectId: string) {
       tasks: toTasks(args.rows), open: args.open, language, expectedRevision: args.revision,
     }),
     // A prototype framed in this session shows the card as saved, not the one it was handed before.
-    onSuccess: forgetPrototypeCards,
+    onSuccess: () => { queryClient.removeQueries({ queryKey: prototypeCardKeys.all }) },
     onSettled: settle,
   })
   const report = useMutation({ mutationFn: () => validationApi.writeReport(projectId, language), onSettled: settle })

@@ -228,7 +228,8 @@ def _write_unpaused(scope: WorkspaceScope, entry: dict[str, Any]) -> None:
     ``trial_paused`` (shared/trial_state.py), whatever the order of the reads. ``_LostRace`` when the entry's own
     condition failed."""
     try:
-        _forms(scope).write_unpaused(entry, configured_table(get_workspaces_table(), 'Workspaces'))
+        ws_table(scope, _forms_table()).transact_write_items(
+            [entry], unpaused_in=configured_table(get_workspaces_table(), 'Workspaces'))
     except ClientError as exc:
         codes = cancellation_codes(exc)
         if len(codes) > 1 and codes[1] == 'ConditionalCheckFailed':
@@ -2507,8 +2508,10 @@ def import_form_responses(form_id: str):
     the form's brand partition, so Results, Report and Compare read it. NPS stays in ``form_answers``, never the
     rating. Answers ``{accepted, refused: [{row, code, question_id?}] (the first 200), refused_count, run_id,
     raw_s3_key}``; a dry run checks the rows and writes nothing. A form that was not imported is a 409. Under a
-    redacting policy (a workspace's default) a call holds at most ``fimp.MAX_REDACTED_TEXTS`` texts (400
-    ``too_many_texts``): each is one Comprehend call, and the rows are redacted several at once.
+    redacting policy (a workspace's default) a call in a language Comprehend reads holds at most
+    ``fimp.MAX_REDACTED_TEXTS`` texts (400 ``too_many_texts``): each is one Comprehend call, and the rows are redacted
+    several at once. A row one of whose texts Comprehend could not read (after its retries) is refused
+    (``redaction_unavailable``), never kept with the patterns' redaction alone.
     """
     scope = _request_scope(write=True)
     _require_import_admin()
@@ -2533,17 +2536,22 @@ def import_form_responses(form_id: str):
         fimp.check_redaction_budget(form.definition, read.accepted)
     if request.dry_run:
         return answer
-    # Several rows redacted at once, and only their own words read by the entity model (never an id or a code).
+    # Several rows redacted at once, and only their own words read by the entity model (never an id or a code); a row
+    # it could not read is refused, not kept with a pattern-only redaction.
+    unreadable: list[str] = []
     messages, mode = prepare_messages(
         s3, RAW_DATA_BUCKET, [fimp.response_message(form, number, row, _row_routing(form, row, scope))
                               for number, row in read.accepted], profile, now,
-        connector_id=fimp.IMPORT_WRITER, scope=scope, free_text=fimp.free_text_paths(form.definition))
+        connector_id=fimp.IMPORT_WRITER, scope=scope, free_text=fimp.free_text_paths(form.definition),
+        unreadable=unreadable)
+    fimp.refuse_unredacted(read, form_id, unreadable)
     uri = stamp_file_archive(messages, mode, _kept_file(form_id, scope, run_id, request))
     sent, errors = _queue_batches(messages, _resolved_context())
     if sent:
         _mark_answered(form_id, stored, scope)
     _record_form_import(stored, form_id, scope, now, read, (len(messages), sent, errors, uri), run_id)
-    return {**answer, 'accepted': sent, 'run_id': run_id, 'raw_s3_key': uri,
+    return {**answer, 'accepted': sent, 'refused': read.refused[:fimp.MAX_REFUSALS],
+            'refused_count': len(read.refused), 'run_id': run_id, 'raw_s3_key': uri,
             **({'errors': errors[:20]} if errors else {})}
 
 

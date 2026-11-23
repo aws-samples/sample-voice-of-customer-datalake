@@ -37,11 +37,13 @@ Routes:
     POST /platform/workspaces/{ws}/trial/extend   {days} -> {trial}: 14, 30 or 60 more days from its end (or from now
                                 once it ended), audited first (trial_extended), a paused trial's plugins and forms
                                 turned back on (shared/trial_pause.py; a form no longer publishable stays off and is
-                                named in the history's `resumed.skipped`). 404 for no trial, 409 for a converted one
-                                or one changed meanwhile.
+                                named in `trial.resumed.skipped`, {form_id, name, code}; `resumed` is null for a trial
+                                that was not paused). 404 for no trial, 409 for a converted one or one changed
+                                meanwhile.
     POST /platform/workspaces/{ws}/trial/convert  -> {trial}: a regular workspace from now on, audited first
-                                (trial_converted), a paused trial resumed the same way; a converted one is answered
-                                as it is. Neither route, nor the expiry, deletes anything.
+                                (trial_converted), a paused trial resumed the same way (`trial.resumed`); a converted
+                                one is answered as it is (`resumed` null). Neither route, nor the expiry, deletes
+                                anything.
     GET /platform/costs         {estimate: true, label, currency, price_as_of, price_source, from, to, workspaces:
                                 [{id, name, slug, status, days, total}], next_cursor, deployment?,
                                 unattributed?}: the Bedrock cost estimate per workspace (shared/platform_costs.py,

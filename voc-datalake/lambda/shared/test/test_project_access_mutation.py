@@ -5,11 +5,11 @@ Re-running mutmut on the grown module found thirteen survivors, all in the new
 code, that `test_project_access.py` and `test_project_access_agent.py` cannot see:
 
 * the WIRE NAMES of the three claims the agents runtime and the global MCP
-  Lambda set (``voc:mcp_agent_run``, ``voc:agent_owner_sub``,
+  Lambda set (``voc:mcp_op``, since 7.71.01 the one delegated operation claim, ``voc:agent_owner_sub``,
   ``voc:agent_editor_subs``). The earlier tests spell them through the module's
   own constants, so a renamed constant still passes them; here they are literals,
   because the producers in other Lambdas spell the same strings.
-* ``delegated_agent_run_allowed`` itself: no test in this module's suite called
+* ``delegated_op_allowed`` itself: no test in this module's suite called
   it, so each of its three conjuncts could be inverted or the ``and`` turned into
   an ``or`` unnoticed.
 * the ACCEPTED side of the two agent bounds: an agent id of exactly 64 characters
@@ -27,8 +27,8 @@ OWNER = 'owner-sub'
 NO_USABLE_AGENT_ID = 'agent principal has no usable agent id'
 ONLY_AN_AGENT_NAMES_AN_OWNER = 'only an agent principal may name a project owner'
 NO_OWNER_TO_HAND_TO = 'agent principal has no owner to hand the project to'
-# The one shape delegated_agent_run_allowed clears, spelled with wire-name literals.
-CLEARED_RUN_CLAIMS = {'sub': 'mcp:tok_1', 'voc:mcp_agent_run': 'agents_run', 'voc:acting_subject': 'admin-sub'}
+# The one shape delegated_op_allowed clears for Run now, spelled with wire-name literals.
+CLEARED_RUN_CLAIMS = {'sub': 'mcp:tok_1', 'voc:mcp_op': 'agents_run', 'voc:acting_subject': 'admin-sub'}
 
 
 def _exact(message: str) -> str:
@@ -36,8 +36,8 @@ def _exact(message: str) -> str:
 
 
 class TestClaimNamesAreTheWireContract:
-    def test_global_mcp_run_claim(self):
-        assert pa.MCP_AGENT_RUN_CLAIM == 'voc:mcp_agent_run'
+    def test_global_mcp_operation_claim(self):
+        assert pa.MCP_OP_CLAIM == 'voc:mcp_op'
 
     def test_agent_owner_claim(self):
         assert pa.AGENT_OWNER_CLAIM == 'voc:agent_owner_sub'
@@ -60,38 +60,49 @@ class TestClaimNamesAreTheWireContract:
         assert caller.agent_editor_subs == ('e1', 'e2')
 
 
-class TestDelegatedAgentRunIsExactlyOneShape:
+class TestADelegatedOperationIsExactlyOneShape:
     def test_the_cleared_shape_is_allowed(self):
-        assert pa.delegated_agent_run_allowed(CLEARED_RUN_CLAIMS, 'agents_run') is True
+        assert pa.delegated_op_allowed(CLEARED_RUN_CLAIMS, 'agents_run') is True
         assert frozenset({'agents_run', 'insights_get_adoption'}) == pa.MCP_ADMIN_OPS
+        # F7 (7.71.01): one claim and one set for the admin-only and the engineering operations, sharing no name.
+        assert pa.MCP_DELEGATED_OPS == pa.MCP_ADMIN_OPS | pa.MCP_ENGINEERING_OPS
+        assert pa.MCP_ADMIN_OPS.isdisjoint(pa.MCP_ENGINEERING_OPS)
 
     @pytest.mark.parametrize(('override', 'reason'), [
         ({'sub': 'admin-sub'}, 'a person is not a delegated subject'),
         ({'sub': 'agent:ag_1'}, 'an agent is not an mcp subject'),
-        ({'voc:mcp_agent_run': 'true'}, 'the claim names its operation, never a bare true'),
-        ({'voc:mcp_agent_run': 'Agents_run'}, 'the claim must be exactly the operation'),
-        ({'voc:mcp_agent_run': 'insights_get_adoption'}, 'a claim for another operation does not run an agent'),
-        ({'voc:mcp_agent_run': ''}, 'a blank claim is not set'),
+        ({'voc:mcp_op': 'true'}, 'the claim names its operation, never a bare true'),
+        ({'voc:mcp_op': 'Agents_run'}, 'the claim must be exactly the operation'),
+        ({'voc:mcp_op': 'insights_get_adoption'}, 'a claim for another operation does not run an agent'),
+        ({'voc:mcp_op': 'run_steer'}, 'nor does an engineering operation'),
+        ({'voc:mcp_op': ''}, 'a blank claim is not set'),
+        ({'voc:mcp_op': None, 'voc:mcp_agent_run': 'agents_run'}, "the old claim's name is honoured no more"),
         ({'voc:acting_subject': ''}, 'the token must act for somebody'),
         ({'voc:acting_subject': 'mcp:other'}, 'the token cannot act for a credential'),
         ({'voc:acting_subject': 'agent:ag_1'}, 'the token cannot act for an agent'),
     ])
     def test_every_other_shape_is_refused(self, override, reason):
-        assert pa.delegated_agent_run_allowed({**CLEARED_RUN_CLAIMS, **override}, 'agents_run') is False, reason
+        claims = {key: value for key, value in {**CLEARED_RUN_CLAIMS, **override}.items() if value is not None}
+        assert pa.delegated_op_allowed(claims, 'agents_run') is False, reason
 
-    def test_an_operation_outside_the_two_is_refused_whatever_the_claim(self):
-        claims = {**CLEARED_RUN_CLAIMS, 'voc:mcp_agent_run': 'runs_list'}
-        assert pa.delegated_agent_run_allowed(claims, 'runs_list') is False
+    def test_an_operation_outside_the_set_is_refused_whatever_the_claim(self):
+        claims = {**CLEARED_RUN_CLAIMS, 'voc:mcp_op': 'workflows_save'}
+        assert pa.delegated_op_allowed(claims, 'workflows_save') is False
+
+    def test_an_engineering_operation_is_cleared_for_itself_alone(self):
+        claims = {**CLEARED_RUN_CLAIMS, 'voc:mcp_op': 'run_steer'}
+        assert (pa.delegated_op_allowed(claims, 'run_steer'), pa.delegated_op_allowed(claims, 'agents_run')) == (
+            True, False)
 
     def test_a_missing_run_claim_is_refused_even_for_a_delegated_subject(self):
         claims = {'sub': 'mcp:tok_1', 'voc:acting_subject': 'admin-sub'}
 
-        assert pa.delegated_agent_run_allowed(claims, 'agents_run') is False
+        assert pa.delegated_op_allowed(claims, 'agents_run') is False
 
     def test_the_subject_key_is_sub(self):
-        claims = {'XXsubXX': 'mcp:tok_1', 'voc:mcp_agent_run': 'agents_run', 'voc:acting_subject': 'admin-sub'}
+        claims = {'XXsubXX': 'mcp:tok_1', 'voc:mcp_op': 'agents_run', 'voc:acting_subject': 'admin-sub'}
 
-        assert pa.delegated_agent_run_allowed(claims, 'agents_run') is False
+        assert pa.delegated_op_allowed(claims, 'agents_run') is False
 
 
 class TestAgentBoundsAcceptTheirLimit:

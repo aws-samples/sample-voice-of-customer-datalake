@@ -5,7 +5,8 @@
  */
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderWithQueryClient } from '../../test/query-client'
+import { ApiError } from '../../lib/errors'
+import { createTestQueryClient, renderWithQueryClient } from '../../test/query-client'
 import { hideMessage, parseWidgetMessage, showMessage } from './pinMessages'
 import PrototypePinsReview from './PrototypePinsReview'
 import type { PrototypePin } from '../../api/prototypePinsApi'
@@ -64,11 +65,27 @@ const submitMessage = {
   body: { text: 'Broken button', pin: { selector: '#pay' } },
 }
 
-function renderReview(canEdit: boolean) {
+function renderReview(canEdit: boolean, client = createTestQueryClient()) {
   return renderWithQueryClient(
     <PrototypePinsReview projectId="proj_1" documentId="prototype_1" url="https://app.example/prototypes/p.html"
       title="Prototype" canEdit={canEdit} />,
+    client,
   )
+}
+
+const cardMessage = (requestId: string) => ({ source: 'voc-pin-widget', type: 'card', formId: FORM_ID, requestId, body: { answers: {} } })
+
+/** Two frame loads, each asking for the card on its own port; what each port was answered. */
+async function askTwice(client = createTestQueryClient({ gcTime: 60_000 })) {
+  renderReview(false, client)
+  const answers = []
+  for (const requestId of ['v1', 'v2']) {
+    const port = readyWidget()
+    fromFrame(cardMessage(requestId))
+    await waitFor(() => { expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'card', requestId })) })
+    answers.push(port.postMessage.mock.calls.at(-1)?.[0])
+  }
+  return answers
 }
 
 beforeEach(() => {
@@ -104,6 +121,27 @@ describe('the bridge', () => {
 
     await waitFor(() => expect(port.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'result', ok: false })))
+  })
+
+  it('asks for the validation card once per form for the page session, and hands every frame load the same card', async () => {
+    mocks.submit.mockResolvedValue({ success: true, card: { revision: 2, questions: [{ id: 'q' }] } })
+    const answers = await askTwice()
+    expect(answers).toStrictEqual(['v1', 'v2'].map((requestId) => (
+      { source: 'voc-pin-host', type: 'card', requestId, ok: true, card: { revision: 2, questions: [{ id: 'q' }] } })))
+    expect(mocks.submit).toHaveBeenCalledExactlyOnceWith(FORM_ID, { answers: {} })
+  })
+
+  it("keeps a form's 400 validation_closed as no card", async () => {
+    mocks.submit.mockRejectedValue(new ApiError(400, 'This prototype asks no validation questions', 'validation_closed'))
+    expect(await askTwice()).toStrictEqual(['v1', 'v2'].map((requestId) => ({ source: 'voc-pin-host', type: 'card', requestId, ok: true })))
+    expect(mocks.submit).toHaveBeenCalledExactlyOnceWith(FORM_ID, { answers: {} })
+  })
+
+  it('asks for the card again after any other failure (a throttle, another 400)', async () => {
+    mocks.submit.mockRejectedValueOnce(new ApiError(429, 'Too many requests'))
+      .mockRejectedValueOnce(new ApiError(400, 'Invalid response', 'answer_invalid'))
+    expect(await askTwice()).toStrictEqual(['v1', 'v2'].map((requestId) => ({ source: 'voc-pin-host', type: 'card', requestId, ok: false })))
+    expect(mocks.submit).toHaveBeenCalledTimes(2)
   })
 
   it('swaps to the new port when the frame reloads, closing the old one', async () => {

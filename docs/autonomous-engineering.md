@@ -3243,9 +3243,9 @@ Tenet 4: a local Kiro or Claude agent follows, analyses, steers and asks for run
 
 - **Who.** Only a write token minted by an administrator who still is one: the MCP Lambda re-checks the minter in
   `admins` on every call and refuses a read, a non-admin's or a project-pinned token. The call is never an admin:
-  it carries `voc:mcp_engineering` set to its one operation, and the route admits it for that operation alone
+  it carries `voc:mcp_op` set to its one operation, and the route admits it for that operation alone
   (`_engineering_caller` in `agents_handler.py` and `shared/agents_engineering_run_routes.py`, through
-  `project_access.delegated_engineering_allowed`). Signals, go, restart, Stop, answers, board actions, approvals, the
+  `project_access.delegated_op_allowed`). Signals, go, restart, Stop, answers, board actions, approvals, the
   registry, the connections, the dial and a request's confirm or decline refuse every delegated credential.
 - **The retrospective** (`GET …/<run>/retrospective`, an administrator's too) is Learn's record of the run, built by
   rule from its own rows and gate records (`learning/records.py`, `learning/retrospective.py`, no model call): its

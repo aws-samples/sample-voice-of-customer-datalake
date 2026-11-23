@@ -10,13 +10,18 @@
  * @module pages/Scrapers/ImportWizard/wizardMapping
  */
 import type { Dimension } from '../../../api/dimensionsSchema'
-import type { ColumnKind, ImportTarget } from '../../../api/importWizardSchema'
+import type { ColumnKind, ImportTarget, InferredForm } from '../../../api/importWizardSchema'
+import { inferredQuestions } from './inferredQuestions'
 
 /** The rows one `POST /feedback-forms/{id}/import` call takes at most (lambda/shared/forms_v2_import.py). */
 const MAX_ROWS_PER_CALL = 5000
-/** The texts (each row's text and its open answers) one call holds when its source redacts personal data, each one
- * Comprehend call (lambda/shared/forms_v2_import.py `MAX_REDACTED_TEXTS`): a call stays well inside the API's 29 s. */
+/** The texts (each row's text, its open answers and its hidden values) one call holds when its source redacts
+ * personal data, each one Comprehend call (lambda/shared/forms_v2_import.py `MAX_REDACTED_TEXTS`): a call stays well
+ * inside the API's 29 s. */
 const MAX_REDACTED_TEXTS = 250
+/** The languages whose texts reach Comprehend (lambda/shared/pii_redaction.py `COMPREHEND_PII_LANGUAGES`): a form in
+ * another one sends none, so its calls are bound by their size alone. */
+const COMPREHEND_LANGUAGES: ReadonlySet<string> = new Set(['en', 'es'])
 /** A call's body as its Lambda event carries it (its JSON escaped once more, as the event's `body`): Lambda takes 6 MB
  * a synchronous call, headers and request context included, so a call stays under 4 MB. */
 const MAX_CALL_BYTES = 4 * 1024 * 1024
@@ -81,14 +86,25 @@ interface CallSizes {
   readonly first: number
   /** `eventBytes` of a later call without its rows (the first call's file key instead). */
   readonly later: number
-  /** The texts one row may hold: its text and one per open-text question. */
+  /** The texts one row may send to Comprehend (`redactedTextsPerRow`); 0 for none. */
   readonly textsPerRow: number
 }
 
-/** The rows in calls, in order: each at most `MAX_REDACTED_TEXTS` texts and, with the call's other fields, at most
- * `MAX_CALL_BYTES` (a row too large on its own still goes, alone). */
+/** The texts one row of `form` sends to Comprehend under a redacting source, as the server counts them
+ * (lambda/shared/forms_v2_import.py `check_redaction_budget`): its text, one per open-text question and one per hidden
+ * field; none for a form in a language Comprehend does not read. */
+export function redactedTextsPerRow(form: InferredForm): number {
+  const { language, hidden_fields: hidden } = form.definition
+  if (typeof language !== 'string' || !COMPREHEND_LANGUAGES.has(language)) return 0
+  const openText = inferredQuestions(form).filter((question) => question.type === 'open_text').length
+  return 1 + openText + (Array.isArray(hidden) ? hidden.length : 0)
+}
+
+/** The rows in calls, in order: each at most `MAX_REDACTED_TEXTS` texts (when a row sends any) and, with the call's
+ * other fields, at most `MAX_CALL_BYTES` (a row too large on its own still goes, alone). */
 export function importCalls<T>(rows: readonly T[], sizes: CallSizes): ImportCall<T>[] {
-  const maxRows = Math.max(1, Math.min(MAX_ROWS_PER_CALL, Math.floor(MAX_REDACTED_TEXTS / Math.max(1, sizes.textsPerRow))))
+  const byTexts = sizes.textsPerRow > 0 ? Math.floor(MAX_REDACTED_TEXTS / sizes.textsPerRow) : MAX_ROWS_PER_CALL
+  const maxRows = Math.max(1, Math.min(MAX_ROWS_PER_CALL, byTexts))
   const calls: { readonly offset: number; readonly items: T[]; bytes: number }[] = []
   rows.forEach((row, index) => {
     const bytes = eventBytes(row) + 1 // and its comma

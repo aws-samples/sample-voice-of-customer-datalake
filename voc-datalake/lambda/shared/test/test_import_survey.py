@@ -244,13 +244,20 @@ class TestTheRedactionBudget:
         cells = {'Which plan?': 'Pro', 'What could we improve?': text}
         return [(n, row_answers(form.definition, mapping, cells, default_at=NOW)) for n in range(rows)]
 
-    def test_each_row_holds_its_text_and_its_open_answers(self):
+    def test_each_row_holds_its_text_and_its_open_answers(self, monkeypatch):
+        monkeypatch.setenv('PII_COMPREHEND', '1')
         _table, form = _survey()
         fimp.check_redaction_budget(form.definition, self._accepted(fimp.MAX_REDACTED_TEXTS // 2))
         with pytest.raises(ValidationError) as caught:
             fimp.check_redaction_budget(form.definition, self._accepted(fimp.MAX_REDACTED_TEXTS // 2 + 1))
         assert caught.value.code == fimp.TOO_MANY_TEXTS
         fimp.check_redaction_budget(form.definition, self._accepted(fimp.MAX_REDACTED_TEXTS, text=''))
+
+    def test_no_text_reaches_comprehend_without_its_flag_so_nothing_is_bound(self, monkeypatch):
+        """Q34 (7.71.01): the bound is Comprehend's calls; with ``PII_COMPREHEND`` off a call makes none."""
+        monkeypatch.delenv('PII_COMPREHEND', raising=False)
+        _table, form = _survey()
+        assert fimp.check_redaction_budget(form.definition, self._accepted(fimp.MAX_REDACTED_TEXTS)) is None
 
     def test_the_free_text_is_the_open_answers_and_a_choices_other(self):
         _table, form = _survey()

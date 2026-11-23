@@ -9,7 +9,7 @@ survivors) found what it cannot see:
   the 409 for an agent whose workflow is gone, the 500s for an unconfigured
   table or runtime, and the exact 400 body of an invalid workflow definition.
 * the one delegated path to an admin action: a global-MCP write token carrying
-  ``voc:mcp_agent_run`` may run an agent, the same token without the claim may
+  ``voc:mcp_op`` = ``agents_run`` may run an agent, the same token without the claim may
   not, and an ``agent:`` principal never may.
 * what an archived agent looks like from each side: an admin reads it, a user or
   a delegated admin gets 404, archiving is idempotent, it is disabled, and it
@@ -48,8 +48,8 @@ from shared.test.agents_fixtures import AgentsEnv, agent_body
 from shared.test.instrumentation_fixtures import API_HANDLER_LAYERS, handler_layers
 
 DELEGATED_ADMIN = {'sub': 'mcp:tok', 'voc:acting_subject': 'admin-sub', 'cognito:groups': 'admins'}
-MCP_RUNNER = {**DELEGATED_ADMIN, 'voc:mcp_agent_run': 'agents_run'}
-AGENT_PRINCIPAL = {'sub': 'agent:ag_0123456789ab', 'voc:acting_subject': 'admin-sub', 'voc:mcp_agent_run': 'agents_run'}
+MCP_RUNNER = {**DELEGATED_ADMIN, 'voc:mcp_op': 'agents_run'}
+AGENT_PRINCIPAL = {'sub': 'agent:ag_0123456789ab', 'voc:acting_subject': 'admin-sub', 'voc:mcp_op': 'agents_run'}
 T0 = datetime(2026, 10, 5, 12, 0, 0, tzinfo=UTC)
 UNKNOWN_WORKFLOW = 'wf_0123456789ab'
 RAW_WORKFLOW = 'wf_abcdefabcdef'

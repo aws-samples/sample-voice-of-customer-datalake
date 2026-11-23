@@ -4,8 +4,8 @@ and how ``api/mcp_global_handler.py`` gates them (docs/mcp.md → Engineering ru
 * the tool list: exactly five ``engineering_`` tools, each one route of the Agents API and one operation; offered only
   to a WRITE token minted by an administrator, never a read token, a non-admin's or a project-pinned one;
 * every call re-checks the minter in Cognito: a demoted administrator's token is refused before any route is called;
-* the delegated claims carry ``voc:mcp_engineering`` = the tool's one operation, never ``voc:mcp_agent_run`` and never
-  a group; ``agents_run`` keeps its own claim and never the engineering one;
+* the delegated claims carry ``voc:mcp_op`` = the tool's one operation (7.71.01: the one claim, ``agents_run``'s too,
+  set to its own name), never a group;
 * no tool reaches a signal, a go, a restart, a Stop, an answer, an approval, the registry, the connections, the dial or
   a request's confirm or decline: each tool builds only its own route;
 * the steering and the run requests are held to ``ENGINEERING_ACTS_PER_HOUR`` per token, a store fault refusing;
@@ -145,8 +145,8 @@ class TestEveryCallIsGated:
         (call,) = rig.call_domain.call_args_list
         sent, claims = call.args[0], call.kwargs['claims']
         assert (sent.function_name, sent.method, sent.path) == ('agents-fn', *ROUTES[op])
-        assert claims['voc:mcp_engineering'] == op
-        assert 'voc:mcp_agent_run' not in claims
+        assert claims['voc:mcp_op'] == op
+        assert not {'voc:mcp_engineering', 'voc:mcp_agent_run'} & set(claims)
         assert (claims['sub'], claims['cognito:groups'], claims['voc:acting_subject']) == (
             f'mcp:{MINTED.token_id}', '', 'root-sub')
         assert _audited(rig) == [(tool.name, gt.OUTCOME_OK)]
@@ -178,12 +178,14 @@ class TestEveryCallIsGated:
             assert (result['isError'], result['content'][0]['text']) == (True, f'{name} {refusal}')
         rig.call_domain.assert_not_called()
 
-    def test_agents_run_keeps_its_claim_and_never_gets_an_engineering_one(self):
+    def test_each_admin_only_tool_carries_its_one_operation_in_the_one_claim(self):
+        """F7 (7.71.01): ``agents_run`` names itself, an engineering tool its operation, in the same claim."""
         claims = h._claims_for(h.ToolCall(TOOLS_BY_NAME['agents_run'], {}, None), _row())
-        assert (claims.get('voc:mcp_agent_run'), 'voc:mcp_engineering' in claims) == ('agents_run', False)
+        assert claims['voc:mcp_op'] == 'agents_run'
         for tool in ENGINEERING_TOOLS:
             claims = h._claims_for(h.ToolCall(tool, {}, None), _row())
-            assert (claims['voc:mcp_engineering'], 'voc:mcp_agent_run' in claims) == (tool.engineering_op, False)
+            assert claims['voc:mcp_op'] == tool.engineering_op
+            assert not {'voc:mcp_engineering', 'voc:mcp_agent_run'} & set(claims)
 
 
 class TestNoOtherEngineeringRouteIsReachable:

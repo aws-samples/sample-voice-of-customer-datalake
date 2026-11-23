@@ -30,7 +30,7 @@ Administrators only, acting for themselves (403 for anyone else, a delegated cre
 
 **MCP for runs (7.53.00).** Three of these routes also admit the global MCP server's engineering tools
 (shared/mcp_global_tools_engineering.py), each for its one operation (``_engineering_caller``, through
-``project_access.delegated_engineering_allowed``): the runs list (``runs_list``), the retrospective (``run_analysis``)
+``project_access.delegated_op_allowed``): the runs list (``runs_list``), the retrospective (``run_analysis``)
 and the steering (``run_steer``). The principal is never an admin (a write token whose minter is still an
 administrator, re-checked by the MCP Lambda on every call); its steering is logged with ``via: mcp:<token>`` and the
 minter, and the conversation records it as the minter's, marked as sent over MCP (``MCP_STEER_MARK``). Every other
@@ -79,7 +79,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
-from shared.project_access import Caller, claims_from_event, delegated_engineering_allowed, mcp_via
+from shared.project_access import Caller, claims_from_event, delegated_op_allowed, mcp_via
 from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
 from shared.route_answers import json_response as _json
@@ -117,7 +117,7 @@ def _engineering_caller(op: str | None = None) -> Caller:
     """An administrator acting for themselves, or, for ``op``, the global MCP server's engineering tool of that one
     operation (never an admin: see the module's header); 403 for anyone else."""
     caller = _caller()
-    if op is not None and caller.delegated and not caller.agent_id and delegated_engineering_allowed(
+    if op is not None and caller.delegated and not caller.agent_id and delegated_op_allowed(
             claims_from_event(app.current_event.raw_event), op):
         return caller
     require_admin_caller(caller)

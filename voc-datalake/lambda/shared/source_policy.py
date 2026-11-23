@@ -11,8 +11,10 @@ it archives anything and before it queues the message, and archives only what
   the author's avatar URL) are dropped, every string metadata value is redacted
   — at any depth, inside nested maps such as ``custom_fields`` and inside lists
   — and no raw copy is archived (the redacted message is the only copy that exists). A caller that names its
-  messages' free text (``quiet_policy``'s ``free_text``: a form import's open answers) sends only that, the text and
-  the title to the entity model; their ids, codes and URLs get the patterns alone.
+  messages' free text (``quiet_policy``'s ``free_text``: a form import's open answers and hidden values) sends only
+  that, the text and the title to the entity model; their ids, codes and URLs get the patterns alone. With
+  ``strict`` (a redacting import, shared/ingest_archive.py) a text the entity model should have read and could not
+  raises ``EntityModelFailed`` instead of keeping its pattern-only redaction.
 - ``summary_only``: the same redaction; the processor then stores derived
   fields only (``shared.source_profiles`` contract).
 
@@ -95,17 +97,18 @@ def archive_mode(profile: Mapping[str, Any]) -> str:
     return ARCHIVE_ITEM if profile.get('retention_days') is not None else ARCHIVE_FILE
 
 
-def _redacted(value: object, language: str | None, free_text: FreeText = None, path: tuple[str, ...] = ()) -> object:
+def _redacted(value: object, language: str | None, free_text: FreeText = None, path: tuple[str, ...] = (), *,
+              strict: bool = False) -> object:
     """``value`` with every string redacted: recursing into maps and lists, author keys dropped; a string off
     ``free_text``'s paths by the patterns alone."""
     if isinstance(value, str):
         model_language = language if free_text is None or path in free_text else None
-        return _bounded(redact_text(value, model_language).text, MAX_METADATA_VALUE_LENGTH)
+        return _bounded(redact_text(value, model_language, strict=strict).text, MAX_METADATA_VALUE_LENGTH)
     if isinstance(value, Mapping):
-        return {key: _redacted(item, language, free_text, (*path, str(key))) for key, item in value.items()
-                if key not in _AUTHOR_METADATA_FIELDS}
+        return {key: _redacted(item, language, free_text, (*path, str(key)), strict=strict)
+                for key, item in value.items() if key not in _AUTHOR_METADATA_FIELDS}
     if isinstance(value, list | tuple):
-        return [_redacted(item, language, free_text, path) for item in value]
+        return [_redacted(item, language, free_text, path, strict=strict) for item in value]
     return value
 
 
@@ -119,36 +122,37 @@ def _lower_cased_emails(message: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _redact_message(message: Mapping[str, Any], free_text: FreeText = None) -> dict[str, Any]:
+def _redact_message(message: Mapping[str, Any], free_text: FreeText = None, *, strict: bool = False) -> dict[str, Any]:
     language = message.get('language') if isinstance(message.get('language'), str) else None
     out = {key: value for key, value in message.items()
            if key not in _AUTHOR_FIELDS and key not in _RAW_FIELDS}
     # The caller passes only a non-blank string ``text``, and a placeholder is never empty.
-    out['text'] = _bounded(redact_text(message['text'], language).text, MAX_TEXT_LENGTH)
+    out['text'] = _bounded(redact_text(message['text'], language, strict=strict).text, MAX_TEXT_LENGTH)
     if isinstance(message.get('title'), str):
-        out['title'] = _bounded(redact_text(message['title'], language).text, _MAX_TITLE_LENGTH)
+        out['title'] = _bounded(redact_text(message['title'], language, strict=strict).text, _MAX_TITLE_LENGTH)
     for field in _URL_FIELDS:
         if isinstance(message.get(field), str):
-            out[field] = _bounded(redact_text(message[field], language if free_text is None else None).text,
-                                  MAX_URL_LENGTH)
+            out[field] = _bounded(redact_text(message[field], language if free_text is None else None,
+                                              strict=strict).text, MAX_URL_LENGTH)
     if 'metadata' in message:
-        out['metadata'] = _redacted(message['metadata'], language, free_text)
+        out['metadata'] = _redacted(message['metadata'], language, free_text, strict=strict)
     return out
 
 
 def quiet_policy(message: Mapping[str, Any], profile: Mapping[str, Any], *,
-                 free_text: FreeText = None) -> dict[str, Any] | None:
+                 free_text: FreeText = None, strict: bool = False) -> dict[str, Any] | None:
     """``apply_source_policy`` without its metric, for a caller that applies the policy to many messages on worker
     threads (shared/ingest_archive.py ``policy_applied``) and counts them itself, once, on its own thread.
     ``free_text`` (``FreeText``): the metadata paths that hold a person's own words, the only metadata the entity
-    model reads (None: all of it)."""
+    model reads (None: all of it). ``strict``: a text the entity model should have read and could not raises
+    shared/pii_redaction.py ``EntityModelFailed`` (see the module docstring)."""
     pii = _pii(profile)
     message = {key: value for key, value in _lower_cased_emails(message).items() if key != WORKSPACE_FIELD}
     if pii == PII_ALLOW:
         return {**message, 'pii_policy_applied': PII_ALLOW}
     if not isinstance(message.get('text'), str) or not message['text'].strip():
         return None
-    out = _redact_message(message, free_text)
+    out = _redact_message(message, free_text, strict=strict)
     out['pii_policy_applied'] = pii
     return out
 

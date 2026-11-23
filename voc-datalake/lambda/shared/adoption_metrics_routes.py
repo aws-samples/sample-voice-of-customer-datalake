@@ -7,9 +7,9 @@ On the metrics proxy (no new API Gateway resource). With ``X-Workspace-Id`` the 
 member admin, or a platform admin who entered, audited: shared/request_workspace.py); without it the deployment's, for
 the deployment's ``admins`` and for a platform admin (live-checked). A delegated caller reads only the deployment's
 view, and only through the MCP tool ``insights_get_adoption``, which the MCP Lambda offers to a token an administrator
-minted and clears per call with its live admin check (``project_access.delegated_agent_run_allowed(claims,
+minted and clears per call with its live admin check (``project_access.delegated_op_allowed(claims,
 'insights_get_adoption')``: the claim the MCP Lambda adds to an ``admin_only`` tool's call names that one operation, so
-a call cleared for ``agents_run`` never reads the view); in a workspace a credential is never an admin (shared/workspace.py), so it is
+a call cleared for ``agents_run`` or an engineering operation never reads the view); in a workspace a credential is never an admin (shared/workspace.py), so it is
 refused there. Read-only: the scope's one rollup item and its baselines row (shared/adoption.py), never a
 project, a feedback item or a person. The answer holds counts only, no per-person figure (owner decision 11).
 """
@@ -30,7 +30,7 @@ from shared.ingest_tables import table_view
 from shared.logging import logger, tracer
 from shared.platform_admin import is_platform_admin
 from shared.platform_admin_gate import confirm_live_platform_admin
-from shared.project_access import ADMIN_GROUP, claims_from_event, delegated_agent_run_allowed
+from shared.project_access import ADMIN_GROUP, claims_from_event, delegated_op_allowed
 from shared.project_gate import caller_from_event
 from shared.request_workspace import request_workspace
 from shared.tables import configured_table
@@ -63,7 +63,7 @@ def bind_aggregates_table(getter: Callable[[], Any]) -> None:
 def require_adoption_reader(event: dict, context: WorkspaceContext | None) -> None:
     """403 unless the caller may read the scope's leadership view (see the module docstring)."""
     if caller_from_event(event).delegated:
-        if context is None and delegated_agent_run_allowed(claims_from_event(event), ADOPTION_OP):
+        if context is None and delegated_op_allowed(claims_from_event(event), ADOPTION_OP):
             return
         raise AuthorizationError(DELEGATED_REFUSED)
     if context is not None:

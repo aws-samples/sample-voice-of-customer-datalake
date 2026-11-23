@@ -121,7 +121,7 @@ def test_an_allow_message_without_text_still_passes():
 def test_language_is_passed_to_the_redactor():
     with patch.object(source_policy, 'redact_text', wraps=source_policy.redact_text) as redact:
         apply_source_policy(_message(language='es', metadata=None, title=None), _profile(pii='redact'))
-    redact.assert_called_once_with(_message()['text'], 'es')
+    redact.assert_called_once_with(_message()['text'], 'es', strict=False)
 
 
 @pytest.mark.parametrize(('profile', 'mode', 'allowed'), [

@@ -779,6 +779,7 @@
       "duplicate_row": "ten sam wiersz ponownie",
       "response_too_long": "za dużo tekstu",
       "hidden_invalid": "wartość jest za długa",
+      "redaction_unavailable": "nie udało się sprawdzić danych osobowych, więc wiersz pominięto",
       "selection_count": "za dużo lub za mało wyborów",
       "other": "nie przyjęto"
     },

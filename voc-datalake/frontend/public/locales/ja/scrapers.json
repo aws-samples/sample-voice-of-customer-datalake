@@ -703,6 +703,7 @@
       "duplicate_row": "同じ行の重複",
       "response_too_long": "テキストが長すぎる",
       "hidden_invalid": "値が長すぎる",
+      "redaction_unavailable": "個人データを確認できなかったため、除外されました",
       "selection_count": "選択数が多すぎるか少なすぎる",
       "other": "受け付けられない"
     },

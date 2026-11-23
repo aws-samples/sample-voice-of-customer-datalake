@@ -703,6 +703,7 @@
       "duplicate_row": "重复的行",
       "response_too_long": "文本过长",
       "hidden_invalid": "某个值过长",
+      "redaction_unavailable": "无法检查其个人数据，因此未导入",
       "selection_count": "选择过多或过少",
       "other": "未被接受"
     },
