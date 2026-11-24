@@ -6,7 +6,7 @@
 import { InputQueue, type SonicTransport } from './bedrock-stream.js';
 import { SessionGoneError } from './store.js';
 import type { RelayMessage, VoiceEndReason } from './protocol.js';
-import type { Activation, MonthTotals, SessionUsage, VoiceStore } from './store.js';
+import type { MonthTotals, SessionUsage, VoiceStore } from './store.js';
 import type { ClientChannel, Clock } from './voice-session.js';
 
 export const SESSION_ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -64,7 +64,7 @@ export class FakeStore implements VoiceStore {
   readonly usage: SessionUsage[] = [];
   readonly monthly: Array<{ key: string; seconds: number; cost: number }> = [];
   ended: VoiceEndReason | undefined;
-  activation: Activation = 'live';
+  activation = true;
   input: unknown = undefined;
   monthTotal = 0;
   monthCost = 0;
@@ -75,7 +75,7 @@ export class FakeStore implements VoiceStore {
   /** The session row's usage write waits for it (a spec's race of a minute's meter with the end). */
   usageGate: Promise<void> = Promise.resolve();
 
-  async activate(sessionId: string): Promise<Activation> {
+  async activate(sessionId: string): Promise<boolean> {
     this.calls.push(`activate:${sessionId}`);
     await this.gate;
     return this.activation;

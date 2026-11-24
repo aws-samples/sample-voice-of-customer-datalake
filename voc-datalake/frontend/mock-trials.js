@@ -58,7 +58,7 @@ export function trialSummary(trial) {
 /** The platform console's view (trials.py `trial_view`), or null. */
 export function trialView(trial) {
   if (!trial) return null;
-  return { ...trial, paused: isPaused(trial) ? trial.paused : null, resume_incomplete: false };
+  return { ...trial, paused: isPaused(trial) ? trial.paused : null };
 }
 
 /** What resuming `trial` turns back on (trial_pause.py `resume`), or null when it is not paused. */

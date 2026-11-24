@@ -118,12 +118,13 @@ class SessionFiles:
 
     def record(self, result: ToolResult, context: AgentContext) -> None:
         """What the harness needs from this process: the agent's notes (each save its own, even when the same),
-        its finish and its step."""
+        its finish, its step and (7.71.03) the host writes made (``AgentContext.host_writes``), which the harness's
+        checkpoint keeps for a continuation."""
         if result.checkpoint is not None:
             self.write('checkpoint', {**result.checkpoint, 'save': secrets.token_hex(8)})
         if result.finished is not None:
             self.write('finished', {'summary': result.finished})
-        self.write('state', {'step': context.status.step})
+        self.write('state', {'step': context.status.step, 'writes': sorted(context.host_writes)})
 
 
 def _taken(files: SessionFiles) -> tuple[InboxMessage, ...]:

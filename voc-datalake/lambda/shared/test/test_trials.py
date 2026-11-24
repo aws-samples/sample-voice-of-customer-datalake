@@ -139,10 +139,11 @@ def test_the_views_read_dynamodbs_numbers_and_say_what_the_pause_turned_off(tabl
     assert _present(trial_view(paused))['paused'] == {'plugins': ['webscraper'], 'forms': ['f1', 'f2']}
     assert 'rev' not in _present(trial_view(paused))
     assert 'created_by' not in _present(trial_summary(paused))
-    # A resume cut short (its mark left): the console says so, from the listing (summary) and the routes (view).
+    # A resume cut short (its mark left): the console says so from the listing (summary). A route's view never carries
+    # the mark (F4, 7.71.03: it is answered once the route's own write removed it).
     marked = {**paused, 'resuming_at': '2026-12-22T09:00:00+00:00'}
-    assert (_present(trial_summary(marked))['resume_incomplete'], _present(trial_view(marked))['resume_incomplete'],
-            _present(trial_view(paused))['resume_incomplete']) == (True, True, False)
+    assert (_present(trial_summary(marked))['resume_incomplete'], _present(trial_summary(paused))['resume_incomplete'],
+            {'resume_incomplete', 'resuming_at'} & set(_present(trial_view(marked)))) == (True, False, set())
     # A recorded list that is not one reads as none (7.71.02, F2: the pause and the resume read only these lists).
     assert _present(trial_summary({**paused, 'paused': {'plugins': 7, 'forms': ['f1', 3]}}))['paused'] == {
         'plugins': 0, 'forms': 1}

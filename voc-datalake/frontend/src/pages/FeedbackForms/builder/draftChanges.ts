@@ -9,6 +9,7 @@ import type { TFunction } from 'i18next'
 import type { FormV2 } from '../model/formsV2'
 import { isChoice } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { languageNames } from '../../../i18n/languages'
 
 /** What an edit removes that a live form's respondents answered: questions, options and endings. */
@@ -16,7 +17,7 @@ export function removedParts(t: TFunction<'feedbackForms'>, baseline: FormV2, fo
   const lng = baseline.language
   const kept = new Map(form.questions.map((q) => [q.id, q]))
   const questions = baseline.questions.filter((q) => !kept.has(q.id))
-    .map((q) => t('builder.confirmRemoval.question', { text: textIn(q.headline, lng) }))
+    .map((q) => t('builder.confirmRemoval.question', { text: headlineShown(q, lng) }))
   const options = baseline.questions.flatMap((q) => {
     const now = kept.get(q.id)
     if (!isChoice(q) || now === undefined || !isChoice(now)) return []
@@ -43,7 +44,7 @@ interface Keyed {
 function keyedParts(t: TFunction<'feedbackForms'>, form: FormV2): Keyed[] {
   const lng = form.language
   return [
-    ...form.questions.map((q, index) => ({ id: q.id, label: t('logic.target.question', { number: index + 1, headline: textIn(q.headline, lng) }), json: JSON.stringify(q) })),
+    ...form.questions.map((q, index) => ({ id: q.id, label: t('logic.target.question', { number: index + 1, headline: headlineShown(q, lng) }), json: JSON.stringify(q) })),
     ...form.endings.map((e) => ({ id: e.id, label: t('logic.target.ending', { title: textIn(e.title, lng) }), json: JSON.stringify(e) })),
     ...form.hidden_fields.map((h) => ({ id: `hidden:${h.id}`, label: t('problems.where.hidden', { id: h.id }), json: JSON.stringify(h) })),
     ...form.languages.map((l) => ({ id: `language:${l}`, label: languageNames[l], json: l })),

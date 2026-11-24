@@ -36,7 +36,7 @@ from typing import Any, Final, Literal
 
 from engineering.connectors.identity import OPEN_OR_UPDATE_DRAFT_PR
 from engineering.rows import amount_attr
-from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
+from engineering.runtime.outputs import AGENT_BRANCH_PREFIX, run_branch
 from shared.github_rest import GITHUB_LOGIN
 from shared.logging import logger
 
@@ -237,6 +237,13 @@ def pull_request_of(item: Mapping[str, Any] | None, repository: str) -> PullRequ
     return None if item is None else link_of(_string(item.get('result')), repository)
 
 
+def own_head(head: str, run_id: str) -> bool:
+    """Whether a pull request's ``head`` is a branch of the run ``run_id``: its own (``run_branch``, since 7.71.03
+    ``voc-agent/<run id>-fix``), or one under ``voc-agent/<run id>/`` that a run before 7.71.03 pushed, whose recorded
+    pull request is still read (a run id holds no ``/``, so no other run's branch is either)."""
+    return head == run_branch(run_id) or head.startswith(f'{AGENT_BRANCH_PREFIX}{run_id}/')
+
+
 def _newest_claim(client: Any, table: str, ws: str, run_id: str,
                   repository: str) -> tuple[PullRequestLink, int] | None:
     """The newest done open or update of the run's pull request whose answer is its own (on a branch of the run),
@@ -250,13 +257,12 @@ def _newest_claim(client: Any, table: str, ws: str, run_id: str,
                           KeyConditionExpression='pk = :pk AND begins_with(sk, :p)',
                           ExpressionAttributeValues={':pk': {'S': writes_pk(ws, run_id)}, ':p': {'S': PR_AUTHOR_CLAIMS}})
     rows: list[dict[str, Any]] = answer.get('Items', [])
-    own = f'{AGENT_BRANCH_PREFIX}{run_id}/'
     found: list[tuple[int, PullRequestLink]] = []
     for row in rows:
         if _string(row.get('op')) != OPEN_OR_UPDATE_DRAFT_PR or _string(row.get('state')) != 'done':
             continue
         link = link_of(_string(row.get('result')), repository)
-        if link is not None and link.head.startswith(own):
+        if link is not None and own_head(link.head, run_id):
             found.append((int(amount_attr(row, 'closed_at')), link))
     if not found:
         return None

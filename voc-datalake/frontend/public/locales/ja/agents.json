@@ -1901,7 +1901,8 @@
       "done": "完了",
       "failed": "失敗",
       "stopped": "停止",
-      "reposted": "再投稿"
+      "reposted": "再投稿",
+      "needs_human": "担当者の判断待ち"
     }
   },
   "templatePage": {
@@ -2229,7 +2230,8 @@
           "failed": "失敗",
           "crashed": "クラッシュ",
           "stopped": "停止",
-          "reposted": "引き継ぎ済み"
+          "reposted": "引き継ぎ済み",
+          "needs_human": "担当者の判断待ち"
         },
         "restarted": "{{agent}} が予期せず停止し、再起動されました（{{max, number}} 回中 {{n, number}} 回目）",
         "restartedAgain": "{{agent}} が予期せず停止し、再起動されました（{{n, number}} 回目）",

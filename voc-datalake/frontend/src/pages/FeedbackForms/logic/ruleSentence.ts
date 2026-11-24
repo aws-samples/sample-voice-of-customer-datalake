@@ -12,6 +12,7 @@ import type { TFunction } from 'i18next'
 import type { FormV2, Question, Rule } from '../model/formsV2'
 import { isChoice } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { consentOp, splitOtherwise, valueCodes } from '../model/rules'
 
 /** An option code as it reads: its label, or "Other (typed answer)" / "None of these". */
@@ -51,7 +52,7 @@ export function conditionText(t: TFunction<'feedbackForms'>, form: FormV2, quest
 export function targetText(t: TFunction<'feedbackForms'>, form: FormV2, target: string): string {
   const at = form.questions.findIndex((q) => q.id === target)
   const question = form.questions[at]
-  if (question !== undefined) return t('logic.target.question', { number: at + 1, headline: textIn(question.headline, form.language) })
+  if (question !== undefined) return t('logic.target.question', { number: at + 1, headline: headlineShown(question, form.language) })
   const ending = form.endings.find((e) => e.id === target)
   if (ending !== undefined) return t('logic.target.ending', { title: textIn(ending.title, form.language) })
   return t('logic.target.missing')

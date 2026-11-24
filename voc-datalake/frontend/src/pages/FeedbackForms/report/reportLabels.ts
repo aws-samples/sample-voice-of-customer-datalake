@@ -14,7 +14,7 @@ import { formatDate } from '../../../utils/dateUtils'
 import { formatDecimal, formatPercent } from '../../../utils/numberFormat'
 import type { FormV2 } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
-import { shownAsIds } from '../model/recall'
+import { headlineShown } from '../model/recall'
 import { endingTitle } from '../results/answers'
 
 export interface SegmentChoice {
@@ -27,7 +27,7 @@ export interface SegmentChoice {
 export function segmentChoices(form: FormV2): SegmentChoice[] {
   const hidden = form.hidden_fields.map((field) => ({ value: `hidden.${field.id}`, label: field.label === undefined || field.label === '' ? field.id : field.label }))
   const questions = form.questions.flatMap((question): SegmentChoice[] => {
-    const headline = shownAsIds(textIn(question.headline, form.language)) || question.id
+    const headline = headlineShown(question, form.language) || question.id
     if (question.type === 'single_select') return [{ value: question.id, label: headline }]
     if (question.type === 'matrix') {
       return question.rows.map((row) => ({ value: `${question.id}.${row.code}`, label: `${headline}: ${textIn(row.label, form.language) || row.code}` }))
@@ -86,7 +86,7 @@ export function measuredIds(form: FormV2): string[] {
 /** The question's headline as Results show it (a recalled value as `[id]`), its id without one. */
 export function questionHeadline(form: FormV2, questionId: string): string {
   const question = form.questions.find((candidate) => candidate.id === questionId)
-  return question === undefined ? questionId : shownAsIds(textIn(question.headline, form.language)) || questionId
+  return question === undefined ? questionId : headlineShown(question, form.language) || questionId
 }
 
 /** A heatmap cell's shade for a share in percent, in four steps (none, some, a quarter or more, half or more): the

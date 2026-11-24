@@ -25,7 +25,7 @@ import { seg, serverTool } from './common.js';
 const AGENT_ID = /^[a-z][a-z-]{0,39}-\d{1,6}$/;
 /** The supervisor's sessions that have ended (engineering/runtime/sessions.py Status): every other one, a paused agent
  * held for a person included, is still the run's and shown in full. */
-const ENDED = new Set(['done', 'failed', 'stopped', 'reposted']);
+const ENDED = new Set(['done', 'failed', 'stopped', 'reposted', 'needs_human']);
 
 const RUN_FIELDS = ['run_id', 'goal', 'repo', 'flow', 'status', 'started_at', 'ended_at'] as const;
 const AGENT_FIELDS = [

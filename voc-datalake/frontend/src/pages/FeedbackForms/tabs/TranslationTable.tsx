@@ -18,6 +18,7 @@ import { useDraft } from '../builder/formDraftContext'
 import { useBuilderUi } from '../builder/builderUi'
 import type { FormLanguage, FormV2 } from '../model/formsV2'
 import { hasText, textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { textsToTranslate } from '../model/translatable'
 import type { TranslatableText } from '../model/translatable'
 import { questionIcon } from '../ui/typeIcons'
@@ -35,7 +36,7 @@ function headingOf(t: TFunction<'feedbackForms'>, form: FormV2, owner: Translata
   if (owner.kind === 'welcome') return t('types.welcome')
   if (owner.kind === 'ending') return textIn(form.endings.find((e) => e.id === owner.id)?.title, form.language)
   const at = form.questions.findIndex((q) => q.id === owner.id)
-  return t('logic.target.question', { number: at + 1, headline: textIn(form.questions[at]?.headline, form.language) })
+  return t('logic.target.question', { number: at + 1, headline: headlineShown(form.questions[at], form.language) })
 }
 
 function groupsOf(t: TFunction<'feedbackForms'>, form: FormV2, entries: readonly TranslatableText[]): Group[] {

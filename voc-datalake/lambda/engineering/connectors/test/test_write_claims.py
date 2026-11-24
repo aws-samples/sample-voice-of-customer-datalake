@@ -10,7 +10,15 @@ from botocore.exceptions import ClientError
 from moto import mock_aws
 
 from engineering.board.test.table import TABLE, create_table
-from engineering.connectors.broker import Broker, NotNow, NotPermitted, write_key
+from engineering.connectors.broker import (
+    STALE_CLAIM_SECONDS,
+    Broker,
+    Labelled,
+    NotNow,
+    NotPermitted,
+    issue_marker,
+    write_key,
+)
 from engineering.connectors.handler import handle
 from engineering.connectors.hosts import (
     WRITE_CLAIMED,
@@ -62,10 +70,10 @@ def _row(client: Any) -> dict[str, Any]:
 def test_a_claim_is_created_once_closed_with_its_outcome_and_answered_to_a_repeat(client: Any):
     claims = WriteClaims(client, TABLE, clock=lambda: 1_000)
     assert claims.claim(RUN, KEY, 'post_comment') is None
-    assert claims.claim(RUN, KEY, 'post_comment') == WriteClaim(WRITE_CLAIMED)
+    assert claims.claim(RUN, KEY, 'post_comment') == WriteClaim(WRITE_CLAIMED, at=1_000)
     claims.close(RUN, KEY, WRITE_DONE, {'url': 'https://code.example.com/pull/7#comment-1'})
     assert claims.claim(RUN, KEY, 'post_comment') == WriteClaim(WRITE_DONE, {'url': 'https://code.example.com/pull/7'
-                                                                                    '#comment-1'})
+                                                                                    '#comment-1'}, 1_000)
     # The row's attributes are the claim's alone (the broker's IAM grant allows no other), in the run's partition.
     assert _row(client) == {'pk': PK, 'sk': f'WRITE#{KEY}', 'state': WRITE_DONE, 'op': 'post_comment', 'at': '1000',
                             'closed_at': '1000', 'result': '{"url": "https://code.example.com/pull/7#comment-1"}'}
@@ -75,12 +83,32 @@ def test_a_claim_is_created_once_closed_with_its_outcome_and_answered_to_a_repea
 
 
 def test_only_a_refusal_lets_the_key_be_claimed_again(client: Any):
-    claims = WriteClaims(client, TABLE)
+    claims = WriteClaims(client, TABLE, clock=lambda: 1_000)
     assert claims.claim(RUN, KEY, 'post_comment') is None
     claims.close(RUN, KEY, WRITE_REFUSED)
     assert claims.claim(RUN, KEY, 'post_comment') is None
     claims.close(RUN, KEY, WRITE_UNKNOWN)
-    assert claims.claim(RUN, KEY, 'post_comment') == WriteClaim(WRITE_UNKNOWN)
+    assert claims.claim(RUN, KEY, 'post_comment') == WriteClaim(WRITE_UNKNOWN, at=1_000)
+
+
+def test_an_issue_writes_claim_with_no_outcome_is_taken_again_once_stale_by_one_caller_alone(client: Any):
+    # (7.71.03) A claim of a write on the run's issue whose call never answered (still claimed: it crashed between its
+    # claim and its outcome; or unknown) is taken again once ``stale_after`` old, in one conditional write.
+    now = [1_000]
+    claims = WriteClaims(client, TABLE, clock=lambda: now[0])
+    key = 'issue#42#post_comment'
+    assert claims.claim(RUN, key, 'post_comment') is None
+    assert claims.claim(RUN, key, 'post_comment', 300) == WriteClaim(WRITE_CLAIMED, at=1_000)   # (in flight)
+    now[0] = 1_300
+    assert claims.claim(RUN, key, 'post_comment', 300) is None
+    assert claims.claim(RUN, key, 'post_comment', 300) == WriteClaim(WRITE_CLAIMED, at=1_300)   # (taken once)
+    claims.close(RUN, key, WRITE_UNKNOWN)
+    now[0] = 1_600
+    assert claims.claim(RUN, key, 'post_comment') == WriteClaim(WRITE_UNKNOWN, at=1_300)   # (no stale_after: never)
+    assert claims.claim(RUN, key, 'post_comment', 300) is None
+    claims.close(RUN, key, WRITE_DONE, {'url': 'u'})
+    now[0] = 9_000
+    assert claims.claim(RUN, key, 'post_comment', 300) == WriteClaim(WRITE_DONE, {'url': 'u'}, 1_600)   # (done)
 
 
 class Failing:
@@ -126,12 +154,13 @@ def test_two_understanders_of_a_run_comment_on_and_label_its_issue_once_the_seco
     broker = Broker(connector(host=host, writes=WriteClaims(client, TABLE)))
     first, second = Caller('understander', RUN, 2), Caller('understander', RUN, 5)
     url = broker.post_comment(first, 'issue', 42, 'A bug: the refund total drops the tax.')
-    assert broker.label_issue(first, 42, ('voc-triage/bug', 'voc-severity/s2')) == ('voc-triage/bug',
-                                                                                     'voc-severity/s2')
-    # The second's own words and labels, at another attempt: nothing is written again, its answer is the first's.
+    assert broker.label_issue(first, 42, ('voc-triage/bug', 'voc-severity/s2')) == Labelled(
+        ('voc-triage/bug', 'voc-severity/s2'))
+    # The second's own words and labels, at another attempt: nothing is written again, its answer is the first's, and
+    # (7.71.03) the labels' answer says whose they are.
     assert broker.post_comment(second, 'issue', 42, 'The refund total is wrong.', attempt=2) == url
-    assert broker.label_issue(second, 42, ('voc-triage/bug', 'voc-severity/s3'), attempt=2) == (
-        'voc-triage/bug', 'voc-severity/s2')
+    assert broker.label_issue(second, 42, ('voc-triage/bug', 'voc-severity/s3'), attempt=2) == Labelled(
+        ('voc-triage/bug', 'voc-severity/s2'), set_by='understander-2')
     assert host.writes() == ['post_comment', 'label_issue']
     rows = client.scan(TableName=TABLE)['Items']
     assert sorted((row['sk']['S'], row['state']['S']) for row in rows) == [
@@ -143,14 +172,97 @@ def test_two_understanders_of_a_run_comment_on_and_label_its_issue_once_the_seco
     assert host.writes() == ['post_comment', 'label_issue', 'post_comment', 'post_comment']
 
 
-def test_a_second_understanders_write_on_an_issue_whose_first_outcome_is_unknown_is_never_made():
+def test_a_second_understanders_write_on_an_issue_whose_first_outcome_is_unknown_waits_for_that_call_to_be_over():
     writes = FakeWrites()
     host = FakeHost()
     broker = Broker(connector(host=host, writes=writes))
-    writes.claims[(RUN, 'issue#42#post_comment')] = WriteClaim(WRITE_UNKNOWN)
+    writes.claims[(RUN, 'issue#42#post_comment')] = WriteClaim(WRITE_UNKNOWN, at=writes.now - 60)
     with pytest.raises(OutcomeUnknown, match="on the run's issue, by an agent of this run"):
         broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.')
     assert host.writes() == []
+
+
+class CrashingHost(FakeHost):
+    """A host whose first write of each kind is made, and then the broker's call ends (its function crashed or ran out
+    of time) before the write's outcome is recorded: ``crash`` names the writes still to crash."""
+
+    crash: frozenset[str] = frozenset({'post_comment', 'label_issue'})
+
+    def post_comment(self, connection_id: str, on: Any, number: int, body: str) -> str:
+        url = super().post_comment(connection_id, on, number, body)
+        self._crash('post_comment')
+        return url
+
+    def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
+        added = super().label_issue(connection_id, number, labels)
+        self._crash('label_issue')
+        return added
+
+    def _crash(self, write: str) -> None:
+        if write in self.crash:
+            self.crash = self.crash - {write}
+            raise SystemExit(f'the broker ended after its {write}')
+
+
+def test_a_crash_between_an_issue_writes_claim_and_its_outcome_blocks_the_run_only_until_that_call_is_over(
+        client: Any):
+    # (7.71.03) The first understander's call made its comment and its labels, then ended before their outcomes were
+    # recorded: the claims stay claimed. A later call is answered unknown while that call may still be under way, and
+    # once it is over the comment is found on the host by the run's marker (never posted twice) and the labels, which
+    # the host adds idempotently, are put again.
+    now = [1_000]
+    host = CrashingHost()
+    broker = Broker(connector(host=host, writes=WriteClaims(client, TABLE, clock=lambda: now[0])))
+    first, second = Caller('understander', RUN, 2), Caller('understander', RUN, 5)
+    for write in (lambda: broker.post_comment(first, 'issue', 42, 'A bug: the refund total drops the tax.'),
+                  lambda: broker.label_issue(first, 42, ('voc-triage/bug', 'voc-severity/s2'))):
+        with pytest.raises(SystemExit):
+            write()
+    assert _states(client) == {'issue#42#label_issue': WRITE_CLAIMED, 'issue#42#post_comment': WRITE_CLAIMED}
+    now[0] += 60
+    with pytest.raises(OutcomeUnknown, match='ask again in a few minutes'):
+        broker.post_comment(second, 'issue', 42, 'The refund total is wrong.')
+    now[0] += STALE_CLAIM_SECONDS
+    url = broker.post_comment(second, 'issue', 42, 'The refund total is wrong.')
+    labelled = broker.label_issue(second, 42, ('voc-triage/bug', 'voc-severity/s2'))
+    assert (url, labelled) == ('https://code.example.com/issue/42#comment-1',
+                               Labelled(('voc-triage/bug', 'voc-severity/s2')))
+    [(*_, posted)] = [call for call in host.calls if call[0] == 'post_comment']
+    assert posted == f'A bug: the refund total drops the tax.\n\n{issue_marker(RUN)}'
+    assert host.writes() == ['post_comment', 'label_issue', 'label_issue']
+    assert _states(client) == {'issue#42#label_issue': WRITE_DONE, 'issue#42#post_comment': WRITE_DONE}
+    # Once done, a third caller gets the answers back and nothing more is written.
+    assert broker.post_comment(Caller('understander', RUN, 7), 'issue', 42, 'Again.') == url
+    assert host.writes() == ['post_comment', 'label_issue', 'label_issue']
+
+
+def test_an_issue_comment_retried_after_a_crash_is_posted_when_the_host_has_none_of_the_runs():
+    writes = FakeWrites()
+    host = FakeHost()
+    broker = Broker(connector(host=host, writes=writes))
+    writes.claims[(RUN, 'issue#42#post_comment')] = WriteClaim(WRITE_CLAIMED, at=writes.now - STALE_CLAIM_SECONDS)
+    assert broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.') == (
+        'https://code.example.com/issue/42#comment-1')
+    looked = [call for call in host.calls if call[0] == 'issue_comment']
+    assert looked == [('issue_comment', 'conn-1', 42, issue_marker(RUN))]
+    assert (host.writes(), writes.claims[(RUN, 'issue#42#post_comment')].state) == (['post_comment'], WRITE_DONE)
+
+
+def test_a_look_on_the_host_that_fails_leaves_the_issue_comment_unknown_and_writes_nothing():
+    class Unreadable(FakeHost):
+        def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+            raise HostError(f'The host answered 500 to the comment read ({connection_id}, #{number}, {marker}).')
+
+    writes, host = FakeWrites(), Unreadable()
+    broker = Broker(connector(host=host, writes=writes))
+    writes.claims[(RUN, 'issue#42#post_comment')] = WriteClaim(WRITE_UNKNOWN, at=writes.now - STALE_CLAIM_SECONDS)
+    with pytest.raises(HostError):
+        broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.')
+    assert (host.writes(), writes.claims[(RUN, 'issue#42#post_comment')].state) == ([], WRITE_UNKNOWN)
+
+
+def _states(client: Any) -> dict[str, str]:
+    return {row['sk']['S'].removeprefix('WRITE#'): row['state']['S'] for row in client.scan(TableName=TABLE)['Items']}
 
 
 def test_a_rate_limited_write_wrote_nothing_is_answered_503_and_may_be_asked_again(client: Any):

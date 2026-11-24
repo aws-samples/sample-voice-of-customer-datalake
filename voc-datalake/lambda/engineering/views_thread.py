@@ -76,7 +76,7 @@ SCAN_BYTES: Final = 16 * 1024 * 1024
 #: A tool item's one line of result.
 MAX_RESULT_LINE: Final = 300
 #: The session statuses after which an agent writes nothing more (runtime/sessions.py).
-ENDED: Final = frozenset({'done', 'failed', 'stopped', 'reposted'})
+ENDED: Final = frozenset({'done', 'failed', 'stopped', 'reposted', 'needs_human'})
 HARNESS: Final = {'kind': 'system', 'id': 'harness'}
 #: (7.54.00) The tools whose input is the agent's reply in its own words, by the field that holds it
 #: (runtime/harness/tools.py): what it did and is doing now, what it hands in, what it did and found. Most of what a

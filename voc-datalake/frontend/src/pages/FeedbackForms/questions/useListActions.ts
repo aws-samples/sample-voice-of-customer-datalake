@@ -13,6 +13,7 @@ import { LIMITS, isChoice, isMatrix } from '../model/formsV2'
 import { newEnding, newQuestion } from '../model/defaults'
 import { newEndingId, newQuestionId } from '../model/codes'
 import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import {
   duplicateQuestion, endingIds, insertEnding, insertQuestion, moveEnding, moveQuestion, questionIds, removeEnding, removeQuestion,
   rulesTargeting,
@@ -57,7 +58,7 @@ export function useListActions() {
   const [pending, setPending] = useState<PendingDelete | null>(null)
   const focusCard = useFocusCard()
   const { form } = draft
-  const headlineOf = (id: string) => textIn(form.questions.find((q) => q.id === id)?.headline, form.language)
+  const headlineOf = (id: string) => headlineShown(form.questions.find((q) => q.id === id), form.language)
 
   const addQuestion = (type: QuestionType, at: number = form.questions.length) => {
     if (form.questions.length >= LIMITS.questions) return

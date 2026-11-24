@@ -53,7 +53,6 @@ from shared.trial_state import (
     at_second,
     is_paused,
     paused_lists,
-    resume_incomplete,
 )
 from shared.workspace import ACTIVE, audit_key, audit_sort_key, consistent_row, is_workspace_id, ws_key
 
@@ -81,9 +80,9 @@ def is_converted(trial: Mapping[str, Any]) -> bool:
 
 
 def trial_view(trial: object) -> dict[str, Any] | None:
-    """The platform console's view of a stored ``trial`` (every field but ``rev``; of the resume's mark, only that one
-    was left, ``resume_incomplete``: the extension or the conversion that set it failed, and the same request again
-    finishes it), or None for no trial."""
+    """The platform console's view of a stored ``trial`` (every field but ``rev`` and the resume's mark: a route
+    answers it only once its own write removed the mark, so whether a resume was cut short is the listing's, shared/
+    trial_state.py ``trial_summary``), or None for no trial."""
     if not isinstance(trial, Mapping):
         return None
     view = {field: text_field(trial, field) for field in ('created_at', 'created_by', 'expires_at', PAUSED_AT,
@@ -92,7 +91,7 @@ def trial_view(trial: object) -> dict[str, Any] | None:
     extended = trial.get('extended')
     return {**view, 'days': plain(trial.get('days')), 'pack': plain(pack) if isinstance(pack, Mapping) else {},
             'extended': plain(extended) if isinstance(extended, list) else [],
-            PAUSED: paused_lists(trial) if is_paused(trial) else None, 'resume_incomplete': resume_incomplete(trial)}
+            PAUSED: paused_lists(trial) if is_paused(trial) else None}
 
 
 def read_meta(table: Any, ws: str) -> dict[str, Any]:

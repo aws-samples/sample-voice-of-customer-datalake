@@ -3,10 +3,9 @@
  * voice-personas.md → The relay). One per AgentCore session (one microVM per session id).
  *
  * - Start: the session row goes `minted` → `live` once (store.ts `activate`: the presigned URL is single use and
- *   lasts a minute), then the projects API's input is read and must name this session and its signed scope; any
- *   refusal is `ended {refused}` and close 1008, a first connection after the URL's minute (and 10 s for the clocks)
- *   `ended {expired}` and 1008 (its row marked so, and it leaves the live set). Then the first stream opens and the
- *   browser hears `ready`.
+ *   lasts a minute, with 10 s for the clocks), then the projects API's input is read and must name this session and
+ *   its signed scope; any refusal, a first connection after that minute's end included, is `ended {refused}` and
+ *   close 1008. Then the first stream opens and the browser hears `ready`.
  * - Rollover: a Bedrock stream lasts at most 8 minutes, so at the persona's first finished turn after 7:00 of a
  *   stream's life (or at 7:45 whatever it is doing) a new stream opens with the same prompt and the conversation so far
  *   as its chat history (transcript.ts `history`, within Nova Sonic's 200 KB), the microphone moves to it, the old one
@@ -84,7 +83,6 @@ interface Failure {
 }
 
 const refused: Failure = { reason: 'refused', code: VOICE_CLOSE.policy };
-const expired: Failure = { reason: 'expired', code: VOICE_CLOSE.policy };
 
 export class VoiceSession {
   private input: SessionInput | undefined;
@@ -173,13 +171,7 @@ export class VoiceSession {
     const { sessionId, scope } = this.ids;
     try {
       if (!SESSION_ID.test(sessionId) || !SCOPE_ID.test(scope)) return refused;
-      const activation = await this.deps.store.activate(sessionId, new Date(this.deps.clock.now()));
-      if (activation === 'expired') {
-        // Its row is ended (store.ts): its place in the live set is freed now, as the projects API frees one never used.
-        await this.attempt('live', () => this.deps.store.leaveLive(sessionId));
-        return expired;
-      }
-      this.activated = activation === 'live';
+      this.activated = await this.deps.store.activate(sessionId, new Date(this.deps.clock.now()));
       if (!this.activated) return refused;
       this.startedAt = this.deps.clock.now();
       const input = parseSessionInput(await this.deps.store.loadInput(sessionId), sessionId, scope);

@@ -783,7 +783,8 @@ def _ensure_coordinator(run_id: str, actor: str, *, fill_first: bool = True, res
     """Make sure an active run with its connection, commit and language has a coordinator: the one its coordinate
     task records, started when it has no session yet (the run's start, ``coordinator-1``; a start whose session
     failed), or a new one in its place when its session failed: it kept crashing, which sent the run to a person
-    (``BoardLeases.coordinator_to_start``). Nothing for a run whose coordinator is live or held (a Resume continues
+    (``BoardLeases.coordinator_to_start``), or (7.71.03) when it finished on a flow that did not, which sent the run
+    to a person too. Nothing for a run whose coordinator is live or held (a Resume continues
     a held one itself), nor one a person shut down or stopped. A refusal of the board's (the run's agent cap, a
     racing start or Resume that moved the task on) is logged, never raised: the Resume it follows was applied.
 
@@ -814,7 +815,8 @@ def _ensure_coordinator(run_id: str, actor: str, *, fill_first: bool = True, res
 
     try:
         found = board.coordinator_to_start(run_id, state, actor=who,
-                                           launchable=lambda: _coordinator_launchable(run.language))
+                                           launchable=lambda: _coordinator_launchable(run.language),
+                                           unfinished=lambda: not supervisor.control.flow_finished(run_id))
     except BoardError as error:
         if error.kind not in ('cap', 'conflict'):
             raise

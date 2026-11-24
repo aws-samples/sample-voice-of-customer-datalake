@@ -922,9 +922,9 @@ class TableRunControl:
         run = self._runs.get(run_id)
         return run is not None and run.status == 'active' and not run.stopping
 
-    def end(self, run_id: str, status: str) -> None:
-        """The run ended as ``status`` by the supervisor (7.71.02: its flow finished), its ``RUNLOG#`` row saying so."""
-        self._runs.end(run_id, status, now=int(self._clock()), actor=SUPERVISOR, reason=FLOW_FINISHED)
+    def end_done(self, run_id: str) -> None:
+        """The run ended done by the supervisor (7.71.02: its flow finished), its ``RUNLOG#`` row saying so."""
+        self._runs.end(run_id, 'done', now=int(self._clock()), actor=SUPERVISOR, reason=FLOW_FINISHED)
 
     def flow_finished(self, run_id: str) -> bool:
         plan = self._runs.flow_plan(run_id)

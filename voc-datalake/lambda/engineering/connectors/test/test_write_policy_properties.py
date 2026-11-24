@@ -25,12 +25,13 @@ from engineering.connectors.write_policy import (
     path_refusals,
     text_refusals,
 )
+from engineering.runtime.outputs import run_branch
 from shared.test.properties import PROPERTY
 
 DEFAULT_BRANCH = 'main'
 # A run id as the supervisor names one: a letter or digit, then letters, digits, "_" or "-".
 RUN_IDS = st.from_regex(r'[A-Za-z0-9][A-Za-z0-9_-]{0,20}', fullmatch=True)
-# The rest of a branch name, the way the connector makes one: "fix-tests", "agent/2026-11-13/retry_3".
+# The rest of a branch name another agent might make up: "fix-tests", "agent/2026-11-13/retry_3".
 BRANCH_RESTS = st.from_regex(r'[a-z0-9][a-z0-9-]{0,12}(?:/[a-z0-9][a-z0-9-]{0,12}){0,2}', fullmatch=True)
 # A repository path, with a CI definition sometimes among them.
 CI_PATHS = st.sampled_from(['.github/workflows/ci.yml', '.github/actions/setup/action.yml', '.gitlab-ci.yml',
@@ -50,30 +51,25 @@ PHONE_DIGITS = st.integers(min_value=10**8, max_value=10**15 - 1).map(str)
 
 @PROPERTY
 @given(run_id=RUN_IDS, rest=BRANCH_RESTS)
-def test_a_run_pushes_only_to_a_branch_of_its_own_run(run_id: str, rest: str) -> None:
-    """A run's push is accepted only on a branch under its own run's prefix; a branch of another run is refused."""
-    own = f'{AGENT_BRANCH_PREFIX}{run_id}/{rest}'
+def test_a_run_pushes_only_to_its_own_branch(run_id: str, rest: str) -> None:
+    """A run's push is accepted only on its own branch, one level under the agents' prefix (7.71.03); a branch of
+    another run, one under its own, or any other name of it is refused."""
+    own = run_branch(run_id)
+    assert own == f'{AGENT_BRANCH_PREFIX}{run_id}-fix'
+    assert '/' not in own.removeprefix(AGENT_BRANCH_PREFIX)
     assert branch_refusal(own, DEFAULT_BRANCH, run_id) is None
-    other = f'{AGENT_BRANCH_PREFIX}{run_id}x/{rest}'
-    assert branch_refusal(other, DEFAULT_BRANCH, run_id) is not None
-    assert branch_refusal(f'{AGENT_BRANCH_PREFIX}other-run/{rest}', DEFAULT_BRANCH, run_id) is not None
+    for other in (run_branch(f'{run_id}x'), f'{AGENT_BRANCH_PREFIX}{run_id}/{rest}', f'{own}/{rest}',
+                  f'{own}-{rest}', run_branch('other-run')):
+        assert other == own or branch_refusal(other, DEFAULT_BRANCH, run_id) is not None, other
 
 
 @PROPERTY
 @given(run_id=RUN_IDS, default=st.sampled_from([DEFAULT_BRANCH, 'master', 'trunk', 'release-1']))
 def test_no_run_ever_pushes_to_the_default_branch(run_id: str, default: str) -> None:
-    """The default branch is refused whatever the run and whatever the repository calls it, even when a run's own
-    prefix is spelled the same way."""
+    """The default branch is refused whatever the run and whatever the repository calls it, even when it is the run's
+    own branch."""
     assert branch_refusal(default, default, run_id) is not None
-    assert branch_refusal(f'{AGENT_BRANCH_PREFIX}{run_id}/{default}', default, run_id) is None
-
-
-@PROPERTY
-@given(run_id=RUN_IDS, rest=BRANCH_RESTS, bad=st.sampled_from(['..', '@{', '//', 'x/', 'x.', '/.hidden',
-                                                               '/b.lock', ' b', '~b', '^b', ':b']))
-def test_a_branch_name_git_would_not_create_is_refused(run_id: str, rest: str, bad: str) -> None:
-    """A branch name with a git-forbidden piece is refused even under the run's own prefix."""
-    assert branch_refusal(f'{AGENT_BRANCH_PREFIX}{run_id}/{rest}{bad}', DEFAULT_BRANCH, run_id) is not None
+    assert branch_refusal(run_branch(run_id), run_branch(run_id), run_id) is not None
 
 
 @PROPERTY

@@ -55,9 +55,12 @@ explorer. This is `shared/source_policy.apply_source_policy`.
     in any other language gets the regex rules only.
   - When Comprehend fails on a text it should have read (after its retries), every upload (a manual review
     import, a CSV or JSON upload, a form import) refuses that row and counts it with the skipped rows of its import
-    history, never keeping the regex result alone (`shared/ingest_archive.py`, 7.71.02). One live record (a form
-    submission, a Data Explorer or field edit, a voice transcript) keeps the regex result, counted by the
-    `PiiComprehendFailures` metric.
+    history, never keeping the regex result alone (`shared/ingest_archive.py`, 7.71.02). The upload's answer names
+    each such row so it can be sent again (7.71.03): a form import as a refusal `redaction_unavailable`, a manual
+    review import and a JSON upload as `redaction_unavailable: {count, ids}` (the items' own ids), a CSV upload as
+    `redaction_unavailable: {count, rows}` (its row numbers); the first 100 are named, the count is whole. One live
+    record (a form submission, a Data Explorer or field edit, a voice transcript) keeps the regex result, counted by
+    the `PiiComprehendFailures` metric.
 - **`summary_only`**:
   - The same redaction is applied, and then the processor stores **derived fields only**.
   - `original_text` becomes the (already redacted) `problem_summary`, or `[withheld]`.

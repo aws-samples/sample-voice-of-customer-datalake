@@ -16,6 +16,7 @@ import type { FormFunnel, FormResults } from '../../../api/feedbackFormsV2Result
 import { formatCount, formatPercent } from '../../../utils/numberFormat'
 import { formatRelativeDate } from '../../../utils/dateUtils'
 import type { FormV2 } from '../model/formsV2'
+import { headlineShown } from '../model/recall'
 import QuestionResultCard from './QuestionResultCard'
 import { orderedCards } from './skipRates'
 import type { CardOrder } from './skipRates'
@@ -92,7 +93,7 @@ function RemovedQuestions({ form, results }: Readonly<{ form: FormV2; results: F
       <ul className="mt-3 space-y-1">
         {results.removed_questions.map((question) => (
           <li key={question.id} className="text-sm text-muted">
-            {question.headline[form.language] ?? question.id} · {t('results.removedAnswered', { count: question.answered, formatted: formatCount(question.answered, i18n.language) })}
+            {headlineShown(question, form.language) || question.id} · {t('results.removedAnswered', { count: question.answered, formatted: formatCount(question.answered, i18n.language) })}
           </li>
         ))}
       </ul>

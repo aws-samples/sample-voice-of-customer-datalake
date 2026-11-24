@@ -1,5 +1,5 @@
 """The broker's ``label_issue`` (7.50.00): the understander's triage labels on its run's own issue, the allowlist only,
-once per attempt, no dial; and each writer's writes, pinned."""
+once per run (7.71.02), no dial; and each writer's writes, pinned."""
 from __future__ import annotations
 
 import json
@@ -13,13 +13,15 @@ from engineering.connectors.broker import (
     POST_COMMENT,
     PUSH_BUNDLE,
     READ,
+    STALE_CLAIM_SECONDS,
     Broker,
+    Labelled,
     NotNow,
     NotPermitted,
     permitted,
 )
 from engineering.connectors.handler import handle
-from engineering.connectors.hosts import WRITE_UNKNOWN, Dial, OutcomeUnknown, WriteClaim, WriteLedger
+from engineering.connectors.hosts import WRITE_DONE, WRITE_UNKNOWN, Dial, OutcomeUnknown, WriteClaim, WriteLedger
 from engineering.connectors.identity import AGENT_ROLES, Caller
 from engineering.connectors.test.fakes import (
     ACCOUNT,
@@ -49,7 +51,7 @@ def broker(host: FakeHost | None = None, *, runs: FakeRuns | None = None, dial: 
 
 def test_the_understander_labels_its_runs_issue_with_the_triage_labels() -> None:
     labeller, host = broker()
-    assert labeller.label_issue(UNDERSTANDER, 42, LABELS) == LABELS
+    assert labeller.label_issue(UNDERSTANDER, 42, LABELS) == Labelled(LABELS)
     assert host.calls[-1] == ('label_issue', 'conn-1', 42, LABELS)
 
 
@@ -85,7 +87,7 @@ def test_a_label_outside_the_allowlist_or_two_of_one_kind_is_refused(labels: tup
 
 def test_one_label_alone_is_enough_and_a_repeated_label_is_asked_once() -> None:
     labeller, host = broker()
-    assert labeller.label_issue(UNDERSTANDER, 42, ('voc-severity/s1', 'voc-severity/s1')) == ('voc-severity/s1',)
+    assert labeller.label_issue(UNDERSTANDER, 42, ('voc-severity/s1', 'voc-severity/s1')).labels == ('voc-severity/s1',)
     assert host.calls[-1] == ('label_issue', 'conn-1', 42, ('voc-severity/s1',))
 
 
@@ -101,7 +103,7 @@ def test_no_dial_and_no_ci_check_hold_a_label() -> None:
     # A Human-driven starter, an unattested run: a label changes no code, so neither is read.
     dial = FakeDial({'person-sub-1': 'human_driven'})
     labeller, host = broker(dial=dial, runs=FakeRuns({RUN: record(ci_attested=False)}))
-    assert labeller.label_issue(UNDERSTANDER, 42, LABELS) == LABELS
+    assert labeller.label_issue(UNDERSTANDER, 42, LABELS).labels == LABELS
     assert dial.asked == []
     assert host.ci_checks == []
 
@@ -110,23 +112,36 @@ def test_a_repeat_answers_the_first_outcome_and_labels_once() -> None:
     writes = FakeWrites()
     labeller, host = broker(writes=writes)
     labeller.label_issue(UNDERSTANDER, 42, LABELS, attempt=2)
-    assert labeller.label_issue(UNDERSTANDER, 42, LABELS, attempt=2) == LABELS
+    # (7.71.03) The answer says whose call put them: this agent's earlier one.
+    assert labeller.label_issue(UNDERSTANDER, 42, LABELS, attempt=2) == Labelled(LABELS, set_by='understander-1')
     assert host.writes() == ['label_issue']
     # Even once the run has moved on (the first outcome stands).
     moved = Broker(connector(host=host, runs=FakeRuns({RUN: record(status='done')}), writes=writes))
-    assert moved.label_issue(UNDERSTANDER, 42, LABELS, attempt=2) == LABELS
+    assert moved.label_issue(UNDERSTANDER, 42, LABELS, attempt=2).labels == LABELS
     assert host.writes() == ['label_issue']
 
 
-def test_a_repeat_of_a_label_whose_outcome_is_unknown_is_never_made_again() -> None:
+def test_labels_put_before_7_71_03_are_answered_as_another_agents() -> None:
+    writes = FakeWrites()
+    writes.claims[(RUN, 'issue#42#label_issue')] = WriteClaim(WRITE_DONE, {'number': 42, 'labels': list(LABELS)})
+    labeller, host = broker(writes=writes)
+    assert labeller.label_issue(UNDERSTANDER, 42, LABELS) == Labelled(LABELS, set_by='another agent of the run')
+    assert host.writes() == []
+
+
+def test_a_label_whose_outcome_is_unknown_is_put_again_only_once_its_call_is_over() -> None:
     writes = FakeWrites()
     labeller, host = broker(writes=writes)
     labeller.label_issue(UNDERSTANDER, 42, LABELS)
     key = next(iter(writes.claims))
-    writes.claims[key] = WriteClaim(WRITE_UNKNOWN)
+    writes.claims[key] = WriteClaim(WRITE_UNKNOWN, at=writes.now)
     with pytest.raises(OutcomeUnknown):
         labeller.label_issue(UNDERSTANDER, 42, LABELS)
     assert host.writes() == ['label_issue']
+    # (7.71.03) Labels are idempotent on the host: once that call is long over, they are put again.
+    writes.now += STALE_CLAIM_SECONDS
+    assert labeller.label_issue(UNDERSTANDER, 42, LABELS) == Labelled(LABELS)
+    assert (host.writes(), writes.claims[key].state) == (['label_issue', 'label_issue'], WRITE_DONE)
 
 
 def test_each_writer_keeps_its_writes_and_no_more() -> None:

@@ -83,6 +83,14 @@ describe('TemplatePicker', () => {
     expect(within(preview).getByText('Otherwise → 3 · Which task are you working on right now?')).toBeInTheDocument()
   })
 
+  it("lists a question whose headline recalls a value with it as [id] (Q5, 7.71.03)", async () => {
+    const user = userEvent.setup()
+    renderPicker()
+    await user.click(screen.getByTestId('template-workshop'))
+    const preview = screen.getByRole('complementary', { name: 'Preview' })
+    expect(within(preview).getByText('How valuable was [event] for your work?')).toBeInTheDocument()
+  })
+
   it('opens the builder with the template as an unsaved form, Off, in the "Create in" language', async () => {
     const user = userEvent.setup()
     renderPicker({ search: '?template=old_ui' })

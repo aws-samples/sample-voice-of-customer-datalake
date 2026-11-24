@@ -940,7 +940,7 @@ def test_a_booting_agent_whose_open_task_a_person_blocked_is_ended_on_the_next_t
         task_id='task-1', agent_id='', renewed_at=0, last_progress_at=0, attempt=1, final_state='needs_human')
     world.supervisor.tick(1000)
     ended = world.session('fixer-1')
-    assert (ended.status, ended.continuation, world.board.reposted) == ('failed', 0, [])
+    assert (ended.status, ended.continuation, world.board.reposted) == ('needs_human', 0, [])
     _assert_terminated(world, ended)
 
 
@@ -1204,7 +1204,7 @@ def test_run_health_reports_counts_and_spend(world: World):
     assert health['refs'] == {'tokens': '0', 'cost_usd': '0.00'}
 
 
-@pytest.mark.parametrize(('final', 'status'), [('done', 'done'), ('failed', 'failed'), ('needs_human', 'failed')])
+@pytest.mark.parametrize(('final', 'status'), [('done', 'done'), ('failed', 'failed'), ('needs_human', 'needs_human')])
 def test_a_task_that_has_ended_ends_its_session_however_the_harness_exits(world: World, final: str, status: str):
     # A harness that crashes a moment after its task ended on the board.
     world.launch(code='import sys, time; time.sleep(0.5); sys.exit(1)')

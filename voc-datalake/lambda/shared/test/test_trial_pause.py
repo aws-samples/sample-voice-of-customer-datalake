@@ -34,8 +34,8 @@ from shared.trial_pause import (
     pause,
     resume,
 )
-from shared.trial_state import TRIAL_PAUSED_CODE, NewTrial, new_trial
-from shared.trials import convert_trial, extend_trial, read_meta, save_trial, trial_view
+from shared.trial_state import TRIAL_PAUSED_CODE, NewTrial, new_trial, trial_summary
+from shared.trials import convert_trial, extend_trial, read_meta, save_trial
 from shared.workspace import WorkspaceContext
 from shared.workspace_plugin_settings import set_plugin_enabled, workspace_plugins
 
@@ -326,10 +326,10 @@ def test_a_resume_cut_short_is_left_alone_by_the_tick_and_finished_by_the_same_e
 
 
 def _resume_incomplete(trial) -> bool:
-    """What the platform console reads of the trial's mark (shared/trials.py ``trial_view``)."""
-    view = trial_view(trial)
-    assert view is not None
-    return view['resume_incomplete']
+    """What the platform console reads of the trial's mark (its listing, shared/trial_state.py ``trial_summary``)."""
+    summary = trial_summary(trial)
+    assert summary is not None
+    return summary['resume_incomplete']
 
 
 def _resume_cut_short(world, when):
@@ -387,3 +387,30 @@ def test_a_mark_committed_after_the_revisits_read_fails_its_pause_before_anythin
     assert _enabled(world) == ['webscraper', 'app_reviews_ios']
     assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (True, True)
     assert [kind for kind, _plugin, _reason in _audit_kinds(world)].count('trial_paused') == 1
+
+
+def test_a_mark_committed_during_the_turn_offs_stops_the_rest(world):
+    """Q3 (7.71.03): an extension that marks and resumes the trial after the pause wrote its lists, between two of its
+    turn-offs, moves the trial's rev; the pause reads it again before each turn-off, so it stops there (409, counted
+    failed by the tick) and turns off nothing the extension turned back on."""
+    later = AFTER_END + timedelta(hours=1)
+    turn_off = trial_pause.set_trial_plugin
+    extended: list[dict] = []
+
+    def then_extended(*args):
+        changed = turn_off(*args)
+        if not extended:
+            # The first turn-off done: the extension (whose own resume goes through this patch too) runs once.
+            extended.append({})
+            extended[0] = extend_trial(world.workspaces, WS, 30, 'sub-platform', resume=partial(resume, world.tables),
+                                       now=later)
+        return changed
+
+    with patch.object(trial_pause, 'set_trial_plugin', side_effect=then_extended), \
+            pytest.raises(ConflictError) as raised:
+        pause(world.tables, WS, AFTER_END)
+    assert raised.value.code == 'trial_changed'
+    assert (extended[0]['paused_at'], extended[0]['resumed']) == (None, {'plugins': 1, 'forms': 0, 'skipped': []})
+    assert _enabled(world) == ['webscraper', 'app_reviews_ios']
+    assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (True, True)
+    assert due_trials(world.workspaces, later) == []

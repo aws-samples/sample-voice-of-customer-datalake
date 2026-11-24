@@ -13,7 +13,7 @@ import { AlertTriangle } from 'lucide-react'
 import type { FormFunnel, FormResults } from '../../../api/feedbackFormsV2Results'
 import { formatCount, formatPercent } from '../../../utils/numberFormat'
 import type { FormV2 } from '../model/formsV2'
-import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { Bar } from './BarRow'
 import { percentOf } from './scoreMath'
 import { FUNNEL_HEADING_ID, funnelSteps, largestDrop } from './funnelSteps'
@@ -24,7 +24,7 @@ function stepLabel(t: TFunction<'feedbackForms'>, form: FormV2, step: FunnelStep
   if (step.key === 'started') return t('results.funnel.started')
   if (step.key === 'completed') return t('results.funnel.completed')
   const question = form.questions.find((q) => q.id === step.key)
-  return question === undefined || step.number === null ? step.key : `${String(step.number)} · ${textIn(question.headline, form.language)}`
+  return question === undefined || step.number === null ? step.key : `${String(step.number)} · ${headlineShown(question, form.language)}`
 }
 
 export function FunnelCard({ form, funnel, results }: Readonly<{ form: FormV2; funnel: FormFunnel; results: FormResults }>) {
@@ -70,7 +70,7 @@ export function ReachCard({ form, results, filtered = false }: Readonly<{
           const answered = results.questions[question.id]?.answered ?? 0
           return (
             <li key={question.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,14rem)_1fr_auto]">
-              <span className="min-w-0 break-words text-sm text-text">{index + 1} · {textIn(question.headline, form.language)}</span>
+              <span className="min-w-0 break-words text-sm text-text">{index + 1} · {headlineShown(question, form.language)}</span>
               <span className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto"><Bar percent={percentOf(answered, results.total)} /></span>
               <span className="text-right text-[12px] tabular-nums text-text">
                 {t('results.reachCard.answeredBy', { answered: formatCount(answered, i18n.language), total: formatCount(results.total, i18n.language) })}

@@ -43,7 +43,6 @@ const ENDED_KEYS = {
   error: 'voice.session.ended.error',
   disconnected: 'voice.session.ended.disconnected',
   refused: 'voice.session.ended.refused',
-  expired: 'voice.session.ended.expired',
 } as const
 const PHASE_KEYS = {
   connecting: 'voice.session.connecting',

@@ -999,8 +999,7 @@
         "busy": "Voice is busy right now. Try again in a few minutes.",
         "error": "The session stopped because of an error.",
         "disconnected": "The connection was lost.",
-        "refused": "The session link had expired or was already used. Start a new session.",
-        "expired": "The session link expired before it connected. Start a new session."
+        "refused": "The session link had expired or was already used. Start a new session."
       },
       "filing": "Filing the transcript…",
       "filed": "The transcript is saved as a document of this project.",

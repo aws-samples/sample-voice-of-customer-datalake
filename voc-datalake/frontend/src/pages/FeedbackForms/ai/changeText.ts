@@ -10,6 +10,7 @@ import { languageNames } from '../../../i18n/languages'
 import type { FormV2, I18nText, Question, Rule } from '../model/formsV2'
 import { isFormLanguage } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { ruleSentence } from '../logic/ruleSentence'
 import { textsToTranslate } from '../model/translatable'
 import type { FieldChange, FormChange } from '../model/formDiff'
@@ -33,7 +34,7 @@ export function numberOf(change: FormChange, before: FormV2, after: FormV2): num
 export function headlineOf(t: TFunction<'feedbackForms'>, change: FormChange, before: FormV2, after: FormV2): string {
   const form = changeSource(change, before, after)
   switch (change.area) {
-    case 'question': return textIn(questionOf(change, before, after)?.headline, form.language)
+    case 'question': return headlineShown(questionOf(change, before, after), form.language)
     case 'ending': return textIn(form.endings.find((e) => e.id === change.id)?.title, form.language)
     case 'hidden': return t('ai.diff.hidden', { id: change.id })
     case 'welcome': return t('ai.diff.welcome')

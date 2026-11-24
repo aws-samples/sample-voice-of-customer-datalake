@@ -1920,7 +1920,8 @@
       "done": "Terminé",
       "failed": "Échoué",
       "stopped": "Arrêté",
-      "reposted": "Republié"
+      "reposted": "Republié",
+      "needs_human": "En attente d'une personne"
     }
   },
   "templatePage": {
@@ -2248,7 +2249,8 @@
           "failed": "Échoué",
           "crashed": "Planté",
           "stopped": "Arrêté",
-          "reposted": "Transmis"
+          "reposted": "Transmis",
+          "needs_human": "En attente d'une personne"
         },
         "restarted": "{{agent}} s’est arrêté de façon inattendue et a été relancé (tentative {{n, number}} sur {{max, number}})",
         "restartedAgain": "{{agent}} s’est arrêté de façon inattendue et a été relancé (tentative {{n, number}})",

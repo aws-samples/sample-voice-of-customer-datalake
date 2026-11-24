@@ -376,10 +376,11 @@ def _import_confirmed_reviews(job: dict, job_id: str, reviews: list[dict], conte
     now = datetime.now(UTC)
     scope = scope_of(context) if context is not None else None
     profile = upload_profile(aggregates_table, DEFAULT_UPLOAD_SOURCE, scope)
+    unreadable: list[str] = []
     messages, mode = prepare_messages(
         s3, RAW_DATA_BUCKET,
         [_confirmed_review_message(review, idx, job, job_id, None) for idx, review in enumerate(reviews)],
-        profile, now, connector_id=_PASTE_WRITER, scope=scope,
+        profile, now, connector_id=_PASTE_WRITER, scope=scope, unreadable=unreadable,
     )
     s3_uri = stamp_file_archive(
         messages, mode, lambda: _archive_confirmed_import(job, job_id, reviews, _caller_user_id(), now, scope))
@@ -411,7 +412,8 @@ def _import_confirmed_reviews(job: dict, job_id: str, reviews: list[dict], conte
     result = {
         'success': True,
         'imported_count': imported_count,
-        's3_uri': s3_uri
+        's3_uri': s3_uri,
+        **_unredacted(unreadable),
     }
     if errors:
         result['errors'] = errors
@@ -471,6 +473,10 @@ MAX_SOURCE_LABEL_CHARS = 120
 # the plugin schema package, so the value is restated rather than imported. Keep
 # the two in step — exceeding the model's bound would reject the whole message.
 MAX_CSV_ROW_ID_LENGTH = 256
+
+#: How many of an upload's rows refused for their redaction its answer names (``redaction_unavailable``); the count is
+#: always whole.
+MAX_NAMED_UNREDACTED = 100
 
 
 # ── CSV row identity ────────────────────────────────────────────────────────
@@ -935,9 +941,11 @@ def csv_upload():
             'and confirm the updates (apply_updates) to apply them')
     queued = _rows_to_queue(plan)
 
+    unreadable: list[str] = []
     messages, mode = prepare_messages(s3, RAW_DATA_BUCKET,
                                       [_csv_message(item, profile['id'], radar) for item in queued], profile, now,
-                                      plan.archive_rewrites(), connector_id=_CSV_WRITER, scope=scope)
+                                      plan.archive_rewrites(), connector_id=_CSV_WRITER, scope=scope,
+                                      unreadable=unreadable)
     s3_uri = stamp_file_archive(messages, mode, lambda: _archive_csv_file(
         csv_text, job_id, user_id, default_source, profile['id'], now, scope))
     imported_count, send_errors = _send_items_to_sqs(messages, context=context)
@@ -949,6 +957,7 @@ def csv_upload():
         's3_uri': s3_uri,
         **({'radar_brand': radar['radar_brand_key']} if radar else {}),
         **({'counts': plan.counts()} if dataset else {}),
+        **_unredacted(_rows_of(queued, unreadable), 'rows'),
     }
     if warnings:
         result['warnings'] = warnings[:20]
@@ -958,6 +967,20 @@ def csv_upload():
                 run_id=job_id, source_id=profile['id'], warnings=warnings, errors=send_errors,
                 raw_s3_key=s3_uri, radar_brand=_radar_key(radar))
     return result
+
+
+def _unredacted(named: list[Any], key: str = 'ids') -> dict[str, Any]:
+    """An upload's ``redaction_unavailable`` answer (Q6, 7.71.03): how many of its rows the strict redaction left out
+    because the entity model could not read them (shared/ingest_archive.py ``policy_applied``; counted skipped in the
+    import history), and the first ``MAX_NAMED_UNREDACTED`` of them as the caller knows them (``key``: the items' own
+    ``ids``, a CSV's ``rows`` by number), so they can be sent again; nothing when there are none."""
+    return {'redaction_unavailable': {'count': len(named), key: named[:MAX_NAMED_UNREDACTED]}} if named else {}
+
+
+def _rows_of(items: list[dict], ids: list[str]) -> list[int]:
+    """The row numbers of the parsed CSV ``items`` whose message id is one of ``ids``, in file order."""
+    named = set(ids)
+    return [item['row'] for item in items if item['id'] in named] if named else []
 
 
 def _csv_counts(items: list[dict], messages: list[dict], drops: CsvRowDrops, imported: int) -> ImportCounts:
@@ -1068,9 +1091,10 @@ def json_upload():
     # Send items to SQS in batches of 10. With the 50k cap, per-item
     # send_message would exceed the API Gateway 29s window; batching keeps
     # large uploads inside it.
+    unreadable: list[str] = []
     messages, mode = prepare_messages(
         s3, RAW_DATA_BUCKET, [_json_upload_message(item, None, profile['id'], radar) for item in items], profile, now,
-        connector_id=_JSON_WRITER, scope=scope)
+        connector_id=_JSON_WRITER, scope=scope, unreadable=unreadable)
     s3_uri = stamp_file_archive(messages, mode, lambda: _archive_json_file(items, job_id, user_id, now, scope))
 
     imported_count, send_errors = _send_items_to_sqs(messages, label='item', context=context)
@@ -1081,6 +1105,7 @@ def json_upload():
         'total_items': len(items),
         's3_uri': s3_uri,
         **({'radar_brand': radar['radar_brand_key']} if radar else {}),
+        **_unredacted(unreadable),
     }
 
     if send_errors:

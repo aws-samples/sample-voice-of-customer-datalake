@@ -1687,12 +1687,15 @@ hourly tick reads the new end. A conversion ends the trial for good (the tick pa
 after the audit row (a 409 `trial_changed`, the trial written meanwhile, or an error of the resume) leaves it marked,
 (partly) resumed and still paused, and the same extension or conversion again finishes it (an extension counted from
 the same stored end); the console's row says so ("Extend or Convert again to finish", `resume_incomplete` on the
-listing's trial and on `trial_view`). The mark is the request's own time and holds the hourly pause off for 15 minutes
-only (an extension or a conversion is one API request): a mark older than that is a resume that failed, so the trial is
-due again, even past the day a pause is revisited, and the tick turns off what that resume turned on and removes the
-mark (7.71.02). The pause's own write of what it turns off is conditional on the trial it read and comes before any
-turn-off, so an extension that marked the trial after that read makes the pause fail (409, counted failed by the tick)
-and turn nothing off (7.71.02).
+listing's trial; a route's own answer never carries it, since it is sent once that route's write removed the mark,
+7.71.03). The mark is the request's own time and holds the hourly pause off for 15 minutes only (an extension or a
+conversion is one API request): a mark older than that is a resume that failed, so the trial is due again (its end has
+passed: a failed extension never wrote its new one), even past the day a pause is revisited, and the tick turns off
+what that resume turned on and removes the mark (7.71.02). The pause's own write of what it turns off is conditional on
+the trial it read and comes before any turn-off, so an extension that marked the trial after that read makes the pause
+fail (409, counted failed by the tick) and turn nothing off (7.71.02); and the pause reads the trial's `rev` again
+before each turn-off, so an extension that marks it while the pause is turning things off stops the pause there (409),
+and at most the one turn-off already under way when the mark landed is undone (7.71.03).
 
 **Fixed cost: about none** (tenet 7): 720 ticks a month, each one Query of the listing partition (a few rows per
 workspace) and nothing more while no trial is due.

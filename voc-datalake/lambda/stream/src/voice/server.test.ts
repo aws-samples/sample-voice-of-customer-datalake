@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Server } from 'node:http';
 
 import type { RawData, WebSocket } from 'ws';
 
 import { createRelayServer, SCOPE_HEADER, SESSION_HEADER, type ConnectionIds, type RelayHost } from './server.js';
-import { closedAfterEach, connect, httpJson, listening, until, upgradeStatus, type Client } from './ws-fixtures.js';
+import { closedAfterEach, connect, httpJson, listening, silentPeer, until, upgradeStatus, type Client } from './ws-fixtures.js';
 
 /** RFC 6455's sample nonce (section 1.3), built here so no key-shaped literal sits in the source. */
 const SAMPLE_NONCE = Buffer.from('the sample nonce').toString('base64');
@@ -126,6 +126,25 @@ describe('relay server: the WebSocket', () => {
     host.socket?.send('"late"');
     host.socket?.close(1000);
     expect([await client.closed, client.texts, host.closes]).toStrictEqual([1000, [], 1]);
+  });
+
+  it('destroys a socket whose close is never answered five seconds after the close, not ws\'s 30 (F1, 7.71.03)', async () => {
+    const host = new EchoHost();
+    const peer = await silentPeer(await serving(host), HEADERS, SAMPLE_NONCE);
+    await until(() => host.socket !== undefined);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      host.socket?.close(1008);
+      vi.advanceTimersByTime(4999);
+      await new Promise((resolve) => { setImmediate(resolve); });
+      expect(host.closes).toBe(0);
+      vi.advanceTimersByTime(1);
+      vi.useRealTimers();
+      await until(() => host.closes === 1);
+    } finally {
+      vi.useRealTimers();
+      peer.destroy();
+    }
   });
 
   it('closes with 1009 on a message over 32 KB, in one frame or in fragments, and sends only valid close codes', async () => {

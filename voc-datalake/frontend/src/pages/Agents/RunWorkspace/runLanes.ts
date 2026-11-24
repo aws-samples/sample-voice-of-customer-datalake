@@ -65,12 +65,14 @@ const OVER: ReadonlySet<string> = new Set(['stopped', 'reposted'])
 
 /**
  * An agent's state from its session's status and where the run stands (7.51.04): done, failed, stopped (or posted
- * again) as they say; held (paused) while the run waits for a person or the session is held; stopped once the run
- * has ended; else at work (booting, working, pausing, or a launch with no session row yet), the only state that spins.
+ * again) as they say; one whose task went to a person (7.71.03, `needs_human`) waiting for them, never a failure; held
+ * (paused) while the run waits for a person or the session is held; stopped once the run has ended; else at work
+ * (booting, working, pausing, or a launch with no session row yet), the only state that spins.
  */
 export function sessionState(status: string | null, phase: RunPhase): LaneState {
   if (status === 'done') return 'ran_ok'
   if (status === 'failed' || status === 'crashed') return 'ran_failed'
+  if (status === 'needs_human') return 'waiting'
   if (phase === 'ended' || (status !== null && OVER.has(status))) return 'stopped'
   return phase === 'halted' || (status !== null && HELD.has(status)) ? 'paused' : 'running'
 }

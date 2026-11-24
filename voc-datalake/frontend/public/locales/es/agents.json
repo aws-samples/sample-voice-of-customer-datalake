@@ -1920,7 +1920,8 @@
       "done": "Hecho",
       "failed": "Fallido",
       "stopped": "Detenido",
-      "reposted": "Publicado de nuevo"
+      "reposted": "Publicado de nuevo",
+      "needs_human": "Esperando a una persona"
     }
   },
   "templatePage": {
@@ -2248,7 +2249,8 @@
           "failed": "Falló",
           "crashed": "Se cayó",
           "stopped": "Detenido",
-          "reposted": "Traspasado"
+          "reposted": "Traspasado",
+          "needs_human": "Esperando a una persona"
         },
         "restarted": "{{agent}} se detuvo de forma inesperada y se reinició (intento {{n, number}} de {{max, number}})",
         "restartedAgain": "{{agent}} se detuvo de forma inesperada y se reinició (intento {{n, number}})",

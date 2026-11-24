@@ -26,7 +26,7 @@ import { MAX_VOICE_FRAME_BYTES, VOICE_CLOSE, type RelayMessage, type VoiceEndRea
 import { createRelayServer, type RelayHost } from './server.js';
 import { awsStoreDeps, createVoiceStore } from './store.js';
 import { VoiceSession, type ClientChannel, type Clock, type SessionDeps } from './voice-session.js';
-import { END_WAITS, endConnection, type EndWaits } from './wire-end.js';
+import { END_SETTLE_MS, endConnection } from './wire-end.js';
 
 const DEFAULT_PORT = 8080;
 const REQUIRED = ['VOICE_MODEL_ID', 'VOICE_REGION', 'PROJECTS_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET'] as const;
@@ -54,9 +54,9 @@ export const systemClock: Clock = {
   },
 };
 
-/** How a connection ends on the wire: the waits and the clock that times them (wire-end.ts). */
+/** How a connection ends on the wire: its settle and the clock that times it (wire-end.ts). */
 interface Wire {
-  readonly waits: EndWaits;
+  readonly settleMs: number;
   readonly clock: Clock;
 }
 
@@ -75,8 +75,8 @@ function channelOf(socket: WebSocket, end: (reason: VoiceEndReason, code: number
   };
 }
 
-/** The host of one microVM's conversations; `wire` times every connection's end (a spec's shorter waits). */
-export function relayHost(deps: SessionDeps, wire: Wire = { waits: END_WAITS, clock: systemClock }): RelayHost {
+/** The host of one microVM's conversations; `wire` times every connection's end (a spec's shorter settle). */
+export function relayHost(deps: SessionDeps, wire: Wire = { settleMs: END_SETTLE_MS, clock: systemClock }): RelayHost {
   const state: { current: VoiceSession | undefined } = { current: undefined };
   return {
     busy: () => state.current !== undefined && !state.current.isOver,
@@ -86,7 +86,7 @@ export function relayHost(deps: SessionDeps, wire: Wire = { waits: END_WAITS, cl
       const openedAt = wire.clock.now();
       const end = (reason: VoiceEndReason, code: number): void => {
         const ended: RelayMessage = { type: 'ended', reason };
-        endConnection(socket, openedAt, JSON.stringify(ended), code, wire.waits, wire.clock);
+        endConnection(socket, openedAt, JSON.stringify(ended), code, wire.settleMs, wire.clock);
       };
       if (state.current !== undefined && !state.current.isOver) {
         end('refused', VOICE_CLOSE.policy);

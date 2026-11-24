@@ -1317,9 +1317,27 @@ def attach_execution(table: Any, agent_id: str, run_id: str, execution_arn: str)
 
 def mark_engineering_running(table: Any, agent_id: str, run_id: str) -> dict | None:
     """An engineering agent's queued run once its start wrote (or may have written) its engineering run: ``running``
-    until the heartbeat reads that run ended (agents/heartbeat/engineering.py). None when it is no longer queued."""
-    return _run_update(table, agent_id, run_id, 'SET #st = :running', {'#st': 'status'},
-                       {':running': RUN_RUNNING, ':queued': RUN_QUEUED}, 'attribute_exists(pk) AND #st = :queued')
+    until the heartbeat reads that run ended (agents/heartbeat/engineering.py), and (7.71.03) the agent's own
+    ``last_run_status`` with it (``record_last_run_running``). None when it is no longer queued."""
+    run = _run_update(table, agent_id, run_id, 'SET #st = :running', {'#st': 'status'},
+                      {':running': RUN_RUNNING, ':queued': RUN_QUEUED}, 'attribute_exists(pk) AND #st = :queued')
+    if run is not None:
+        record_last_run_running(table, agent_id, run_id)
+    return run
+
+
+def record_last_run_running(table: Any, agent_id: str, run_id: str) -> None:
+    """The agent's ``last_run_status`` follows its run from queued to running: the agents list and the agent's stats
+    read only the agent row, which said "Queued" for a run that had been working for an hour (a workflow agent's
+    before, an engineering agent's until 7.71.03). Conditional on this run still being the agent's last one and still
+    recorded as queued, so it never writes over a newer run or a finish that landed first."""
+    try:
+        update_unless_condition_fails(
+            table, Key=agent_key(agent_id), UpdateExpression='SET last_run_status = :running',
+            ConditionExpression='last_run_id = :run AND last_run_status = :queued',
+            ExpressionAttributeValues={':run': run_id, ':running': RUN_RUNNING, ':queued': RUN_QUEUED})
+    except (ClientError, BotoCoreError) as exc:
+        raise _service_error('record the agent\'s running run', exc) from exc
 
 
 def finish_run(table: Any, agent_id: str, run_id: str, status: str, *, now: datetime,

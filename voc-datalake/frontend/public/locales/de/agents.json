@@ -1901,7 +1901,8 @@
       "done": "Fertig",
       "failed": "Fehlgeschlagen",
       "stopped": "Gestoppt",
-      "reposted": "Neu eingestellt"
+      "reposted": "Neu eingestellt",
+      "needs_human": "Wartet auf eine Person"
     }
   },
   "templatePage": {
@@ -2229,7 +2230,8 @@
           "failed": "Fehlgeschlagen",
           "crashed": "Abgestürzt",
           "stopped": "Gestoppt",
-          "reposted": "Weitergegeben"
+          "reposted": "Weitergegeben",
+          "needs_human": "Wartet auf eine Person"
         },
         "restarted": "{{agent}} wurde unerwartet beendet und neu gestartet (Versuch {{n, number}} von {{max, number}})",
         "restartedAgain": "{{agent}} wurde unerwartet beendet und neu gestartet (Versuch {{n, number}})",

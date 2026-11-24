@@ -5,6 +5,7 @@ import pytest
 
 from engineering.connectors import write_policy
 from engineering.connectors.write_policy import WriteRefused
+from engineering.runtime.outputs import run_branch
 
 REVIEW = 'The refund took three weeks and nobody answered my emails about it.'
 RUN = 'run-7f3a'
@@ -14,21 +15,15 @@ RUN = 'run-7f3a'
     ('main', 'default_branch'),
     ('feature/x', 'not_run_branch'),
     ('voc-agent/fix', 'not_run_branch'),
-    ('voc-agent/run-0000/fix', 'not_run_branch'),
-    ('voc-agent/run-7f3a/', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/../main', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/-x', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/fix.lock', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/fix/', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/a//b', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/fix\n', 'bad_branch_name'),
-    # What git check-ref-format refuses: a component starting with ".", one ending with ".lock", "@{", a trailing ".".
-    ('voc-agent/run-7f3a/.hidden', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/fix/.x', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/fix.lock/x', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/fix@{1}', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/fix.', 'bad_branch_name'),
-    ('voc-agent/run-7f3a/fix/x.', 'bad_branch_name'),
+    ('voc-agent/run-0000-fix', 'not_run_branch'),
+    # (7.71.03) The run's one branch alone: nothing under it, no other name of the run, no two-level name (7.71.02's
+    # voc-agent/<run id>/fix and the model's own voc-agent/<run id>/<name> before it).
+    ('voc-agent/run-7f3a/fix', 'not_run_branch'),
+    ('voc-agent/run-7f3a/fix-refund-total-42', 'not_run_branch'),
+    ('voc-agent/run-7f3a-fix/x', 'not_run_branch'),
+    ('voc-agent/run-7f3a-fixes', 'not_run_branch'),
+    ('voc-agent/run-7f3a-fix\n', 'not_run_branch'),
+    ('voc-agent/run-7f3a', 'not_run_branch'),
 ])
 def test_refuses_every_branch_but_the_runs_own(branch: str, code: str) -> None:
     refusal = write_policy.branch_refusal(branch, 'main', RUN)
@@ -36,8 +31,8 @@ def test_refuses_every_branch_but_the_runs_own(branch: str, code: str) -> None:
     assert refusal.code == code
 
 
-def test_refuses_the_default_branch_even_under_the_prefix() -> None:
-    branch = f'voc-agent/{RUN}/main'
+def test_refuses_the_default_branch_even_when_it_is_the_runs_own() -> None:
+    branch = run_branch(RUN)
     refusal = write_policy.branch_refusal(branch, branch, RUN)
     assert refusal is not None
     assert refusal.code == 'default_branch'
@@ -45,14 +40,18 @@ def test_refuses_the_default_branch_even_under_the_prefix() -> None:
 
 @pytest.mark.parametrize('run_id', ['', '../x', 'a/b', '-x'])
 def test_refuses_a_run_id_it_does_not_know(run_id: str) -> None:
-    refusal = write_policy.branch_refusal(f'voc-agent/{run_id}/fix', 'main', run_id)
+    refusal = write_policy.branch_refusal(run_branch(run_id), 'main', run_id)
     assert refusal is not None
     assert refusal.code == 'bad_run'
 
 
-@pytest.mark.parametrize('rest', ['fix-refund-total-42', 'fix/v1.2', 'fix.locked', 'a.b/c_d'])
-def test_allows_a_branch_of_the_run(rest: str) -> None:
-    assert write_policy.branch_refusal(f'voc-agent/{RUN}/{rest}', 'main', RUN) is None
+def test_allows_the_runs_own_branch_one_level_under_the_agents_prefix() -> None:
+    # (7.71.03) A ruleset that excludes refs/heads/voc-agent/* matches one level only (GitHub's * stops at a /): the
+    # run's branch is voc-agent/<run id>-fix, with no further level, or it would get that ruleset's rules.
+    branch = run_branch(RUN)
+    assert branch == 'voc-agent/run-7f3a-fix'
+    assert '/' not in branch.removeprefix('voc-agent/')
+    assert write_policy.branch_refusal(branch, 'main', RUN) is None
 
 
 @pytest.mark.parametrize('path', ['.github/workflows/ci.yml', '/.github/workflows/x.yaml', '.github/actions/a/action.yml',

@@ -17,7 +17,7 @@ from typing import Any, Final, Literal
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.api import repost_task
-from engineering.board.model import FINAL, OPEN
+from engineering.board.model import DONE, FINAL, OPEN
 from engineering.board.store import COORDINATE_TASK, LEASE_S, BoardError, BoardStore
 from engineering.bus.publish import EventBridgePublisher, new_event_id
 from engineering.bus.schema import Message, Party, fit_summary
@@ -103,8 +103,9 @@ class BoardLeases:
             return
         repost_task(self.store, self.publisher, WORKSPACE, run_id, task_id, reason, attempt)
 
-    def coordinator_to_start(self, run_id: str, session: Callable[[str], SessionState], *,
-                             actor: str, launchable: Callable[[], None] = lambda: None) -> tuple[str, int] | None:
+    def coordinator_to_start(self, run_id: str, session: Callable[[str], SessionState], *, actor: str,
+                             launchable: Callable[[], None] = lambda: None,
+                             unfinished: Callable[[], bool] = lambda: False) -> tuple[str, int] | None:
         """The run coordinator the runtime is to start, and its task's attempt, or None when the run has one (or no
         coordinate task, or one that ended). ``session(agent)`` says whether that agent's session ``failed``, has
         ``none`` yet, or is ``kept`` as it is. ``launchable()`` raises what the launch would refuse (no skill, no
@@ -116,13 +117,25 @@ class BoardLeases:
         started as it is. One whose session failed (it kept crashing, so the run went to a person) is replaced: the
         task re-posted at its attempt, a new ``coordinator-<n>`` recorded at the next (``launch_coordinator``, which
         the board then checks every coordinator op against, so the old one is refused from the re-post on; its
-        session ended with its session). A retry finds the new one recorded, with no session or a live one."""
+        session ended with its session). A retry finds the new one recorded, with no session or a live one.
+
+        A coordinate task that ended done while the run's flow did not finish (``unfinished()``: its coordinator
+        finished early, and the supervisor sent the run to a person, ``coordinator``) is open again at the next attempt
+        for a new ``coordinator-<n>`` (7.71.03, ``BoardStore.reopen_coordinate``), so a person's Resume has the run
+        planned again; one that ended otherwise (failed, a person's) stays ended."""
         try:
             task = self.store.task(WORKSPACE, run_id, COORDINATE_TASK)
         except BoardError as error:
             if error.kind == 'not_found':
                 return None
             raise
+        if task.state == DONE and unfinished():
+            launchable()
+            task = self.store.reopen_coordinate(WORKSPACE, run_id, attempt=task.attempt, actor=actor,
+                                                reason=f'{task.lease_agent or "the coordinator"} finished on a flow '
+                                                       'that did not: a new coordinator')
+            launched = self.store.launch_coordinator(WORKSPACE, run_id, attempt=task.attempt, actor=actor)
+            return launched.launched_agent, launched.attempt
         if task.state in FINAL:
             return None
         recorded = task.launched_agent if task.launched_attempt == task.attempt else ''

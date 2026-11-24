@@ -10,9 +10,11 @@
  *   over its WebSocket.
  * - `/ws` is served by the `ws` package (docs/dependencies.md): the handshake (anything but a valid upgrade is a 400),
  *   the framing, the close handshake and the answer to a WebSocket ping (its own: the relay adds none), with every
- *   message at most `MAX_VOICE_FRAME_BYTES` (larger: close 1009) and no compression. Any other path is a 404 and the
- *   socket is dropped. The session id and the scope arrive as AgentCore's headers (signed in the URL the projects API
- *   minted, so the browser cannot change them): the host decides what to do with the connection.
+ *   message at most `MAX_VOICE_FRAME_BYTES` (larger: close 1009) and no compression. A socket whose close handshake
+ *   has not finished `CLOSE_TIMEOUT_MS` after the relay's close is destroyed (ws's default is 30 s: a proxy that lost
+ *   the close frame held the browser that long, wire-end.ts). Any other path is a 404 and the socket is dropped. The
+ *   session id and the scope arrive as AgentCore's headers (signed in the URL the projects API minted, so the browser
+ *   cannot change them): the host decides what to do with the connection.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -38,6 +40,9 @@ export interface RelayHost {
 }
 
 type PingStatus = 'Healthy' | 'HealthyBusy';
+
+/** How long a close handshake may take before ws destroys the socket, in milliseconds. */
+const CLOSE_TIMEOUT_MS = 5000;
 
 function header(request: IncomingMessage, name: string): string {
   const value = request.headers[name];
@@ -68,7 +73,9 @@ function pingStatus(host: RelayHost, clock: () => number): () => { status: PingS
 
 /** The server (not yet listening): `/ping`, `/invocations` and the `/ws` upgrade for `host`. */
 export function createRelayServer(host: RelayHost, clock: () => number): Server {
-  const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_VOICE_FRAME_BYTES, perMessageDeflate: false });
+  // ws 8.23 takes `closeTimeout`, which `@types/ws` 8.18 does not name yet: the options go as a value, not a literal.
+  const options = { noServer: true, maxPayload: MAX_VOICE_FRAME_BYTES, perMessageDeflate: false, closeTimeout: CLOSE_TIMEOUT_MS };
+  const sockets = new WebSocketServer(options);
   const ping = pingStatus(host, clock);
   const server = createServer((request, response) => {
     const route = `${request.method ?? ''} ${pathOf(request)}`;

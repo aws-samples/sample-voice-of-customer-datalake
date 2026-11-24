@@ -234,7 +234,8 @@ MAX_LABELS: Final = 2
 
 
 def _label_issue(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
-    """``{number, labels, attempt?}`` (the understander's, 7.50.00): ``{"number", "labels"}`` added."""
+    """``{number, labels, attempt?}`` (the understander's, 7.50.00): ``{"number", "labels"}`` on the issue, and
+    ``set_by`` (7.71.03) when an earlier call put them (another understander of the run), the agent whose call it was."""
     _keys(args, {'number', 'labels'}, _ATTEMPT)
     number, labels = args['number'], args['labels']
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
@@ -242,8 +243,8 @@ def _label_issue(broker: Broker, caller: Caller, args: Mapping[str, object]) -> 
     if (not isinstance(labels, list) or not 0 < len(labels) <= MAX_LABELS
             or not all(isinstance(label, str) and 0 < len(label) <= MAX_NAME for label in labels)):
         raise BadRequest(f'labels is a list of 1-{MAX_LABELS} label names.')
-    added = broker.label_issue(caller, number, tuple(labels), _attempt(args))
-    return {'number': number, 'labels': list(added)}
+    done = broker.label_issue(caller, number, tuple(labels), _attempt(args))
+    return {'number': number, 'labels': list(done.labels), **({'set_by': done.set_by} if done.set_by else {})}
 
 
 def _push_bundle(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:

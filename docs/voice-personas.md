@@ -141,15 +141,17 @@ browser ──HTTPS──▶ projects API (/projects/{proxy+})  ── checks, e
    End stopping the runtime could cut short mid-write. A session whose End never arrived is saved the next time its
    starter reads it (`GET …/voice-sessions/{session}`) or opens the Talk dialog of any persona of its project (the
    offer saves the starter's five newest sessions there that ended without End, through the project's pointers); a URL
-   never used ends a minute after it was made. At the time limit, the session's cost cap or the budget the persona's
-   goodbye, already sent, plays out (at most 10 seconds) before the browser releases the audio.
+   never used ends at the first read 70 seconds after it was made (its minute and the relay's 10 seconds for the
+   clocks, below). At the time limit, the session's cost cap or the budget the persona's goodbye, already sent, plays
+   out (at most 10 seconds) before the browser releases the audio.
 8. **On the wire,** every end of a connection, a refusal or a session's, is `ended {reason}` then the close code, in
-   that order (`lambda/stream/src/voice/wire-end.ts`, 7.71.02): nothing goes before the connection is a second old, the
-   close waits for the `ended` frame's send callback (one second at most), and a socket whose close handshake has not
-   finished five seconds later is terminated. On the b- deployment a refusal sent right after the upgrade never reached
-   the browser (no `ended`, no 1008: AgentCore's proxy forwarded neither, `ws` waited its 30-second close timeout and
-   the browser saw 1006), while a first connection's `ready`, a few hundred milliseconds after its upgrade, always
-   arrived. **That AgentCore's proxy now forwards a refusal so ordered is not verified: check it on a live deployment
+   that order (`lambda/stream/src/voice/wire-end.ts`, 7.71.02): nothing goes before the connection is a second old, then
+   `ws` writes the two frames in that order, and destroys a socket whose close handshake has not finished five seconds
+   after the close (its `closeTimeout`, `server.ts`; 7.71.03, in place of the relay's own two timers). On the b-
+   deployment a refusal sent right after the upgrade never reached the browser (no `ended`, no 1008: AgentCore's proxy
+   forwarded neither, `ws` waited its default 30-second close timeout and the browser saw 1006), while a first
+   connection's `ready`, a few hundred milliseconds after its upgrade, always arrived. **That AgentCore's proxy now
+   forwards a refusal so ordered is not verified: check it on a live deployment
    ([What to check](#what-to-check-on-a-live-deployment), step 1).**
 
 **Routes** (all on `/projects/{proxy+}`; no API Gateway resource was added):
@@ -225,9 +227,11 @@ person acting for themselves, consent, the budget and the limits. The relay then
   60 seconds, not passed by more than 10 seconds for the clocks); a second connection, or one after the session ended,
   is refused (`refused`) with close code 1008;
 - **its own expiry:** AgentCore accepted a URL 65.8 seconds after it was signed with `X-Amz-Expires=60` (the b-
-  deployment, 2026-11-23: a grace of its own, not documented). The relay does not rely on it: a first connection to a
-  row still `minted` more than 70 seconds after its mint ends `expired` (close 1008, "The session link expired before
-  it connected", 7.71.02), its row marked `ended` with that reason and its place in the live set freed;
+  deployment, 2026-11-23: a grace of its own, not documented). The relay does not rely on it: a first connection more
+  than 70 seconds after the mint fails that condition and is refused like a used one (`refused`, 1008). The projects
+  API ends such a row (`disconnected`, its place in the live set freed) at the first read after the same 70 seconds,
+  never sooner: `shared/voice_sessions.py` `CONNECT_SKEW_SECONDS` is the relay's 10 seconds, pinned by a test. (7.71.02
+  ended such a connection `expired`, a reason of its own, which 7.71.03 removed);
 - **bound to its project:** the evidence it reads must name its session id and the signed project scope, else 1008;
 - **bound to its pointer:** a session is answered, ended and saved only through its project's own pointer row, which
   the relay cannot write, so a session row cannot be moved to another project.
@@ -280,10 +284,11 @@ so they never make it again.
 no consent; an MCP credential or an agent; a company persona; the budget used, in minutes or in cost; a fourth start
 in a minute; a sixth session in a day; a busy deployment; a URL whose session id or scope was changed (a different
 signature); a second connection to a live session (1008); an activation that fails its condition (1008); a first
-connection more than 70 seconds after the mint (`expired`, 1008); evidence naming another session or project (1008); a
+connection more than 70 seconds after the mint (`refused`, 1008); evidence naming another session or project (1008); a
 message over 32 KB, in one frame or in fragments (1009); a microphone faster than real time (dropped); a session past
 its cost cap (`cost_limit`); a deleted session row (`error`, its time and cost still added to the month); an end's
-order on the wire (`ended`, then the close, not before the connection is a second old: `wire-end.test.ts`); the flag
+order on the wire (`ended`, then the close, not before the connection is a second old: `wire-end.test.ts`); a close
+handshake the peer never answers, ended five seconds after the close (`server.test.ts`); the flag
 refused outside the four Regions, for any other model id or a profile id. `lib/stacks/voice-relay.test.ts` also runs
 the built `relay.js` and checks that it answers `/ping` and a `/ws` handshake.
 
@@ -297,9 +302,9 @@ Deploy to a test account first (us-west-2), then:
 
 1. **The refusals:** a URL used after 60 seconds, a URL with an edited session id or scope, a second browser tab on
    the same URL, and a URL for another deployment's runtime are all refused by AgentCore or the relay. A refusal by
-   the relay reaches the browser as `ended {refused}` (or `{expired}` for a first connection past 70 seconds) and close
-   1008 about a second after it opened, never a 1006 thirty seconds later (7.71.02's order on the wire, not yet seen
-   through AgentCore's proxy).
+   the relay reaches the browser as `ended {refused}` and close 1008 about a second after it opened, never a 1006
+   thirty seconds later (7.71.02's order on the wire, not yet seen through AgentCore's proxy; were the close frame
+   still lost, the connection would end about five seconds after the refusal, 7.71.03).
 2. **The connection outlives the URL:** a session goes past its first minute.
 3. **The scope header** reaches the container (`X-Amzn-Bedrock-AgentCore-Runtime-Custom-Voc-Scope`): a session starts
    at all (the relay refuses one without it).

@@ -51,9 +51,9 @@ from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import AgentSession
 from engineering.runtime.harness.library_tools import own, with_library
 from engineering.runtime.harness.ports import BrokerRefused
-from engineering.runtime.harness.role_tools import run_branch
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.skills import SKILLS, Skill, harness_argv
+from engineering.runtime.outputs import run_branch
 from engineering.runtime.test.broker_stub import AgentSessions, FunctionUrl
 from engineering.runtime.test.conftest import BOARD_URL, BROKER_URL, COMMIT, TABLE, WORKSPACE_BUCKET
 from engineering.runtime.test.harness_fakes import FakeBedrock, FakeRunner, use
@@ -72,7 +72,7 @@ COORDINATOR = SKILLS['coordinator']
 RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0CD'
 #: The harness's own session builder (a test points its checkout at a temporary directory).
 BUILD_SESSION = harness_main.build_session
-BRANCH = f'voc-agent/{RUN}/fix-slug'
+BRANCH = run_branch(RUN)
 SLUGS = 'def slugify(text, max_length):\n    words, slug = text.lower().split(), ""\n'
 FIXED = SLUGS.replace('""', '""  # <= max_length')
 #: The agents whose session runs on real git (a checkout of the fixture repository): the fixer, whose submitted patch
@@ -113,7 +113,7 @@ class GitHost:
     def ci_protection(self, connection_id: str, default_branch: str, branch: str) -> CiProtection:
         """The branch rules the setup guide asks for: the default branch protected with a required check, the agent's
         branch not protected."""
-        assert (connection_id, default_branch, branch.startswith(f'voc-agent/{RUN}/')) == ('conn-1', 'main', True)
+        assert (connection_id, default_branch, branch == run_branch(RUN)) == ('conn-1', 'main', True)
         return CiProtection(default_branch_protected=True, required_checks=('ci / test',), agent_branch_protected=False)
 
     def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
@@ -130,6 +130,9 @@ class GitHost:
 
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         raise AssertionError(f'no comment in this flow ({connection_id}, {on} {number}, {len(body)} characters)')
+
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        raise AssertionError(f'no comment in this flow ({connection_id}, issue {number}, {marker})')
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         assert connection_id == 'conn-1'

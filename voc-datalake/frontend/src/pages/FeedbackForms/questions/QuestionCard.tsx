@@ -17,7 +17,7 @@ import clsx from 'clsx'
 import { CircleX, GitBranch, GripVertical, Languages, Sparkles } from 'lucide-react'
 import { TruncatedText } from '../../../components/Tooltip/TruncatedText'
 import type { FormLanguage, Question } from '../model/formsV2'
-import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { splitOtherwise } from '../model/rules'
 import TypeChip from '../ui/TypeChip'
 import ActionsMenu from '../ui/ActionsMenu'
@@ -105,7 +105,7 @@ function CardBadges({ question, missing, hasError, aiMarked, secondary }: Readon
 export default function QuestionCard(props: QuestionCardProps) {
   const { question, index, total, language, selected, onSelect, onMove, menu, drag, gap = null } = props
   const { t } = useTranslation('feedbackForms')
-  const headline = textIn(question.headline, language)
+  const headline = headlineShown(question, language)
   const number = index + 1
   const onKey = (event: KeyboardEvent<HTMLLIElement>) => { moveOnArrowKeys(event, index, total, onMove) }
   const allowDrop = (event: DragEvent<HTMLLIElement>) => { event.preventDefault(); drag.onDragOver() }

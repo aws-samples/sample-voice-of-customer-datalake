@@ -652,6 +652,18 @@ def test_a_note_is_posted_and_answered_with_its_link(on: Any, kind: str) -> None
     assert api.bodies('POST', f'{P}/{kind}/42/notes') == [{'body': 'Thanks'}]
 
 
+def test_the_runs_note_on_its_issue_is_found_by_its_marker_newest_first_ten_pages_at_most() -> None:
+    # (7.71.03) The look for the run's own comment whose call never heard back (``broker.issue_marker``).
+    marker = '<!-- voc-engineering-run:01JD3R4NZXQ7Y2W8K4M6P9T0AB -->'
+    notes = f'{P}/issues/42/notes?per_page=100&sort=desc&order_by=created_at&page='
+    api = (FakeGitLab().on('GET', f'{notes}1', answer(200, [{'id': 5, 'body': 'Me too.'}], {'x-next-page': '2'}))
+           .on('GET', f'{notes}2', answer(200, [{'id': 3, 'body': f'Triage\n\n{marker}'}])))
+    assert client(api).issue_comment('conn-1', 42, marker) == f'https://gitlab.com/{PROJECT}/-/issues/42#note_3'
+    for page in range(1, 12):
+        api.on('GET', f'{notes}{page}', answer(200, [{'id': 5, 'body': 'Me too.'}], {'x-next-page': str(page + 1)}))
+    assert client(api).issue_comment('conn-1', 42, marker) is None
+
+
 # --- the router: each connection on its own host's client ------------------------------------------------------------
 
 
@@ -668,6 +680,8 @@ def test_the_router_hands_an_issues_labels_and_a_pull_requests_draft_flag_to_the
     api = draftable(FakeGitLab(), open_mrs=[]).on('PUT', f'{P}/issues/42', answer(200, {}))
     router = HostRouter(lambda _c: credential(), GitHubHost(lambda _c: app_credential()), client(api))
     assert router.label_issue('gl', 42, ('voc-triage/bug',)) == ('voc-triage/bug',)
+    api.on('GET', f'{P}/issues/42/notes?per_page=100&sort=desc&order_by=created_at&page=1', answer(200, []))
+    assert router.issue_comment('gl', 42, '<!-- voc-engineering-run:R -->') is None
     router.open_or_update_draft_pr('gl', BRANCH, 'main', 'Fix', 'Body', TREE, draft=False)
     assert [body['title'] for body in api.bodies('POST', f'{P}/merge_requests')] == ['Fix']
 

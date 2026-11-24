@@ -220,9 +220,9 @@ def test_409_for_a_push_the_dial_holds(mode: str, expected: str) -> None:
 
 
 def test_422_for_another_runs_branch() -> None:
-    status, body = ask('committer', 'push_bundle', {**PUSH, 'branch': f'voc-agent/{OTHER_RUN}/x'})
+    status, body = ask('committer', 'push_bundle', {**PUSH, 'branch': f'voc-agent/{OTHER_RUN}-fix'})
     assert status == 422
-    assert "own run's branches" in body['error']
+    assert "own run's branch, voc-agent/" in body['error']
 
 
 def test_503_while_the_runs_records_cannot_be_read() -> None:

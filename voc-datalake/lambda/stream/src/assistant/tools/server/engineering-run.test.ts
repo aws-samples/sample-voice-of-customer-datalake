@@ -61,7 +61,7 @@ describe('get_engineering_run', () => {
   });
 
   it.each([
-    ['done', false], ['failed', false], ['stopped', false], ['reposted', false],
+    ['done', false], ['failed', false], ['stopped', false], ['reposted', false], ['needs_human', false],
     ['waiting', true], ['pause_requested', true], ['paused', true], ['booting', true],
   ])('shows an agent %s in full: %s', async (status, full) => {
     const routes = { [`GET ${BASE}`]: { run: { run_id: RUN }, agents: [

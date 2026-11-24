@@ -21,13 +21,14 @@ from engineering.runtime.caps import Timings
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.harness import main as harness_main
 from engineering.runtime.harness.board_client import InboxHttp
-from engineering.runtime.harness.cli import CliNotOffered
+from engineering.runtime.harness.cli import CliNotOffered, sync_notes
 from engineering.runtime.harness.converse_loop import ModelTimedOut
 from engineering.runtime.harness.main import Ports, S3Store, build_session, main
 from engineering.runtime.harness.model_wait import WAITING_ON_THE_MODEL, ModelWait
 from engineering.runtime.harness.ports import HarnessPortNotWired, PendingHarnessPorts, TaskBrief
 from engineering.runtime.harness.role_tools import PatchNotJudged
 from engineering.runtime.harness.runner_client import RunnerClient
+from engineering.runtime.harness.tool_server import SessionFiles
 from engineering.runtime.liveness import judge
 from engineering.runtime.ports import Lease
 from engineering.runtime.test.conftest import BUCKET
@@ -394,7 +395,39 @@ def test_a_committers_tool_server_pushes_the_patch_and_tree_its_harness_judged_t
     assert not server.tools.call('push_commit', {'message': 'Divide with true division'}).error
     [(_, _, _, pushed)] = broker.writes
     assert (pushed['patch'], pushed['tree_hash'], pushed['branch'], server.context.brief.pull_request) == (
-        submitted, 'b' * 40, 'voc-agent/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fix', 'ready')
+        submitted, 'b' * 40, 'voc-agent/01JD3R4NZXQ7Y2W8K4M6P9T0AB-fix', 'ready')
+
+
+def test_a_continued_writer_on_the_cli_keeps_the_push_its_first_tool_server_made_and_finishes_done(
+        aws, tmp_path, monkeypatch):
+    # (7.71.03) On the CLI and Kiro the tool server makes the writes, in its own process: its harness takes them from
+    # the server's state before its checkpoint, and the continuation's tool server is handed them, so a committer that
+    # pushed, then was continued, finishes done rather than going to a person over a push that exists.
+    s3, _ = aws
+    submitted, _handed = _tool_servers_handed(s3, monkeypatch)
+    env = _env(tmp_path, VOC_ROLE='committer', VOC_AGENT_ID='committer-7')
+    board, files = GateBoard(patch=submitted), SessionFiles(str(tmp_path / 'files'))
+
+    def harness(**extra: str) -> Any:
+        return build_session({**env, **extra}, s3=s3, ports=Ports(board=board, inbox=FakeInbox(), broker=FakeBroker()),
+                             runner=FakeRunner(tree='b' * 40), checkout=str(tmp_path))
+
+    def tool_server(session: Any) -> Any:
+        return build_session({**env, **harness_main._tool_environment(env, session.context)}, s3=s3,
+                             ports=_ports(board), runner=FakeRunner(), checkout=str(tmp_path), restore=False)
+
+    first = harness()
+    server = tool_server(first)
+    files.record(server.tools.call('push_commit', {'message': 'Divide with true division'}), server.context)
+    sync_notes(first, files, None, 1)
+    continued = harness(VOC_ROLE='committer', VOC_RESTORE_KEY=first.checkpoint(turn=1))
+    assert harness_main._tool_environment(env, continued.context)['VOC_HOST_WRITES'] == 'push_commit'
+    finished = tool_server(continued).tools.call('finish', {'summary': 'pushed the fix'})
+    assert (finished.text, board.moves[-1][2]) == ('finished', 'done')
+    # A fresh start's tool server is handed none, whatever its start named.
+    fresh = harness(VOC_HOST_WRITES='push_commit')
+    assert 'VOC_HOST_WRITES' not in harness_main._tool_environment({**env, 'VOC_HOST_WRITES': 'push_commit'},
+                                                                   fresh.context)
 
 
 def test_a_working_tree_that_does_not_apply_is_a_crash_never_a_silent_loss(aws, tmp_path):

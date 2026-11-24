@@ -308,8 +308,12 @@ shows it through the widget's own preview (since 7.63.00: no second copy of the 
   until it is fixed. The builder's Problems list shows the same texts and Publish (and Update live form) waits for
   them; Save never does.
 - **Results and exports** show a text with placeholders as `[id]` (a CSV header of either layout, a question's
-  headline and an ending's title in Results, its Ending filter included, the item's text for the processor), never a
-  respondent's value.
+  headline and an ending's title in Results, its Ending filter, drop-off and Reach included, the item's text for the
+  processor), never a respondent's value. So does every other place that names a question by its headline (7.71.03):
+  the builder's question list and its move announcements, the logic targets and the Flow view, a choice's routing,
+  Settings › Category routing, the texts to translate, "Insert a value" and the recall preview's names, an update's
+  removal warning, a stale save's differences, the AI's changes, the template preview and the assistant's draft. Only
+  the headline's own field shows it as written, and the widget as respondents read it.
 - **The builder** offers "Insert a value" in each recall text (the hidden fields, then the earlier questions it may
   recall) and previews the text with each value named ("Respondents see: How was ‹Event›?"); the widget preview beside
   it shows the text as respondents read it without the value.

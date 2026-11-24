@@ -54,6 +54,7 @@ from engineering.connectors.test.fakes import (
     record,
 )
 from engineering.connectors.write_policy import WriteRefused
+from engineering.runtime.outputs import run_branch
 
 WRITERS = {'understander': POST_COMMENT, 'pr-reviewer': POST_COMMENT, 'committer': PUSH_BUNDLE,
            'pr-author': OPEN_OR_UPDATE_DRAFT_PR}
@@ -77,9 +78,9 @@ def call(broker: Broker, who: Caller, operation: str) -> object:
     calls: dict[str, Callable[[], object]] = {
         READ: lambda: broker.read(who, 'file', 'src/refund.py', None),
         POST_COMMENT: lambda: broker.post_comment(who, 'issue', 42, 'The refund total is rounded too early.'),
-        PUSH_BUNDLE: lambda: push(broker, who, f'voc-agent/{who.run_id}/fix'),
+        PUSH_BUNDLE: lambda: push(broker, who, run_branch(who.run_id)),
         OPEN_OR_UPDATE_DRAFT_PR: lambda: broker.open_or_update_draft_pr(
-            who, f'voc-agent/{who.run_id}/fix', 'Fix the refund total', 'From feedback fb_0123abcd.'),
+            who, run_branch(who.run_id), 'Fix the refund total', 'From feedback fb_0123abcd.'),
     }
     return calls[operation]()
 
@@ -200,7 +201,9 @@ def test_a_comment_is_posted_on_the_runs_connection() -> None:
     broker, host = go_broker()
     url = broker.post_comment(caller('understander'), 'issue', 42, 'Likely in src/refund.py:42.')
     assert url == 'https://code.example.com/issue/42#comment-1'
-    assert host.calls == [('post_comment', 'conn-1', 'issue', 42, 'Likely in src/refund.py:42.')]
+    # (7.71.03) The run's hidden marker ends it, so a call that never heard back is found on the host.
+    assert host.calls == [('post_comment', 'conn-1', 'issue', 42,
+                           f'Likely in src/refund.py:42.\n\n<!-- voc-engineering-run:{RUN} -->')]
 
 
 @pytest.mark.parametrize(('run', 'on', 'number'), [
@@ -252,7 +255,8 @@ def test_a_bundle_without_exactly_one_head_is_refused(heads: tuple[str, ...]) ->
     assert host.writes() == []
 
 
-@pytest.mark.parametrize('branch', ['main', f'voc-agent/{OTHER_RUN}/fix', 'voc-agent/fix', 'feature/x'])
+# (7.71.03: the run's own branch alone, one level; 7.71.02's two-level voc-agent/<run id>/fix is not it)
+@pytest.mark.parametrize('branch', ['main', run_branch(OTHER_RUN), 'voc-agent/fix', 'feature/x', f'voc-agent/{RUN}/fix'])
 def test_a_push_to_any_branch_but_the_runs_own_is_refused(branch: str) -> None:
     broker, host = go_broker()
     with pytest.raises(WriteRefused) as caught:
@@ -451,7 +455,7 @@ def test_an_attested_run_is_still_refused_while_the_hosts_branch_rules_are_off_t
     assert caught.value.reason == expected
     assert host.writes() == []
     # Asked about the run's own default branch and the agent's branch, with the run's connection.
-    assert host.ci_checks == [('conn-1', 'main', f'voc-agent/{RUN}/fix')]
+    assert host.ci_checks == [('conn-1', 'main', run_branch(RUN))]
 
 
 def test_a_writes_claim_keeps_the_attestation_and_the_branch_rules_it_was_made_on() -> None:
@@ -527,7 +531,7 @@ def test_no_pull_request_from_a_branch_not_on_the_host() -> None:
 
 
 @pytest.mark.parametrize(('branch', 'title', 'body', 'expected'), [
-    (f'voc-agent/{OTHER_RUN}/fix', 'Fix', 'Body', 'own run'),
+    (run_branch(OTHER_RUN), 'Fix', 'Body', 'own run'),
     ('main', 'Fix', 'Body', 'default branch'),
     (BRANCH, 'Fix', f'Customers say "{REVIEW}"', 'cite its feedback id'),
     (BRANCH, 'Call +1 555 010 0199', 'Body', 'phone number'),

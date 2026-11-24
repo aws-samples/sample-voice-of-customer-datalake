@@ -125,10 +125,10 @@ class RunControl(Protocol):
         """The run is active: not ended, and not waiting at a decision point."""
         ...
 
-    def end(self, run_id: str, status: str) -> None:
-        """End the live run as ``status`` (7.71.02: ``done``, once its coordinator finished on a finished flow), with
-        its history row (the supervisor's); it stays listed until no agent of it is live, then the handler's settling
-        releases it and starts its retrospective."""
+    def end_done(self, run_id: str) -> None:
+        """End the live run done (7.71.02: once its coordinator finished on a finished flow, the supervisor's only end
+        of a run), with its history row (the supervisor's); it stays listed until no agent of it is live, then the
+        handler's settling releases it and starts its retrospective."""
         ...
 
     def flow_finished(self, run_id: str) -> bool:

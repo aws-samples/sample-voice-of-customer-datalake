@@ -12,7 +12,7 @@ from engineering.runtime.harness import gate_tools, role_tools
 from engineering.runtime.harness.issues import COMMENT_HEAD, issue_comment
 from engineering.runtime.harness.main import _restore
 from engineering.runtime.outputs import TRIAGE_SCHEMA
-from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, opened, world
+from engineering.runtime.test.harness_fakes import HARNESS_COMMIT, RUN_ID, FakeBroker, opened, world
 from engineering.runtime.test.test_engineering_role_skills import reviewer_commented
 
 TREE = 'e' * 40
@@ -85,6 +85,23 @@ def test_the_understander_labels_its_issue_with_the_allowlist_only(tmp_path: Any
     assert not done.error
     assert w.broker.writes == [('label_issue', RUN_ID, 'fixer-1',
                                 {'number': 1, 'labels': ['voc-triage/bug', 'voc-severity/s2']})]
+
+
+def test_labels_another_agent_of_the_run_put_first_are_said_to_be_theirs(tmp_path: Any) -> None:
+    # (7.71.03) The run labels its issue once: a second understander's call is answered with the first one's labels,
+    # and the tool says so, to the model and on the task, rather than as if its own were put.
+    class FirstLabels(FakeBroker):
+        def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
+            del run_id, agent_id, labels
+            return {'number': number, 'labels': ['voc-triage/bug', 'voc-severity/s2'], 'set_by': 'understander-2'}
+
+    w = world(tmp_path, role='understander')
+    w.session.context.broker = FirstLabels()
+    done = w.session.tools.call('label_issue', {'number': 1, 'labels': ['voc-triage/bug', 'voc-severity/s3']})
+    said = 'labels already set by understander-2: voc-triage/bug, voc-severity/s2'
+    assert (done.error, said in done.text, w.session.context.status.step) == (False, True, said)
+    spec = next(spec for spec in w.session.tools.specs if spec.name == 'label_issue')
+    assert 'labels already set by <agent>' in spec.description
 
 
 def _final_go(tmp_path: Any) -> Any:

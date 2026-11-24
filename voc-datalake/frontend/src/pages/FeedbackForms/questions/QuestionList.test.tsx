@@ -258,6 +258,17 @@ describe('QuestionList: more of the list', () => {
   })
 })
 
+describe('QuestionList: a recalling headline', () => {
+  it('names its card and its move with each recall placeholder as [id] (Q5, 7.71.03)', async () => {
+    const user = userEvent.setup()
+    renderList(sampleForm({ questions: [text('q_first', 'First'), text('q_event', 'How was {{ event | the workshop }}?')], hidden_fields: [{ id: 'event' }] }))
+    expect(within(screen.getByRole('list', { name: 'Questions' })).getByText('How was [event]?')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More actions for question 2' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Move up' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Moved “How was [event]?” to position 1 of 2.')
+  })
+})
+
 describe("QuestionList: a card's meta line", () => {
   it('says a choice’s options, Other and None, and a text’s length and limit', () => {
     const multi: Question = { ...reason, type: 'multi_select', logic: undefined, other: { enabled: true }, none: { enabled: true } }

@@ -115,7 +115,7 @@ def test_a_repeated_comment_answers_the_first_outcome_and_is_never_posted_twice(
     first = _comment(reviewer)
     # Its continuation asks again (it never heard back, say): the first answer, and no second comment.
     assert (_comment(reviewer), _comment(reviewer), host.writes()) == (first, first, ['post_comment'])
-    assert writes.claims[(RUN, COMMENT_KEY)] == WriteClaim(WRITE_DONE, first)
+    assert writes.claims[(RUN, COMMENT_KEY)] == WriteClaim(WRITE_DONE, first, writes.now)
     # Another comment is a write of its own, and so is the same one at a new attempt of the task.
     assert len({first['url'], _comment(reviewer, 'A second finding.')['url'],
                 _comment(_client(url, 'pr-reviewer-5', attempt=2))['url']}) == 3
@@ -207,6 +207,10 @@ def test_the_understander_comments_on_and_labels_its_runs_issue_through_the_brok
     assert commented == {'url': 'https://code.example.com/issue/42#comment-1'}
     assert labelled == {'number': 42, 'labels': ['voc-triage/bug', 'voc-severity/s2']}
     assert host.writes() == ['post_comment', 'label_issue']
+    # (7.71.03) Another understander of the run gets the first one's labels back, and whose they are.
+    again = _client(url, 'understander-4').label_issue(RUN, 'understander-4', number=42, labels=('voc-triage/bug',))
+    assert again == {'number': 42, 'labels': ['voc-triage/bug', 'voc-severity/s2'], 'set_by': 'understander-2'}
+    assert host.writes() == ['post_comment', 'label_issue']
     with pytest.raises(ValueError, match="pull request or its issue"):
         understander.comment(RUN, 'understander-2', number=42, body='b', on='commit')
     # Another role's label is the broker's refusal, said plainly.
@@ -224,7 +228,7 @@ def test_the_understander_comments_on_and_labels_its_runs_issue_through_the_brok
     ('committer-3', lambda c: c.push(RUN, 'committer-3', branch=BRANCH, patch_key=PATCH, tree_hash='f' * 40,
                                      message='m'), 409, 'The board holds no final-go GO for this tree'),
     # Another run's branch.
-    ('committer-3', lambda c: c.push(RUN, 'committer-3', branch='voc-agent/01JC8Z3K4M5N6P7Q8R9S0T1V2X/x',
+    ('committer-3', lambda c: c.push(RUN, 'committer-3', branch='voc-agent/01JC8Z3K4M5N6P7Q8R9S0T1V2X-fix',
                                      patch_key=PATCH, tree_hash=TREE, message='m'), 422, ''),
     # The write rules on what is written: a person's address in the pull request's body.
     ('pr-author-4', lambda c: c.open_draft_pr(RUN, 'pr-author-4', branch=BRANCH, title='Fix the total',
@@ -509,7 +513,7 @@ class FailingBoard(FakeBoard):
 
 @pytest.mark.parametrize(('role', 'tool', 'arguments', 'made'), [
     ('committer', 'push_commit', {'message': 'Fix it'},
-     {'result': {'branch': f'voc-agent/{RUN_ID}/fix', 'tree_hash': TREE}}),
+     {'result': {'branch': f'voc-agent/{RUN_ID}-fix', 'tree_hash': TREE}}),
     ('pr-author', 'open_draft_pr', {'title': 't', 'body': 'b'},
      {'result': {'number': 7, 'url': 'https://code.example.com/pull/7'}}),
     ('pr-reviewer', 'post_comment', {'number': 7, 'body': 'One nit.'},

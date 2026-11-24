@@ -10,6 +10,7 @@ import { AlertTriangle, Flag, GitBranch, Link2, Sparkles, X } from 'lucide-react
 import type { FormV2, Question } from '../../../pages/FeedbackForms/model/formsV2'
 import { isChoice } from '../../../pages/FeedbackForms/model/formsV2'
 import { textIn } from '../../../pages/FeedbackForms/model/i18nText'
+import { headlineShown } from '../../../pages/FeedbackForms/model/recall'
 import { splitOtherwise } from '../../../pages/FeedbackForms/model/rules'
 import TypeChip from '../../../pages/FeedbackForms/ui/TypeChip'
 import { Tooltip } from '../../../components/Tooltip/Tooltip'
@@ -54,7 +55,7 @@ export function QuestionRows({ form, onLeaveOut }: Readonly<{ form: FormV2; onLe
             <li key={question.id} className="flex items-center gap-2 text-[13px]" data-testid={`draft-question-${String(index + 1)}`}>
               <span className="w-4 shrink-0 text-right font-mono text-[12px] text-muted">{index + 1}</span>
               <TypeChip question={question} />
-              <TruncatedText as="span" className="min-w-0 flex-1 truncate text-text" text={textIn(question.headline, form.language)} />
+              <TruncatedText as="span" className="min-w-0 flex-1 truncate text-text" text={headlineShown(question, form.language)} />
               <QuestionMeta question={question} />
               <Tooltip kind="label" content={label}>
                 <button type="button" className="icon-btn" aria-label={label} aria-disabled={last ? true : undefined}

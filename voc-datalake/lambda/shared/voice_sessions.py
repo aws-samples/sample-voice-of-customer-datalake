@@ -16,11 +16,11 @@ The projects API (shared/voice_session_routes.py) decides everything about a ses
   presigned with this function's own credentials (SigV4 query auth, ``bedrock-agentcore``) for **60 seconds**, for
   this one session id and this one project, both signed. The browser never holds AWS credentials, and the relay
   accepts the URL once (``status: minted -> live``).
-* **The end** (``end``): the relay ends a session itself (End, the time or budget limit, a disconnect); the person's
-  End also stops the runtime session and marks the row, then the transcript is saved by an assist job
-  (shared/voice_transcripts.py). A session whose End never came (a closed tab, an End that failed) is saved by its
-  starter's next read of it or of the project's offer (``_save_left_sessions``). **Audio is never stored**, by either
-  side.
+* **The end** (``end``): the relay ends a session itself (End, the time limit, the session's cost cap, the month's
+  budget, a disconnect); the person's End also stops the runtime session and marks the row, then the transcript is
+  saved by an assist job (shared/voice_transcripts.py). A session whose End never came (a closed tab, an End that
+  failed) is saved by its starter's next read of it or of the project's offer (``_save_left_sessions``). **Audio is
+  never stored**, by either side.
 * **Spend:** the month's minutes and a cost cap (``MAX_CENTS_PER_MINUTE`` a minute of them), and each session's own
   cost cap at the same rate, are checked at the start and by the relay (every minute for the month, at every usage
   event for the session).
@@ -86,6 +86,10 @@ UI_LANGUAGES: Final = (*VOICE_LANGUAGES, *UNSUPPORTED_LANGUAGES)
 
 #: The URL's life: the browser connects within it (an established connection outlives it).
 CONNECT_SECONDS: Final = 60
+#: How long after the row's ``connect_by`` the relay still takes a first connection, for the two clocks (store.ts
+#: ``CONNECT_SKEW_SECONDS``, the same 10 s; a test pins both): a row still minted is ended only once it has passed
+#: too, so ``status`` never ends a session the relay would still start.
+CONNECT_SKEW_SECONDS: Final = 10
 #: The approved per-person limits: sessions a day, and starts a minute (a rate limit on creation).
 DAILY_SESSIONS: Final = 5
 CREATES_PER_MINUTE: Final = 3
@@ -94,8 +98,8 @@ CREATES_PER_MINUTE: Final = 3
 ESTIMATED_CENTS_PER_MINUTE: Final = 2
 #: The cost caps' rate: 2.5 times the estimate, which a conversation does not reach (the microphone is held to real
 #: time, the persona speaks at most the whole minute). A session's cap is its minutes at this rate (75 cents for 15
-#: minutes), the month's its minutes at it ($15 for 300); at either the relay ends the session (``budget``) and the
-#: month refuses a start.
+#: minutes), the month's its minutes at it ($15 for 300): at the session's the relay ends it (``cost_limit``), at the
+#: month's it ends it (``budget``) and the month refuses a start.
 MAX_CENTS_PER_MINUTE: Final = 5
 MICRO_USD_PER_CENT: Final = 10_000
 #: The caller's newest sessions of a project an offer saves when they ended without End (every start reads the offer
@@ -630,11 +634,13 @@ def end(stores: Stores, config: VoiceConfig, project_id: str, persona_id: str, s
 
 def status(stores: Stores, project_id: str, persona_id: str, session_id: str, caller: Caller,
            start_finalize: StartFinalize) -> dict[str, Any]:
-    """A session's state. A URL never used is ended once it expires; for its starter, an ended session's transcript
-    is saved now (End may never have been called: a closed tab)."""
+    """A session's state. A URL never used is ended once the relay would no longer take it (``connect_by`` and
+    ``CONNECT_SKEW_SECONDS``); for its starter, an ended session's transcript is saved now (End may never have been
+    called: a closed tab)."""
     row = session_row(stores, project_id, persona_id, session_id)
     now = stores.now()
-    if row.get('status') == STATUS_MINTED and int(now.timestamp()) > as_count(row.get('connect_by')):
+    if (row.get('status') == STATUS_MINTED
+            and int(now.timestamp()) > as_count(row.get('connect_by')) + CONNECT_SKEW_SECONDS):
         _mark_ended(stores, session_id, END_NEVER_CONNECTED, now)
         release_stream(stores, session_id)
         row = session_row(stores, project_id, persona_id, session_id)

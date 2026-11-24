@@ -14,6 +14,7 @@ import type { TFunction } from 'i18next'
 import type { FormV2, Question, Rule, RuleOp } from '../model/formsV2'
 import { isScale } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { currentRule, opTakesCodes, opTakesValue, opsFor, valueCodes } from '../model/rules'
 import { fallthroughTarget } from '../model/paths'
 import { opText, targetText } from './ruleSentence'
@@ -65,7 +66,7 @@ export interface TargetGroups {
 
 const questionOption = (t: TFunction<'feedbackForms'>, form: FormV2, at: number): TargetOption[] => {
   const question = form.questions[at]
-  return question === undefined ? [] : [{ value: question.id, label: t('logic.target.question', { number: at + 1, headline: textIn(question.headline, form.language) }) }]
+  return question === undefined ? [] : [{ value: question.id, label: t('logic.target.question', { number: at + 1, headline: headlineShown(question, form.language) }) }]
 }
 
 /** The targets a rule of the question at `index` can go to, grouped as its select lists them. */
@@ -88,7 +89,7 @@ export function targetGroups(t: TFunction<'feedbackForms'>, form: FormV2, index:
 /** The Otherwise select's first entry: "Next question: 2 · …", or "End: Thank you!" on the last question. */
 export function fallthroughLabel(t: TFunction<'feedbackForms'>, form: FormV2, index: number): string {
   const next = form.questions[index + 1]
-  if (next !== undefined) return t('logic.target.nextNumbered', { number: index + 2, headline: textIn(next.headline, form.language) })
+  if (next !== undefined) return t('logic.target.nextNumbered', { number: index + 2, headline: headlineShown(next, form.language) })
   const ending = form.endings[0]
   return t('logic.target.defaultEnding', { title: ending === undefined ? '' : textIn(ending.title, form.language) })
 }

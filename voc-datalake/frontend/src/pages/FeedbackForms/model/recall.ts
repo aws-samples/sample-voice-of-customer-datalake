@@ -15,8 +15,9 @@
  *
  * @module pages/FeedbackForms/model/recall
  */
-import type { FormV2, HiddenField, I18nText, Question } from './formsV2'
+import type { FormLanguage, FormV2, HiddenField, I18nText, Question } from './formsV2'
 import { isChoice, isMatrix, isScale } from './formsV2'
+import { textIn } from './i18nText'
 
 /** One `{{…}}`: as written, its id and its fallback (both trimmed; '' for none). */
 export interface Placeholder {
@@ -69,6 +70,12 @@ export function renderRecall(text: string, values: Readonly<Record<string, strin
  * question's headline in Results), never a respondent's value. */
 export const shownAsIds = (text: string): string =>
   text.replace(PLACEHOLDER, (_raw, inner: string) => `[${(inner.split('|')[0] ?? '').trim()}]`)
+
+/** A question's headline in `language` (`''` for none) with each placeholder shown as `[id]` (`shownAsIds`): how a
+ * question is named everywhere but its own headline field and what respondents see (Results, the reports, and the
+ * builder's lists, logic targets, menus and summaries; 7.71.03). */
+export const headlineShown = (question: { readonly headline?: I18nText } | undefined, language: FormLanguage): string =>
+  shownAsIds(textIn(question?.headline, language))
 
 /** Where a text is, in the builder's terms (validateForm.ts `ProblemLocation`). */
 export interface TextLocation {

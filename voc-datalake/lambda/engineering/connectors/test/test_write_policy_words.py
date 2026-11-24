@@ -12,25 +12,19 @@ from engineering.connectors.write_policy import Refusal, WriteRefused
 
 RUN = 'run-7f3a'
 BOT = 'bot@agents.example'
-OWN = f'voc-agent/{RUN}/'
+#: (7.71.03) The run's own branch, one level under voc-agent/.
+OWN = 'voc-agent/run-7f3a-fix'
 
 
 @pytest.mark.parametrize(('branch', 'run_id', 'expected'), [
     ('main', RUN, Refusal('default_branch', 'An agent never pushes to the default branch.')),
-    (f'{OWN}fix', 'not a run', Refusal('bad_run', 'The run is not one the connector knows.')),
-    ('feature/x', RUN, Refusal('not_run_branch', f"An agent pushes only to its own run's branches ({OWN}...).")),
-    (f'{OWN}a..b', RUN, Refusal('bad_branch_name', 'The branch name is not one the connector creates.')),
+    (OWN, 'not a run', Refusal('bad_run', 'The run is not one the connector knows.')),
+    ('feature/x', RUN, Refusal('not_run_branch', f"An agent pushes only to its own run's branch, {OWN}: one level "
+                                                 'under voc-agent/, the only level a ruleset that excludes '
+                                                 'refs/heads/voc-agent/* leaves unprotected.')),
 ])
 def test_each_branch_refusal_says_why_in_its_own_words(branch: str, run_id: str, expected: Refusal) -> None:
     assert write_policy.branch_refusal(branch, 'main', run_id) == expected
-
-
-def test_two_dots_anywhere_in_the_branch_name_are_refused() -> None:
-    """"a..b" passes the character set and every component rule: only the ".." rule refuses it."""
-    for rest in ('a..b', 'fix/a..b', 'a/b..c/d'):
-        refusal = write_policy.branch_refusal(f'{OWN}{rest}', 'main', RUN)
-        assert refusal is not None
-        assert refusal.code == 'bad_branch_name'
 
 
 def test_only_leading_slashes_are_dropped_before_a_path_is_matched() -> None:

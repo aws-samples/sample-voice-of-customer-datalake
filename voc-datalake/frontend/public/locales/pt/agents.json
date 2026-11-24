@@ -1920,7 +1920,8 @@
       "done": "Feito",
       "failed": "Falhou",
       "stopped": "Parado",
-      "reposted": "Publicado de novo"
+      "reposted": "Publicado de novo",
+      "needs_human": "Aguardando uma pessoa"
     }
   },
   "templatePage": {
@@ -2248,7 +2249,8 @@
           "failed": "Falhou",
           "crashed": "Caiu",
           "stopped": "Parado",
-          "reposted": "Passado adiante"
+          "reposted": "Passado adiante",
+          "needs_human": "Aguardando uma pessoa"
         },
         "restarted": "{{agent}} parou inesperadamente e foi reiniciado (tentativa {{n, number}} de {{max, number}})",
         "restartedAgain": "{{agent}} parou inesperadamente e foi reiniciado (tentativa {{n, number}})",

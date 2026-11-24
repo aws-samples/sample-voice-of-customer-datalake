@@ -17,7 +17,138 @@ the platform package version.
 
 ## [Unreleased]
 
-## [7.71.02] - 2026-11-23
+## [7.71.03] - 2026-11-24
+
+The non-blocking findings 7.71.02's review gate deferred, and what the Bug fixer rerun on b- with 7.71.02 found: the
+committer sent only its message and the push reached the broker, which refused it, since a repository set up as the
+guide says protects a branch two levels under `voc-agent/`. A run's branch is one level now. An issue write whose call
+never answered no longer blocks the run's later ones for good, and a label answer says whose labels they are; a run
+whose flow is recorded finished just after its coordinator's finish ends done, and a Resume plans again a run whose
+coordinator finished early; a continued writer on the CLI or Kiro keeps the writes it made; a person's stop reads as
+one in the run's health, which has the run's whole spend, and its agents are told why they pause; an engineering
+agent's stats follow its run. Also: the voice relay leaves a lost close to `ws` and refuses a late first connection
+again; the hourly trial pause stops when a mark lands during its turn-offs; the leadership rollup has one deadline
+again; a recall placeholder reads `[id]` wherever a question is named by its headline; an upload names the rows its
+redaction refused.
+
+### Removed
+
+- **The voice `expired` end** of 7.71.02 (the relay, `protocol.ts`, the SPA and the nine locales): a late first
+  connection is `refused`, the skew alone fixing the case seen live.
+- **The leadership rollup's minute for the workspaces** (`WORKSPACE_SECONDS`, `lambda/jobs/adoption_rollup/handler.py`):
+  their reads are only counts until projects move into workspaces, so it protected nothing; the deployment, the only
+  scope with projects until then, may use the run's whole time again ([leadership-view.md](docs/leadership-view.md)).
+- **`resume_incomplete` on the trial routes' answers** (`shared/trials.py` `trial_view`), where it was always false (a
+  route answers after its own write removed the mark); the platform console reads it from the listing
+  (`trial_summary`) as before.
+
+### Fixed
+
+- **A run's branch is one level under `voc-agent/`** (`runtime/outputs.py` `run_branch`, `connectors/write_policy.py`):
+  on the b- rerun the broker refused the committer's push with 409 ("The agent's branch is protected by the
+  repository's rules"). A ruleset that leaves `refs/heads/voc-agent/*` unprotected matches one level only, since
+  GitHub's `*` does not cross a `/`, so 7.71.02's `voc-agent/<run id>/fix` got the ruleset's creation, update, deletion
+  and non-fast-forward rules (and before 7.71.02 the tool asked for `voc-agent/<run id>/<name>`, two levels as well).
+  The branch is now `voc-agent/<run id>-fix`, and the broker takes a push to that branch alone (`not_run_branch`, 422,
+  for any other, the two-level shape included). Its refusals, the readiness check and the setup guide name the pattern
+  that works and why; a pull request recorded from a two-level branch is still read
+  ([autonomous-engineering.md](docs/autonomous-engineering.md#repository-connectors)).
+- **An issue write whose call never answered blocks the run only until that call is over** (`connectors/broker.py`):
+  7.71.02 made the run's comment on its issue and its labels once per run, so a host error or a crash between the
+  claim and its outcome left them unknown for good, and every later understander was refused. Such a claim is taken
+  again once it is 5 minutes old (`STALE_CLAIM_SECONDS`, over twice the broker's 120 s timeout; one conditional write,
+  so one caller alone): the labels, which the host adds idempotently, are put again, and the comment, which now ends
+  with the run's hidden marker (`<!-- voc-engineering-run:<run id> -->`, `issue_marker`), is looked for on the issue
+  first (`RepositoryHost.issue_comment`, GitHub and GitLab, ten pages of a hundred comments at most) and posted only
+  when the host has none. Until then a later call is answered unknown, "ask again in a few minutes".
+- **A label answer says whose labels they are**: a second understander's call gets the first one's labels back, and
+  the broker's answer names whose call put them (`set_by`); the tool says "labels already set by <agent>: …", to the
+  model and on the task, and its description says so (`runtime/harness/issues.py`).
+- **A run whose flow is recorded finished just after its coordinator's finish ends done** (`runtime/supervisor.py`
+  `_coordinator_done`): a coordinator that finished on a flow not yet finished sends the run to a person only once its
+  session ended 90 seconds ago (`FLOW_SETTLE_SECONDS`), the flow read again at the tick between, never asking a person
+  to end a run that finished.
+- **A Resume plans a run whose coordinator finished on a flow that did not** (`runtime/board_bus.py`
+  `coordinator_to_start`, `board/store.py` `reopen_coordinate`): the coordinate task had ended done, so a person's
+  Resume started no coordinator and the next tick sent the run back to them. It now reopens the task at the next
+  attempt for a new `coordinator-<n>`, its history row the person's.
+- **A continued writer on the CLI or Kiro keeps the writes it made** (`runtime/harness/main.py`, `cli.py`,
+  `tool_server.py`): there the tool server makes the push or the pull request, in its own process, and a
+  continuation's server started with none, so a committer that pushed and was continued went to a person. The server's
+  state carries its writes, the harness takes them before each checkpoint, and a continuation's server is handed the
+  ones its checkpoint names (`VOC_HOST_WRITES`). The native harness kept them already.
+- **A committer whose task named no patch says so** (`runtime/harness/review_tools.py`): its finish goes to a person
+  saying "its task names no submitted patch" (no patch, or none the harness could apply and hash), no longer that the
+  broker made no push.
+- **A held agent is told why** (`runtime/supervisor.py` `held_because`): every hold said "The run reached its budget",
+  the rerun's at its flow's commit step too; an agent held for a flow's decision point is told "The run waits for a
+  person to decide at flow:<step>".
+- **The run's last health has its whole spend**: a tick's `run.health` read the spend before its moves, so the tokens
+  and cost of the sessions it ended or held were left out of the run's last one (405,193 tokens and 0.96 USD against
+  the agents' 491,208 and 1.17 on the rerun). It reads the spend again after them, the caps' own source.
+- **A session whose task went to a person ends `needs_human`, no longer `failed`** (`runtime/sessions.py`), so the
+  rerun's "1 done, 1 failed" for a run that stopped for a person reads "1 done, 1 needs_human", and the run workspace
+  shows that agent waiting for a person (`runLanes.ts`; the thread view and the assistant's run tool read it as ended).
+- **An engineering agent's stats follow its run** (`shared/agents_store.py` `record_last_run_running`): its row said
+  `last_run_status: queued` while the run worked, as a workflow agent's did before its own fix; the start that marks
+  the run running marks the agent's last run so too, unless a newer run or a finish landed first.
+- **The voice relay leaves a lost close to `ws`** (`lambda/stream/src/voice/wire-end.ts`, `server.ts`): an end still
+  waits until the connection is a second old, then sends `ended` and the close; `ws`, with its `closeTimeout` at 5
+  seconds (its default is 30), drops a socket whose close handshake never finished. The relay's own two timers are
+  gone. Still to verify on a live deployment ([voice-personas.md](docs/voice-personas.md)).
+- **A late first voice connection is refused again, and the projects API ends its row on the relay's deadline**: a
+  first connection more than 70 seconds after the mint ends `refused` (1008), as a used URL does; the projects API
+  (`shared/voice_sessions.py` `status`) ends a still-minted row (`disconnected`, its live-set place freed) only after
+  the same 70 seconds (`CONNECT_SKEW_SECONDS`, pinned to the relay's), so it never ends a session the relay would
+  still start.
+- **The hourly pause stops once an extension marks the trial during its turn-offs** (`shared/trial_pause.py`): it
+  reads the trial's `rev` again before each plugin and form it turns off, so an extension or a conversion that marks
+  the trial meanwhile stops it there (409 `trial_changed`, counted failed by the tick); at most the one turn-off under
+  way when the mark lands is undone ([multi-workspace.md](docs/multi-workspace.md#trial-workspaces)).
+- **A recall placeholder reads `[id]` wherever a question is named by its headline** (`model/recall.ts`
+  `headlineShown`): Results' drop-off and Reach printed `{{event|the event}}`, as did Settings › Category routing, the
+  builder's question list and move announcements, the logic targets and Flow view, a choice's routing, the texts to
+  translate, "Insert a value" and the recall preview's names, an update's removal warning, a stale save's differences,
+  the AI's changes, the template preview and the assistant's draft. Only the headline's own field shows it as written
+  ([feedback-forms.md](docs/feedback-forms.md#recall)).
+- **An upload names the rows its redaction refused** (`api/manual_import_handler.py`): a manual reviews import and a
+  JSON upload answer `redaction_unavailable: {count, ids}`, and a CSV upload `{count, rows}` (its row numbers; the
+  first 100 named), so a row Comprehend could not read can be sent again
+  ([source-policies.md](docs/source-policies.md)).
+- Tests: a supervisor built as voc-engineering-runtime builds it has the production 40 s boot wait, a quarter of its
+  claim at most and inside the tick's minute, and the claim is the function's timeout (every other test's supervisor
+  waits for none).
+- `RunControl.end(run_id, status)` is `end_done(run_id)`, its one use; `_coordinator_lost` and `_coordinator_done` read
+  the newest coordinator and its lease through one reader, each with its own liveness check.
+- Docs: `voice_sessions.py` names the session cost cap's end `cost_limit`; `trial_pause.py` says a stale mark makes a
+  trial due again only once its end has passed; 7.71.02 is dated 2026-11-24.
+- **Corrections to 7.71.02's notes**: its hourly pause never turned off what an extension turned on before the pause's
+  write, but a mark made during its turn-offs was not covered (fixed above); its stored Bug fixer flow note is wrong
+  about the caps: re-saving the flow from the template adds its monthly budget (50 USD) only, since a saved flow keeps
+  only `budget.monthly_usd`, and a run's token cap and task limit are the deployment's (`-c` context), never the
+  flow's; and its `expired` voice end, its rollup minute for the workspaces and `resume_incomplete` on the trial routes'
+  answers are removed again (Removed, above).
+
+### Upgrade notes
+
+- **Deploy the agent images with the broker.** The harness in the image builds the run's branch and the broker takes
+  only the one-level name: a 7.71.02 image's committer is refused `not_run_branch` by this broker. A run that 7.71.02
+  left at `flow:commit` (its committer's push refused 409; nothing was written on the host, so there is no branch to
+  clean up) can be continued after the deploy: a person opens its run workspace and presses Resume, and a new
+  committer, at the next attempt, pushes `voc-agent/<run id>-fix`, the PR author then opening from it.
+- **The run's issue comment carries a hidden marker** from now on. A comment of 7.71.02 has none, so a call retried
+  after a 7.71.02 claim that never answered may post it once more.
+- **A new session status, `needs_human`**, on the runs' `AGENT#` rows: a client that reads them (the run workspace, the
+  assistant's run tool, the run's thread) takes it. Deploy the SPA with the runtime: an older SPA shows such an agent
+  as still at work.
+- **The `expired` voice end reason is gone**: a late first connection is `refused`. A session row 7.71.02's relay ended
+  `expired` (only on b-, between its deploy and this one) shows no reason in the SPA. Deploy VocProcessingStack (the
+  relay) and the SPA together.
+- **An upload's answer may carry `redaction_unavailable`**: a client reading these answers takes the new field;
+  nothing else changes.
+- No new resource, IAM statement, route or flag.
+
+## [7.71.02] - 2026-11-24
 
 The non-blocking findings 7.71.01's review gate deferred, what the live test of the b- deployment found, and the
 engineering agents fixed from the first live Bug fixer run on b-: its committer and PR author wrote nothing and ended

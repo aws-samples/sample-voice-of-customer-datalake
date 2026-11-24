@@ -14,8 +14,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { Braces } from 'lucide-react'
 import type { FormV2 } from '../model/formsV2'
-import { textIn } from '../model/i18nText'
-import { placeholders, recallChoices, renderRecall } from '../model/recall'
+import { headlineShown, placeholders, recallChoices, renderRecall } from '../model/recall'
 import ActionsMenu from '../ui/ActionsMenu'
 import type { MenuAction } from '../ui/ActionsMenu'
 import { useDraft } from '../builder/formDraftContext'
@@ -30,7 +29,7 @@ function sampleValues(form: FormV2, before: number): Record<string, string> {
   const { hidden, questions } = recallChoices(form, before)
   return Object.fromEntries([
     ...hidden.map((field) => [field.id, `‹${field.label ?? field.id}›`] as const),
-    ...questions.map((q) => [q.id, `‹${textIn(q.headline, form.language) || q.id}›`] as const),
+    ...questions.map((q) => [q.id, `‹${headlineShown(q, form.language) || q.id}›`] as const),
   ])
 }
 
@@ -40,7 +39,7 @@ function insertChoices(t: TFunction<'feedbackForms'>, form: FormV2, before: numb
   return [
     ...hidden.map((field) => ({ id: field.id, label: t('recall.hiddenItem', { name: field.label ?? field.id }) })),
     ...questions.map((q) => ({
-      id: q.id, label: t('recall.questionItem', { number: form.questions.indexOf(q) + 1, headline: textIn(q.headline, form.language) || q.id }),
+      id: q.id, label: t('recall.questionItem', { number: form.questions.indexOf(q) + 1, headline: headlineShown(q, form.language) || q.id }),
     })),
   ]
 }

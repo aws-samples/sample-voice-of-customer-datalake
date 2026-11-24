@@ -4,10 +4,10 @@ The harness ships alone in the agents' images (templates/orchestration/images: n
 ``role_tools`` write these outputs; the readers take the same values from here: a ``voc-finding/1`` line
 (workspace/findings.py), a ``voc-note/1`` line (knowledge/notes.py), a ``voc-gate-record/1`` record and its verdicts
 and severities (quality_gate/record.py, review.py), a package path as one workspace key segment
-(workspace/layout.py), the agents' branch prefix (connectors/write_policy.py), a submitted patch's key and the
-broker's size bound for it (connectors/patches.py: the gate judges only a patch the broker would read), a triage
-record and, since 7.52.00, a ``voc-tenets/1`` record and the rule that holds a triage to the accepted tenets. Pure: the
-standard library only.
+(workspace/layout.py), the agents' branch prefix and (7.71.03) a run's own branch (connectors/write_policy.py), a
+submitted patch's key and the broker's size bound for it (connectors/patches.py: the gate judges only a patch the
+broker would read), a triage record and, since 7.52.00, a ``voc-tenets/1`` record and the rule that holds a triage to
+the accepted tenets. Pure: the standard library only.
 """
 from __future__ import annotations
 
@@ -26,8 +26,18 @@ GATE_VERDICTS: Final = frozenset({'GO', 'NO-GO', 'STOPPED'})
 #: A finding's file: a repository path of path characters only (no spaces, no ``@`` of an e-mail address), so a
 #: ``file`` cannot carry text.
 FINDING_FILE: Final = re.compile(r'[A-Za-z0-9_./+-]{1,300}\Z')
-#: The branches an agent's push may name: ``voc-agent/<run id>/<name>``.
+#: The agents' branches' prefix; a run's own branch is one level under it (``run_branch``).
 AGENT_BRANCH_PREFIX: Final = 'voc-agent/'
+
+
+def run_branch(run_id: str) -> str:
+    """The run's own branch, ``voc-agent/<run id>-fix`` (7.71.03): the one the harness has the committer push to and
+    the PR author open from (the model never types it), and the only one the broker lets the run push to
+    (connectors/write_policy.py). One level under ``voc-agent/``, because the setup guide's GitHub ruleset that leaves
+    ``refs/heads/voc-agent/*`` unprotected matches one level only (its ``*`` does not cross a ``/``): 7.71.02's
+    ``voc-agent/<run id>/fix`` got that ruleset's rules on a repository set up as the guide says, and the broker
+    refuses a push to a protected agent branch (the first live Bug fixer rerun's 409)."""
+    return f'{AGENT_BRANCH_PREFIX}{run_id}-fix'
 #: How the run's pull request opens (7.50.00, META's ``pull_request``): ready for review unless its flow says
 #: ``pr: draft`` (the flow's settings, its start step's ``data.params``); the broker reads it at the open
 #: (connectors/records.py ``RunRecord.draft_pr``), and since 7.71.02 the PR author's opening says it.

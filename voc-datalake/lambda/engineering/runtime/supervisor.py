@@ -28,7 +28,7 @@ monthly budget (``run.budget_alert``: measured, never a stop). It never switches
 after an ``end_run`` and after each tick).
 
 A run whose coordinator finished with nothing of it live ends done when its flow finished, and goes to a person
-otherwise (7.71.02, ``_coordinator_done``). A session that ends, or is continued, has its harness's status read once
+otherwise (7.71.02, ``_coordinator_done``), once the next tick read its flow again (7.71.03, ``FLOW_SETTLE_SECONDS``). A session that ends, or is continued, has its harness's status read once
 more first (7.71.02, ``_last_count``), so the tokens it used since the tick before are counted, the caps' too.
 
 ``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
@@ -108,6 +108,22 @@ COORDINATOR_FILL_LAUNCH_SECONDS: Final = COORDINATOR_FILL_LAUNCH_INVOCATIONS * C
 #: ``CLAIM_SECONDS``. And how often a command is polled meanwhile.
 BOOT_WAIT_SECONDS: Final = 40.0
 BOOT_POLL_SECONDS: Final = 1.0
+#: (7.71.03) How long after its session ended a coordinator that finished on a flow not recorded finished waits for it
+#: before the run goes to a person: the next tick's read of the flow, and half a tick's margin (the rule ticks every
+#: minute), so a flow recorded finished just after its coordinator's finish ends the run done.
+FLOW_SETTLE_SECONDS: Final = 90
+
+
+#: The decision point a spent budget sends the run to (``RunControl.needs_human``).
+BUDGET_POINT: Final = 'budget'
+
+
+def held_because(point: str) -> str:
+    """What a held agent is told when it is asked to pause (7.71.03; every hold said the budget before): the run's
+    budget, or the decision point its flow waits at for a person (``flow:<step>``)."""
+    if point == BUDGET_POINT:
+        return 'The run reached its budget: checkpoint and pause.'
+    return f'The run waits for a person to decide at {point}: checkpoint and pause.'
 
 
 class SessionCallFailed(RuntimeError):
@@ -164,7 +180,9 @@ class SessionBusy(RuntimeRefused):
     """Another move holds the session's claim: a signal answers ``busy`` (try again), a tick skips it."""
 
 #: The session's end for each state its task can end in on the board.
-ENDED_AS: Final[dict[str, Status]] = {'done': 'done', 'failed': 'failed', 'needs_human': 'failed'}
+#: (7.71.03: a task at a person ends its session ``needs_human``, no longer ``failed``: a person's stop never reads as a
+#: failure in the run's health.)
+ENDED_AS: Final[dict[str, Status]] = {'done': 'done', 'failed': 'failed', 'needs_human': 'needs_human'}
 
 @dataclass
 class Supervisor:
@@ -197,9 +215,9 @@ class Supervisor:
     boot_wait: float = BOOT_WAIT_SECONDS
     clock: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
-    #: Runs whose agents are held, as of their last tick (a spent budget, or the flow waiting at a person): no new
-    #: session starts for them.
-    _held: set[str] = field(default_factory=set, init=False, repr=False)
+    #: Runs whose agents are held, as of their last tick, and why (7.71.03: ``budget``, or the decision point the
+    #: run's flow waits at, ``flow:<step>``): no new session starts for them.
+    _held: dict[str, str] = field(default_factory=dict, init=False, repr=False)
     #: When this tick's boot wait ends (``clock``'s time; 0 outside a tick: a signal's move never waits).
     _boot_until: float = field(default=0.0, init=False, repr=False)
 
@@ -240,50 +258,58 @@ class Supervisor:
                 statuses.update(session.status for session in run_sessions)
         return dict(statuses)
 
+    def _newest_coordinator(self, run_id: str, sessions: list[AgentSession],
+                            status: Status) -> tuple[AgentSession, Lease] | None:
+        """The run's newest coordinator session (by its task's attempt, then its start) when it ended ``status``, and
+        the coordinate task's lease at that coordinator's attempt (one read of it): ``_coordinator_lost``'s and
+        ``_coordinator_done``'s one reader (7.71.03). None for no coordinator, one that ended otherwise (failed is
+        ``_coordinator_lost``'s, done ``_coordinator_done``'s; a person's Shut down or Stop now: never replaced, the
+        run stays theirs), or a lease at another attempt (a Resume re-posted the task for a new coordinator, which may
+        still be booting)."""
+        coordinators = [session for session in sessions if session.role == 'coordinator']
+        if not coordinators:
+            return None
+        newest = max(coordinators, key=lambda session: (session.task_attempt, session.started_at))
+        if newest.status != status:
+            return None
+        lease = self.board.lease(run_id, newest.task_id)
+        return None if lease is None or lease.attempt != newest.task_attempt else (newest, lease)
+
     def _coordinator_lost(self, run_id: str, sessions: list[AgentSession], now: int) -> None:
         """Ask for a person again when the run's newest coordinator failed and the run is still active: the session
         was ended as failed but sending the run to a person did not land (``_crashed``), and nothing else would ask.
         Only from the sessions the tick read already, and one read of the coordinate task's lease when its newest
-        coordinator failed: none while another coordinator is live or moving, nor once a Resume re-posted the task
-        for a new one (its attempt moved on; that one may still be booting)."""
-        coordinators = [session for session in sessions if session.role == 'coordinator']
-        if not coordinators or any(session.status in LIVE_STATUSES or (session.claimed_until or 0) >= now
-                                   for session in coordinators):
+        coordinator failed: none while another coordinator is live or moving (the other agents may be), nor once its
+        task ended."""
+        if any(session.role == 'coordinator' and (session.status in LIVE_STATUSES or (session.claimed_until or 0) >= now)
+               for session in sessions):
             return
-        newest = max(coordinators, key=lambda session: (session.task_attempt, session.started_at))
-        if newest.status != 'failed':
-            # (done: _coordinator_done's; a person's Shut down or Stop now: never replaced, the run stays theirs)
-            return
-        lease = self.board.lease(run_id, newest.task_id)
-        if lease is None or lease.attempt != newest.task_attempt or lease.final_state:
-            return
-        if self.control.is_active(run_id):
+        found = self._newest_coordinator(run_id, sessions, 'failed')
+        if found is not None and not found[1].final_state and self.control.is_active(run_id):
             self.control.needs_human(run_id, 'coordinator')
 
     def _coordinator_done(self, run_id: str, sessions: list[AgentSession], now: int) -> None:
         """End the run its coordinator finished (7.71.02): the newest coordinator session ended ``done``, nothing of the
-        run is live or moving, the coordinate task ended done at that coordinator's attempt, and the run is still
-        active. On a finished flow the run ends done (``RunControl.end``; the handler's settling then releases it,
-        starts its retrospective and, with nothing listed, switches the rule off); on any other (a flow still running,
-        one at a person, a run without a flow) it goes to a person (``coordinator``). Never a run left active with
-        nobody planning it and the rule ticking every minute (the first live Bug fixer run, 01M83JQWMKAYK9GJB8FBAVZV7E,
-        whose engineering agent's run never ended, so its lock was never freed). From the sessions the tick read
-        already, then one read of the coordinate task's lease, of the run's row and of its flow's plan."""
-        coordinators = [session for session in sessions if session.role == 'coordinator']
-        if not coordinators or any(session.status in LIVE_STATUSES or session.stop_pending
-                                   or (session.claimed_until or 0) >= now for session in sessions):
+        run is live or moving (no session of any role), the coordinate task ended done at that coordinator's attempt,
+        and the run is still active. On a finished flow the run ends done (``RunControl.end_done``; the handler's
+        settling then releases it, starts its retrospective and, with nothing listed, switches the rule off); on any
+        other (a flow still running, one at a person, a run without a flow) it goes to a person (``coordinator``), but
+        (7.71.03) only once the coordinator's session ended ``FLOW_SETTLE_SECONDS`` ago, its flow read again at each
+        tick meanwhile: a coordinator that finished just before its flow was recorded finished ends the run done. Never
+        a run left active with nobody planning it and the rule ticking every minute (the first live Bug fixer run,
+        01M83JQWMKAYK9GJB8FBAVZV7E, whose engineering agent's run never ended, so its lock was never freed). From the
+        sessions the tick read already, then one read of the coordinate task's lease, of the run's row and of its
+        flow's plan."""
+        if any(session.status in LIVE_STATUSES or session.stop_pending or (session.claimed_until or 0) >= now
+               for session in sessions):
             return
-        newest = max(coordinators, key=lambda session: (session.task_attempt, session.started_at))
-        if newest.status != 'done':
-            return
-        lease = self.board.lease(run_id, newest.task_id)
-        if (lease is None or lease.attempt != newest.task_attempt or lease.final_state != 'done'
-                or not self.control.is_active(run_id)):
+        found = self._newest_coordinator(run_id, sessions, 'done')
+        if found is None or found[1].final_state != 'done' or not self.control.is_active(run_id):
             return
         if self.control.flow_finished(run_id):
             logger.info('engineering supervisor: the run\'s flow finished: the run is done', extra={'run_id': run_id})
-            self.control.end(run_id, 'done')
-        else:
+            self.control.end_done(run_id)
+        elif now - (found[0].last_tick_at or 0) >= FLOW_SETTLE_SECONDS:
             self.control.needs_human(run_id, 'coordinator')
 
     def _coordinator_never_launched(self, run_id: str, sessions: list[AgentSession], holds: dict[str, int],
@@ -323,40 +349,43 @@ class Supervisor:
             self._budget_alert(run_id, now)   # (its agents' last writes may have passed a level)
             return [session.status for session in results]
         budget = self.control.budget(run_id)
-        if budget.exceeded:
-            self._held.add(run_id)
-            self.control.needs_human(run_id, 'budget')
-        elif self._flow_point(run_id):
-            self._held.add(run_id)   # (held like a spent budget: a person's Resume, their decision, continues them)
+        point = BUDGET_POINT if budget.exceeded else self._flow_point(run_id)
+        if point == BUDGET_POINT:
+            self.control.needs_human(run_id, BUDGET_POINT)
+        if point:
+            self._held[run_id] = point   # (a flow's point held like a spent budget: a person's Resume continues them)
         else:
-            self._held.discard(run_id)
+            self._held.pop(run_id, None)
         results = [self._ticked(session, now, lambda s: self._advance(s, now)) for session in run_sessions]
         # After the moves: a level passed by this tick's writes (an agent's last, too) is said now, even if no agent of
         # the run is live by the next tick.
         self._budget_alert(run_id, now)
         counts = Counter(session.status for session in results)
+        # (7.71.03) The spend read again after the moves, the caps' own source: a session that ended or was held in
+        # this tick had its last tokens counted in its move, and the run's last health is its whole spend.
+        spent = self.control.budget(run_id)
         self.bus.emit(run_id, 'run', 'run.health',
                       ', '.join(f'{count} {status}' for status, count in sorted(counts.items())),
-                      {'tokens': str(budget.tokens), 'cost_usd': f'{budget.cost_usd:.2f}'})
+                      {'tokens': str(spent.tokens), 'cost_usd': f'{spent.cost_usd:.2f}'})
         return [session.status for session in results]
 
-    def _flow_point(self, run_id: str) -> bool:
+    def _flow_point(self, run_id: str) -> str:
         """An active run whose flow waits at a person (a human decision point reached, a step blocked, or one the
         runtime cannot do and the flow cannot go on without) goes to that decision point, ``flow:<step>``, before its
-        agents move, and they are held (checkpointed, then paused) as for a spent budget: True. A failed read is
-        logged and the run goes on (the next tick reads it again)."""
+        agents move, and they are held (checkpointed, then paused) as for a spent budget: that point. '' for none; a
+        failed read is logged and the run goes on (the next tick reads it again)."""
         try:
             stop = self.control.flow_stop(run_id)
         except Exception:
             logger.exception('engineering supervisor: a run\'s flow could not be read', extra={'run_id': run_id})
-            return False
+            return ''
         if stop is None:
-            return False
+            return ''
         if not stop.waiting:   # (waiting there already: nothing to ask again, its agents stay held)
             logger.info('engineering supervisor: a run\'s flow waits at a person',
                         extra={'run_id': run_id, 'decision_point': stop.point})
             self.control.needs_human(run_id, stop.point)
-        return True
+        return stop.point
 
     def _budget_alert(self, run_id: str, now: int) -> None:
         """The run's flow passed a level of its monthly budget: said to the run, at least once per flow, budget, level
@@ -535,9 +564,10 @@ class Supervisor:
         return self._observe(moved, lease, now) if moved.status in WITH_SESSION else moved
 
     def _hold(self, session: AgentSession, now: int) -> AgentSession:
-        """A spent budget: a working agent checkpoints and is held; one still booting is held at once."""
+        """A spent budget or a flow waiting at a person: a working agent checkpoints and is held, told why (7.71.03,
+        ``held_because``); one still booting is held at once."""
         if session.status == 'working':
-            self._emit(session, session.agent_id, 'pause', 'The run reached its budget: checkpoint and pause.')
+            self._emit(session, session.agent_id, 'pause', held_because(self._held[session.run_id]))
             return self._ask_pause(self._wake(session), now, 'hold')
         if session.status == 'booting':
             return self._end(session, 'paused', now)
@@ -978,7 +1008,7 @@ class Supervisor:
         if self.control.budget(run_id).exceeded:
             raise RuntimeRefused(f'run {run_id} has spent its budget: raise it before resuming')
         # Its budget is no longer spent, and a person decided: a held run may start sessions again.
-        self._held.discard(run_id)
+        self._held.pop(run_id, None)
 
     def signal_detailed(self, run_id: str, agent_id: str | None, kind: str, now: int,
                         attempt: int | None = None, restart_from: str = 'checkpoint') -> dict[str, tuple[str, bool]]:

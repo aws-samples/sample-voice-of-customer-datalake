@@ -58,6 +58,13 @@ describe('Insert a value', () => {
     expect(within(menu).getByRole('menuitem')).toHaveTextContent('Add a hidden field, or a score or single-choice question before this text.')
   })
 
+  it("names an earlier question by its headline, a placeholder in it as [id] (Q5, 7.71.03)", async () => {
+    const user = userEvent.setup()
+    renderWithDraft(<LiveQuestionEditor id="q_pick" />, recallForm([{ ...nps, headline: en('Would you recommend {{event}}?') }, reason, pick]))
+    const menu = await openInsert(user)
+    expect(within(menu).getByRole('menuitem', { name: 'Q1 · Would you recommend [event]?' })).toBeInTheDocument()
+  })
+
   it('is on the recall texts only, never on an option, a button or a placeholder', async () => {
     const user = userEvent.setup()
     renderWithDraft(<LiveQuestionEditor id="q_pick" />, recallForm())
@@ -73,6 +80,11 @@ describe('the recall preview', () => {
     expect(screen.getByText('Respondents see: Thanks, ‹Event›! You gave ‹How likely are you to recommend us?›.')).toBeInTheDocument()
     // (the widget alone tidies a text around a missing value: no second copy of its rules here)
     expect(screen.queryByText(/^Without a value/)).not.toBeInTheDocument()
+  })
+
+  it("names a recalled question whose own headline recalls a value with that value as [id]", () => {
+    renderWithDraft(<LiveQuestionEditor id="q_pick" />, recallForm([{ ...nps, headline: en('Recommend {{event}}?') }, reason, { ...pick, headline: en('You gave {{q_nps}}.') }]))
+    expect(screen.getByText('Respondents see: You gave ‹Recommend [event]?›.')).toBeInTheDocument()
   })
 
   it('previews an ending, which may recall every question', () => {

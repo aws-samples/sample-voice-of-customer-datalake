@@ -39,6 +39,11 @@ and its tool server is handed the patch's key (``PATCH_HANDED``). A brief carrie
 request opens (``TaskBrief.issue``, ``pull_request``: the board's claim), which the checkpoint keeps with the host
 writes made (a writer's finish reads them, ``review_tools.ending``), and the tool server takes the pull request's
 mode (``PULL_REQUEST_ENV``).
+
+7.71.03: on the CLI and Kiro, whose tool server makes the writes, the harness takes them from the server's state
+(``SessionFiles.record``, ``cli.sync_notes``) before each checkpoint, and a continuation's tool server is handed the
+ones its checkpoint names (``HOST_WRITES_ENV``), so a continued writer that pushed or opened its pull request before
+finishes done.
 """
 from __future__ import annotations
 
@@ -82,7 +87,7 @@ from engineering.runtime.harness.ports import (
     Planner,
     TaskBrief,
 )
-from engineering.runtime.harness.review_tools import WRITERS, show_submitted_patch
+from engineering.runtime.harness.review_tools import WRITE_TOOLS, show_submitted_patch
 from engineering.runtime.harness.role_tools import JUDGED_ROLES, MAX_RESULT_KEYS, judge_submitted_patch
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.seed import MAX_SEED_BYTES, SeedError, check_seed_key
@@ -109,6 +114,9 @@ PATCH_HANDED: Final = PATCH_READERS | {'committer'}
 #: (7.71.02) How the run's pull request opens, as the harness's brief has it (``TaskBrief.pull_request``), handed to
 #: the tool server the same way, for the PR author's ``open_draft_pr``.
 PULL_REQUEST_ENV: Final = 'VOC_PULL_REQUEST'
+#: (7.71.03) The host writes the session made before (its checkpoint's), handed to the tool server the same way
+#: (comma-separated, ``review_tools.WRITE_TOOLS`` only), so a continued writer's finish on the CLI or Kiro counts them.
+HOST_WRITES_ENV: Final = 'VOC_HOST_WRITES'
 _FENCE: Final = re.compile(r'[0-9a-f]{16}\Z')
 HEARTBEAT_SECONDS: Final = 60.0
 #: The run coordinator's role (its stop without ``finish`` is a crash: ``_finished``).
@@ -184,6 +192,9 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         model=env.get('VOC_MODEL', ''), gates_dir=configured_gates_dir(env),
         # (the tool server takes the harness's own fence; the harness makes its own)
         fence=fence if not restore and _FENCE.fullmatch(fence := env.get(FENCE_ENV, '')) else nonce())
+    if not restore:
+        # (7.71.03) The tool server's writes made before: the harness's, from the session's checkpoint.
+        context.host_writes = {name for name in env.get(HOST_WRITES_ENV, '').split(',') if name in WRITE_TOOLS}
     skill = session_skill(ports.board, context)
     if restore and not saved:
         # (a continuation's brief is its checkpoint's, which kept what it recalled in its notes)
@@ -210,10 +221,6 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         # names a newer version (``AgentSession.read_direction``).
         session.read_direction()
     return session
-
-
-#: The host writes a checkpoint may name as made (``AgentContext.host_writes``): the writers' own.
-WRITE_TOOLS: Final = frozenset(tool for tool, _ in WRITERS.values())
 
 
 def _handed_patch(env: Mapping[str, str], run_id: str, commit: str) -> str:
@@ -496,7 +503,8 @@ def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
 #: What the tool server a CLI or kiro-cli starts gets of the harness's environment (its ids, its session, its fence).
 TOOL_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT',
                    'VOC_ATTEMPT', 'VOC_BOARD_URL', 'VOC_BROKER_URL', 'VOC_MODEL', GATE_TREE_ENV, FENCE_ENV,
-                   PATCH_KEY_ENV, PULL_REQUEST_ENV, 'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME')
+                   PATCH_KEY_ENV, PULL_REQUEST_ENV, HOST_WRITES_ENV, 'VOC_GATES_DIR', 'AWS_REGION', 'AWS_CONFIG_FILE',
+                   'HOME')
 #: How long the harness's Bedrock client waits for a Converse answer, which comes once the whole reply is written (a
 #: reply of ``converse_loop.MAX_TOKENS`` tokens, thinking included, at 54 tokens a second or more), and for its
 #: connection. 7.58.01: 600 s (900 in 7.58.00, which outlasted the stall rule), so that a request outlives the line the
@@ -605,10 +613,12 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
 
 def _tool_environment(env: Mapping[str, str], context: AgentContext) -> dict[str, str]:
     """What the session's tool server is started with: the harness's environment, with the tree this harness hashed,
-    the patch and the pull request's mode its brief names (7.71.02) and its fence, never ones the session's start
-    named."""
+    the patch and the pull request's mode its brief names (7.71.02), the host writes its checkpoint names (7.71.03)
+    and its fence, never ones the session's start named."""
     tool_env = {name: value for name, value in env.items()
-                if name not in (GATE_TREE_ENV, FENCE_ENV, PATCH_KEY_ENV, PULL_REQUEST_ENV)}
+                if name not in (GATE_TREE_ENV, FENCE_ENV, PATCH_KEY_ENV, PULL_REQUEST_ENV, HOST_WRITES_ENV)}
+    if context.host_writes:
+        tool_env[HOST_WRITES_ENV] = ','.join(sorted(context.host_writes))
     if context.gate_tree:
         tool_env[GATE_TREE_ENV] = context.gate_tree
     if context.role in PATCH_HANDED and context.brief.patch:

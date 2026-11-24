@@ -42,8 +42,9 @@ from engineering.connectors.hosts import (
 from engineering.connectors.identity import Caller
 from engineering.connectors.test.app_keys import APP_ID, INSTALLATION_ID, credential, private_key
 from engineering.connectors.test.fakes import BASE, BOT, BRANCH, RUN, TREE, FakeWrites, bundle_contents, connector
-from engineering.connectors.transport import MAX_RESPONSE_BYTES, HttpsTransport, Response
+from engineering.connectors.transport import FIND_PAGES, MAX_RESPONSE_BYTES, HttpsTransport, Response
 from engineering.connectors.write_policy import WriteRefused
+from engineering.runtime.outputs import run_branch
 
 NOW = 1_800_000_000.0
 REPO = '/repos/example-org/refund-service'
@@ -399,6 +400,34 @@ def test_a_comment_is_posted_on_the_issue() -> None:
     api = FakeGitHub().on('POST', f'{REPO}/issues/42/comments', answer(201, {'html_url': 'https://h/i/42#c1'}))
     assert client(api).post_comment('c', 'issue', 42, 'Bug: src/a.py:3.') == 'https://h/i/42#c1'
     assert api.sent[-1].body == {'body': 'Bug: src/a.py:3.'}
+
+
+#: (7.71.03) The run's marker on its issue comment, and the look for it (a hundred comments a page).
+MARKER = '<!-- voc-engineering-run:01JD3R4NZXQ7Y2W8K4M6P9T0AB -->'
+PER_PAGE = 'per_page=100'
+
+
+def _comment_pages(api: FakeGitHub, *pages: Sequence[object]) -> FakeGitHub:
+    """The issue's comments, one list per page, each but the last linking to the next."""
+    for page, comments in enumerate(pages, start=1):
+        link = ({'link': f'<https://api.github.com/repositories/1/issues/42/comments?page={page + 1}>; rel="next"'}
+                if page < len(pages) else {})
+        api.on('GET', f'{REPO}/issues/42/comments?{PER_PAGE}&page={page}', answer(200, list(comments), link))
+    return api
+
+
+def test_the_runs_comment_on_its_issue_is_found_by_its_marker() -> None:
+    api = _comment_pages(FakeGitHub(), [{'body': 'Me too.', 'html_url': 'https://h/i/42#c1'}],
+                         [{'body': None}, {'body': f'Triage\n\n{MARKER}', 'html_url': 'https://h/i/42#c9'}])
+    assert client(api).issue_comment('c', 42, MARKER) == 'https://h/i/42#c9'
+    assert [path for _, path in api.calls()] == [f'{REPO}/issues/42/comments?{PER_PAGE}&page={page}' for page in (1, 2)]
+
+
+def test_a_look_for_the_runs_comment_reads_ten_pages_at_most_and_answers_none() -> None:
+    api = _comment_pages(FakeGitHub(), *([{'body': 'Me too.', 'html_url': 'u'}] for _ in range(11)))
+    assert client(api).issue_comment('c', 42, MARKER) is None
+    assert len(api.calls()) == FIND_PAGES
+    assert client(_comment_pages(FakeGitHub(), [])).issue_comment('c', 42, MARKER) is None
 
 
 PR_HEAD = '9' * 40
@@ -765,10 +794,10 @@ def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     # Reads (a patch's base file, the default branch, the credential's repository, the branch rules, the reactions to
     # a pull request, and since 7.47.00 a branch's head and an issue's state) and the four writes (7.50.00: an issue's
     # triage labels), and the checkout cache's read-only fetch token, and since 7.52.00 the approved docs' tree (an
-    # object no branch names until a push commits it): nothing else (no method changes a branch rule, merges,
-    # approves or marks a pull request ready).
+    # object no branch names until a push commits it), and since 7.71.03 the look for the run's own comment on its
+    # issue: nothing else (no method changes a branch rule, merges, approves or marks a pull request ready).
     assert public == {'read', 'file_at', 'default_branch', 'repository', 'ci_protection', 'post_comment',
-                      'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
+                      'issue_comment', 'branch_tree_hash', 'push_bundle', 'open_or_update_draft_pr', 'fetch_token',
                       'revoke_fetch_token', 'reactions', 'head_commit', 'issue_state', 'label_issue', 'tree_with',
                       'public_get',   # (7.58.00: no upstream pull request is opened through it)
                       # (7.60.00: a fine-grained connection's push and pull request, made with its own token)
@@ -956,7 +985,7 @@ def test_a_passing_check_is_kept_five_minutes_and_a_failing_one_read_again() -> 
 
 def test_the_kept_checks_hold_at_most_their_bound(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(github, 'MAX_CACHED_BRANCHES', 2)
-    branches = [f'voc-agent/{RUN}/fix-{n}' for n in range(3)]
+    branches = [run_branch(f'{RUN}{n}') for n in range(3)]
     api = FakeGitHub()
     for branch in branches:
         ruled(api, branch=branch)

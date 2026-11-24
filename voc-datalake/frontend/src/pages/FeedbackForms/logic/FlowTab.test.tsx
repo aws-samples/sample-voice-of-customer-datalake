@@ -44,6 +44,11 @@ describe('FlowTab: the whole path on one outline', () => {
     expect(within(screen.getByTestId('flow-q_c')).queryByText('No path reaches this question')).not.toBeInTheDocument()
   })
 
+  it("titles a question's card by its headline, a recall placeholder as [id] (Q5, 7.71.03)", () => {
+    renderWithDraft(<FlowTab />, sampleForm({ questions: [open('q_a', 'How was {{ event | the workshop }}?')], hidden_fields: [{ id: 'event' }] }))
+    expect(within(screen.getByTestId('flow-q_a')).getByRole('heading', { name: 'How was [event]?' })).toBeInTheDocument()
+  })
+
   it('says everyone goes through in order when no question has a rule', () => {
     renderWithDraft(<FlowTab />, sampleForm())
     expect(screen.getByText(/Everyone goes through the questions in order/)).toBeInTheDocument()

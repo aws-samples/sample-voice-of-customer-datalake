@@ -5,6 +5,7 @@ half of its tokens), and a session's boot commands follow each other within one 
 minutes and twenty seconds before its harness started)."""
 from __future__ import annotations
 
+import re
 import sys
 import time
 from dataclasses import replace
@@ -14,20 +15,26 @@ from typing import Any
 import boto3
 import pytest
 
+from engineering.board.model import Task
 from engineering.board.store import COORDINATE_TASK, BoardStore
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime import handler
 from engineering.runtime.caps import SessionPricing, SessionRates, TokenPrice, TokenPrices
 from engineering.runtime.interface import Command
+from engineering.runtime.ports import Budget, Lease
 from engineering.runtime.runs import FLOW_FINISHED, TableRunControl
 from engineering.runtime.sessions import AgentSession
+from engineering.runtime.supervisor import BOOT_WAIT_SECONDS, CLAIM_SECONDS, FLOW_SETTLE_SECONDS, Supervisor
 from engineering.runtime.test.conftest import RUN, TABLE, World
+from engineering.runtime.test.test_engineering_images import DATALAKE
 from engineering.runtime.test.test_engineering_runtime_handler import (
     COORDINATED,
     COORDINATOR_AGENT,
     OTHER_RUN,
+    RESUME,
     _Context,
     _handing_on,
+    _recording,
     _runs,
 )
 
@@ -58,17 +65,29 @@ def test_a_finished_coordinator_on_a_finished_flow_ends_the_run_done_at_the_next
     world.control.finished_flows.add(RUN)
     assert _coordinator_finished(world).status == 'done'
     # (the tick that ended its session read it working: nothing was ended then)
-    assert world.control.ended == {}
+    assert world.control.ended == set()
     world.supervisor.tick(1060)
-    assert (world.control.ended, world.control.humans) == ({RUN: 'done'}, [])
+    assert (world.control.ended, world.control.humans) == ({RUN}, [])
     world.supervisor.tick(1120)   # (ended once: the run is no longer active)
-    assert world.control.ended == {RUN: 'done'}
+    assert world.control.ended == {RUN}
+
+
+def test_a_coordinator_that_finished_just_before_its_flow_was_recorded_finished_ends_the_run_done(world: World):
+    # (7.71.03) The coordinator's finish landed a moment before the flow's last step was recorded: the tick after its
+    # session ended reads the flow unfinished, and waits a tick rather than ask a person to end a finished run.
+    assert _coordinator_finished(world).status == 'done'
+    world.supervisor.tick(1060)
+    assert (world.control.ended, world.control.humans) == (set(), [])
+    world.control.finished_flows.add(RUN)
+    world.supervisor.tick(1120)
+    assert (world.control.ended, world.control.humans) == ({RUN}, [])
 
 
 def _finished_through_the_handler(finished: bool, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
     """voc-engineering-runtime's own wiring: a run whose coordinator claimed its coordinate task, finished it (done)
-    and whose session ended done, its flow finished or not as the conductor would say (``finished``: the conductor's
-    side is the flow's tests' and the Bug hunt's end to end); then one tick. What the tick handed on."""
+    and whose session ended done ``FLOW_SETTLE_SECONDS`` ago, its flow finished or not as the conductor would say
+    (``finished``: the conductor's side is the flow's tests' and the Bug hunt's end to end); then one tick. What the
+    tick handed on."""
     handler.lambda_handler(COORDINATED, None)
     board = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE, new_id=lambda: 'unused')
     board.claim(WORKSPACE, OTHER_RUN, COORDINATE_TASK, role='coordinator', agent=COORDINATOR_AGENT)
@@ -78,7 +97,8 @@ def _finished_through_the_handler(finished: bool, monkeypatch: pytest.MonkeyPatc
     sessions = handler._supervisor().sessions
     session = sessions.get(OTHER_RUN, COORDINATOR_AGENT)
     assert session is not None
-    sessions.save(replace(session, status='done', exec_id=None))
+    sessions.save(replace(session, status='done', exec_id=None,
+                          last_tick_at=int(handler.clock()) - FLOW_SETTLE_SECONDS))
     monkeypatch.setattr(TableRunControl, 'flow_finished', lambda _control, _run_id: finished)
     calls = _handing_on(monkeypatch)
     handler.lambda_handler({'action': 'tick'}, _Context())
@@ -108,10 +128,47 @@ def test_the_tick_after_a_coordinator_finished_on_a_flow_that_did_not_sends_the_
     assert (run.status, run.waiting_at, OTHER_RUN in _runs().listed()) == ('needs_human', 'coordinator', True)
 
 
-def test_a_coordinator_that_finished_on_a_flow_that_did_not_goes_to_a_person(world: World):
+def _resumed(monkeypatch: pytest.MonkeyPatch, *, finished: bool) -> tuple[BoardStore, Task, list[str]]:
+    """A person's Resume of the run its coordinator finished on a flow that did not (sent to a person), its flow read
+    as ``finished`` by then: the board, the coordinate task after it, and the agents it started."""
+    _finished_through_the_handler(False, monkeypatch)
+    if finished:
+        monkeypatch.setattr(TableRunControl, 'flow_finished', lambda _control, _run_id: True)
+    _runtime, started = _recording(monkeypatch)
+    handler.lambda_handler(RESUME, None)
+    board = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE, new_id=lambda: 'unused')
+    return board, board.task(WORKSPACE, OTHER_RUN, COORDINATE_TASK), [vm.agent_id for vm in started]
+
+
+def test_a_resume_after_a_coordinator_finished_on_a_flow_that_did_not_starts_a_new_coordinator(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    # (7.71.03) The run went to a person (coordinator) with its coordinate task done: a person's Resume reopens the task
+    # at the next attempt for a new coordinator, so the run is planned again instead of going straight back to them.
+    assert wired is not None
+    board, task, started = _resumed(monkeypatch, finished=False)
+    assert (task.state, task.attempt, task.lease_agent, task.launched_agent, task.launched_attempt) == (
+        'open', 2, '', 'coordinator-2', 2)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert (run.status, started) == ('active', ['coordinator-2'])
+    moves = board.history(WORKSPACE, OTHER_RUN)[COORDINATE_TASK]
+    assert sorted((move.op, move.attempt) for move in moves if move.actor == 'admin-1') == [('launch', 2), ('repost', 2)]
+    # A retried reopen finds the task open at the next attempt and changes nothing.
+    assert board.reopen_coordinate(WORKSPACE, OTHER_RUN, attempt=1, actor='admin-1', reason='again') == task
+
+
+def test_a_resume_reopens_no_coordinate_task_whose_flow_finished(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _board, task, started = _resumed(monkeypatch, finished=True)
+    assert (task.state, task.attempt, started) == ('done', 1, [])
+
+
+def test_a_coordinator_that_finished_on_a_flow_that_did_not_goes_to_a_person_once_the_next_tick_read_it(world: World):
     _coordinator_finished(world)
-    world.supervisor.tick(1060)
-    assert (world.control.ended, world.control.humans) == ({}, [(RUN, 'coordinator')])
+    world.supervisor.tick(1060)   # (its session ended at 1000: the flow is read again at the next tick)
+    assert (world.control.ended, world.control.humans) == (set(), [])
+    world.supervisor.tick(1000 + FLOW_SETTLE_SECONDS)
+    assert (world.control.ended, world.control.humans) == (set(), [(RUN, 'coordinator')])
 
 
 def test_nothing_ends_while_an_agent_of_the_run_still_works_or_the_coordinate_task_did_not_end_done(world: World):
@@ -119,25 +176,32 @@ def test_nothing_ends_while_an_agent_of_the_run_still_works_or_the_coordinate_ta
     _coordinator_finished(world)
     world.launch(code='import time; time.sleep(60)')
     world.supervisor.tick(1060)
-    assert (world.control.ended, world.control.humans) == ({}, [])
+    assert (world.control.ended, world.control.humans) == (set(), [])
     world.store.save(replace(world.session(), status='done', exec_id=None))
     # A coordinate task that went to a person, or another attempt's coordinator: never ended by the tick.
     for lease in (replace(world.board.leases[COORDINATE], final_state='needs_human'),
                   replace(world.board.leases[COORDINATE], attempt=2)):
         world.board.leases[COORDINATE] = lease
         world.supervisor.tick(1120)
-        assert (world.control.ended, world.control.humans) == ({}, [])
+        assert (world.control.ended, world.control.humans) == (set(), [])
     # Nor a run that is not active (stopped, or at a decision point already).
     world.board.leases[COORDINATE] = replace(world.board.leases[COORDINATE], attempt=1, final_state='done')
     world.control.stops.add(RUN)
     world.supervisor.tick(1180)
-    assert world.control.ended == {}
+    assert world.control.ended == set()
 
 
-def test_a_session_that_ends_between_two_ticks_still_has_its_tokens_and_cost_counted(world: World):
+def test_a_session_that_ends_between_two_ticks_still_has_its_tokens_and_cost_counted(world: World,
+                                                                                      monkeypatch: pytest.MonkeyPatch):
     # (its tokens priced alone: its session's time unpriced)
     world.store.pricing = SessionPricing(rates=SessionRates(Decimal(0), Decimal(0), Decimal(0), Decimal(0)),
                                          tokens=TokenPrices(prices={'model-a': TokenPrice(Decimal(3), Decimal(15))}))
+
+    def spent(run_id: str) -> Budget:   # (the caps' own source, as TableRunControl reads it)
+        tokens, cost = world.runs.spend(run_id)
+        return Budget(tokens=tokens, cost_usd=cost, max_tokens=None, max_cost_usd=None)
+
+    monkeypatch.setattr(world.control, 'budget', spent)
     session = world.launch(code=REPORTS_AND_EXITS)
     for _ in range(300):
         world.supervisor.tick(1000)
@@ -155,6 +219,64 @@ def test_a_session_that_ends_between_two_ticks_still_has_its_tokens_and_cost_cou
     # has every token, priced (3 USD a million in, 15 out).
     assert (ended.status, ended.tokens) == ('done', {'model-a': {'in': 15000, 'out': 2000}})
     assert world.runs.spend(RUN) == (17000, float(Decimal('0.045') + Decimal('0.03')))
+    # (7.71.03) The tick's health, its last for the run, has them too: the spend is read again after the moves (the
+    # first live rerun's last health said 405,193 tokens of the agents' 491,208).
+    [*_, health] = [event for event in world.bus.events if event['kind'] == 'run.health']
+    assert (health['summary'], health['refs']) == ('1 done', {'tokens': '17000', 'cost_usd': f'{0.075:.2f}'})
+
+
+def _working(world: World) -> None:
+    world.launch(code='import time; time.sleep(60)')
+    for _ in range(300):
+        world.supervisor.tick(1000)
+        if world.session().status == 'working':
+            return
+        time.sleep(0.02)
+    raise AssertionError('the agent never worked')
+
+
+@pytest.mark.parametrize(('point', 'said'), [
+    ('budget', 'The run reached its budget: checkpoint and pause.'),
+    ('flow:commit', 'The run waits for a person to decide at flow:commit: checkpoint and pause.'),
+])
+def test_a_held_agent_is_told_why_the_run_waits_for_a_person(world: World, point: str, said: str):
+    # (7.71.03) Every hold said the budget, the first live rerun's at its flow's commit step too.
+    _working(world)
+    if point == 'budget':
+        world.control.spend = Budget(tokens=10, cost_usd=5.0, max_tokens=None, max_cost_usd=5.0)
+    else:
+        world.control.flow_points[RUN] = point
+    world.supervisor.tick(1060)
+    [pause] = [event for event in world.bus.events if event['kind'] == 'pause']
+    assert (pause['summary'], world.session().status, world.control.humans) == (
+        said, 'pause_requested', [(RUN, point)])
+
+
+def test_a_session_whose_task_went_to_a_person_ends_needs_human_never_failed(world: World):
+    # (7.71.03) The first live rerun's health read "1 done, 1 failed" for a run that stopped for a person.
+    world.launch(code='import time; time.sleep(60)')
+    world.board.leases[f'{RUN}/task-1'] = Lease(task_id='task-1', agent_id='', renewed_at=0, last_progress_at=0,
+                                                attempt=1, final_state='needs_human')
+    world.supervisor.tick(1000)
+    [*_, health] = [event for event in world.bus.events if event['kind'] == 'run.health']
+    assert (world.session().status, health['summary']) == ('needs_human', '1 needs_human')
+
+
+def test_the_handlers_supervisor_has_the_production_boot_wait_well_inside_its_claim_and_its_timeout(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    # (7.71.03) Every other test's supervisor waits for no boot (conftest's QuickSupervisor): this one is built as
+    # voc-engineering-runtime builds it, and its 40 s is pinned against the claim a tick moves sessions under and the
+    # function's own timeout (lib/stacks/engineering-runtime.ts), which a tick's boot wait must leave room in.
+    assert wired is not None
+    monkeypatch.setattr(handler, 'Supervisor', Supervisor)
+    monkeypatch.setattr(handler, '_supervisor_cache', None)
+    assert handler._supervisor().boot_wait == BOOT_WAIT_SECONDS
+    stack = (DATALAKE / 'lib' / 'stacks' / 'engineering-runtime.ts').read_text()
+    [minutes] = re.findall(r"handler: 'engineering/runtime/handler\.lambda_handler',[^}]*?"
+                           r'timeout: cdk\.Duration\.minutes\((\d+)\)', stack, re.DOTALL)
+    assert int(minutes) * 60 == CLAIM_SECONDS
+    # Well under both: a quarter of the claim at most, and inside the rule's one-minute tick.
+    assert (BOOT_WAIT_SECONDS * 4 <= CLAIM_SECONDS, BOOT_WAIT_SECONDS < 60) == (True, True)
 
 
 def _checkout(*steps: str) -> list[Command]:

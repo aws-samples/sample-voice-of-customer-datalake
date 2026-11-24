@@ -18,11 +18,13 @@ from engineering.connectors.test.fakes import (
 )
 from engineering.connectors.test.test_broker import caller, push
 from engineering.connectors.write_policy import WriteRefused
+from engineering.runtime.outputs import run_branch
 
 CI = 'An agent never changes the CI definitions (.github/workflows/ci.yml).'
 
 
-@pytest.mark.parametrize('branch', ['main', f'voc-agent/{RUN}/', 'voc-agent/OTHER/fix', f'voc-agent/{RUN}/a..b'])
+@pytest.mark.parametrize('branch', ['main', f'voc-agent/{RUN}/', 'voc-agent/OTHER/fix', f'voc-agent/{RUN}/a..b',
+                                    f'voc-agent/{RUN}/fix', f'{run_branch(RUN)}/x'])
 def test_a_push_to_a_branch_not_the_runs_is_refused_before_the_ledger_or_the_patch_is_read(branch: str) -> None:
     bundles, host = FakeBundles(), FakeHost()
     ledger = FakeLedger(set())   # (no GO: had the branch not been judged first, this would answer NotNow)
@@ -50,11 +52,11 @@ def test_every_ci_definition_a_push_changes_is_named_once_in_order() -> None:
 
 def test_a_run_whose_default_branch_is_its_own_branch_is_still_never_pushed_to() -> None:
     # (the default branch judged is the one the host confirms for the run's stored branch, as _open reads it)
-    own = f'voc-agent/{RUN}/fix'
+    own = run_branch(RUN)
     runs = FakeRuns({RUN: record(default_branch='', stored_default_branch=own)})
     host = FakeHost(branches=('main', own))
     with pytest.raises(WriteRefused) as caught:
-        push(Broker(connector(host=host, runs=runs)), caller('committer'), f'voc-agent/{RUN}/fix')
+        push(Broker(connector(host=host, runs=runs)), caller('committer'), own)
     assert (str(caught.value), host.calls, host.branch_lookups) == (
         'An agent never pushes to the default branch.', [], [('conn-1', own)])
 

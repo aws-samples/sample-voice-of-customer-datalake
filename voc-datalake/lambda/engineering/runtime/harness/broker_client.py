@@ -60,6 +60,8 @@ TIMEOUT_SECONDS: Final = 125
 #: A function URL answers at most 6 MB (the broker keeps its answers under 5.5 MB: handler.py ``MAX_ANSWER_BYTES``).
 MAX_ANSWER_BYTES: Final = 6 * 1024 * 1024
 MAX_REASON: Final = 500
+#: The longest agent id a label answer's ``set_by`` keeps (7.71.03: ``<role>-<n>``).
+MAX_AGENT_ID: Final = 64
 #: Lost on the way (no status): what a read retries (a write's is ``WriteOutcomeUnknown``).
 LOST: Final = 0
 _RETRIED: Final = frozenset({LOST, 503})
@@ -235,8 +237,11 @@ class BrokerHttp:
 
     def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
         """The triage ``labels`` on the run's own issue ``number`` (the understander's; the broker checks the role,
-        the issue and the allowlist)."""
+        the issue and the allowlist), and ``set_by`` (7.71.03) when they are an earlier call's: the agent whose call
+        put them."""
         self._own(run_id, agent_id)
         result = self.transport.call(LABEL_ISSUE, {'number': number, 'labels': list(labels),
                                                    'attempt': self.attempt})
-        return _shaped(result, {'number': int, 'labels': list})
+        set_by = result.get('set_by')
+        return {**_shaped(result, {'number': int, 'labels': list}),
+                **({'set_by': set_by[:MAX_AGENT_ID]} if isinstance(set_by, str) and set_by else {})}

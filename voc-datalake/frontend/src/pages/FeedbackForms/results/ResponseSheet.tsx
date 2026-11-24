@@ -14,8 +14,7 @@ import SideSheet from '../../../components/SideSheet/SideSheet'
 import type { AnswerValue, FormResponse } from '../../../api/feedbackFormsV2Results'
 import { formatDateTime } from '../../../utils/dateUtils'
 import type { FormV2, Question } from '../model/formsV2'
-import { textIn } from '../model/i18nText'
-import { shownAsIds } from '../model/recall'
+import { headlineShown } from '../model/recall'
 import { answerText, endingTitle, hiddenValues, matrixLines } from './answers'
 
 /** One answer: a matrix's rows each on a line, any other answer as one text. */
@@ -39,7 +38,7 @@ function AnswerList({ form, response }: Readonly<{ form: FormV2; response: FormR
         const value = response.answers[question.id]
         return (
           <li key={question.id} className="space-y-0.5">
-            <p className="text-[12px] text-muted">{t('results.sheet.question', { number: index + 1, headline: shownAsIds(textIn(question.headline, form.language)) })}</p>
+            <p className="text-[12px] text-muted">{t('results.sheet.question', { number: index + 1, headline: headlineShown(question, form.language) })}</p>
             {value === undefined
               ? <p className="text-sm italic text-muted">{t('results.sheet.notAnswered')}</p>
               : <AnswerValueText form={form} question={question} value={value} />}

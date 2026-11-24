@@ -1986,7 +1986,8 @@
       "done": "Gotowe",
       "failed": "Nieudane",
       "stopped": "Zatrzymany",
-      "reposted": "Opublikowane ponownie"
+      "reposted": "Opublikowane ponownie",
+      "needs_human": "Czeka na osobę"
     }
   },
   "templatePage": {
@@ -2316,7 +2317,8 @@
           "failed": "Nieudane",
           "crashed": "Awaria",
           "stopped": "Zatrzymane",
-          "reposted": "Przekazane"
+          "reposted": "Przekazane",
+          "needs_human": "Czeka na osobę"
         },
         "restarted": "{{agent}} niespodziewanie się zatrzymał i został uruchomiony ponownie (próba {{n, number}} z {{max, number}})",
         "restartedAgain": "{{agent}} niespodziewanie się zatrzymał i został uruchomiony ponownie (próba {{n, number}})",

@@ -1847,7 +1847,8 @@
       "done": "Done",
       "failed": "Failed",
       "stopped": "Stopped",
-      "reposted": "Posted again"
+      "reposted": "Posted again",
+      "needs_human": "Waiting for a person"
     }
   },
   "templatePage": {
@@ -2175,7 +2176,8 @@
           "failed": "Failed",
           "crashed": "Crashed",
           "stopped": "Stopped",
-          "reposted": "Handed on"
+          "reposted": "Handed on",
+          "needs_human": "Waiting for a person"
         },
         "restarted": "{{agent}} stopped unexpectedly and was restarted (attempt {{n, number}} of {{max, number}})",
         "restartedAgain": "{{agent}} stopped unexpectedly and was restarted (attempt {{n, number}})",

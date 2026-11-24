@@ -1033,8 +1033,7 @@
         "busy": "La voix est saturée pour le moment. Réessayez dans quelques minutes.",
         "error": "La session s’est arrêtée à cause d’une erreur.",
         "disconnected": "La connexion a été perdue.",
-        "refused": "Le lien de la session avait expiré ou avait déjà servi. Lancez une nouvelle session.",
-        "expired": "Le lien de la session a expiré avant la connexion. Lancez une nouvelle session."
+        "refused": "Le lien de la session avait expiré ou avait déjà servi. Lancez une nouvelle session."
       },
       "filing": "Classement de la transcription…",
       "filed": "La transcription est enregistrée comme document de ce projet.",

@@ -4,6 +4,7 @@
  * the relay is one), so the specs pin what reaches the wire.
  */
 import { request, type Server } from 'node:http';
+import type { Duplex } from 'node:stream';
 
 import { afterEach } from 'vitest';
 
@@ -64,6 +65,23 @@ export function upgradeStatus(server: Server, headers: Record<string, string>, p
     outgoing.on('response', (response) => {
       response.resume();
       resolve(response.statusCode ?? 0);
+    });
+    outgoing.on('error', reject);
+    outgoing.end();
+  });
+}
+
+/** An accepted `/ws` upgrade's raw socket: a peer that reads nothing and never answers a close frame (a proxy that
+ *  lost it). `key` is the handshake's Sec-WebSocket-Key. */
+export function silentPeer(server: Server, headers: Record<string, string>, key: string): Promise<Duplex> {
+  return new Promise((resolve, reject) => {
+    const outgoing = request({ port: portOf(server), host: '127.0.0.1', path: '/ws', headers: {
+      ...headers, Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key,
+    } });
+    outgoing.on('upgrade', (_response, socket) => { resolve(socket); });
+    outgoing.on('response', (response) => {
+      response.resume();
+      reject(new RangeError(`the upgrade answered ${String(response.statusCode)}`));
     });
     outgoing.on('error', reject);
     outgoing.end();

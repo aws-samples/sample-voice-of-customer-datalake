@@ -26,7 +26,7 @@ from engineering.knowledge.notes import CitationRules, parse_notes
 from engineering.quality_gate import record as gate_record
 from engineering.quality_gate.review import SEVERITIES
 from engineering.runtime import outputs
-from engineering.runtime.harness import role_tools, skills
+from engineering.runtime.harness import review_tools, role_tools, skills
 from engineering.runtime.harness.board_client import BoardRefused
 from engineering.runtime.harness.converse_loop import opening
 from engineering.runtime.harness.main import _restore
@@ -99,7 +99,7 @@ def gated(tmp_path: Path, name: str = 'gate') -> Any:
     w.session.context.gates_dir = str(packs.parent)
     return w
 TREE = 'b' * 40
-BRANCH = f'voc-agent/{RUN_ID}/fix-slug'
+BRANCH = outputs.run_branch(RUN_ID)
 FINDING = {'file': 'slugs.py', 'line': 9, 'severity': 'blocking', 'rule': 'off-by-one',
            'title': 'A slug exactly max_length long loses its last word', 'evidence': 'the check uses < where <= is meant'}
 
@@ -497,11 +497,11 @@ def test_the_committer_pushes_the_fixers_submitted_patch_the_harness_names_throu
     answer = json.loads(w.session.tools.call('push_commit', {'message': 'Keep a slug exactly max_length long',
                                                              'branch': 'main', 'tree_hash': 'abc'}).text)
     operation, run_id, agent, sent = w.broker.writes[0]
-    branch = role_tools.run_branch(RUN_ID)
+    branch = outputs.run_branch(RUN_ID)
     assert (operation, run_id, agent, sent['branch'], sent['tree_hash'], sent['patch'], answer['broker']) == (
         'push_bundle', RUN_ID, 'fixer-1', branch, TREE, FIXERS, {'branch': branch, 'tree_hash': TREE})
     assert (branch, answer['branch'], answer['tree_hash'], w.session.context.host_writes) == (
-        f'voc-agent/{RUN_ID}/fix', branch, TREE, {'push_commit'})
+        f'voc-agent/{RUN_ID}-fix', branch, TREE, {'push_commit'})
     # Never a snapshot of its own checkout, nor anything written under its keys.
     assert (w.runner.calls, w.store.objects) == ([], {})
     assert w.session.tools.call('push_commit', {'message': ''}).error
@@ -525,7 +525,7 @@ def test_the_writers_opening_names_what_the_harness_fills_in(tmp_path):
     w.session.context.brief = replace(w.session.context.brief, issue=7)
     [_, issue, _, push] = role_tools.writer_parts(w.session.context)
     assert issue == 'The run starts from issue #7: that is the number read_issue takes.'
-    assert all(name in push for name in (FIXERS, TREE, role_tools.run_branch(RUN_ID), 'only your commit message'))
+    assert all(name in push for name in (FIXERS, TREE, outputs.run_branch(RUN_ID), 'only your commit message'))
     assert role_tools.writer_parts(_committer(tmp_path / 'none', '').session.context)[-1].startswith(
         'Note: your task names no submitted patch')
     author = world(tmp_path / 'author', role='pr-author')
@@ -533,7 +533,7 @@ def test_the_writers_opening_names_what_the_harness_fills_in(tmp_path):
                        ('draft', 'as a draft (the run\'s flow says pr: draft)'), ('', 'or as a draft')):
         author.session.context.brief = replace(author.session.context.brief, pull_request=mode)
         [_, opens] = role_tools.writer_parts(author.session.context)
-        assert (role_tools.run_branch(RUN_ID) in opens, said in opens, 'read_gate_record' in opens) == (True, True, True)
+        assert (outputs.run_branch(RUN_ID) in opens, said in opens, 'read_gate_record' in opens) == (True, True, True)
     # The opening says it (7.71.02: the first live run's understander, told no number, tried issue 1).
     understander = world(tmp_path / 'understander', role='understander')
     understander.session.context.brief = replace(understander.session.context.brief, issue=7)
@@ -651,7 +651,7 @@ def test_the_pr_author_opens_the_pull_request_and_the_pr_reviewer_comments_throu
     opened = json.loads(author.session.tools.call('open_draft_pr', {'title': 'Keep long slugs', 'branch': 'main',
                                                                     'body': 'Fixes the slug cut.'}).text)
     assert (opened['broker']['number'], author.broker.writes[0][0]) == (7, 'open_or_update_draft_pr')
-    assert author.broker.writes[0][3]['branch'] == role_tools.run_branch(RUN_ID)
+    assert author.broker.writes[0][3]['branch'] == outputs.run_branch(RUN_ID)
     assert (author.board.progress_seen[-1][3], author.session.context.host_writes) == (
         'opened the pull request, ready for review', {'open_draft_pr'})
     assert author.session.tools.call('open_draft_pr', {'title': '', 'body': 'b'}).error
@@ -691,6 +691,21 @@ def test_a_writer_that_finishes_without_its_write_goes_to_a_person(tmp_path, rol
     said = {'committer': 'finished without pushing', 'pr-author': 'finished without opening the pull request'}[role]
     assert (w.board.moves[-1][2], said in done.text, done.finished is not None) == ('needs_human', True, True)
     assert w.board.progress_seen[-1][3].endswith(': a person decides')
+
+
+@pytest.mark.parametrize('judged', [True, False], ids=['no-patch', 'no-judged-tree'])
+def test_a_committer_whose_task_names_no_patch_says_so_never_that_the_broker_made_no_push(tmp_path, judged: bool):
+    # (7.71.03) Its task named no submitted patch (or none the harness could apply and hash): nothing was ever asked of
+    # the broker, and the person reads why.
+    w = _committer(tmp_path, patch='')
+    if judged:
+        w.session.context.gate_tree = TREE
+    else:
+        w.session.context.brief = replace(w.session.context.brief, patch=FIXERS)
+    done = w.session.tools.call('finish', {'summary': 'nothing to push'})
+    assert (w.board.moves[-1][2], review_tools.NO_PATCH_TO_PUSH in done.text, 'broker' in done.text) == (
+        'needs_human', True, False)
+    assert w.broker.writes == []
 
 
 @pytest.mark.parametrize(('role', 'write'), [('committer', 'push_commit'), ('pr-author', 'open_draft_pr')])

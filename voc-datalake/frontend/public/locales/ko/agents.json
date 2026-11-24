@@ -1901,7 +1901,8 @@
       "done": "완료",
       "failed": "실패",
       "stopped": "중지됨",
-      "reposted": "다시 게시됨"
+      "reposted": "다시 게시됨",
+      "needs_human": "사람의 결정 대기 중"
     }
   },
   "templatePage": {
@@ -2229,7 +2230,8 @@
           "failed": "실패",
           "crashed": "비정상 종료",
           "stopped": "중지됨",
-          "reposted": "넘겨짐"
+          "reposted": "넘겨짐",
+          "needs_human": "사람의 결정 대기 중"
         },
         "restarted": "{{agent}}이(가) 예기치 않게 중지되어 다시 시작되었습니다({{max, number}}번 중 {{n, number}}번째 시도)",
         "restartedAgain": "{{agent}}이(가) 예기치 않게 중지되어 다시 시작되었습니다({{n, number}}번째 시도)",

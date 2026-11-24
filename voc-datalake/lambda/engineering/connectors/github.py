@@ -113,10 +113,12 @@ from engineering.connectors.hosts import (
 from engineering.connectors.reactions import PullRequestReactions, writer_permission
 from engineering.connectors.transport import (
     DEFAULT_RETRY_SECONDS,
+    FIND_PAGE_SIZE,
     HttpsTransport,
     Response,
     Transport,
     asked_wait,
+    marked_comment,
     text_or_empty,
     text_unless_missing,
 )
@@ -643,6 +645,16 @@ class GitHubHost:
         response = self._api(connection_id, _COMMENTS[on], 'POST', f'/issues/{number}/comments', 'the comment',
                              body={'body': body}, ok=(201,))
         return _text(_json(response), 'html_url')
+
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        """The URL of issue ``number``'s comment holding ``marker`` (7.71.03), oldest first (GitHub's order), a few
+        pages at most (``marked_comment``)."""
+        query = {'per_page': FIND_PAGE_SIZE}
+        return marked_comment(
+            lambda page: self._api(connection_id, _READS['issue'], 'GET',
+                                   f'/issues/{int(number)}/comments?{urlencode({**query, "page": page})}',
+                                   'the comment read'),
+            next_page, marker, lambda comment: _text(comment, 'html_url'))
 
     def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
         """Add ``labels`` to issue ``number`` (GitHub creates a label the repository does not have yet)."""

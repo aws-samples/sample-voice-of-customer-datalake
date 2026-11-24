@@ -157,6 +157,9 @@ def test_an_engineering_run_moves_from_queued_to_running_once() -> None:
         running = store.mark_engineering_running(env.agents, agent['agent_id'], run['run_id'])
         assert running is not None
         assert running['status'] == 'running'
+        # (7.71.03) The agent's own row follows it: its stats read "running", never "queued", while the run works.
+        agent_row = env.agents.get_item(Key=store.agent_key(agent['agent_id']))['Item']
+        assert (agent_row['last_run_id'], agent_row['last_run_status']) == (run['run_id'], 'running')
         assert store.mark_engineering_running(env.agents, agent['agent_id'], run['run_id']) is None
         view = store.run_view({**run, 'kind': 'engineering', 'engineering_run_id': 'E', 'issue': {'number': 1},
                                'feedback_count': 3})

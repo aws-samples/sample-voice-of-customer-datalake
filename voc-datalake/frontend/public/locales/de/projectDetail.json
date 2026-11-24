@@ -999,8 +999,7 @@
         "busy": "Die Sprachfunktion ist gerade ausgelastet. Versuchen Sie es in einigen Minuten erneut.",
         "error": "Die Sitzung wurde wegen eines Fehlers beendet.",
         "disconnected": "Die Verbindung wurde unterbrochen.",
-        "refused": "Der Sitzungslink war abgelaufen oder wurde bereits verwendet. Starten Sie eine neue Sitzung.",
-        "expired": "Der Sitzungslink ist abgelaufen, bevor die Verbindung zustande kam. Starten Sie eine neue Sitzung."
+        "refused": "Der Sitzungslink war abgelaufen oder wurde bereits verwendet. Starten Sie eine neue Sitzung."
       },
       "filing": "Transkript wird abgelegt…",
       "filed": "Das Transkript ist als Dokument dieses Projekts gespeichert.",

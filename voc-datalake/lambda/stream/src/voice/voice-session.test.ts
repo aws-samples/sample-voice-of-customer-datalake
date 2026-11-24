@@ -69,22 +69,13 @@ describe('VoiceSession start', () => {
     expect(run.transport.stream(0).bodies('textInput')[0]?.content).toContain('You are "Maria"');
   });
 
-  it('refuses a session the store does not activate (used, ended or gone) and writes nothing', async () => {
+  it('refuses a session the store does not activate (used, ended, past its minute or gone) and writes nothing', async () => {
     const run = harness();
-    run.store.activation = 'used';
+    run.store.activation = false;
     await run.session.start();
     expect(run.channel.messages).toStrictEqual([{ type: 'ended', reason: 'refused' }]);
     expect(run.channel.closedWith).toBe(1008);
     expect(run.store.ended).toBeUndefined();
-    expect(run.transport.streams).toHaveLength(0);
-  });
-
-  it('ends a first connection after the URL\'s minute as expired, freeing its place in the live set (L4)', async () => {
-    const run = harness();
-    run.store.activation = 'expired';
-    await run.session.start();
-    expect([run.channel.messages, run.channel.closedWith]).toStrictEqual([[{ type: 'ended', reason: 'expired' }], 1008]);
-    expect(run.store.calls).toStrictEqual([`activate:${SESSION_ID}`, `leaveLive:${SESSION_ID}`]);
     expect(run.transport.streams).toHaveLength(0);
   });
 

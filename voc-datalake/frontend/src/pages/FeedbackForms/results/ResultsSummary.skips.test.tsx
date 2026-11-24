@@ -48,3 +48,13 @@ describe('skip rates on the summary', () => {
     expect(headings().slice(0, 3)).toStrictEqual(['3 · Your takeaway?', '2 · Why [q_tooling]?', '1 · How were the tools?'])
   })
 })
+
+describe('removed questions on the summary', () => {
+  it('names one by its headline, a recall placeholder as [id], else by its id (Q5, 7.71.03)', () => {
+    const removed = parseFormResults({ ...RESULTS, removed_questions: [
+      { id: 'q_old', headline: { en: 'Was {{ event | it }} useful?' }, answered: 3 }, { id: 'q_older', answered: 1 }] })
+    renderWithDraft(<ResultsSummary form={FORM} results={removed} onShowAll={vi.fn()} />, FORM)
+    expect(screen.getByText(/^Was \[event\] useful\? · 3 answers$/u)).toBeInTheDocument()
+    expect(screen.getByText(/^q_older · 1 answer$/u)).toBeInTheDocument()
+  })
+})

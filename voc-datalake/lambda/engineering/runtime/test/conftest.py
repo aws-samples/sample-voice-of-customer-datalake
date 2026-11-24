@@ -94,9 +94,9 @@ class FakeControl:
     filling: set[str] = field(default_factory=set)
     #: The decision point each run's flow waits at (``flow_stop``): none by default.
     flow_points: dict[str, str] = field(default_factory=dict)
-    #: (7.71.02) The runs whose flow finished (``flow_finished``), and each run ended and how (``end``).
+    #: (7.71.02) The runs whose flow finished (``flow_finished``), and each run ended done (``end_done``).
     finished_flows: set[str] = field(default_factory=set)
-    ended: dict[str, str] = field(default_factory=dict)
+    ended: set[str] = field(default_factory=set)
 
     def budget(self, run_id: str) -> Budget:
         assert run_id
@@ -119,8 +119,8 @@ class FakeControl:
         return (run_id not in self.stops and run_id not in self.ended
                 and all(run != run_id for run, _reason in self.humans))
 
-    def end(self, run_id: str, status: str) -> None:
-        self.ended[run_id] = status
+    def end_done(self, run_id: str) -> None:
+        self.ended.add(run_id)
 
     def flow_finished(self, run_id: str) -> bool:
         return run_id in self.finished_flows

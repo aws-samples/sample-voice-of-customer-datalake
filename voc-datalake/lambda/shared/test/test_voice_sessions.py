@@ -122,6 +122,12 @@ class TestVoices:
             "'", '').replace(' ', '').replace('asconst', '')
 
 
+def test_the_connect_skew_is_the_relay_s():
+    """F3 (7.71.03): ``status`` ends an unused URL's row on the relay's own deadline (store.ts), never before it."""
+    store = (CDK_ROOT / 'lambda/stream/src/voice/store.ts').read_text(encoding='utf-8')
+    assert re.findall(r'const CONNECT_SKEW_SECONDS = (\d+);', store) == [str(voice.CONNECT_SKEW_SECONDS)]
+
+
 def test_a_project_delete_finds_its_sessions_rows_through_its_pointers():
     keys = [{'pk': 'PROJECT#p1', 'sk': 'META'}, {'pk': 'PROJECT#p1', 'sk': 'VOICE#s-1'},
             {'pk': 'PROJECT#p1', 'sk': 'PERSONA#persona_1'}]
@@ -410,6 +416,17 @@ class TestEndAndStatus:
         assert voice.status(store, 'p1', 'persona_1', sid, OTHER, lambda _row: 'job')['status'] == 'ended'
         status = voice.status(store, 'p1', 'persona_1', sid, PERSON, lambda _row: 'job-3')
         assert (status['status'], status['end_reason'], status['job_id']) == ('finalizing', 'disconnected', 'job-3')
+
+    def test_an_unused_url_stays_minted_while_the_relay_would_still_take_it(self, stores):
+        """F3 (7.71.03): the relay takes a first connection until ``connect_by`` and 10 s for the clocks, so a row
+        still minted is ended only after both: a read in those 10 s never ends a session that is about to start."""
+        store, clock = stores
+        sid = _mint(store)['session_id']
+        last = int(NOW.timestamp()) + voice.CONNECT_SECONDS + voice.CONNECT_SKEW_SECONDS
+        clock['now'] = datetime.fromtimestamp(last, tz=UTC)
+        assert voice.status(store, 'p1', 'persona_1', sid, OTHER, lambda _row: 'job')['status'] == 'minted'
+        clock['now'] += timedelta(seconds=1)
+        assert voice.status(store, 'p1', 'persona_1', sid, OTHER, lambda _row: 'job')['end_reason'] == 'disconnected'
 
     def test_a_failed_job_start_leaves_it_ended_to_retry(self, stores):
         store, _ = stores

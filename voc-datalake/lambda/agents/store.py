@@ -149,28 +149,8 @@ def start_run(agent_id: str, run_id: str, workflow_revision: int) -> dict:
         if is_conditional_check_failure(exc):
             raise RunNotRunning('run is not queued') from exc
         raise
-    _record_last_run_running(agent_id, run_id)
+    shared_store.record_last_run_running(_table(), agent_id, run_id)
     return plain(response['Attributes'])
-
-
-def _record_last_run_running(agent_id: str, run_id: str) -> None:
-    """The agent's ``last_run_status`` follows its run from queued to running.
-
-    Without it the agents list (which reads only the agent row) said "Queued" for a
-    run that had been working for an hour. Conditional on this run still being the
-    agent's last one and still recorded as queued, so it never writes over a newer
-    run or a finish that landed first.
-    """
-    try:
-        _table().update_item(
-            Key={'pk': f'AGENT#{agent_id}', 'sk': 'META'},
-            UpdateExpression='SET last_run_status = :running',
-            ConditionExpression='last_run_id = :run AND last_run_status = :queued',
-            ExpressionAttributeValues={':run': run_id, ':running': RUN_RUNNING, ':queued': RUN_QUEUED},
-        )
-    except Exception as exc:
-        if not is_conditional_check_failure(exc):
-            raise
 
 
 def update_running(agent_id: str, run_id: str, sets: dict[str, Any], *, remove: tuple[str, ...] = ()) -> None:

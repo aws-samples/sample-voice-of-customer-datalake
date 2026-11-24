@@ -2,7 +2,8 @@
 
 Every write an engineering agent makes goes through the connector's broker, and the broker checks it here first:
 
-* a push only to a branch of the agent's own run (``voc-agent/{run_id}/...``), never to the default branch;
+* a push only to the agent's own run's branch (``voc-agent/{run_id}-fix``, 7.71.03: ``outputs.run_branch``), never to
+  the default branch;
 * no change to the CI definition paths it knows (best effort: the CI attestation is the real boundary);
 * no customer text: a write the agents made that holds, verbatim, a sentence of a review the run cited (comments,
   pull request bodies, commit messages and the lines a diff adds), or, in prose (comments, pull request bodies,
@@ -22,16 +23,16 @@ from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-# The agents' branch prefix (``voc-agent/``) is runtime/outputs.py's, shared with the harness, whose committer's and PR
-# author's tools check a branch against it.
-from engineering.runtime.outputs import AGENT_BRANCH_PREFIX
+# The agents' branch prefix (``voc-agent/``) and a run's own branch are runtime/outputs.py's, shared with the harness,
+# whose committer's push and PR author's pull request name that branch (``run_branch``).
+from engineering.runtime.outputs import AGENT_BRANCH_PREFIX, run_branch
 
-#: A run id: an ASCII letter or digit, then up to 63 more of letters, digits, ``_`` and ``-``.
-#: A branch name's rest (after ``voc-agent/{run_id}/``): an ASCII letter or digit, then up to 149 more of letters,
-#: digits, ``.``, ``_``, ``/`` and ``-`` (``branch_refusal`` also refuses ``..``, ``//`` and a trailing ``/``, ``.``
-#: or ``.lock``).
+#: A run id: an ASCII letter or digit, then up to 63 more of letters, digits, ``_`` and ``-`` (so its branch,
+#: ``run_branch``, is always a name git takes: no ``.``, ``/`` or ``@{`` in it).
 _RUN_ID: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}')
-_BRANCH_REST: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,149}')
+#: Why a push to another branch is refused (7.71.03): the run's one branch, and why it is one level.
+NOT_RUN_BRANCH: Final = ("An agent pushes only to its own run's branch, {own}: one level under voc-agent/, the only "
+                         'level a ruleset that excludes refs/heads/voc-agent/* leaves unprotected.')
 #: CI definitions an agent never changes (the GitHub App holds no ``workflows`` permission either).
 _CI_PATHS: Final = re.compile(r'^(?:\.github/workflows/|\.github/actions/|\.gitlab-ci\.yml\Z|\.gitlab/ci/)')
 _EMAIL: Final = re.compile(r'[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})')
@@ -93,22 +94,17 @@ class Refusal:
 
 
 def branch_refusal(branch: str, default_branch: str, run_id: str) -> Refusal | None:
-    """Why a push to ``branch`` is refused, or ``None`` when it is a branch of the run ``run_id`` (from the caller's
-    role session name, never from the request)."""
+    """Why a push to ``branch`` is refused, or ``None`` when it is the run ``run_id``'s own branch (``run_branch``;
+    the run from the caller's role session name, never from the request). Since 7.71.03 that one branch alone, one
+    level under ``voc-agent/``: the harness names it for the model (7.71.02), and before 7.71.02 the model's own
+    ``voc-agent/<run id>/<name>`` was two levels, which the setup guide's ruleset does not leave unprotected."""
     if branch == default_branch:
         return Refusal('default_branch', 'An agent never pushes to the default branch.')
     if not _RUN_ID.fullmatch(run_id):
         return Refusal('bad_run', 'The run is not one the connector knows.')
-    own = f'{AGENT_BRANCH_PREFIX}{run_id}/'
-    if not branch.startswith(own):
-        return Refusal('not_run_branch', f'An agent pushes only to its own run\'s branches ({own}...).')
-    rest = branch[len(own):]
-    # git check-ref-format's rules on top of the character set: no "..", "//" or "@{", no component that starts
-    # with "." or ends with ".lock", no trailing "/" or ".".
-    components = rest.split('/')
-    if (not _BRANCH_REST.fullmatch(rest) or '..' in rest or '@{' in rest or rest.endswith(('/', '.'))
-            or any(not c or c.startswith('.') or c.endswith('.lock') for c in components)):
-        return Refusal('bad_branch_name', 'The branch name is not one the connector creates.')
+    own = run_branch(run_id)
+    if branch != own:
+        return Refusal('not_run_branch', NOT_RUN_BRANCH.format(own=own))
     return None
 
 

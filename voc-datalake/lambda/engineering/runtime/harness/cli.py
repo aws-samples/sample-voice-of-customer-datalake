@@ -40,6 +40,7 @@ from typing import Any, Final
 
 from engineering.runtime.harness.converse_loop import opening, system_prompt
 from engineering.runtime.harness.interface import AgentSession, Ending
+from engineering.runtime.harness.review_tools import WRITE_TOOLS
 from engineering.runtime.harness.tool_server import SERVER_NAME, SessionFiles
 
 CLAUDE: Final = 'claude'
@@ -192,11 +193,15 @@ class ClaudeCli:
 
 def sync_notes(session: AgentSession, files: SessionFiles, seen: dict[str, Any] | None,
                turn: int) -> dict[str, Any] | None:
-    """Take what the tool server recorded (its step); a new ``save_checkpoint`` is saved at once (the CLI's and the Kiro
-    adapter's: both hear their tool server through ``SessionFiles``)."""
+    """Take what the tool server recorded (its step, and since 7.71.03 the host writes it made, kept with the session's
+    own for its next checkpoint); a new ``save_checkpoint`` is saved at once (the CLI's and the Kiro adapter's: both
+    hear their tool server through ``SessionFiles``)."""
     state = files.read('state')
     if state is not None:
         session.context.status.step = str(state.get('step', ''))
+        writes = state.get('writes')
+        if isinstance(writes, list):
+            session.context.host_writes |= {name for name in writes if name in WRITE_TOOLS}
     notes = files.read('checkpoint')
     if notes is not None and notes != seen:
         session.remember(notes)

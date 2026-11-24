@@ -26,11 +26,12 @@ from engineering.run_links import (
     run_links,
     writes_pk,
 )
+from engineering.runtime.outputs import run_branch
 from engineering.runtime.sessions import AgentSession
 
 REPO = 'example-org/shop'
 PULL = f'https://github.com/{REPO}/pull/7'
-BRANCH = f'voc-agent/{RUN}/fix-paging'
+BRANCH = run_branch(RUN)
 #: Not ASCII: the Kelvin sign (U+212A) lower-cases to "k", so it would pass a case-blind compare with ``…/kit/…``.
 KELVIN_URL = f'https://github.com/example-org/{chr(0x212A)}it/pull/7'
 
@@ -158,7 +159,17 @@ def test_a_record_never_written_is_read_from_the_newest_done_claim() -> None:
         _claim(client, 9, 2_000)
         _claim(client, 11, 3_000, state='unknown')                          # (its outcome not known: not read)
         _claim(client, 13, 4_000, head='voc-agent/another-run/fix-paging')   # (not the run's branch)
+        _claim(client, 15, 5_000, head=run_branch('another-run'))            # (nor is this, 7.71.03's shape)
+        _claim(client, 17, 6_000, head=f'{BRANCH}x')                         # (nor one that only starts like it)
         assert (_links(client)['number'], _links(client)['superseded']) == (9, [])
+
+
+def test_a_pull_request_a_run_opened_from_a_two_level_branch_before_7_71_03_is_still_read() -> None:
+    # (7.71.03) A run's branch is one level now (voc-agent/<run id>-fix); a run that pushed voc-agent/<run id>/<name>
+    # before keeps its recorded pull request (the reactions read of an ended run reads it).
+    with engineering_table() as client:
+        _claim(client, 7, 1_000, head=f'voc-agent/{RUN}/fix-paging')
+        assert _links(client)['number'] == 7
 
 
 def test_a_claim_newer_than_the_row_names_the_pull_request_and_an_older_one_does_not() -> None:

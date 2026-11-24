@@ -97,12 +97,11 @@ no async retry. An EventBridge rule runs it at **03:05 UTC** (pay per use: no fi
 does the same. Each run rebuilds the last 24 months for the deployment and every active workspace and overwrites the
 scope's one item: the rebuild is idempotent. A scope whose reads AWS refuses is not written (the others are) and the
 run fails after them; the next day rebuilds it. The run has one deadline (its 15 minutes less a minute for the writes):
-the deployment comes first, as it is the only scope with projects until projects move into workspaces
-([multi-workspace.md → Phases](multi-workspace.md#phases), phase 3), and may take all of it but the last 60 seconds,
-which are kept for the workspace scopes when there are any (7.71.02): until then their reads are only counts (an empty
-registry, a conversation count per month), so a deployment walk that runs long can no longer leave every workspace
-cut short. A scope cut short is written with `complete: false` only where no complete item is stored; otherwise the
-last complete figures stay, and the page shows their `as_of`.
+the deployment comes first and may take all of it, as it is the only scope with projects until projects move into
+workspaces ([multi-workspace.md → Phases](multi-workspace.md#phases), phase 3), so no scope is given a share of the
+time (7.71.01; the last minute 7.71.02 kept for the workspace scopes is gone again in 7.71.03: their reads are only
+counts until they hold projects, so it protected nothing). A scope cut short is written with `complete: false` only where no complete item is stored; otherwise
+the last complete figures stay, and the page shows their `as_of`.
 
 **It never Scans**, reads no feedback and calls no model. Every read is a Query (`lib/stacks/adoption-rollup-worker.ts`
 holds the role to them, and `adoption-rollup-worker.test.ts` pins every statement and what is refused):

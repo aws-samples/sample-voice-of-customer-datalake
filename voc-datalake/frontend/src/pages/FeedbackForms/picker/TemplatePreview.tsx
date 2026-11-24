@@ -19,7 +19,7 @@ import type { WindowPreset } from '../preview/previewChannel'
 import { usePreviewWindowSync } from '../preview/usePreviewWindowSync'
 import { questionIcon } from '../ui/typeIcons'
 import type { FormV2 } from '../model/formsV2'
-import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { logicSentences } from '../logic/ruleSentence'
 import type { TemplateFlow } from '../templates/templateKit'
 
@@ -36,7 +36,7 @@ function QuestionOutline({ form }: Readonly<{ form: FormV2 }>) {
               <span className="flex items-start gap-1.5 text-text">
                 <span className="tabular-nums text-muted">{index + 1}</span>
                 {createElement(questionIcon(question), { size: 14, className: 'mt-0.5 shrink-0 text-muted', 'aria-hidden': true })}
-                <span className="min-w-0">{textIn(question.headline, form.language)}</span>
+                <span className="min-w-0">{headlineShown(question, form.language)}</span>
               </span>
               {logicSentences(t, form, question).map((sentence) => (
                 <span key={sentence} className="ml-5 flex items-start gap-1 text-[12px] text-muted">

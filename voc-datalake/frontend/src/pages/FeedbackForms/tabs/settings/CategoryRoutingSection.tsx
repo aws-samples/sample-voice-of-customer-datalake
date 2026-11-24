@@ -20,7 +20,7 @@ import type { Category } from '../../../../components/CategoriesManager/Categori
 import { useDraft } from '../../builder/formDraftContext'
 import { useBuilderUi } from '../../builder/builderUi'
 import { isChoice } from '../../model/formsV2'
-import { textIn } from '../../model/i18nText'
+import { headlineShown } from '../../model/recall'
 
 /** The entry a stored routing value names: by name, else (forms saved before) by config id. */
 function findRouted<T extends { readonly id: string; readonly name: string }>(entries: readonly T[] | undefined, stored: string): T | undefined {
@@ -113,7 +113,7 @@ function OptionRouting() {
         const mapped = options.filter((option) => option.category !== undefined).length
         return (
           <li key={question.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
-            <span className="min-w-0 flex-1 text-text">{number} · {textIn(question.headline, form.language)}</span>
+            <span className="min-w-0 flex-1 text-text">{number} · {headlineShown(question, form.language)}</span>
             <span className="text-[12px] text-muted">{t('settings.routing.mapped', { mapped, count: options.length })}</span>
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => go('questions', [question.id])}
               aria-label={t('settings.routing.editQuestion', { number })}>{t('settings.routing.edit')}</button>

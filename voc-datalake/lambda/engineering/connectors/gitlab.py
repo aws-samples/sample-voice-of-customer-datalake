@@ -95,12 +95,14 @@ from engineering.connectors.hosts import (
 )
 from engineering.connectors.reactions import PullRequestReactions
 from engineering.connectors.transport import (
+    FIND_PAGE_SIZE,
     Response,
     Transport,
     dig,
     int_of,
     items_of,
     json_of,
+    marked_comment,
     text_of,
     text_or_empty,
     text_unless_missing,
@@ -147,8 +149,9 @@ GITLAB_NO_PIPELINE: Final = ("The project lets a merge request merge without a p
                              'must succeed (the repository\'s own checks) before the agents push.')
 GITLAB_SKIPPED_PIPELINE: Final = ("The project lets a merge request merge when its pipeline was skipped: turn off "
                                   'Skipped pipelines are considered successful before the agents push.')
-GITLAB_PUSH_RULE: Final = ("The project's push rule for branch names refuses the agent's branch: let it take "
-                           'voc-agent/ branches before the agents push.')
+GITLAB_PUSH_RULE: Final = ("The project's push rule for branch names refuses the agent's branch (a run's is "
+                           'voc-agent/<run id>-fix, one level under voc-agent/): let it take voc-agent/ branches '
+                           'before the agents push.')
 GITLAB_RULES_UNREAD: Final = ("The connection's token cannot read the project's protected branches, so the broker "
                               'cannot check them: the agents push nothing until it can.')
 GITLAB_TOO_MANY_RULES: Final = ('The project has more protected branch rules than the broker reads: it pushes '
@@ -573,6 +576,17 @@ class GitLabHost:
         note = int_of(json_of(response), 'id')
         kind = 'issues' if on == 'issue' else 'merge_requests'
         return f'{GITLAB_URL}{self.repository(connection_id)}/-/{kind}/{number}#note_{note}'
+
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        """The URL of issue ``number``'s note holding ``marker`` (7.71.03), newest first, a few pages at most
+        (``marked_comment``)."""
+        base = f'/{_THREADS["issue"]}/{int(number)}'
+        query = {'per_page': FIND_PAGE_SIZE, 'sort': 'desc', 'order_by': 'created_at'}
+        url = f'{GITLAB_URL}{self.repository(connection_id)}/-/issues/{int(number)}#note_'
+        return marked_comment(
+            lambda page: self._api(connection_id, 'GET', f'{base}/notes?{urlencode({**query, "page": page})}',
+                                   'the comment read'),
+            next_page, marker, lambda note: f'{url}{int_of(note, "id")}')
 
     def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
         """Add ``labels`` to issue ``number`` (``add_labels``: GitLab creates a label the project does not have yet)."""

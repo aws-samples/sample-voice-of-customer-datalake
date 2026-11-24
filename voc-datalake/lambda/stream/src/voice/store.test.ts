@@ -22,7 +22,7 @@ function store(answer: Partial<StoreDeps> = {}) {
 describe('voice store: the session row', () => {
   it('activates a minted session once, within its minute and 10 s for the clocks, in its own partition', async () => {
     const run = store();
-    await expect(run.store.activate(SESSION_ID, NOW)).resolves.toBe('live');
+    await expect(run.store.activate(SESSION_ID, NOW)).resolves.toBe(true);
     expect(run.update).toHaveBeenCalledExactlyOnceWith({
       ...SESSION_KEY,
       UpdateExpression: 'SET #status = :live, connected_at = :now',
@@ -32,20 +32,13 @@ describe('voice store: the session row', () => {
     });
   });
 
-  it('marks a session still minted past its minute ended as expired (L4), and answers used for any other', async () => {
-    const expired = store();
-    expired.update.mockRejectedValueOnce(named('ConditionalCheckFailedException'));
-    await expect(expired.store.activate(SESSION_ID, NOW)).resolves.toBe('expired');
-    expect(expired.update).toHaveBeenLastCalledWith({
-      ...SESSION_KEY,
-      UpdateExpression: 'SET #status = :ended, ended_at = if_not_exists(ended_at, :now), end_reason = if_not_exists(end_reason, :expired)',
-      ConditionExpression: '#status = :minted',
-      ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: { ':ended': 'ended', ':minted': 'minted', ':now': '2026-11-21T12:00:00.000Z', ':expired': 'expired' },
-    });
-    const used = store({ update: () => Promise.reject(named('ConditionalCheckFailedException')) });
+  it('answers false for a used, ended or expired session, writing nothing more, and lets any other failure through', async () => {
+    const refused = store();
+    refused.update.mockRejectedValueOnce(named('ConditionalCheckFailedException'));
+    await expect(refused.store.activate(SESSION_ID, NOW)).resolves.toBe(false);
+    // F3 (7.71.03): a row still minted past its minute is left to the projects API, which ends it (`disconnected`).
+    expect(refused.update).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ UpdateExpression: 'SET #status = :live, connected_at = :now' }));
     const failing = store({ update: () => Promise.reject(named('AccessDeniedException')) });
-    await expect(used.store.activate(SESSION_ID, NOW)).resolves.toBe('used');
     await expect(failing.store.activate(SESSION_ID, NOW)).rejects.toThrow('AccessDeniedException');
   });
 

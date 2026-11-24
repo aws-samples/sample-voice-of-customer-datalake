@@ -57,6 +57,7 @@ from engineering.connectors.hosts import (
     NO_CONNECTION,
     WRITE_CLAIMED,
     WRITE_REFUSED,
+    WRITE_UNKNOWN,
     Conflict,
     NoConnection,
     RunRecord,
@@ -185,15 +186,23 @@ class WriteClaims(WritesPartition):
     def _key(self, run_id: str, key: str) -> dict[str, Any]:
         return {'pk': {'S': writes_pk(WORKSPACE, run_id)}, 'sk': {'S': f'{WRITE_PREFIX}{key}'}}
 
-    def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:
+    def claim(self, run_id: str, key: str, operation: str, stale_after: int | None = None) -> WriteClaim | None:
+        now = int(self._clock())
+        condition, values = 'attribute_not_exists(pk) OR #state = :refused', {':refused': {'S': WRITE_REFUSED}}
+        if stale_after is not None:
+            # (7.71.03) A claim of an issue write whose call ended long ago without an outcome: its own row read as it
+            # stands in the condition, so only one caller takes it again.
+            condition += ' OR (#state IN (:claimed, :unknown) AND #at <= :stale)'
+            values = {**values, ':claimed': {'S': WRITE_CLAIMED}, ':unknown': {'S': WRITE_UNKNOWN},
+                      ':stale': {'N': str(now - stale_after)}}
         try:
             self._client.put_item(
                 TableName=self._table,
                 Item={**self._key(run_id, key), 'state': {'S': WRITE_CLAIMED}, 'op': {'S': operation},
-                      'at': {'N': str(int(self._clock()))}},
-                ConditionExpression='attribute_not_exists(pk) OR #state = :refused',
-                ExpressionAttributeNames={'#state': 'state'},
-                ExpressionAttributeValues={':refused': {'S': WRITE_REFUSED}})
+                      'at': {'N': str(now)}},
+                ConditionExpression=condition,
+                ExpressionAttributeNames={'#state': 'state', **({'#at': 'at'} if stale_after is not None else {})},
+                ExpressionAttributeValues=values)
         except ClientError as exc:
             if exc.response.get('Error', {}).get('Code') != 'ConditionalCheckFailedException':
                 raise Unavailable(_UNREADABLE) from exc
@@ -212,7 +221,9 @@ class WriteClaims(WritesPartition):
             return None
         raw = string_attr(item, 'result')
         result = json.loads(raw) if raw else None
-        return WriteClaim(state=string_attr(item, 'state'), result=result if isinstance(result, dict) else None)
+        at = item.get('at', {}).get('N', '0')
+        return WriteClaim(state=string_attr(item, 'state'), result=result if isinstance(result, dict) else None,
+                          at=int(at) if at.isdigit() else 0)
 
     def _row(self, run_id: str, key: str) -> dict[str, Any] | None:
         try:

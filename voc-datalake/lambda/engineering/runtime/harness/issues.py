@@ -10,7 +10,8 @@
   id they do not hold is refused, and with none accepted a triage cites none (the hard lock; the run's end holds it
   to the same rule, ``outputs.unaccepted_tenets``).
 - ``label_issue`` (the understander): the broker's ``label_issue``, the run's own issue only, ``outputs.TRIAGE_LABELS``
-  only (checked here too), once per run (7.71.02: the broker answers a later call with the first labels).
+  only (checked here too), once per run (7.71.02: the broker answers a later call with the first labels; 7.71.03: and
+  who put them, which the tool's answer says, "labels already set by <agent>: ...").
 
 The understander's comment on its issue is ``post_comment`` (role_tools.py), its lines rendered by
 ``issue_comment``: each a code span (``quality_gate/text.cell``), so no link, mention, image or HTML survives in it.
@@ -78,7 +79,9 @@ def specs(tool_spec: Callable[..., Built], role: str, roles: Mapping[str, frozen
                    'summary': text, 'paths': items, 'acceptance_criteria': items, 'tenets': items},
                   ('kind', 'severity', 'priority', 'summary')),
         tool_spec('label_issue', 'Put the triage\'s labels on the run\'s issue: voc-triage/<kind> and '
-                  'voc-severity/s<n> only.', {'number': issue, 'labels': {
+                  'voc-severity/s<n> only. The run labels its issue once: when another agent of the run labelled it '
+                  'first, nothing is added and the answer says "labels already set by <agent>: ..." with the labels '
+                  'it has.', {'number': issue, 'labels': {
                       'type': 'array', 'items': {'type': 'string', 'enum': sorted(TRIAGE_LABELS)}}},
                   ('number', 'labels')),
     )
@@ -117,6 +120,12 @@ def handlers(context: Built, result: Callable[..., Built], record: Record) -> di
         if not set(labels) <= TRIAGE_LABELS or len({label.split('/', 1)[0] for label in labels}) != len(labels):
             raise ValueError('the labels are one voc-triage/<kind> and one voc-severity/s<n>, nothing else')
         answer = context.broker.label_issue(context.run_id, context.agent_id, number=number(arguments), labels=labels)
+        set_by = answer.get('set_by')
+        if set_by:
+            # (7.71.03) Another call's labels, not this one's: said so, to the model and on the task.
+            already = f'labels already set by {set_by}: {", ".join(str(label) for label in answer.get("labels", []))}'
+            context.written(already)
+            return result(already)
         context.written(f'labelled the issue {", ".join(labels)}')
         return result(json.dumps({'broker': answer}))
 

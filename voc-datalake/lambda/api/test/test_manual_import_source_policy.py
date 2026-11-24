@@ -119,7 +119,8 @@ def test_a_redacting_upload_refuses_a_row_comprehend_could_not_read_and_counts_i
                                                                                          lambda_context):
     """F1 (7.71.02): every redacting upload's redaction is strict, as the form import's: a row whose text Comprehend
     should have read and could not (every text read as English here, as a row that named its language would be) is
-    refused and counted with the skipped rows, never queued with the patterns' redaction alone; the others are."""
+    refused and counted with the skipped rows, never queued with the patterns' redaction alone; the others are. Q6
+    (7.71.03): the answer names it by its id (``redaction_unavailable``)."""
     items = [{'id': f'i{n}', 'text': text, 'source': 'web', 'timestamp': '2026-01-02T00:00:00Z'}
              for n, text in enumerate(['Call +49 30 12345678', 'unreadable by the model'])]
     with patch.object(pii_redaction, 'comprehend_language', return_value='en'), \
@@ -128,6 +129,23 @@ def test_a_redacting_upload_refuses_a_row_comprehend_could_not_read_and_counts_i
         response, body = _upload(api_gateway_event, lambda_context, '/scrapers/manual/json-upload',
                                  {'items': items, 'source_id': 'support_tickets'})
     assert (response['statusCode'], body['imported_count'], body['total_items']) == (200, 1, 2)
+    assert body['redaction_unavailable'] == {'count': 1, 'ids': ['i1']}
     assert [(message['id'], message['text']) for message in _sent(wired)] == [('i0', 'Call [PHONE]')]
     counts = recorded.call_args.args[3]
     assert (counts.received, counts.imported, counts.skipped) == (2, 1, 1)
+
+
+@pytest.mark.usefixtures('wired')
+def test_a_csv_upload_names_each_row_it_refused_for_its_redaction_by_number(api_gateway_event, lambda_context):
+    """Q6 (7.71.03): a CSV upload names the rows the strict redaction left out by their row number (the ids are the
+    platform's), the first ``MAX_NAMED_UNREDACTED`` with the whole count; an upload that refused none says nothing."""
+    rows = '\n'.join(f'"{text}",Jane,app,vip,pro,2026-01-02' for text in ['Fine', 'unreadable one', 'Also fine', 'unreadable two'])
+    upload = {'csv_text': f'Body,Customer,Product,Labels,Plan,date\n{rows}\n', 'source_id': 'support_tickets',
+              'column_map': MAP}
+    with patch.object(pii_redaction, 'comprehend_language', return_value='en'), \
+            patch.object(pii_redaction, '_comprehend', return_value=_comprehend_failing_on('unreadable')), \
+            patch.object(h, 'MAX_NAMED_UNREDACTED', 1):
+        _response, body = _upload(api_gateway_event, lambda_context, '/scrapers/manual/csv-upload', upload)
+    assert (body['imported_count'], body['redaction_unavailable']) == (2, {'count': 2, 'rows': [2]})
+    _response, plain = _upload(api_gateway_event, lambda_context, '/scrapers/manual/csv-upload', upload)
+    assert 'redaction_unavailable' not in plain

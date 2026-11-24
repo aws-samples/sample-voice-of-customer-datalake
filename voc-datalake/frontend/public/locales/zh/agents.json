@@ -1901,7 +1901,8 @@
       "done": "完成",
       "failed": "失败",
       "stopped": "已停止",
-      "reposted": "已重新发布"
+      "reposted": "已重新发布",
+      "needs_human": "等待人工处理"
     }
   },
   "templatePage": {
@@ -2229,7 +2230,8 @@
           "failed": "失败",
           "crashed": "崩溃",
           "stopped": "已停止",
-          "reposted": "已移交"
+          "reposted": "已移交",
+          "needs_human": "等待人工处理"
         },
         "restarted": "{{agent}} 意外停止并已重新启动（第 {{n, number}} 次，共 {{max, number}} 次）",
         "restartedAgain": "{{agent}} 意外停止并已重新启动（第 {{n, number}} 次）",

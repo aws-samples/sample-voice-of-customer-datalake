@@ -54,6 +54,7 @@ from botocore.exceptions import ClientError
 
 from engineering.board.model import (
     CLAIMED,
+    DONE,
     FAILED,
     FINAL,
     MOVES,
@@ -655,6 +656,26 @@ class BoardStore:
             refusal='the task moved on since it was read'),
             Move(task_id, OPEN, actor, at, attempt + 1, REPOST_OP, reason=why).item(ws, run_id))
         return _reposted(task, actor, written=written)
+
+    def reopen_coordinate(self, ws: str, run_id: str, *, attempt: int, actor: str, reason: str) -> Task:
+        """(7.71.03) The run's coordinate task, which its coordinator ended done at ``attempt`` on a flow that did not
+        finish, open again at the next attempt with its lease cleared, for a new coordinator (``launch_coordinator``
+        records it next): a person's Resume of the run (``runtime/board_bus.BoardLeases.coordinator_to_start``), never a
+        board op. Only from done at that attempt, so a retried Resume reopens it once (a retry finds it open at the next
+        attempt); ``reason`` goes on the history row, which names ``actor`` (D4)."""
+        at = self.now().isoformat()
+        task, _written = self._write_change(ws, run_id, COORDINATE_TASK, _Write(
+            set_expr='SET #state = :open, attempt = attempt + :one, waiting = :no, updated_by = :actor, '
+                     'updated_at = :at, updated_op = :op '
+                     'REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
+            condition='#state = :done AND attempt = :attempt', names={'#state': 'state'},
+            values={':open': {'S': OPEN}, ':done': {'S': DONE}, ':one': {'N': '1'}, ':no': {'BOOL': False},
+                    ':op': {'S': REPOST_OP}, ':actor': {'S': actor}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
+            already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
+            refusal='the coordinate task moved on since it was read'),
+            Move(COORDINATE_TASK, OPEN, actor, at, attempt + 1, REPOST_OP,
+                 reason=redact(reason.strip())[:MAX_LINE]).item(ws, run_id))
+        return task
 
     # ---- a person's board actions (the Agents API's, admins acting for themselves; plan v3 4.3) --------------------
 

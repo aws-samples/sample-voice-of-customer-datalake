@@ -21,13 +21,17 @@ The pause, ``pause`` (once a trial is due), in this order:
 5. each plugin turned off by the existing audited change (shared/workspace_plugin_settings.py ``set_trial_plugin``: its
    own ``plugin_disabled`` row, reason ``trial_paused``), and each form set ``enabled`` false (one conditional UpdateItem
    of ``enabled``, its save counter one up so an editor's stale copy cannot turn it on again, ``updated_at`` and
-   ``updated_by``).
+   ``updated_by``). Before each of them the trial's ``rev`` is read again (one strongly consistent GetItem): a mark an
+   extension or a conversion committed after step 3 moved it, so the pause stops there (409 ``trial_changed``) and
+   turns nothing more off. Only a mark committed between that read and the turn-off it precedes is not seen, and that
+   one turn-off is all it can undo.
 
 No form is put live once step 1 committed (the publish's own transaction checks ``paused_at``), so the forms read in
 step 2 are all there are. A trial an extension or a conversion is resuming (``resuming_at``, shared/trials.py) is not
 due while the mark is fresh (``RESUMING_FRESH``): its resume is not undone. An older mark is a resume that failed and
-was not repeated: the trial is due again, and its pause turns off what that resume turned on and removes the mark in
-step 3's write.
+was not repeated. It makes the trial due again only once the trial's end has passed (``expires_at``, as for any trial:
+an extension whose resume failed never wrote its new end, so a paused trial's end is still the one that paused it);
+its pause then turns off what that resume turned on and removes the mark in step 3's write.
 
 Nothing is deleted but the plugins' own ``PLUGIN#{plugin}`` / ``WS#{ws}`` rows, which ARE the existing disable (a
 present row means enabled; the ingestors' tick fans out over them). No form, response, feedback item, project, file or
@@ -67,8 +71,17 @@ from shared.trial_state import (
     is_paused,
     paused_lists,
     resume_incomplete,
+    stored_trial,
 )
-from shared.trials import TRIAL_PAUSED_KIND, audit_trial, expiry_of, is_converted, read_meta, save_trial
+from shared.trials import (
+    TRIAL_CHANGED,
+    TRIAL_PAUSED_KIND,
+    audit_trial,
+    expiry_of,
+    is_converted,
+    read_meta,
+    save_trial,
+)
 from shared.workspace import ACTIVE
 from shared.workspace_ids import is_workspace_id
 from shared.workspace_plugin_settings import set_trial_plugin, workspace_ceiling, workspace_plugins
@@ -215,6 +228,32 @@ def _due(ws: str, meta: Mapping[str, Any], trial: object, now: datetime) -> str 
     return None
 
 
+def _still_as_saved(tables: PauseTables, ws: str, saved: Mapping[str, Any]) -> None:
+    """409 ``trial_changed`` unless the stored trial's ``rev`` is still the one the pause saved (``saved``): an
+    extension or a conversion that wrote it since (its ``resuming_at`` mark) stops the pause, which turns nothing more
+    off (Q3, 7.71.03)."""
+    stored = stored_trial(tables.workspaces, ws)
+    if stored is None or stored.get('rev') != saved.get('rev'):
+        raise ConflictError(TRIAL_CHANGED, code='trial_changed')
+
+
+def _turn_off(tables: PauseTables, ws: str, forms: WorkspaceTable, saved: Mapping[str, Any], at: str
+              ) -> tuple[int, int]:
+    """Each plugin, then each form, of the lists the pause saved on the trial (``saved``) turned off, the trial's
+    ``rev`` read again before each (``_still_as_saved``); how many of each changed."""
+    actor = {'actor': EXPIRY_ACTOR, 'actor_kind': EXPIRY_ACTOR_KIND}
+    scope = workspace_scope(ws)
+    lists = paused_lists(saved)
+    plugins_off = forms_off = 0
+    for plugin in lists['plugins']:
+        _still_as_saved(tables, ws, saved)
+        plugins_off += set_trial_plugin(tables.workspaces, ws, plugin, False, actor, TRIAL_PAUSED_KIND)
+    for form_id in lists['forms']:
+        _still_as_saved(tables, ws, saved)
+        forms_off += set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at)
+    return plugins_off, forms_off
+
+
 def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
     """Pause trial ``ws`` if it is due (see the module docstring); what was done, ``outcome`` saying which case."""
     meta = read_meta(tables.workspaces, ws)
@@ -239,15 +278,13 @@ def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
     plugins = _union(recorded['plugins'], still_on)
     live = _union(recorded['forms'], still_live)
     # Always, and conditional on the rev read (Q1, 7.71.02): a mark an extension or a conversion committed since the
-    # read fails this write (409), so nothing it turned on is turned off.
+    # read fails this write (409), so nothing it turned on is turned off; one committed after it stops the turn-offs
+    # (Q3, 7.71.03: ``_turn_off`` reads the rev again before each).
     trial = save_trial(tables.workspaces, ws, meta, {**trial, PAUSED: {'plugins': plugins, 'forms': live}})
     at = audit_trial(tables.workspaces, ws, TRIAL_PAUSED_KIND, EXPIRY_ACTOR,
                 {'actor_kind': EXPIRY_ACTOR_KIND, 'expires_at': trial.get('expires_at'), 'plugins': plugins,
                  'forms': live})
-    actor = {'actor': EXPIRY_ACTOR, 'actor_kind': EXPIRY_ACTOR_KIND}
-    plugins_off = sum(set_trial_plugin(tables.workspaces, ws, plugin, False, actor, TRIAL_PAUSED_KIND)
-                      for plugin in plugins)
-    forms_off = sum(set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at) for form_id in live)
+    plugins_off, forms_off = _turn_off(tables, ws, forms, trial, at)
     logger.info('Trial paused', extra={'workspace_id': ws, 'plugins': plugins_off, 'forms': forms_off})
     return {'outcome': PAUSED_NOW, 'plugins': plugins_off, 'forms': forms_off}
 

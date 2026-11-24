@@ -159,3 +159,26 @@ def items_of(data: object, fields: Mapping[str, tuple[str, ...]]) -> list[dict[s
     """Each item of a list answer, as ``fields`` (name -> the keys to it) pick it."""
     return [{name: dig(item, *keys) for name, keys in fields.items()}
             for item in (data if isinstance(data, list) else [])]
+
+
+#: (7.71.03) How many pages of an issue's comments, and how many to a page, a look for the run's own comment reads
+#: (``RepositoryHost.issue_comment``): a thousand comments, enough for any issue a run comments on, never an unbounded
+#: walk.
+FIND_PAGES: Final = 10
+FIND_PAGE_SIZE: Final = 100
+
+
+def marked_comment(read: Callable[[str], Response], next_page: Callable[[Mapping[str, str]], str | None],
+                   marker: str, url: Callable[[dict[str, object]], str]) -> str | None:
+    """The URL (``url``) of the first comment whose body holds ``marker``, reading pages (``read``, from ``'1'``, the
+    next as ``next_page`` names it) to ``FIND_PAGES`` at most; None when none of them has it."""
+    page: str | None = '1'
+    for _ in range(FIND_PAGES):
+        if page is None:
+            break
+        response = read(page)
+        for comment in list_of(response):
+            if isinstance(comment, dict) and marker in str(comment.get('body') or ''):
+                return url(comment)
+        page = next_page(response.headers)
+    return None

@@ -216,42 +216,15 @@ def test_a_run_cut_short_keeps_the_last_complete_figures(tables):
     assert after['ADOPTION#ROLLUP']['complete'] is True
 
 
-def test_the_deployment_stops_a_minute_before_the_runs_one_deadline_which_the_workspaces_keep():
-    """C2 (7.71.02): one run deadline; the deployment, the only scope with projects until they move into workspaces,
-    takes all of it but the last WORKSPACE_SECONDS, which the workspace scopes keep."""
-    ticks = iter([0.0, 119.0, 121.0, 179.0, 181.0])
+def test_the_run_has_one_deadline_which_the_deployment_may_take_whole():
+    """F9 (7.71.01), F2 (7.71.03): no per-scope share of the time; the deployment, the only scope with projects until
+    they move into workspaces, may use the run's whole time, and the run's own deadline still stops it."""
+    ticks = iter([0.0, 150.0, 181.0])
     rollup = Rollup(aggregates=None, projects=None, workspaces=None, conversations=None, agents=None,
                     remaining=lambda: 180.0 + handler.RESERVE_SECONDS, monotonic=lambda: next(ticks))
-    run = handler._Clock.of_run(rollup)
-    deployment = run.earlier(handler.WORKSPACE_SECONDS)
-    assert deployment.has_time()      # at 119 s of 120
-    assert not deployment.has_time()  # at 121 s
-    assert run.has_time()             # at 179 s of 180
-    assert not run.has_time()         # at 181 s
-
-
-def test_a_deployment_walk_that_uses_its_whole_share_still_leaves_the_workspaces_complete(tables):
-    """C2 (7.71.02): the deployment's walk reaches its share's end (one chunk takes all of it); it is written partial,
-    and every workspace, read in the minute kept for them, is still written complete."""
-    second = 'proj_000000000000000000000004'
-    tables['projects'].put_item(Item={'pk': 'PROJECT_IDS', 'sk': second, 'created_at': '2026-10-01T00:00:00+00:00'})
-    tables['projects'].put_item(Item={'pk': f'PROJECT#{second}', 'sk': 'META', 'created_at': '2026-10-01T00:00:00+00:00'})
-    clock = {'now': 0.0}
-    share = 100.0
-    rows = handler._project_rows
-
-    def a_long_walk(table: Any, scope: Any, project_id: str) -> list[dict[str, Any]]:
-        if scope is None:
-            clock['now'] += share
-        return rows(table, scope, project_id)
-
-    rollup = _rollup(tables, remaining=lambda: handler.RESERVE_SECONDS + handler.WORKSPACE_SECONDS + share,
-                     monotonic=lambda: clock['now'])
-    with patch.object(handler, 'PROJECT_CHUNK', 1), patch.object(handler, '_project_rows', a_long_walk):
-        handle_event({}, rollup)
-    complete = {item['pk']: item['complete'] for item in _written(tables).values()}
-    assert complete == {'ADOPTION#ROLLUP': False, f'WS#{ACME}#ADOPTION#ROLLUP': True,
-                        f'WS#{BIRCH}#ADOPTION#ROLLUP': True}
+    clock = handler._Clock(rollup)
+    assert clock.has_time()      # at 150 s of 180
+    assert not clock.has_time()  # at 181 s
 
 
 def test_the_handler_needs_every_table(monkeypatch):

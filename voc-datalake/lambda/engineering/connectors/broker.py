@@ -21,7 +21,11 @@ its caller never heard back from answers the first outcome and is never made twi
 unknown (``OutcomeUnknown``, 502), and the write is not made again for that attempt. A comment on the run's issue and
 its labels are made once per run and issue (7.71.02, ``issue_write_key``: no agent, attempt or digest), so a second
 understander of the run gets the first one's answer back: the first live Bug fixer run's two understanders each
-commented on and labelled its issue.
+commented on and labelled its issue. Since 7.71.03 the labels' answer names who put them (``Labelled.set_by``), and an
+issue write whose call never answered (a host error, or a crash between its claim and its outcome) blocks the run's
+later ones only until that call is over (``STALE_CLAIM_SECONDS``): the labels, which the host adds idempotently, are
+put again, and the comment, which carries the run's marker (``issue_marker``), is looked for on the host first and
+posted only when the host has none.
 
 A pull request opens ready for review (7.50.00, the owner's decision: a person approves it without a "Ready for
 review" click), or as a draft when the run's flow says ``pr: draft`` (META's ``pull_request``, ``RunRecord.draft_pr``);
@@ -414,7 +418,9 @@ class Broker:
         if self._connector is None:
             raise NoConnection(NO_CONNECTION)
         earlier = self._connector.writes.earlier(caller.run_id, key)
-        if earlier is None or earlier.state == WRITE_REFUSED:
+        # (7.71.03) An issue write whose earlier call has no outcome goes on to its claim, which takes it again only
+        # once that call is long over (``STALE_CLAIM_SECONDS``) and answers ``OutcomeUnknown`` until then.
+        if earlier is None or earlier.state == WRITE_REFUSED or (_issue_key(key) and earlier.state != WRITE_DONE):
             return None
         if earlier.state == WRITE_DONE and earlier.result is not None:
             _repeated(caller, operation, key)
@@ -429,33 +435,42 @@ class Broker:
     def post_comment(self, caller: Caller, on: CommentTarget, number: int, body: str, attempt: int = 1) -> str:
         """Post ``body`` on the run's own issue or pull request; the comment's URL. Once per ``attempt`` (``_once``) on
         the pull request; once per run on its issue (7.71.02, ``issue_write_key``: a later caller, another
-        understander, gets the first comment's URL back)."""
-        key = (issue_write_key(number, POST_COMMENT) if on == 'issue'
-               else write_key(caller, attempt, POST_COMMENT, on, number, body))
+        understander, gets the first comment's URL back). A comment on the issue carries the run's marker
+        (``issue_marker``, 7.71.03), so a later call whose earlier one has no outcome finds it on the host, and posts
+        only when the host has none."""
+        issue = on == 'issue'
+        key = issue_write_key(number, POST_COMMENT) if issue else write_key(caller, attempt, POST_COMMENT, on, number,
+                                                                            body)
         first = self._first_outcome(caller, POST_COMMENT, key)
         if first is not None:
             return str(first['url'])
         connector, run = self._open(caller, POST_COMMENT)
-        if on == 'issue' and connection_kind(connector, run.connection_id) == FORK:
+        if issue and connection_kind(connector, run.connection_id) == FORK:
             raise NotNow(FORK_ISSUE)
-        own = run.issue_number if on == 'issue' else run.pull_request_number
+        own = run.issue_number if issue else run.pull_request_number
         if own is None or number != own:
             raise NotPermitted(f"An agent comments only on its own run's {on.replace('_', ' ')}.")
         check_text(body, run.cited_reviews, prose=True)
+        marker = issue_marker(caller.run_id)
 
         def comment() -> dict[str, object]:
-            url = connector.host.post_comment(run.connection_id, on, number, body)
+            url = connector.host.post_comment(run.connection_id, on, number, f'{body}\n\n{marker}' if issue else body)
             _wrote(caller, POST_COMMENT, run, on=on, number=number)
             return {'url': url}
 
-        return str(_once(connector, caller, POST_COMMENT, key, comment)['url'])
+        def made() -> dict[str, object] | None:
+            url = connector.host.issue_comment(run.connection_id, number, marker)
+            return None if url is None else {'url': url}
 
-    def label_issue(self, caller: Caller, number: int, labels: tuple[str, ...], attempt: int = 1) -> tuple[str, ...]:
+        return str(_once(connector, caller, POST_COMMENT, key, comment, made if issue else None)['url'])
+
+    def label_issue(self, caller: Caller, number: int, labels: tuple[str, ...], attempt: int = 1) -> Labelled:
         """Put the triage ``labels`` on the run's own issue ``number`` (the understander's, 7.50.00): the labels
         added. Only ``TRIAGE_LABELS``, one or two, at most one kind (``voc-triage/*``) and one severity
         (``voc-severity/*``); the run active, as every operation; no dial (a label changes no code) and no CI check.
         Once per run and issue (7.71.02, ``issue_write_key``; before, once per ``attempt``): a later caller gets the
-        labels the first one put."""
+        labels the first one put, and (7.71.03) who put them (``Labelled.set_by``). A label is idempotent on the host,
+        so one whose earlier call has no outcome is put again once that call is long over (``STALE_CLAIM_SECONDS``)."""
         del attempt   # (the run's, whoever asks: never once per attempt)
         if not permitted(caller.role, LABEL_ISSUE):   # (the role first, before what it asks is judged)
             raise NotPermitted(f'The {caller.role} role may not {LABEL_ISSUE.replace("_", " ")}.')
@@ -463,18 +478,18 @@ class Broker:
         key = issue_write_key(number, LABEL_ISSUE)
         first = self._first_outcome(caller, LABEL_ISSUE, key)
         if first is not None:
-            return tuple(str(label) for label in _listed(first.get('labels')))
+            return _labelled(first, '')
         connector, run = self._open(caller, LABEL_ISSUE)
         if run.issue_number is None or number != run.issue_number:
             raise NotPermitted("An agent labels only its own run's issue.")
+        own = agent_id(caller)
 
         def label() -> dict[str, object]:
             added = connector.host.label_issue(run.connection_id, number, asked)
             _wrote(caller, LABEL_ISSUE, run, on='issue', number=number, labels=list(added))
-            return {'number': number, 'labels': list(added)}
+            return {'number': number, 'labels': list(added), 'by': own}
 
-        done = _once(connector, caller, LABEL_ISSUE, key, label)
-        return tuple(str(label) for label in _listed(done.get('labels')))
+        return _labelled(_once(connector, caller, LABEL_ISSUE, key, label, lambda: None), own)
 
     def push_bundle(self, caller: Caller, branch: str, patch: str, tree_hash: str, message: str,
                     attempt: int = 1) -> str:
@@ -975,13 +990,34 @@ def _repeated(caller: Caller, operation: str, key: str) -> None:
                                                  'agent': caller.agent_index, 'key': key})
 
 
+@dataclass(frozen=True)
+class Labelled:
+    """``label_issue``'s answer: the labels on the run's issue, and (7.71.03) the agent whose call put them when it
+    was an earlier one (another understander's, or this agent's before), '' when this call put them."""
+
+    labels: tuple[str, ...]
+    set_by: str = ''
+
+
+def _labelled(done: Mapping[str, object], own: str) -> Labelled:
+    """A label write's answer (``done``, its claim's result) for the call whose agent is ``own`` ('' for a repeat
+    answered before its write): who put the labels when it was not this call (a result from before 7.71.03 names
+    nobody)."""
+    labels = tuple(str(label) for label in _listed(done.get('labels')))
+    by = str(done.get('by') or '')
+    return Labelled(labels, '' if own and by == own else by or 'another agent of the run')
+
+
 #: A repeat of a write whose first outcome is not known: never made again.
 EARLIER_UNKNOWN: Final = ('An earlier call of this write, by this agent at this attempt, has no known outcome, so it is '
                           'not made again: the outcome stays unknown until a person checks the host.')
-#: The same for a write made once per run and issue (7.71.02, ``issue_write_key``), whoever made the earlier call.
+#: The same for a write made once per run and issue (7.71.02, ``issue_write_key``), whoever made the earlier call,
+#: until that call is long over (7.71.03, ``STALE_CLAIM_SECONDS``).
 EARLIER_ISSUE_UNKNOWN: Final = ("An earlier call of this write on the run's issue, by an agent of this run, has no "
-                                 'known outcome, so it is not made again: the outcome stays unknown until a person '
-                                 'checks the host.')
+                                 'known outcome yet, so it is not made now: ask again in a few minutes.')
+#: (7.71.03) How long after its claim an issue write whose call never answered (a host error, a crash between its
+#: claim and its outcome) may be claimed again: over twice the broker function's 120 s timeout, so that call is over.
+STALE_CLAIM_SECONDS: Final = 300
 #: What the host refused or never reached: nothing written, so the key may be claimed again (a rate limit included:
 #: the host answered it instead of the write, and the broker answers 503 with its Retry-After).
 _NOTHING_WRITTEN: Final = (WriteRefused, NoConnection, NotFound, InvalidTarget, HostBusy)
@@ -1002,32 +1038,63 @@ def issue_write_key(number: int, operation: str) -> str:
     return f'issue#{number}#{operation}'
 
 
+def issue_marker(run_id: str) -> str:
+    """The hidden line every comment of the run on its issue ends with (7.71.03): how a later call finds it on the
+    host (``RepositoryHost.issue_comment``) when the call that posted it never heard back."""
+    return f'<!-- voc-engineering-run:{run_id} -->'
+
+
+def _issue_key(key: str) -> bool:
+    return key.startswith('issue#')
+
+
 def _unknown(key: str) -> str:
     """What a repeat of the write at ``key`` whose first outcome is not known is answered."""
-    return EARLIER_ISSUE_UNKNOWN if key.startswith('issue#') else EARLIER_UNKNOWN
+    return EARLIER_ISSUE_UNKNOWN if _issue_key(key) else EARLIER_UNKNOWN
+
+
+#: What an issue write retried after an earlier call with no outcome looks for first (7.71.03): that call's write on
+#: the host (its answer, the claim then closed done), None when the host has none.
+Made = Callable[[], dict[str, object] | None]
 
 
 def _once(connector: Connector, caller: Caller, operation: str, key: str,
-          write: Callable[[], dict[str, object]]) -> dict[str, object]:
+          write: Callable[[], dict[str, object]], made: Made | None = None) -> dict[str, object]:
     """``write`` (the host call, after every check) once per ``key`` (``write_key``: the caller's run, agent and
     attempt, the operation and what it writes; ``issue_write_key``: the run's issue and the operation). The claim is
     taken before the host call and closed with its outcome: a repeat of a done write answers its first answer, a repeat
     of one whose outcome is unknown is ``OutcomeUnknown`` (and is not made), and only a refusal that wrote nothing lets
-    the key be claimed again."""
+    the key be claimed again. ``made`` (7.71.03, a write on the run's issue): an earlier claim with no outcome is taken
+    again once ``STALE_CLAIM_SECONDS`` old, and ``made`` looks on the host for what its call wrote before anything is
+    written again."""
     return _claimed(connector.writes, caller.run_id, key, operation, write,
-                    lambda: _repeated(caller, operation, key))
+                    lambda: _repeated(caller, operation, key), made)
 
 
 def _claimed(ledger: WriteLedger, partition: str, key: str, operation: str, write: Callable[[], dict[str, object]],
-             repeated: Callable[[], None]) -> dict[str, object]:
+             repeated: Callable[[], None], made: Made | None = None) -> dict[str, object]:
     """``write`` once for ``key`` in ``ledger``'s ``partition`` (a run's writes, ``_once``; a connection's docs,
     ``push_approved_docs``), as ``_once`` says."""
-    earlier = ledger.claim(partition, key, operation)
+    before = ledger.earlier(partition, key) if made is not None else None
+    earlier = ledger.claim(partition, key, operation, STALE_CLAIM_SECONDS if made is not None else None)
     if earlier is not None:
         if earlier.state == WRITE_DONE and earlier.result is not None:
             repeated()
             return earlier.result
         raise OutcomeUnknown(_unknown(key))
+    if made is not None and before is not None and before.state != WRITE_REFUSED:
+        # (taken again from a call that never answered: what it wrote, if the host has it, is the answer; a look that
+        # fails leaves that call's outcome unknown, taken again once stale)
+        try:
+            found = made()
+        except Exception:
+            with contextlib.suppress(Unavailable):
+                ledger.close(partition, key, WRITE_UNKNOWN)
+            raise
+        if found is not None:
+            with contextlib.suppress(Unavailable):
+                ledger.close(partition, key, WRITE_DONE, found)
+            return found
     try:
         result = write()
     except _NOTHING_WRITTEN:

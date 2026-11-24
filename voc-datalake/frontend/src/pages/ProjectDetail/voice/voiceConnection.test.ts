@@ -83,7 +83,7 @@ describe('createVoiceConnection', () => {
   })
 
   it('lets the queued goodbye play out after the time limit, the cost cap or the budget, and silences it after any other end', () => {
-    const ends = ['session_limit', 'cost_limit', 'budget', 'ended_by_person', 'error', 'expired'].map((reason) => {
+    const ends = ['session_limit', 'cost_limit', 'budget', 'ended_by_person', 'error', 'refused'].map((reason) => {
       const { audio, socket } = connected()
       socket.receive({ type: 'ended', reason })
       return audio.closed.drains

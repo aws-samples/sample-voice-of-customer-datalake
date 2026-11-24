@@ -5,7 +5,7 @@
  * voc-projects, the session's own partition only (`VOICE#<session id>` / `SESSION`; the role's `LeadingKeys` hold it
  * there and its `Attributes` to the names below), UpdateItem alone:
  * - activate: `minted` → `live` once, before the URL's minute is up (single use: a second connection is refused), with
- *   `CONNECT_SKEW_SECONDS` for the clocks; a row still `minted` after that is marked `ended` (`expired`) instead;
+ *   `CONNECT_SKEW_SECONDS` for the clocks; a later first connection is refused, and the projects API ends its row;
  * - usage and parts: `seconds`, `tokens`, `cost_microusd`, `streams`, `transcript_parts`, only while the row exists
  *   (a deleted project's session row is never made again: the write fails with `SessionGoneError`);
  * - ended: `status`, `ended_at`, `end_reason`, only while `live` (the projects API may have ended it first).
@@ -38,18 +38,16 @@ export interface MonthTotals {
   costMicroUsd: number;
 }
 
-/** What a first connection's activation found: the session is `live` now; it was minted too long ago (`expired`: its
- *  row is marked ended so); or it was used, ended or is gone (`used`). */
-export type Activation = 'live' | 'expired' | 'used';
-
 /** Seconds a first connection may come after the URL's own minute (the row's `connect_by`, the mint's time plus 60 s),
  *  for the minting Lambda's clock and the relay's. AgentCore itself took a URL 65.8 s after it was signed with
- *  `X-Amz-Expires=60` (the b- deployment, 2026-11-23): the relay's own check is the one that holds. */
+ *  `X-Amz-Expires=60` (the b- deployment, 2026-11-23): the relay's own check is the one that holds. The projects API
+ *  ends a row still `minted` only once this has passed too (shared/voice_sessions.py `CONNECT_SKEW_SECONDS`, the same
+ *  10 s, pinned by its tests), so a URL the relay still takes is never ended under it. */
 const CONNECT_SKEW_SECONDS = 10;
 
 export interface VoiceStore {
-  /** `minted` → `live`, while the URL's minute (and the skew) lasts; else `expired` or `used` (`Activation`). */
-  activate(sessionId: string, now: Date): Promise<Activation>;
+  /** `minted` → `live`, while the URL's minute (and the skew) lasts; false when it was used, ended or expired. */
+  activate(sessionId: string, now: Date): Promise<boolean>;
   /** The session's input (session-input.ts), as JSON. */
   loadInput(sessionId: string): Promise<unknown>;
   writePart(sessionId: string, part: number, body: string): Promise<void>;
@@ -138,27 +136,16 @@ export function createVoiceStore(config: StoreConfig, deps: StoreDeps): VoiceSto
     }
   };
   return {
-    async activate(sessionId, now) {
-      const at = now.toISOString();
+    activate(sessionId, now) {
       // `connect_by` + the skew not passed: `connect_by >= now - skew`.
       const latest = Math.floor(now.getTime() / 1000) - CONNECT_SKEW_SECONDS;
-      if (await conditional({
+      return conditional({
         ...session(sessionId),
         UpdateExpression: 'SET #status = :live, connected_at = :now',
         ConditionExpression: '#status = :minted AND connect_by >= :latest',
         ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':live': 'live', ':minted': 'minted', ':now': at, ':latest': latest },
-      })) return 'live';
-      // Not activated: a row still minted is one whose URL's minute passed (as the projects API ends one never used);
-      // any other was used, ended or is gone.
-      const expired = await conditional({
-        ...session(sessionId),
-        UpdateExpression: 'SET #status = :ended, ended_at = if_not_exists(ended_at, :now), end_reason = if_not_exists(end_reason, :expired)',
-        ConditionExpression: '#status = :minted',
-        ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':ended': 'ended', ':minted': 'minted', ':now': at, ':expired': 'expired' },
+        ExpressionAttributeValues: { ':live': 'live', ':minted': 'minted', ':now': now.toISOString(), ':latest': latest },
       });
-      return expired ? 'expired' : 'used';
     },
     async loadInput(sessionId) {
       const response = await s3('GetObject', { method: 'GET', url: objectUrl(`${prefix(sessionId)}/evidence.json`) });

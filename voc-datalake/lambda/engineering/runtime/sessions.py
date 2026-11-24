@@ -45,8 +45,10 @@ from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
 from shared.ids import is_key_collision
 
+#: ``needs_human`` (7.71.03): its task went to a person (the agent finished saying it could not do it), never a
+#: failure of the session's own.
 Status = Literal['booting', 'working', 'pause_requested', 'waiting', 'paused', 'done', 'failed', 'stopped',
-                 'reposted']
+                 'reposted', 'needs_human']
 #: The sessions the supervisor checks each tick. All but ``waiting`` have a session; a ``waiting`` session
 #: paused for a long open wait and is continued in a new session once the wait closes.
 LIVE_STATUSES: Final = frozenset({'booting', 'working', 'pause_requested', 'waiting'})

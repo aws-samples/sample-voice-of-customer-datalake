@@ -8,6 +8,7 @@ from engineering.connectors.hosts import (
     STORED_BRANCH_MISSING,
     WRITE_CLAIMED,
     WRITE_REFUSED,
+    WRITE_UNKNOWN,
     BundleContents,
     CiProtection,
     CommentTarget,
@@ -27,6 +28,7 @@ from engineering.connectors.hosts import (
 )
 from engineering.connectors.reactions import PullRequestReactions
 from engineering.run_links import PullRequestLink, merged
+from engineering.runtime.outputs import run_branch
 
 RUN = '01JC8Z3K4M5N6P7Q8R9S0T1V2W'
 OTHER_RUN = '01JC8Z3K4M5N6P7Q8R9S0T1V2X'
@@ -36,7 +38,7 @@ REVIEW = 'The refund took three weeks and nobody answered my emails about it.'
 TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 #: The commit a bundle builds on (``BundleContents.base``).
 BASE = 'a94a8fe5ccb19ba61c4c0873d391e987982fbbd3'
-BRANCH = f'voc-agent/{RUN}/fix-refund-total'
+BRANCH = run_branch(RUN)
 #: A person's address, which no pushed commit may carry.
 PERSON = 'casey@mail-host.net'
 #: The connection's bot address (``record().bot_addresses``).
@@ -132,6 +134,13 @@ class FakeHost:
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         self.calls.append(('post_comment', connection_id, on, number, body))
         return f'https://code.example.com/{on}/{number}#comment-1'
+
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        """(7.71.03) The URL of the issue's comment, among those posted here, whose body holds ``marker``."""
+        self.calls.append(('issue_comment', connection_id, number, marker))
+        posted = [call for call in self.calls if call[:4] == ('post_comment', connection_id, 'issue', number)
+                  and marker in str(call[4])]
+        return f'https://code.example.com/issue/{number}#comment-1' if posted else None
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         self.calls.append(('branch_tree_hash', connection_id, branch))
@@ -242,25 +251,30 @@ class FakeWrites:
     refusal)."""
 
     claims: dict[tuple[str, str], WriteClaim] = field(default_factory=dict)
+    #: The ledger's clock (epoch seconds): each claim's ``at``, and how old a claim is (7.71.03, ``stale_after``).
+    now: int = 1_700_000_000
 
-    def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:
+    def claim(self, run_id: str, key: str, operation: str, stale_after: int | None = None) -> WriteClaim | None:
         # (an agent's write, ``<agent>#<attempt>#<operation>#<digest>``; 7.71.02, a write on the run's issue,
         # ``issue#<n>#<operation>``)
         if f'#{operation}#' not in key and not (key.startswith('issue#') and key.endswith(f'#{operation}')):
             raise ValueError(f'{key} is not a key of {operation}')
         earlier = self.claims.get((run_id, key))
-        if earlier is not None and earlier.state != WRITE_REFUSED:
+        stale = (stale_after is not None and earlier is not None and earlier.state in (WRITE_CLAIMED, WRITE_UNKNOWN)
+                 and earlier.at <= self.now - stale_after)
+        if earlier is not None and earlier.state != WRITE_REFUSED and not stale:
             return earlier
-        self.claims[(run_id, key)] = WriteClaim(WRITE_CLAIMED)
+        self.claims[(run_id, key)] = WriteClaim(WRITE_CLAIMED, at=self.now)
         return None
 
     def earlier(self, run_id: str, key: str) -> WriteClaim | None:
         return self.claims.get((run_id, key))
 
     def close(self, run_id: str, key: str, state: str, result: dict[str, object] | None = None) -> None:
-        if self.claims[(run_id, key)].state != WRITE_CLAIMED:
+        claimed = self.claims[(run_id, key)]
+        if claimed.state != WRITE_CLAIMED:
             raise ValueError(f'{key} is closed already')
-        self.claims[(run_id, key)] = WriteClaim(state, result)
+        self.claims[(run_id, key)] = WriteClaim(state, result, claimed.at)
 
     #: Each run's pull request as recorded (keyed on its head, as ``records.WriteClaims.record_pull_request``).
     pull_requests: dict[str, PullRequestLink] = field(default_factory=dict)

@@ -53,7 +53,6 @@ from engineering.runtime.harness.coordinator import Built, Record, Tool, answere
 from engineering.runtime.harness.review_tools import harness_git
 from engineering.runtime.harness.transcript import already_written
 from engineering.runtime.outputs import (
-    AGENT_BRANCH_PREFIX,
     FINDING_FILE,
     FINDING_SCHEMA,
     GATE_SCHEMA,
@@ -67,6 +66,7 @@ from engineering.runtime.outputs import (
     STOP_REASON,
     encode_package,
     is_submitted_patch,
+    run_branch,
 )
 
 #: The roles each tool is for (the ToolBox offers it to no other).
@@ -476,12 +476,6 @@ NO_PUSH: Final = ('your task names no submitted patch, so there is nothing to pu
                   'goes to a person)')
 #: The tool's own words for it (``open_draft_pr``'s progress line on the task).
 OPENED_AS: Final[Mapping[str, str]] = {PULL_REQUEST_READY: 'ready for review', PULL_REQUEST_DRAFT: 'a draft'}
-
-
-def run_branch(run_id: str) -> str:
-    """The run's own branch (7.71.02): the one the committer's push and the PR author's pull request name,
-    ``voc-agent/<run id>/fix``. The harness fills it in; the model never types it."""
-    return f'{AGENT_BRANCH_PREFIX}{run_id}/fix'
 
 
 def _push_target(context: Built) -> tuple[str, str, str]:

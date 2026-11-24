@@ -108,6 +108,8 @@ describe('a lane', () => {
     [{ state: 'claimed', agent: 'a', status: null }, 'active', 'running'],
     [{ state: 'in_progress', agent: 'a', status: 'paused' }, 'active', 'paused'],
     [{ state: 'in_progress', agent: 'a', status: 'failed' }, 'active', 'ran_failed'],
+    // (7.71.03: a session whose task went to a person ends needs_human, a wait for them, never a failure)
+    [{ state: 'in_review', agent: 'a', status: 'needs_human' }, 'active', 'waiting'],
     [{ state: 'in_progress', agent: 'a', status: 'working' }, 'halted', 'paused'],
     [{ state: 'in_progress', agent: 'a', status: 'working' }, 'ended', 'stopped'],
   ] as const)('reads %o (the run %s) as %s', (lane, phase, state) => {

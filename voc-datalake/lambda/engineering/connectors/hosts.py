@@ -189,16 +189,19 @@ WRITE_CLAIMED: Final = 'claimed'
 WRITE_DONE: Final = 'done'
 #: Refused with nothing written (a write rule, the host's lease): the same key may be claimed again.
 WRITE_REFUSED: Final = 'refused'
-#: The host may or may not have made it: never made again for that key.
+#: The host may or may not have made it: never made again for that key (but a write on the run's issue, 7.71.03,
+#: ``WriteLedger.claim``'s ``stale_after``).
 WRITE_UNKNOWN: Final = 'unknown'
 
 
 @dataclass(frozen=True)
 class WriteClaim:
-    """An earlier claim of a write's key: its state, and a done write's answer (never a body or a patch)."""
+    """An earlier claim of a write's key: its state, a done write's answer (never a body or a patch) and when it was
+    claimed (epoch seconds; 0 when not read)."""
 
     state: str
     result: dict[str, object] | None = None
+    at: int = 0
 
 
 @dataclass(frozen=True)
@@ -472,9 +475,14 @@ CI_DEFAULT_UNPROTECTED: Final = ("The repository's default branch is not protect
                                  "repository's own checks required, before the agents push.")
 CI_NO_REQUIRED_CHECKS: Final = ("The repository's default branch requires no status check: require the repository's "
                                 'own CI checks on it before the agents push.')
+#: (7.71.03) It names the pattern that works and why: a run's branch is one level under ``voc-agent/``
+#: (``outputs.run_branch``), the only level a GitHub ruleset's ``refs/heads/voc-agent/*`` matches.
 CI_AGENT_BRANCH_PROTECTED: Final = ("The agent's branch is protected by the repository's rules, so it would get what "
                                     'protected branches get (their CI secrets and cloud trust): leave voc-agent/* '
-                                    'branches unprotected.')
+                                    'branches unprotected (on GitHub, exclude refs/heads/voc-agent/* from every ruleset '
+                                    'and branch protection rule that covers them; on GitLab, protect no branch name '
+                                    "that matches them). A run's branch is one level under it, voc-agent/<run id>-fix, "
+                                    "the only level GitHub's voc-agent/* matches: its * stops at a /.")
 
 
 def ci_refusal(found: CiProtection) -> str | None:
@@ -555,6 +563,12 @@ class RepositoryHost(Protocol):
 
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str: ...
 
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        """The URL of issue ``number``'s comment whose body holds ``marker`` (7.71.03: the run's own, ``broker
+        .issue_marker``), as far as ``transport.FIND_PAGES`` pages of its comments reach; None for none. A read:
+        whether an issue comment whose outcome was unknown was made after all."""
+        ...
+
     def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
         """Add ``labels`` to issue ``number`` (7.50.00, the understander's triage labels; the broker checks the
         allowlist first): the labels added, as asked. Adds only: nothing is removed or renamed."""
@@ -622,8 +636,11 @@ class WriteLedger(Protocol):
     """Each write once per key (the caller's run, agent and attempt and the operation), so a repeat of a write whose
     outcome its caller never learnt answers the first outcome and is never made twice."""
 
-    def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:
-        """None: claimed now (create-only, or again after a refusal); else the earlier claim as it stands."""
+    def claim(self, run_id: str, key: str, operation: str, stale_after: int | None = None) -> WriteClaim | None:
+        """None: claimed now (create-only, or again after a refusal); else the earlier claim as it stands.
+        ``stale_after`` (7.71.03, a write on the run's issue): a claim whose outcome is unknown, or that is still
+        claimed, taken that many seconds ago or more is claimed again too (its broker call ended, or crashed, long
+        ago), in one conditional write, so two callers never both take it."""
         ...
 
     def earlier(self, run_id: str, key: str) -> WriteClaim | None:
@@ -743,7 +760,8 @@ class Unconnected:
     def mode(self, person: str) -> str:  # noqa: ARG002 - the protocol's signature
         raise NoConnection(NO_CONNECTION)
 
-    def claim(self, run_id: str, key: str, operation: str) -> WriteClaim | None:  # noqa: ARG002 - the protocol's
+    def claim(self, run_id: str, key: str, operation: str, stale_after: int | None = None) -> WriteClaim | None:
+        del run_id, key, operation, stale_after   # (the protocol's signature)
         raise NoConnection(NO_CONNECTION)
 
     def earlier(self, run_id: str, key: str) -> WriteClaim | None:  # noqa: ARG002 - the protocol's signature

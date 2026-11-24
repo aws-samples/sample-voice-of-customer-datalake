@@ -290,6 +290,22 @@ WRITERS: Final[Mapping[str, tuple[str, str]]] = {
     'committer': ('push_commit', 'finished without pushing: the broker made no push of the submitted patch'),
     'pr-author': ('open_draft_pr', 'finished without opening the pull request: the broker opened none'),
 }
+#: The host writes a checkpoint, or the tool server's state (7.71.03), may name as made: the writers' own.
+WRITE_TOOLS: Final = frozenset(tool for tool, _ in WRITERS.values())
+#: (7.71.03) A committer's finish when its task named no submitted patch, or none the harness could apply and hash:
+#: there was nothing to push, so the broker was never asked.
+NO_PATCH_TO_PUSH: Final = 'finished without pushing: its task names no submitted patch'
+
+
+def _unwritten(context: Built) -> str:
+    """Why a writer's finish goes to a person (7.71.02), '' when it made its write or is no writer: a committer whose
+    task named no patch, or no tree the harness judged, says so (7.71.03), never that the broker made no push."""
+    write = WRITERS.get(context.role)
+    if write is None or write[0] in context.host_writes:
+        return ''
+    if context.role == 'committer' and not (context.brief.patch and context.gate_tree):
+        return NO_PATCH_TO_PUSH
+    return write[1]
 
 
 def ending(context: Built) -> tuple[str, str]:
@@ -297,10 +313,10 @@ def ending(context: Built) -> tuple[str, str]:
     says it could not do its job: a reviewer's ``could_not_review`` (7.54.00), a gate runner's STOPPED (its setup
     failed, it checked nothing: never a reason to revise the code), and (7.71.02) a committer or PR author whose one
     write the broker never answered as made (``AgentContext.host_writes``: refused, never asked, or its outcome
-    unknown). ``ValueError`` for a reviewer that recorded no review: its finish waits for one."""
-    write = WRITERS.get(context.role)
-    if write is not None and write[0] not in context.host_writes:
-        return 'needs_human', write[1]
+    unknown; 7.71.03: a committer whose task named no patch says that, ``NO_PATCH_TO_PUSH``). ``ValueError`` for a reviewer that recorded no review: its finish waits for one."""
+    unwritten = _unwritten(context)
+    if unwritten:
+        return 'needs_human', unwritten
     if context.role in REVIEW_ROLES:
         verdict, reason = review_verdict(own_record(context, 'review', REVIEW_FILE))
         if not verdict:

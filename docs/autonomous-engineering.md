@@ -559,14 +559,14 @@ branch, being refused:
 | Role | Operations |
 |---|---|
 | every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token; since 7.52.00 the run's connection's accepted tenets (`read` of kind `tenets`, target `accepted`: the store's, never the repository's file) |
-| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record); on the issue once per run since 7.71.02 (its claim is `issue#<n>#post_comment`, no agent, attempt or digest: a second understander of the run gets the first comment's URL back, where the first live Bug fixer run's two understanders each commented) |
-| issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per run since 7.71.02, `issue#<n>#label_issue`: a later call gets the first labels back; no dial: a label changes no code) |
-| committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`; since 7.71.02 the harness fills in the patch, the tree and the run's branch `voc-agent/<run id>/fix`, and the model gives the message: [The flow a run follows](#the-flow-a-run-follows)) |
+| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record); on the issue once per run since 7.71.02 (its claim is `issue#<n>#post_comment`, no agent, attempt or digest: a second understander of the run gets the first comment's URL back, where the first live Bug fixer run's two understanders each commented). Since 7.71.03 the issue comment ends with the run's hidden marker (`<!-- voc-engineering-run:<run id> -->`), and a call whose earlier one never answered (a host error, or a crash between its claim and its outcome) waits until that call is over (`broker.STALE_CLAIM_SECONDS`, 5 minutes), then looks for the marker on the issue and posts only when the host has none |
+| issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per run since 7.71.02, `issue#<n>#label_issue`: a later call gets the first labels back, and since 7.71.03 `set_by`, whose call put them, which the tool's answer says: "labels already set by <agent>: …"; one whose earlier call never answered is put again 5 minutes on, labels being idempotent on the host; no dial: a label changes no code) |
+| committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`; since 7.71.02 the harness fills in the patch, the tree and the run's branch, since 7.71.03 `voc-agent/<run id>-fix` (one level under `voc-agent/`: "The run's branch", below), and the model gives the message: [The flow a run follows](#the-flow-a-run-follows)) |
 | PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`), from the run's branch, which the harness fills in since 7.71.02; on a fork connection (7.57.00) it goes on to the run's upstream pull request, and `open_upstream_pr` is that step on its own ([Any public repository](#any-public-repository-75700)) |
 | voc-engineering-start (no agent) | `head` (7.47.00: a connection's default branch's head and an issue's state, read only) and `push_approved_docs` (7.52.00: the approved knowledge docs or tenets, at an administrator's request: [The knowledge docs pull request](#the-knowledge-docs-pull-request-75200)) |
 
 Every operation goes through the connector's rules, which refuse, before the host would: a push to any branch but
-the run's own (`voc-agent/{run_id}/…`, the run from the caller's session name), the default branch above all; any
+the run's own (`voc-agent/{run_id}-fix` since 7.71.03, the run from the caller's session name), the default branch above all; any
 push or pull request the dial holds (above); any push or pull request without the board's final-go GO for exactly
 its tree (since 6.23.00 every push, not only one to a branch with an open pull request); a push with other than
 exactly one head ref; a merge, an approval; any call to
@@ -580,12 +580,23 @@ compatibility normalisation, invisible format characters dropped), and personal 
 body, commit messages), never in what was already in the repository. The agents write a commit's author and
 committer themselves, so both must be the connection's bot address, or the push is refused; a commit's
 `Co-authored-by:` and `Signed-off-by:` trailers take only the form `Name <address>` with the bot's address, their
-name part read as prose, and any other such trailer is refused. A branch name must also be one git accepts (no
-component starting with `.` or ending with `.lock`, no `..`, `@{` or trailing `.`). The broker hands the host the tree it checked (and the GO is for): the client pushes the bundle's head only
+name part read as prose, and any other such trailer is refused. Since 7.71.03 the run's one branch is the only one it
+pushes to (before, any name under `voc-agent/{run_id}/` that git accepts). The broker hands the host the tree it checked (and the GO is for): the client pushes the bundle's head only
 when it has that tree, with a lease on the branch's head, and opens or updates a pull request only after verifying
 that the branch's head has it. A unit test pins each refusal. The setup guide asks
 the team to back them with the host's own rules: protect the default branch, and limit the App's or token's pushes to
 `voc-agent/*` (a GitHub ruleset; GitLab protected branches, plus a branch-name push rule on the tiers that offer one).
+
+**The run's branch: one level under `voc-agent/` (7.71.03).** A run pushes to one branch, `voc-agent/<run id>-fix`
+(`outputs.run_branch`), with no `/` after `voc-agent/`. On GitHub, leave it unprotected by excluding
+`refs/heads/voc-agent/*` from every ruleset that targets the default branch or all branches (and naming no
+`voc-agent/` branch in a classic branch protection rule). That pattern matches one level only: GitHub's `*` does not
+cross a `/`, so a branch such as 7.71.02's `voc-agent/<run id>/fix` still gets the ruleset's rules (creation, update,
+deletion, non-fast-forward), and the broker refuses the push with 409 ("The agent's branch is protected by the
+repository's rules"; tested live on the b- deployment's first Bug fixer rerun). On GitLab, protect no branch whose name
+matches `voc-agent/*` (GitLab's `*` crosses `/`, so any agent branch would be protected), and a branch-name push rule
+must take `voc-agent/<run id>-fix`. A pull request recorded from a two-level branch before 7.71.03 is still read
+(`run_links`), but no push goes to one.
 
 **The target's CI.** A push to an agent branch can start the repository's own pipelines, and those run scripts an
 agent can change. So, on unprotected branches, the repository's pipelines must get nothing worth taking: CI secrets
@@ -852,7 +863,7 @@ names no issue, and the upstream pull request fixes it.
 
 **The run's outcome: the upstream pull request, one click away (`connectors/upstream_pr.py`, the broker's
 `open_upstream_pr`).** On a fork connection the PR author's `open_or_update_draft_pr` opens (or updates) the fork's
-pull request, `voc-agent/<run>/…` → the fork's default branch, exactly as before, and then goes on to the upstream pull
+pull request, the run's branch (`voc-agent/<run>-fix`) → the fork's default branch, exactly as before, and then goes on to the upstream pull
 request: `<fork owner>:voc-agent/…` → `<upstream>:<its default branch>`, as GitHub answers the default branch now
 (7.58.00; the step's facts, not the one stored when the fork was connected). `open_upstream_pr` `{branch}` is the same
 step on its own, the PR author's alone (any other role, the runtime and the start: 403). Its answer, and the PR
@@ -1802,14 +1813,19 @@ pushed is exactly what the gate passed.
 **The writers' identifiers (7.71.02).** The harness fills in what a writer's one write names, as it does a gate
 record's tree, and the model writes only the words: the committer's checkout has its task's submitted patch applied
 and hashed as a gate's has, and `push_commit {message}` pushes that patch, for that tree, to the run's own branch
-`voc-agent/<run id>/fix` (`role_tools.run_branch`); the PR author's `open_draft_pr {title, body}` opens from that branch,
+(`outputs.run_branch`: 7.71.02's `voc-agent/<run id>/fix`, since 7.71.03 `voc-agent/<run id>-fix`, one level under
+`voc-agent/`: [Repository connectors](#repository-connectors), "The run's branch"); the PR author's `open_draft_pr {title, body}` opens from that branch,
 and it reads the gate record its description quotes (`read_gate_record`). Each one's opening names what the harness
 fills in; a brief also carries the run's issue and how its pull request opens, which the board's claim reads from
 META (`issue`, `pull_request`), so the opening of every role that reads the issue names its number, and the PR
 author's says "ready for review" or "a draft" as META says, whatever the task's own words say. A committer or PR author
 whose write the broker never answered as made (refused, never asked, its outcome unknown) finishes to a person
-(`needs_human`, saying which write is missing), the conductor reads its step blocked, and the supervisor sends the
-run to that step's decision point (`flow:commit`, `flow:pr_author`). Before, the first live Bug fixer run's committer
+(`needs_human`, saying which write is missing; since 7.71.03 a committer whose task named no submitted patch, or
+none the harness could apply and hash, says "its task names no submitted patch"), the conductor reads its step
+blocked, and the supervisor sends the run to that step's decision point (`flow:commit`, `flow:pr_author`). The writes
+made are kept in the checkpoint; on the CLI and Kiro, whose tool server makes them, the harness takes them from the
+server before each checkpoint and hands a continuation's server the ones its checkpoint names (7.71.03,
+`VOC_HOST_WRITES`), so a continued writer that wrote finishes done there too. Before, the first live Bug fixer run's committer
 and PR author were shown none of their identifiers, read the broker, wrote nothing and ended done, and the run's
 flow went on to its end (01M83JQWMKAYK9GJB8FBAVZV7E, 2026-11-23). A hunter's or builder's `post_subtask` that names no
 step goes to the one live board step that takes its posts (`board/flow_guard.py`): its task never names one, and that
@@ -2047,12 +2063,15 @@ called flow's steps carry theirs). The step's own shape is the rules'
 
 *Built* (7.71.02): the run's end when its flow finishes. Once the run's newest coordinator session ended done, nothing
 of the run is live or moving and its coordinate task ended done, the supervisor's next tick ends the run done when its
-flow finished (`Supervisor._coordinator_done`, `RunControl.end`: its `RUNLOG#` row the supervisor's), and settling
+flow finished (`Supervisor._coordinator_done`, `RunControl.end_done`: its `RUNLOG#` row the supervisor's), and settling
 then releases it, starts its retrospective (triage end, scorecards) and, with nothing listed, switches the rule off;
 the agents' heartbeat then ends an engineering agent's run completed and frees its lock. A coordinator that finished
-on a flow that did not (still running, at a person, or no flow) sends the run to a person (`coordinator`). Before, no
-code ended a run done: the first live Bug fixer run stayed active, the rule ticking every minute, its agent's lock
-held.
+on a flow that did not (still running, at a person, or no flow) sends the run to a person (`coordinator`), since
+7.71.03 only once its session ended 90 seconds ago (`supervisor.FLOW_SETTLE_SECONDS`: the next tick reads the flow
+again), so a flow recorded finished just after its coordinator's finish ends done. A person's Resume of such a run
+reopens its coordinate task at the next attempt for a new `coordinator-<n>` (7.71.03, `BoardStore.reopen_coordinate`),
+so the run is planned again. Before, no code ended a run done: the first live Bug fixer run stayed active, the rule
+ticking every minute, its agent's lock held.
 
 *Planned*: the conductor reading the dial itself (AI-assisted: a person's go after the plan; Human-driven: the flow
 stops at the proposal), the memory steps, the learning loop and self-improvement as flow steps, shard
@@ -2806,7 +2825,9 @@ wait closes.
   first (7.71.02, `Supervisor._last_count`), so the tokens it used since the tick before are on its row, priced, and
   in the run's spend that the caps and `run.health` read; before, a harness that exited between two ticks lost them
   (the tick reads the status only of a session still working), and the first live Bug fixer run counted about 49% of
-  its roughly 858k tokens.
+  its roughly 858k tokens. Since 7.71.03 a tick's `run.health` reads that spend again after its moves, so a run's
+  last health has the tokens and cost of the sessions that tick ended or held (the rerun's last said 405,193 tokens of
+  the agents' 491,208).
 - **Sessions.** One row per agent of a run, the board's own `AGENT#<agent>` row in the run's partition: ids, times,
   the session's id and its runtime's ARN (`vm_id`, `endpoint`), the boot step, the continuation count, the checkpoint it restored from, the run
   monitor's inspection data, the live cost counters and what the reports read (role, model, skill version, session
@@ -2833,7 +2854,11 @@ wait closes.
   times out twice is split or goes to a person. Model tokens and cost stay hard caps set by a person: past one, the
   run goes to a human decision point, every agent is checkpointed and held (`paused`, resumable once the cap is
   raised; raising a run's cap is not built yet, so today a person can only end the run from that decision point; until
-  then it stays listed and the supervisor keeps ticking), and no new session starts.
+  then it stays listed and the supervisor keeps ticking), and no new session starts. A held agent is told why
+  (7.71.03, `supervisor.held_because`): the budget, or the decision point its flow waits at ("The run waits for a
+  person to decide at flow:commit"), never the budget for both. A session whose task went to a person ends
+  `needs_human` (7.71.03; `failed` before), so `run.health` and the run workspace show a person's stop as a wait for
+  them, never a failure.
 - **The supervisor.** voc-engineering-runtime, invoked every minute by an EventBridge rule created disabled (TENETS.md
   tenet 7: schedules run on EventBridge rules). `start_run` turns it on; once no run is listed (after an `end_run`
   or a tick), it is turned off and the list re-read, and turned back on if a run started meanwhile. Each tick it renews sessions, boots new agents (the checkout, then the harness), judges each

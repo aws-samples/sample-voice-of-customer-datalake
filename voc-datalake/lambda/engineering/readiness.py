@@ -594,7 +594,8 @@ def _ci_attestation(ctx: _Context) -> Check:
 
 def _ci_protection(ctx: _Context) -> Check:
     fix = ('Protect the default branch with the checks the repository requires, and leave voc-agent/* without any '
-           'branch rule or ruleset.')
+           'branch rule or ruleset (on GitHub, exclude refs/heads/voc-agent/*: a run\'s branch, voc-agent/<run id>-fix, '
+           'is one level under it, the only level that pattern matches).')
     if ctx.row is None:
         return Check('ci_protection', 'unknown', 'No stored connection to read the branch rules of.', fix,
                      CONNECTORS_DOCS)
