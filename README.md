@@ -52,6 +52,7 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 - **Decisions and prioritization**: decision records per project, and Prioritization rows scored on your team's metrics with individual or room votes ([Prioritization](docs/prioritization.md))
 - **Autonomous agents**: agents watch a feedback scope and, when a trigger fires, run a workflow from research to a reviewed prototype, with human decision points ([Autonomous Agents](docs/autonomous-agents.md))
 - **Memory and company context**: company and personal memory learned from conversations and agent runs, plus the company vision, objectives and design system that ground every output ([Memory](docs/memory.md), [Company Context](docs/company-context.md))
+- **Documents Library**: upload a market report, transcripts or a deck once, tag it, and mention it in any chat with `#slug`: the assistant reads the file itself or searches it and cites the passages. Library items are never feedback ([Documents Library](docs/documents-library.md)).
 
 ### Extend
 
@@ -245,6 +246,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Assistant Chat Scope](docs/assistant-chat-scope.md) | The `/chat` filter panel and the filter floor the assistant's feedback tools cannot read past |
 | [Autonomous Agents](docs/autonomous-agents.md) | Agents, triggers, workflows, runs, decisions and plans |
 | [Memory](docs/memory.md) | Company and personal memory: extraction, review, recall, retention |
+| [Documents Library](docs/documents-library.md) | Reports, transcripts and decks uploaded once, referenced in any chat with `#slug`, read natively or searched and cited; never feedback |
 | [Company Context](docs/company-context.md) | Company vision, personal objectives and the design system |
 | [Participants](docs/participants.md) | Lists of people to ask for feedback, emailed asks, unsubscribe, attribution, erasure |
 | [Feedback boards](docs/feature-requests.md) | Boards per team or audience: templates, fields, audiences, +1s, sign-in, promote to a project |

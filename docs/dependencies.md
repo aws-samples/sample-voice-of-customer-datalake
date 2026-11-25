@@ -45,6 +45,11 @@ Exact pins worth knowing (not holds; Dependabot still proposes their minor and p
 - `mutmut` (`requirements-dev.txt`) is pinned exactly: `scripts/mutate-python.sh` drives mutmut 3 through
   `scripts/mutmut_run.py`, which feeds the `--patch` / `--lines` spans to mutmut's own line filter through its
   internals (`mutmut.__main__.gather_coverage`). Re-run the script on one module before accepting a new release.
+- `pypdf` (`voc-datalake/lambda/layers/signing-deps/requirements.txt`, BSD-3-Clause, 7.62.00) is pinned exactly: it
+  reads files people upload to the Documents Library ([documents-library.md](documents-library.md)), so a release is
+  taken deliberately, its changelog's security entries read (most are hardenings against crafted PDFs), and
+  `lambda/shared/test/test_library_extract.py` run on it. It sits in the projects API's own layer (VocApiStack has no
+  room for another); `lib/utils/dependency-layers.test.ts` pins that layer's two requirements.
 - `cdk-nag` (`voc-datalake/package.json`) is pinned exactly: `lib/utils/nag-ack.ts` renders finding ids the way
   cdk-nag 3.0.2's (unexported) `flattenCfnReference` does; `lib/nag-suppressions.test.ts` fails if a release
   renders them differently.

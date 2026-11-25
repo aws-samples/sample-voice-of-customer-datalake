@@ -31,7 +31,8 @@
     "radar": "Radar",
     "featureRequests": "Tableros de feedback",
     "participants": "Participantes",
-    "oauthConsent": "Aprobar un asistente"
+    "oauthConsent": "Aprobar un asistente",
+    "library": "Biblioteca"
   },
   "cancel": "Cancelar",
   "configureBrand": "Configurar marca",
@@ -94,7 +95,8 @@
     "admin": "Administración",
     "connect": "MCP y skills",
     "featureRequests": "Tableros de feedback",
-    "participants": "Participantes"
+    "participants": "Participantes",
+    "library": "Biblioteca"
   },
   "partialCountsHint": "Aproximado: no se pudo leer el periodo completo, los recuentos son un límite inferior",
   "problemAnalysisPage": {

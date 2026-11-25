@@ -85,12 +85,20 @@ export const WORKFLOW_VALIDATE_RESOURCE = '/workflows/validate';
 export const SCRAPER_ANALYZE_RESOURCE = '/scrapers/analyze-url';
 
 /**
+ * The Documents Library's read for the assistant (lambda/shared/library_routes.py `library_context`): the mentioned or
+ * searched items' passages and, for a document Converse takes as it is, a 5-minute presigned GET (never its bytes:
+ * a synchronous Lambda answer is capped at 6 MB). Read with the caller's own access; it writes nothing.
+ */
+export const LIBRARY_CONTEXT_RESOURCE = '/projects/library/context';
+
+/**
  * The only non-GET routes this invoker may call, each pinned to the function
  * that owns it — reads that carry a body. Anything else that is not a GET is
  * refused before an invoke.
  */
 const READ_POSTS: ReadonlyMap<string, ApiFunction> = new Map([
   [CHAT_CONTEXT_RESOURCE, 'projects'],
+  [LIBRARY_CONTEXT_RESOURCE, 'projects'],
   [MEMORY_RETRIEVE_RESOURCE, 'memory'],
   [WORKFLOW_VALIDATE_RESOURCE, 'agents'],
   [SCRAPER_ANALYZE_RESOURCE, 'scrapers'],

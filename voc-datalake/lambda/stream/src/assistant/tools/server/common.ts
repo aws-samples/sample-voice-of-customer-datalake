@@ -100,3 +100,11 @@ export function getProjectRoute(
     pathParameters: { project_id: projectId },
   }, ctx.claims);
 }
+
+/** The rows of `rows` that `schema` reads; the others are dropped, never failing the answer. */
+export function parseEach<T>(schema: z.ZodType<T>, rows: unknown[]): T[] {
+  return rows.flatMap((row) => {
+    const parsed = schema.safeParse(row);
+    return parsed.success ? [parsed.data] : [];
+  });
+}

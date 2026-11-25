@@ -14,7 +14,7 @@
  * `store/authStore` is wired the same way through {@link authStoreModule}.
  * Each spec file gets its own module registry, so the doubles are per file.
  */
-import { afterAll, beforeAll, vi } from 'vitest'
+import { afterAll, beforeAll, expect, vi } from 'vitest'
 import { useConfigStore } from '../store/configStore'
 
 /** One canned endpoint: receives the parsed JSON body, returns the response. */
@@ -69,6 +69,17 @@ export function routeFetchApi(routes: Record<string, RouteHandler>, { missStatus
 }
 
 /** Per-test reset: forget every programmed answer and point the SPA at an API. */
+/**
+ * The parsed JSON body of the first `<method> <path>` call to {@link fetchApi}
+ * (undefined when it sent none); fails the test when no such call was made.
+ */
+export function sentFetchApiBody(path: string, method = 'GET'): unknown {
+  const call = fetchApi.mock.calls.find(([endpoint, options]) => endpoint === path && (options?.method ?? 'GET') === method)
+  expect(call, `${method} ${path} was not called`).toBeDefined()
+  const body = call?.[1]?.body
+  return typeof body === 'string' ? JSON.parse(body) : undefined
+}
+
 export function resetFetchApi(): void {
   fetchApi.mockReset()
   useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: 'https://api.example.com' } }))

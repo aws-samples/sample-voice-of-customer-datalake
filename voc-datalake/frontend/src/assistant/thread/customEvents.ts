@@ -15,7 +15,7 @@ import { parseEach } from '../../api/lenientFields'
 import { asRecord } from '../../api/wireRecord'
 import type { ApprovalInterrupt } from '../types'
 import type {
-  FeedbackSourceRef, MessageSources, NavigationSuggestion, WebSourceRef,
+  FeedbackSourceRef, LibrarySourceRef, MessageSources, NavigationSuggestion, WebSourceRef,
 } from './types'
 
 const optionalString = z.string().optional().catch(undefined)
@@ -33,6 +33,17 @@ const webSourceSchema = z.object({
   title: z.string().catch(''),
   url: z.url(),
 })
+
+const librarySourceSchema = z.object({
+  item_id: z.string().regex(/^lib_\d{14}_[0-9a-f]{8}$/),
+  slug: z.string().min(1).max(64),
+  title: z.string().max(200).catch(''),
+  page: z.number().int().positive().optional().catch(undefined),
+})
+
+function toLibraryRef(raw: z.infer<typeof librarySourceSchema>): LibrarySourceRef {
+  return { item_id: raw.item_id, slug: raw.slug, title: raw.title, ...(raw.page === undefined ? {} : { page: raw.page }) }
+}
 
 function toFeedbackRef(raw: z.infer<typeof feedbackSourceSchema>): FeedbackSourceRef {
   return {
@@ -54,6 +65,7 @@ export function parseSources(value: unknown): MessageSources {
   return {
     feedback: parseEach(feedbackSourceSchema, record.feedback).map(toFeedbackRef),
     web: parseEach(webSourceSchema, record.web).filter(isSafeWebSource),
+    library: parseEach(librarySourceSchema, record.library).map(toLibraryRef),
   }
 }
 

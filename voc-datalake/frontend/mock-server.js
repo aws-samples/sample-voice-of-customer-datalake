@@ -41,6 +41,7 @@ import { problemTree } from './mock-problems.js';
 import { facetedMetric, seedUsefulness, withoutParams } from './mock-facets.js';
 import { callerAccess, handleScopeRoutes, scopeAdmits, scopedCategoriesConfig, scopedMetric } from './mock-scope.js';
 import { handleProjectActionRoutes, startProjectAssistJob } from './mock-project-actions.js';
+import { handleLibraryRoutes } from './mock-library.js';
 import { humanMethodology, projectMethodology, workflowMethodologyWarnings } from './mock-methodology.js';
 import { handleCompanyPersonaRoutes } from './mock-company-personas.js';
 import { handleDocumentReviewRoutes } from './mock-document-review.js';
@@ -1353,7 +1354,10 @@ function handleDomainModules(req, res, url) {
     attributeFilterOf, sourceProfiles, dimensionsConfig, startOwnerAssistJob, startProjectAssistJob,
     mockProjectSharing, mockCaller: MOCK_CALLER,
   };
-  return handlePrioritizationConfigRoutes(req, res, url, send, shared)
+  // (the Documents Library first: `/projects/library…` and its upload target `/mock-upload/library/…` are its own,
+  // never a project's id or a product doc's upload)
+  return handleLibraryRoutes(req, res, url, send, shared)
+    || handlePrioritizationConfigRoutes(req, res, url, send, shared)
     || handleDimensionRoutes(req, res, url, send, shared)
     || handleDataQualityRoutes(req, res, url, send, shared)
     || handleFeedbackCatalogueRoutes(req, res, url, send)
@@ -3576,7 +3580,8 @@ const server = http.createServer((req, res) => {
   // PATCH is used by prioritization ballots and row edits; without it the
   // browser's preflight rejects them before they reach this server.
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // If-None-Match: the Documents Library's presigned PUT (written once, mock-library.js).
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, If-None-Match');
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'OPTIONS') {

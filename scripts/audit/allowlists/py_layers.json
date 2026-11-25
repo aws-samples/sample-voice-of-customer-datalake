@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "key": "VocCoreStack/UserMessagesSigningDepsLayer*::pypdf",
+      "kind": "unused-distribution",
+      "reason": "The Cognito message trigger (lib/stacks/core-auth.ts) installs its own copy of voc-datalake/lambda/layers/signing-deps for cryptography (the invitation logo's CloudFront signature); since 7.05.00 that directory also pins pypdf, the projects API's Documents Library reader (shared/library_extract.py). One requirements file keeps the two copies the same versions; the trigger never imports pypdf."
+    }
+  ]
+}

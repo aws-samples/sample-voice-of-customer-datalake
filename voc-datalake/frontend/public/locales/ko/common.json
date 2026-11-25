@@ -31,7 +31,8 @@
     "radar": "레이더",
     "featureRequests": "피드백 보드",
     "participants": "참여자",
-    "oauthConsent": "어시스턴트 승인"
+    "oauthConsent": "어시스턴트 승인",
+    "library": "라이브러리"
   },
   "cancel": "취소",
   "configureBrand": "브랜드 설정",
@@ -91,7 +92,8 @@
     "admin": "관리",
     "connect": "MCP 및 스킬",
     "featureRequests": "피드백 보드",
-    "participants": "참여자"
+    "participants": "참여자",
+    "library": "라이브러리"
   },
   "partialCountsHint": "근사치: 전체 기간을 읽을 수 없어 집계는 최소값입니다",
   "problemAnalysisPage": {

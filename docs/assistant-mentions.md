@@ -1,5 +1,8 @@
 # Mentions in the project assistant: @persona, @all and #document
 
+(A Documents Library item is mentioned with `#slug` on every page the assistant runs on:
+[documents-library.md](documents-library.md#in-chat-slug). This page covers a project page's own mentions.)
+
 On a project page, the AI assistant's composer lets you ask the project's personas directly and point
 them at documents:
 
@@ -22,13 +25,14 @@ documents and its own profile. Then the assistant adds a short synthesis.
 - Limits per message: **6 personas** and **3 documents**. `@all` asks the first 6 personas in project
   order. When the project has more, the composer names the 6 it asks, and the assistant tells you
   which were left out.
-- Mentions only exist on a project page. Other pages have no list, and the stream refuses mentions
-  sent from them.
+- Persona and document mentions only exist on a project page. Other pages list the Documents Library alone
+  under `#` (a project page lists it after the project's documents, as its own **Library** group, at most 3 items a
+  message), and the stream refuses a persona or document mention sent from another page.
 
 ## What happens
 
 1. The mentions travel **structured**, as ids picked from the project. They are never parsed from the
-   message text: `forwardedProps.mentions = { personas?: [ids] | 'all', documents?: [{ document_id, version? }] }`
+   message text: `forwardedProps.mentions = { personas?: [ids] | 'all', documents?: [{ document_id, version? }], library?: [{ item_id }] }`
    in the AG-UI `RunAgentInput`. The schema is `mentionsSchema` in `lambda/stream/src/assistant/contract.ts`,
    which the SPA imports itself through `@stream/assistant/contract`. A request over the limits is a 400.
 2. **Persona round** (`lambda/stream/src/assistant/runtime/persona-round.ts`): before the model's own

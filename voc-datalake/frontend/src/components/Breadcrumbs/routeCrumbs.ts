@@ -66,6 +66,7 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'oauth': { labelKey: 'common:breadcrumbs.connect', path: '/connect' },
   'authorize': { labelKey: 'common:breadcrumbs.oauthConsent' },
   'account': { labelKey: 'common:breadcrumbs.account' },
+  'library': { labelKey: 'common:breadcrumbs.library' },
   'admin': { labelKey: 'common:breadcrumbs.admin' },
   // Redirects to /admin; labelled for the redirect's instant.
   'settings': { labelKey: 'common:breadcrumbs.admin', path: '/admin' },

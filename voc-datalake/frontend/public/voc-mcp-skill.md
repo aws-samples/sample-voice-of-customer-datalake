@@ -66,6 +66,7 @@ outcome — never the arguments or any content).
 | `list_categories` | The category taxonomy the user can see — use the exact names as filters. |
 | `list_dimensions` | The feedback dimensions (product, module, user type, ...) and their allowed values — use the exact keys and values in `dims` and as the `key` of the dimensions view. |
 | `search_memory` | Check what the team already decided or knows (company + the user's personal memory) before proposing something. |
+| `search_library` | Find passages in the Documents Library (reports, transcripts, decks the team uploaded; not customer feedback) for a question, in up to 3 items by id or slug, or in the items whose title or tags match. Cite `[#slug p.N]`. |
 | `get_company_context` | The vision and objectives a proposal should align with. |
 | `list_projects` | Find research projects (and their ids). |
 | `get_project` | A project's personas and the list of its documents (titles and ids only). |

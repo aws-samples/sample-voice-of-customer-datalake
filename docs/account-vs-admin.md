@@ -89,6 +89,7 @@ everyone who uses the same browser.
 | Assistant web search | the assistant composer toggle | a per-conversation choice |
 | Time range and date basis | the header selector on data pages | stored in `voc-config`; the default is the last 14 days by imported date |
 | Personal memories | Memory → Personal | a working tool, not a setting |
+| Reports, transcripts and decks for the assistant (`#slug` in any chat) | Library (`/library`) | shared content, not a setting: every signed-in user reads, mentions and uploads; an admin or the uploader deletes |
 | My conversations | the assistant sidebar | content, not a setting |
 | Brand (name, handles, hashtags, URLs) | Administration → General | |
 | Default theme (the colour theme everyone sees until they pick their own) | Administration → General | `GET /settings/appearance` (everyone) / `PUT` (admins); non-admins see it read-only |

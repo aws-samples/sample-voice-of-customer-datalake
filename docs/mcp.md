@@ -137,6 +137,7 @@ MCP call never sees an archived board.
 | `list_categories` | read | `GET /settings/categories` (settings) |
 | `list_dimensions` | read | `GET /settings/dimensions` (settings): dimension keys and allowed values ([dimensions.md](dimensions.md)) |
 | `search_memory` | read | `POST /memory/retrieve` (memory) — company + the minter's personal memories, category-filtered |
+| `search_library` | read | `POST /projects/library/context` (projects) — passages of the Documents Library's items (`items`: up to 3 ids or slugs, else the best-matching), never a file ([documents-library.md](documents-library.md)) |
 | `get_company_context` | read | `GET /settings/company-context` (settings) |
 | `list_projects` | read | `GET /projects` (projects) |
 | `get_project` | read | `GET /projects/{id}` (projects) — documents as titles/ids only |
@@ -507,8 +508,9 @@ document, revoked / expired / disabled-minter / tampered tokens, a project-scope
 token refused outside its project, and `run_agent` for non-admin, admin and demoted
 minters. `test_global_mcp_protocol.py` and `test_global_mcp_tokens_api.py` cover the
 envelope, argument validation and the token API. `lambda/shared/test/test_mcp_global_tools_budget.py`
-keeps the whole `tools/list` under an estimated 4,000 tokens (ChatGPT connectors are reported to
-refuse servers past about 5,000): a new tool or a wordy description fails there first. To stay inside it, a
+keeps the whole `tools/list` under an estimated 10,000 tokens (7.05.00; 4,000 before), past which on-demand tool
+search serves a client better: a new tool or a wordy description fails there first. It is about 4,200 today. ChatGPT
+connectors are reported to refuse servers past about 5,000, so descriptions stay short even under the budget. A
 tool publishes only the annotations that differ from the MCP defaults (`readOnlyHint`, `openWorldHint: false`, and
 `destructiveHint: false` on a write tool); the display name is the top-level `title`.
 `lambda/api/test/test_mcp_global_work_tools.py` covers the catalogue, Prioritization and board-write tools (routes,

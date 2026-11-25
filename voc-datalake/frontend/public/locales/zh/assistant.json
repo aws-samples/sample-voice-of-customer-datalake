@@ -68,7 +68,9 @@
       "saving": "正在保存…",
       "saved": "已保存到文档",
       "error": "保存失败 – 重试"
-    }
+    },
+    "librarySources": "使用的资料库文档",
+    "openLibraryItem": "在资料库中打开 {{name}}（{{marker}}）"
   },
   "toolStatus": {
     "streaming": "准备中",
@@ -288,12 +290,14 @@
     },
     "limit": {
       "persona": "每条消息最多 {{max, number}} 个用户画像。",
-      "document": "每条消息最多 {{max, number}} 个文档。"
+      "document": "每条消息最多 {{max, number}} 个文档。",
+      "library": "每条消息最多 {{max, number}} 个资料库文档。"
     },
     "loading": "正在加载项目…",
     "empty": {
       "persona": "没有匹配的用户画像。",
-      "document": "没有匹配的文档。"
+      "document": "没有匹配的文档。",
+      "library": "没有匹配的资料库文档。请在“资料库”页面添加文档。"
     },
     "count_one": "{{count, number}} 条建议",
     "count_other": "{{count, number}} 条建议",
@@ -301,7 +305,14 @@
     "remove": "移除 {{name}}",
     "insertPersona": "提及用户画像",
     "insertDocument": "标记文档",
-    "allCapped": "@all 会询问 {{total, number}} 个用户画像中的前 {{max, number}} 个：{{names}}。"
+    "allCapped": "@all 会询问 {{total, number}} 个用户画像中的前 {{max, number}} 个：{{names}}。",
+    "placeholderLibrary": "询问您的反馈、项目或此页面。输入 # 选择资料库文档…",
+    "sections": {
+      "library": "资料库"
+    },
+    "loadingLibrary": "正在加载资料库…",
+    "insertLibrary": "提及资料库文档",
+    "largeItem": "{{name}} 较大：每次发送约 {{tokens, number}} 个 token。"
   },
   "scope": {
     "title": "反馈范围",

@@ -9,7 +9,7 @@ import type { ApiInvoker } from '../internal-api.js';
 import { CHAT_CONTEXT_RESOURCE } from '../internal-api.js';
 import { AssistantToolError } from '../errors.js';
 import { parseProjectAccess, type ProjectAccessSummary } from '../project-access.js';
-import { seg } from './common.js';
+import { parseEach, seg } from './common.js';
 
 /** Lenient field: null or a malformed value degrades to absent instead of failing the row. */
 function lenient<T>(schema: z.ZodType<T>) {
@@ -54,13 +54,6 @@ const bodySchema = z.object({
   documents: z.array(z.unknown()).catch([]),
   access: z.unknown().optional(),
 });
-
-function parseEach<T>(schema: z.ZodType<T>, rows: unknown[]): T[] {
-  return rows.flatMap((row) => {
-    const parsed = schema.safeParse(row);
-    return parsed.success ? [parsed.data] : [];
-  });
-}
 
 export async function loadChatContext(
   invoke: ApiInvoker,

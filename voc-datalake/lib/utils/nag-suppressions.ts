@@ -117,7 +117,8 @@ export function s3ObjectSuppressions(objectArns: readonly string[]): NagAck[] {
  * The reviewed key prefixes of the raw data bucket, one data family each. Owners as of 5.34.00, for the
  * reviewer: avatars/ (projects API, persona generator and importer), company-context/ (settings API),
  * company-context/design/logo_preview_ and icons_ (design capture, logo previews and copied icons only),
- * memory-imports/ (memory API and extractor), projects/{@literal *}/product_docs/ (projects API; extracted/ for the
+ * library/ (the projects API's Documents Library), memory-imports/ (memory API and extractor),
+ * projects/{@literal *}/product_docs/ (projects API; extracted/ for the
  * document generator), prototypes/ (projects API, document generator, agent nodes and persona panel),
  * raw/github_issues/ (the GitHub webhook), raw/feedback_form/ (the feedback-form API), raw/feature_requests/ (the
  * engagement API's board copies) and raw/email_intake/ (the opt-in email inbox), those three write-once puts only
@@ -126,7 +127,8 @@ export function s3ObjectSuppressions(objectArns: readonly string[]): NagAck[] {
  */
 export type RawDataPrefix =
   | 'avatars/*' | 'company-context/*' | 'company-context/design/logo_preview_*' | 'company-context/design/icons_*'
-  | 'memory-imports/*' | 'projects/*/product_docs/*' | 'projects/*/product_docs/extracted/*' | 'prototypes/*'
+  | 'library/*' | 'memory-imports/*' | 'projects/*/product_docs/*' | 'projects/*/product_docs/extracted/*'
+  | 'prototypes/*'
   | 'raw/github_issues/*' | 'raw/feedback_form/*' | 'raw/feature_requests/*' | 'raw/email_intake/*'
   | 'scratch/document_jobs/*' | 'scratch/research_jobs/*';
 

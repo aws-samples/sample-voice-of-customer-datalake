@@ -68,7 +68,9 @@
       "saving": "Saving…",
       "saved": "Saved to documents",
       "error": "Save failed – retry"
-    }
+    },
+    "librarySources": "Library documents used",
+    "openLibraryItem": "Open {{name}} ({{marker}}) in the Library"
   },
   "toolStatus": {
     "streaming": "preparing",
@@ -288,12 +290,14 @@
     },
     "limit": {
       "persona": "At most {{max, number}} personas per message.",
-      "document": "At most {{max, number}} documents per message."
+      "document": "At most {{max, number}} documents per message.",
+      "library": "At most {{max, number}} library documents per message."
     },
     "loading": "Loading the project…",
     "empty": {
       "persona": "No persona matches.",
-      "document": "No document matches."
+      "document": "No document matches.",
+      "library": "No library document matches. Add documents on the Library page."
     },
     "count_one": "{{count, number}} suggestion",
     "count_other": "{{count, number}} suggestions",
@@ -301,7 +305,14 @@
     "remove": "Remove {{name}}",
     "insertPersona": "Mention a persona",
     "insertDocument": "Tag a document",
-    "allCapped": "@all asks the first {{max, number}} of {{total, number}} personas: {{names}}."
+    "allCapped": "@all asks the first {{max, number}} of {{total, number}} personas: {{names}}.",
+    "placeholderLibrary": "Ask about your feedback, projects or this page. Type # for a library document…",
+    "sections": {
+      "library": "Library"
+    },
+    "loadingLibrary": "Loading the library…",
+    "insertLibrary": "Mention a library document",
+    "largeItem": "{{name}} is large: about {{tokens, number}} tokens each time it is sent."
   },
   "scope": {
     "title": "Feedback scope",

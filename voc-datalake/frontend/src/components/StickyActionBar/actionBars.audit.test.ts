@@ -117,9 +117,12 @@ const EXEMPT: Readonly<Record<string, string>> = {
   DocumentComments: 'the Comment button floats next to the selected text in the document, not a form row',
   CommentComposer: 'inline Post in the margin beside one thread or selection, one of many in the comment rail',
   ReferenceDesignPreview: 'per-reference Use as design system, one of many in the references list (it only loads a draft)',
+  Library: 'Upload heads the Documents Library page (it opens the upload sheet), not a form\'s save row',
+  ItemEditor: 'a library item\'s Save, rendered only inside the Library\'s preview drawer (PreviewDrawer.tsx, a SideSheet over the launcher)',
 }
 
-const isDialog = (text: string): boolean => /ModalShell|dialog-footer/.test(text)
+// (a SideSheet is a ModalShell too: its footer sits over the launcher)
+const isDialog = (text: string): boolean => /ModalShell|dialog-footer|<SideSheet\b/.test(text)
 /** File name without extension; an `index` file is named by its folder (`RouteErrorBoundary/index`). */
 const moduleName = (path: string): string => {
   const [folder = '', file = ''] = path.replace(/\.tsx$/, '').split('/').slice(-2)

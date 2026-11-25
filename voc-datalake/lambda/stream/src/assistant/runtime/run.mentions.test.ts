@@ -24,6 +24,19 @@ function textOfBlocks(blocks: unknown): string {
   return Array.isArray(blocks) ? blocks.map((block: unknown) => JSON.stringify(block)).join('\n') : '';
 }
 
+/** A run refused before any model call, its last event the RUN_ERROR that says `message`. */
+async function expectRefused(page: Record<string, unknown>, mentions: unknown, message: string,
+  prepare: (h: ReturnType<typeof harness>) => void = () => undefined): Promise<void> {
+  const h = harness([{ text: 'never' }]);
+  prepare(h);
+  const events = await run(body(page, mentions), h);
+  expect(h.calls).toHaveLength(0);
+  expect(events.at(-1)).toMatchObject({ type: EventType.RUN_ERROR, message: expect.stringContaining(message) });
+}
+
+const OFF_PROJECT = 'only available on a project page';
+const INVALID = 'Invalid forwardedProps at mentions';
+
 silenceConsole();
 
 describe('runAssistant — mentions', () => {
@@ -50,11 +63,9 @@ describe('runAssistant — mentions', () => {
   });
 
   it('refuses mentions off a project page before any model call', async () => {
-    const h = harness([{ text: 'never' }]);
-    h.deps.personaRound = () => Promise.reject(new Error('must not run'));
-    const events = await run(body({ kind: 'dashboard', path: '/' }, { personas: 'all' }), h);
-    expect(h.calls).toHaveLength(0);
-    expect(events.at(-1)).toMatchObject({ type: EventType.RUN_ERROR, message: expect.stringContaining('only available on a project page') });
+    await expectRefused({ kind: 'dashboard', path: '/' }, { personas: 'all' }, OFF_PROJECT, (h) => {
+      h.deps.personaRound = () => Promise.reject(new Error('must not run'));
+    });
   });
 
   it.each([
@@ -62,10 +73,7 @@ describe('runAssistant — mentions', () => {
     ['four documents', { documents: [1, 2, 3, 4].map((n) => ({ document_id: `d${String(n)}` })) }],
     ['a persona keyword other than all', { personas: 'everyone' }],
   ])('rejects %s', async (_label, mentions) => {
-    const h = harness([{ text: 'never' }]);
-    const events = await run(body(PROJECT_PAGE, mentions), h);
-    expect(h.calls).toHaveLength(0);
-    expect(events.at(-1)).toMatchObject({ type: EventType.RUN_ERROR, message: expect.stringContaining('Invalid forwardedProps at mentions') });
+    await expectRefused(PROJECT_PAGE, mentions, INVALID);
   });
 
   it('adds no block and no round when the message mentions nothing', async () => {
@@ -73,5 +81,55 @@ describe('runAssistant — mentions', () => {
     h.deps.personaRound = () => Promise.reject(new Error('must not run'));
     await run(runBody({ forwardedProps: { page: PROJECT_PAGE } }), h);
     expect(textOfBlocks(nth(h.calls, 0).messages.at(-1)?.content)).not.toContain('<mentions>');
+  });
+});
+
+describe('runAssistant — #slug library mentions (any page)', () => {
+  const ITEM = 'lib_20261101000000_0000a001';
+  const DASHBOARD = { kind: 'dashboard', path: '/' };
+  const FILE = { document: { format: 'pdf' as const, name: 'Library document 1', source: { bytes: new Uint8Array([1]) } } };
+
+  it('resolves library mentions off a project page and hands the model the block and the file', async () => {
+    const h = harness([{ text: 'Sales grew [#q3-market].' }]);
+    const seen: unknown[] = [];
+    h.deps.personaRound = () => Promise.reject(new Error('must not run'));
+    h.deps.resolveLibrary = (input) => {
+      seen.push({ mentions: input.mentions, attached: input.attachedDocuments, native: input.nativeAllowed });
+      return Promise.resolve({ block: '<library>\nQ3\n</library>', documents: [FILE],
+        sources: [{ item_id: ITEM, slug: 'q3-market', title: 'Q3 market' }] });
+    };
+    const events = await run(body(DASHBOARD, { library: [{ item_id: ITEM }] }), h);
+
+    expect(seen).toStrictEqual([{ mentions: { library: [{ item_id: ITEM }] }, attached: 0, native: true }]);
+    const userTurn = nth(h.calls, 0).messages.at(-1);
+    expect({ block: textOfBlocks(userTurn?.content).includes('<library>'), file: userTurn?.content?.at(-1) })
+      .toStrictEqual({ block: true, file: FILE });
+    const sources = events.find((event) => event.type === EventType.CUSTOM && 'name' in event
+      && event.name === 'assistant.sources');
+    expect(sources).toMatchObject({ value: { library: [{ item_id: ITEM, slug: 'q3-market' }] } });
+    expect(finished(events)).toMatchObject({ outcome: { type: 'success' } });
+  });
+
+  it('keeps persona and document mentions on a project page only, even beside a library mention', async () => {
+    await expectRefused(DASHBOARD, { personas: 'all', library: [{ item_id: ITEM }] }, OFF_PROJECT);
+  });
+
+  it('runs the persona round without the library mentions on a project page', async () => {
+    const h = harness([{ text: 'ok' }]);
+    const rounds: PersonaRoundInput[] = [];
+    h.deps.personaRound = (input) => {
+      rounds.push(input);
+      return Promise.resolve(undefined);
+    };
+    h.deps.resolveLibrary = () => Promise.resolve({ block: undefined, documents: [], sources: [] });
+    await run(body(PROJECT_PAGE, { personas: 'all', library: [{ item_id: ITEM }] }), h);
+    expect(rounds.map((input) => input.mentions)).toStrictEqual([{ personas: 'all' }]);
+  });
+
+  it.each([
+    ['four library items', { library: [1, 2, 3, 4].map((n) => ({ item_id: `lib_2026110100000${String(n)}_0000a001` })) }],
+    ['an id that is not a library id', { library: [{ item_id: 'proj_1' }] }],
+  ])('rejects %s', async (_label, mentions) => {
+    await expectRefused(DASHBOARD, mentions, INVALID);
   });
 });

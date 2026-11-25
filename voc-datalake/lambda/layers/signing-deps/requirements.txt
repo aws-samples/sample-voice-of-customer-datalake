@@ -3,3 +3,9 @@
 # kms:Sign cannot substitute: it offers no SHA-1 variant. Native wheels exist
 # for manylinux aarch64. Brings cffi + pycparser.
 cryptography>=50.0.2
+# The Documents Library's PDF text layer (lambda/shared/library_extract.py, BSD-3-Clause; THIRD-PARTY-LICENSES.md),
+# here because this layer is the projects API's own (SIGNING_LAYER_FUNCTION_IDS: the projects API and its assist
+# twin, which extract), and VocApiStack has no room for a layer of its own (lib/stacks/api-engagement-budget.test.ts).
+# Pure Python. Exact pin: what reads an uploaded file must not move under it; 7.1.1 carries four hardenings against
+# crafted PDFs (inline images, ASCIIHexDecode, page labels, cross-reference streams).
+pypdf==7.1.1

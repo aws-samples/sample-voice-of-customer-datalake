@@ -72,7 +72,9 @@
     "toolGroupRunning_few": "Przeglądam {{count, number}} elementy…",
     "toolGroupRunning_many": "Przeglądam {{count, number}} elementów…",
     "toolGroup_few": "Przejrzano {{count, number}} elementy",
-    "toolGroup_many": "Przejrzano {{count, number}} elementów"
+    "toolGroup_many": "Przejrzano {{count, number}} elementów",
+    "librarySources": "Użyte dokumenty z biblioteki",
+    "openLibraryItem": "Otwórz {{name}} ({{marker}}) w Bibliotece"
   },
   "toolStatus": {
     "complete": "gotowe",
@@ -324,12 +326,14 @@
     },
     "limit": {
       "persona": "Najwyżej {{max, number}} person na wiadomość.",
-      "document": "Najwyżej {{max, number}} dokumenty na wiadomość."
+      "document": "Najwyżej {{max, number}} dokumenty na wiadomość.",
+      "library": "Najwyżej {{max, number}} dokumenty z biblioteki na wiadomość."
     },
     "loading": "Wczytywanie projektu…",
     "empty": {
       "persona": "Brak pasującej persony.",
-      "document": "Brak pasującego dokumentu."
+      "document": "Brak pasującego dokumentu.",
+      "library": "Żaden dokument z biblioteki nie pasuje. Dodaj dokumenty na stronie Biblioteka."
     },
     "count_one": "{{count, number}} propozycja",
     "count_few": "{{count, number}} propozycje",
@@ -339,7 +343,14 @@
     "remove": "Usuń {{name}}",
     "insertPersona": "Wspomnij personę",
     "insertDocument": "Oznacz dokument",
-    "allCapped": "@all pyta pierwsze {{max, number}} z {{total, number}} person: {{names}}."
+    "allCapped": "@all pyta pierwsze {{max, number}} z {{total, number}} person: {{names}}.",
+    "placeholderLibrary": "Zapytaj o opinie, projekty lub tę stronę. Wpisz #, aby wybrać dokument z biblioteki…",
+    "sections": {
+      "library": "Biblioteka"
+    },
+    "loadingLibrary": "Wczytywanie biblioteki…",
+    "insertLibrary": "Wspomnij dokument z biblioteki",
+    "largeItem": "{{name}} jest duży: około {{tokens, number}} tokenów przy każdym wysłaniu."
   },
   "scope": {
     "title": "Zakres opinii",

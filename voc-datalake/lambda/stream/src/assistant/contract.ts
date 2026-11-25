@@ -107,7 +107,7 @@ export const SERVER_TOOLS = {
   core: [
     'search_feedback', 'get_metrics', 'get_feedback_item', 'list_projects', 'get_project', 'suggest_navigation', 'web_search',
     'list_categories', 'list_dimensions', 'search_memory', 'get_plan', 'plan_catalogue', 'plan_lookup',
-    'get_radar', 'search_feature_requests',
+    'get_radar', 'search_feature_requests', 'library_search',
   ],
   insights: ['get_urgent_feedback', 'list_feedback', 'get_entities', 'get_resolved_problems'],
   project: ['get_documents', 'get_persona', 'get_product_context', 'list_project_jobs', 'consult_personas'],
@@ -257,7 +257,7 @@ export const PLAN_INTERRUPT_ID_PREFIX = 'plan:';
 export const CUSTOM_EVENTS = {
   /** First event after RUN_STARTED: `{ page, packs, model, webSearch }`. */
   context: 'assistant.context',
-  /** `{ feedback: FeedbackSource[], web: WebSource[] }` — once, before RUN_FINISHED. */
+  /** `{ feedback: FeedbackSource[], web: WebSource[], library: LibrarySource[] }` — once, before RUN_FINISHED. */
   sources: 'assistant.sources',
   /** `{ path: string, label: string }` — rendered as a link chip. */
   navigation: 'assistant.navigation',
@@ -396,7 +396,9 @@ export type PageContext = z.infer<typeof pageContextSchema>;
  * message text. `personas: 'all'` = the project's personas, the first MENTION_LIMITS.maxPersonas
  * in project order (the reply names the ones left out).
  */
-export const MENTION_LIMITS = { maxPersonas: 6, maxDocuments: 3, maxDocumentVersion: 100_000 } as const;
+export const MENTION_LIMITS = { maxPersonas: 6, maxDocuments: 3, maxDocumentVersion: 100_000, maxLibraryItems: 3 } as const;
+/** A Documents Library item's id (lambda/shared/library_keys.py ITEM_ID_PATTERN): `lib_<UTC stamp>_<8 hex>`. */
+export const LIBRARY_ITEM_ID = /^lib_\d{14}_[0-9a-f]{8}$/;
 export const MENTION_ALL_PERSONAS = 'all';
 /**
  * Tool call ids of the persona round start with this: each mentioned persona's reply is one
@@ -415,12 +417,15 @@ export const mentionsSchema = z.object({
     /** The `(vN)` the picker showed; informational (the id names the version). */
     version: z.number().int().min(1).max(MENTION_LIMITS.maxDocumentVersion).optional(),
   })).min(1).max(MENTION_LIMITS.maxDocuments).optional(),
+  /** `#slug` of a Documents Library item (docs/documents-library.md), on every page the assistant runs on. */
+  library: z.array(z.object({ item_id: z.string().regex(LIBRARY_ITEM_ID) }))
+    .min(1).max(MENTION_LIMITS.maxLibraryItems).optional(),
 });
 export type Mentions = z.infer<typeof mentionsSchema>;
 
 export const forwardedPropsSchema = z.object({
   page: pageContextSchema,
-  /** Personas and documents the user mentioned in THIS message (project pages only). */
+  /** Personas and documents (project pages only) and library items (any page) mentioned in THIS message. */
   mentions: mentionsSchema.optional(),
   /** Global time-range picker, 0–9999 (0 = all time), default 7. 9999 = MAX_WINDOW_DAYS (pinned in server-tools.test.ts). */
   days: z.number().int().min(ALL_TIME_DAYS).max(9999).optional(),

@@ -48,8 +48,8 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
     ]),
     ...rawDataPrefixSuppressions(raw, [
       'avatars/*', 'company-context/*', 'company-context/design/logo_preview_*', 'company-context/design/icons_*',
-      'memory-imports/*', 'projects/*/product_docs/*', 'projects/*/product_docs/extracted/*', 'prototypes/*',
-      'raw/github_issues/*', 'raw/feedback_form/*', 'raw/feature_requests/*', 'scratch/document_jobs/*',
+      'library/*', 'memory-imports/*', 'projects/*/product_docs/*', 'projects/*/product_docs/extracted/*',
+      'prototypes/*', 'raw/github_issues/*', 'raw/feedback_form/*', 'raw/feature_requests/*', 'scratch/document_jobs/*',
     ]),
   ]);
 }

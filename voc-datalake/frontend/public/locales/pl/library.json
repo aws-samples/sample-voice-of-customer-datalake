@@ -1,0 +1,157 @@
+{
+  "title": "Biblioteka dokumentów",
+  "subtitle": "Raporty, badania, prezentacje i obrazy, które asystent może przeczytać, gdy wskażesz je w czacie.",
+  "configureFirst": "Najpierw podłącz endpoint API w Administracja → Ogólne.",
+  "intro": {
+    "label": "O bibliotece",
+    "notFeedback": "Elementy biblioteki to dokumenty referencyjne, a nie opinie: nigdy nie trafiają do metryk, sentymentu ani kategorii. Aby zaimportować opinie z pliku CSV lub JSON, użyj sekcji",
+    "importLink": "Źródła danych",
+    "mention": "W asystencie wpisz # i krótką nazwę elementu (na przykład #q3-market), aby dodać ten dokument do czatu."
+  },
+  "toolbar": {
+    "label": "Filtruj bibliotekę",
+    "search": "Przeszukaj bibliotekę",
+    "searchPlaceholder": "Szukaj w tytułach, krótkich nazwach, źródłach i tagach",
+    "tag": "Tag",
+    "anyTag": "Dowolny tag",
+    "project": "Projekt",
+    "anyProject": "Dowolny projekt",
+    "sort": "Sortuj",
+    "sorts": {
+      "newest": "Najnowsze",
+      "oldest": "Najstarsze",
+      "title": "Tytuł",
+      "docDate": "Data dokumentu"
+    }
+  },
+  "status": {
+    "pending": "Czeka na plik",
+    "extracting": "Odczytywanie",
+    "ready": "Gotowy",
+    "failed": "Błąd"
+  },
+  "row": {
+    "dated": "Data: {{date}}",
+    "added": "Dodano {{date}}",
+    "addedBy": "Dodano {{date}}, dodał(a): {{name}}"
+  },
+  "list": {
+    "label": "Elementy biblioteki",
+    "loading": "Wczytywanie biblioteki…",
+    "loadFailed": "Nie udało się wczytać biblioteki. Sprawdź połączenie i spróbuj ponownie.",
+    "noMatch": "Żaden element biblioteki nie pasuje do tych filtrów.",
+    "loadMore": "Załaduj więcej"
+  },
+  "empty": {
+    "title": "Nie ma jeszcze dokumentów",
+    "text": "Prześlij raz raport, eksport ankiety, prezentację lub obraz i wskazuj go w dowolnym czacie przez # i jego krótką nazwę.",
+    "textReadOnly": "Nikt jeszcze nie dodał dokumentu do tej biblioteki."
+  },
+  "upload": {
+    "open": "Prześlij pliki",
+    "title": "Prześlij do biblioteki",
+    "description": "Każdy plik staje się jednym elementem biblioteki. Jego tekst jest odczytywany raz, po przesłaniu.",
+    "dropHint": "Upuść pliki tutaj albo je wybierz.",
+    "choose": "Wybierz pliki",
+    "limits": "PDF, Word, Excel, PowerPoint, CSV, HTML, tekst, Markdown albo obraz PNG, JPEG, GIF lub WebP. Pliki do 25 MB, obrazy do 3,75 MB.",
+    "filesLabel": "Pliki do przesłania",
+    "moreDetails": "Więcej szczegółów",
+    "remove": "Usuń z listy: {{name}}",
+    "progressLabel": "Przesyłanie: {{name}}",
+    "start": "Prześlij ({{count, number}})",
+    "cancel": "Anuluj",
+    "done": "Gotowe",
+    "phase": {
+      "creating": "Przygotowywanie przesyłania…",
+      "uploading": "Przesyłanie… {{percent}}",
+      "finishing": "Rozpoczynanie odczytu pliku…",
+      "done": "Przesłano. Tekst jest odczytywany: lista pokaże, kiedy będzie gotowy."
+    },
+    "refused": {
+      "unsupported": "Ten typ pliku nie jest obsługiwany. Prześlij jeden z tych typów: {{accepted}}.",
+      "empty": "Ten plik jest pusty.",
+      "tooLarge": "Ten plik ma ponad 25 MB, czyli więcej niż maksimum dla elementu biblioteki.",
+      "imageTooLarge": "Ten obraz ma ponad 3,75 MB, czyli więcej niż maksimum dla obrazu."
+    }
+  },
+  "fields": {
+    "title": "Tytuł",
+    "slug": "Krótka nazwa",
+    "slugHint": "To, co wpisujesz po # w czacie: małe litery, cyfry i łączniki. Jeśli zostawisz ją pustą, powstanie z tytułu.",
+    "source": "Źródło",
+    "docDate": "Data dokumentu",
+    "tags": "Tagi",
+    "tagsHint": "Oddzielone przecinkami, na przykład: rynek, q3.",
+    "project": "Projekt",
+    "noProject": "Bez projektu",
+    "titleRequired": "Nadaj elementowi tytuł.",
+    "badSlug": "Krótka nazwa ma od 1 do 64 małych liter, cyfr i łączników oraz zaczyna się i kończy literą lub cyfrą.",
+    "tooManyTags": "Element może mieć najwyżej {{max, number}} tagów.",
+    "tagTooLong": "Tag może mieć najwyżej {{max, number}} znaków."
+  },
+  "errors": {
+    "slugTaken": "Inny element biblioteki ma już tę krótką nazwę. Wybierz inną.",
+    "libraryFull": "Ta biblioteka zawiera 1000 elementów, czyli maksimum. Najpierw usuń niektóre.",
+    "unsupported": "Ten typ pliku nie jest obsługiwany.",
+    "tooLarge": "Ten plik jest za duży: pliki mogą mieć najwyżej 25 MB, obrazy najwyżej 3,75 MB.",
+    "stale": "Ten element zmienił się, odkąd go otwarto. Wczytaj go ponownie i spróbuj jeszcze raz.",
+    "notUploaded": "Plik nie dotarł. Spróbuj ponownie.",
+    "uploadMismatch": "Przesłany plik nie jest tym zapowiedzianym. Spróbuj ponownie.",
+    "writeForbidden": "Tylko administrator lub osoba, która przesłała ten element, może go zmienić lub usunąć.",
+    "deleteForbidden": "Ten element może usunąć tylko administrator lub osoba, która go przesłała.",
+    "notFound": "Ten element biblioteki już nie istnieje.",
+    "notFailed": "Ponownie odczytać można tylko element z błędem.",
+    "uploadRefused": "Nie udało się przesłać pliku. Spróbuj ponownie.",
+    "network": "Przesyłanie zostało przerwane: sprawdź połączenie i spróbuj ponownie.",
+    "other": "Coś poszło nie tak. Spróbuj ponownie."
+  },
+  "preview": {
+    "title": "Element biblioteki",
+    "loading": "Wczytywanie elementu…",
+    "loadFailed": "Nie udało się wczytać tego elementu. Sprawdź połączenie i spróbuj ponownie.",
+    "notFound": "Ten element biblioteki nie istnieje lub został usunięty.",
+    "pending": "Czeka na swój plik. Jeśli przesyłanie się nie zakończyło, usuń ten element i prześlij plik ponownie.",
+    "extracting": "Jego tekst jest odczytywany. Ta strona odświeży się, gdy będzie gotowy.",
+    "failed": "Nie udało się odczytać jego tekstu.",
+    "download": "Pobierz oryginał",
+    "newTab": "(otwiera się w nowej karcie)",
+    "retry": "Odczytaj ponownie",
+    "edit": "Edytuj szczegóły",
+    "delete": "Usuń",
+    "mentionHint": "Wpisz {{slug}} w asystencie, aby dodać ten dokument do czatu."
+  },
+  "details": {
+    "none": "Brak",
+    "file": "Plik",
+    "pages": "Strony",
+    "assistant": "Jak czyta go asystent",
+    "native": "Sam plik, gdy zostanie wskazany w czacie",
+    "passages": "Fragmenty tekstu pasujące do pytania",
+    "added": "Dodano",
+    "changed": "Ostatnia zmiana",
+    "byOn": "{{name}} · {{date}}"
+  },
+  "edit": {
+    "label": "Edytuj szczegóły elementu",
+    "save": "Zapisz",
+    "cancel": "Anuluj",
+    "reload": "Wczytaj ponownie"
+  },
+  "text": {
+    "title": "Tekst",
+    "loading": "Wczytywanie tekstu…",
+    "loadFailed": "Nie udało się wczytać tekstu. Spróbuj ponownie.",
+    "empty": "Na tej stronie nie znaleziono tekstu.",
+    "pagesLabel": "Strony tekstu",
+    "pageOf": "Strona {{current, number}} z {{total, number}}",
+    "partOf": "Część {{current, number}} z {{total, number}}",
+    "previous": "Poprzednia",
+    "next": "Następna",
+    "truncated": "Ten dokument jest bardzo długi: odczytano tylko jego pierwszą część."
+  },
+  "delete": {
+    "title": "Usunąć ten element biblioteki?",
+    "message": "„{{title}}” zostanie trwale usunięty wraz z plikiem i tekstem. Czaty, w których go wskazano, zachowają swoją treść.",
+    "confirm": "Usuń"
+  }
+}

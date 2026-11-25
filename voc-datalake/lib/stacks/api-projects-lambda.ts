@@ -10,6 +10,7 @@ import { PROJECTS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
+import { embeddingModelArn } from '../utils/model-allowlist';
 import { grantWorkspaceObjects } from '../utils/workspace-object-deletes';
 import {
   ASSIST_WORKER_ENV, PROJECTS_ASSIST_FUNCTION_BASE_NAME, assistWorkerName, createAssistWorker, grantAssistWorkerInvoke,
@@ -24,6 +25,11 @@ export interface ProjectsLambda {
   projectTablesEnvironment: Record<string, string>;
 }
 
+/** CDK's `grantReadData` actions but its stream reads, and its `grantWriteData` writes (lib/utils/table-write-grants.ts). */
+const TABLE_READS = ['dynamodb:BatchGetItem', 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:Scan',
+  'dynamodb:ConditionCheckItem', 'dynamodb:DescribeTable'] as const;
+const TABLE_WRITES = ['dynamodb:BatchWriteItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'] as const;
+
 export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
@@ -33,15 +39,18 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
 
   // Projects API
   const projectsRole = ctx.role('ProjectsLambdaRole');
-  feedbackTable.grantReadData(projectsRole);
+  // CDK's read grant without its stream reads: GetRecords and GetShardIterator act on a stream's ARN only, so on the
+  // table's and its indexes' they grant nothing and only cost the role's inline quota (api-stack-mcp.test.ts: the
+  // Documents Library's grants needed the room). The table's key: kmsKey.grantEncryptDecrypt below.
+  feedbackTable.grant(projectsRole, ...TABLE_READS);
   // Prioritization rows, room votes, user flags (Put + Update). Its aggregates deletes are workspace rows only: a
   // Prioritization row with its ballots (PRIORITIZATION) and a closed vote's pointer (VOTING_SESSION_ROW).
   grantReadAndWrites(aggregatesTable, projectsRole, ['PutItem', 'UpdateItem']);
   grantKeyScopedWrites(aggregatesTable, projectsRole, ['DeleteItem'], ['PRIORITIZATION', 'VOTING_SESSION_ROW']);
   // Workspace artifacts (owner decision: really deleted when their owner deletes them): every write, batches included
   // (a project delete sweeps its rows and its jobs with batch_writer, lambda/api/projects.py delete_project).
-  projectsTable.grantReadWriteData(projectsRole);
-  jobsTable.grantReadWriteData(projectsRole);
+  projectsTable.grant(projectsRole, ...TABLE_READS, ...TABLE_WRITES);
+  jobsTable.grant(projectsRole, ...TABLE_READS, ...TABLE_WRITES);
   kmsKey.grantEncryptDecrypt(projectsRole);
   projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['states:StartExecution'], resources: [researchStateMachine.stateMachineArn] }));
   // Claude models through the stack's shared customer-managed policies (lib/utils/claude-model-grant.ts),
@@ -49,17 +58,21 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   const projectsClaudePolicies = grantClaudeModels(projectsRole, 'stream');
   // Persona avatar image generation: the in-Region image model, exact ARN. Single-sourced in
   // model-allowlist.ts so the grant tracks the model through its EOL migration.
+  // With it, the Documents Library's embedder (lambda/shared/library_index.py): Titan Text Embeddings V2, in-Region
+  // and invoked directly, its exact ARN, in the same statement to spare the role's inline quota.
   projectsRole.addToPolicy(new iam.PolicyStatement({
     actions: ['bedrock:InvokeModel'],
-    resources: [ctx.avatarImageModelArn],
+    resources: [ctx.avatarImageModelArn, embeddingModelArn(stack.region)],
   }));
   // The image model is a Marketplace listing (issue #274).
   grantMarketplaceSubscription(projectsRole);
 
   // Avatars, product docs (presigned PUT URLs, extracted text, deletes) and prototypes (a duplicated document copies
   // its HTML, projects.py _copy_prototype_html): read, write and delete, every version of a deleted object, in one
-  // statement (lib/utils/workspace-object-deletes.ts).
-  grantWorkspaceObjects(rawDataBucket, projectsRole, ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*']);
+  // statement (lib/utils/workspace-object-deletes.ts). With them, the Documents Library's `library/` (the presigned
+  // PUT and GET, the extracted text, every version of a deleted item: lambda/shared/library_objects.py).
+  grantWorkspaceObjects(rawDataBucket, projectsRole, ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*',
+    'library/*']);
   // Signs the avatar and prototype URLs returned by GET /projects/{id}.
   // Explicit statement rather than secret.grantRead(): that adds a KMS
   // key-policy entry naming this role, and the key lives in CoreStack, so it

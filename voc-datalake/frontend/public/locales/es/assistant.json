@@ -70,7 +70,9 @@
       "saving": "Guardando…",
       "saved": "Guardado en documentos",
       "error": "Error al guardar – reintentar"
-    }
+    },
+    "librarySources": "Documentos de la biblioteca usados",
+    "openLibraryItem": "Abrir {{name}} ({{marker}}) en la Biblioteca"
   },
   "toolStatus": {
     "streaming": "preparando",
@@ -290,12 +292,14 @@
     },
     "limit": {
       "persona": "Como máximo {{max, number}} personas por mensaje.",
-      "document": "Como máximo {{max, number}} documentos por mensaje."
+      "document": "Como máximo {{max, number}} documentos por mensaje.",
+      "library": "Como máximo {{max, number}} documentos de la biblioteca por mensaje."
     },
     "loading": "Cargando el proyecto…",
     "empty": {
       "persona": "Ninguna persona coincide.",
-      "document": "Ningún documento coincide."
+      "document": "Ningún documento coincide.",
+      "library": "Ningún documento de la biblioteca coincide. Añade documentos en la página Biblioteca."
     },
     "count_one": "{{count, number}} sugerencia",
     "count_other": "{{count, number}} sugerencias",
@@ -304,7 +308,14 @@
     "remove": "Quitar {{name}}",
     "insertPersona": "Mencionar una persona",
     "insertDocument": "Etiquetar un documento",
-    "allCapped": "@all pregunta a las primeras {{max, number}} de {{total, number}} personas: {{names}}."
+    "allCapped": "@all pregunta a las primeras {{max, number}} de {{total, number}} personas: {{names}}.",
+    "placeholderLibrary": "Pregunta sobre tus comentarios, proyectos o esta página. Escribe # para un documento de la biblioteca…",
+    "sections": {
+      "library": "Biblioteca"
+    },
+    "loadingLibrary": "Cargando la biblioteca…",
+    "insertLibrary": "Mencionar un documento de la biblioteca",
+    "largeItem": "{{name}} es grande: unos {{tokens, number}} tokens cada vez que se envía."
   },
   "scope": {
     "title": "Alcance de los comentarios",

@@ -31,7 +31,8 @@
     "radar": "雷达",
     "featureRequests": "反馈看板",
     "participants": "参与者",
-    "oauthConsent": "批准助手"
+    "oauthConsent": "批准助手",
+    "library": "资料库"
   },
   "cancel": "取消",
   "configureBrand": "配置品牌",
@@ -91,7 +92,8 @@
     "admin": "管理",
     "connect": "MCP 与技能",
     "featureRequests": "反馈看板",
-    "participants": "参与者"
+    "participants": "参与者",
+    "library": "资料库"
   },
   "partialCountsHint": "近似值：无法读取完整时间范围，计数为下限",
   "problemAnalysisPage": {

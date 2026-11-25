@@ -29,7 +29,8 @@
     "radar": "Radar",
     "featureRequests": "Tablice opinii",
     "participants": "Uczestnicy",
-    "oauthConsent": "Zatwierdź asystenta"
+    "oauthConsent": "Zatwierdź asystenta",
+    "library": "Biblioteka"
   },
   "filters": {
     "allCategories": "Wszystkie kategorie",
@@ -85,7 +86,8 @@
     "admin": "Administracja",
     "connect": "MCP i skille",
     "featureRequests": "Tablice opinii",
-    "participants": "Uczestnicy"
+    "participants": "Uczestnicy",
+    "library": "Biblioteka"
   },
   "problemAnalysisPage": {
     "emptyHint": "Spróbuj rozszerzyć zakres czasu lub zmienić filtry",

@@ -1,0 +1,157 @@
+{
+  "title": "Dokumentenbibliothek",
+  "subtitle": "Berichte, Studien, Präsentationen und Bilder, die der Assistent lesen kann, wenn Sie sie in einem Chat nennen.",
+  "configureFirst": "Verbinden Sie zuerst den API-Endpunkt unter Administration → Allgemein.",
+  "intro": {
+    "label": "Über die Bibliothek",
+    "notFeedback": "Einträge der Bibliothek sind Referenzdokumente, kein Feedback: sie fließen nie in Kennzahlen, Stimmung oder Kategorien ein. Um Feedback aus einer CSV- oder JSON-Datei zu importieren, nutzen Sie",
+    "importLink": "Datenquellen",
+    "mention": "Geben Sie im Assistenten # und den Kurznamen eines Eintrags ein (zum Beispiel #q3-market), um dieses Dokument in den Chat zu holen."
+  },
+  "toolbar": {
+    "label": "Bibliothek filtern",
+    "search": "Bibliothek durchsuchen",
+    "searchPlaceholder": "Titel, Kurznamen, Quellen und Schlagwörter durchsuchen",
+    "tag": "Schlagwort",
+    "anyTag": "Alle Schlagwörter",
+    "project": "Projekt",
+    "anyProject": "Alle Projekte",
+    "sort": "Sortieren",
+    "sorts": {
+      "newest": "Neueste",
+      "oldest": "Älteste",
+      "title": "Titel",
+      "docDate": "Dokumentdatum"
+    }
+  },
+  "status": {
+    "pending": "Wartet auf die Datei",
+    "extracting": "Wird gelesen",
+    "ready": "Bereit",
+    "failed": "Fehlgeschlagen"
+  },
+  "row": {
+    "dated": "Datiert {{date}}",
+    "added": "Hinzugefügt am {{date}}",
+    "addedBy": "Hinzugefügt am {{date}} von {{name}}"
+  },
+  "list": {
+    "label": "Einträge der Bibliothek",
+    "loading": "Bibliothek wird geladen…",
+    "loadFailed": "Die Bibliothek konnte nicht geladen werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    "noMatch": "Keine Einträge der Bibliothek passen zu diesen Filtern.",
+    "loadMore": "Mehr laden"
+  },
+  "empty": {
+    "title": "Noch keine Dokumente",
+    "text": "Laden Sie einen Bericht, einen Umfrageexport, eine Präsentation oder ein Bild einmal hoch und nennen Sie es in jedem Chat mit # und seinem Kurznamen.",
+    "textReadOnly": "Noch niemand hat dieser Bibliothek ein Dokument hinzugefügt."
+  },
+  "upload": {
+    "open": "Dateien hochladen",
+    "title": "In die Bibliothek hochladen",
+    "description": "Jede Datei wird ein Eintrag der Bibliothek. Der Text jeder Datei wird einmal gelesen, nach dem Hochladen.",
+    "dropHint": "Dateien hier ablegen oder auswählen.",
+    "choose": "Dateien auswählen",
+    "limits": "PDF, Word, Excel, PowerPoint, CSV, HTML, Text, Markdown oder ein PNG-, JPEG-, GIF- oder WebP-Bild. Dateien bis 25 MB, Bilder bis 3,75 MB.",
+    "filesLabel": "Hochzuladende Dateien",
+    "moreDetails": "Weitere Angaben",
+    "remove": "{{name}} entfernen",
+    "progressLabel": "Hochladen von {{name}}",
+    "start": "Hochladen ({{count, number}})",
+    "cancel": "Abbrechen",
+    "done": "Fertig",
+    "phase": {
+      "creating": "Hochladen wird vorbereitet…",
+      "uploading": "Wird hochgeladen… {{percent}}",
+      "finishing": "Lesen der Datei beginnt…",
+      "done": "Hochgeladen. Der Text wird gelesen: Die Liste zeigt, wann er bereit ist."
+    },
+    "refused": {
+      "unsupported": "Dieser Dateityp wird nicht unterstützt. Laden Sie einen dieser Typen hoch: {{accepted}}.",
+      "empty": "Diese Datei ist leer.",
+      "tooLarge": "Diese Datei ist größer als 25 MB, das Maximum für einen Eintrag der Bibliothek.",
+      "imageTooLarge": "Dieses Bild ist größer als 3,75 MB, das Maximum für ein Bild."
+    }
+  },
+  "fields": {
+    "title": "Titel",
+    "slug": "Kurzname",
+    "slugHint": "Was Sie in einem Chat nach # eingeben: Kleinbuchstaben, Ziffern und Bindestriche. Leer gelassen, wird er aus dem Titel gebildet.",
+    "source": "Quelle",
+    "docDate": "Dokumentdatum",
+    "tags": "Schlagwörter",
+    "tagsHint": "Durch Kommas getrennt, zum Beispiel: markt, q3.",
+    "project": "Projekt",
+    "noProject": "Kein Projekt",
+    "titleRequired": "Geben Sie dem Eintrag einen Titel.",
+    "badSlug": "Ein Kurzname besteht aus 1 bis 64 Kleinbuchstaben, Ziffern und Bindestrichen und beginnt und endet mit einem Buchstaben oder einer Ziffer.",
+    "tooManyTags": "Ein Eintrag hat höchstens {{max, number}} Schlagwörter.",
+    "tagTooLong": "Ein Schlagwort hat höchstens {{max, number}} Zeichen."
+  },
+  "errors": {
+    "slugTaken": "Ein anderer Eintrag der Bibliothek hat bereits diesen Kurznamen. Wählen Sie einen anderen.",
+    "libraryFull": "Diese Bibliothek enthält 1.000 Einträge, ihr Maximum. Löschen Sie zuerst einige.",
+    "unsupported": "Dieser Dateityp wird nicht unterstützt.",
+    "tooLarge": "Diese Datei ist zu groß: Dateien dürfen höchstens 25 MB groß sein, Bilder höchstens 3,75 MB.",
+    "stale": "Dieser Eintrag wurde geändert, seit Sie ihn geöffnet haben. Laden Sie ihn neu und versuchen Sie es erneut.",
+    "notUploaded": "Die Datei ist nicht angekommen. Versuchen Sie es erneut.",
+    "uploadMismatch": "Die hochgeladene Datei ist nicht die angekündigte. Versuchen Sie es erneut.",
+    "writeForbidden": "Nur ein Admin oder die Person, die dieses Element hochgeladen hat, kann es ändern oder löschen.",
+    "deleteForbidden": "Nur Administratoren oder die Person, die ihn hochgeladen hat, können diesen Eintrag löschen.",
+    "notFound": "Dieser Eintrag der Bibliothek existiert nicht mehr.",
+    "notFailed": "Nur ein fehlgeschlagener Eintrag kann erneut gelesen werden.",
+    "uploadRefused": "Die Datei konnte nicht hochgeladen werden. Versuchen Sie es erneut.",
+    "network": "Das Hochladen wurde unterbrochen: Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    "other": "Etwas ist schiefgelaufen. Versuchen Sie es erneut."
+  },
+  "preview": {
+    "title": "Eintrag der Bibliothek",
+    "loading": "Eintrag wird geladen…",
+    "loadFailed": "Dieser Eintrag konnte nicht geladen werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    "notFound": "Dieser Eintrag der Bibliothek existiert nicht oder wurde gelöscht.",
+    "pending": "Wartet auf seine Datei. Wenn das Hochladen nicht abgeschlossen wurde, löschen Sie diesen Eintrag und laden Sie die Datei erneut hoch.",
+    "extracting": "Sein Text wird gelesen. Diese Seite aktualisiert sich, sobald er bereit ist.",
+    "failed": "Sein Text konnte nicht gelesen werden.",
+    "download": "Original herunterladen",
+    "newTab": "(öffnet in einem neuen Tab)",
+    "retry": "Erneut lesen",
+    "edit": "Angaben bearbeiten",
+    "delete": "Löschen",
+    "mentionHint": "Geben Sie {{slug}} im Assistenten ein, um dieses Dokument in einen Chat zu holen."
+  },
+  "details": {
+    "none": "Keine",
+    "file": "Datei",
+    "pages": "Seiten",
+    "assistant": "Wie der Assistent es liest",
+    "native": "Die Datei selbst, wenn sie in einem Chat genannt wird",
+    "passages": "Die Textstellen, die zur Frage passen",
+    "added": "Hinzugefügt",
+    "changed": "Zuletzt geändert",
+    "byOn": "{{name}}, {{date}}"
+  },
+  "edit": {
+    "label": "Angaben des Eintrags bearbeiten",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "reload": "Neu laden"
+  },
+  "text": {
+    "title": "Inhalt",
+    "loading": "Text wird geladen…",
+    "loadFailed": "Der Text konnte nicht geladen werden. Versuchen Sie es erneut.",
+    "empty": "Auf dieser Seite wurde kein Text gefunden.",
+    "pagesLabel": "Seiten des Texts",
+    "pageOf": "Seite {{current, number}} von {{total, number}}",
+    "partOf": "Teil {{current, number}} von {{total, number}}",
+    "previous": "Zurück",
+    "next": "Weiter",
+    "truncated": "Dieses Dokument ist sehr lang: Nur sein erster Teil wurde gelesen."
+  },
+  "delete": {
+    "title": "Diesen Eintrag der Bibliothek löschen?",
+    "message": "„{{title}}“ wird endgültig gelöscht, mit seiner Datei und seinem Text. Chats, die ihn genannt haben, behalten, was sie gesagt haben.",
+    "confirm": "Löschen"
+  }
+}

@@ -38,6 +38,8 @@ interface ComposerProps {
   webSearchAvailable: boolean
   /** The project on screen: `@` mentions its personas, `#` tags its documents. Absent = off. */
   projectId?: string
+  /** `#slug` mentions a Documents Library item, on any page (docs/documents-library.md). */
+  libraryEnabled?: boolean
   onSend: (content: string | ContentPart[], mentions?: Mentions) => void
   onStop: () => void
   /** Text injected from outside (suggested prompts); consumed once. */
@@ -114,15 +116,19 @@ function AttachmentChips({ items, onRemove }: Readonly<{ items: readonly Pending
 function MentionButtons({ mentions }: Readonly<{ mentions: MentionsController }>) {
   const { t } = useTranslation('assistant')
   if (!mentions.enabled) return null
+  // Off a project page `#` mentions the library alone, and there is no persona to `@`.
+  const hashLabel = mentions.personasEnabled ? t('mentions.insertDocument') : t('mentions.insertLibrary')
   return (
     <>
-      <button type="button" onClick={() => mentions.insertTrigger('@')} className="icon-btn" title={t('mentions.insertPersona')}>
-        <AtSign size={16} aria-hidden />
-        <span className="sr-only">{t('mentions.insertPersona')}</span>
-      </button>
-      <button type="button" onClick={() => mentions.insertTrigger('#')} className="icon-btn" title={t('mentions.insertDocument')}>
+      {mentions.personasEnabled && (
+        <button type="button" onClick={() => mentions.insertTrigger('@')} className="icon-btn" title={t('mentions.insertPersona')}>
+          <AtSign size={16} aria-hidden />
+          <span className="sr-only">{t('mentions.insertPersona')}</span>
+        </button>
+      )}
+      <button type="button" onClick={() => mentions.insertTrigger('#')} className="icon-btn" title={hashLabel}>
         <Hash size={16} aria-hidden />
-        <span className="sr-only">{t('mentions.insertDocument')}</span>
+        <span className="sr-only">{hashLabel}</span>
       </button>
     </>
   )
@@ -171,7 +177,8 @@ function SendOrStop({ streaming, canSend, onStop }: Readonly<{ streaming: boolea
 }
 
 export default function Composer({
-  threadId, streaming, blockedReason, webSearchAvailable, projectId, onSend, onStop, draft, innerClassName,
+  threadId, streaming, blockedReason, webSearchAvailable, projectId, libraryEnabled = false, onSend, onStop, draft,
+  innerClassName,
 }: Readonly<ComposerProps>) {
   const { t } = useTranslation('assistant')
   const inputId = useId()
@@ -186,7 +193,7 @@ export default function Composer({
   }
   const [lastDraft, setLastDraft] = useState<string | undefined>(undefined)
   const attachments = useAttachments()
-  const mentions = useMentions({ projectId, text, setText, textareaRef })
+  const mentions = useMentions({ projectId, libraryEnabled, text, setText, textareaRef })
 
   // Adopt a new suggested prompt (render-time sync, not an effect).
   if (draft !== undefined && draft !== lastDraft) {

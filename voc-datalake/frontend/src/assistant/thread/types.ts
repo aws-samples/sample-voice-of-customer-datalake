@@ -40,9 +40,19 @@ export interface WebSourceRef {
   url: string
 }
 
+/** A Documents Library item the answer used (docs/documents-library.md): its chip opens it at the page cited. */
+export interface LibrarySourceRef {
+  item_id: string
+  slug: string
+  title: string
+  page?: number
+}
+
 export interface MessageSources {
   feedback: FeedbackSourceRef[]
   web: WebSourceRef[]
+  /** Absent in a conversation saved before 7.62.00. */
+  library?: LibrarySourceRef[]
 }
 
 export interface NavigationSuggestion {

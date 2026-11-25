@@ -31,7 +31,8 @@
     "radar": "Radar",
     "featureRequests": "Feedback-Boards",
     "participants": "Teilnehmende",
-    "oauthConsent": "Assistent freigeben"
+    "oauthConsent": "Assistent freigeben",
+    "library": "Bibliothek"
   },
   "cancel": "Abbrechen",
   "configureBrand": "Marke konfigurieren",
@@ -91,7 +92,8 @@
     "admin": "Administration",
     "connect": "MCP & Skills",
     "featureRequests": "Feedback-Boards",
-    "participants": "Teilnehmende"
+    "participants": "Teilnehmende",
+    "library": "Bibliothek"
   },
   "partialCountsHint": "Näherungswert: Der gesamte Zeitraum konnte nicht gelesen werden, die Zahlen sind eine Untergrenze",
   "problemAnalysisPage": {

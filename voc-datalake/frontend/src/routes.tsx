@@ -30,7 +30,7 @@ import Login from './pages/Login/Login'
 import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
-  DataExplorer, Vote, Memory, Company, Agents, AgentDetail,
+  DataExplorer, Vote, Memory, Company, Library, Agents, AgentDetail,
   WorkflowPage, Account, Connect, OAuthConsent, Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
 } from './lazyPages'
@@ -135,6 +135,9 @@ export const routes: RouteObject[] = [
       { path: 'feature-requests/:slug', ...page(<FeatureBoardPage />) },
       { path: 'memory', ...page(<Memory />) },
       { path: 'company', ...page(<Company />) },
+      // The Documents Library: one page; the item open in its preview drawer is `?item=<id>&page=<n>`, where the
+      // assistant's citation chips link (Library/libraryParams.ts).
+      { path: 'library', ...page(<Library />) },
       { path: 'agents', ...page(<Agents />) },
       { path: 'agents/:id', ...page(<AgentDetail />) },
       // The library itself is the Workflows tab of /agents (its "Workflows" crumb links there). Without this,

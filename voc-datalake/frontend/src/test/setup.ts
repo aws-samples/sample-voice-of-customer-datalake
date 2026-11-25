@@ -40,6 +40,7 @@ import radarEn from '../../public/locales/en/radar.json'
 import emailInboxEn from '../../public/locales/en/emailInbox.json'
 import participantsEn from '../../public/locales/en/participants.json'
 import featureRequestsEn from '../../public/locales/en/featureRequests.json'
+import libraryEn from '../../public/locales/en/library.json'
 
 // Single source of truth for namespaces and their resources.
 // Adding a new locale namespace only requires one entry here.
@@ -68,6 +69,7 @@ const namespaceResources = {
   emailInbox: emailInboxEn,
   participants: participantsEn,
   featureRequests: featureRequestsEn,
+  library: libraryEn,
 } as const
 
 void i18n.use(initReactI18next).init({

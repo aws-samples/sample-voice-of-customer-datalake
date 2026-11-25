@@ -61,6 +61,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   // "set up Radar for <brand>" (brand list, Radar scraper / connector, scan) works on this page.
   { route: 'radar', kind: 'radar' },
   { route: 'account', kind: 'other', label: 'account' },
+  // The Documents Library (docs/documents-library.md): no pack of its own; its items are `#slug` on every page.
+  { route: 'library', kind: 'other' },
   // Participants (docs/participants.md): its own kind — core + the participants pack (lists, add people).
   { route: 'participants', kind: 'participants' },
   // The in-app feature-request board (docs/feature-requests.md): no assistant pack either.
