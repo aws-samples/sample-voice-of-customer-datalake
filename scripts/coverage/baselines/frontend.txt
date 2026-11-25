@@ -16,7 +16,6 @@ voc-datalake/frontend/src/assistant/approvals/registry.ts 73.86   # 65/88
 voc-datalake/frontend/src/assistant/components/Composer.tsx 64.28   # 54/84
 voc-datalake/frontend/src/assistant/components/attachments.ts 66.66   # 22/33
 voc-datalake/frontend/src/assistant/components/exportMarkdown.ts 53.84   # 7/13
-voc-datalake/frontend/src/assistant/mentions/MentionMenu.tsx 50.00   # 8/16
 voc-datalake/frontend/src/components/AiCoach/HumanDrivenNotice.tsx 70.00   # 7/10
 voc-datalake/frontend/src/components/CategoriesManager/CategoryDetailsEditor.tsx 55.55   # 20/36
 voc-datalake/frontend/src/components/DimensionsManager/BuiltinDimensionCard.tsx 0.00   # 0/3

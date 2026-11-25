@@ -81,7 +81,7 @@ export function contentTypeOf(file: Pick<File, 'name' | 'type'>): string | null 
   return Object.hasOwn(LIBRARY_FORMATS, declared) ? declared : null
 }
 
-export const isImageType = (contentType: string): boolean => contentType.startsWith('image/')
+const isImageType = (contentType: string): boolean => contentType.startsWith('image/')
 
 /** Why a file cannot be uploaded, or what it is. */
 export type FileCheck =

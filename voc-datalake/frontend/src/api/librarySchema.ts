@@ -10,14 +10,14 @@ import { parseEach } from './lenientFields'
 
 /** = lambda/shared/library_keys.py ITEM_ID_PATTERN. */
 export const LIBRARY_ITEM_ID = /^lib_\d{14}_[0-9a-f]{8}$/
-export const LIBRARY_STATUSES = ['pending', 'extracting', 'ready', 'failed'] as const
+const LIBRARY_STATUSES = ['pending', 'extracting', 'ready', 'failed'] as const
 export type LibraryStatus = (typeof LIBRARY_STATUSES)[number]
 
 const optionalString = z.string().optional().catch(undefined)
 const optionalNumber = z.number().optional().catch(undefined)
 const person = z.looseObject({ sub: z.string().catch(''), name: z.string().catch('') }).optional().catch(undefined)
 
-export const libraryItemSchema = z.looseObject({
+const libraryItemSchema = z.looseObject({
   item_id: z.string().regex(LIBRARY_ITEM_ID),
   title: z.string().catch(''),
   slug: z.string().catch(''),
@@ -71,7 +71,7 @@ export function normalizeLibraryPage(raw: unknown): LibraryPage {
 }
 
 /** What `#` offers: a ready item (the suggest route's slim fields). */
-export const librarySuggestionSchema = z.looseObject({
+const librarySuggestionSchema = z.looseObject({
   item_id: z.string().regex(LIBRARY_ITEM_ID),
   slug: z.string().min(1),
   title: z.string().catch(''),

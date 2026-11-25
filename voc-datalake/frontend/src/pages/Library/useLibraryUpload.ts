@@ -27,7 +27,7 @@ export interface DraftFields {
   readonly tags: string
 }
 
-export type UploadPhase = 'ready' | 'creating' | 'uploading' | 'finishing' | 'done' | 'failed'
+type UploadPhase = 'ready' | 'creating' | 'uploading' | 'finishing' | 'done' | 'failed'
 
 export interface UploadEntry {
   readonly key: string
@@ -89,7 +89,7 @@ async function send(entry: UploadEntry, contentType: string, report: Report): Pr
 
 const NEXT_KEY = { value: 0 }
 
-export function newEntry(file: File): UploadEntry {
+function newEntry(file: File): UploadEntry {
   NEXT_KEY.value += 1
   return {
     key: `upload-${String(NEXT_KEY.value)}`, file, check: checkFile(file),
