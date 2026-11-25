@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  ACCEPT_ATTR, LIBRARY_FORMATS, MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES, checkFile, contentTypeOf, isSlug, parseTags, slugify,
+  ACCEPT_ATTR, LIBRARY_FORMATS, MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES, checkFile, contentTypeOf, isSlug, parseLibraryTags, librarySlug,
   tagsProblem, titleFromFilename,
 } from './libraryFormats'
 
@@ -91,7 +91,7 @@ describe('titles and short names', () => {
     ['日本', 'document'],
     ['a'.repeat(63) + ' b', 'a'.repeat(63)],
   ])('makes %s into %s, as the server does', (title, slug) => {
-    expect(slugify(title)).toBe(slug)
+    expect(librarySlug(title)).toBe(slug)
   })
 
   it('knows a short name', () => {
@@ -101,7 +101,7 @@ describe('titles and short names', () => {
 
 describe('tags', () => {
   it('reads a typed list of tags', () => {
-    expect(parseTags(' Market,  q3   report ,,market ')).toStrictEqual(['market', 'q3 report'])
+    expect(parseLibraryTags(' Market,  q3   report ,,market ')).toStrictEqual(['market', 'q3 report'])
   })
 
   it('says what is wrong with them', () => {

@@ -9,12 +9,7 @@ import type { ApiInvoker } from '../internal-api.js';
 import { CHAT_CONTEXT_RESOURCE } from '../internal-api.js';
 import { AssistantToolError } from '../errors.js';
 import { parseProjectAccess, type ProjectAccessSummary } from '../project-access.js';
-import { parseEach, seg } from './common.js';
-
-/** Lenient field: null or a malformed value degrades to absent instead of failing the row. */
-function lenient<T>(schema: z.ZodType<T>) {
-  return schema.nullish().catch(null).transform((value): T | undefined => value ?? undefined);
-}
+import { lenient, parseEach, seg } from './common.js';
 
 const optionalString = lenient(z.string());
 

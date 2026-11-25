@@ -16,7 +16,7 @@ import { libraryApi, libraryKeys } from '../../api/libraryApi'
 import type { LibraryEditBody } from '../../api/libraryApi'
 import type { LibraryItem } from '../../api/librarySchema'
 import { failureText, libraryFailure } from './libraryErrors'
-import { isSlug, parseTags, tagsProblem } from './libraryFormats'
+import { isSlug, parseLibraryTags, tagsProblem } from './libraryFormats'
 import type { ProjectOption } from './libraryFilters'
 
 interface EditFields {
@@ -37,7 +37,7 @@ const sameTags = (a: readonly string[], b: readonly string[]) => a.length === b.
 
 /** Only what changed, with the version it was opened at. */
 function changesOf(item: LibraryItem, fields: EditFields): LibraryEditBody {
-  const tags = parseTags(fields.tags)
+  const tags = parseLibraryTags(fields.tags)
   return {
     expected_version: item.version,
     ...(fields.title.trim() === item.title ? {} : { title: fields.title.trim() }),
@@ -50,7 +50,7 @@ function changesOf(item: LibraryItem, fields: EditFields): LibraryEditBody {
 }
 
 function invalid(fields: EditFields): boolean {
-  return fields.title.trim() === '' || !isSlug(fields.slug.trim()) || tagsProblem(parseTags(fields.tags)) !== null
+  return fields.title.trim() === '' || !isSlug(fields.slug.trim()) || tagsProblem(parseLibraryTags(fields.tags)) !== null
 }
 
 
