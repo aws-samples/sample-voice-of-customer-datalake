@@ -14,10 +14,10 @@ import type { LibraryItem, LibraryPage } from '../../api/librarySchema'
 /** How often a list with an item in flight is read again. */
 export const IN_FLIGHT_REFETCH_MS = 4000
 
-export const isInFlight = (item: Pick<LibraryItem, 'status'>): boolean => item.status === 'pending' || item.status === 'extracting'
+export const isItemInFlight = (item: Pick<LibraryItem, 'status'>): boolean => item.status === 'pending' || item.status === 'extracting'
 
 function anyInFlight(pages: readonly LibraryPage[] | undefined): boolean {
-  return (pages ?? []).some((page) => page.items.some(isInFlight))
+  return (pages ?? []).some((page) => page.items.some(isItemInFlight))
 }
 
 export function useLibraryList(query: LibraryListQuery) {

@@ -12,9 +12,9 @@ import { LIBRARY_SORTS } from '../../api/libraryApi'
 import type { LibrarySort } from '../../api/libraryApi'
 import type { LibraryFilters, ProjectOption } from './libraryFilters'
 
-const isSort = (value: string): value is LibrarySort => LIBRARY_SORTS.some((sort) => sort === value)
+const isLibrarySort = (value: string): value is LibrarySort => LIBRARY_SORTS.some((sort) => sort === value)
 
-function sortLabel(t: TFunction<'library'>, sort: LibrarySort): string {
+function librarySortLabel(t: TFunction<'library'>, sort: LibrarySort): string {
   switch (sort) {
     case 'newest': return t('toolbar.sorts.newest')
     case 'oldest': return t('toolbar.sorts.oldest')
@@ -61,8 +61,8 @@ export default function LibraryToolbar({ filters, onChange, tags, projects }: Re
       <div className="flex min-w-0 flex-col gap-1">
         <label htmlFor={`${id}-sort`} className="text-[12px] font-medium text-muted">{t('toolbar.sort')}</label>
         <select id={`${id}-sort`} className="select select-sm w-auto" value={filters.sort}
-          onChange={(event) => { if (isSort(event.target.value)) onChange({ ...filters, sort: event.target.value }) }}>
-          {LIBRARY_SORTS.map((sort) => <option key={sort} value={sort}>{sortLabel(t, sort)}</option>)}
+          onChange={(event) => { if (isLibrarySort(event.target.value)) onChange({ ...filters, sort: event.target.value }) }}>
+          {LIBRARY_SORTS.map((sort) => <option key={sort} value={sort}>{librarySortLabel(t, sort)}</option>)}
         </select>
       </div>
     </div>

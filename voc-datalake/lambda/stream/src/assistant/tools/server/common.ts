@@ -108,3 +108,9 @@ export function parseEach<T>(schema: z.ZodType<T>, rows: unknown[]): T[] {
     return parsed.success ? [parsed.data] : [];
   });
 }
+
+/** A lenient field of a backend answer: null or a malformed value degrades to absent instead of failing the row
+ *  (the chat context's and the library's rows). */
+export function lenient<T>(schema: z.ZodType<T>) {
+  return schema.nullish().catch(null).transform((value): T | undefined => value ?? undefined);
+}
