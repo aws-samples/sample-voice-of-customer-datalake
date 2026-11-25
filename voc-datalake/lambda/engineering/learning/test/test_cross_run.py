@@ -392,3 +392,18 @@ def test_the_manifest_names_each_agents_flow_step_from_its_task() -> None:
               {'sk': 'AGENT#coordinator-1', 'seq': 1, 'role': 'coordinator', 'task_id': 'coordinate', 'commit': SHA}]
     body = manifest.build(run, agents, [_Task('t-slug', 'fix'), _Task('coordinate', '')], revision=1).body
     assert [(row['agent'], row['step']) for row in body['agents']] == [('coordinator-1', ''), ('fixer-2', 'fix')]
+
+
+def test_an_agent_whose_task_went_to_a_person_is_a_cross_run_signal() -> None:
+    # (Q8, 7.71.04) Since 7.71.03 such a session ends needs_human, no longer failed: the pass still counts it, by its
+    # own kind, with the agent's transcripts as its evidence; a done one is none.
+    from engineering.learning.cross_run_input import AgentLine, RunDigest, signals
+    keys = f'ws/default/runs/{run_id(1)}/committer-7/commits/{SHA}/_transcripts/attempt-1/'
+    agents = tuple(AgentLine(agent=agent, role=agent.rsplit('-', 1)[0], step=step, task=task, attempt=1, status=status,
+                             cost=Decimal('0.10'), seconds=60, transcripts=keys if status != 'done' else '')
+                   for agent, step, task, status in (('coordinator-1', '', 'coordinate', 'done'),
+                                                     ('committer-7', 'commit', 't-commit', 'needs_human')))
+    run = RunDigest(run_id=run_id(1), day='2026-11-14', status='needs_human', connection=CONN, repo='example/harbor',
+                    cost=Decimal('0.20'), tokens=1_000, manifest='manifest-key', agents=agents)
+    assert [(found.role, found.kind, found.evidence) for found in signals(run)] == [
+        ('committer', 'needs_human', ('manifest-key', keys))]

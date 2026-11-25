@@ -113,7 +113,7 @@ function OptionRouting() {
         const mapped = options.filter((option) => option.category !== undefined).length
         return (
           <li key={question.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
-            <span className="min-w-0 flex-1 text-text">{number} · {headlineShown(question, form.language)}</span>
+            <span className="min-w-0 flex-1 text-text">{number} · {headlineShown(question.headline, form.language)}</span>
             <span className="text-[12px] text-muted">{t('settings.routing.mapped', { mapped, count: options.length })}</span>
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => go('questions', [question.id])}
               aria-label={t('settings.routing.editQuestion', { number })}>{t('settings.routing.edit')}</button>

@@ -120,7 +120,7 @@ def test_a_redacting_upload_refuses_a_row_comprehend_could_not_read_and_counts_i
     """F1 (7.71.02): every redacting upload's redaction is strict, as the form import's: a row whose text Comprehend
     should have read and could not (every text read as English here, as a row that named its language would be) is
     refused and counted with the skipped rows, never queued with the patterns' redaction alone; the others are. Q6
-    (7.71.03): the answer names it by its id (``redaction_unavailable``)."""
+    (7.71.03): the answer names it (``redaction_unavailable``), by its place in the items sent since F8 (7.71.04)."""
     items = [{'id': f'i{n}', 'text': text, 'source': 'web', 'timestamp': '2026-01-02T00:00:00Z'}
              for n, text in enumerate(['Call +49 30 12345678', 'unreadable by the model'])]
     with patch.object(pii_redaction, 'comprehend_language', return_value='en'), \
@@ -129,7 +129,7 @@ def test_a_redacting_upload_refuses_a_row_comprehend_could_not_read_and_counts_i
         response, body = _upload(api_gateway_event, lambda_context, '/scrapers/manual/json-upload',
                                  {'items': items, 'source_id': 'support_tickets'})
     assert (response['statusCode'], body['imported_count'], body['total_items']) == (200, 1, 2)
-    assert body['redaction_unavailable'] == {'count': 1, 'ids': ['i1']}
+    assert body['redaction_unavailable'] == {'count': 1, 'rows': [2]}
     assert [(message['id'], message['text']) for message in _sent(wired)] == [('i0', 'Call [PHONE]')]
     counts = recorded.call_args.args[3]
     assert (counts.received, counts.imported, counts.skipped) == (2, 1, 1)
@@ -138,7 +138,8 @@ def test_a_redacting_upload_refuses_a_row_comprehend_could_not_read_and_counts_i
 @pytest.mark.usefixtures('wired')
 def test_a_csv_upload_names_each_row_it_refused_for_its_redaction_by_number(api_gateway_event, lambda_context):
     """Q6 (7.71.03): a CSV upload names the rows the strict redaction left out by their row number (the ids are the
-    platform's), the first ``MAX_NAMED_UNREDACTED`` with the whole count; an upload that refused none says nothing."""
+    platform's), the first ``MAX_NAMED_UNREDACTED`` with the whole count; an upload that refused none says nothing.
+    Every upload answers this one shape since F8 (7.71.04)."""
     rows = '\n'.join(f'"{text}",Jane,app,vip,pro,2026-01-02' for text in ['Fine', 'unreadable one', 'Also fine', 'unreadable two'])
     upload = {'csv_text': f'Body,Customer,Product,Labels,Plan,date\n{rows}\n', 'source_id': 'support_tickets',
               'column_map': MAP}
@@ -149,3 +150,31 @@ def test_a_csv_upload_names_each_row_it_refused_for_its_redaction_by_number(api_
     assert (body['imported_count'], body['redaction_unavailable']) == (2, {'count': 2, 'rows': [2]})
     _response, plain = _upload(api_gateway_event, lambda_context, '/scrapers/manual/csv-upload', upload)
     assert 'redaction_unavailable' not in plain
+
+
+def test_a_pasted_reviews_import_names_each_review_it_refused_for_its_redaction_by_its_place(wired, api_gateway_event,
+                                                                                            lambda_context):
+    """F8 (7.71.04): a pasted reviews import answers ``redaction_unavailable`` as a CSV and a JSON upload do,
+    ``{count, rows}``: each review left out by its 1-based place among the reviews sent (its message id is the
+    platform's), the count whole."""
+    job = {'source_url': 'https://example.com/reviews', 'source_origin': 'example', 'raw_text': 'r', 'reviews': []}
+    sources = {'sources': [{'id': 'manual_import', 'pii': 'redact', 'retention_days': 365}]}
+    table = MagicMock()
+    table.get_item.side_effect = lambda **kw: {'Item': job if kw['Key']['pk'].startswith('MANUAL_IMPORT#') else sources}
+    reviews = [{'text': text, 'date': '2026-01-02'} for text in ['Fine', 'unreadable one', 'unreadable two']]
+    with patch.object(h, 'aggregates_table', table), \
+            patch.object(pii_redaction, 'comprehend_language', return_value='en'), \
+            patch.object(pii_redaction, '_comprehend', return_value=_comprehend_failing_on('unreadable')), \
+            patch.object(h, '_record_run'):
+        response, body = _upload(api_gateway_event, lambda_context, '/scrapers/manual/confirm',
+                                 {'job_id': 'job-1', 'reviews': reviews})
+    assert (response['statusCode'], body['imported_count']) == (200, 1)
+    assert body['redaction_unavailable'] == {'count': 2, 'rows': [2, 3]}
+    assert [json.loads(call.kwargs['MessageBody'])['text'] for call in wired.send_message.call_args_list] == ['Fine']
+
+
+def test_each_refused_id_is_the_next_message_of_that_id_by_its_text():
+    """F8 (7.71.04): the left-out ids come in upload order, so two items that share an id are told apart by their
+    place, and an id that is not a string (a JSON item's number) matches as the text ``policy_applied`` names."""
+    sent = enumerate([{'id': 'a'}, {'id': 'a'}, {'id': 7}, {'id': 'b'}], start=1)
+    assert h._refused_rows(sent, ['a', '7']) == [1, 3]

@@ -66,7 +66,7 @@ export interface TargetGroups {
 
 const questionOption = (t: TFunction<'feedbackForms'>, form: FormV2, at: number): TargetOption[] => {
   const question = form.questions[at]
-  return question === undefined ? [] : [{ value: question.id, label: t('logic.target.question', { number: at + 1, headline: headlineShown(question, form.language) }) }]
+  return question === undefined ? [] : [{ value: question.id, label: t('logic.target.question', { number: at + 1, headline: headlineShown(question.headline, form.language) }) }]
 }
 
 /** The targets a rule of the question at `index` can go to, grouped as its select lists them. */
@@ -75,7 +75,7 @@ export function targetGroups(t: TFunction<'feedbackForms'>, form: FormV2, index:
   const nextIndex = later[0]
   const next = nextIndex === undefined ? [] : questionOption(t, form, nextIndex)
   const rest = later.slice(1).flatMap((at) => questionOption(t, form, at))
-  const endings = form.endings.map((ending) => ({ value: ending.id, label: t('logic.target.ending', { title: textIn(ending.title, form.language) }) }))
+  const endings = form.endings.map((ending) => ({ value: ending.id, label: t('logic.target.ending', { title: headlineShown(ending.title, form.language) }) }))
   const all = [...next, ...rest, ...endings].filter((option) => option.value !== skip)
   const known = current === null || all.some((option) => option.value === current) || current === skip
   return {
@@ -89,9 +89,8 @@ export function targetGroups(t: TFunction<'feedbackForms'>, form: FormV2, index:
 /** The Otherwise select's first entry: "Next question: 2 · …", or "End: Thank you!" on the last question. */
 export function fallthroughLabel(t: TFunction<'feedbackForms'>, form: FormV2, index: number): string {
   const next = form.questions[index + 1]
-  if (next !== undefined) return t('logic.target.nextNumbered', { number: index + 2, headline: headlineShown(next, form.language) })
-  const ending = form.endings[0]
-  return t('logic.target.defaultEnding', { title: ending === undefined ? '' : textIn(ending.title, form.language) })
+  if (next !== undefined) return t('logic.target.nextNumbered', { number: index + 2, headline: headlineShown(next.headline, form.language) })
+  return t('logic.target.defaultEnding', { title: headlineShown(form.endings[0]?.title, form.language) })
 }
 
 /** The Otherwise target as the select shows it: '' for "no jump" (or a jump to where the form goes anyway). */

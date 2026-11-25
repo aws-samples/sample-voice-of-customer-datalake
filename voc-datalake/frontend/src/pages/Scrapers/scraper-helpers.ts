@@ -81,3 +81,21 @@ export function countMissingDates(reviews: ReadonlyArray<{ text: string; date: s
 export function countDefaultedDates(reviews: ReadonlyArray<{ text: string; date: string | null; date_defaulted?: boolean }>): number {
   return reviews.filter((r) => r.text.trim() !== '' && r.date_defaulted === true && r.date != null && r.date !== '').length
 }
+
+/** How much of a left-out review's text its name quotes. */
+const OPENING_CHARS = 60
+
+/**
+ * Each review a confirmed paste left out for its redaction (`redaction_unavailable.rows`, 7.71.04) as its notice names
+ * it: its number in the list confirmed and its opening words, since that list is gone once imported. `rows` count the
+ * reviews sent, those with text, as the server does.
+ */
+export function leftOutNames(t: TFunction<'scrapers'>, reviews: ReadonlyArray<{ text: string }>, rows: readonly number[]): string[] {
+  const sent = reviews.flatMap((review, index) => (review.text.trim() === '' ? [] : [{ position: index + 1, text: review.text.trim() }]))
+  return rows.map((row) => {
+    const review = sent[row - 1]
+    if (review === undefined) return String(row)
+    const text = review.text.length > OPENING_CHARS ? `${review.text.slice(0, OPENING_CHARS).trimEnd()}…` : review.text
+    return t('unredacted.quoted', { position: review.position, text })
+  })
+}

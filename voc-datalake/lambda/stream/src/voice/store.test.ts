@@ -20,15 +20,16 @@ function store(answer: Partial<StoreDeps> = {}) {
 }
 
 describe('voice store: the session row', () => {
-  it('activates a minted session once, within its minute and 10 s for the clocks, in its own partition', async () => {
+  it('activates a minted session once, until its row\'s connect_by with no skew of its own, in its own partition', async () => {
     const run = store();
     await expect(run.store.activate(SESSION_ID, NOW)).resolves.toBe(true);
+    // F5 (7.71.04): the projects API wrote the deadline (the URL's minute and 10 s for the clocks); now's second is compared.
     expect(run.update).toHaveBeenCalledExactlyOnceWith({
       ...SESSION_KEY,
       UpdateExpression: 'SET #status = :live, connected_at = :now',
-      ConditionExpression: '#status = :minted AND connect_by >= :latest',
+      ConditionExpression: '#status = :minted AND connect_by >= :epoch',
       ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: { ':live': 'live', ':minted': 'minted', ':now': '2026-11-21T12:00:00.000Z', ':latest': 1_795_262_390 },
+      ExpressionAttributeValues: { ':live': 'live', ':minted': 'minted', ':now': '2026-11-21T12:00:00.000Z', ':epoch': 1_795_262_400 },
     });
   });
 
@@ -36,7 +37,7 @@ describe('voice store: the session row', () => {
     const refused = store();
     refused.update.mockRejectedValueOnce(named('ConditionalCheckFailedException'));
     await expect(refused.store.activate(SESSION_ID, NOW)).resolves.toBe(false);
-    // F3 (7.71.03): a row still minted past its minute is left to the projects API, which ends it (`disconnected`).
+    // F3 (7.71.03): a row still minted past its `connect_by` is left to the projects API, which ends it (`disconnected`).
     expect(refused.update).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ UpdateExpression: 'SET #status = :live, connected_at = :now' }));
     const failing = store({ update: () => Promise.reject(named('AccessDeniedException')) });
     await expect(failing.store.activate(SESSION_ID, NOW)).rejects.toThrow('AccessDeniedException');

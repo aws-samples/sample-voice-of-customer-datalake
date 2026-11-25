@@ -135,11 +135,12 @@ class FakeHost:
         self.calls.append(('post_comment', connection_id, on, number, body))
         return f'https://code.example.com/{on}/{number}#comment-1'
 
-    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
-        """(7.71.03) The URL of the issue's comment, among those posted here, whose body holds ``marker``."""
-        self.calls.append(('issue_comment', connection_id, number, marker))
+    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
+        """(7.71.03) The URL of the issue's comment, among those posted here (all the connection's own), whose body
+        ends with ``marker`` (7.71.04); ``since`` is recorded with the call."""
+        self.calls.append(('issue_comment', connection_id, number, marker, since))
         posted = [call for call in self.calls if call[:4] == ('post_comment', connection_id, 'issue', number)
-                  and marker in str(call[4])]
+                  and str(call[4]).rstrip().endswith(marker)]
         return f'https://code.example.com/issue/{number}#comment-1' if posted else None
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:

@@ -149,6 +149,15 @@ describe('ChoiceEditor: the choice settings', () => {
 })
 
 describe('ChoiceEditor: routing', () => {
+  it("names an ending an option goes to by its title, a recall placeholder as [id] (F7, 7.71.04)", async () => {
+    const user = userEvent.setup()
+    const question = choice('single_select', ['price'], { logic: [{ when: { op: 'equals', value: 'price' }, then: { jump_to: 'end_thanks' } }] })
+    renderWithDraft(<LiveChoice />, { ...formWith(question), endings: [{ id: 'end_thanks', title: { en: 'Thanks for {{ event | coming }}!' } }], hidden_fields: [{ id: 'event' }] })
+    expect(within(screen.getByRole('list', { name: 'Options' })).getByLabelText('Goes to Thanks for [event]!')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Routing' }))
+    expect(screen.getAllByRole('option', { name: 'Ending: Thanks for [event]!' }).length).toBeGreaterThan(0)
+  })
+
   it("writes an option's Go to as an `equals` rule on a single choice", async () => {
     const user = userEvent.setup()
     const harness = renderWithDraft(<LiveChoice />, formWith(choice('single_select', ['price', 'slow'])))

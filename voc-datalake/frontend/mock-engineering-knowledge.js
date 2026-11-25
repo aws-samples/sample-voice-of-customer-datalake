@@ -109,7 +109,7 @@ function preview(connection, kind) {
   const added = (text) => text.split('\n').map((l) => `+${l}`).join('\n');
   const patch = rendered.files.map((file) => `--- /dev/null\n+++ b/${file.path}\n${added(file.text)}`).join('\n');
   return [200, {
-    connection, kind, version: rendered.version, branch: `voc-agent/docs/${kind}-v${rendered.version}`,
+    connection, kind, version: rendered.version, branch: `voc-agent/docs-${kind}-v${rendered.version}`,
     files: rendered.files.map((file) => ({ path: file.path, sha256: sha(file.text), bytes: Buffer.byteLength(file.text), text: file.text })),
     digest, approved_digest: digest, matches: true, approved_by: 'admin-demo', approved_at: daysAgo(8), patch, patch_truncated: false,
     texts_truncated: false,
@@ -128,7 +128,7 @@ function publish(connection, body) {
   if (!rendered) return [409, { error: 'nothing of the kind is approved', code: 'not_approved' }];
   if (body.digest !== digestOf(rendered.files)) return [409, { error: 'the docs changed since the preview', code: 'digest_mismatch' }];
   const key = `${connection}/${kind}/${rendered.version}`;
-  const pr = { url: `https://github.com/example-org/${connection}/pull/41`, number: 41, branch: `voc-agent/docs/${kind}-v${rendered.version}` };
+  const pr = { url: `https://github.com/example-org/${connection}/pull/41`, number: 41, branch: `voc-agent/docs-${kind}-v${rendered.version}` };
   if (PUBLISHED.has(key)) return [409, { error: 'This version of the docs has its pull request already.', code: 'already_published', pr }];
   PUBLISHED.add(key);
   return [202, { pr, kind, version: rendered.version, digest: body.digest, draft: false }];

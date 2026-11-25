@@ -122,12 +122,6 @@ class TestVoices:
             "'", '').replace(' ', '').replace('asconst', '')
 
 
-def test_the_connect_skew_is_the_relay_s():
-    """F3 (7.71.03): ``status`` ends an unused URL's row on the relay's own deadline (store.ts), never before it."""
-    store = (CDK_ROOT / 'lambda/stream/src/voice/store.ts').read_text(encoding='utf-8')
-    assert re.findall(r'const CONNECT_SKEW_SECONDS = (\d+);', store) == [str(voice.CONNECT_SKEW_SECONDS)]
-
-
 def test_a_project_delete_finds_its_sessions_rows_through_its_pointers():
     keys = [{'pk': 'PROJECT#p1', 'sk': 'META'}, {'pk': 'PROJECT#p1', 'sk': 'VOICE#s-1'},
             {'pk': 'PROJECT#p1', 'sk': 'PERSONA#persona_1'}]
@@ -170,9 +164,12 @@ class TestStart:
         started = _mint(store, body={'consent': True, 'language': 'de'})
         sid = started['session_id']
         row = _item(store.projects, f'VOICE#{sid}', 'SESSION')
+        # F5 (7.71.04): ``connect_by`` is the relay's own deadline, the URL's minute and 10 s for the clocks; the live
+        # set's entry outlives the latest session it allows by the slack.
         assert {k: row[k] for k in ('status', 'project_id', 'persona_id', 'starter_sub', 'language', 'connect_by')} \
             == {'status': 'minted', 'project_id': 'p1', 'persona_id': 'persona_1', 'starter_sub': 'sub-ada',
-                'language': 'de', 'connect_by': int(NOW.timestamp()) + 60}
+                'language': 'de', 'connect_by': int(NOW.timestamp()) + 70}
+        assert _item(store.aggregates, 'VOICEUSE#LIVE', 'LIVE')['live'] == {sid: int(NOW.timestamp()) + 70 + 900 + 120}
         assert _item(store.projects, 'PROJECT#p1', f'VOICE#{sid}')['starter_sub'] == 'sub-ada'
         assert started['connect_url'].startswith('wss://bedrock-agentcore.us-west-2.amazonaws.com/runtimes/')
         assert (started['expires_in'], started['session_minutes'], started['minutes_left']) == (60, 15.0, 300.0)
@@ -418,11 +415,12 @@ class TestEndAndStatus:
         assert (status['status'], status['end_reason'], status['job_id']) == ('finalizing', 'disconnected', 'job-3')
 
     def test_an_unused_url_stays_minted_while_the_relay_would_still_take_it(self, stores):
-        """F3 (7.71.03): the relay takes a first connection until ``connect_by`` and 10 s for the clocks, so a row
-        still minted is ended only after both: a read in those 10 s never ends a session that is about to start."""
+        """F3 (7.71.03), F5 (7.71.04): the relay takes a first connection until the row's ``connect_by`` (the URL's
+        minute and 10 s for the clocks, the one deadline), so a row still minted is ended only once it passed: a read
+        in those 10 s never ends a session that is about to start."""
         store, clock = stores
         sid = _mint(store)['session_id']
-        last = int(NOW.timestamp()) + voice.CONNECT_SECONDS + voice.CONNECT_SKEW_SECONDS
+        last = int(_item(store.projects, f'VOICE#{sid}', 'SESSION')['connect_by'])
         clock['now'] = datetime.fromtimestamp(last, tz=UTC)
         assert voice.status(store, 'p1', 'persona_1', sid, OTHER, lambda _row: 'job')['status'] == 'minted'
         clock['now'] += timedelta(seconds=1)

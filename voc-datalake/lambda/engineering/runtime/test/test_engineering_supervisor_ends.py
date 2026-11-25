@@ -24,7 +24,7 @@ from engineering.runtime.interface import Command
 from engineering.runtime.ports import Budget, Lease
 from engineering.runtime.runs import FLOW_FINISHED, TableRunControl
 from engineering.runtime.sessions import AgentSession
-from engineering.runtime.supervisor import BOOT_WAIT_SECONDS, CLAIM_SECONDS, FLOW_SETTLE_SECONDS, Supervisor
+from engineering.runtime.supervisor import BOOT_WAIT_SECONDS, CLAIM_SECONDS, COORDINATOR_LAUNCH_SECONDS, Supervisor
 from engineering.runtime.test.conftest import RUN, TABLE, World
 from engineering.runtime.test.test_engineering_images import DATALAKE
 from engineering.runtime.test.test_engineering_runtime_handler import (
@@ -72,22 +72,31 @@ def test_a_finished_coordinator_on_a_finished_flow_ends_the_run_done_at_the_next
     assert world.control.ended == {RUN}
 
 
-def test_a_coordinator_that_finished_just_before_its_flow_was_recorded_finished_ends_the_run_done(world: World):
-    # (7.71.03) The coordinator's finish landed a moment before the flow's last step was recorded: the tick after its
-    # session ended reads the flow unfinished, and waits a tick rather than ask a person to end a finished run.
+def test_a_coordinator_that_finished_on_a_flow_at_a_person_sends_the_run_to_that_decision_point(world: World):
+    # (7.71.04) The live Bug fixer run's coordinator finished with its flow waiting at the commit step: the run goes to
+    # that step's decision point, where a person's Resume decides the step and tries it again, not the coordinator's.
     assert _coordinator_finished(world).status == 'done'
+    world.control.flow_points[RUN] = 'flow:commit'   # (its committer's task ended at a person meanwhile)
     world.supervisor.tick(1060)
+    assert (world.control.ended, world.control.humans) == (set(), [(RUN, 'flow:commit')])
+
+
+def test_a_resume_since_the_coordinator_finished_waits_for_its_next_coordinator_launch(world: World):
+    # (Q1, 7.71.04) A person resumed the run after its coordinator finished, and the Resume handed its launch on (a
+    # fill first): the tick leaves the run alone while that launch may still come, and asks a person once it is late.
+    assert _coordinator_finished(world).status == 'done'
+    world.control.awaited[RUN] = 1030
+    world.supervisor.tick(1060)
+    world.supervisor.tick(1030 + COORDINATOR_LAUNCH_SECONDS)
     assert (world.control.ended, world.control.humans) == (set(), [])
-    world.control.finished_flows.add(RUN)
-    world.supervisor.tick(1120)
-    assert (world.control.ended, world.control.humans) == ({RUN}, [])
+    world.supervisor.tick(1031 + COORDINATOR_LAUNCH_SECONDS)
+    assert (world.control.ended, world.control.humans) == (set(), [(RUN, 'coordinator')])
 
 
-def _finished_through_the_handler(finished: bool, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
+def _coordinator_finished_through_the_handler(finished: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     """voc-engineering-runtime's own wiring: a run whose coordinator claimed its coordinate task, finished it (done)
-    and whose session ended done ``FLOW_SETTLE_SECONDS`` ago, its flow finished or not as the conductor would say
-    (``finished``: the conductor's side is the flow's tests' and the Bug hunt's end to end); then one tick. What the
-    tick handed on."""
+    and whose session ended done, its flow finished or not as the conductor would say (``finished``: the conductor's
+    side is the flow's tests' and the Bug hunt's end to end); the run still active."""
     handler.lambda_handler(COORDINATED, None)
     board = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE, new_id=lambda: 'unused')
     board.claim(WORKSPACE, OTHER_RUN, COORDINATE_TASK, role='coordinator', agent=COORDINATOR_AGENT)
@@ -97,12 +106,32 @@ def _finished_through_the_handler(finished: bool, monkeypatch: pytest.MonkeyPatc
     sessions = handler._supervisor().sessions
     session = sessions.get(OTHER_RUN, COORDINATOR_AGENT)
     assert session is not None
-    sessions.save(replace(session, status='done', exec_id=None,
-                          last_tick_at=int(handler.clock()) - FLOW_SETTLE_SECONDS))
+    sessions.save(replace(session, status='done', exec_id=None))
     monkeypatch.setattr(TableRunControl, 'flow_finished', lambda _control, _run_id: finished)
+
+
+def _finished_through_the_handler(finished: bool, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
+    """``_coordinator_finished_through_the_handler``, then one tick: what the tick handed on."""
+    _coordinator_finished_through_the_handler(finished, monkeypatch)
     calls = _handing_on(monkeypatch)
     handler.lambda_handler({'action': 'tick'}, _Context())
     return calls
+
+
+@pytest.mark.parametrize(('resumed', 'reopened'), [(False, False), (True, True)])
+def test_only_a_resumes_launch_reopens_a_coordinate_task_its_coordinator_ended_done(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, resumed: bool, reopened: bool):
+    # (R1, 7.71.04) A coordinate task done on a flow that did not finish is reopened by a person's whole-run Resume
+    # only: a start's retry or a board launch's fill, carried on by the same launch_coordinator, leaves it done; a
+    # Resume's own launch handed on behind a fill (``resumed``) reopens it for a new coordinator.
+    assert wired is not None
+    _coordinator_finished_through_the_handler(False, monkeypatch)
+    _runtime, started = _recording(monkeypatch)
+    handler.launch_coordinator({'run_id': OTHER_RUN, 'actor': 'admin-1', 'filled': True, 'resumed': resumed})
+    task = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE,
+                      new_id=lambda: 'unused').task(WORKSPACE, OTHER_RUN, COORDINATE_TASK)
+    assert (task.state, task.attempt, [vm.agent_id for vm in started]) == (
+        ('open', 2, ['coordinator-2']) if reopened else ('done', 1, []))
 
 
 def test_the_tick_after_a_coordinator_finished_its_flow_ends_the_run_done_and_settling_releases_it(
@@ -153,8 +182,9 @@ def test_a_resume_after_a_coordinator_finished_on_a_flow_that_did_not_starts_a_n
     assert (run.status, started) == ('active', ['coordinator-2'])
     moves = board.history(WORKSPACE, OTHER_RUN)[COORDINATE_TASK]
     assert sorted((move.op, move.attempt) for move in moves if move.actor == 'admin-1') == [('launch', 2), ('repost', 2)]
-    # A retried reopen finds the task open at the next attempt and changes nothing.
-    assert board.reopen_coordinate(WORKSPACE, OTHER_RUN, attempt=1, actor='admin-1', reason='again') == task
+    # A retried reopen finds the task open at the next attempt and changes nothing (7.71.04: the store's re-post).
+    assert board.repost(WORKSPACE, OTHER_RUN, COORDINATE_TASK, attempt=1, actor='admin-1', reason='again',
+                        reopen=True) == task
 
 
 def test_a_resume_reopens_no_coordinate_task_whose_flow_finished(wired: Any, monkeypatch: pytest.MonkeyPatch):
@@ -163,11 +193,11 @@ def test_a_resume_reopens_no_coordinate_task_whose_flow_finished(wired: Any, mon
     assert (task.state, task.attempt, started) == ('done', 1, [])
 
 
-def test_a_coordinator_that_finished_on_a_flow_that_did_not_goes_to_a_person_once_the_next_tick_read_it(world: World):
+def test_a_coordinator_that_finished_on_a_flow_that_did_not_sends_the_run_to_a_person_at_the_next_tick(world: World):
+    # (7.71.04: no 90 s wait for the flow first; its started run's own launch window is long over by then)
+    world.control.awaited[RUN] = 0
     _coordinator_finished(world)
-    world.supervisor.tick(1060)   # (its session ended at 1000: the flow is read again at the next tick)
-    assert (world.control.ended, world.control.humans) == (set(), [])
-    world.supervisor.tick(1000 + FLOW_SETTLE_SECONDS)
+    world.supervisor.tick(1060)
     assert (world.control.ended, world.control.humans) == (set(), [(RUN, 'coordinator')])
 
 

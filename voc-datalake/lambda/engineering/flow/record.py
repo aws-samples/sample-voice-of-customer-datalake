@@ -30,6 +30,7 @@ from engineering.board.store import BoardError, posts_sk
 from engineering.flow.conductor import GO, NO_GO, UNREAD, BoardState, Flow, FlowError, Plan, StepTask, conduct
 from engineering.flow.ledger import ReadRecord, newest_final_go, verdict
 from engineering.rows import get_row, number_value, run_pk, run_rows, string_attr
+from engineering.runtime.outputs import PULL_REQUEST_DRAFT
 from shared.aws import is_conditional_check_failure
 from shared.ids import is_key_collision
 from shared.logging import logger
@@ -100,8 +101,9 @@ def recorded_verdicts(rows: Iterable[Mapping[str, Any]]) -> dict[tuple[str, str]
 
 
 def board_state(tasks: Iterable[Task], rows: Iterable[Mapping[str, Any]], *, cap_reached: bool,
-                verdicts: Mapping[str, str] | None = None) -> BoardState:
-    """The conductor's view of a run: its tasks (each with its step), its step rows and its gates' verdicts."""
+                verdicts: Mapping[str, str] | None = None, draft_pr: bool = False) -> BoardState:
+    """The conductor's view of a run: its tasks (each with its step), its step rows and its gates' verdicts; and
+    (7.71.04) whether its pull request opens as a draft (``draft_pull_request``)."""
     fanned: dict[str, tuple[str, ...]] = {}
     done: set[str] = set()
     inherited: set[str] = set()
@@ -118,7 +120,13 @@ def board_state(tasks: Iterable[Task], rows: Iterable[Mapping[str, Any]], *, cap
             inherited.add(step)
     return BoardState(tasks=tuple(step_task(task) for task in tasks if task.flow_step), fanned_out=fanned,
                       completed=frozenset(done), decisions=dict(decisions), cap_reached=cap_reached,
-                      verdicts=dict(verdicts or {}), inherited=frozenset(inherited))
+                      verdicts=dict(verdicts or {}), inherited=frozenset(inherited), draft_pr=draft_pr)
+
+
+def draft_pull_request(meta: Mapping[str, Any] | None) -> bool:
+    """The run's pull request opens as a draft: its ``META``'s ``pull_request`` (a low-level row), as its start wrote
+    it from the flow's settings (``runs.pull_request_mode``)."""
+    return string_attr(meta or {}, 'pull_request') == PULL_REQUEST_DRAFT
 
 
 def cap_reached(meta: Mapping[str, Any] | None) -> bool:
@@ -223,7 +231,8 @@ class FlowRecord:
         records with ``read``, else as recorded: ``gate_verdicts``)."""
         rows = self.rows(ws, run_id)
         verdicts = gate_verdicts(flow, tasks, ws, run_id, read, recorded_verdicts(rows))
-        return conduct(flow, board_state(tasks, rows, cap_reached=cap_reached(meta), verdicts=verdicts))
+        return conduct(flow, board_state(tasks, rows, cap_reached=cap_reached(meta), verdicts=verdicts,
+                                         draft_pr=draft_pull_request(meta)))
 
     def record_verdicts(self, ws: str, run_id: str, plan: Plan, tasks: Sequence[Task], *, actor: str, at: str) -> None:
         """Record each gate's verdict the plan read from its record, for the deciding final-go task (create-only:

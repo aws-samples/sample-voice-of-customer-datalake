@@ -37,7 +37,9 @@ What each step type means here:
 - ``memory`` and ``learning_loop``: not run yet; the flow goes on (a read is context, a write a record, the learning
   loop the run's own retrospective at its end, which still runs). ``self_improvement``: not run yet, and it is the
   whole of its flow's work, so it stops at a person.
-- ``stop_at_pr``: the flow ends at the draft pull request (the broker's dial still decides whether one is opened);
+- ``stop_at_pr``: the flow ends at the pull request, ready for review or a draft as the run's ``META`` says
+  (``BoardState.draft_pr``, 7.71.04: its words were always "the draft pull request", which a run's coordinator
+  repeated for one ready for review); the broker's dial still decides whether one is opened;
   ``end``: the flow ends, at a person when its status is ``needs_human``.
 
 A child run (7.51.00: a person's Resume of an ended run) takes the steps its parent had done as done
@@ -98,6 +100,13 @@ NOT_RUN: Final = {
     'learning_loop': "a flow's learning loop is not run yet: the flow goes on (the run's retrospective still runs "
                      'at its end)',
 }
+#: (7.71.04) A step ready again after a person's decision on it (a task of it ended without being done): what the
+#: coordinator does there, which the live Bug fixer run's coordinator read as the person's to do and did not.
+RETRY: Final = ('a person decided to try this step again: post its task again as it was (naming the same patch) and '
+                'launch its agent')
+#: Where a flow's ``stop_at_pr`` ends it, as the run's pull request opens (``BoardState.draft_pr``).
+PR_END: Final = {False: 'the flow ends at the pull request, ready for review',
+                 True: 'the flow ends at the draft pull request'}
 SELF_IMPROVEMENT_STOP: Final = ("the coach's self-improvement step is not run by a flow yet, and the flow has nothing "
                                 'to do without it: a person decides')
 #: What the run coordinator does at a live step of each kind (platform text, shown with the step's settings).
@@ -243,6 +252,8 @@ class BoardState:
     verdicts: Mapping[str, str] = field(default_factory=dict)
     #: A child run's steps its parent had done (7.51.00, ``record.py`` ``inherited``): done here without a task.
     inherited: frozenset[str] = frozenset()
+    #: (7.71.04) The run's pull request opens as a draft (its ``META``'s ``pull_request``): how its end is worded.
+    draft_pr: bool = False
 
 
 @dataclass(frozen=True)
@@ -469,7 +480,7 @@ class _Conductor:
         """A step whose turn has come, by its kind."""
         kinds: dict[str, Callable[[Step], StepState]] = {
             'end': self._end, 'agent': self._agent, 'map': self._map, 'board': self._board, 'quality_gate': self._gate,
-            NODE_STOP_AT_PR: lambda s: self._state(s, DONE, reason='the flow ends at the draft pull request'),
+            NODE_STOP_AT_PR: lambda s: self._state(s, DONE, reason=PR_END[self.board.draft_pr]),
             'reduce': lambda s: self._state(s, DONE),
             'self_improvement': lambda s: self._passed_or(s, SELF_IMPROVEMENT_STOP),
             **{kind: lambda s: self._state(s, NOT_YET_RUN, reason=NOT_RUN[s.type]) for kind in NOT_RUN},
@@ -503,7 +514,7 @@ class _Conductor:
             return self._state(step, RUNNING, roles=(role,))
         if tally.failures > self._decided(step.id):
             return self._state(step, BLOCKED, reason=f'its {role} task ended without being done: a person decides')
-        return self._state(step, READY, roles=(role,))
+        return self._state(step, READY, roles=(role,), reason=RETRY if tally.failures else '')
 
     def _shards(self, step: Step, role: str, map_id: str) -> StepState:
         shards = self.board.fanned_out.get(map_id, ())

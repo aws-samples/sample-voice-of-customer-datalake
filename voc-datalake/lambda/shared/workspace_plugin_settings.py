@@ -28,10 +28,11 @@ The deployment-only plugins (``DEPLOYMENT_ONLY_PLUGINS``) are neither listed for
 
 A trial workspace (7.71.00, shared/trials.py): its expiry turns its plugins off through the same change
 (``set_trial_plugin``: the audit row, kind ``plugin_disabled`` with ``reason`` ``trial_paused`` and the job as the actor,
-then the same transaction) and an extension or a conversion turns those back on (``plugin_enabled``, the platform
-admin's, ``reason`` the route's). While the trial is paused, a workspace admin's enable is refused (409
-``trial_paused``, shared/trial_state.py): the transaction's check of ``META`` then also needs ``trial.paused_at`` absent,
-so a pause that lands between the read and the commit still wins.
+then the same transaction, whose check of ``META`` also needs the trial still at the ``rev`` the pause saved, 7.71.04)
+and an extension or a conversion turns those back on (``plugin_enabled``, the platform admin's, ``reason`` the
+route's). While the trial is paused, a workspace admin's enable is refused (409 ``trial_paused``,
+shared/trial_state.py): the transaction's check of ``META`` then also needs ``trial.paused_at`` absent, so a pause that
+lands between the read and the commit still wins.
 """
 from __future__ import annotations
 
@@ -47,7 +48,14 @@ from shared.persona_save import cancellation_codes
 from shared.plugin_identity import S3_IMPORT_SOURCE, is_valid_plugin_identifier
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
-from shared.trial_state import TRIAL_PAUSED, TRIAL_PAUSED_CODE, is_paused, stored_trial, unpaused_check
+from shared.trial_state import (
+    TRIAL_PAUSED,
+    TRIAL_PAUSED_CODE,
+    is_paused,
+    stored_trial,
+    unchanged_check,
+    unpaused_check,
+)
 from shared.workspace import ACTIVE, NOT_FOUND, WorkspaceContext, audit_key, audit_sort_key, ws_key
 from shared.workspace_members import NO_LONGER_ADMIN
 from shared.workspace_plugins import plugin_partition
@@ -201,20 +209,27 @@ def set_plugin_enabled(table: Any, context: WorkspaceContext, plugin_id: str, en
     return {'id': plugin_id, 'enabled': enabled, **({'enabled_at': at, 'enabled_by': actor} if enabled else {})}
 
 
-def set_trial_plugin(table: Any, ws: str, plugin_id: str, enabled: bool, actor: dict[str, Any], reason: str) -> bool:
+def set_trial_plugin(table: Any, ws: str, plugin_id: str, enabled: bool, actor: dict[str, Any], reason: str, *,
+                     rev: object = None) -> bool:
     """A trial's pause (``enabled`` False) or its resume (True) of ``plugin_id`` (shared/trial_pause.py): the same change
     as a workspace admin's, recorded with ``actor`` (``{'actor': sub, …}``: the expiry job, or the platform admin who
     extended or converted) and ``reason``, and checked only for the workspace being active (no member's role: nobody
-    acts as a member). True when it changed the row, False when it already held or the workspace is not active."""
+    acts as a member). True when it changed the row, False when it already held or the workspace is not active.
+
+    ``rev`` (a pause's turn-off, 7.71.04): the transaction's check of ``META`` is shared/trial_state.py
+    ``unchanged_check`` instead, the workspace active and its trial still at that ``rev``; when that check refuses,
+    the cancelled transaction's error propagates (the pause stops), its audit row written first as for every change."""
     if (_stored(table, plugin_id, ws) is not None) == enabled:
         return False
+    check = _active_check(table.name, ws, unpaused=False) if rev is None else unchanged_check(table.name, ws, rev)
     try:
-        _commit(table, ws, plugin_id, enabled, {**actor, 'reason': reason},
-                [_active_check(table.name, ws, unpaused=False)])
+        _commit(table, ws, plugin_id, enabled, {**actor, 'reason': reason}, [check])
     except ClientError as exc:
-        if 'ConditionalCheckFailed' in cancellation_codes(exc):
-            # Changed meanwhile (the row: already what was asked) or no longer active: nothing for the trial to do. A
-            # conflict with another transaction propagates: the caller runs again (an expiry is retried).
+        codes = cancellation_codes(exc)
+        if 'ConditionalCheckFailed' in codes and (rev is None or codes[-1:] != ['ConditionalCheckFailed']):
+            # Changed meanwhile (the row: already what was asked) or, without ``rev``, no longer active: nothing for
+            # the trial to do. A conflict with another transaction propagates: the caller runs again (an expiry is
+            # retried).
             return False
         raise
     return True

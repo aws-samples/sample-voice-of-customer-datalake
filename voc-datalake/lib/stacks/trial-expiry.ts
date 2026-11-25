@@ -16,7 +16,9 @@
  *     `PLUGIN#*` and `AUDIT#WS#*` (META's trial, a plugin row, an audit row read back after a retried put); UpdateItem
  *     of `trial` alone (and the key) on META and the listing row (`WS#*`, `WORKSPACES`); PutItem of `AUDIT#WS#*` rows
  *     (the audit-row guard names this role a writer of that partition only); ConditionCheckItem on `WS#*` (the
- *     workspace is still active); DeleteItem on `PLUGIN#*` only (above);
+ *     workspace is still active and, since 7.71.04, its trial still at the rev the pause saved: each plugin's and each
+ *     form's turn-off is one transaction with that check, lambda/shared/trial_state.py unchanged_check); DeleteItem on
+ *     `PLUGIN#*` only (above);
  *   - voc-aggregates: Query and UpdateItem of a workspace's forms partition (`WS#<one id>#FEEDBACK_FORM`), the update
  *     held to `enabled`, `write_count`, `updated_at` and `updated_by`, with no values returned;
  *   - the Core key. No S3, no BatchWriteItem, no scheduler, Cognito, IAM or Lambda action, no Bedrock.

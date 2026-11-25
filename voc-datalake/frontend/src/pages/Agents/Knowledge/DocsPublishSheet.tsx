@@ -6,8 +6,9 @@
  *   a document of its own, from its text (gap O, documents/docsPreviewDocument.ts). A file past the preview's bound
  *   says it is in the patch. When the stored records no longer render to what was approved, it says a publish will
  *   be refused.
- * - **Open the pull request** (`POST …/publish {kind, digest}`) writes `voc-agent/docs/<kind>-v<n>` and opens it ready
- *   for review (or as a draft, as the flow says). Only a person merges it, on the host.
+ * - **Open the pull request** (`POST …/publish {kind, digest}`) writes `voc-agent/docs-<kind>-v<n>` (one level under
+ *   `voc-agent/` since 7.71.04; the preview's `branch`) and opens it ready for review (or as a draft, as the flow
+ *   says). Only a person merges it, on the host.
  * - Refused: a Human-driven administrator gets the patch to apply themselves (Copy, Download); a version published
  *   before says so; another rendering than the preview's offers to read it again; nothing approved says so.
  *

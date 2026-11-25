@@ -165,7 +165,10 @@ export function useImportWizard() {
       date_order: dateOrder, import_tag: tag,
     })
     setProgress({ done: current.table.rows.length, total: current.table.rows.length })
-    return { target: 'reviews', accepted: result.imported_count, refused: [], refusedCount: 0, filter: { tag },
+    // The rows the strict redaction left out (7.71.04) read as a survey's per-row refusals do.
+    const left = result.redaction_unavailable
+    return { target: 'reviews', accepted: result.imported_count, refusedCount: left?.count ?? 0,
+             refused: (left?.rows ?? []).map((row) => ({ row, code: 'redaction_unavailable' })), filter: { tag },
              source: MANUAL_IMPORT_SOURCE, npsQuestionIds: [] }
   }, [dateOrder, dimensionsConfig?.dimensions, kinds])
 

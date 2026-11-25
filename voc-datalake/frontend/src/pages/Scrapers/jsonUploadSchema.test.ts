@@ -4,7 +4,7 @@
  * structured reason (never Zod's raw "Item 1.text: Invalid input: expected string").
  */
 import { describe, it, expect } from 'vitest'
-import { parseJsonFeedback } from './jsonUploadSchema'
+import { filePositions, parseJsonFeedback } from './jsonUploadSchema'
 
 const valid = (id: string) => ({ id, text: 'Great', source: 'zendesk', timestamp: '2026-03-20T14:30:00Z' })
 
@@ -57,5 +57,13 @@ describe('parseJsonFeedback', () => {
     const result = parse({ items: [{ id: 'a', text: 't', source_channel: 'email', created_at: '2026-01-01' }] })
 
     expect(result).toMatchObject({ data: [{ id: 'a' }], skipped: [] })
+  })
+})
+
+describe('filePositions (7.71.04)', () => {
+  it('reads a place among the items sent as its place in the file, past every skipped item before it', () => {
+    const skipped = [{ position: 4, reasons: [] }, { position: 1, reasons: [] }]
+    expect(filePositions([1, 2, 3, 4], skipped)).toStrictEqual([2, 3, 5, 6])
+    expect(filePositions([1, 2], [])).toStrictEqual([1, 2])
   })
 })

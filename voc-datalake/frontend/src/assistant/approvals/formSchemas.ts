@@ -16,7 +16,7 @@ import i18n from 'i18next'
 import { CHANNELS } from '../../pages/FeedbackForms/model/formsV2'
 import type { FormV2 } from '../../pages/FeedbackForms/model/formsV2'
 import { parseFormV2 } from '../../pages/FeedbackForms/model/formsV2Schema'
-import { textIn } from '../../pages/FeedbackForms/model/i18nText'
+import { headlineShown } from '../../pages/FeedbackForms/model/recall'
 import { blockingProblems, validateForm } from '../../pages/FeedbackForms/model/validateForm'
 import type { FormProblem } from '../../pages/FeedbackForms/model/validateForm'
 import type { DraftNote } from '../../api/feedbackFormsV2Api'
@@ -35,7 +35,8 @@ const note = z.union([
 ])
 const notes = z.array(note).max(MAX_NOTES).optional().transform((list): DraftNote[] => list ?? [])
 
-/** Where a problem is, in words the card's Details list reads ("Q4", "Ending “Thank you”"). */
+/** Where a problem is, in words the card's Details list reads ("Q4", "Ending “Thank you”", a recall placeholder in an
+ * ending's title as `[id]`, 7.71.04). */
 function problemWhere(form: FormV2, problem: FormProblem): string {
   const { at } = problem
   if (at.kind === 'question') {
@@ -44,7 +45,7 @@ function problemWhere(form: FormV2, problem: FormProblem): string {
   }
   if (at.kind === 'ending') {
     const ending = form.endings.find((candidate) => candidate.id === at.id)
-    return i18n.t('feedbackForms:problems.where.ending', { title: ending === undefined ? at.id ?? '' : textIn(ending.title, form.language) })
+    return i18n.t('feedbackForms:problems.where.ending', { title: ending === undefined ? at.id ?? '' : headlineShown(ending.title, form.language) })
   }
   return i18n.t(`feedbackForms:problems.where.${at.kind}`, { id: at.id ?? '', language: at.id ?? '' })
 }

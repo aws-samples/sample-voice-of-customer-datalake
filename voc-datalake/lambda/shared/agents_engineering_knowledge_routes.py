@@ -27,7 +27,8 @@ Every version and decision stays (D1), with who and when (D4).
 
 The publish asks voc-engineering-start's ``publish_docs`` (``runtime/docs_publish.py``), which asks the broker's
 ``push_approved_docs``: it renders the approved version again and holds the request's digest and the approval's to it,
-writes ``docs/agents/**`` or ``TENETS.md`` only, on ``voc-agent/docs/<kind>-v<n>``, and opens the pull request ready
+writes ``docs/agents/**`` or ``TENETS.md`` only, on ``voc-agent/docs-<kind>-v<n>`` (one level under ``voc-agent/``
+since 7.71.04: ``write_policy.docs_branch``, which the preview's ``branch`` names too), and opens the pull request ready
 for review or as a draft (``pr``, else the flow's own setting: Understand the repository's for the knowledge, Tenets'
 for the tenets). The requesting administrator's stored way of working applies, failing closed: Human-driven is 409
 ``human_driven`` (the preview's ``patch`` is theirs to apply); a version published before is 409 ``already_published``

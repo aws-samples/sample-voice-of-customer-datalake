@@ -482,7 +482,7 @@ def _push_target(context: Built) -> tuple[str, str, str]:
     """The committer's push, as the harness fills it in (7.71.02): its task's submitted patch, the tree the harness
     applied it to and hashed (``judge_submitted_patch``) and the run's own branch; ``ValueError`` when the task names
     no patch, so there is nothing to push."""
-    if not context.brief.patch or not context.gate_tree:
+    if review_tools.nothing_to_push(context):
         raise ValueError(NO_PUSH)
     return submitted_patch(context, context.brief.patch), context.gate_tree, run_branch(context.run_id)
 

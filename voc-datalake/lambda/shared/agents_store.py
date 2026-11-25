@@ -1330,14 +1330,17 @@ def record_last_run_running(table: Any, agent_id: str, run_id: str) -> None:
     """The agent's ``last_run_status`` follows its run from queued to running: the agents list and the agent's stats
     read only the agent row, which said "Queued" for a run that had been working for an hour (a workflow agent's
     before, an engineering agent's until 7.71.03). Conditional on this run still being the agent's last one and still
-    recorded as queued, so it never writes over a newer run or a finish that landed first."""
+    recorded as queued, so it never writes over a newer run or a finish that landed first. Best effort (Q5, 7.71.04):
+    it follows the run's own move to running, which has landed, so a failure here is logged, never raised (the stats
+    say "Queued" until the run's finish writes them)."""
     try:
         update_unless_condition_fails(
             table, Key=agent_key(agent_id), UpdateExpression='SET last_run_status = :running',
             ConditionExpression='last_run_id = :run AND last_run_status = :queued',
             ExpressionAttributeValues={':run': run_id, ':running': RUN_RUNNING, ':queued': RUN_QUEUED})
-    except (ClientError, BotoCoreError) as exc:
-        raise _service_error('record the agent\'s running run', exc) from exc
+    except (ClientError, BotoCoreError):
+        logger.exception('Agent last run status not recorded as running', extra={'agent_id': agent_id,
+                                                                                  'run_id': run_id})
 
 
 def finish_run(table: Any, agent_id: str, run_id: str, status: str, *, now: datetime,

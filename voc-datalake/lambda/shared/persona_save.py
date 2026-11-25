@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
@@ -53,6 +53,10 @@ PROJECT_GONE_MESSAGE = 'The project was deleted while its personas were being ge
 
 class ProjectNotWritableError(NotFoundError):
     """The project is deleted (or being deleted): nothing may be written into it."""
+
+
+#: A cancelled transaction's code for an entry whose condition did not hold (one of ``cancellation_codes``).
+CONDITION_FAILED: Final = 'ConditionalCheckFailed'
 
 
 def cancellation_codes(error: ClientError) -> list[str | None]:

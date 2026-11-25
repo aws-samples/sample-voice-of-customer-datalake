@@ -10,7 +10,8 @@ tell apart. The start function
    the person; a whole run's Shut down and Stop now are its Stop (``stop_run``), never a signal here;
 2. checks the run, the agent and the state (``check``): the run is there and has not ended, no Stop of it is under
    way (a Stop decided: the run takes no other signal meanwhile), the agent has a session row in the run and holds
-   its task at that attempt, and the task has not ended;
+   its task at that attempt, and the task has not ended (7.71.04: one that ended needing a person is answered with
+   what to do instead, the run's Resume, ``ENDED_AT_A_PERSON``);
 3. records who asked what of whom, when and why (their note), on a ``RUNLOG#`` row of its own (D4,
    ``RunStore.record_signal``), as a Stop records itself, before anything moves;
 4. hands the signal on to voc-engineering-runtime's ``signal`` action, asynchronously (``handed_on``: a Resume may
@@ -26,7 +27,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
-from engineering.board.model import FINAL, OPEN
+from engineering.board.model import FINAL, NEEDS_HUMAN, OPEN
 from engineering.board.store import BoardError, BoardStore
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
@@ -44,6 +45,11 @@ AGENT_SIGNALS: Final = frozenset({'save', 'pause', 'resume', 'shutdown', 'stop_n
 RESTART_STARTS: Final = frozenset({'checkpoint', 'fresh'})
 #: The most attempts a task has (the board's lease epoch).
 MAX_ATTEMPT: Final = 1_000_000
+#: (7.71.04) What a signal to the agent of a task that ended needing a person answers (409): its agent's session ended
+#: with it, so nothing restarts or resumes it there; the whole run's Resume does, at the step's decision point
+#: (``step_retry.py``: the step's task posted again for a new agent).
+ENDED_AT_A_PERSON: Final = ('This task ended needing a person, so no agent works on it to restart or resume: '
+                            'Resume the run instead, which posts the step\'s task again for a new agent')
 #: The longest person's id recorded (runs.py MAX_ACTOR), and the longest note (why: monitor.py MAX_NOTE_BYTES).
 MAX_ACTOR: Final = 200
 MAX_NOTE_BYTES: Final = 500
@@ -134,6 +140,9 @@ def check(request: SignalRequest, runs: RunStore, board: BoardStore, sessions: S
         task = board.task(WORKSPACE, request.run_id, request.task_id)
     except BoardError as missing:
         raise RuntimeRefused(f'no task {request.task_id} in run {request.run_id}') from missing
-    if (task.lease_agent, task.lease_epoch) != (request.agent_id, request.attempt) or task.state == OPEN \
-            or task.state in FINAL:
+    if (task.lease_agent, task.lease_epoch) != (request.agent_id, request.attempt) or task.state == OPEN:
+        raise RuntimeRefused('this task has moved on since you looked: reload the run')
+    if task.state == NEEDS_HUMAN:
+        raise RuntimeRefused(ENDED_AT_A_PERSON)
+    if task.state in FINAL:
         raise RuntimeRefused('this task has moved on since you looked: reload the run')

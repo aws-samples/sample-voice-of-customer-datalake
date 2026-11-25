@@ -8,7 +8,9 @@ import { useInvalidateFeedbackData } from '../../api/invalidateFeedbackData'
 import { ApiError } from '../../lib/errors'
 import { MANUAL_IMPORT_MAX_CHARACTERS as MAX_CHARACTERS, useManualImportStore } from '../../store/manualImportStore'
 import ParsedReviewCard from './ParsedReviewCard'
-import { countDefaultedDates, countMissingDates } from './scraper-helpers'
+import LeftOutNotice from './ManualImportLeftOut'
+import type { LeftOut } from './ManualImportLeftOut'
+import { countDefaultedDates, countMissingDates, leftOutNames } from './scraper-helpers'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import SourceDialogHeader from './SourceDialogHeader'
 import { isHttpUrl } from './scraperUrl'
@@ -64,7 +66,7 @@ function SourceUrlField({ id }: Readonly<{ id: string }>) {
   )
 }
 
-function InputStep() {
+function InputStep({ leftOut }: Readonly<{ leftOut: LeftOut | null }>) {
   const { t, i18n } = useTranslation('scrapers')
   const id = useId()
   const { rawText, setRawText, processingError, draftDropped } = useManualImportStore()
@@ -74,6 +76,7 @@ function InputStep() {
 
   return (
     <div className="space-y-4">
+      {leftOut === null ? null : <LeftOutNotice leftOut={leftOut} />}
       {draftDropped ? <p role="status" className="p-3 rounded-lg border border-warn/30 bg-warn-subtle text-sm text-text">
         {t('manualImport.draftDropped', { max })}
       </p> : null}
@@ -268,6 +271,7 @@ export default function ManualImportModal() {
     rawText,
     jobId,
     parsedReviews,
+    setSourceUrl,
     setStep,
     setJobId,
     setSourceOrigin,
@@ -285,6 +289,7 @@ export default function ManualImportModal() {
   // "Importing…" button UI, and mutating a ref never re-renders — with a ref
   // the in-flight state silently never showed.
   const [isConfirming, setIsConfirming] = useState(false)
+  const [leftOut, setLeftOut] = useState<LeftOut | null>(null)
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current != null) {
@@ -330,6 +335,7 @@ export default function ManualImportModal() {
 
   const handleClose = () => {
     stopPolling()
+    setLeftOut(null)
     resetModal()
   }
 
@@ -350,6 +356,7 @@ export default function ManualImportModal() {
     }
 
     setProcessingError(null)
+    setLeftOut(null)
     setStep('processing')
 
     try {
@@ -380,9 +387,15 @@ export default function ManualImportModal() {
       const result = await scrapersApi.confirmManualImport(jobId, validReviews)
 
       if (result.success) {
+        const left = result.redaction_unavailable
         clearDraft()
-        resetModal()
         invalidateFeedbackData({ afterIngest: true }) // the pages behind show the new reviews without a full reload
+        if (left === undefined) {
+          resetModal()
+        } else {
+          setSourceUrl(sourceUrl)
+          setLeftOut({ imported: result.imported_count ?? 0, count: left.count, names: leftOutNames(t, parsedReviews, left.rows) })
+        }
       } else {
         setProcessingError(result.error ?? t('manualImport.importFailed'))
       }
@@ -404,7 +417,7 @@ export default function ManualImportModal() {
         <SourceDialogHeader titleId={titleId} title={t('manualImport.title')} icon={ClipboardPaste} onClose={handleClose} />
 
         <div className="dialog-body">
-          {step === 'input' && <InputStep />}
+          {step === 'input' && <InputStep leftOut={leftOut} />}
           {step === 'processing' && <ProcessingStep />}
           {step === 'preview' && <PreviewStep onConfirm={() => void handleConfirm()} isConfirming={isConfirming} />}
         </div>

@@ -297,13 +297,20 @@ WRITE_TOOLS: Final = frozenset(tool for tool, _ in WRITERS.values())
 NO_PATCH_TO_PUSH: Final = 'finished without pushing: its task names no submitted patch'
 
 
+def nothing_to_push(context: Built) -> bool:
+    """A committer's task names no submitted patch, or none the harness could apply and hash (no judged tree): there
+    is nothing to push. The one check (F9, 7.71.04) its push (``role_tools._push_target``) and its finish
+    (``_unwritten``) both make."""
+    return not (context.brief.patch and context.gate_tree)
+
+
 def _unwritten(context: Built) -> str:
     """Why a writer's finish goes to a person (7.71.02), '' when it made its write or is no writer: a committer whose
     task named no patch, or no tree the harness judged, says so (7.71.03), never that the broker made no push."""
     write = WRITERS.get(context.role)
     if write is None or write[0] in context.host_writes:
         return ''
-    if context.role == 'committer' and not (context.brief.patch and context.gate_tree):
+    if context.role == 'committer' and nothing_to_push(context):
         return NO_PATCH_TO_PUSH
     return write[1]
 

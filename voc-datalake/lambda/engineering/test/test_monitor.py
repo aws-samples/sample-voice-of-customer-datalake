@@ -254,6 +254,19 @@ def test_a_signal_for_an_attempt_that_moved_on_is_refused_before_anything_is_don
     assert (signaller.calls, publisher.sent) == ([], [])
 
 
+@pytest.mark.parametrize('body', [{'signal': 'restart', 'from': 'fresh'}, {'signal': 'resume'}])
+def test_a_task_that_ended_at_a_person_says_to_resume_the_run(run, body: dict[str, Any]) -> None:
+    # (7.71.04) The live Bug fixer run's restart (fresh) and resume of its committer's task, at a person, answered
+    # "moved on": they say what to do instead, the run's own Resume, which tries the step again.
+    client, monitor, signaller, _, task_id = run
+    tasks = board(client)
+    tasks.move('default', RUN, task_id, agent='fixer-1', epoch=1, to_state='in_progress', result_keys=[])
+    tasks.move('default', RUN, task_id, agent='fixer-1', epoch=1, to_state='needs_human', result_keys=[])
+    with pytest.raises(MonitorError, match=r'ended needing a person.*Resume the run instead') as refused:
+        monitor.signal(RUN, parse_signal({**body, 'task_id': task_id, 'attempt': 1, 'confirm': True}), ADMIN)
+    assert (refused.value.kind, signaller.calls) == ('conflict', [])
+
+
 def test_an_open_task_has_no_agent_to_signal(run) -> None:
     client, monitor, signaller, _, _ = run
     task = BoardStore(client, TABLE, new_id=lambda: 'task-open').post(

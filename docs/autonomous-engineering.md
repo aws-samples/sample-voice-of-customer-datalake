@@ -559,8 +559,8 @@ branch, being refused:
 | Role | Operations |
 |---|---|
 | every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token; since 7.52.00 the run's connection's accepted tenets (`read` of kind `tenets`, target `accepted`: the store's, never the repository's file) |
-| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record); on the issue once per run since 7.71.02 (its claim is `issue#<n>#post_comment`, no agent, attempt or digest: a second understander of the run gets the first comment's URL back, where the first live Bug fixer run's two understanders each commented). Since 7.71.03 the issue comment ends with the run's hidden marker (`<!-- voc-engineering-run:<run id> -->`), and a call whose earlier one never answered (a host error, or a crash between its claim and its outcome) waits until that call is over (`broker.STALE_CLAIM_SECONDS`, 5 minutes), then looks for the marker on the issue and posts only when the host has none |
-| issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per run since 7.71.02, `issue#<n>#label_issue`: a later call gets the first labels back, and since 7.71.03 `set_by`, whose call put them, which the tool's answer says: "labels already set by <agent>: …"; one whose earlier call never answered is put again 5 minutes on, labels being idempotent on the host; no dial: a label changes no code) |
+| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record); on the issue once per run since 7.71.02 (its claim is `issue#<n>#post_comment`, no agent, attempt or digest: a second understander of the run gets the first comment's URL back, where the first live Bug fixer run's two understanders each commented). Since 7.71.03 the issue comment ends with the run's hidden marker (`<!-- voc-engineering-run:<run id> -->`), and a call whose earlier one never answered (a host error, or a crash between its claim and its outcome) waits until that call is over (`broker.STALE_CLAIM_SECONDS`, 5 minutes), then looks for the marker on the issue and posts only when the host has none. Since 7.71.04 the look takes only the connection's own comment (on GitHub one its App posted, `performed_via_github_app.id`; on GitLab one of its token's user, never a system note) whose body ends with the marker, so a comment anyone copies the marker into is never taken for the run's; and it reads only the comments that can be the run's: on GitHub those updated since that call's claim (`since`, a minute before it), on GitLab the newest first, ten pages of a hundred at most |
+| issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per run since 7.71.02, `issue#<n>#label_issue`: a later call gets the first labels back, `{number, labels}`, and since 7.71.04 the tool compares them with the ones it asked: other labels are "labels already set: …" (the run's issue had its labels from an earlier call), the same ones that it labelled the issue (7.71.03's `set_by`, whose call put them, is gone); one whose earlier call never answered is put again 5 minutes on, labels being idempotent on the host; no dial: a label changes no code) |
 | committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`; since 7.71.02 the harness fills in the patch, the tree and the run's branch, since 7.71.03 `voc-agent/<run id>-fix` (one level under `voc-agent/`: "The run's branch", below), and the model gives the message: [The flow a run follows](#the-flow-a-run-follows)) |
 | PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`), from the run's branch, which the harness fills in since 7.71.02; on a fork connection (7.57.00) it goes on to the run's upstream pull request, and `open_upstream_pr` is that step on its own ([Any public repository](#any-public-repository-75700)) |
 | voc-engineering-start (no agent) | `head` (7.47.00: a connection's default branch's head and an issue's state, read only) and `push_approved_docs` (7.52.00: the approved knowledge docs or tenets, at an administrator's request: [The knowledge docs pull request](#the-knowledge-docs-pull-request-75200)) |
@@ -597,6 +597,14 @@ repository's rules"; tested live on the b- deployment's first Bug fixer rerun). 
 matches `voc-agent/*` (GitLab's `*` crosses `/`, so any agent branch would be protected), and a branch-name push rule
 must take `voc-agent/<run id>-fix`. A pull request recorded from a two-level branch before 7.71.03 is still read
 (`run_links`), but no push goes to one.
+
+The approved docs' pull request has its branch one level under `voc-agent/` too since 7.71.04,
+`voc-agent/docs-<kind>-v<n>` (`write_policy.docs_branch`). 7.52.00-7.71.03 wrote `voc-agent/docs/<kind>-v<n>`, which
+that ruleset protects, so the broker refused its push with 409. A GitLab branch-name push rule must take it too
+(`voc-agent/`, then one name with no `/`, as a run's). A docs pull request recorded from a two-level branch is still
+answered as it was recorded (`already_published`); docs pushed on one before 7.71.04 whose pull request never opened
+have it opened from that branch, the one their push claim names
+([The knowledge docs pull request](#the-knowledge-docs-pull-request-75200)).
 
 **The target's CI.** A push to an agent branch can start the repository's own pipelines, and those run scripts an
 agent can change. So, on unprotected branches, the repository's pipelines must get nothing worth taking: CI secrets
@@ -1160,10 +1168,11 @@ library only, so the Agents API and the broker render the same bytes, and its di
      anything but AI-assisted or AI-driven: their request is the person's go an AI-assisted push waits for);
   5. holds the connection's CI attestation and the host's branch rules, as for an agent's push (409);
   6. writes one commit (the bot's identity, a trusted message naming the version and the digest) on its own branch
-     `voc-agent/docs/<kind>-v<n>` from the default branch's head, then opens the pull request ready for review, or as
-     a draft when the request says `pr: draft` or else the flow's own `pr` setting says so (Understand the
-     repository's for the knowledge, Tenets' for the tenets: both `ready`). Its body names the files, the version
-     and the digest, and ends with the platform's line that only a person approves and merges it.
+     `voc-agent/docs-<kind>-v<n>` (one level under `voc-agent/` since 7.71.04: [Repository
+     connectors](#repository-connectors), "The run's branch") from the default branch's head, then opens the pull
+     request ready for review, or as a draft when the request says `pr: draft` or else the flow's own `pr` setting says
+     so (Understand the repository's for the knowledge, Tenets' for the tenets: both `ready`). Its body names the
+     files, the version and the digest, and ends with the platform's line that only a person approves and merges it.
 
   Each write is made once per (connection, kind, version): the push and the pull request are claims of their own
   (`WS#default#DOCS#<connection>`, a run's claims' attributes), so a pull request whose open failed opens on a retry
@@ -1949,6 +1958,9 @@ started from a saved flow follows that flow's steps; the flow is the plan.
   agents](#the-coordinator-waits-for-its-agents-75400)). `coordinator@7` (7.54.00) names the submitted patch on a
   commit reviewer's task (`post_task` refuses one without it), and leaves a task that ended at a person (a review that
   could not review, a gate that stopped) to the person: only a NO-GO or a blocking finding starts a revision.
+  `coordinator@8` (7.71.04) leaves it to the person until they decide: their Resume at its step tries it again, and the
+  coordinator launches the task the Resume posted again, or posts it again itself when the flow lists the step ready;
+  it says where the flow ended in the flow's own words (ready for review, or a draft).
 - **The board's check.** In a run that follows a flow, a post names a live step (`flow_step`), for a role that step
   takes, from a poster it allows: the run coordinator for any live step, another agent only on a board step that
   names it a poster (within the board's own rule of who posts for whom), a person for any live step or for a task of
@@ -2016,7 +2028,7 @@ the run monitor and in the reports.
 | reduce | runs as the join of the map's shards: done once every shard's task is; the step after it reads their results |
 | board | runs: tasks for its claimers, posted by the coordinator and its posters, while its posters still run too; the coordinator closes it once nothing on it is under way (`until: caps`: only at the run's task cap; an empty board only when an agent other than the coordinator was to post on it) |
 | quality gate | routes by the GO ledger: the final go (only once a gate runner's task is done) takes the `pass` arrow only on a GO its gate record says, anything else the `fail` arrow, to a person. The gate runner has a skill since 6.29.00 and is one of the bus's task roles: its tasks are posted and claimed like any role's, at a step that takes it (the quality gate's, in the shipped templates). Its task and the final go's name the submitted patch, which the harness applies to their checkouts and hashes before anything runs; it runs the packs' checks on that tree as repository commands and writes its record, with the tree the harness hashed; the gate CLI is not in the images yet ([The quality gate](#the-quality-gate)), and the broker still opens a pull request only for a gate record's GO on the exact tree |
-| stop at PR | runs: the flow ends at the draft pull request; the broker's dial still decides whether one is opened (tenet 3) |
+| stop at PR | runs: the flow ends at the pull request, ready for review or a draft as the run's flow says (its `pr` setting on META; 7.71.04: the flow's end says which, where it said "the draft pull request" for both); the broker's dial still decides whether one is opened (tenet 3) |
 | end, human decision point | runs: a completed end finishes the flow; a human decision point puts the run at a person |
 | memory (read, write) | not yet run: the flow goes on without the read (context) or the write |
 | learning loop | not yet run: the flow goes on; the run's retrospective at its end still runs for every run |
@@ -2065,13 +2077,33 @@ called flow's steps carry theirs). The step's own shape is the rules'
 of the run is live or moving and its coordinate task ended done, the supervisor's next tick ends the run done when its
 flow finished (`Supervisor._coordinator_done`, `RunControl.end_done`: its `RUNLOG#` row the supervisor's), and settling
 then releases it, starts its retrospective (triage end, scorecards) and, with nothing listed, switches the rule off;
-the agents' heartbeat then ends an engineering agent's run completed and frees its lock. A coordinator that finished
-on a flow that did not (still running, at a person, or no flow) sends the run to a person (`coordinator`), since
-7.71.03 only once its session ended 90 seconds ago (`supervisor.FLOW_SETTLE_SECONDS`: the next tick reads the flow
-again), so a flow recorded finished just after its coordinator's finish ends done. A person's Resume of such a run
-reopens its coordinate task at the next attempt for a new `coordinator-<n>` (7.71.03, `BoardStore.reopen_coordinate`),
-so the run is planned again. Before, no code ended a run done: the first live Bug fixer run stayed active, the rule
-ticking every minute, its agent's lock held.
+the agents' heartbeat then ends an engineering agent's run completed and frees its lock, at its next tick (every 15
+minutes), or (7.71.04) at once when the run workspace reads the ended run (`agents_handler.get_engineering_run`, as
+a Stop does: the runtime's own role writes nothing of voc-agents' runs). A coordinator that finished on a flow that
+did not sends the run to a person at the next tick: (7.71.04) at the decision point its flow waits at
+(`flow:<step>`), else (a flow still running, or no flow) the coordinator's. 7.71.03's 90-second wait for a flow
+recorded finished after the coordinator's finish is gone: the flow is the board's record, written before its writers'
+sessions end. It waits instead while a person's Resume since that coordinator started may still launch the next one
+(its launch window, `COORDINATOR_LAUNCH_SECONDS`, or the fill chain's when the Resume filled the checkout cache first).
+A person's whole-run Resume of such a run, and only that (7.71.04: never a start's retry or a board launch's fill),
+reopens its coordinate task at the next attempt for a new `coordinator-<n>` (the board store's re-post with
+`reopen`), so the run is planned again; a Resume whose launch waits for a fill hands that on with it (`resumed`).
+Before 7.71.02, no code ended a run done: the first live Bug fixer run stayed active, the rule ticking every minute,
+its agent's lock held.
+
+*Built* (7.71.04): a person's Resume at a step whose task went to a person tries the step again. At a flow step's
+decision point (`flow:<step>`) the Resume records the person's decision on the step, and then posts each task of the
+step that ended needing a person again (`runtime/step_retry.py`): the newest task of each of the step's works (its
+spec) that ended `needs_human` with none of that work done or under way, as it was (its role, title, spec with the
+same submitted patch, parent, priority and shard), as a new task the person posted (`human:<subject>`), through the
+board's own checks (the step must be live after the decision; one task at a time for an agent step). The coordinator,
+continued or new, launches it; a refused post is logged and the coordinator posts it itself (the conductor says so on
+a step ready again after a decision, and the coordinator's skill, version 8, says a task at a person is the person's
+until they decide). A task that failed stays the coordinator's to post again. On b- the committer's task of run
+01M86YEPB6VFP9XEG1M9HTHABV ended needing a person at `flow:commit`; a Resume reopened its coordinator, which read the
+task as the person's, posted nothing and finished, and the run went straight back to a person. An agent's Restart
+(fresh) or Resume of a task that ended needing a person answers 409 saying so: its agent's session ended with it, and
+the run's Resume is what tries it again.
 
 *Planned*: the conductor reading the dial itself (AI-assisted: a person's go after the plan; Human-driven: the flow
 stops at the proposal), the memory steps, the learning loop and self-improvement as flow steps, shard
@@ -3171,7 +3203,8 @@ The run workspace ([docs/autonomous-agents.md](autonomous-agents.md#the-run-work
 - **Restart one agent of a live run** (`signal.restart`, `{from: checkpoint | fresh}`): from its newest checkpoint (its
   session ended, then continued at once in a new one) or afresh (its task re-posted as `restarted` at the next attempt,
   its session ended as re-posted). Refused for a stopped run, past 30 days, with its budget spent, without an agent, for
-  a fresh restart of the coordinator, and while a person's Stop of the run is under way.
+  a fresh restart of the coordinator, and while a person's Stop of the run is under way; for a task that ended needing
+  a person (7.71.04) with what to do instead: the run's Resume, which posts the step's task again for a new agent.
 - **Resume or Restart an ended run as a child run** (D51-3: never reopened). voc-engineering-start's `restart_run`
   (`runtime/restart.py`, `POST …/restart {mode, agents?, base, model?, confirm}`, 409 while the run is live; `model`,
   7.58.00: one for every role of the child, else the parent's models) writes the child in
@@ -3539,8 +3572,8 @@ person (`learning/cross_run.py`, `cross_run_input.py`, `cross_run_answer.py`).
   the rounds, the open blocking findings' titles, the final go's reasons). Every text is cut and redacted
   (`quality_gate/text.redact`). A run whose manifest cannot be read is left out and counted.
 - **What is counted by rule** (numbers, ids and keys, never a model's words): the recurring failures (by role and
-  kind: the retrospective's `no_go`, `failed`, `crashed` or `timed_out`, else a session that ended `failed` or
-  `reposted`, else a NO-GO; in two runs or more), each with its runs, newest first, and its evidence's keys (the
+  kind: the retrospective's `no_go`, `failed`, `crashed` or `timed_out`, else a session that ended `failed`,
+  `reposted` or (7.71.04) `needs_human`, else a NO-GO; in two runs or more), each with its runs, newest first, and its evidence's keys (the
   manifests, the failing agents' transcript prefixes, the gate records); each flow step's session seconds and cost at
   p50 and p95 (an agent's role where its task named no step: since 7.53.00 the manifest names each agent's `step`);
   the cost outliers (runs, and agents of a step, at three times their p50 or more); the convergence (the runs by

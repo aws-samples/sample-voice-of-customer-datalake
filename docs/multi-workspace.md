@@ -1653,7 +1653,9 @@ partition, and the workspaces API holds no scheduler or `iam:PassRole` action. A
    stored as `paused`;
 3. a `trial_paused` audit row (actor `trial-expiry`, kind `schedule`, the lists);
 4. each plugin turned off by the existing audited disable (its own `plugin_disabled` row, reason `trial_paused`) and
-   each live form set `enabled: false` (its save counter one up, `updated_by` `trial-expiry`).
+   each live form set `enabled: false` (its save counter one up, `updated_by` `trial-expiry`), each turn-off one
+   transaction with a check of `META`: the workspace still active and the trial still at the `rev` step 2 saved
+   (7.71.04, `lambda/shared/trial_state.py` `unchanged_check`).
 
 No form is put live once step 1 committed (the publish's own transaction checks `paused_at`), so the live forms read in
 step 2 are all there are (7.71.01 dropped a second read that could never find one).
@@ -1693,9 +1695,12 @@ conversion is one API request): a mark older than that is a resume that failed, 
 passed: a failed extension never wrote its new one), even past the day a pause is revisited, and the tick turns off
 what that resume turned on and removes the mark (7.71.02). The pause's own write of what it turns off is conditional on
 the trial it read and comes before any turn-off, so an extension that marked the trial after that read makes the pause
-fail (409, counted failed by the tick) and turn nothing off (7.71.02); and the pause reads the trial's `rev` again
-before each turn-off, so an extension that marks it while the pause is turning things off stops the pause there (409),
-and at most the one turn-off already under way when the mark landed is undone (7.71.03).
+fail (409, counted failed by the tick) and turn nothing off (7.71.02); and each turn-off checks in its own
+transaction that the trial is still at the `rev` of that write, so an extension that marks it while the pause is
+turning things off refuses the next turn-off and stops the pause there (409), and nothing the extension turned on is
+undone (7.71.04; 7.71.03 read the `rev` again before each turn-off, one read each, and a mark that landed between that
+read and the turn-off was not seen). A refused plugin's `plugin_disabled` audit row is written all the same, before its
+transaction, as every plugin change's is.
 
 **Fixed cost: about none** (tenet 7): 720 ticks a month, each one Query of the listing partition (a few rows per
 workspace) and nothing more while no trial is due.

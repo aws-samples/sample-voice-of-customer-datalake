@@ -59,6 +59,7 @@ from engineering.flow.record import (
     cap_reached,
     copied_definition,
     decision_item,
+    draft_pull_request,
     flow_item,
     gate_verdicts,
     parse_flow,
@@ -635,14 +636,14 @@ class RunStore:
                 return   # at a decision point already: this one's reason, or the 30-day one, which only a stop ends
             raise
 
-    def resume(self, run_id: str, *, now: int, actor: str = '', only_from: str = '') -> None:
+    def resume(self, run_id: str, *, now: int, actor: str = '', only_from: str = '') -> str:
         """A person resumed the run from its decision point: active again; ``RunNotActive`` when it was not waiting.
         ``resumed_epoch`` records when (the supervisor gives a Resume's new coordinator its own launch window). At a
         flow step's decision point (``flow:<step>``) it is also that person's decision on the step, a create-only
         ``STEP#<step>#decision#…`` row in the same transaction, held to the decision point read (D4: who and when;
         the conductor passes the step, or gives a blocked one another try). ``only_from``: only off that decision
         point (``RunNotActive`` at any other: a Resume a fill carries on never passes a point the person did not
-        see)."""
+        see). The step decided on, '' for none (7.71.04: the Resume then tries it again, ``step_retry.py``)."""
         waiting = self.get(run_id)
         if waiting is None:   # (never started: refused before any write, as META's condition would refuse it)
             raise RunNotActive(f'run {run_id} is not active')
@@ -664,6 +665,7 @@ class RunStore:
                             'SET #status = :active, resumed_epoch = :now REMOVE needs_human, needs_human_detail',
                             condition, values, also)
         self._listed(run_id, 'active')
+        return step
 
     def release(self, run_id: str) -> None:
         """No agent of the ended run is live: the supervisor stops watching it (idempotent)."""
@@ -818,8 +820,9 @@ class RunStore:
         rows = self.typed_rows(run_id, STEP_PREFIX)
         recorded = recorded_verdicts(rows)
         verdicts = gate_verdicts(flow, tasks, WORKSPACE, run_id, self._gate_records, recorded)
-        plan = conduct(flow, board_state(tasks, rows, cap_reached=cap_reached(_typed(meta) if meta else None),
-                                         verdicts=verdicts))
+        typed = _typed(meta) if meta else None
+        plan = conduct(flow, board_state(tasks, rows, cap_reached=cap_reached(typed), verdicts=verdicts,
+                                         draft_pr=draft_pull_request(typed)))
         if keep_verdicts and plan.decision_point and self._gate_records is not None:
             # (kept once the run is at its decision point: ``keep_verdicts``, best effort, never before it)
             self._unkept[run_id] = (plan, tasks, recorded)

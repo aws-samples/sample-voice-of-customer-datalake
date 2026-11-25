@@ -38,6 +38,7 @@ import { useCsvSelection } from './useCsvSelection'
 import RadarSourcePicker from './RadarSourcePicker'
 import CsvDatasetField from './CsvDatasetField'
 import CsvUpdatePreview from './CsvUpdatePreview'
+import UnredactedRows from './UnredactedRows'
 import { useCsvUploadFlow } from './useCsvUploadFlow'
 import type { CsvUploadFlow } from './useCsvUploadFlow'
 import type { CsvDatasetPreview, CsvUploadResult } from '../../api/csvDatasetSchema'
@@ -378,6 +379,9 @@ function SuccessView({
           {t('csvUpload.preview.resultUnchanged', { count: result.counts.unchanged })}
         </p>
       ) : null}
+      {result.redaction_unavailable === undefined ? null : (
+        <UnredactedRows count={result.redaction_unavailable.count} names={result.redaction_unavailable.rows.map(String)} noun="rows" />
+      )}
       {result.warnings && result.warnings.length > 0 ? (
         <div className="text-left text-xs bg-warn-subtle border border-warn/30 rounded-sm p-3 mb-3 max-h-40 overflow-y-auto">
           <div className="font-medium text-warn mb-1">

@@ -188,6 +188,13 @@ function partitionItems(arr: readonly unknown[]): { data: JsonFeedbackItem[]; sk
   }
 }
 
+/** The 1-based file position of each item at `places` among those Import sent (the valid ones, in file order), as an
+ * upload's answer names them (`redaction_unavailable.rows`, 7.71.04): the person counts the skipped items too. */
+export function filePositions(places: readonly number[], skipped: readonly SkippedItem[]): number[] {
+  const gone = skipped.map((item) => item.position).sort((a, b) => a - b)
+  return places.map((place) => gone.reduce((position, skip) => (skip <= position ? position + 1 : position), place))
+}
+
 export function parseJsonFeedback(content: string): ParseResult {
   const raw: unknown = JSON.parse(content)
   const arr = extractJsonArray(raw)

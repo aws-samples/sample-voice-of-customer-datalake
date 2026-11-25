@@ -216,8 +216,8 @@ def test_by_default_the_scorecards_show_the_shipped_versions_only_never_the_stor
     assert [(c['version'], c['source'], c['runs']) for c in body['cards']] == [
         (4, 'shipped', 0), (3, 'shipped', 0), (2, 'shipped', 1), (1, 'shipped', 0)]
     coordinator = _call(lambda_context, 'GET', '/agents/engineering/scorecards/coordinator', query={'connection': CONN})[1]
-    # (it ships as version 7 since 7.54.00: the shipped one and the ones before it, at most DEFAULT_COMPARED)
-    assert coordinator['versions'] == [7, 6, 5, 4, 3]
+    # (it ships as version 8 since 7.71.04: the shipped one and the ones before it, at most DEFAULT_COMPARED)
+    assert coordinator['versions'] == [8, 7, 6, 5, 4]
 
 
 @pytest.mark.usefixtures('env')

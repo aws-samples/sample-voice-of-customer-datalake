@@ -81,7 +81,9 @@ These rows go through the CSV import (`POST /scrapers/manual/csv-upload`), which
 
 Every row carries the import's tag (`import-YYYY-MM-DD-xxxx`), so First insights reads only this import's reviews
 (`tag=` on the metrics routes). Row identity, datasets and source profiles work as for any CSV upload
-([csv-import.md](csv-import.md)).
+([csv-import.md](csv-import.md)). Under a redacting source a row whose text Comprehend could not read is left out
+(the upload's `redaction_unavailable: {count, rows}`, [source-policies.md](source-policies.md)), and First insights
+lists it with its row number as a survey's refused rows are listed (7.71.04).
 
 ## A survey export: an imported form
 

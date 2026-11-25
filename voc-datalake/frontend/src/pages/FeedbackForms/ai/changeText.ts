@@ -34,8 +34,8 @@ export function numberOf(change: FormChange, before: FormV2, after: FormV2): num
 export function headlineOf(t: TFunction<'feedbackForms'>, change: FormChange, before: FormV2, after: FormV2): string {
   const form = changeSource(change, before, after)
   switch (change.area) {
-    case 'question': return headlineShown(questionOf(change, before, after), form.language)
-    case 'ending': return textIn(form.endings.find((e) => e.id === change.id)?.title, form.language)
+    case 'question': return headlineShown(questionOf(change, before, after)?.headline, form.language)
+    case 'ending': return headlineShown(form.endings.find((e) => e.id === change.id)?.title, form.language)
     case 'hidden': return t('ai.diff.hidden', { id: change.id })
     case 'welcome': return t('ai.diff.welcome')
     case 'language': {
@@ -55,7 +55,7 @@ export function applyLabel(t: TFunction<'feedbackForms'>, change: FormChange, be
   const what = (() => {
     switch (change.area) {
       case 'question': return t('ai.diff.what.question', { number: numberOf(change, before, after) ?? '' })
-      case 'ending': return t('ai.diff.what.ending', { title: textIn(form.endings.find((e) => e.id === change.id)?.title, form.language) })
+      case 'ending': return t('ai.diff.what.ending', { title: headlineShown(form.endings.find((e) => e.id === change.id)?.title, form.language) })
       case 'hidden': return t('ai.diff.what.hidden', { id: change.id })
       case 'language': return t('ai.diff.what.language', { language: isFormLanguage(change.id) ? languageNames[change.id] : change.id })
       case 'welcome': return t('ai.diff.what.welcome')

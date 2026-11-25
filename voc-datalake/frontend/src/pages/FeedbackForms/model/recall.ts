@@ -71,11 +71,11 @@ export function renderRecall(text: string, values: Readonly<Record<string, strin
 export const shownAsIds = (text: string): string =>
   text.replace(PLACEHOLDER, (_raw, inner: string) => `[${(inner.split('|')[0] ?? '').trim()}]`)
 
-/** A question's headline in `language` (`''` for none) with each placeholder shown as `[id]` (`shownAsIds`): how a
- * question is named everywhere but its own headline field and what respondents see (Results, the reports, and the
- * builder's lists, logic targets, menus and summaries; 7.71.03). */
-export const headlineShown = (question: { readonly headline?: I18nText } | undefined, language: FormLanguage): string =>
-  shownAsIds(textIn(question?.headline, language))
+/** A question's headline or an ending's title in `language` (`''` for none) with each placeholder shown as `[id]`
+ * (`shownAsIds`): how a question or an ending is named everywhere but its own field and what respondents see (Results,
+ * the reports, and the builder's lists, logic targets, menus and summaries; 7.71.03, an ending's title 7.71.04). */
+export const headlineShown = (text: I18nText | undefined, language: FormLanguage): string =>
+  shownAsIds(textIn(text, language))
 
 /** Where a text is, in the builder's terms (validateForm.ts `ProblemLocation`). */
 export interface TextLocation {

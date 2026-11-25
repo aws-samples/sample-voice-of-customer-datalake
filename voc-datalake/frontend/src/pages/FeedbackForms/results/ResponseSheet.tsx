@@ -38,7 +38,7 @@ function AnswerList({ form, response }: Readonly<{ form: FormV2; response: FormR
         const value = response.answers[question.id]
         return (
           <li key={question.id} className="space-y-0.5">
-            <p className="text-[12px] text-muted">{t('results.sheet.question', { number: index + 1, headline: headlineShown(question, form.language) })}</p>
+            <p className="text-[12px] text-muted">{t('results.sheet.question', { number: index + 1, headline: headlineShown(question.headline, form.language) })}</p>
             {value === undefined
               ? <p className="text-sm italic text-muted">{t('results.sheet.notAnswered')}</p>
               : <AnswerValueText form={form} question={question} value={value} />}

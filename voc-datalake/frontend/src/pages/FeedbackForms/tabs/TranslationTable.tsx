@@ -34,9 +34,9 @@ interface Group {
 
 function headingOf(t: TFunction<'feedbackForms'>, form: FormV2, owner: TranslatableText['owner']): string {
   if (owner.kind === 'welcome') return t('types.welcome')
-  if (owner.kind === 'ending') return textIn(form.endings.find((e) => e.id === owner.id)?.title, form.language)
+  if (owner.kind === 'ending') return headlineShown(form.endings.find((e) => e.id === owner.id)?.title, form.language)
   const at = form.questions.findIndex((q) => q.id === owner.id)
-  return t('logic.target.question', { number: at + 1, headline: headlineShown(form.questions[at], form.language) })
+  return t('logic.target.question', { number: at + 1, headline: headlineShown(form.questions[at]?.headline, form.language) })
 }
 
 function groupsOf(t: TFunction<'feedbackForms'>, form: FormV2, entries: readonly TranslatableText[]): Group[] {

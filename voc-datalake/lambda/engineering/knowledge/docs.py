@@ -12,7 +12,7 @@ log row, and in the same transaction records it as the connection's next renderi
     WS#<ws>#REPO#<connection> / KDOCSLOG#<version:06d>  the same, create-only (D1, D4)
 
 held to the number read (two approvals racing: one is refused, read again). The rendering's number names its pull
-request's branch (``voc-agent/docs/knowledge-v<n>``).
+request's branch (``voc-agent/docs-knowledge-v<n>``, one level under ``voc-agent/`` since 7.71.04).
 
 **Tenets.** The accepted version (``tenets.TenetsStore.accepted``), its ``TENETS.md`` digest recorded at its acceptance.
 

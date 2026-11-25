@@ -77,7 +77,7 @@ from typing import Any, Final
 
 from engineering.runtime.checkpoints import artifact_prefix
 from engineering.runtime.harness.acp import AcpClient, AcpError, AcpTimeout, Notification
-from engineering.runtime.harness.cli import PATH, TOOL_SERVER, sync_notes
+from engineering.runtime.harness.cli import PATH, TOOL_SERVER, crash_checkpoint, sync_notes
 from engineering.runtime.harness.converse_loop import nudge, opening, system_prompt
 from engineering.runtime.harness.effort import CLAUDE_EFFORT
 from engineering.runtime.harness.interface import AgentSession, Ending
@@ -426,10 +426,10 @@ class KiroAcp:
             session.context.status.at(str(refused))
             return 'done'
         except Exception:
-            # Whatever failed (the protocol, a port, a tool's crash): kiro-cli is ended and the work saved first.
+            # Whatever failed (the protocol, a port, a tool's crash): kiro-cli is ended and the work saved first, the
+            # tool server's last writes with it (Q6, 7.71.04).
             state.end()
-            with contextlib.suppress(Exception):
-                session.checkpoint(turn=-1)
+            crash_checkpoint(session, state.files)
             raise
         finally:
             state.end()

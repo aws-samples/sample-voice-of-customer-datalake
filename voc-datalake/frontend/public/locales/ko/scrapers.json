@@ -251,7 +251,9 @@
     "datesDefaulted_other": "리뷰 {{count, number}}개는 본문에 날짜가 없어 오늘 가져온 날짜를 사용합니다. 아래에서 변경할 수 있습니다.",
     "importFailed": "리뷰를 가져오지 못했습니다",
     "clearDraft": "초안 지우기",
-    "draftDropped": "저장된 초안이 {{max}}자를 넘어 지웠습니다. 계속하려면 더 짧은 텍스트를 붙여넣으세요."
+    "draftDropped": "저장된 초안이 {{max}}자를 넘어 지웠습니다. 계속하려면 더 짧은 텍스트를 붙여넣으세요.",
+    "imported_one": "리뷰 {{count, number}}개를 가져왔습니다.",
+    "imported_other": "리뷰 {{count, number}}개를 가져왔습니다."
   },
   "newSource": "새 소스",
   "parsedReview": {
@@ -716,5 +718,17 @@
       "title": "몇 분 만에 보유한 신호 가져오기",
       "body": "아직 피드백이 없습니다. 앱 스토어 리뷰, 지원 티켓 또는 다른 설문 도구 결과가 담긴 CSV를 가져오면 몇 분 안에 감정, 주제, NPS를 확인할 수 있습니다."
     }
+  },
+  "unredacted": {
+    "rowsLeftOut_one": "개인정보를 가리기 위한 확인을 하지 못해(개인정보를 가리는 서비스가 읽지 못했습니다) {{count, number}}개 행이 제외되었습니다: 행 {{list}}.",
+    "rowsLeftOut_other": "개인정보를 가리기 위한 확인을 하지 못해(개인정보를 가리는 서비스가 읽지 못했습니다) {{count, number}}개 행이 제외되었습니다: 행 {{list}}.",
+    "itemsLeftOut_one": "개인정보를 가리기 위한 확인을 하지 못해(개인정보를 가리는 서비스가 읽지 못했습니다) {{count, number}}개 항목이 제외되었습니다: 항목 {{list}}.",
+    "itemsLeftOut_other": "개인정보를 가리기 위한 확인을 하지 못해(개인정보를 가리는 서비스가 읽지 못했습니다) {{count, number}}개 항목이 제외되었습니다: 항목 {{list}}.",
+    "reviewsLeftOut_one": "개인정보를 가리기 위한 확인을 하지 못해(개인정보를 가리는 서비스가 읽지 못했습니다) {{count, number}}개 리뷰가 제외되었습니다: 리뷰 {{list}}.",
+    "reviewsLeftOut_other": "개인정보를 가리기 위한 확인을 하지 못해(개인정보를 가리는 서비스가 읽지 못했습니다) {{count, number}}개 리뷰가 제외되었습니다: 리뷰 {{list}}.",
+    "more_one": "외 {{count, number}}개",
+    "more_other": "외 {{count, number}}개",
+    "sendAgain": "가져오려면 제외된 것만 다시 보내세요.",
+    "quoted": "{{position}}(“{{text}}”)"
   }
 }

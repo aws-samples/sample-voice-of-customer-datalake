@@ -21,11 +21,13 @@ its caller never heard back from answers the first outcome and is never made twi
 unknown (``OutcomeUnknown``, 502), and the write is not made again for that attempt. A comment on the run's issue and
 its labels are made once per run and issue (7.71.02, ``issue_write_key``: no agent, attempt or digest), so a second
 understander of the run gets the first one's answer back: the first live Bug fixer run's two understanders each
-commented on and labelled its issue. Since 7.71.03 the labels' answer names who put them (``Labelled.set_by``), and an
-issue write whose call never answered (a host error, or a crash between its claim and its outcome) blocks the run's
-later ones only until that call is over (``STALE_CLAIM_SECONDS``): the labels, which the host adds idempotently, are
-put again, and the comment, which carries the run's marker (``issue_marker``), is looked for on the host first and
-posted only when the host has none.
+commented on and labelled its issue (the labels' answer is the labels the first call put, which a caller compares with
+its own: 7.71.04, 7.71.03's ``set_by`` gone). Since 7.71.03 an issue write whose call never answered (a host error, or
+a crash between its claim and its outcome) blocks the run's later ones only until that call is over
+(``STALE_CLAIM_SECONDS``): the labels, which the host adds idempotently, are put again, and the comment, which carries
+the run's marker (``issue_marker``), is looked for on the host first and posted only when the host has none (7.71.04:
+only the connection's own comment ending with the marker, among those updated since that call's claim). The claim row
+is read once before it is taken (7.71.04, ``_earlier``).
 
 A pull request opens ready for review (7.50.00, the owner's decision: a person approves it without a "Ready for
 review" click), or as a draft when the run's flow says ``pr: draft`` (META's ``pull_request``, ``RunRecord.draft_pr``);
@@ -54,9 +56,10 @@ still planned.
 Since 7.52.00 voc-engineering-start also asks for ``push_approved_docs`` (``Broker.push_approved_docs``, its alone: no
 agent role, nor the runtime): the knowledge docs (``docs/agents/**``) or the tenets (``TENETS.md``) an administrator
 approved, rendered again from the stored records and held to the request's and the approval's digest, as one commit on
-``voc-agent/docs/<kind>-v<n>`` and a pull request, under the requesting administrator's way of working, the CI
-attestation and the branch rules, once per (connection, kind, version) (``records.DocsClaims``); and every agent reads
-its run's connection's accepted tenets (``Broker.tenets``, the ``read`` of kind ``tenets``).
+``voc-agent/docs-<kind>-v<n>`` (7.71.04: one level under ``voc-agent/``, ``write_policy.docs_branch``) and a pull
+request, under the requesting administrator's way of working, the CI attestation and the branch rules, once per
+(connection, kind, version) (``records.DocsClaims``); and every agent reads its run's connection's accepted tenets
+(``Broker.tenets``, the ``read`` of kind ``tenets``).
 
 Since 7.57.00 a connection is of a kind (``connection_kind``: its credential's). On a public repository read only
 (``public_read``) every write is refused, whatever the role, before any token is minted or the host asked
@@ -120,6 +123,7 @@ from engineering.connectors.hosts import (
     Submission,
     TokenWrites,
     Unavailable,
+    WriteClaim,
     WriteLedger,
     ci_refusal,
 )
@@ -408,24 +412,20 @@ class Broker:
         _require_branch(branch, run, caller.run_id)
         return connector, run, _ci_record(run, _require_ci(connector, run, branch)), token
 
-    def _first_outcome(self, caller: Caller, operation: str, key: str) -> dict[str, object] | None:
-        """A repeat's first outcome (its write's ``key``: ``write_key``, ``issue_write_key``), before the run's, the
-        dial's and the board's checks (as the runtime answers a repeated launch): a write made answers its answer even
-        after the run moved on, and one whose outcome is not known is ``OutcomeUnknown``; None when there is none
-        (never asked, or refused with nothing written). The role's permission and the connection still come first."""
+    def _earlier(self, caller: Caller, operation: str, key: str) -> WriteClaim | None:
+        """The earlier claim of a write's ``key`` (``write_key``, ``issue_write_key``), read once (7.71.04: what a
+        repeat is answered, ``_answered``, and what an issue write retried after a call that never answered looks for
+        on the host, ``_found_comment``), before the run's, the dial's and the board's checks. The role's permission
+        and the connection still come first."""
         if not permitted(caller.role, operation):
             raise NotPermitted(f'The {caller.role} role may not {operation.replace("_", " ")}.')
         if self._connector is None:
             raise NoConnection(NO_CONNECTION)
-        earlier = self._connector.writes.earlier(caller.run_id, key)
-        # (7.71.03) An issue write whose earlier call has no outcome goes on to its claim, which takes it again only
-        # once that call is long over (``STALE_CLAIM_SECONDS``) and answers ``OutcomeUnknown`` until then.
-        if earlier is None or earlier.state == WRITE_REFUSED or (_issue_key(key) and earlier.state != WRITE_DONE):
-            return None
-        if earlier.state == WRITE_DONE and earlier.result is not None:
-            _repeated(caller, operation, key)
-            return earlier.result
-        raise OutcomeUnknown(_unknown(key))
+        return self._connector.writes.earlier(caller.run_id, key)
+
+    def _first_outcome(self, caller: Caller, operation: str, key: str) -> dict[str, object] | None:
+        """A repeat's first outcome (``_answered``) from its write's earlier claim (``_earlier``)."""
+        return _answered(caller, operation, key, self._earlier(caller, operation, key))
 
     def read(self, caller: Caller, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
         connector, run = self._open(caller, READ)
@@ -436,12 +436,13 @@ class Broker:
         """Post ``body`` on the run's own issue or pull request; the comment's URL. Once per ``attempt`` (``_once``) on
         the pull request; once per run on its issue (7.71.02, ``issue_write_key``: a later caller, another
         understander, gets the first comment's URL back). A comment on the issue carries the run's marker
-        (``issue_marker``, 7.71.03), so a later call whose earlier one has no outcome finds it on the host, and posts
-        only when the host has none."""
+        (``issue_marker``, 7.71.03), so a later call whose earlier one has no outcome finds it on the host
+        (``_found_comment``), and posts only when the host has none."""
         issue = on == 'issue'
         key = issue_write_key(number, POST_COMMENT) if issue else write_key(caller, attempt, POST_COMMENT, on, number,
                                                                             body)
-        first = self._first_outcome(caller, POST_COMMENT, key)
+        earlier = self._earlier(caller, POST_COMMENT, key)
+        first = _answered(caller, POST_COMMENT, key, earlier)
         if first is not None:
             return str(first['url'])
         connector, run = self._open(caller, POST_COMMENT)
@@ -458,19 +459,20 @@ class Broker:
             _wrote(caller, POST_COMMENT, run, on=on, number=number)
             return {'url': url}
 
-        def made() -> dict[str, object] | None:
-            url = connector.host.issue_comment(run.connection_id, number, marker)
-            return None if url is None else {'url': url}
+        # (an earlier call on the issue that never answered, ``_answered`` having taken any other: what it wrote is
+        # looked for on the host before anything is posted, once its claim is taken again)
+        made = (_found_comment(connector, run, number, marker, earlier.at)
+                if issue and earlier is not None and earlier.state != WRITE_REFUSED else None)
+        return str(_once(connector, caller, POST_COMMENT, key, comment, made)['url'])
 
-        return str(_once(connector, caller, POST_COMMENT, key, comment, made if issue else None)['url'])
-
-    def label_issue(self, caller: Caller, number: int, labels: tuple[str, ...], attempt: int = 1) -> Labelled:
-        """Put the triage ``labels`` on the run's own issue ``number`` (the understander's, 7.50.00): the labels
-        added. Only ``TRIAGE_LABELS``, one or two, at most one kind (``voc-triage/*``) and one severity
+    def label_issue(self, caller: Caller, number: int, labels: tuple[str, ...], attempt: int = 1) -> tuple[str, ...]:
+        """Put the triage ``labels`` on the run's own issue ``number`` (the understander's, 7.50.00): the labels on
+        the issue. Only ``TRIAGE_LABELS``, one or two, at most one kind (``voc-triage/*``) and one severity
         (``voc-severity/*``); the run active, as every operation; no dial (a label changes no code) and no CI check.
         Once per run and issue (7.71.02, ``issue_write_key``; before, once per ``attempt``): a later caller gets the
-        labels the first one put, and (7.71.03) who put them (``Labelled.set_by``). A label is idempotent on the host,
-        so one whose earlier call has no outcome is put again once that call is long over (``STALE_CLAIM_SECONDS``)."""
+        labels the first one put, which it compares with its own (7.71.04: the answer names no agent; a result of
+        7.71.03 keeps a ``by`` nothing reads). A label is idempotent on the host, so one whose earlier call has no
+        outcome is put again once that call is long over (``STALE_CLAIM_SECONDS``)."""
         del attempt   # (the run's, whoever asks: never once per attempt)
         if not permitted(caller.role, LABEL_ISSUE):   # (the role first, before what it asks is judged)
             raise NotPermitted(f'The {caller.role} role may not {LABEL_ISSUE.replace("_", " ")}.')
@@ -478,18 +480,17 @@ class Broker:
         key = issue_write_key(number, LABEL_ISSUE)
         first = self._first_outcome(caller, LABEL_ISSUE, key)
         if first is not None:
-            return _labelled(first, '')
+            return _labels_of(first)
         connector, run = self._open(caller, LABEL_ISSUE)
         if run.issue_number is None or number != run.issue_number:
             raise NotPermitted("An agent labels only its own run's issue.")
-        own = agent_id(caller)
 
         def label() -> dict[str, object]:
             added = connector.host.label_issue(run.connection_id, number, asked)
             _wrote(caller, LABEL_ISSUE, run, on='issue', number=number, labels=list(added))
-            return {'number': number, 'labels': list(added), 'by': own}
+            return {'number': number, 'labels': list(added)}
 
-        return _labelled(_once(connector, caller, LABEL_ISSUE, key, label, lambda: None), own)
+        return _labels_of(_once(connector, caller, LABEL_ISSUE, key, label))
 
     def push_bundle(self, caller: Caller, branch: str, patch: str, tree_hash: str, message: str,
                     attempt: int = 1) -> str:
@@ -681,9 +682,10 @@ class Broker:
 
     def push_approved_docs(self, caller: Caller, request: DocsRequest) -> dict[str, object]:
         """The approved docs of ``request.kind`` (7.52.00; the knowledge docs, ``docs/agents/**``, or the tenets,
-        ``TENETS.md``) as one commit on their own branch (``voc-agent/docs/<kind>-v<n>``, on the default branch's head)
-        and a pull request, ready for review or a draft as asked (the flow's ``pr``); voc-engineering-start's alone
-        (its ``publish_docs``, an administrator's request: no agent role may ask for it, ``NotPermitted``).
+        ``TENETS.md``) as one commit on their own branch (``voc-agent/docs-<kind>-v<n>``, one level under
+        ``voc-agent/`` since 7.71.04: ``write_policy.docs_branch``; on the default branch's head) and a pull request,
+        ready for review or a draft as asked (the flow's ``pr``); voc-engineering-start's alone (its ``publish_docs``,
+        an administrator's request: no agent role may ask for it, ``NotPermitted``).
 
         Before anything is written: the connection's credential names the stored connection's repository; the approved
         version is read again and rendered again from the stored records (``DocsReader.approved``), and the request's
@@ -693,7 +695,9 @@ class Broker:
         the person's go AI-assisted waits for); the CI attestation and the host's branch rules, as for an agent's push.
         No final go: no code is written (D-6). Each write once per (connection, kind, version), the push and the pull
         request each its own claim (``DocsClaims``), so a pull request whose open failed is opened on a retry from the
-        branch already pushed; a second publish of a version whose pull request is open answers it, ``repeated``."""
+        branch already pushed (the one its push claim names: a push of 7.52.00-7.71.03 was on the two-level
+        ``voc-agent/docs/<kind>-v<n>``); a second publish of a version whose pull request is open answers it as it was
+        recorded, ``repeated``, its branch whichever it was opened from."""
         if caller.role != START_ROLE:
             raise NotPermitted(f'The {caller.role} role may not push approved docs.')
         connector = self._connector
@@ -701,12 +705,14 @@ class Broker:
             raise NoConnection(NO_CONNECTION)
         claims, connection = connector.docs_writes, request.connection
         recorded, rendering = _approved_docs(connector, request)
-        branch = docs_branch(request.kind, recorded.version)
         key = functools.partial(docs_write_key, request.kind, recorded.version, digest=recorded.digest)
         opened = _earlier_done(claims, connection, key(OPEN_OR_UPDATE_DRAFT_PR))
         if opened is not None:
             _docs_repeated(connection, request.kind, recorded.version)
             return {**opened, 'repeated': True}
+        # (7.71.04) The branch a push already made is on (its claim's: before 7.71.04 two levels), else the kind's own.
+        pushed_before = _earlier_done(claims, connection, key(PUSH_BUNDLE))
+        branch = str((pushed_before or {}).get('branch') or docs_branch(request.kind, recorded.version))
         default, run, ci = _docs_write_checks(connector, request, branch)
         commit = Commit(docs_commit_message(request.kind, recorded.version, recorded.digest), AUTHOR, AUTHOR,
                         tuple(FileChange(file.path, '100644', file.content) for file in rendering.files))
@@ -717,7 +723,7 @@ class Broker:
         title, body = docs_pull_request(request.kind, recorded.version, recorded.digest, rendering.paths(),
                                         recorded.approved_at)
         check_text(f'{title}\n\n{body}', (), prose=True)
-        pushed = _earlier_done(claims, connection, key(PUSH_BUNDLE)) or _docs_push(
+        pushed = pushed_before or _docs_push(
             connector, request, recorded.version, key(PUSH_BUNDLE), BundleContents(
                 heads=(f'refs/heads/{branch}',), tree_hash='', changed_paths=rendering.paths(), commits=(commit,),
                 added_lines=lines, base=''), default, ci)
@@ -990,22 +996,23 @@ def _repeated(caller: Caller, operation: str, key: str) -> None:
                                                  'agent': caller.agent_index, 'key': key})
 
 
-@dataclass(frozen=True)
-class Labelled:
-    """``label_issue``'s answer: the labels on the run's issue, and (7.71.03) the agent whose call put them when it
-    was an earlier one (another understander's, or this agent's before), '' when this call put them."""
+def _answered(caller: Caller, operation: str, key: str, earlier: WriteClaim | None) -> dict[str, object] | None:
+    """A repeat's first outcome from its write's ``earlier`` claim (``Broker._earlier``; as the runtime answers a
+    repeated launch): a write made answers its answer even after the run moved on, and one whose outcome is not known
+    is ``OutcomeUnknown``; None when there is none (never asked, or refused with nothing written)."""
+    # (7.71.03) An issue write whose earlier call has no outcome goes on to its claim, which takes it again only once
+    # that call is long over (``STALE_CLAIM_SECONDS``) and answers ``OutcomeUnknown`` until then.
+    if earlier is None or earlier.state == WRITE_REFUSED or (_issue_key(key) and earlier.state != WRITE_DONE):
+        return None
+    if earlier.state == WRITE_DONE and earlier.result is not None:
+        _repeated(caller, operation, key)
+        return earlier.result
+    raise OutcomeUnknown(_unknown(key))
 
-    labels: tuple[str, ...]
-    set_by: str = ''
 
-
-def _labelled(done: Mapping[str, object], own: str) -> Labelled:
-    """A label write's answer (``done``, its claim's result) for the call whose agent is ``own`` ('' for a repeat
-    answered before its write): who put the labels when it was not this call (a result from before 7.71.03 names
-    nobody)."""
-    labels = tuple(str(label) for label in _listed(done.get('labels')))
-    by = str(done.get('by') or '')
-    return Labelled(labels, '' if own and by == own else by or 'another agent of the run')
+def _labels_of(done: Mapping[str, object]) -> tuple[str, ...]:
+    """A label write's answer (``done``, its claim's result): the labels the run's first call put on its issue."""
+    return tuple(str(label) for label in _listed(done.get('labels')))
 
 
 #: A repeat of a write whose first outcome is not known: never made again.
@@ -1044,6 +1051,11 @@ def issue_marker(run_id: str) -> str:
     return f'<!-- voc-engineering-run:{run_id} -->'
 
 
+#: (7.71.04) How long before an earlier issue comment's claim its look on the host starts (``_found_comment``): the
+#: call posted it after its claim, and the host's clock and the broker's may differ a little.
+CLAIM_CLOCK_MARGIN_SECONDS: Final = 60
+
+
 def _issue_key(key: str) -> bool:
     return key.startswith('issue#')
 
@@ -1058,15 +1070,29 @@ def _unknown(key: str) -> str:
 Made = Callable[[], dict[str, object] | None]
 
 
+def _found_comment(connector: Connector, run: RunRecord, number: int, marker: str, claimed_at: int) -> Made:
+    """The look for the run's comment on its issue ``number`` that an earlier call, which claimed it at
+    ``claimed_at`` and never heard back, may have posted (7.71.03): the connection's own comment ending with
+    ``marker`` (7.71.04: ``RepositoryHost.issue_comment``), among those updated since that claim
+    (``CLAIM_CLOCK_MARGIN_SECONDS`` before it), so the pages read are the ones that can hold it."""
+    since = max(0, claimed_at - CLAIM_CLOCK_MARGIN_SECONDS)
+
+    def made() -> dict[str, object] | None:
+        url = connector.host.issue_comment(run.connection_id, number, marker, since)
+        return None if url is None else {'url': url}
+
+    return made
+
+
 def _once(connector: Connector, caller: Caller, operation: str, key: str,
           write: Callable[[], dict[str, object]], made: Made | None = None) -> dict[str, object]:
     """``write`` (the host call, after every check) once per ``key`` (``write_key``: the caller's run, agent and
     attempt, the operation and what it writes; ``issue_write_key``: the run's issue and the operation). The claim is
     taken before the host call and closed with its outcome: a repeat of a done write answers its first answer, a repeat
     of one whose outcome is unknown is ``OutcomeUnknown`` (and is not made), and only a refusal that wrote nothing lets
-    the key be claimed again. ``made`` (7.71.03, a write on the run's issue): an earlier claim with no outcome is taken
-    again once ``STALE_CLAIM_SECONDS`` old, and ``made`` looks on the host for what its call wrote before anything is
-    written again."""
+    the key be claimed again. A write on the run's issue (7.71.03): an earlier claim with no outcome is taken again
+    once ``STALE_CLAIM_SECONDS`` old; ``made``, given when the caller's read of that claim (``Broker._earlier``) found
+    it so, looks on the host for what its call wrote before anything is written again."""
     return _claimed(connector.writes, caller.run_id, key, operation, write,
                     lambda: _repeated(caller, operation, key), made)
 
@@ -1074,15 +1100,15 @@ def _once(connector: Connector, caller: Caller, operation: str, key: str,
 def _claimed(ledger: WriteLedger, partition: str, key: str, operation: str, write: Callable[[], dict[str, object]],
              repeated: Callable[[], None], made: Made | None = None) -> dict[str, object]:
     """``write`` once for ``key`` in ``ledger``'s ``partition`` (a run's writes, ``_once``; a connection's docs,
-    ``push_approved_docs``), as ``_once`` says."""
-    before = ledger.earlier(partition, key) if made is not None else None
-    earlier = ledger.claim(partition, key, operation, STALE_CLAIM_SECONDS if made is not None else None)
+    ``push_approved_docs``), as ``_once`` says. Nothing is read before the claim (7.71.04: the caller read the
+    earlier claim once, and ``made`` says what it found)."""
+    earlier = ledger.claim(partition, key, operation, STALE_CLAIM_SECONDS if _issue_key(key) else None)
     if earlier is not None:
         if earlier.state == WRITE_DONE and earlier.result is not None:
             repeated()
             return earlier.result
         raise OutcomeUnknown(_unknown(key))
-    if made is not None and before is not None and before.state != WRITE_REFUSED:
+    if made is not None:
         # (taken again from a call that never answered: what it wrote, if the host has it, is the answer; a look that
         # fails leaves that call's outcome unknown, taken again once stale)
         try:

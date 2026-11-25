@@ -271,7 +271,10 @@
     "datesDefaulted_many": "{{count, number}} d'avis ne contenaient pas de date dans le texte. Ils utilisent donc la date d'import du jour. Vous pouvez les modifier ci-dessous.",
     "importFailed": "Échec de l'importation des avis",
     "clearDraft": "Effacer le brouillon",
-    "draftDropped": "Votre brouillon enregistré dépassait {{max}} caractères ; il a été effacé. Collez un texte plus court pour continuer."
+    "draftDropped": "Votre brouillon enregistré dépassait {{max}} caractères ; il a été effacé. Collez un texte plus court pour continuer.",
+    "imported_one": "{{count, number}} avis importé.",
+    "imported_other": "{{count, number}} avis importés.",
+    "imported_many": "{{count, number}} avis importés."
   },
   "newSource": "Nouvelle source",
   "parsedReview": {
@@ -754,5 +757,21 @@
       "title": "Apportez vos propres signaux en quelques minutes",
       "body": "Aucun retour ici pour l’instant. Importez un CSV d’avis des boutiques d’applications, de tickets de support ou de résultats d’un autre outil d’enquête, et voyez le sentiment, les thèmes et le NPS en quelques minutes."
     }
+  },
+  "unredacted": {
+    "rowsLeftOut_one": "{{count, number}} ligne a été laissée de côté, car ses données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu la lire) : ligne {{list}}.",
+    "rowsLeftOut_other": "{{count, number}} lignes ont été laissées de côté, car leurs données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu les lire) : lignes {{list}}.",
+    "rowsLeftOut_many": "{{count, number}} lignes ont été laissées de côté, car leurs données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu les lire) : lignes {{list}}.",
+    "itemsLeftOut_one": "{{count, number}} élément a été laissé de côté, car ses données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu le lire) : élément {{list}}.",
+    "itemsLeftOut_other": "{{count, number}} éléments ont été laissés de côté, car leurs données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu les lire) : éléments {{list}}.",
+    "itemsLeftOut_many": "{{count, number}} éléments ont été laissés de côté, car leurs données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu les lire) : éléments {{list}}.",
+    "reviewsLeftOut_one": "{{count, number}} avis a été laissé de côté, car ses données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu le lire) : avis {{list}}.",
+    "reviewsLeftOut_other": "{{count, number}} avis ont été laissés de côté, car leurs données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu les lire) : avis {{list}}.",
+    "reviewsLeftOut_many": "{{count, number}} avis ont été laissés de côté, car leurs données personnelles n’ont pas pu être vérifiées pour le masquage (le service de masquage n’a pas pu les lire) : avis {{list}}.",
+    "more_one": "{{count, number}} autre",
+    "more_other": "{{count, number}} autres",
+    "more_many": "{{count, number}} autres",
+    "sendAgain": "Renvoyez uniquement ce qui a été laissé de côté pour l’importer.",
+    "quoted": "{{position}} (« {{text}} »)"
   }
 }

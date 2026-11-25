@@ -113,7 +113,7 @@ from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all, unprocessed_back
 from shared.dynamo_paging import iter_query
 from shared.review_share_audience import is_share_id, routing_of, share_key
 from shared.row_ids import LONG_OPAQUE_ID_RE
-from shared.trial_state import unpaused_check
+from shared.trial_state import unchanged_check, unpaused_check
 from shared.workspace_ids import ACTIVE, is_workspace_id, ws_key
 from shared.workspace_plugins import WORKSPACE_SORT_PREFIX, plugin_partition
 
@@ -1663,7 +1663,8 @@ class WorkspaceTable:
         return response
 
     def transact_write_items(self, items: Sequence[Mapping[str, Any]], *, outside: OutsideEntry | None = None,
-                             unpaused_in: Any | None = None, **kwargs: Any) -> dict:
+                             unpaused_in: Any | None = None, unchanged_in: tuple[Any, object] | None = None,
+                             **kwargs: Any) -> dict:
         """One ``TransactWriteItems`` on this table: 1 to 100 entries, each ``{'Put': {'Item': …}}``,
         ``{'Update': {'Key': …, 'UpdateExpression': …}}``, ``{'Delete': {'Key': …}}`` or
         ``{'ConditionCheck': {'Key': …, 'ConditionExpression': …}}`` (plain Python values, no ``TableName``).
@@ -1681,22 +1682,38 @@ class WorkspaceTable:
 
         ``unpaused_in``: voc-workspaces (its table handle): the transaction also checks this view's OWN workspace's
         ``META`` there (shared/trial_state.py ``unpaused_check``, last, counted in the 100): still active and no paused
-        trial, so a write that puts something live cannot land once a trial's pause committed. The layer names the key
-        from its own scope; a caller names no key and no condition. A cancelled transaction's error propagates: its
-        reasons name the caller's entries first and the check last.
+        trial, so a write that puts something live cannot land once a trial's pause committed. ``unchanged_in``:
+        ``(voc-workspaces, rev)``: the check there is a trial pause's turn-off's instead (shared/trial_state.py
+        ``unchanged_check``, 7.71.04): still active and its trial's ``rev`` still ``rev``, so the pause turns a form off
+        only while no extension or conversion wrote the trial since it saved its lists. Never both (a ValueError: one
+        transaction checks an item once). The layer names the key from its own scope; a caller names no key and no
+        condition. A cancelled transaction's error propagates: its reasons name the caller's entries first and the
+        check last.
         """
         options = _checked_options('TransactWriteItems', kwargs, _TRANSACT_WRITE_OPTIONS)
         entries = list(items)
         claimed = [] if outside is None else [self._outside_entry(outside)]
-        live = [] if unpaused_in is None else [unpaused_check(unpaused_in.name, self.scope.ws)]
-        if not 1 <= len(entries) + len(claimed) + len(live) <= MAX_TRANSACT_ITEMS:
+        meta = self._meta_checks(unpaused_in, unchanged_in)
+        if not 1 <= len(entries) + len(claimed) + len(meta) <= MAX_TRANSACT_ITEMS:
             raise ValueError(f'a TransactWriteItems takes 1 to {MAX_TRANSACT_ITEMS} entries, '
-                             f'not {len(entries) + len(claimed) + len(live)}')
+                             f'not {len(entries) + len(claimed) + len(meta)}')
         checked = [self._checked_write(entry) for entry in entries]
         self._refuse_duplicates('TransactWriteItems',
                                 [body.get('Key') or body['Item'] for entry in checked for body in entry.values()])
-        return self._unscoped_table.meta.client.transact_write_items(TransactItems=[*claimed, *checked, *live],
+        return self._unscoped_table.meta.client.transact_write_items(TransactItems=[*claimed, *checked, *meta],
                                                                      **options)
+
+    def _meta_checks(self, unpaused_in: Any | None, unchanged_in: tuple[Any, object] | None) -> list[dict[str, Any]]:
+        """The check of this view's own workspace's ``META`` a transaction asked for (``transact_write_items``), if
+        any: ``unpaused_check`` or ``unchanged_check``, never both."""
+        if unpaused_in is not None and unchanged_in is not None:
+            raise ValueError("a TransactWriteItems checks its workspace's META once: unpaused_in or unchanged_in")
+        if unpaused_in is not None:
+            return [unpaused_check(unpaused_in.name, self.scope.ws)]
+        if unchanged_in is not None:
+            workspaces, rev = unchanged_in
+            return [unchanged_check(workspaces.name, self.scope.ws, rev)]
+        return []
 
     def _outside_entry(self, outside: object) -> dict[str, Any]:
         """The outside entry's Put, built here from its kind, id, time and expiry and this view's own workspace and

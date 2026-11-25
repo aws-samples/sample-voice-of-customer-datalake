@@ -377,10 +377,9 @@ def _import_confirmed_reviews(job: dict, job_id: str, reviews: list[dict], conte
     scope = scope_of(context) if context is not None else None
     profile = upload_profile(aggregates_table, DEFAULT_UPLOAD_SOURCE, scope)
     unreadable: list[str] = []
+    built = [_confirmed_review_message(review, idx, job, job_id, None) for idx, review in enumerate(reviews)]
     messages, mode = prepare_messages(
-        s3, RAW_DATA_BUCKET,
-        [_confirmed_review_message(review, idx, job, job_id, None) for idx, review in enumerate(reviews)],
-        profile, now, connector_id=_PASTE_WRITER, scope=scope, unreadable=unreadable,
+        s3, RAW_DATA_BUCKET, built, profile, now, connector_id=_PASTE_WRITER, scope=scope, unreadable=unreadable,
     )
     s3_uri = stamp_file_archive(
         messages, mode, lambda: _archive_confirmed_import(job, job_id, reviews, _caller_user_id(), now, scope))
@@ -413,7 +412,7 @@ def _import_confirmed_reviews(job: dict, job_id: str, reviews: list[dict], conte
         'success': True,
         'imported_count': imported_count,
         's3_uri': s3_uri,
-        **_unredacted(unreadable),
+        **_unredacted(_refused_rows(enumerate(built, start=1), unreadable)),
     }
     if errors:
         result['errors'] = errors
@@ -957,7 +956,7 @@ def csv_upload():
         's3_uri': s3_uri,
         **({'radar_brand': radar['radar_brand_key']} if radar else {}),
         **({'counts': plan.counts()} if dataset else {}),
-        **_unredacted(_rows_of(queued, unreadable), 'rows'),
+        **_unredacted(_refused_rows(((item['row'], item) for item in queued), unreadable)),
     }
     if warnings:
         result['warnings'] = warnings[:20]
@@ -969,18 +968,27 @@ def csv_upload():
     return result
 
 
-def _unredacted(named: list[Any], key: str = 'ids') -> dict[str, Any]:
-    """An upload's ``redaction_unavailable`` answer (Q6, 7.71.03): how many of its rows the strict redaction left out
-    because the entity model could not read them (shared/ingest_archive.py ``policy_applied``; counted skipped in the
-    import history), and the first ``MAX_NAMED_UNREDACTED`` of them as the caller knows them (``key``: the items' own
-    ``ids``, a CSV's ``rows`` by number), so they can be sent again; nothing when there are none."""
-    return {'redaction_unavailable': {'count': len(named), key: named[:MAX_NAMED_UNREDACTED]}} if named else {}
+def _unredacted(rows: list[int]) -> dict[str, Any]:
+    """An upload's ``redaction_unavailable`` answer (Q6, 7.71.03), ``{count, rows}`` for every upload (F8, 7.71.04):
+    how many of its rows the strict redaction left out because the entity model could not read them
+    (shared/ingest_archive.py ``policy_applied``; counted skipped in the import history), and the first
+    ``MAX_NAMED_UNREDACTED`` of them by their 1-based place in what the person sent (a CSV's row numbers, a pasted
+    review's or a JSON item's position in its list), so they can be sent again; nothing when there are none."""
+    return {'redaction_unavailable': {'count': len(rows), 'rows': rows[:MAX_NAMED_UNREDACTED]}} if rows else {}
 
 
-def _rows_of(items: list[dict], ids: list[str]) -> list[int]:
-    """The row numbers of the parsed CSV ``items`` whose message id is one of ``ids``, in file order."""
-    named = set(ids)
-    return [item['row'] for item in items if item['id'] in named] if named else []
+def _refused_rows(sent: Iterable[tuple[int, Mapping[str, Any]]], ids: list[str]) -> list[int]:
+    """The row numbers of the messages the redaction left out, in upload order: ``sent`` pairs each message given to
+    ``prepare_messages`` with its row number, in the order given, and ``ids`` names the left-out ones in that order
+    (``policy_applied``), so each id is the next message of that id (two JSON items may share one)."""
+    pending = iter(ids)
+    wanted = next(pending, None)
+    rows: list[int] = []
+    for row, message in sent:
+        if str(message.get('id')) == wanted:
+            rows.append(row)
+            wanted = next(pending, None)
+    return rows
 
 
 def _csv_counts(items: list[dict], messages: list[dict], drops: CsvRowDrops, imported: int) -> ImportCounts:
@@ -1092,9 +1100,9 @@ def json_upload():
     # send_message would exceed the API Gateway 29s window; batching keeps
     # large uploads inside it.
     unreadable: list[str] = []
-    messages, mode = prepare_messages(
-        s3, RAW_DATA_BUCKET, [_json_upload_message(item, None, profile['id'], radar) for item in items], profile, now,
-        connector_id=_JSON_WRITER, scope=scope, unreadable=unreadable)
+    built = [_json_upload_message(item, None, profile['id'], radar) for item in items]
+    messages, mode = prepare_messages(s3, RAW_DATA_BUCKET, built, profile, now, connector_id=_JSON_WRITER, scope=scope,
+                                      unreadable=unreadable)
     s3_uri = stamp_file_archive(messages, mode, lambda: _archive_json_file(items, job_id, user_id, now, scope))
 
     imported_count, send_errors = _send_items_to_sqs(messages, label='item', context=context)
@@ -1105,7 +1113,7 @@ def json_upload():
         'total_items': len(items),
         's3_uri': s3_uri,
         **({'radar_brand': radar['radar_brand_key']} if radar else {}),
-        **_unredacted(unreadable),
+        **_unredacted(_refused_rows(enumerate(built, start=1), unreadable)),
     }
 
     if send_errors:

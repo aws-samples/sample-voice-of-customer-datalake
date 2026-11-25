@@ -26,6 +26,7 @@ from engineering.connectors.broker import (
 from engineering.connectors.hosts import (
     CI_AGENT_BRANCH_PROTECTED,
     WRITE_CLAIMED,
+    WRITE_DONE,
     WRITE_UNKNOWN,
     BundleContents,
     CiProtection,
@@ -130,7 +131,7 @@ def _pr(done: Mapping[str, object]) -> Mapping[str, Any]:
 def test_the_knowledge_docs_are_one_commit_on_their_branch_and_a_ready_pull_request() -> None:
     world = World()
     done = world.broker.push_approved_docs(START, request())
-    assert done['pr'] == {'number': 7, 'url': 'https://code.example.com/pull/7', 'branch': 'voc-agent/docs/knowledge-v3'}
+    assert done['pr'] == {'number': 7, 'url': 'https://code.example.com/pull/7', 'branch': 'voc-agent/docs-knowledge-v3'}
     assert (done['kind'], done['version'], done['digest'], done['draft'], done['repeated']) == (
         'knowledge', 3, KNOWLEDGE.digest, False, False)
     names = [call[0] for call in world.host.calls]
@@ -140,15 +141,15 @@ def test_the_knowledge_docs_are_one_commit_on_their_branch_and_a_ready_pull_requ
     push = next(call for call in world.host.calls if call[0] == 'push_bundle')
     contents = push[3]
     assert isinstance(contents, BundleContents)
-    assert (push[2], push[4], push[5]) == ('voc-agent/docs/knowledge-v3', TREE, 'main')
+    assert (push[2], push[4], push[5]) == ('voc-agent/docs-knowledge-v3', TREE, 'main')
     assert (contents.heads, contents.base, contents.tree_hash, contents.changed_paths) == (
-        ('refs/heads/voc-agent/docs/knowledge-v3',), BASE, TREE, KNOWLEDGE.paths())
+        ('refs/heads/voc-agent/docs-knowledge-v3',), BASE, TREE, KNOWLEDGE.paths())
     (commit,) = contents.commits
     assert (commit.author, commit.committer) == (AUTHOR, AUTHOR)
     assert [(c.path, c.mode, c.content) for c in commit.changes] == [
         (f.path, '100644', f.content) for f in KNOWLEDGE.files]
     opened = next(call for call in world.host.calls if call[0] == 'open_or_update_draft_pr')
-    assert (opened[2], opened[3], opened[6]) == ('voc-agent/docs/knowledge-v3', 'main', TREE)
+    assert (opened[2], opened[3], opened[6]) == ('voc-agent/docs-knowledge-v3', 'main', TREE)
     assert opened[4] == 'Agent docs: the approved knowledge pack (rendering 3)'
     body = opened[5]
     assert isinstance(body, str)
@@ -162,7 +163,7 @@ def test_the_knowledge_docs_are_one_commit_on_their_branch_and_a_ready_pull_requ
 def test_the_tenets_are_tenets_md_and_a_draft_when_asked() -> None:
     world = World()
     done = world.broker.push_approved_docs(START, request('tenets', draft=True))
-    assert _pr(done)['branch'] == 'voc-agent/docs/tenets-v2'
+    assert _pr(done)['branch'] == 'voc-agent/docs-tenets-v2'
     push = next(call for call in world.host.calls if call[0] == 'push_bundle')
     contents = push[3]
     assert isinstance(contents, BundleContents)
@@ -225,7 +226,7 @@ def test_the_ci_attestation_and_the_branch_rules_hold_as_for_a_push() -> None:
     with pytest.raises(NotNow) as refused:
         guarded.broker.push_approved_docs(START, request())
     assert refused.value.reason == CI_AGENT_BRANCH_PROTECTED
-    assert guarded.host.ci_checks == [('conn-1', 'main', 'voc-agent/docs/knowledge-v3')]
+    assert guarded.host.ci_checks == [('conn-1', 'main', 'voc-agent/docs-knowledge-v3')]
     assert world.host.writes() == guarded.host.writes() == []
 
 
@@ -274,6 +275,34 @@ def test_a_pull_request_whose_open_failed_is_opened_on_a_retry_from_the_branch_p
     done = world.broker.push_approved_docs(START, request())
     assert _pr(done)['number'] == 7
     assert [call[0] for call in world.host.calls].count('push_bundle') == 1
+
+
+#: (7.71.04) A docs branch of 7.52.00-7.71.03, two levels under ``voc-agent/``.
+TWO_LEVEL = 'voc-agent/docs/knowledge-v3'
+
+
+def _claim_key(operation: str) -> tuple[str, str]:
+    return 'conn-1', f'docs-knowledge-v3#1#{operation}#{KNOWLEDGE.digest[:32]}'
+
+
+def test_a_pull_request_recorded_from_a_two_level_branch_is_still_answered() -> None:
+    world = World()
+    recorded = {'pr': {'number': 5, 'url': 'https://code.example.com/pull/5', 'branch': TWO_LEVEL},
+                'kind': 'knowledge', 'version': 3, 'digest': KNOWLEDGE.digest, 'tree_hash': TREE, 'draft': False}
+    world.claims.claims[_claim_key('open_or_update_draft_pr')] = WriteClaim(WRITE_DONE, recorded)
+    assert world.broker.push_approved_docs(START, request()) == {**recorded, 'repeated': True}
+    assert world.host.calls == []
+
+
+def test_docs_pushed_on_a_two_level_branch_open_their_pull_request_from_it() -> None:
+    # A push of 7.71.03 or before made, its pull request not: the retry opens it from the branch the docs are on, the
+    # one its push claim names, and pushes nothing again.
+    world = World()
+    world.claims.claims[_claim_key('push_bundle')] = WriteClaim(WRITE_DONE, {
+        'branch': TWO_LEVEL, 'tree_hash': TREE, 'base': BASE, 'ci': {}})
+    done = world.broker.push_approved_docs(START, request())
+    assert (_pr(done)['branch'], [call[0] for call in world.host.calls]) == (TWO_LEVEL, ['open_or_update_draft_pr'])
+    assert world.host.ci_checks == [('conn-1', 'main', TWO_LEVEL)]
 
 
 def test_a_write_whose_outcome_is_unknown_is_never_made_again() -> None:
@@ -344,7 +373,7 @@ def _call(user_arn: str, args: object, world: World | None = None, operation: st
 def test_the_start_publishes_through_the_function_url_and_an_agent_never_does() -> None:
     status, body = _call(start_arn(), {**ARGS, 'draft': False})
     assert (status, body['result']['pr']['branch'], body['result']['repeated']) == (
-        200, 'voc-agent/docs/knowledge-v3', False)
+        200, 'voc-agent/docs-knowledge-v3', False)
     assert _call(role_arn('pr-author'), ARGS)[0] == 403
     assert _call(role_arn('committer'), ARGS)[0] == 403
 
@@ -374,7 +403,9 @@ def test_the_docs_paths_and_branches_are_the_write_policys() -> None:
         assert docs_path_refusal(path, 'knowledge') is not None
     with pytest.raises(WriteRefused):
         docs_paths([], 'knowledge')
-    assert docs_branch('knowledge', 12) == 'voc-agent/docs/knowledge-v12'
+    # (7.71.04) One level under voc-agent/, the only level a ruleset excluding refs/heads/voc-agent/* leaves unprotected.
+    assert (docs_branch('knowledge', 12), docs_branch('tenets', 1)) == ('voc-agent/docs-knowledge-v12',
+                                                                       'voc-agent/docs-tenets-v1')
     for kind, version in (('code', 1), ('knowledge', 0), ('tenets', -1)):
         with pytest.raises(WriteRefused):
             docs_branch(kind, version)

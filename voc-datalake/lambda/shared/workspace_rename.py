@@ -37,7 +37,7 @@ from shared.audit_rows import put_new_audit_row
 from shared.dynamo_paging import iter_query
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError
 from shared.logging import logger
-from shared.persona_save import cancellation_codes
+from shared.persona_save import CONDITION_FAILED, cancellation_codes
 from shared.platform_workspaces import LISTING_PK, RENAMED_AT, listing_sort_key, validated_workspace_name
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
@@ -47,7 +47,6 @@ from shared.workspace_members import NO_LONGER_ADMIN
 
 WORKSPACE_RENAMED: Final = 'workspace_renamed'
 RENAME_CHANGED_MEANWHILE: Final = 'The workspace changed meanwhile: reload and try again'
-_FAILED: Final = 'ConditionalCheckFailed'
 
 
 def parse_rename(body: Mapping[str, Any]) -> str:
@@ -116,9 +115,9 @@ def _commit(table: Any, context: WorkspaceContext, name: str, actor: str) -> Non
         table.meta.client.transact_write_items(TransactItems=items, ClientRequestToken=secrets.token_hex(16))
     except ClientError as exc:
         codes = cancellation_codes(exc)
-        if actor_index is not None and codes[actor_index:actor_index + 1] == [_FAILED]:
+        if actor_index is not None and codes[actor_index:actor_index + 1] == [CONDITION_FAILED]:
             raise AuthorizationError(NO_LONGER_ADMIN) from exc
-        if _FAILED in codes or 'TransactionConflict' in codes:
+        if CONDITION_FAILED in codes or 'TransactionConflict' in codes:
             raise ConflictError(RENAME_CHANGED_MEANWHILE) from exc
         raise
 

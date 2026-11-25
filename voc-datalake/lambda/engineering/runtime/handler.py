@@ -57,9 +57,11 @@
   default) or ``fresh`` (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
   (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given). A
   Resume of the whole run also makes sure the run has a coordinator, as its start does (``_ensure_coordinator``: a
-  new one in place of one whose session failed); it is refused while a person's Stop of the run is under way. A
-  whole run's Shut down or Stop now is the run's Stop (7.50.03, ``_stop_in_runtime``): it ends the run, a run with no
-  session at all included, and answers its outcome in ``run``.
+  new one in place of one whose session failed, or of one that finished on a flow that did not), and (7.71.04) at a
+  flow step's decision point posts the step's tasks that ended at a person again for it to launch (``step_retry.py``);
+  it is refused while a person's Stop of the run is under way. A whole run's Shut down or Stop now is the run's Stop
+  (7.50.03, ``_stop_in_runtime``): it ends the run, a run with no session at all included, and answers its outcome in
+  ``run``.
 
 ``delivery_handler`` is voc-engineering-delivery's entry point, the same code with a role of its own
 (engineering-runtime.ts createDelivery): the router's message for an agent, the conductor or a role of a run,
@@ -387,15 +389,19 @@ def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
     if kind == 'resume' and agent_id is None:
         # The supervisor accepted it (the run is not ended, its budget not spent): the run may launch agents again.
         with contextlib.suppress(RunNotActive):  # it was not at a decision point
-            _runs().resume(run_id, now=int(clock()), actor=str(event.get('actor') or ''))
+            decided = _runs().resume(run_id, now=int(clock()), actor=str(event.get('actor') or ''))
+            if decided:
+                # (7.71.04) At a step's decision point: its tasks that ended at a person posted again, for the
+                # coordinator to launch (step_retry.py; best effort: else the coordinator posts them itself).
+                _retried(run_id, decided, str(event.get('actor') or ''))
         # A run whose coordinator kept crashing waited for this Resume: it gets a new one. One under way is logged
         # (it may still start). A launch refused (its record cleared, as the board's are) or a session that will not
         # start is logged and sends the run back to a person, as a start does: never active with nobody planning it.
         try:
-            # (resume_after_fill: agents held for want of a usable checkout are continued once the fill has landed; a
-            # Resume that follows a fill, ``after_fill``, never hands another one on: never a loop)
-            _ensure_coordinator(run_id, str(event.get('actor') or ''), fill_first=not after_fill,
-                                resume_after_fill=True)
+            # (resumed: agents held for want of a usable checkout are continued once the fill has landed, and a done
+            # coordinate task is reopened, here or by the fill it hands on; a Resume that follows a fill,
+            # ``after_fill``, never hands another one on: never a loop)
+            _ensure_coordinator(run_id, str(event.get('actor') or ''), fill_first=not after_fill, resumed=True)
         except SessionBusy:
             logger.info('engineering runtime: the run\'s coordinator launch is under way', extra={'run_id': run_id})
         except Exception:
@@ -418,6 +424,17 @@ def _refuse_while_stopping(run_id: str, kind: str) -> None:
     if run is not None and run.stopping:
         raise RuntimeRefused(f'run {run_id} is being stopped: it cannot be '
                              f'{"resumed" if kind == "resume" else "restarted"}')
+
+
+def _retried(run_id: str, step: str, actor: str) -> None:
+    """(7.71.04) A person's Resume at ``step``'s decision point: the step's tasks that ended at a person posted again
+    (``step_retry.retry_step``). Best effort: a failure is logged, and the coordinator posts the step's task itself."""
+    from engineering.runtime.step_retry import retry_step
+    try:
+        retry_step(_flow_guard(), run_id, step, actor=actor)
+    except (BoardError, ClientError, BotoCoreError):
+        logger.exception('engineering runtime: the step was not tried again on the Resume',
+                         extra={'run_id': run_id, 'step': step})
 
 
 def _board_store() -> BoardStore:
@@ -760,31 +777,33 @@ def _coordinated_run(run_id: str, *, or_waiting_for_cache: bool = False) -> Run 
     return run if run.status == 'active' or (or_waiting_for_cache and waiting) else None
 
 
-def _fill_handed_on(run: Run, actor: str, *, resume_after_fill: bool) -> bool:
+def _fill_handed_on(run: Run, actor: str, *, resumed: bool) -> bool:
     """When the run's commit has no usable entry, or only the previous generation's, the current one is filled first,
     in an invocation of its own (a fill may take minutes), which then launches as ``_ensure_coordinator`` does
     (``launch_coordinator``): True, the fill handed on. Whatever the coordinator's state: a Resume refills an entry
     gone under a live run. Only a run with nothing usable waits for it (at the checkout cache's point, which the
     Resume carried on after the fill may pass); one served by the previous generation goes on, and its fill ahead
-    resumes nothing."""
+    resumes nothing, but (7.71.04) a Resume's (``resumed``) still launches as that Resume would (``resumed`` on its
+    event: a done coordinate task reopened)."""
     found = _checkout_cache().look(run.connection, run.commit, run.repo)
     if found.state == 'ready' and not found.fill_ahead:
         return False
-    held = resume_after_fill and found.state != 'ready'
+    held = resumed and found.state != 'ready'
     if held:
         with contextlib.suppress(RunNotActive):
             _runs().needs_human(run.run_id, CHECKOUT_CACHE_POINT, now=int(clock()), actor=actor or UNATTRIBUTED)
     _fill_marked(run.run_id)
-    _launch_later(run.run_id, actor, filled=False, resume=held)
+    _launch_later(run.run_id, actor, filled=False, resume=held, resumed=resumed and not held)
     return True
 
 
-def _ensure_coordinator(run_id: str, actor: str, *, fill_first: bool = True, resume_after_fill: bool = False) -> None:
+def _ensure_coordinator(run_id: str, actor: str, *, fill_first: bool = True, resumed: bool = False) -> None:
     """Make sure an active run with its connection, commit and language has a coordinator: the one its coordinate
     task records, started when it has no session yet (the run's start, ``coordinator-1``; a start whose session
     failed), or a new one in its place when its session failed: it kept crashing, which sent the run to a person
     (``BoardLeases.coordinator_to_start``), or (7.71.03) when it finished on a flow that did not, which sent the run
-    to a person too. Nothing for a run whose coordinator is live or held (a Resume continues
+    to a person too: only for a person's whole-run Resume (``resumed``, 7.71.04: a start's retry or a board launch's
+    fill never reopens a done coordinate task). Nothing for a run whose coordinator is live or held (a Resume continues
     a held one itself), nor one a person shut down or stopped. A refusal of the board's (the run's agent cap, a
     racing start or Resume that moved the task on) is logged, never raised: the Resume it follows was applied.
 
@@ -799,7 +818,7 @@ def _ensure_coordinator(run_id: str, actor: str, *, fill_first: bool = True, res
     run = _coordinated_run(run_id)
     if run is None:
         return
-    if fill_first and _fill_handed_on(run, actor, resume_after_fill=resume_after_fill):
+    if fill_first and _fill_handed_on(run, actor, resumed=resumed):
         return
     supervisor = _supervisor()
     if not isinstance(supervisor.board, BoardLeases):
@@ -816,7 +835,8 @@ def _ensure_coordinator(run_id: str, actor: str, *, fill_first: bool = True, res
     try:
         found = board.coordinator_to_start(run_id, state, actor=who,
                                            launchable=lambda: _coordinator_launchable(run.language),
-                                           unfinished=lambda: not supervisor.control.flow_finished(run_id))
+                                           unfinished=(lambda: not supervisor.control.flow_finished(run_id))
+                                           if resumed else (lambda: False))
     except BoardError as error:
         if error.kind not in ('cap', 'conflict'):
             raise
@@ -1008,7 +1028,7 @@ def launch_coordinator(event: Mapping[str, Any]) -> dict[str, Any]:
     launches it. Never raises (nothing retries it): a launch under way elsewhere is left to it; any other failure
     sends the run to a person, whose Resume launches it, so a run is never left active with no coordinator."""
     run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
-    flags = {name: event.get(name) is True for name in ('resume', 'background', 'board')}
+    flags = {name: event.get(name) is True for name in ('resume', 'resumed', 'background', 'board')}
     asks = event.get('asks')
     asks = asks if isinstance(asks, int) and not isinstance(asks, bool) and 0 <= asks <= MAX_FILL_ASKS else 0
     try:
@@ -1023,7 +1043,7 @@ def launch_coordinator(event: Mapping[str, Any]) -> dict[str, Any]:
             # that Resume asked (the whole-run Resume again, which also makes sure of the coordinator).
             signal_action({'run_id': run_id, 'signal': 'resume', 'actor': actor, 'after_fill': True})
         else:
-            _ensure_coordinator(run_id, actor, fill_first=False)
+            _ensure_coordinator(run_id, actor, fill_first=False, resumed=flags['resumed'])
     except FillOutlasted as outlasted:
         # Not a launch under way: another run's fill of the commit held its claim past this one's wait, or ended with
         # no READY. Asked again in a fresh invocation, whose own fill takes a lapsed claim over (bounded: asks).
@@ -1224,16 +1244,17 @@ def _not_filled_ahead(run_id: str, error: Exception) -> bool:
     return False
 
 
-def _launch_later(run_id: str, actor: str, *, filled: bool, resume: bool = False, background: bool = False,
-                  board: bool = False, asks: int = 0) -> None:
+def _launch_later(run_id: str, actor: str, *, filled: bool, resume: bool = False, resumed: bool = False,
+                  background: bool = False, board: bool = False, asks: int = 0) -> None:
     """``launch_coordinator`` of the run in an invocation of its own of this function (asynchronous, by its name: the
     runtime's role may invoke itself); here and now with no function name (a local run, the tests). ``resume``: a
-    person's whole-run Resume handed it on, so it resumes the run once filled; ``background``: a fill ahead while the
-    previous generation serves, which never sends the run to a person; ``board``: a board launch handed it on while
-    the coordinator works, so a transient failure sends nobody until it repeats; ``asks``: how many times it was
-    asked again after another fill outlasted the wait."""
+    person's whole-run Resume handed it on, so it resumes the run once filled; ``resumed`` (7.71.04): one handed it on
+    while the previous generation serves the run, so its coordinator launches as that Resume's (a done coordinate task
+    reopened); ``background``: a fill ahead while the previous generation serves, which never sends the run to a
+    person; ``board``: a board launch handed it on while the coordinator works, so a transient failure sends nobody
+    until it repeats; ``asks``: how many times it was asked again after another fill outlasted the wait."""
     event = {'action': 'launch_coordinator', 'run_id': run_id, 'actor': actor, 'filled': filled, 'resume': resume,
-             'background': background, 'board': board, 'asks': asks}
+             'resumed': resumed, 'background': background, 'board': board, 'asks': asks}
     if not _function_name:
         launch_coordinator(event)
         return

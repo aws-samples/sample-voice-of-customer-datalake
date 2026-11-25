@@ -65,7 +65,7 @@ import json
 import re
 import time
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import partial
 from typing import Final
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
@@ -281,6 +281,16 @@ def _ruleset_checks(rules: list[object]) -> tuple[str, ...]:
     return _check_names(names)
 
 
+def _posted_by_app(comment: dict[str, object], app_id: str) -> bool:
+    """Whether GitHub says App ``app_id`` (the connection's) posted ``comment`` (7.71.04): its
+    ``performed_via_github_app.id``, which a person's comment, or another App's, never has."""
+    found = _dig(comment, 'performed_via_github_app', 'id')
+    return type(found) is int and str(found) == app_id
+
+
+def _iso_utc(epoch: int) -> str:
+    """``epoch`` (seconds) as GitHub's ``since`` takes it: ISO 8601 in UTC, ``YYYY-MM-DDTHH:MM:SSZ``."""
+    return datetime.fromtimestamp(epoch, UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def issues_repository(credential: GitHubAppCredential) -> str:
@@ -646,15 +656,20 @@ class GitHubHost:
                              body={'body': body}, ok=(201,))
         return _text(_json(response), 'html_url')
 
-    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
-        """The URL of issue ``number``'s comment holding ``marker`` (7.71.03), oldest first (GitHub's order), a few
-        pages at most (``marked_comment``)."""
-        query = {'per_page': FIND_PAGE_SIZE}
+    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
+        """The URL of issue ``number``'s comment that is the run's (7.71.03), oldest first (GitHub's order), a few
+        pages at most (``marked_comment``). Since 7.71.04 only one the connection's App posted
+        (``performed_via_github_app.id``, the credential's ``app_id``) whose body ends with ``marker``, among the
+        comments updated at or after ``since`` (GitHub's ``since``), so the run's is on the first pages however long
+        the issue's thread."""
+        app_id = self._credentials(connection_id).app_id
+        query = {'per_page': FIND_PAGE_SIZE, 'since': _iso_utc(since)}
         return marked_comment(
             lambda page: self._api(connection_id, _READS['issue'], 'GET',
                                    f'/issues/{int(number)}/comments?{urlencode({**query, "page": page})}',
                                    'the comment read'),
-            next_page, marker, lambda comment: _text(comment, 'html_url'))
+            next_page, marker, lambda comment: _posted_by_app(comment, app_id),
+            lambda comment: _text(comment, 'html_url'))
 
     def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
         """Add ``labels`` to issue ``number`` (GitHub creates a label the repository does not have yet)."""

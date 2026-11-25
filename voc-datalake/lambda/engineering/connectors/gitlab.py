@@ -417,15 +417,16 @@ class GitLabHost:
             lambda path: self._api(connection_id, 'GET', path, 'the reactions read', ok=(200, 404)), url, number,
             branch, lambda: self._own_user(connection_id), lambda user: self._member_level(connection_id, user))
 
-    def _own_user(self, connection_id: str) -> int:
-        """The id of the connection's token's own user (``GET /user``), kept ``MEMBER_SECONDS``."""
+    def _own_user(self, connection_id: str, what: str = 'the reactions read') -> int:
+        """The id of the connection's token's own user (``GET /user``; ``what``: the read it is for, as an error names
+        it), kept ``MEMBER_SECONDS``: the reactions read's trust filter, and since 7.71.04 the author of the run's
+        own issue note (``issue_comment``)."""
         credential = self._credentials(connection_id)
         key, now = (connection_id, credential.project_id), self._clock()
         held = fresh(self._own_users, key, now)
         if held is not None:
             return held
-        user = int_of(json_of(send(self._transport, self._clock, 'GET', '/user', credential.token,
-                                   'the reactions read')), 'id')
+        user = int_of(json_of(send(self._transport, self._clock, 'GET', '/user', credential.token, what)), 'id')
         keep(self._own_users, key, (user, now + MEMBER_SECONDS), MAX_CACHED)
         return user
 
@@ -577,16 +578,20 @@ class GitLabHost:
         kind = 'issues' if on == 'issue' else 'merge_requests'
         return f'{GITLAB_URL}{self.repository(connection_id)}/-/{kind}/{number}#note_{note}'
 
-    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
-        """The URL of issue ``number``'s note holding ``marker`` (7.71.03), newest first, a few pages at most
-        (``marked_comment``)."""
+    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
+        """The URL of issue ``number``'s note that is the run's (7.71.03), newest first, a few pages at most
+        (``marked_comment``). Since 7.71.04 only a note of the connection's token's own user (``author.id``, ``GET
+        /user``: ``_own_user``), never a system note, whose body ends with ``marker``. ``since`` is not sent: the
+        notes API takes no time filter, and newest first the run's note is on the first pages however long the thread."""
+        del since   # (GitHub's bound; GitLab's is the newest-first order)
+        own = self._own_user(connection_id, 'the comment read')
         base = f'/{_THREADS["issue"]}/{int(number)}'
         query = {'per_page': FIND_PAGE_SIZE, 'sort': 'desc', 'order_by': 'created_at'}
         url = f'{GITLAB_URL}{self.repository(connection_id)}/-/issues/{int(number)}#note_'
         return marked_comment(
             lambda page: self._api(connection_id, 'GET', f'{base}/notes?{urlencode({**query, "page": page})}',
                                    'the comment read'),
-            next_page, marker, lambda note: f'{url}{int_of(note, "id")}')
+            next_page, marker, lambda note: _written_by(note, own), lambda note: f'{url}{int_of(note, "id")}')
 
     def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
         """Add ``labels`` to issue ``number`` (``add_labels``: GitLab creates a label the project does not have yet)."""
@@ -810,6 +815,13 @@ class GitLabHost:
                       body={'state_event': 'close'})
         except (BrokerError, NoConnection, ValueError, OSError):
             logger.warning('engineering merge request not closed', extra={'pull_request': number})
+
+
+def _written_by(note: dict[str, object], user: int) -> bool:
+    """Whether ``note`` is ``user``'s own (7.71.04: its ``author.id``), and no system note (GitLab writes those, as
+    the author whose action they record)."""
+    author = dig(note, 'author', 'id')
+    return type(author) is int and author == user and note.get('system') is not True
 
 
 def _merge_request_ref(found: object) -> PullRequestRef:

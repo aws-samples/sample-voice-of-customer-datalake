@@ -139,6 +139,17 @@ describe('CsvUploadModal', () => {
     expect(await screen.findByText(/row 2: empty text/i)).toBeInTheDocument()
   })
 
+  it('names the rows its redaction left out, "and N more" past those named, and says to send them again (7.71.04)', async () => {
+    const user = renderOpenWithUploadResult({
+      success: true, imported_count: 1, total_rows: 4, redaction_unavailable: { count: 3, rows: [2, 4] },
+    })
+
+    await uploadDefaultCsv(user)
+
+    expect(await screen.findByText(/rows were left out/)).toHaveTextContent('3 rows were left out because their personal data could not '
+      + 'be checked for redaction (the redaction service could not read them): rows 2, 4, and 1 more. Send just those again to import them.')
+  })
+
   it('shows the API error and stays on the form when the upload fails', async () => {
     const user = userEvent.setup()
     mockUploadCsvFeedback.mockRejectedValue(new Error('API Error: 400'))

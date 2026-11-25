@@ -17,6 +17,204 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.71.04] - 2026-11-25
+
+The findings 7.71.03's review gate deferred, and what the live Bug fixer runs on b- with 7.71.03 showed: a fresh run
+went from its issue to a pull request ready for review in about ten minutes and ended done by itself, but the run left
+at `flow:commit` by 7.71.02 did not get past its commit step. A person's Resume reopened its coordinator, which read
+the committer's task, ended needing a person, as the person's, posted nothing and finished, and the run went straight
+back to a person; a Restart or a Resume of that task answered "moved on". Now a person's Resume at a step whose task
+went to a person posts that task again, and the coordinator launches it; a coordinator that finishes with its flow at a
+person sends the run to that step; an engineering agent's run ends as soon as its ended run is read; the flow's end says
+whether the pull request is ready for review. Also: only a whole-run Resume reopens a finished coordinator's task, and
+the tick waits for that Resume's launch; the docs' branch is one level; the run's issue comment is matched only when the
+connection wrote it; a label answer is the labels themselves; the voice connect deadline is written once; the hourly
+trial pause checks the trial in each turn-off's own write; an ending named by its title reads a recall placeholder
+as `[id]`; an upload answers its redaction refusals in one shape, and the app names the rows left out.
+
+### Removed
+
+- **The 90-second wait for a flow recorded finished after its coordinator's finish** (`FLOW_SETTLE_SECONDS`,
+  `runtime/supervisor.py`, 7.71.03): the flow is the board's record (its tasks, its step rows, the gate records), every
+  write of which lands before its writer's session ends, so a coordinator's finish never comes before its flow's end.
+  The tick now waits only for a person's Resume that may still launch the next coordinator (Fixed, below).
+- **`BoardStore.reopen_coordinate`** (7.71.03): the store's re-post takes a done coordinate task with `reopen`, one
+  write path for both.
+- **`Labelled.set_by`** and the broker client's pass-through of it (`connectors/broker.py`, `runtime/harness/
+  broker_client.py`): the tool compares the labels it gets back with those it asked for (Fixed, below).
+- **The relay's own `CONNECT_SKEW_SECONDS`** and the test that pinned it to the projects API's (`lambda/stream/src/
+  voice/store.ts`, `shared/test/test_voice_sessions.py`): the deadline is on the row (Fixed, below).
+
+### Fixed
+
+- **A person's Resume at a step whose task went to a person tries the step again** (`runtime/step_retry.py`,
+  `runtime/handler.py` `signal_action`, `runs.RunStore.resume`, which now answers the step it decided on): on b-, run
+  01M86YEPB6VFP9XEG1M9HTHABV waited at `flow:commit`, its coordinate task done and its committer's task
+  `needs_human`; the person's Resume reopened the coordinate task for coordinator-8, which read that task as "a task at
+  a person is the person's", posted nothing and finished, and the run was back at a person. The Resume, deciding the
+  step, now posts each task of it that ended needing a person again (the newest of each work, by its spec, with none of
+  that work done or under way), as it was: its role, title, spec with the same submitted patch, parent, priority and
+  shard, as a new task the person posted (`human:<subject>`, D4), through the board's own flow checks
+  (`FlowGuard.post_fields`: the step live after the decision, one task at a time). The coordinator, continued or new,
+  launches it. Best effort: a refused post is logged, and the conductor names the step ready again after a decision
+  (`flow/conductor.py` `RETRY`), so the coordinator posts it itself. A task that failed stays the coordinator's to post
+  again. The coordinator's skill is version 8 (`templates/orchestration/agents/coordinator`): a task at a person is the
+  person's until they decide, their Resume at its step is the decision to try it again, and a task posted again with
+  no agent is launched, not posted twice; both bundles and the Kiro configs are compiled again
+  ([autonomous-engineering.md](docs/autonomous-engineering.md#the-flow-a-run-follows)).
+- **A coordinator that finished with its flow at a person sends the run to that step** (`runtime/supervisor.py`
+  `_coordinator_done`): it sent the run to `coordinator`, where a person's Resume decides no step, so the step stayed
+  blocked and the next coordinator could only finish again. It goes to the flow's decision point (`flow:<step>`) now,
+  and to the coordinator's only for a flow still running or a run without one.
+- **An agent's Restart or Resume of a task that ended needing a person says what to do** (`engineering/monitor.py`,
+  `runtime/run_signals.py` `ENDED_AT_A_PERSON`): both answered 409 "This task has moved on since you looked", which on
+  b- left the person with nothing to try. They still answer 409, now "This task ended needing a person, so no agent
+  works on it to restart or resume: Resume the run instead, which posts the step's task again for a new agent": the
+  agent's session ended with its task, and a Restart (fresh) of an ended task would only repeat the run's Resume.
+- **An engineering agent's run ends as soon as its ended run is read** (`api/agents_handler.py` `get_engineering_run`,
+  `_end_agent_run_of`): right after the fresh Bug fixer run's META said done, its agent's run still said running. The
+  heartbeat ends it (completed, the lock freed: `agents/heartbeat/engineering.py` `heal`, its done path tested) at its
+  next tick, every 15 minutes; the run's own end is the runtime's, whose role writes nothing of voc-agents' runs (a CDK
+  test pins that). The run monitor's read of a run that ended now ends its agent's run at once, as a Stop's does since
+  7.50.03, and a second read writes nothing more.
+- **The flow's end says how its pull request opens** (`flow/conductor.py` `PR_END`, `flow/record.py`
+  `draft_pull_request`, `BoardState.draft_pr`): a `stop_at_pr` step's reason was always "the flow ends at the draft
+  pull request", which the fresh run's coordinator repeated in its finish for a pull request ready for review. It reads
+  the run's META (`pull_request`) as the PR author's opening does: "the flow ends at the pull request, ready for
+  review", or at the draft one; the coordinator's skill says to say where the flow ended in the flow's own words.
+- **A Resume's coordinator launch handed on behind a fill is waited for** (Q1, `runtime/supervisor.py`
+  `_coordinator_done`, `_launching`): a Resume whose checkout was served by the previous generation hands its launch on
+  with the fill, and the tick in between could send the run back to a person before the coordinate task was reopened.
+  The tick now leaves a run whose newest coordinator finished alone while a person's Resume since that coordinator
+  started may still launch the next one (`COORDINATOR_LAUNCH_SECONDS`, or the fill chain's window), and asks a person
+  once it is late.
+- **Only a person's whole-run Resume reopens a coordinate task its coordinator ended done** (R1, `runtime/handler.py`
+  `_ensure_coordinator` `resumed`, `launch_coordinator`): 7.71.03 reopened it from every caller, a start's retry and a
+  board launch's fill included. A Resume whose launch goes behind a fill hands `resumed` on with it.
+- **The approved docs' branch is one level under `voc-agent/`** (F1/Q2, `connectors/write_policy.py` `docs_branch`):
+  it was `voc-agent/docs/<kind>-v<n>`; a repository set up as the guide says leaves only `refs/heads/voc-agent/*`
+  unprotected, and GitHub's `*` does not cross a `/`, so the broker's push would have been refused with 409, as the run's
+  branch was before 7.71.03. The docs go on `voc-agent/docs-<kind>-v<n>`. A docs pull request recorded from a two-level
+  branch is still answered as recorded (`already_published`), and docs pushed on one whose pull request never opened
+  open it from the branch their push claim names (`broker.py` `push_approved_docs`)
+  ([autonomous-engineering.md](docs/autonomous-engineering.md#repository-connectors)).
+- **The look for the run's issue comment takes only the connection's own** (S1, `connectors/transport.py`
+  `marked_comment`, `github.py` and `gitlab.py` `issue_comment`): a call retried after one that never answered took
+  the first comment holding the run's marker, whoever wrote it. It takes only a comment the connection's GitHub App
+  posted (`performed_via_github_app.id`, the credential's `app_id`), or on GitLab a note of the token's own user that
+  is not a system note, and only when its body ends with the marker.
+- **The look reads only the comments that can be the run's** (C3): on GitHub, those updated since the earlier call's
+  claim, a minute before it (`since`, `broker.CLAIM_CLOCK_MARGIN_SECONDS`), so a busy issue's older comments no longer
+  push the run's past the ten pages read; GitLab already reads newest first.
+- **A label answer is the labels on the issue** (F3, `connectors/broker.py` `label_issue`, `handler.py`,
+  `runtime/harness/broker_client.py`, `issues.py`): 7.71.03's `set_by` told an agent repeating its own call that "an
+  agent" set them (C1), and called a result from before 7.71.03 "another agent of the run" (C2). The broker answers
+  `{number, labels}`, the run's first call's labels; the tool says "labels already set: …" when they are not the ones
+  asked, else that it labelled the issue, and its description says so. F3 was taken, so C1 and C2 cannot happen.
+- The broker reads an issue write's claim row once before taking it (F2, `broker.py` `_earlier`, `_claimed`).
+- **A first voice connection's deadline is written once, on the session row** (F5, `shared/voice_sessions.py`,
+  `lambda/stream/src/voice/store.ts`): 7.71.03 kept the 10 seconds for the clocks in both languages, each reader adding
+  it to `connect_by`. The mint writes `connect_by` as the last second a first connection is taken (its time, the URL's
+  60 seconds and `CONNECT_SKEW_SECONDS`, the one constant); the relay takes a first connection while
+  `connect_by >= now`, and `status` ends a still-minted row once `connect_by` has passed. The URL's own expiry stays 60
+  seconds; the live set's entry is counted from the same deadline ([voice-personas.md](docs/voice-personas.md)).
+- **The hourly pause checks the trial in each turn-off's own write** (C4, `shared/trial_pause.py`, `shared/trial_state.py`
+  `unchanged_check`): 7.71.03 read the trial's `rev` before each plugin and form it turned off, one strongly consistent
+  GetItem each, and a mark committed between that read and the turn-off could still be undone by it. Each turn-off is
+  one transaction with a ConditionCheck of `META` (the workspace active, the trial at the `rev` the pause saved its
+  lists with): a plugin's in its existing transaction (`shared/workspace_plugin_settings.py` `set_trial_plugin`,
+  `rev`), a form's through the workspace layer (`shared/ws_repo.py` `transact_write_items`, `unchanged_in`, never with
+  `unpaused_in`). A refused check stops the pause with 409 `trial_changed`, nothing the extension turned on is turned
+  off, and the pause reads the trial once; a refused plugin's `plugin_disabled` audit row is still written first, as
+  every plugin change's is ([multi-workspace.md](docs/multi-workspace.md#trial-workspaces)).
+- **An ending named by its title reads a recall placeholder as `[id]` too** (F7, `model/recall.ts` `headlineShown`,
+  which takes the text to show, `headlineShown(question.headline, language)` or an ending's `title`, no longer a
+  question): the builder's ending list, its ⋯ menu and its move and default announcements, the logic targets, a last
+  question's Otherwise entry and the Flow view, a choice's routing and its "→" mark, a rule's "goes there anyway" note,
+  a problem's place (the builder's and the assistant's draft card's), the texts to translate, an update's removal
+  warning, a stale save's differences, the AI's change rows and their checkboxes, and the assistant's draft printed
+  `{{event|the event}}`. Only the title's own field shows it as written; Results' `endingTitle` reads it through the
+  same function ([feedback-forms.md](docs/feedback-forms.md#recall)).
+- **One answer shape for an upload's redaction refusals** (F8, `api/manual_import_handler.py` `_unredacted`,
+  `_refused_rows`): a manual reviews import, a CSV and a JSON upload answer `redaction_unavailable: {count, rows}`,
+  `rows` the refused rows' 1-based places in what was sent (a CSV's row numbers as before, a pasted review's or a JSON
+  item's position in its list; two JSON items sharing an id told apart by their place), the first 100 named and
+  `count` whole; 7.71.03 answered `{count, ids}` for a paste and a JSON upload. The form import's per-row `refused`
+  list is unchanged ([source-policies.md](docs/source-policies.md)).
+- **The app names the rows an upload's redaction left out** (Q3, `pages/Scrapers/UnredactedRows.tsx`,
+  `api/redactionUnavailable.ts`): 7.71.03's `redaction_unavailable` was read by no screen. The CSV and JSON uploads'
+  results say how many rows were left out because their personal data could not be checked for redaction, name them by
+  number (a JSON item by its place in the file, the items skipped before Import counted; "and N more" past the 100
+  named) and say to send just those again. A paste no longer closes: it returns to its paste step with its source URL
+  kept, says how many reviews were imported and names each one left out by its number and opening words. The import
+  wizard's First insights lists them with a survey's refused rows, and the assistant's `import_reviews` tells the model
+  which approved rows were left out. Nine locales; the local mock leaves out a row whose text holds `#unreadable`
+  ([source-policies.md](docs/source-policies.md), [import-wizard.md](docs/import-wizard.md)).
+- **A session whose task went to a person is a cross-run signal again** (Q4, `learning/cross_run_input.py`): 7.71.03
+  ended such sessions `needs_human` rather than `failed`, and the weekly cross-run pass, which counted `failed` and
+  `reposted` only, stopped seeing them. It counts them as their own kind, `needs_human`.
+- **The agent's stats are best effort after its run moved to running** (Q5, `shared/agents_store.py`
+  `record_last_run_running`): a failed write of the agent row raised after the run's own move had landed, failing the
+  start's caller; it is logged now.
+- **A crash's checkpoint on the CLI and Kiro keeps the tool server's last writes** (Q6, `runtime/harness/cli.py`
+  `crash_checkpoint`, `kiro.py`): the checkpoint saved before a crash was raised did not take the tool server's state
+  first, so a committer that pushed just before a crash was continued without it and went to a person.
+- A committer's "no submitted patch" is one check (F9, `runtime/harness/review_tools.py` `nothing_to_push`), which its
+  push (`role_tools._push_target`) and its finish (`_unwritten`) both make.
+- `ConditionalCheckFailed` as a cancelled transaction's code has one home (`shared/persona_save.py`
+  `CONDITION_FAILED`, beside `cancellation_codes`), which the trial pause and the workspace rename read.
+- Tests (Q7, Q8): a run at `flow:commit` with its coordinate task done and its committer's task `needs_human`, from the
+  Bug hunt's start on the local fake runtime: a Resume posts a new committer task, the person's, naming the same patch,
+  and reopens the coordinate task for coordinator-8, which launches it; the committer pushes, the PR author opens the
+  pull request, the flow's end says ready for review, and the next tick ends the run done; it fails without the
+  Resume's post (`runtime/test/test_engineering_bug_hunt_resume.py`). A session that ended `needs_human` yields a
+  cross-run signal. Only a Resume's launch reopens a done coordinate task; a coordinator that finished at a flow's
+  person sends the run to that step; a Resume since it finished is waited for, then a person is asked; the run
+  monitor's read of a run ended done ends its agent's run once; a task at a person answers its agent's Restart and
+  Resume with the run's Resume; the trial pause's check in each turn-off's own write, the docs' two-level records,
+  and the comment lookup's author and `since`.
+- Docs: autonomous-engineering (the run's end, the Resume at a step, `coordinator@8`, the cross-run kinds, stop at PR,
+  the docs branch, the comment lookup and label answer, an agent's Restart), voice-personas, multi-workspace,
+  feedback-forms (Recall), source-policies, import-wizard.
+- `lib/test-support/baseline.json` regenerated on a real vite build (VocApiStack's and VocProcessingStack's template
+  hashes; no name changed).
+- **Correction to 7.71.03's notes**: its hourly pause left "at most the one turn-off under way when the mark lands"
+  undone; the check above closes that window. Its "a Resume plans a run whose coordinator finished on a flow that did
+  not" did so from every coordinator start; only a whole-run Resume does now.
+
+### Upgrade notes
+
+- **Rebuild the four agent images with this release.** The harness in them changed (the crash checkpoint, the
+  committer's one check, the label answer) and so did the Kiro agent configs (the coordinator's skill, version 8).
+  The Resume's post of the step's task again is the runtime's and needs no image.
+- **A deployment that stored the coordinator's skill in its skills store keeps that version** until a person accepts
+  template version 8; its runs still get the Resume's post, which is what moves a step at a person on.
+- **A run waiting at `flow:<step>` with its step's task at a person** (the case of 7.71.02's run on b-) is moved on
+  after the deploy by a person's Resume: it posts the task again and starts a coordinator if its own had finished. A run
+  that went back to `coordinator` after such a Resume under 7.71.03 has its step decided already: its Resume starts a
+  new coordinator, which posts the step's task itself (the conductor's `RETRY`, its skill's rule). Stopping such a run
+  and starting a fresh one works too.
+- **A `launch_coordinator` invocation handed on before the deploy carries no `resumed`**: its coordinator does not
+  reopen a done coordinate task, and once the Resume's launch window has passed the run goes back to a person; a
+  second Resume recovers.
+- **A docs pull request on a two-level branch** (`voc-agent/docs/<kind>-v<n>`, 7.52.00 to 7.71.03) stays as it is and
+  is still answered `already_published`. On GitLab, a branch-name push rule must take `voc-agent/docs-<kind>-v<n>` too.
+- **The label answer's shape changed**: `label_issue` answers `{number, labels}`, with no `set_by`. Deploy the agent
+  images with the broker; an older harness simply never sees `set_by`.
+- **The comment match needs the connection's own author**: a comment of the run's marker posted by any other account,
+  or with the marker anywhere but at its end, is no longer taken for the run's; on GitLab the look makes one more
+  `GET /user`, kept 10 minutes. A 7.71.02 comment (no marker) may still be posted once more, as 7.71.03 noted.
+- **A voice session minted just before the deploy keeps 7.71.03's deadline**: its row's `connect_by` is its mint plus
+  60 seconds, which the new relay reads as written, so a first connection 60 to 70 seconds after such a mint is refused
+  where 7.71.03's relay took it. It concerns only URLs minted in the minute before the update (and between the two
+  stacks' updates); Talk again starts a new session.
+- **A trial form's turn-off is a transaction now** (voc-aggregates' form row and a check of the trial's `META`); the
+  trial-expiry role already holds both actions.
+- **A client that read `redaction_unavailable.ids`** from a manual reviews import or a JSON upload (7.71.03) reads
+  `rows` now: the refused items' 1-based positions in the list it sent, no longer their ids. The app's own pages and the
+  assistant's import read `rows`; deploy the SPA with the API.
+- No new resource, IAM statement, route or flag.
+
 ## [7.71.03] - 2026-11-24
 
 The non-blocking findings 7.71.02's review gate deferred, and what the Bug fixer rerun on b- with 7.71.02 found: the

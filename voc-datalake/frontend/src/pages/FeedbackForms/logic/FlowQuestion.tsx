@@ -127,7 +127,7 @@ export default function FlowQuestion({ questionId, number, reached, marked, fold
       <div className="flex items-center gap-2">
         <span className="w-6 font-mono text-[12px] text-muted">{number}</span>
         {createElement(questionIcon(question), { size: 14, className: 'shrink-0 text-muted', 'aria-hidden': true })}
-        <TruncatedText as="h3" className="min-w-0 flex-1 truncate text-sm font-medium text-text-strong" text={headlineShown(question, form.language)} />
+        <TruncatedText as="h3" className="min-w-0 flex-1 truncate text-sm font-medium text-text-strong" text={headlineShown(question.headline, form.language)} />
         {marked && <span className="badge badge-aim inline-flex items-center gap-1"><Sparkles size={12} aria-hidden="true" />{t('flow.ai')}</span>}
         {!folded && <span className="hidden text-[12px] text-muted sm:inline">{meta}</span>}
       </div>

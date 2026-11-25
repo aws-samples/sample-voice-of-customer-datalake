@@ -19,12 +19,15 @@ The pause, ``pause`` (once a trial is due), in this order:
    (409 ``trial_changed``) before anything is turned off;
 4. the ``trial_paused`` audit row (actor ``trial-expiry``, kind ``schedule``, the lists);
 5. each plugin turned off by the existing audited change (shared/workspace_plugin_settings.py ``set_trial_plugin``: its
-   own ``plugin_disabled`` row, reason ``trial_paused``), and each form set ``enabled`` false (one conditional UpdateItem
-   of ``enabled``, its save counter one up so an editor's stale copy cannot turn it on again, ``updated_at`` and
-   ``updated_by``). Before each of them the trial's ``rev`` is read again (one strongly consistent GetItem): a mark an
-   extension or a conversion committed after step 3 moved it, so the pause stops there (409 ``trial_changed``) and
-   turns nothing more off. Only a mark committed between that read and the turn-off it precedes is not seen, and that
-   one turn-off is all it can undo.
+   own ``plugin_disabled`` row, reason ``trial_paused``), and each form set ``enabled`` false (a conditional update of
+   ``enabled``, its save counter one up so an editor's stale copy cannot turn it on again, ``updated_at`` and
+   ``updated_by``). Each turn-off is one transaction with a check of ``META`` (shared/trial_state.py
+   ``unchanged_check``): the workspace still active and the trial's ``rev`` still the one step 3 saved. A mark an
+   extension or a conversion committed after step 3 moved it, so the first turn-off after it is refused and the pause
+   stops there (409 ``trial_changed``), turning nothing more off and undoing nothing the extension turned on (7.71.04:
+   7.71.03 read the ``rev`` again before each turn-off, one GetItem each, and a mark committed between that read and
+   the turn-off was not seen). A refused plugin's ``plugin_disabled`` row is still written, first, as for every
+   plugin change.
 
 No form is put live once step 1 committed (the publish's own transaction checks ``paused_at``), so the forms read in
 step 2 are all there are. A trial an extension or a conversion is resuming (``resuming_at``, shared/trials.py) is not
@@ -60,6 +63,7 @@ from shared.dynamo_paging import iter_query
 from shared.exceptions import ConflictError, ValidationError
 from shared.logging import logger
 from shared.onboarding import forms_partition
+from shared.persona_save import CONDITION_FAILED, cancellation_codes
 from shared.platform_workspaces import LISTING_PK
 from shared.timestamps import now_iso, parse_iso
 from shared.trial_state import (
@@ -71,7 +75,6 @@ from shared.trial_state import (
     is_paused,
     paused_lists,
     resume_incomplete,
-    stored_trial,
 )
 from shared.trials import (
     TRIAL_CHANGED,
@@ -179,22 +182,32 @@ def due_trials(table: Any, now: datetime) -> list[str]:
     return due
 
 
-def set_form_live(forms: WorkspaceTable, scope: WorkspaceScope, form_id: str, live: bool, actor: str, at: str) -> bool:
+def set_form_live(view: WorkspaceTable, scope: WorkspaceScope, form_id: str, live: bool, actor: str, at: str, *,
+                  unchanged: tuple[Any, object] | None = None) -> bool:
     """``enabled`` set to ``live`` on the form while it exists and is the other way; its save counter one up,
-    ``updated_at`` and ``updated_by``. True when it changed, False when there was nothing to change."""
+    ``updated_at`` and ``updated_by``. True when it changed, False when there was nothing to change.
+
+    ``unchanged`` (a pause's turn-off, 7.71.04): ``(voc-workspaces, the rev the pause saved)``, the update then one
+    transaction with the check that the trial is still at that rev (shared/ws_repo.py ``unchanged_in``); when that
+    check refuses, the cancelled transaction's error propagates (``_turn_off`` stops the pause)."""
+    key = {'pk': forms_partition(scope), 'sk': f'{_FORM_PREFIX}{form_id}'}
+    update = {
+        'UpdateExpression': ('SET #enabled = :to, #writes = if_not_exists(#writes, :zero) + :one, '
+                             '#updated_at = :at, #updated_by = :actor'),
+        'ConditionExpression': 'attribute_exists(#sk) AND #enabled = :from',
+        'ExpressionAttributeNames': {'#enabled': 'enabled', '#writes': 'write_count', '#updated_at': 'updated_at',
+                                     '#updated_by': 'updated_by', '#sk': 'sk'},
+        'ExpressionAttributeValues': {':to': live, ':from': not live, ':zero': 0, ':one': 1, ':at': at,
+                                      ':actor': actor},
+    }
     try:
-        forms.update_item(
-            {'pk': forms_partition(scope), 'sk': f'{_FORM_PREFIX}{form_id}'},
-            UpdateExpression=('SET #enabled = :to, #writes = if_not_exists(#writes, :zero) + :one, '
-                              '#updated_at = :at, #updated_by = :actor'),
-            ConditionExpression='attribute_exists(#sk) AND #enabled = :from',
-            ExpressionAttributeNames={'#enabled': 'enabled', '#writes': 'write_count', '#updated_at': 'updated_at',
-                                      '#updated_by': 'updated_by', '#sk': 'sk'},
-            ExpressionAttributeValues={':to': live, ':from': not live, ':zero': 0, ':one': 1, ':at': at,
-                                       ':actor': actor},
-            ReturnValues='NONE')
+        if unchanged is None:
+            view.update_item(key, **update, ReturnValues='NONE')
+        else:
+            view.transact_write_items([{'Update': {'Key': key, **update}}], unchanged_in=unchanged)
     except ClientError as exc:
-        if is_conditional_check_failure(exc):
+        # The form's own condition alone (gone, or already the other way): nothing to change.
+        if is_conditional_check_failure(exc) or cancellation_codes(exc) == [CONDITION_FAILED, None]:
             return False
         raise
     return True
@@ -228,29 +241,26 @@ def _due(ws: str, meta: Mapping[str, Any], trial: object, now: datetime) -> str 
     return None
 
 
-def _still_as_saved(tables: PauseTables, ws: str, saved: Mapping[str, Any]) -> None:
-    """409 ``trial_changed`` unless the stored trial's ``rev`` is still the one the pause saved (``saved``): an
-    extension or a conversion that wrote it since (its ``resuming_at`` mark) stops the pause, which turns nothing more
-    off (Q3, 7.71.03)."""
-    stored = stored_trial(tables.workspaces, ws)
-    if stored is None or stored.get('rev') != saved.get('rev'):
-        raise ConflictError(TRIAL_CHANGED, code='trial_changed')
-
-
 def _turn_off(tables: PauseTables, ws: str, forms: WorkspaceTable, saved: Mapping[str, Any], at: str
               ) -> tuple[int, int]:
-    """Each plugin, then each form, of the lists the pause saved on the trial (``saved``) turned off, the trial's
-    ``rev`` read again before each (``_still_as_saved``); how many of each changed."""
+    """Each plugin, then each form, of the lists the pause saved on the trial (``saved``) turned off, each in one
+    transaction whose last entry checks that the trial is still at ``saved``'s ``rev`` (7.71.04); how many of each
+    changed. A turn-off that check refuses stops the pause: 409 ``trial_changed``, nothing more turned off (Q3,
+    7.71.03)."""
     actor = {'actor': EXPIRY_ACTOR, 'actor_kind': EXPIRY_ACTOR_KIND}
     scope = workspace_scope(ws)
     lists = paused_lists(saved)
-    plugins_off = forms_off = 0
-    for plugin in lists['plugins']:
-        _still_as_saved(tables, ws, saved)
-        plugins_off += set_trial_plugin(tables.workspaces, ws, plugin, False, actor, TRIAL_PAUSED_KIND)
-    for form_id in lists['forms']:
-        _still_as_saved(tables, ws, saved)
-        forms_off += set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at)
+    rev = saved.get('rev')
+    unchanged = (tables.workspaces, rev)
+    try:
+        plugins_off = sum(set_trial_plugin(tables.workspaces, ws, plugin, False, actor, TRIAL_PAUSED_KIND, rev=rev)
+                          for plugin in lists['plugins'])
+        forms_off = sum(set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at, unchanged=unchanged)
+                        for form_id in lists['forms'])
+    except ClientError as exc:
+        if cancellation_codes(exc)[-1:] == [CONDITION_FAILED]:
+            raise ConflictError(TRIAL_CHANGED, code='trial_changed') from exc
+        raise
     return plugins_off, forms_off
 
 
@@ -279,7 +289,7 @@ def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
     live = _union(recorded['forms'], still_live)
     # Always, and conditional on the rev read (Q1, 7.71.02): a mark an extension or a conversion committed since the
     # read fails this write (409), so nothing it turned on is turned off; one committed after it stops the turn-offs
-    # (Q3, 7.71.03: ``_turn_off`` reads the rev again before each).
+    # (Q3, 7.71.03: each turn-off's own transaction checks the rev saved here, 7.71.04).
     trial = save_trial(tables.workspaces, ws, meta, {**trial, PAUSED: {'plugins': plugins, 'forms': live}})
     at = audit_trial(tables.workspaces, ws, TRIAL_PAUSED_KIND, EXPIRY_ACTOR,
                 {'actor_kind': EXPIRY_ACTOR_KIND, 'expires_at': trial.get('expires_at'), 'plugins': plugins,

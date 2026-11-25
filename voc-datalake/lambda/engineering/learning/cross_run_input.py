@@ -24,9 +24,9 @@ replaced here (``thread_items.one_line``: ``quality_gate.text.redact``); the pro
 **What is counted by rule** (``figures``: numbers, ids and keys only):
 
 - the recurring failures: an attempt's failure as the retrospective named it (``no_go``, ``failed``, ``crashed``,
-  ``timed_out``), else an agent's session that ended ``failed`` or ``reposted``, else a gate's NO-GO (the final go's
-  role), by role and kind, in ``MIN_RECURRING`` runs or more, with those runs and the evidence's keys (the manifests,
-  the failing agents' transcript prefixes, the gate records);
+  ``timed_out``), else an agent's session that ended ``failed``, ``reposted`` or (7.71.04) ``needs_human``, else a
+  gate's NO-GO (the final go's role), by role and kind, in ``MIN_RECURRING`` runs or more, with those runs and the
+  evidence's keys (the manifests, the failing agents' transcript prefixes, the gate records);
 - each flow step's (an agent's role where its task named no step) session seconds and cost at p50 and p95 (nearest
   rank), and the cost outliers: runs, and agents of a step, at ``OUTLIER_FACTOR`` times their p50 or more;
 - the convergence: the runs by status, the share done, the older half's and the newer half's, the failures a run;
@@ -87,8 +87,9 @@ MAX_TASKS: Final = 100
 FLOW: Final = re.compile(r'[A-Za-z0-9._:@+=-]{1,100}\Z')
 _DAY: Final = re.compile(r'20[0-9]{2}-[01][0-9]-[0-3][0-9]\Z')
 _AGENT_NUMBER: Final = re.compile(r'-[0-9]+\Z')
-#: An agent's session ended so (runtime/sessions.py), and what the pass calls it.
-_SESSION_FAILURES: Final = {'failed': 'failed', 'reposted': 'reposted'}
+#: An agent's session ended so (runtime/sessions.py), and what the pass calls it: (7.71.04) one whose task went to a
+#: person too, ``needs_human`` since 7.71.03 (``failed`` before, so the pass had stopped seeing it).
+_SESSION_FAILURES: Final = {'failed': 'failed', 'reposted': 'reposted', 'needs_human': 'needs_human'}
 
 
 @dataclass(frozen=True)

@@ -145,7 +145,7 @@ def test_an_approval_records_the_docs_and_the_preview_renders_them_again(lambda_
     assert status == 200
     assert (preview['digest'], preview['approved_digest'], preview['matches']) == (
         approved['rendering_digest'], approved['rendering_digest'], True)
-    assert preview['branch'] == 'voc-agent/docs/knowledge-v1'
+    assert preview['branch'] == 'voc-agent/docs-knowledge-v1'
     assert [f['path'] for f in preview['files']] == ['docs/agents/index.md', 'docs/agents/repository.md']
     assert 'new file mode 100644' in preview['patch']
     assert preview['patch_truncated'] is False
@@ -209,7 +209,7 @@ def _approve(lambda_context: Any, world: World) -> str:
                  body={})[1]['rendering_digest']
 
 
-PR = {'number': 12, 'url': 'https://github.com/example-org/harbor/pull/12', 'branch': 'voc-agent/docs/knowledge-v1'}
+PR = {'number': 12, 'url': 'https://github.com/example-org/harbor/pull/12', 'branch': 'voc-agent/docs-knowledge-v1'}
 
 
 def test_human_driven_gets_409_and_the_patch_never_a_start(lambda_context: Any, world: World) -> None:

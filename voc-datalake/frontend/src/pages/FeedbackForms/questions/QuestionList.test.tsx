@@ -375,6 +375,19 @@ describe('QuestionList: the endings', () => {
     expect(screen.getByRole('menuitem', { name: /^Delete…/ })).toHaveTextContent('A form needs at least one ending.')
   })
 
+  it('names its card and its moves with each recall placeholder as [id] (F7, 7.71.04)', async () => {
+    const user = userEvent.setup()
+    const endings = [ending('end_thanks', 'Thank you!'), ending('end_sorry', 'Sorry'), ending('end_event', 'See you at {{ event | the next one }}')]
+    renderList(sampleForm({ endings, hidden_fields: [{ id: 'event' }] }))
+    expect(within(screen.getByRole('list', { name: 'Endings' })).getByText('See you at [event]')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More actions for ending “See you at [event]”' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Move up' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Moved “See you at [event]” to position 2 of 3.')
+    await user.click(screen.getByRole('button', { name: 'More actions for ending “See you at [event]”' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Move up' }))
+    expect(screen.getByRole('status')).toHaveTextContent('“See you at [event]” is now the default ending.')
+  })
+
   it('says why it holds no more than 5 endings', async () => {
     const user = userEvent.setup()
     const five = Array.from({ length: 5 }, (_unused, n) => ending(`end_${String(n)}`, `Ending ${String(n)}`))

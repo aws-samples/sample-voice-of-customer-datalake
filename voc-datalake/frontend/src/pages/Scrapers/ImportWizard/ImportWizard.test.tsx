@@ -90,14 +90,14 @@ function sentBodies(path: string): unknown[] {
 
 const next = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: 'Continue' }))
 
-/** Through Map (Stars made a 1-10 rating) and Confirm, then Import; resolves once First insights shows. */
-async function importReviews(user: ReturnType<typeof userEvent.setup>) {
+/** Through Map (Stars made a 1-10 rating) and Confirm, then Import; resolves once First insights shows `imported`. */
+async function importReviews(user: ReturnType<typeof userEvent.setup>, imported = '2 rows imported.') {
   await next(user)
   await user.selectOptions(within(columnCard('Stars')).getByRole('combobox'), 'rating_1_10')
   await next(user)
   await screen.findByText('What goes where')
   await user.click(screen.getByRole('button', { name: 'Import' }))
-  await screen.findByText('2 rows imported.')
+  await screen.findByText(imported)
 }
 
 const SURVEY_ROUTES = {
@@ -183,6 +183,16 @@ describe('ImportWizard: reviews or tickets', () => {
     await importReviews(await upload(REVIEWS, 'reviews.csv'))
     expect(screen.getByRole('status')).toHaveTextContent('Nothing new to analyse: these rows were imported before.')
     expect(screen.getByRole('link', { name: 'See them on the dashboard' })).toHaveAttribute('href', '/dashboard?source=manual_import')
+  })
+
+  it("lists a row its redaction left out by its number, as a survey's refused rows are (7.71.04)", async () => {
+    routeFetchApi({
+      'POST /scrapers/manual/detect': () => REVIEWS_ANSWER,
+      'POST /scrapers/manual/csv-upload': () => ({ success: true, imported_count: 1, total_rows: 2, redaction_unavailable: { count: 1, rows: [2] } }),
+    })
+    await importReviews(await upload(REVIEWS, 'reviews.csv'), '1 row imported.')
+    expect(screen.getByText('1 row was not imported:')).toBeInTheDocument()
+    expect(screen.getByText('Row 2: its personal data could not be checked, so it was left out')).toBeInTheDocument()
   })
 
   it('reads a file that is not UTF-8 as Windows-1252 and says so', async () => {

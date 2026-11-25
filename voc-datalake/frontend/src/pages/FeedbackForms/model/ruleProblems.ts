@@ -9,7 +9,7 @@
  */
 import type { FormV2, Question, Rule } from './formsV2'
 import { isScale } from './formsV2'
-import { textIn } from './i18nText'
+import { headlineShown } from './recall'
 import { matchesEverything, opTakesValue, opsFor, ruleCodes, scaleOf, scaleValues, splitOtherwise, valueCodes } from './rules'
 import { noMatchTarget } from './paths'
 import { serverTakesOp } from './logicOps'
@@ -156,7 +156,7 @@ function noEffectNote(form: FormV2, index: number, question: Question, rules: re
   if (caughtElsewhere) return null
   const number = form.questions.findIndex((other) => other.id === target) + 1
   if (number > 0) return { severity: 'note', code: 'whereAnyway', params: { number } }
-  return { severity: 'note', code: 'whereAnywayEnding', params: { title: textIn(form.endings.find((e) => e.id === target)?.title, form.language) } }
+  return { severity: 'note', code: 'whereAnywayEnding', params: { title: headlineShown(form.endings.find((e) => e.id === target)?.title, form.language) } }
 }
 
 /** Every problem of the question at `index`'s rules (its Otherwise checked for its target only). */

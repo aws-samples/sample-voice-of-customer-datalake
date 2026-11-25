@@ -251,7 +251,9 @@
     "datesDefaulted_other": "{{count, number}} Bewertungen hatten im Text kein Datum und erhalten das heutige Importdatum. Sie können es unten ändern.",
     "importFailed": "Bewertungen konnten nicht importiert werden",
     "clearDraft": "Entwurf löschen",
-    "draftDropped": "Ihr gespeicherter Entwurf war länger als {{max}} Zeichen und wurde gelöscht. Fügen Sie einen kürzeren Text ein, um fortzufahren."
+    "draftDropped": "Ihr gespeicherter Entwurf war länger als {{max}} Zeichen und wurde gelöscht. Fügen Sie einen kürzeren Text ein, um fortzufahren.",
+    "imported_one": "{{count, number}} Bewertung importiert.",
+    "imported_other": "{{count, number}} Bewertungen importiert."
   },
   "newSource": "Neue Quelle",
   "parsedReview": {
@@ -716,5 +718,17 @@
       "title": "Eigene Signale in wenigen Minuten einbringen",
       "body": "Hier gibt es noch kein Feedback. Importieren Sie eine CSV-Datei mit App-Store-Bewertungen, Support-Tickets oder den Ergebnissen eines anderen Umfragetools und sehen Sie Stimmung, Themen und NPS in wenigen Minuten."
     }
+  },
+  "unredacted": {
+    "rowsLeftOut_one": "{{count, number}} Zeile wurde ausgelassen, weil ihre personenbezogenen Daten nicht für die Schwärzung geprüft werden konnten (der Schwärzungsdienst konnte sie nicht lesen): Zeile {{list}}.",
+    "rowsLeftOut_other": "{{count, number}} Zeilen wurden ausgelassen, weil ihre personenbezogenen Daten nicht für die Schwärzung geprüft werden konnten (der Schwärzungsdienst konnte sie nicht lesen): Zeilen {{list}}.",
+    "itemsLeftOut_one": "{{count, number}} Element wurde ausgelassen, weil seine personenbezogenen Daten nicht für die Schwärzung geprüft werden konnten (der Schwärzungsdienst konnte es nicht lesen): Element {{list}}.",
+    "itemsLeftOut_other": "{{count, number}} Elemente wurden ausgelassen, weil ihre personenbezogenen Daten nicht für die Schwärzung geprüft werden konnten (der Schwärzungsdienst konnte sie nicht lesen): Elemente {{list}}.",
+    "reviewsLeftOut_one": "{{count, number}} Bewertung wurde ausgelassen, weil ihre personenbezogenen Daten nicht für die Schwärzung geprüft werden konnten (der Schwärzungsdienst konnte sie nicht lesen): Bewertung {{list}}.",
+    "reviewsLeftOut_other": "{{count, number}} Bewertungen wurden ausgelassen, weil ihre personenbezogenen Daten nicht für die Schwärzung geprüft werden konnten (der Schwärzungsdienst konnte sie nicht lesen): Bewertungen {{list}}.",
+    "more_one": "{{count, number}} weitere",
+    "more_other": "{{count, number}} weitere",
+    "sendAgain": "Senden Sie nur diese erneut, um sie zu importieren.",
+    "quoted": "{{position}} („{{text}}“)"
   }
 }

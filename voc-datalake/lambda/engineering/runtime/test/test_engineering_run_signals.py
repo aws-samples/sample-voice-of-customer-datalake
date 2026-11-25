@@ -161,10 +161,12 @@ def _stopping(_monkeypatch: pytest.MonkeyPatch) -> None:
     _runs().request_stop(RUN, mode='stop', now=int(handler.clock()), actor=ADMIN)
 
 
-def _done_task(_monkeypatch: pytest.MonkeyPatch) -> None:
-    board = _board()
-    board.move(WORKSPACE, RUN, TASK, agent=FIXER, epoch=1, to_state='in_progress', result_keys=[])
-    board.move(WORKSPACE, RUN, TASK, agent=FIXER, epoch=1, to_state='done', result_keys=[])
+def _ended_task(state: str) -> Any:
+    def ended(_monkeypatch: pytest.MonkeyPatch) -> None:
+        board = _board()
+        board.move(WORKSPACE, RUN, TASK, agent=FIXER, epoch=1, to_state='in_progress', result_keys=[])
+        board.move(WORKSPACE, RUN, TASK, agent=FIXER, epoch=1, to_state=state, result_keys=[])
+    return ended
 
 
 @pytest.mark.parametrize(('change', 'fields', 'error', 'says'), [
@@ -176,7 +178,11 @@ def _done_task(_monkeypatch: pytest.MonkeyPatch) -> None:
     (None, {'signal': 'pause', **AGENT, 'agent_id': 'fixer-9'}, RuntimeRefused, 'no agent fixer-9'),
     (None, {'signal': 'pause', **AGENT, 'task_id': 'task-9'}, RuntimeRefused, 'no task task-9'),
     (None, {'signal': 'pause', **AGENT, 'attempt': 2}, RuntimeRefused, 'moved on'),
-    (_done_task, {'signal': 'pause', **AGENT}, RuntimeRefused, 'moved on'),
+    (_ended_task('done'), {'signal': 'pause', **AGENT}, RuntimeRefused, 'moved on'),
+    # (7.71.04) A task at a person: its agent's restart or resume is answered with what to do, the run's Resume.
+    (_ended_task('needs_human'), {'signal': 'restart', 'restart_from': 'fresh', **AGENT}, RuntimeRefused,
+     'ended needing a person.*Resume the run instead'),
+    (_ended_task('needs_human'), {'signal': 'resume', **AGENT}, RuntimeRefused, 'Resume the run instead'),
 ])
 def test_the_run_the_agent_and_the_state_are_checked_before_anything_is_written(
         wired: Any, monkeypatch: pytest.MonkeyPatch, change: Any, fields: dict[str, Any], error: type, says: str):

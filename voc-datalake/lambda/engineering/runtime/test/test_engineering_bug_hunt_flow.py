@@ -131,8 +131,8 @@ class GitHost:
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         raise AssertionError(f'no comment in this flow ({connection_id}, {on} {number}, {len(body)} characters)')
 
-    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
-        raise AssertionError(f'no comment in this flow ({connection_id}, issue {number}, {marker})')
+    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
+        raise AssertionError(f'no comment in this flow ({connection_id}, issue {number}, {marker}, {since})')
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         assert connection_id == 'conn-1'
@@ -337,14 +337,17 @@ class BugHunt:
         assert model.refused() == []
         return code
 
-    def coordinator(self) -> AgentSession:
-        argv, env = self.environment('coordinator-1')
+    def coordinator(self, agent_id: str = 'coordinator-1', attempt: int = 1) -> AgentSession:
+        """The run coordinator's session (its start's, or (7.71.04) one a person's Resume launched at a later attempt of
+        the coordinate task), as its session row has it."""
+        argv, env = self.environment(agent_id)
         assert argv == harness_argv(COORDINATOR)
-        return BUILD_SESSION(env, s3=self.s3, ports=self.ports('coordinator-1', COORDINATE_TASK, 1),
-                             runner=FakeRunner(), checkout=str(self.tmp / 'coordinator-1' / 'repo'))
+        return BUILD_SESSION(env, s3=self.s3, ports=self.ports(agent_id, COORDINATE_TASK, attempt),
+                             runner=FakeRunner(), checkout=str(self.tmp / agent_id / 'repo'))
 
-    def plan(self) -> dict[str, Any]:
-        flow = self.transport('coordinator-1').post({'op': 'flow'})['flow']
+    def plan(self, coordinator: str = 'coordinator-1') -> dict[str, Any]:
+        """The flow as the run's current coordinator reads it (a replaced one is refused every op)."""
+        flow = self.transport(coordinator).post({'op': 'flow'})['flow']
         assert isinstance(flow, dict)
         return flow
 
@@ -461,37 +464,53 @@ def _authoring(opened: dict[str, str]) -> Turn:
     return turn
 
 
-def _commit_and_open(flow: BugHunt, coordinator: AgentSession, patch: str, tree: str,
-                     monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, str], dict[str, str]]:
-    """After the GO: the committer pushes the fixer's submitted patch, for the tree the gate judged, to the run's
-    branch, and the PR author opens the pull request from it. Each knows them only from its opening (7.71.02: the
-    harness fills them in; the first live run's committer and PR author were told none, and wrote nothing), and the
-    model gives the message, the title and the body alone. What each opening named."""
-    coordinate(coordinator, _post_and_launch('committer', 'commit', 'task-6', 'Commit the slug fix', patch=patch))
+def pushed_by(flow: BugHunt, committer: str, patch: str, tree: str, monkeypatch: pytest.MonkeyPatch,
+              coordinator: str = 'coordinator-1') -> dict[str, str]:
+    """The committer's session: it pushes the fixer's submitted patch, for the tree the gate judged, to the run's
+    branch, knowing them only from its opening (7.71.02: the harness fills them in; the first live run's committer was
+    told none, and wrote nothing), its model giving the message alone. What its opening named; the PR author's step is
+    ready after it."""
     pushed: dict[str, str] = {}
-    flow.run_agent('committer-7', [_committing(pushed), _done('pushed')], monkeypatch)
-    assert (pushed, statuses(flow.plan())['pr_author']) == ({'patch': patch, 'tree': tree,
-                                                             'branch': run_branch(RUN)}, 'ready')
-    coordinate(coordinator, _post_and_launch('pr-author', 'pr_author', 'task-7', 'Open the draft pull request'))
+    flow.run_agent(committer, [_committing(pushed), _done('pushed')], monkeypatch)
+    assert (pushed, statuses(flow.plan(coordinator))['pr_author']) == ({'patch': patch, 'tree': tree,
+                                                                        'branch': run_branch(RUN)}, 'ready')
+    return pushed
+
+
+def opened_by(flow: BugHunt, coordinator: AgentSession, task: str, author: str, tree: str,
+              monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """The coordinator posts the PR author's task and launches it, and the PR author opens the pull request from the
+    run's branch, knowing it and how it opens only from its opening, its model giving the title and the body alone.
+    What its opening named."""
+    coordinate(coordinator, _post_and_launch('pr-author', 'pr_author', task, 'Open the draft pull request'))
     opened: dict[str, str] = {}
-    flow.run_agent('pr-author-8', [
+    flow.run_agent(author, [
         _authoring(opened), [use('open_draft_pr', title='Keep a slug exactly max_length long',
                                  body='Fixes the slug cut (slugs.py:2), tested; the gate said GO.')],
         _done('#7 opened')], monkeypatch)
     # (7.71.02: the run's META says ready, whatever the task's own words say, "draft" included)
     assert opened == {'branch': run_branch(RUN), 'opens': 'ready for review'}
     assert [json.loads(text.split('\n', 1)[1].rsplit('\n', 1)[0])[0]['tree_hash']
-            for text in flow.results('pr-author-8', '<<<DATA gate-records ')] == [tree]
-    return pushed, opened
+            for text in flow.results(author, '<<<DATA gate-records ')] == [tree]
+    return opened
 
 
-def _the_run_ends_done_at_the_next_tick(flow: BugHunt) -> None:
+def _commit_and_open(flow: BugHunt, coordinator: AgentSession, patch: str, tree: str,
+                     monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, str], dict[str, str]]:
+    """After the GO: the committer pushes the fixer's submitted patch, for the tree the gate judged, to the run's
+    branch, and the PR author opens the pull request from it. What each opening named."""
+    coordinate(coordinator, _post_and_launch('committer', 'commit', 'task-6', 'Commit the slug fix', patch=patch))
+    pushed = pushed_by(flow, 'committer-7', patch, tree, monkeypatch)
+    return pushed, opened_by(flow, coordinator, 'task-7', 'pr-author-8', tree, monkeypatch)
+
+
+def ends_done_at_the_next_tick(flow: BugHunt, coordinators: tuple[str, ...] = ('coordinator-1',)) -> None:
     """The coordinator finished on a finished flow: once its session and every other has ended (the supervisor ends
     each as its harness exits; the test runs each harness in process, never through its session), the next tick ends
     the run done and settling no longer lists it (7.71.02: no code ended a run done before, so the first live run
     stayed active, the rule ticking every minute, its engineering agent's lock held)."""
     sessions = handler._supervisor().sessions
-    for agent_id in ['coordinator-1', *flow.launcher.launched]:
+    for agent_id in [*coordinators, *flow.launcher.launched]:
         session = sessions.get(RUN, agent_id)
         assert session is not None
         sessions.save(replace(session, status='done', exec_id=None))
@@ -526,9 +545,10 @@ def _reviewed(flow: BugHunt, patch: str, monkeypatch: pytest.MonkeyPatch) -> Non
     assert 'slugs.py (+' in diff
 
 
-def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_request(
-        bug_hunt: BugHunt, monkeypatch: pytest.MonkeyPatch):
-    flow = bug_hunt
+def through_the_gate(flow: BugHunt, monkeypatch: pytest.MonkeyPatch) -> tuple[AgentSession, str, str]:
+    """The run from its start to its gate's GO, every agent on its role's skill: the hunter finds the bug and posts its
+    fix, the fixer submits its patch, the commit reviewer approves it, and the gate's runner and final go say GO on the
+    tree the patch makes; the commit step is ready. The coordinator's session, the submitted patch and that tree."""
     coordinator = flow.coordinator()
     coordinate(coordinator, [[use('read_flow')], *_post_and_launch('hunter', 'hunt', 'task-1', 'Hunt in slugs.py')])
     assert flow.run_agent('hunter-2', [
@@ -595,6 +615,13 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
     records = [json.loads(flow.s3.get_object(Bucket=WORKSPACE_BUCKET, Key=tasks[task].result_keys[0])['Body'].read())
                for task in ('task-4', 'task-5')]
     assert [(record['verdict'], record['tree_hash']) for record in records] == [('GO', tree), ('GO', tree)]
+    return coordinator, patch, tree
+
+
+def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_request(
+        bug_hunt: BugHunt, monkeypatch: pytest.MonkeyPatch):
+    flow = bug_hunt
+    coordinator, patch, tree = through_the_gate(flow, monkeypatch)
 
     pushed, opened = _commit_and_open(flow, coordinator, patch, tree, monkeypatch)
     assert coordinate(coordinator, [[use('read_flow')], _done('the flow reached its pull request')]) == 'done'
@@ -630,7 +657,7 @@ def test_a_bug_hunt_runs_every_step_with_its_roles_skill_to_the_draft_pull_reque
                                    (f'{RUN}.7', 'push_bundle', 200), (f'{RUN}.8', 'open_or_update_draft_pr', 200)]
     assert [json.loads(text)['broker'] for text in flow.results('pr-author-8', '{"branch"')] == [
         {'number': PULL_REQUEST.number, 'url': PULL_REQUEST.url}]
-    _the_run_ends_done_at_the_next_tick(flow)
+    ends_done_at_the_next_tick(flow)
 
 
 def test_an_agent_that_stops_without_finishing_takes_the_run_to_a_person(bug_hunt: BugHunt,

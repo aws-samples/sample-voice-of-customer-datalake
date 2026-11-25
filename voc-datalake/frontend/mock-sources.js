@@ -30,6 +30,12 @@ const RUN_DURATION_MS = 3000;
 /** GET polls a manual-parse job answers 'processing' before 'completed'. */
 const PARSE_POLLS_BEFORE_DONE = 1;
 const MOCK_RAW_BUCKET = 'voc-raw-data-123456789012-us-west-2';
+/** A pasted review, CSV row or JSON item whose text holds this stands for one the entity model could not read under
+ * a redacting source (7.71.04, docs/source-policies.md): it is left out and named in the answer's
+ * `redaction_unavailable: {count, rows}` (its 1-based place in what was sent, the first 100), as the real uploads
+ * answer, so the result's notice can be seen locally. The mock models no redaction otherwise. */
+const UNREADABLE_MARK = '#unreadable';
+const MAX_NAMED_UNREDACTED = 100;
 const MOCK_S3_IMPORT_BUCKET = 'voc-s3-import-123456789012-us-west-2';
 
 // ── Small pure helpers ───────────────────────────────────────────────────────
@@ -38,6 +44,11 @@ const isoAgo = (ms) => new Date(Date.now() - ms).toISOString();
 const fail = (status, error) => [status, { success: false, error }];
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' ? v : '');
+const unreadable = (text) => str(text).includes(UNREADABLE_MARK);
+/** `manual_import_handler._unredacted`: the left-out rows' answer, nothing when there are none. */
+const unredacted = (rows) => (rows.length ? { redaction_unavailable: { count: rows.length, rows: rows.slice(0, MAX_NAMED_UNREDACTED) } } : {});
+/** The 1-based places of `list`'s entries whose text is unreadable. */
+const unreadablePlaces = (list) => list.flatMap((entry, at) => (unreadable(entry.text) ? [at + 1] : []));
 
 /** `YYYYmmddHHMMSS`, the suffix the real handlers put on an execution id. */
 function stamp(date = new Date()) {
@@ -711,7 +722,9 @@ function confirmImport({ shared }, body) {
     job_id: jobId, source_url: job.source_url, source_origin: job.source_origin, raw_text: job.raw_text,
     llm_response: { reviews: job.reviews }, final_reviews: finalReviews, imported_at: new Date().toISOString(),
   }));
-  for (const review of finalReviews) {
+  const leftOut = unreadablePlaces(finalReviews);
+  const kept = finalReviews.filter((review) => !unreadable(review.text));
+  for (const review of kept) {
     processImported(shared, {
       source_platform: 'manual_import', source_channel: job.source_origin, text: str(review.text),
       rating: typeof review.rating === 'number' ? review.rating : null, title: str(review.title), url: job.source_url,
@@ -720,10 +733,11 @@ function confirmImport({ shared }, body) {
   }
   job.status = 'imported';
   recordImportRun({
-    method: 'paste', source: job.source_origin, counts: { received: finalReviews.length, imported: finalReviews.length },
+    method: 'paste', source: job.source_origin,
+    counts: { received: finalReviews.length, imported: kept.length, skipped: leftOut.length },
     raw_s3_key: `s3://${MOCK_RAW_BUCKET}/${key}`,
   });
-  return [200, { success: true, imported_count: finalReviews.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` }];
+  return [200, { success: true, imported_count: kept.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}`, ...unredacted(leftOut) }];
 }
 
 function jsonItemErrors(items) {
@@ -774,7 +788,9 @@ function jsonUpload({ shared }, body) {
   const key = rawKey('json_upload', `${shared.nextMockId('job')}.json`);
   putRawObject(shared, key, JSON.stringify({ items: clean, uploaded_at: new Date().toISOString() }));
   const sourceId = str(body.source_id).trim() || 'manual_import';
-  for (const item of radar.brand ? [] : clean) {
+  const leftOut = unreadablePlaces(clean);
+  const kept = clean.filter((item) => !unreadable(item.text));
+  for (const item of radar.brand ? [] : kept) {
     processImported(shared, {
       source_platform: sourceId, dimensions: item.dimensions, tags: item.tags, source_channel: str(item.source || item.source_channel), text: str(item.text).trim(),
       rating: typeof item.rating === 'number' ? item.rating : null, title: str(item.title), url: str(item.url),
@@ -783,9 +799,11 @@ function jsonUpload({ shared }, body) {
   }
   recordImportRun({
     ...jsonRunOrigin(body, sourceId), source_id: sourceId,
-    counts: { received: items.length, imported: clean.length }, raw_s3_key: `s3://${MOCK_RAW_BUCKET}/${key}`, radar_brand: radar.brand,
+    counts: { received: items.length, imported: kept.length, skipped: leftOut.length }, raw_s3_key: `s3://${MOCK_RAW_BUCKET}/${key}`, radar_brand: radar.brand,
   });
-  return [200, { success: true, imported_count: clean.length, total_items: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` }];
+  return [200, {
+    success: true, imported_count: kept.length, total_items: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}`, ...unredacted(leftOut),
+  }];
 }
 
 /**
@@ -968,7 +986,8 @@ function csvUpload({ shared }, body) {
 function importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, items, warnings, drops, dataset }) {
   const key = rawKey('csv_upload', `${shared.nextMockId('job')}.csv`);
   putRawObject(shared, key, csvText, 'text/csv; charset=utf-8');
-  const fresh = [...plan.v1_rows, ...plan.new];
+  const leftOut = [...plan.v1_rows, ...plan.new].filter((item) => unreadable(item.text)).map((item) => item.row).sort((a, b) => a - b);
+  const fresh = [...plan.v1_rows, ...plan.new].filter((item) => !unreadable(item.text));
   if (!radar.brand) {
     for (const item of fresh) {
       rememberDatasetRow(sourceId, item, processImported(shared, { ...item, source_platform: sourceId, source_channel: item.source }));
@@ -976,12 +995,12 @@ function importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, 
     plan.changed.forEach(applyDatasetUpdate);
   }
   const queued = fresh.length + plan.changed.length;
-  const result = { success: true, imported_count: queued, total_rows: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` };
+  const result = { success: true, imported_count: queued, total_rows: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}`, ...unredacted(leftOut) };
   if (dataset) result.counts = planCounts(plan);
   if (warnings.length) result.warnings = warnings.slice(0, 20);
   recordImportRun({
     method: 'csv', source: defaultSource, source_id: sourceId, warnings, raw_s3_key: result.s3_uri, radar_brand: radar.brand,
-    counts: csvUploadCounts(items.length, drops),
+    counts: csvUploadCounts(items.length - leftOut.length, { ...drops, skipped: drops.skipped + leftOut.length }),
   });
   return result;
 }

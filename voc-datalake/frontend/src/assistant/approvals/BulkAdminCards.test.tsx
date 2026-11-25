@@ -100,6 +100,14 @@ describe('import_reviews card', () => {
     expect(writes()[0]?.[2]).toMatchObject({ import_origin: 'assistant', source_label: 'Support survey' })
   })
 
+  it('tells which rows its redaction left out, by their place in the approved list (7.71.04)', async () => {
+    routeFetchApi({ 'POST /scrapers/manual/json-upload': () => ({ success: true, imported_count: 2, total_items: 3, redaction_unavailable: { count: 1, rows: [3] } }) })
+    const { user, onResolve } = card()
+    await approve(user, onResolve)
+    expect(outcomeOf(onResolve)).toMatchObject({ status: 'executed', data: { imported_count: 2, redaction_unavailable: { count: 1, rows: [3] } } })
+    expect(JSON.stringify(outcomeOf(onResolve))).toContain('1 was left out because the personal data could not be checked for redaction (approved rows 3)')
+  })
+
   it('dates a row without a date at the approval time', async () => {
     routeFetchApi({ 'POST /scrapers/manual/json-upload': () => ({ success: true, imported_count: 3, total_items: 3 }) })
     const { user, onResolve } = card()

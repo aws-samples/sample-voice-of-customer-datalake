@@ -22,7 +22,7 @@ const PREVIEW_PATH = 'GET /agents/engineering/docs/storefront/preview?kind=knowl
 const PUBLISH = '/agents/engineering/docs/storefront/publish'
 const DIGEST = 'd'.repeat(64)
 const PREVIEW = {
-  connection: 'storefront', kind: 'knowledge', version: 3, branch: 'voc-agent/docs/knowledge-v3', digest: DIGEST,
+  connection: 'storefront', kind: 'knowledge', version: 3, branch: 'voc-agent/docs-knowledge-v3', digest: DIGEST,
   approved_digest: DIGEST, matches: true, patch: '--- /dev/null\n+++ b/docs/agents/index.md\n+# What the agents know\n',
   patch_truncated: false, texts_truncated: true,
   files: [
@@ -46,7 +46,7 @@ beforeEach(() => { resetFetchApi() })
 describe('the approved docs\' preview', () => {
   it('lists every file the approval renders to, and reads one as a document from its text', async () => {
     const sheet = await renderSheet()
-    expect(await within(sheet).findByText('Branch voc-agent/docs/knowledge-v3, from approved version 3. Only a person merges it.')).toBeInTheDocument()
+    expect(await within(sheet).findByText('Branch voc-agent/docs-knowledge-v3, from approved version 3. Only a person merges it.')).toBeInTheDocument()
     await userEvent.click(within(sheet).getByRole('button', { name: /docs\/agents\/index\.md/ }))
     expect(await within(sheet).findByRole('heading', { name: 'What the agents know' })).toBeInTheDocument()
   })
@@ -67,7 +67,7 @@ describe('the approved docs\' preview', () => {
 describe('the publish', () => {
   it('sends the preview\'s digest, and says the pull request is ready for review and only a person merges it', async () => {
     const sheet = await renderSheet({ [`POST ${PUBLISH}`]: () => ({ pr: { url: 'https://github.com/o/r/pull/41', number: 41,
-      branch: 'voc-agent/docs/knowledge-v3' }, kind: 'knowledge', version: 3, digest: DIGEST, draft: false }) })
+      branch: 'voc-agent/docs-knowledge-v3' }, kind: 'knowledge', version: 3, digest: DIGEST, draft: false }) })
     await publish(sheet)
     expect(await within(sheet).findByRole('status')).toHaveTextContent('Pull request #41 opened, ready for review.')
     expect(within(sheet).getByText('Only a person merges it, on the host.')).toBeInTheDocument()

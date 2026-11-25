@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Flag, Sparkles } from 'lucide-react'
 import { TruncatedText } from '../../../components/Tooltip/TruncatedText'
 import type { FormV2 } from '../model/formsV2'
-import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import type { FormPaths } from '../model/paths'
 import FlowQuestion from './FlowQuestion'
 import type { OpenRule } from './FlowQuestion'
@@ -24,7 +24,7 @@ function FlowEnding({ form, id, index, ways, marked }: Readonly<{ form: FormV2; 
     <li className="rounded-lg border border-border p-3" data-testid={`flow-${id}`}>
       <div className="flex flex-wrap items-center gap-2">
         <Flag size={14} className="shrink-0 text-muted" aria-hidden="true" />
-        <TruncatedText as="h3" className="min-w-0 flex-1 truncate text-sm font-medium text-text-strong" text={textIn(ending.title, form.language)} />
+        <TruncatedText as="h3" className="min-w-0 flex-1 truncate text-sm font-medium text-text-strong" text={headlineShown(ending.title, form.language)} />
         {marked && <span className="badge badge-aim inline-flex items-center gap-1"><Sparkles size={12} aria-hidden="true" />{t('flow.ai')}</span>}
         {index === 0 && <span className="badge badge-muted">{t('flow.default')}</span>}
         <span className="text-[12px] text-muted tabular-nums">{t('flow.reachedBy', { count: ways })}</span>

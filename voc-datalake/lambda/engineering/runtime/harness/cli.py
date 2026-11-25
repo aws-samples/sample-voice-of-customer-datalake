@@ -142,10 +142,10 @@ class ClaudeCli:
         try:
             return self._watched(session, process, files)
         except Exception:
-            # Whatever failed (the inbox, a sync, a port), the CLI is ended and its work saved before the crash.
+            # Whatever failed (the inbox, a sync, a port), the CLI is ended and its work saved before the crash, the
+            # tool server's last writes with it (Q6, 7.71.04: ``crash_checkpoint``).
             self._end(process)
-            with contextlib.suppress(Exception):
-                session.checkpoint(turn=-1)
+            crash_checkpoint(session, files)
             raise
 
     def _watched(self, session: AgentSession, process: subprocess.Popen[str], files: SessionFiles) -> Ending:
@@ -191,17 +191,34 @@ class ClaudeCli:
         return 'done'
 
 
-def sync_notes(session: AgentSession, files: SessionFiles, seen: dict[str, Any] | None,
-               turn: int) -> dict[str, Any] | None:
-    """Take what the tool server recorded (its step, and since 7.71.03 the host writes it made, kept with the session's
-    own for its next checkpoint); a new ``save_checkpoint`` is saved at once (the CLI's and the Kiro adapter's: both
-    hear their tool server through ``SessionFiles``)."""
+def _take_state(session: AgentSession, files: SessionFiles) -> None:
+    """What the tool server recorded: its step, and since 7.71.03 the host writes it made, kept with the session's
+    own for its next checkpoint."""
     state = files.read('state')
     if state is not None:
         session.context.status.step = str(state.get('step', ''))
         writes = state.get('writes')
         if isinstance(writes, list):
             session.context.host_writes |= {name for name in writes if name in WRITE_TOOLS}
+
+
+def crash_checkpoint(session: AgentSession, files: SessionFiles) -> str | None:
+    """The checkpoint a crash saves, once the CLI or kiro-cli is ended (Q6, 7.71.04), and its key (None when it could
+    not be saved): with the tool server's last host writes taken first, so a continued writer that pushed or opened
+    its pull request just before the crash keeps them. Best effort, each part: the crash is raised after it either
+    way."""
+    with contextlib.suppress(Exception):
+        _take_state(session, files)
+    with contextlib.suppress(Exception):
+        return session.checkpoint(turn=-1)
+    return None
+
+
+def sync_notes(session: AgentSession, files: SessionFiles, seen: dict[str, Any] | None,
+               turn: int) -> dict[str, Any] | None:
+    """Take what the tool server recorded (``_take_state``); a new ``save_checkpoint`` is saved at once (the CLI's and
+    the Kiro adapter's: both hear their tool server through ``SessionFiles``)."""
+    _take_state(session, files)
     notes = files.read('checkpoint')
     if notes is not None and notes != seen:
         session.remember(notes)

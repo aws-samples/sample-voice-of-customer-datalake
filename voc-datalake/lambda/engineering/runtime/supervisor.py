@@ -28,8 +28,10 @@ monthly budget (``run.budget_alert``: measured, never a stop). It never switches
 after an ``end_run`` and after each tick).
 
 A run whose coordinator finished with nothing of it live ends done when its flow finished, and goes to a person
-otherwise (7.71.02, ``_coordinator_done``), once the next tick read its flow again (7.71.03, ``FLOW_SETTLE_SECONDS``). A session that ends, or is continued, has its harness's status read once
-more first (7.71.02, ``_last_count``), so the tokens it used since the tick before are counted, the caps' too.
+otherwise (7.71.02, ``_coordinator_done``): at its flow's decision point when it waits at one (7.71.04), and never while
+a person's Resume may still launch its next coordinator. A session that ends, or is continued, has its harness's
+status read once more first (7.71.02, ``_last_count``), so the tokens it used since the tick before are counted, the
+caps' too.
 
 ``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
 held for a person), Resume (a held agent continued from its checkpoint; refused for a stopped run or a spent
@@ -108,14 +110,20 @@ COORDINATOR_FILL_LAUNCH_SECONDS: Final = COORDINATOR_FILL_LAUNCH_INVOCATIONS * C
 #: ``CLAIM_SECONDS``. And how often a command is polled meanwhile.
 BOOT_WAIT_SECONDS: Final = 40.0
 BOOT_POLL_SECONDS: Final = 1.0
-#: (7.71.03) How long after its session ended a coordinator that finished on a flow not recorded finished waits for it
-#: before the run goes to a person: the next tick's read of the flow, and half a tick's margin (the rule ticks every
-#: minute), so a flow recorded finished just after its coordinator's finish ends the run done.
-FLOW_SETTLE_SECONDS: Final = 90
 
 
 #: The decision point a spent budget sends the run to (``RunControl.needs_human``).
 BUDGET_POINT: Final = 'budget'
+
+
+def _launching(awaited: tuple[int, bool] | None, now: int, *, after: int = -1) -> bool:
+    """A start's or Resume's coordinator may still be on its way (``RunControl.coordinator_awaited``: since when, and
+    whether a fill began since): within ``COORDINATOR_LAUNCH_SECONDS`` of it, ``COORDINATOR_FILL_LAUNCH_SECONDS`` when
+    the launch fills the checkout cache first; ``after``: only a start or Resume later than that (epoch seconds)."""
+    if awaited is None:
+        return False
+    since, filling = awaited
+    return since > after and now - since <= (COORDINATOR_FILL_LAUNCH_SECONDS if filling else COORDINATOR_LAUNCH_SECONDS)
 
 
 def held_because(point: str) -> str:
@@ -293,13 +301,15 @@ class Supervisor:
         run is live or moving (no session of any role), the coordinate task ended done at that coordinator's attempt,
         and the run is still active. On a finished flow the run ends done (``RunControl.end_done``; the handler's
         settling then releases it, starts its retrospective and, with nothing listed, switches the rule off); on any
-        other (a flow still running, one at a person, a run without a flow) it goes to a person (``coordinator``), but
-        (7.71.03) only once the coordinator's session ended ``FLOW_SETTLE_SECONDS`` ago, its flow read again at each
-        tick meanwhile: a coordinator that finished just before its flow was recorded finished ends the run done. Never
-        a run left active with nobody planning it and the rule ticking every minute (the first live Bug fixer run,
-        01M83JQWMKAYK9GJB8FBAVZV7E, whose engineering agent's run never ended, so its lock was never freed). From the
-        sessions the tick read already, then one read of the coordinate task's lease, of the run's row and of its
-        flow's plan."""
+        other it goes to a person: (7.71.04) at the decision point its flow waits at (``flow:<step>``, so their Resume
+        decides the step and tries it again), else (a flow still running, a run without a flow) the coordinator's.
+        Never a run left active with nobody planning it and the rule ticking every minute (the first live Bug fixer
+        run, 01M83JQWMKAYK9GJB8FBAVZV7E, whose engineering agent's run never ended, so its lock was never freed). But
+        (Q1, 7.71.04) not while a person's Resume since that coordinator started may still launch the next one
+        (``_launching``: its fill handed on, the next coordinator not yet recorded): the run is theirs to plan again.
+        (7.71.03's 90 s wait for a flow recorded finished after its coordinator's finish is gone: the flow is the
+        board's record, every write of which lands before the session of its writer ends.) From the sessions the tick
+        read already, then one read of the coordinate task's lease, of the run's row and of its flow's plan."""
         if any(session.status in LIVE_STATUSES or session.stop_pending or (session.claimed_until or 0) >= now
                for session in sessions):
             return
@@ -309,8 +319,11 @@ class Supervisor:
         if self.control.flow_finished(run_id):
             logger.info('engineering supervisor: the run\'s flow finished: the run is done', extra={'run_id': run_id})
             self.control.end_done(run_id)
-        elif now - (found[0].last_tick_at or 0) >= FLOW_SETTLE_SECONDS:
-            self.control.needs_human(run_id, 'coordinator')
+            return
+        if _launching(self.control.coordinator_awaited(run_id), now, after=found[0].started_at):
+            return
+        stop = self.control.flow_stop(run_id)
+        self.control.needs_human(run_id, stop.point if stop is not None else 'coordinator')
 
     def _coordinator_never_launched(self, run_id: str, sessions: list[AgentSession], holds: dict[str, int],
                                     now: int) -> None:
@@ -326,10 +339,7 @@ class Supervisor:
         if any(agent.startswith('coordinator-') and until >= now for agent, until in holds.items()):
             return   # (a launch of it is under way)
         awaited = self.control.coordinator_awaited(run_id)
-        if awaited is None:
-            return
-        since, filling = awaited
-        if now - since > (COORDINATOR_FILL_LAUNCH_SECONDS if filling else COORDINATOR_LAUNCH_SECONDS):
+        if awaited is not None and not _launching(awaited, now):
             logger.warning('engineering supervisor: a run\'s coordinator was never launched', extra={'run_id': run_id})
             self.control.needs_human(run_id, 'coordinator')
 

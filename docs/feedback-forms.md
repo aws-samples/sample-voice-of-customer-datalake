@@ -313,7 +313,11 @@ shows it through the widget's own preview (since 7.63.00: no second copy of the 
   the builder's question list and its move announcements, the logic targets and the Flow view, a choice's routing,
   Settings › Category routing, the texts to translate, "Insert a value" and the recall preview's names, an update's
   removal warning, a stale save's differences, the AI's changes, the template preview and the assistant's draft. Only
-  the headline's own field shows it as written, and the widget as respondents read it.
+  the headline's own field shows it as written, and the widget as respondents read it. An ending named by its title
+  reads the same (7.71.04): the builder's ending list, its menu and move announcements, the logic targets, the
+  Otherwise entry and the Flow view, a choice's routing and its jump mark, a rule's "goes there anyway" note, a
+  problem's place, the texts to translate, an update's removal warning, a stale save's differences, the AI's changes
+  and the assistant's draft; only the title's own field shows it as written.
 - **The builder** offers "Insert a value" in each recall text (the hidden fields, then the earlier questions it may
   recall) and previews the text with each value named ("Respondents see: How was ‹Event›?"); the widget preview beside
   it shows the text as respondents read it without the value.

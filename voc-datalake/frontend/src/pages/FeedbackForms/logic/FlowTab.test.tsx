@@ -49,6 +49,11 @@ describe('FlowTab: the whole path on one outline', () => {
     expect(within(screen.getByTestId('flow-q_a')).getByRole('heading', { name: 'How was [event]?' })).toBeInTheDocument()
   })
 
+  it("titles an ending's card by its title, a recall placeholder as [id] (F7, 7.71.04)", () => {
+    renderWithDraft(<FlowTab />, sampleForm({ endings: [{ id: 'end_thanks', title: { en: 'Thanks for {{ event | coming }}!' } }], hidden_fields: [{ id: 'event' }] }))
+    expect(within(screen.getByTestId('flow-end_thanks')).getByRole('heading', { name: 'Thanks for [event]!' })).toBeInTheDocument()
+  })
+
   it('says everyone goes through in order when no question has a rule', () => {
     renderWithDraft(<FlowTab />, sampleForm())
     expect(screen.getByText(/Everyone goes through the questions in order/)).toBeInTheDocument()

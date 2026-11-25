@@ -11,7 +11,7 @@ import clsx from 'clsx'
 import { CircleX, Flag, GripVertical, Sparkles } from 'lucide-react'
 import { TruncatedText } from '../../../components/Tooltip/TruncatedText'
 import type { Ending, FormLanguage } from '../model/formsV2'
-import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import ActionsMenu from '../ui/ActionsMenu'
 import type { MenuAction } from '../ui/ActionsMenu'
 import type { CardDrag } from './QuestionCard'
@@ -31,7 +31,7 @@ export default function EndingCard({ ending, index, total, language, selected, h
   drag: CardDrag
 }>) {
   const { t } = useTranslation('feedbackForms')
-  const title = textIn(ending.title, language)
+  const title = headlineShown(ending.title, language)
   const onKey = (event: KeyboardEvent<HTMLLIElement>) => { moveOnArrowKeys(event, index, total, onMove) }
   const allowDrop = (event: DragEvent<HTMLLIElement>) => { event.preventDefault(); drag.onDragOver() }
   return (

@@ -105,7 +105,7 @@ function CardBadges({ question, missing, hasError, aiMarked, secondary }: Readon
 export default function QuestionCard(props: QuestionCardProps) {
   const { question, index, total, language, selected, onSelect, onMove, menu, drag, gap = null } = props
   const { t } = useTranslation('feedbackForms')
-  const headline = headlineShown(question, language)
+  const headline = headlineShown(question.headline, language)
   const number = index + 1
   const onKey = (event: KeyboardEvent<HTMLLIElement>) => { moveOnArrowKeys(event, index, total, onMove) }
   const allowDrop = (event: DragEvent<HTMLLIElement>) => { event.preventDefault(); drag.onDragOver() }

@@ -12,7 +12,6 @@ import type { FormV2, QuestionType } from '../model/formsV2'
 import { LIMITS, isChoice, isMatrix } from '../model/formsV2'
 import { newEnding, newQuestion } from '../model/defaults'
 import { newEndingId, newQuestionId } from '../model/codes'
-import { textIn } from '../model/i18nText'
 import { headlineShown } from '../model/recall'
 import {
   duplicateQuestion, endingIds, insertEnding, insertQuestion, moveEnding, moveQuestion, questionIds, removeEnding, removeQuestion,
@@ -58,7 +57,7 @@ export function useListActions() {
   const [pending, setPending] = useState<PendingDelete | null>(null)
   const focusCard = useFocusCard()
   const { form } = draft
-  const headlineOf = (id: string) => headlineShown(form.questions.find((q) => q.id === id), form.language)
+  const headlineOf = (id: string) => headlineShown(form.questions.find((q) => q.id === id)?.headline, form.language)
 
   const addQuestion = (type: QuestionType, at: number = form.questions.length) => {
     if (form.questions.length >= LIMITS.questions) return
@@ -131,9 +130,9 @@ export function useListActions() {
     draft.update(() => next)
     const nowDefault = next.endings[0]
     if (nowDefault !== undefined && nowDefault.id !== wasDefault) {
-      announce({ message: t('endings.nowDefault', { title: textIn(nowDefault.title, form.language) }) })
+      announce({ message: t('endings.nowDefault', { title: headlineShown(nowDefault.title, form.language) }) })
     } else {
-      announce({ message: t('endings.moved', { title: textIn(next.endings[to]?.title, form.language), position: to + 1, total: next.endings.length }) })
+      announce({ message: t('endings.moved', { title: headlineShown(next.endings[to]?.title, form.language), position: to + 1, total: next.endings.length }) })
     }
     focusCard(id)
   }

@@ -3,9 +3,10 @@
  * file (`docs/agents/**`, `TENETS.md`) is read as a document on its own, from its text in the preview (gap O), and a
  * publish's answer read as what to tell the administrator.
  *
- * Opening the pull request writes `voc-agent/docs/<kind>-v<n>` and opens it ready for review (or as a draft, as the
- * flow says); only a person merges it, on the host. A Human-driven administrator's publish is refused (`human_driven`):
- * the preview's patch is theirs to apply. The server's rendering, of what an administrator approved: read only.
+ * Opening the pull request writes `voc-agent/docs-<kind>-v<n>` (one level under `voc-agent/` since 7.71.04) and opens
+ * it ready for review (or as a draft, as the flow says); only a person merges it, on the host. A Human-driven
+ * administrator's publish is refused (`human_driven`): the preview's patch is theirs to apply. The server's rendering,
+ * of what an administrator approved: read only.
  *
  * @module pages/Agents/documents/docsPreviewDocument
  */

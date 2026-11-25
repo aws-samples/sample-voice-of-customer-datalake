@@ -11,7 +11,8 @@ Every write an engineering agent makes goes through the connector's broker, and 
   phone number).
 
 Since 7.52.00, the approved docs' write (``push_approved_docs``) writes ``docs/agents/**`` or exactly ``TENETS.md``,
-each kind its own (``docs_paths``), on its own branch (``docs_branch``).
+each kind its own (``docs_paths``), on its own branch (``docs_branch``: since 7.71.04 one level under ``voc-agent/``, as
+a run's).
 
 Pure functions, no I/O: the broker calls them and raises on a refusal.
 """
@@ -122,9 +123,11 @@ def path_refusals(paths: Iterable[str], ci_definitions: Collection[str] = ()) ->
 #: tenets file at the root, exactly; each kind its own.
 DOCS_PATHS: Final = re.compile(r'docs/agents/(?:[A-Za-z0-9@._+-]+/){0,20}[A-Za-z0-9@._+-]+\Z')
 TENETS_PATH: Final = 'TENETS.md'
-#: The docs write's branches, one per kind and version: ``voc-agent/docs/<kind>-v<n>`` (never a run's, never the
-#: default branch: the ruleset that leaves ``voc-agent/**`` unprotected covers it).
-DOCS_BRANCH: Final = re.compile(rf'{re.escape(AGENT_BRANCH_PREFIX)}docs/(?P<kind>knowledge|tenets)-v[1-9][0-9]{{0,5}}\Z')
+#: The docs write's branches, one per kind and version: ``voc-agent/docs-<kind>-v<n>`` (never a run's, which ends
+#: ``-fix``, never the default branch). One level under ``voc-agent/`` since 7.71.04, as a run's is since 7.71.03: a
+#: ruleset that leaves ``refs/heads/voc-agent/*`` unprotected, as the setup guide says, matches one level only (GitHub's
+#: ``*`` does not cross a ``/``), so 7.52.00's ``voc-agent/docs/<kind>-v<n>`` got its rules and the push was refused.
+DOCS_BRANCH: Final = re.compile(rf'{re.escape(AGENT_BRANCH_PREFIX)}docs-(?P<kind>knowledge|tenets)-v[1-9][0-9]{{0,5}}\Z')
 
 
 def docs_path_refusal(path: str, kind: str) -> Refusal | None:
@@ -150,7 +153,7 @@ def docs_paths(paths: Iterable[str], kind: str) -> None:
 
 def docs_branch(kind: str, version: int) -> str:
     """The branch the docs write of ``kind`` at ``version`` goes on (``DOCS_BRANCH``)."""
-    branch = f'{AGENT_BRANCH_PREFIX}docs/{kind}-v{int(version)}'
+    branch = f'{AGENT_BRANCH_PREFIX}docs-{kind}-v{int(version)}'
     if not DOCS_BRANCH.fullmatch(branch):
         raise WriteRefused('The docs write is of knowledge or tenets, at a version from 1.')
     return branch

@@ -15,7 +15,7 @@ const { patchFileName, previewFileAdapter, previewFileDocumentOf, publishOutcome
 const { parsePreview } = await import('../../../api/engineeringKnowledgeApi')
 
 const PREVIEW = {
-  connection: 'storefront', kind: 'knowledge', version: 3, branch: 'voc-agent/docs/knowledge-v3', digest: 'd'.repeat(64),
+  connection: 'storefront', kind: 'knowledge', version: 3, branch: 'voc-agent/docs-knowledge-v3', digest: 'd'.repeat(64),
   approved_digest: 'd'.repeat(64), matches: true, patch: '--- /dev/null\n+++ b/docs/agents/index.md\n', patch_truncated: false,
   texts_truncated: true,
   files: [

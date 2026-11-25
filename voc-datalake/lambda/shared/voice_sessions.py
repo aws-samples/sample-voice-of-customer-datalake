@@ -15,7 +15,8 @@ The projects API (shared/voice_session_routes.py) decides everything about a ses
   relay to it: ``dynamodb:LeadingKeys``) with a listing pointer under the project, and the browser gets a WebSocket URL
   presigned with this function's own credentials (SigV4 query auth, ``bedrock-agentcore``) for **60 seconds**, for
   this one session id and this one project, both signed. The browser never holds AWS credentials, and the relay
-  accepts the URL once (``status: minted -> live``).
+  accepts the URL once (``status: minted -> live``), until the row's ``connect_by`` (``CONNECT_SKEW_SECONDS`` after
+  the URL's minute, for the clocks).
 * **The end** (``end``): the relay ends a session itself (End, the time limit, the session's cost cap, the month's
   budget, a disconnect); the person's End also stops the runtime session and marks the row, then the transcript is
   saved by an assist job (shared/voice_transcripts.py). A session whose End never came (a closed tab, an End that
@@ -84,11 +85,12 @@ VOICE_LANGUAGES: Final = ('en', 'de', 'es', 'fr', 'pt')
 UNSUPPORTED_LANGUAGES: Final = ('ja', 'ko', 'pl', 'zh')
 UI_LANGUAGES: Final = (*VOICE_LANGUAGES, *UNSUPPORTED_LANGUAGES)
 
-#: The URL's life: the browser connects within it (an established connection outlives it).
+#: The URL's life (its ``X-Amz-Expires``, the answer's ``expires_in``): the browser connects within it (an established
+#: connection outlives it).
 CONNECT_SECONDS: Final = 60
-#: How long after the row's ``connect_by`` the relay still takes a first connection, for the two clocks (store.ts
-#: ``CONNECT_SKEW_SECONDS``, the same 10 s; a test pins both): a row still minted is ended only once it has passed
-#: too, so ``status`` never ends a session the relay would still start.
+#: How long after the URL's minute a first connection is still taken, for the minting Lambda's clock and the relay's.
+#: The session row's ``connect_by`` is the mint's time plus both (7.71.04): the one deadline, which the relay's
+#: activation (store.ts ``activate``) and ``status`` both read as written, so neither keeps a skew of its own.
 CONNECT_SKEW_SECONDS: Final = 10
 #: The approved per-person limits: sessions a day, and starts a minute (a rate limit on creation).
 DAILY_SESSIONS: Final = 5
@@ -105,7 +107,8 @@ MICRO_USD_PER_CENT: Final = 10_000
 #: The caller's newest sessions of a project an offer saves when they ended without End (every start reads the offer
 #: first, so a session left unsaved is among them).
 LEFT_SESSIONS: Final = DAILY_SESSIONS
-#: A live-set entry outlives its session by this much (the relay removes it at the end; this covers a relay that died).
+#: A live-set entry outlives its session's latest end (its ``connect_by`` and its time, 7.71.04) by this much (the
+#: relay removes it at the end; this covers a relay that died).
 LIVE_SLACK_SECONDS: Final = 120
 #: How long the counters are kept: a day's and a minute's for 2 days, a month's usage for 400 days.
 COUNTER_TTL: Final = timedelta(days=2)
@@ -253,6 +256,12 @@ def transcript_key(session_id: str, part: int) -> str:
 
 
 # ── The presigned URL ────────────────────────────────────────────────────────────────────────────────────────────
+
+def _connect_by(now: datetime) -> int:
+    """The last second (epoch) the relay takes a first connection to a session minted at ``now``, its row's
+    ``connect_by`` (7.71.04): the URL's minute and ``CONNECT_SKEW_SECONDS`` for the clocks."""
+    return int(now.timestamp()) + CONNECT_SECONDS + CONNECT_SKEW_SECONDS
+
 
 def connect_url(config: VoiceConfig, session_id: str, scope: str, credentials: Any) -> str:
     """The browser's ``wss://`` URL to the relay for this one session: SigV4 query auth for ``bedrock-agentcore``
@@ -403,7 +412,7 @@ def _claim_stream(stores: Stores, config: VoiceConfig, session_id: str, session_
     if len(live) >= config.max_concurrent:
         raise TooManyRequestsError('Voice is busy: every stream is in use. Try again in a few minutes.', code='busy')
     version = as_count(item.get('version'))
-    expires = epoch + CONNECT_SECONDS + session_seconds + LIVE_SLACK_SECONDS
+    expires = _connect_by(now) + session_seconds + LIVE_SLACK_SECONDS
     names = {'#live': 'live', '#version': 'version'}
     values: dict[str, Any] = {':next': version + 1, ':version': version}
     if entries is None:
@@ -489,7 +498,7 @@ def _write_scratch_and_rows(stores: Stores, config: VoiceConfig, project_id: str
     stores.projects.put_item(Item={
         **session_key(sid), 'session_id': sid, 'project_id': project_id, 'persona_id': persona['persona_id'],
         'starter_sub': start.subject, 'status': STATUS_MINTED, 'created_at': at, 'consent_at': at, 'reason': REASON,
-        'connect_by': int(now.timestamp()) + CONNECT_SECONDS, 'voice_id': start.voice_id, 'model_id': config.model_id,
+        'connect_by': _connect_by(now), 'voice_id': start.voice_id, 'model_id': config.model_id,
         'language': start.language, 'session_seconds': start.session_seconds,
         'monthly_seconds': config.monthly_minutes * 60, 'usage_key': usage['pk'], 'evidence_key': evidence_key(sid),
         'seconds': 0, 'transcript_parts': 0, 'streams': 0,
@@ -634,13 +643,12 @@ def end(stores: Stores, config: VoiceConfig, project_id: str, persona_id: str, s
 
 def status(stores: Stores, project_id: str, persona_id: str, session_id: str, caller: Caller,
            start_finalize: StartFinalize) -> dict[str, Any]:
-    """A session's state. A URL never used is ended once the relay would no longer take it (``connect_by`` and
-    ``CONNECT_SKEW_SECONDS``); for its starter, an ended session's transcript is saved now (End may never have been
-    called: a closed tab)."""
+    """A session's state. A URL never used is ended once the relay would no longer take it (its row's ``connect_by``
+    passed, the deadline the relay reads too: 7.71.04); for its starter, an ended session's transcript is saved now
+    (End may never have been called: a closed tab)."""
     row = session_row(stores, project_id, persona_id, session_id)
     now = stores.now()
-    if (row.get('status') == STATUS_MINTED
-            and int(now.timestamp()) > as_count(row.get('connect_by')) + CONNECT_SKEW_SECONDS):
+    if row.get('status') == STATUS_MINTED and int(now.timestamp()) > as_count(row.get('connect_by')):
         _mark_ended(stores, session_id, END_NEVER_CONNECTED, now)
         release_stream(stores, session_id)
         row = session_row(stores, project_id, persona_id, session_id)

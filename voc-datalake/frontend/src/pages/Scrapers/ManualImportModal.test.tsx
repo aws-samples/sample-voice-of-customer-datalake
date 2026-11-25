@@ -388,6 +388,25 @@ describe('ManualImportModal', () => {
       expect(mockAfterIngest).toHaveBeenCalledExactlyOnceWith({ afterIngest: true })
     })
 
+    it('returns to the paste step, its source kept, naming each review its redaction left out (7.71.04)', async () => {
+      useManualImportStore.setState({
+        sourceUrl: 'https://example.com/reviews',
+        parsedReviews: [
+          { text: '', rating: null, author: null, date: null, title: null },
+          { text: 'Great product!', rating: 5, author: 'John', date: '2026-01-05', title: 'Amazing' },
+          { text: 'The checkout kept failing on my phone every single time I tried to pay for the order', rating: 1, author: null, date: '2026-01-06', title: null },
+        ],
+      })
+      // (the server names the second review sent: the list's third, after the empty one Import leaves out)
+      mockConfirmManualImport.mockResolvedValue({ success: true, imported_count: 1, redaction_unavailable: { count: 1, rows: [2] } })
+      await renderAndClick(/import 2 reviews/i)
+      expect(await screen.findByText(/review was left out/)).toHaveTextContent('1 review was left out because its personal data could not be '
+        + 'checked for redaction (the redaction service could not read it): review 3 (“The checkout kept failing on my phone every single time I tr…”). '
+        + 'Send just those again to import them.')
+      expect(screen.getByText('1 review imported.')).toBeInTheDocument()
+      expect(useManualImportStore.getState()).toMatchObject({ isModalOpen: true, step: 'input', sourceUrl: 'https://example.com/reviews', parsedReviews: [] })
+    })
+
     it('shows error when confirm fails', async () => {
       mockConfirmManualImport.mockResolvedValue({
         success: false,

@@ -84,7 +84,7 @@ export default function QuestionResultCard({ form, question, number, aggregate, 
     <section className="card space-y-3" aria-labelledby={`result-${question.id}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h3 id={`result-${question.id}`} className="min-w-0 flex-1 text-sm font-semibold tracking-tight text-text-strong">
-          {number} · {headlineShown(question, form.language)}
+          {number} · {headlineShown(question.headline, form.language)}
         </h3>
         <TypeChip question={question} />
       </div>

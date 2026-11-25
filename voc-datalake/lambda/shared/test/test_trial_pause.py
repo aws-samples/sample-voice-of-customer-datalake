@@ -1,7 +1,8 @@
 """shared/trial_pause.py (7.71.00): a trial's pause at its end (the plugins' existing audited disable, the live forms
 turned off, all recorded) and its resume, which the hourly pause never undoes (7.71.01) while its mark is fresh, and
-which a stale mark no longer holds off (7.71.02); a paused trial refuses a plugin's enable; and NOTHING is deleted but
-the plugins' own enable rows, which are the existing disable (moto-backed, every DynamoDB call recorded)."""
+which a stale mark no longer holds off (7.71.02), nor a mark committed during its turn-offs, each of which checks the
+trial in its own transaction (7.71.04); a paused trial refuses a plugin's enable; and NOTHING is deleted but the
+plugins' own enable rows, which are the existing disable (moto-backed, every DynamoDB call recorded)."""
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -13,7 +14,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from shared import trial_pause
+from shared import trial_pause, workspace_plugin_settings
 from shared.exceptions import ConflictError
 from shared.ingest_tables import ingest_table
 from shared.platform_workspaces import NewWorkspace, create_workspace
@@ -389,18 +390,22 @@ def test_a_mark_committed_after_the_revisits_read_fails_its_pause_before_anythin
     assert [kind for kind, _plugin, _reason in _audit_kinds(world)].count('trial_paused') == 1
 
 
-def test_a_mark_committed_during_the_turn_offs_stops_the_rest(world):
+@pytest.mark.parametrize(('turn_offs', 'resumed'), [(1, 1), (2, 2)], ids=['a-plugin-next', 'a-form-next'])
+def test_a_mark_committed_during_the_turn_offs_stops_the_rest(world, turn_offs, resumed):
     """Q3 (7.71.03): an extension that marks and resumes the trial after the pause wrote its lists, between two of its
-    turn-offs, moves the trial's rev; the pause reads it again before each turn-off, so it stops there (409, counted
-    failed by the tick) and turns off nothing the extension turned back on."""
+    turn-offs, moves the trial's rev; the next turn-off's own transaction checks it (7.71.04), a plugin's or, once the
+    plugins are off, a form's, so the pause stops there (409, counted failed by the tick) and turns off nothing the
+    extension turned back on."""
     later = AFTER_END + timedelta(hours=1)
     turn_off = trial_pause.set_trial_plugin
     extended: list[dict] = []
+    done: list[str] = []
 
-    def then_extended(*args):
-        changed = turn_off(*args)
-        if not extended:
-            # The first turn-off done: the extension (whose own resume goes through this patch too) runs once.
+    def then_extended(*args, **kwargs):
+        changed = turn_off(*args, **kwargs)
+        done.append(args[2])
+        if len(done) == turn_offs and not extended:
+            # That many turn-offs done: the extension (whose own resume goes through this patch too) runs once.
             extended.append({})
             extended[0] = extend_trial(world.workspaces, WS, 30, 'sub-platform', resume=partial(resume, world.tables),
                                        now=later)
@@ -410,7 +415,48 @@ def test_a_mark_committed_during_the_turn_offs_stops_the_rest(world):
             pytest.raises(ConflictError) as raised:
         pause(world.tables, WS, AFTER_END)
     assert raised.value.code == 'trial_changed'
-    assert (extended[0]['paused_at'], extended[0]['resumed']) == (None, {'plugins': 1, 'forms': 0, 'skipped': []})
+    assert (extended[0]['paused_at'], extended[0]['resumed']) == (None, {'plugins': resumed, 'forms': 0, 'skipped': []})
     assert _enabled(world) == ['webscraper', 'app_reviews_ios']
     assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (True, True)
     assert due_trials(world.workspaces, later) == []
+
+
+def test_a_mark_committed_just_before_a_turn_off_commits_refuses_it(world):
+    """C4 (7.71.04): 7.71.03 read the rev before each turn-off, so a mark committed between that read and the turn-off
+    was not seen, and that turn-off undid what the extension had just turned on. The check is in the turn-off's own
+    transaction now: an extension that lands after the plugin's audit row, just before its delete commits, refuses that
+    delete, and the pause stops with everything on."""
+    later = AFTER_END + timedelta(hours=1)
+    audit = workspace_plugin_settings.put_new_audit_row
+    extended: list[dict] = []
+
+    def extended_before_the_commit(table, row):
+        audit(table, row)
+        if not extended:
+            extended.append(extend_trial(world.workspaces, WS, 30, 'sub-platform', resume=partial(resume, world.tables),
+                                         now=later))
+
+    with patch.object(workspace_plugin_settings, 'put_new_audit_row', side_effect=extended_before_the_commit), \
+            pytest.raises(ConflictError) as raised:
+        pause(world.tables, WS, AFTER_END)
+    assert raised.value.code == 'trial_changed'
+    # Nothing was off yet, so the extension had nothing to turn back on; the pause's delete was refused.
+    assert (extended[0]['paused_at'], extended[0]['resumed']) == (None, {'plugins': 0, 'forms': 0, 'skipped': []})
+    assert _enabled(world) == ['webscraper', 'app_reviews_ios']
+    assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (True, True)
+
+
+def test_the_pause_reads_the_trial_once_and_each_turn_off_checks_it_in_its_own_write(world):
+    """C4 (7.71.04): one read of ``META`` (the pause's own), no GetItem per turn-off: each of the four turn-offs (two
+    plugins, two forms) is one transaction whose last entry is the check of the trial at the rev its lists were saved
+    with."""
+    world.calls.clear()
+    pause(world.tables, WS, AFTER_END)
+    meta = {'pk': f'WS#{WS}', 'sk': 'META'}
+    reads = [params for name, params in world.calls if name == 'GetItem' and params['Key'] == meta]
+    last = [params['TransactItems'][-1] for name, params in world.calls if name == 'TransactWriteItems'
+            and len(params['TransactItems']) == 2 and 'Update' not in params['TransactItems'][-1]]
+    saved = read_meta(world.workspaces, WS)['trial']['rev']
+    assert len(reads) == 1
+    assert [(entry['ConditionCheck']['Key'], entry['ConditionCheck']['ExpressionAttributeValues'][':rev'])
+            for entry in last] == [(meta, saved)] * 4

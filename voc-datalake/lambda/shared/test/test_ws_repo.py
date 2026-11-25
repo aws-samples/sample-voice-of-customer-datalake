@@ -741,23 +741,39 @@ class TestTheMultiItemCalls:
                                     'TableName': 'voc-feedback'}}],
             ClientRequestToken='request-1', ReturnConsumedCapacity='TOTAL')
 
-    def test_an_unpaused_check_is_the_views_own_workspaces_meta_and_comes_last(self):
+    @pytest.mark.parametrize(('option', 'condition', 'names', 'values'), [
+        ('unpaused_in', '#status = :active AND attribute_not_exists(#trial.#paused_at)', {'#paused_at': PAUSED_AT},
+         {':active': 'active'}),
+        ('unchanged_in', '#status = :active AND #trial.#rev = :rev', {'#rev': 'rev'}, {':active': 'active', ':rev': 3}),
+    ], ids=['unpaused', 'unchanged'])
+    def test_a_trial_check_is_the_views_own_workspaces_meta_and_comes_last(self, option, condition, names, values):
         """7.71.00 (review round 1, S5): a write that puts something live checks its own workspace's ``META`` in
         voc-workspaces in the same transaction; the layer names the key, so it names no other workspace. The check is
-        shared/trial_state.py ``unpaused_check``, the plugin enable's too (7.71.01, F10)."""
+        shared/trial_state.py ``unpaused_check``, the plugin enable's too (7.71.01, F10). A trial pause's turn-off of a
+        form checks the trial's rev there the same way (``unchanged_check``, 7.71.04)."""
         backing, workspaces = _backing(), MagicMock()
         workspaces.name = 'voc-workspaces'
         item = {**_key(A, 'f1'), 'gsi4pk': feedback_id_pk(A, 'f1')}
+        given = {'unpaused_in': workspaces, 'unchanged_in': (workspaces, 3)}[option]
 
-        ws_table(A, backing).transact_write_items([{'Put': {'Item': item}}], unpaused_in=workspaces)
+        ws_table(A, backing).transact_write_items([{'Put': {'Item': item}}], **{option: given})
 
         sent = backing.meta.client.transact_write_items.call_args.kwargs['TransactItems']
         assert sent[-1] == {'ConditionCheck': {
-            'TableName': 'voc-workspaces', 'Key': {'pk': f'WS#{WS}', 'sk': 'META'},
-            'ConditionExpression': '#status = :active AND attribute_not_exists(#trial.#paused_at)',
-            'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, '#paused_at': PAUSED_AT},
-            'ExpressionAttributeValues': {':active': 'active'}}}
+            'TableName': 'voc-workspaces', 'Key': {'pk': f'WS#{WS}', 'sk': 'META'}, 'ConditionExpression': condition,
+            'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, **names},
+            'ExpressionAttributeValues': values}}
         assert len(sent) == 2
+
+    def test_a_transaction_checks_its_workspaces_meta_once(self):
+        """7.71.04: one transaction cannot check an item twice, so ``unpaused_in`` and ``unchanged_in`` together are
+        refused before anything is sent."""
+        backing, workspaces = _backing(), MagicMock()
+        item = {**_key(A, 'f1'), 'gsi4pk': feedback_id_pk(A, 'f1')}
+        with pytest.raises(ValueError, match='once'):
+            ws_table(A, backing).transact_write_items([{'Put': {'Item': item}}], unpaused_in=workspaces,
+                                                      unchanged_in=(workspaces, 3))
+        assert backing.mock_calls == []
 
     def test_a_batch_get_sends_at_most_100_keys_a_request(self):
         backing = _backing()

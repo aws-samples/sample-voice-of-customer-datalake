@@ -120,9 +120,10 @@ class BoardLeases:
         session ended with its session). A retry finds the new one recorded, with no session or a live one.
 
         A coordinate task that ended done while the run's flow did not finish (``unfinished()``: its coordinator
-        finished early, and the supervisor sent the run to a person, ``coordinator``) is open again at the next attempt
-        for a new ``coordinator-<n>`` (7.71.03, ``BoardStore.reopen_coordinate``), so a person's Resume has the run
-        planned again; one that ended otherwise (failed, a person's) stays ended."""
+        finished early, and the supervisor sent the run to a person) is open again at the next attempt for a new
+        ``coordinator-<n>`` (7.71.03; 7.71.04: the store's re-post with ``reopen``), so a person's Resume has the run
+        planned again; one that ended otherwise (failed, a person's) stays ended. Only a whole-run Resume passes
+        ``unfinished`` (7.71.04): a start's retry or a board launch's fill reopens nothing (the default: never)."""
         try:
             task = self.store.task(WORKSPACE, run_id, COORDINATE_TASK)
         except BoardError as error:
@@ -131,9 +132,9 @@ class BoardLeases:
             raise
         if task.state == DONE and unfinished():
             launchable()
-            task = self.store.reopen_coordinate(WORKSPACE, run_id, attempt=task.attempt, actor=actor,
-                                                reason=f'{task.lease_agent or "the coordinator"} finished on a flow '
-                                                       'that did not: a new coordinator')
+            task = self.store.repost(WORKSPACE, run_id, COORDINATE_TASK, attempt=task.attempt, actor=actor,
+                                     reopen=True, reason=f'{task.lease_agent or "the coordinator"} finished on a '
+                                                         'flow that did not: a new coordinator')
             launched = self.store.launch_coordinator(WORKSPACE, run_id, attempt=task.attempt, actor=actor)
             return launched.launched_agent, launched.attempt
         if task.state in FINAL:

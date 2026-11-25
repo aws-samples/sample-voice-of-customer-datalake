@@ -11,7 +11,7 @@ import type { AnswerValue, FormResponse } from '../../../api/feedbackFormsV2Resu
 import type { FormV2, Question } from '../model/formsV2'
 import { isChoice } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
-import { shownAsIds } from '../model/recall'
+import { headlineShown } from '../model/recall'
 import { codeLabel } from '../logic/ruleSentence'
 
 /** The label of Other on this question (its own, else the widget's word). */
@@ -53,12 +53,10 @@ export function answerText(t: TFunction<'feedbackForms'>, form: FormV2, question
   return objectText(t, form, question, value)
 }
 
-/** The ending a response reached, by its title with any placeholder as `[id]` (model/recall.ts `shownAsIds`, as a
+/** The ending a response reached, by its title with any placeholder as `[id]` (model/recall.ts `headlineShown`, as a
  * question's headline: never a respondent's value), or its id when it has no title or was removed. */
 export function endingTitle(form: FormV2, endingId: string): string {
-  const ending = form.endings.find((e) => e.id === endingId)
-  const title = ending === undefined ? '' : shownAsIds(textIn(ending.title, form.language))
-  return title === '' ? endingId : title
+  return headlineShown(form.endings.find((e) => e.id === endingId)?.title, form.language) || endingId
 }
 
 /** The table's summary: the first two questions answered, then the first open text, quoted (UX §10.4). */

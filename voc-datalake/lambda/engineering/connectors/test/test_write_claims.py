@@ -11,9 +11,9 @@ from moto import mock_aws
 
 from engineering.board.test.table import TABLE, create_table
 from engineering.connectors.broker import (
+    CLAIM_CLOCK_MARGIN_SECONDS,
     STALE_CLAIM_SECONDS,
     Broker,
-    Labelled,
     NotNow,
     NotPermitted,
     issue_marker,
@@ -154,13 +154,12 @@ def test_two_understanders_of_a_run_comment_on_and_label_its_issue_once_the_seco
     broker = Broker(connector(host=host, writes=WriteClaims(client, TABLE)))
     first, second = Caller('understander', RUN, 2), Caller('understander', RUN, 5)
     url = broker.post_comment(first, 'issue', 42, 'A bug: the refund total drops the tax.')
-    assert broker.label_issue(first, 42, ('voc-triage/bug', 'voc-severity/s2')) == Labelled(
-        ('voc-triage/bug', 'voc-severity/s2'))
-    # The second's own words and labels, at another attempt: nothing is written again, its answer is the first's, and
-    # (7.71.03) the labels' answer says whose they are.
+    assert broker.label_issue(first, 42, ('voc-triage/bug', 'voc-severity/s2')) == ('voc-triage/bug', 'voc-severity/s2')
+    # The second's own words and labels, at another attempt: nothing is written again, and its answer is the first's
+    # (7.71.04: the labels on the issue, which its tool compares with its own).
     assert broker.post_comment(second, 'issue', 42, 'The refund total is wrong.', attempt=2) == url
-    assert broker.label_issue(second, 42, ('voc-triage/bug', 'voc-severity/s3'), attempt=2) == Labelled(
-        ('voc-triage/bug', 'voc-severity/s2'), set_by='understander-2')
+    assert broker.label_issue(second, 42, ('voc-triage/bug', 'voc-severity/s3'), attempt=2) == (
+        'voc-triage/bug', 'voc-severity/s2')
     assert host.writes() == ['post_comment', 'label_issue']
     rows = client.scan(TableName=TABLE)['Items']
     assert sorted((row['sk']['S'], row['state']['S']) for row in rows) == [
@@ -225,10 +224,12 @@ def test_a_crash_between_an_issue_writes_claim_and_its_outcome_blocks_the_run_on
     now[0] += STALE_CLAIM_SECONDS
     url = broker.post_comment(second, 'issue', 42, 'The refund total is wrong.')
     labelled = broker.label_issue(second, 42, ('voc-triage/bug', 'voc-severity/s2'))
-    assert (url, labelled) == ('https://code.example.com/issue/42#comment-1',
-                               Labelled(('voc-triage/bug', 'voc-severity/s2')))
+    assert (url, labelled) == ('https://code.example.com/issue/42#comment-1', ('voc-triage/bug', 'voc-severity/s2'))
     [(*_, posted)] = [call for call in host.calls if call[0] == 'post_comment']
     assert posted == f'A bug: the refund total drops the tax.\n\n{issue_marker(RUN)}'
+    # (7.71.04) The look reads the comments updated since the first call's claim, a minute's margin before it.
+    looked = [call for call in host.calls if call[0] == 'issue_comment']
+    assert looked == [('issue_comment', 'conn-1', 42, issue_marker(RUN), 1_000 - CLAIM_CLOCK_MARGIN_SECONDS)]
     assert host.writes() == ['post_comment', 'label_issue', 'label_issue']
     assert _states(client) == {'issue#42#label_issue': WRITE_DONE, 'issue#42#post_comment': WRITE_DONE}
     # Once done, a third caller gets the answers back and nothing more is written.
@@ -244,14 +245,41 @@ def test_an_issue_comment_retried_after_a_crash_is_posted_when_the_host_has_none
     assert broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.') == (
         'https://code.example.com/issue/42#comment-1')
     looked = [call for call in host.calls if call[0] == 'issue_comment']
-    assert looked == [('issue_comment', 'conn-1', 42, issue_marker(RUN))]
+    assert looked == [('issue_comment', 'conn-1', 42, issue_marker(RUN),
+                       writes.now - STALE_CLAIM_SECONDS - CLAIM_CLOCK_MARGIN_SECONDS)]
     assert (host.writes(), writes.claims[(RUN, 'issue#42#post_comment')].state) == (['post_comment'], WRITE_DONE)
+
+
+class CountedWrites(FakeWrites):
+    """The ledger, counting its reads of a claim row (``earlier``)."""
+
+    reads: int = 0
+
+    def earlier(self, run_id: str, key: str) -> WriteClaim | None:
+        self.reads += 1
+        return super().earlier(run_id, key)
+
+
+@pytest.mark.parametrize('state', [WRITE_CLAIMED, WRITE_UNKNOWN, WRITE_REFUSED, None])
+def test_an_issue_write_reads_its_claim_row_once_and_looks_on_the_host_only_after_a_call_that_never_answered(
+        state: str | None):
+    # (7.71.04) One read of the claim before it is taken, whatever it holds; a refused one (nothing written) or none
+    # is posted with no look on the host.
+    writes, host = CountedWrites(), FakeHost()
+    if state is not None:
+        writes.claims[(RUN, 'issue#42#post_comment')] = WriteClaim(state, at=writes.now - STALE_CLAIM_SECONDS)
+    broker = Broker(connector(host=host, writes=writes))
+    assert broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.') == (
+        'https://code.example.com/issue/42#comment-1')
+    looks = [call[0] for call in host.calls].count('issue_comment')
+    assert (writes.reads, looks, host.writes()) == (1, int(state in (WRITE_CLAIMED, WRITE_UNKNOWN)), ['post_comment'])
 
 
 def test_a_look_on_the_host_that_fails_leaves_the_issue_comment_unknown_and_writes_nothing():
     class Unreadable(FakeHost):
-        def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
-            raise HostError(f'The host answered 500 to the comment read ({connection_id}, #{number}, {marker}).')
+        def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
+            raise HostError(f'The host answered 500 to the comment read ({connection_id}, #{number}, {marker}, '
+                            f'{since}).')
 
     writes, host = FakeWrites(), Unreadable()
     broker = Broker(connector(host=host, writes=writes))

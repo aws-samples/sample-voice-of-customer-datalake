@@ -251,7 +251,9 @@
     "datesDefaulted_other": "{{count, number}} reviews had no date in the text, so they use today's import date. You can change them below.",
     "importFailed": "Failed to import reviews",
     "clearDraft": "Clear draft",
-    "draftDropped": "Your saved draft was longer than {{max}} characters, so it was cleared. Paste a shorter text to continue."
+    "draftDropped": "Your saved draft was longer than {{max}} characters, so it was cleared. Paste a shorter text to continue.",
+    "imported_one": "{{count, number}} review imported.",
+    "imported_other": "{{count, number}} reviews imported."
   },
   "newSource": "New source",
   "parsedReview": {
@@ -716,5 +718,17 @@
       "title": "Bring your own signals in minutes",
       "body": "No feedback here yet. Import a CSV of app store reviews, support tickets or another survey tool's results, and see sentiment, themes and NPS in a few minutes."
     }
+  },
+  "unredacted": {
+    "rowsLeftOut_one": "{{count, number}} row was left out because its personal data could not be checked for redaction (the redaction service could not read it): row {{list}}.",
+    "rowsLeftOut_other": "{{count, number}} rows were left out because their personal data could not be checked for redaction (the redaction service could not read them): rows {{list}}.",
+    "itemsLeftOut_one": "{{count, number}} item was left out because its personal data could not be checked for redaction (the redaction service could not read it): item {{list}}.",
+    "itemsLeftOut_other": "{{count, number}} items were left out because their personal data could not be checked for redaction (the redaction service could not read them): items {{list}}.",
+    "reviewsLeftOut_one": "{{count, number}} review was left out because its personal data could not be checked for redaction (the redaction service could not read it): review {{list}}.",
+    "reviewsLeftOut_other": "{{count, number}} reviews were left out because their personal data could not be checked for redaction (the redaction service could not read them): reviews {{list}}.",
+    "more_one": "{{count, number}} more",
+    "more_other": "{{count, number}} more",
+    "sendAgain": "Send just those again to import them.",
+    "quoted": "{{position}} (“{{text}}”)"
   }
 }

@@ -4,8 +4,8 @@
  *
  * voc-projects, the session's own partition only (`VOICE#<session id>` / `SESSION`; the role's `LeadingKeys` hold it
  * there and its `Attributes` to the names below), UpdateItem alone:
- * - activate: `minted` → `live` once, before the URL's minute is up (single use: a second connection is refused), with
- *   `CONNECT_SKEW_SECONDS` for the clocks; a later first connection is refused, and the projects API ends its row;
+ * - activate: `minted` → `live` once, until the row's `connect_by` (single use: a second connection is refused); a
+ *   later first connection is refused, and the projects API ends its row;
  * - usage and parts: `seconds`, `tokens`, `cost_microusd`, `streams`, `transcript_parts`, only while the row exists
  *   (a deleted project's session row is never made again: the write fails with `SessionGoneError`);
  * - ended: `status`, `ended_at`, `end_reason`, only while `live` (the projects API may have ended it first).
@@ -38,15 +38,12 @@ export interface MonthTotals {
   costMicroUsd: number;
 }
 
-/** Seconds a first connection may come after the URL's own minute (the row's `connect_by`, the mint's time plus 60 s),
- *  for the minting Lambda's clock and the relay's. AgentCore itself took a URL 65.8 s after it was signed with
- *  `X-Amz-Expires=60` (the b- deployment, 2026-11-23): the relay's own check is the one that holds. The projects API
- *  ends a row still `minted` only once this has passed too (shared/voice_sessions.py `CONNECT_SKEW_SECONDS`, the same
- *  10 s, pinned by its tests), so a URL the relay still takes is never ended under it. */
-const CONNECT_SKEW_SECONDS = 10;
-
 export interface VoiceStore {
-  /** `minted` → `live`, while the URL's minute (and the skew) lasts; false when it was used, ended or expired. */
+  /** `minted` → `live` while the row's `connect_by` has not passed; false when it was used, ended or expired. The row
+   *  holds the one deadline (7.71.04): the mint's time, the URL's minute and 10 s for the minting Lambda's clock and
+   *  the relay's (shared/voice_sessions.py `CONNECT_SKEW_SECONDS`), which the projects API also reads to end a row still
+   *  `minted`, so a URL the relay still takes is never ended under it. AgentCore itself took a URL 65.8 s after it was
+   *  signed with `X-Amz-Expires=60` (the b- deployment, 2026-11-23): this check is the one that holds. */
   activate(sessionId: string, now: Date): Promise<boolean>;
   /** The session's input (session-input.ts), as JSON. */
   loadInput(sessionId: string): Promise<unknown>;
@@ -137,14 +134,15 @@ export function createVoiceStore(config: StoreConfig, deps: StoreDeps): VoiceSto
   };
   return {
     activate(sessionId, now) {
-      // `connect_by` + the skew not passed: `connect_by >= now - skew`.
-      const latest = Math.floor(now.getTime() / 1000) - CONNECT_SKEW_SECONDS;
+      // The row's own deadline, as written: the relay adds no skew of its own.
       return conditional({
         ...session(sessionId),
         UpdateExpression: 'SET #status = :live, connected_at = :now',
-        ConditionExpression: '#status = :minted AND connect_by >= :latest',
+        ConditionExpression: '#status = :minted AND connect_by >= :epoch',
         ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':live': 'live', ':minted': 'minted', ':now': now.toISOString(), ':latest': latest },
+        ExpressionAttributeValues: {
+          ':live': 'live', ':minted': 'minted', ':now': now.toISOString(), ':epoch': Math.floor(now.getTime() / 1000),
+        },
       });
     },
     async loadInput(sessionId) {

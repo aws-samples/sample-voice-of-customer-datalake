@@ -251,7 +251,9 @@
     "datesDefaulted_other": "{{count, number}} 条评论的文本中没有日期，已使用今天的导入日期。您可以在下方修改。",
     "importFailed": "无法导入评论",
     "clearDraft": "清除草稿",
-    "draftDropped": "您保存的草稿超过 {{max}} 个字符，已被清除。请粘贴较短的文本以继续。"
+    "draftDropped": "您保存的草稿超过 {{max}} 个字符，已被清除。请粘贴较短的文本以继续。",
+    "imported_one": "已导入 {{count, number}} 条评论。",
+    "imported_other": "已导入 {{count, number}} 条评论。"
   },
   "newSource": "新建来源",
   "parsedReview": {
@@ -716,5 +718,17 @@
       "title": "几分钟内带入您自己的信号",
       "body": "这里还没有反馈。导入包含应用商店评价、支持工单或其他调查工具结果的 CSV，几分钟内即可看到情感、主题和 NPS。"
     }
+  },
+  "unredacted": {
+    "rowsLeftOut_one": "由于无法检查其个人数据以进行脱敏（脱敏服务无法读取），{{count, number}} 行未导入：第 {{list}} 行。",
+    "rowsLeftOut_other": "由于无法检查其个人数据以进行脱敏（脱敏服务无法读取），{{count, number}} 行未导入：第 {{list}} 行。",
+    "itemsLeftOut_one": "由于无法检查其个人数据以进行脱敏（脱敏服务无法读取），{{count, number}} 个项目未导入：第 {{list}} 项。",
+    "itemsLeftOut_other": "由于无法检查其个人数据以进行脱敏（脱敏服务无法读取），{{count, number}} 个项目未导入：第 {{list}} 项。",
+    "reviewsLeftOut_one": "由于无法检查其个人数据以进行脱敏（脱敏服务无法读取），{{count, number}} 条评论未导入：第 {{list}} 条。",
+    "reviewsLeftOut_other": "由于无法检查其个人数据以进行脱敏（脱敏服务无法读取），{{count, number}} 条评论未导入：第 {{list}} 条。",
+    "more_one": "另外 {{count, number}} 个",
+    "more_other": "另外 {{count, number}} 个",
+    "sendAgain": "只需重新发送这些内容即可导入。",
+    "quoted": "{{position}}（“{{text}}”）"
   }
 }

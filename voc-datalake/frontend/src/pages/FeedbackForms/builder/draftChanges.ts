@@ -17,7 +17,7 @@ export function removedParts(t: TFunction<'feedbackForms'>, baseline: FormV2, fo
   const lng = baseline.language
   const kept = new Map(form.questions.map((q) => [q.id, q]))
   const questions = baseline.questions.filter((q) => !kept.has(q.id))
-    .map((q) => t('builder.confirmRemoval.question', { text: headlineShown(q, lng) }))
+    .map((q) => t('builder.confirmRemoval.question', { text: headlineShown(q.headline, lng) }))
   const options = baseline.questions.flatMap((q) => {
     const now = kept.get(q.id)
     if (!isChoice(q) || now === undefined || !isChoice(now)) return []
@@ -26,7 +26,7 @@ export function removedParts(t: TFunction<'feedbackForms'>, baseline: FormV2, fo
   })
   const endingIds = new Set(form.endings.map((e) => e.id))
   const endings = baseline.endings.filter((e) => !endingIds.has(e.id))
-    .map((e) => t('builder.confirmRemoval.ending', { text: textIn(e.title, lng) }))
+    .map((e) => t('builder.confirmRemoval.ending', { text: headlineShown(e.title, lng) }))
   return [...questions, ...options, ...endings]
 }
 
@@ -44,8 +44,8 @@ interface Keyed {
 function keyedParts(t: TFunction<'feedbackForms'>, form: FormV2): Keyed[] {
   const lng = form.language
   return [
-    ...form.questions.map((q, index) => ({ id: q.id, label: t('logic.target.question', { number: index + 1, headline: headlineShown(q, lng) }), json: JSON.stringify(q) })),
-    ...form.endings.map((e) => ({ id: e.id, label: t('logic.target.ending', { title: textIn(e.title, lng) }), json: JSON.stringify(e) })),
+    ...form.questions.map((q, index) => ({ id: q.id, label: t('logic.target.question', { number: index + 1, headline: headlineShown(q.headline, lng) }), json: JSON.stringify(q) })),
+    ...form.endings.map((e) => ({ id: e.id, label: t('logic.target.ending', { title: headlineShown(e.title, lng) }), json: JSON.stringify(e) })),
     ...form.hidden_fields.map((h) => ({ id: `hidden:${h.id}`, label: t('problems.where.hidden', { id: h.id }), json: JSON.stringify(h) })),
     ...form.languages.map((l) => ({ id: `language:${l}`, label: languageNames[l], json: l })),
     { id: 'welcome', label: t('types.welcome'), json: JSON.stringify(form.welcome) },

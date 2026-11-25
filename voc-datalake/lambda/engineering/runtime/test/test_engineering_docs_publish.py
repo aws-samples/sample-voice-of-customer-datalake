@@ -15,7 +15,7 @@ from engineering.runtime.interface import RuntimeRefused
 DIGEST = 'd' * 64
 EVENT = {'action': 'publish_docs', 'connection': 'conn-1', 'repository': 'example-org/harbor',
          'default_branch': 'main', 'kind': 'knowledge', 'digest': DIGEST, 'draft': False, 'actor': 'admin-sub-1'}
-PR = {'number': 12, 'url': 'https://github.com/example-org/harbor/pull/12', 'branch': 'voc-agent/docs/knowledge-v3'}
+PR = {'number': 12, 'url': 'https://github.com/example-org/harbor/pull/12', 'branch': 'voc-agent/docs-knowledge-v3'}
 
 
 class Broker:
@@ -50,6 +50,10 @@ def test_an_opened_and_a_repeated_pull_request() -> None:
         'status': 'opened', 'pr': PR, 'kind': 'knowledge', 'version': 3, 'digest': DIGEST, 'draft': False}
     again = publish(EVENT, Broker({'result': {**result, 'repeated': True}}))
     assert again['status'] == 'repeated'
+    # (7.71.04) A pull request recorded from 7.71.03's two-level branch is answered as it was recorded.
+    recorded = {**PR, 'branch': 'voc-agent/docs/knowledge-v3'}
+    before = publish(EVENT, Broker({'result': {**result, 'pr': recorded, 'repeated': True}}))
+    assert (before['status'], before['pr']) == ('repeated', recorded)
 
 
 def test_a_refusal_is_answered_with_its_status_reason_and_code() -> None:

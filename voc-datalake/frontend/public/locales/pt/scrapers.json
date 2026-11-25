@@ -271,7 +271,10 @@
     "datesDefaulted_many": "{{count, number}} de avaliações não tinham data no texto, por isso usarão a data de importação de hoje. Você pode alterá-las abaixo.",
     "importFailed": "Não foi possível importar as avaliações",
     "clearDraft": "Limpar rascunho",
-    "draftDropped": "Seu rascunho salvo tinha mais de {{max}} caracteres e foi apagado. Cole um texto mais curto para continuar."
+    "draftDropped": "Seu rascunho salvo tinha mais de {{max}} caracteres e foi apagado. Cole um texto mais curto para continuar.",
+    "imported_one": "{{count, number}} avaliação importada.",
+    "imported_other": "{{count, number}} avaliações importadas.",
+    "imported_many": "{{count, number}} avaliações importadas."
   },
   "newSource": "Nova fonte",
   "parsedReview": {
@@ -754,5 +757,21 @@
       "title": "Traga seus próprios sinais em minutos",
       "body": "Ainda não há feedback aqui. Importe um CSV de avaliações de lojas de apps, chamados de suporte ou resultados de outra ferramenta de pesquisa e veja sentimento, temas e NPS em poucos minutos."
     }
+  },
+  "unredacted": {
+    "rowsLeftOut_one": "{{count, number}} linha ficou de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-la): linha {{list}}.",
+    "rowsLeftOut_other": "{{count, number}} linhas ficaram de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-las): linhas {{list}}.",
+    "rowsLeftOut_many": "{{count, number}} linhas ficaram de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-las): linhas {{list}}.",
+    "itemsLeftOut_one": "{{count, number}} item ficou de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-lo): item {{list}}.",
+    "itemsLeftOut_other": "{{count, number}} itens ficaram de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-los): itens {{list}}.",
+    "itemsLeftOut_many": "{{count, number}} itens ficaram de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-los): itens {{list}}.",
+    "reviewsLeftOut_one": "{{count, number}} avaliação ficou de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-la): avaliação {{list}}.",
+    "reviewsLeftOut_other": "{{count, number}} avaliações ficaram de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-las): avaliações {{list}}.",
+    "reviewsLeftOut_many": "{{count, number}} avaliações ficaram de fora porque não foi possível verificar seus dados pessoais para ocultá-los (o serviço de ocultação não conseguiu lê-las): avaliações {{list}}.",
+    "more_one": "mais {{count, number}}",
+    "more_other": "mais {{count, number}}",
+    "more_many": "mais {{count, number}}",
+    "sendAgain": "Envie novamente apenas o que ficou de fora para importá-lo.",
+    "quoted": "{{position}} (“{{text}}”)"
   }
 }

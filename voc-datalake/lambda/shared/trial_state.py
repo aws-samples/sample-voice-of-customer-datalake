@@ -14,9 +14,11 @@ platform admin extends or converts the trial, nothing turns them back on:
 
 Both checks are ``unpaused_check``'s, the one spelling of that condition. Both answer 409 with ``TRIAL_PAUSED`` and the
 code ``trial_paused``. An extension or a conversion of a paused trial marks it ``resuming_at`` before it turns anything
-back on (shared/trials.py), so the hourly pause leaves it alone meanwhile (shared/trial_pause.py). Everything else (reads, edits, the export, a form
-turned off, a plugin turned off) works as in any workspace. This module imports none of the trial's writers, so the
-request paths (and shared/platform_workspaces.py, which the writers import) take it alone.
+back on (shared/trials.py), so the hourly pause leaves it alone meanwhile (shared/trial_pause.py), and each of the
+pause's turn-offs commits beside ``unchanged_check`` (7.71.04), so a mark committed while it turns things off refuses
+the next one. Everything else (reads, edits, the export, a form turned off, a plugin turned off) works as in any
+workspace. This module imports none of the trial's writers, so the request paths (and shared/platform_workspaces.py,
+which the writers import) take it alone.
 """
 from __future__ import annotations
 
@@ -68,6 +70,18 @@ def unpaused_check(table_name: str, ws: str) -> dict[str, Any]:
         'ConditionExpression': '#status = :active AND attribute_not_exists(#trial.#paused_at)',
         'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, '#paused_at': PAUSED_AT},
         'ExpressionAttributeValues': {':active': ACTIVE}}}
+
+
+def unchanged_check(table_name: str, ws: str, rev: object) -> dict[str, Any]:
+    """The ConditionCheck of workspace ``ws``'s ``META`` in voc-workspaces (``table_name``) that each of a pause's
+    turn-offs commits beside (shared/trial_pause.py, 7.71.04): the workspace still active and its trial's ``rev`` still
+    ``rev``, the one the pause saved its lists with, so an extension or a conversion that wrote the trial since (its
+    ``resuming_at`` mark) refuses it."""
+    return {'ConditionCheck': {
+        'TableName': table_name, 'Key': {'pk': ws_key(ws), 'sk': 'META'},
+        'ConditionExpression': '#status = :active AND #trial.#rev = :rev',
+        'ExpressionAttributeNames': {'#status': 'status', '#trial': TRIAL, '#rev': 'rev'},
+        'ExpressionAttributeValues': {':active': ACTIVE, ':rev': rev}}}
 
 
 def stored_trial(table: Any, ws: str) -> dict[str, Any] | None:

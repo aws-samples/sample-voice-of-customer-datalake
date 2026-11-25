@@ -56,11 +56,16 @@ explorer. This is `shared/source_policy.apply_source_policy`.
   - When Comprehend fails on a text it should have read (after its retries), every upload (a manual review
     import, a CSV or JSON upload, a form import) refuses that row and counts it with the skipped rows of its import
     history, never keeping the regex result alone (`shared/ingest_archive.py`, 7.71.02). The upload's answer names
-    each such row so it can be sent again (7.71.03): a form import as a refusal `redaction_unavailable`, a manual
-    review import and a JSON upload as `redaction_unavailable: {count, ids}` (the items' own ids), a CSV upload as
-    `redaction_unavailable: {count, rows}` (its row numbers); the first 100 are named, the count is whole. One live
-    record (a form submission, a Data Explorer or field edit, a voice transcript) keeps the regex result, counted by
-    the `PiiComprehendFailures` metric.
+    each such row so it can be sent again (7.71.03): a form import as a refusal `redaction_unavailable` on that row,
+    a manual review import, a CSV and a JSON upload as `redaction_unavailable: {count, rows}` (since 7.71.04 one
+    shape for the three: `rows` are the rows' 1-based places in what was sent, a CSV's row numbers, a pasted review's
+    or a JSON item's position in its list; the first 100 are named, the count is whole). The app's upload results say
+    so (7.71.04): the CSV and JSON uploads name them by number ("3 rows were left out …: rows 2, 4, and 1 more", a
+    JSON item by its place in the file, the items skipped before Import counted), a paste returns to its paste step,
+    its source kept, naming each review by its number and opening words, each with "Send just those again to import
+    them"; the import wizard lists them with a survey's refused rows. One live record (a form submission, a Data
+    Explorer or field edit, a voice transcript) keeps the regex result, counted by the `PiiComprehendFailures` metric.
+    The local mock leaves out a row whose text holds `#unreadable`, to see this without Comprehend.
 - **`summary_only`**:
   - The same redaction is applied, and then the processor stores **derived fields only**.
   - `original_text` becomes the (already redacted) `problem_summary`, or `[withheld]`.

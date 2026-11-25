@@ -402,9 +402,13 @@ def test_a_comment_is_posted_on_the_issue() -> None:
     assert api.sent[-1].body == {'body': 'Bug: src/a.py:3.'}
 
 
-#: (7.71.03) The run's marker on its issue comment, and the look for it (a hundred comments a page).
+#: (7.71.03) The run's marker on its issue comment, and the look for it (a hundred comments a page; 7.71.04: only
+#: those updated since the earlier call's claim, ``SINCE``, GitHub's ``since`` in UTC).
 MARKER = '<!-- voc-engineering-run:01JD3R4NZXQ7Y2W8K4M6P9T0AB -->'
-PER_PAGE = 'per_page=100'
+SINCE = 1_799_999_000
+COMMENTS = f'{REPO}/issues/42/comments?per_page=100&since=2027-01-15T07%3A43%3A20Z'
+#: What GitHub says of a comment the connection's App posted (``performed_via_github_app``).
+BY_APP = {'performed_via_github_app': {'id': int(APP_ID), 'slug': 'voc-agents'}}
 
 
 def _comment_pages(api: FakeGitHub, *pages: Sequence[object]) -> FakeGitHub:
@@ -412,22 +416,36 @@ def _comment_pages(api: FakeGitHub, *pages: Sequence[object]) -> FakeGitHub:
     for page, comments in enumerate(pages, start=1):
         link = ({'link': f'<https://api.github.com/repositories/1/issues/42/comments?page={page + 1}>; rel="next"'}
                 if page < len(pages) else {})
-        api.on('GET', f'{REPO}/issues/42/comments?{PER_PAGE}&page={page}', answer(200, list(comments), link))
+        api.on('GET', f'{COMMENTS}&page={page}', answer(200, list(comments), link))
     return api
 
 
 def test_the_runs_comment_on_its_issue_is_found_by_its_marker() -> None:
-    api = _comment_pages(FakeGitHub(), [{'body': 'Me too.', 'html_url': 'https://h/i/42#c1'}],
-                         [{'body': None}, {'body': f'Triage\n\n{MARKER}', 'html_url': 'https://h/i/42#c9'}])
-    assert client(api).issue_comment('c', 42, MARKER) == 'https://h/i/42#c9'
-    assert [path for _, path in api.calls()] == [f'{REPO}/issues/42/comments?{PER_PAGE}&page={page}' for page in (1, 2)]
+    api = _comment_pages(FakeGitHub(), [{'body': 'Me too.', 'html_url': 'https://h/i/42#c1', **BY_APP}],
+                         [{'body': None}, {'body': f'Triage\n\n{MARKER}\n', 'html_url': 'https://h/i/42#c9', **BY_APP}])
+    assert client(api).issue_comment('c', 42, MARKER, SINCE) == 'https://h/i/42#c9'
+    assert [path for _, path in api.calls()] == [f'{COMMENTS}&page={page}' for page in (1, 2)]
+
+
+@pytest.mark.parametrize('comment', [
+    {'body': f'Triage\n\n{MARKER}'},   # (a person's: no App)
+    {'body': f'Triage\n\n{MARKER}', 'performed_via_github_app': {'id': int(APP_ID) + 1}},   # (another App's)
+    {'body': f'Triage\n\n{MARKER}', 'performed_via_github_app': {'id': APP_ID}},   # (an id that is no number)
+    {'body': f'Quoting {MARKER} here.', **BY_APP},   # (the marker inside, not at the end)
+], ids=['person', 'another-app', 'text-id', 'inside'])
+def test_a_comment_with_the_marker_is_the_runs_only_when_the_apps_own_and_ending_with_it(
+        comment: dict[str, object]) -> None:
+    # (7.71.04) Anyone who reads the issue may copy the marker into a comment: only the connection's App's own
+    # comment that ends with it is the run's.
+    api = _comment_pages(FakeGitHub(), [{**comment, 'html_url': 'https://h/i/42#c3'}])
+    assert client(api).issue_comment('c', 42, MARKER, SINCE) is None
 
 
 def test_a_look_for_the_runs_comment_reads_ten_pages_at_most_and_answers_none() -> None:
     api = _comment_pages(FakeGitHub(), *([{'body': 'Me too.', 'html_url': 'u'}] for _ in range(11)))
-    assert client(api).issue_comment('c', 42, MARKER) is None
+    assert client(api).issue_comment('c', 42, MARKER, SINCE) is None
     assert len(api.calls()) == FIND_PAGES
-    assert client(_comment_pages(FakeGitHub(), [])).issue_comment('c', 42, MARKER) is None
+    assert client(_comment_pages(FakeGitHub(), [])).issue_comment('c', 42, MARKER, SINCE) is None
 
 
 PR_HEAD = '9' * 40

@@ -9,7 +9,7 @@ import i18n from 'i18next'
 import type { TFunction } from 'i18next'
 import type { FormV2 } from '../model/formsV2'
 import { isFormLanguage } from '../model/formsV2'
-import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import type { FormProblem, ProblemLocation } from '../model/validateForm'
 import { languageNames } from '../../../i18n/languages'
 import { formatDecimal } from '../../../utils/numberFormat'
@@ -23,7 +23,7 @@ const themePlace = (t: TFunction<'feedbackForms'>, palette: string | undefined):
 export function problemPlace(t: TFunction<'feedbackForms'>, form: FormV2, at: ProblemLocation): string {
   switch (at.kind) {
     case 'question': return t('problems.where.question', { number: form.questions.findIndex((q) => q.id === at.id) + 1 })
-    case 'ending': return t('problems.where.ending', { title: textIn(form.endings.find((e) => e.id === at.id)?.title, form.language) })
+    case 'ending': return t('problems.where.ending', { title: headlineShown(form.endings.find((e) => e.id === at.id)?.title, form.language) })
     case 'welcome': return t('problems.where.welcome')
     case 'hidden': return t('problems.where.hidden', { id: at.id ?? '' })
     case 'language': return t('problems.where.language', { language: isFormLanguage(at.id) ? languageNames[at.id] : at.id ?? '' })

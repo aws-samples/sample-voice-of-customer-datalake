@@ -95,9 +95,9 @@ function GoToSelect({ form, question, index, code, label, onChange, onEditLogic 
       onChange={(event) => onChange(withOptionJump(question, code, event.target.value === '' ? null : event.target.value))}>
       <option value="">{fallback}</option>
       {form.questions.slice(index + 1).map((later, offset) => (
-        <option key={later.id} value={later.id}>{t('logic.target.question', { number: index + offset + 2, headline: headlineShown(later, form.language) })}</option>
+        <option key={later.id} value={later.id}>{t('logic.target.question', { number: index + offset + 2, headline: headlineShown(later.headline, form.language) })}</option>
       ))}
-      {form.endings.map((ending) => <option key={ending.id} value={ending.id}>{t('logic.target.ending', { title: textIn(ending.title, form.language) })}</option>)}
+      {form.endings.map((ending) => <option key={ending.id} value={ending.id}>{t('logic.target.ending', { title: headlineShown(ending.title, form.language) })}</option>)}
     </select>
   )
 }

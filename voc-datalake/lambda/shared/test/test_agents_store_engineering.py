@@ -148,12 +148,18 @@ def test_a_rerun_claims_a_free_issue_and_keeps_a_taken_one() -> None:
         assert env.agents.get_item(Key=store.issue_claim_key('o/r', 1))['Item']['agent_run_id'] == 'ar_1'
 
 
+def _queued(env: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """An engineering agent and its queued run."""
+    agent = _agent(env)
+    run = store.start_run(env.agents, agent, store.RunStart(trigger='manual', requested_by='a', workflow_revision=1),
+                          now=NOW)
+    assert run is not None
+    return agent, run
+
+
 def test_an_engineering_run_moves_from_queued_to_running_once() -> None:
     with agents_env() as env:
-        agent = _agent(env)
-        run = store.start_run(env.agents, agent, store.RunStart(trigger='manual', requested_by='a',
-                                                                workflow_revision=1), now=NOW)
-        assert run is not None
+        agent, run = _queued(env)
         running = store.mark_engineering_running(env.agents, agent['agent_id'], run['run_id'])
         assert running is not None
         assert running['status'] == 'running'
@@ -165,3 +171,19 @@ def test_an_engineering_run_moves_from_queued_to_running_once() -> None:
                                'feedback_count': 3})
         assert (view['kind'], view['engineering_run_id'], view['issue'], view['feedback_count'], view['prd']) == (
             'engineering', 'E', {'number': 1}, 3, None)
+
+
+def test_a_stats_write_that_fails_after_the_run_started_is_logged_and_never_raised(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    # (Q5, 7.71.04) The run's own move to running landed: the agent row's stats are best effort after it.
+    from botocore.exceptions import ClientError
+    with agents_env() as env:
+        agent, run = _queued(env)
+
+        def refused(*_args: Any, **_kwargs: Any) -> None:
+            raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'UpdateItem')
+
+        monkeypatch.setattr(store, 'update_unless_condition_fails', refused)
+        running = store.mark_engineering_running(env.agents, agent['agent_id'], run['run_id'])
+        assert running is not None
+        assert running['status'] == 'running'

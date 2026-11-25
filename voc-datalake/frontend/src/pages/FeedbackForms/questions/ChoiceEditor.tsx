@@ -14,6 +14,7 @@ import type { ChoiceQuestion, FormV2 } from '../model/formsV2'
 import { LIMITS } from '../model/formsV2'
 import { codeFromLabel } from '../model/codes'
 import { textIn } from '../model/i18nText'
+import { headlineShown } from '../model/recall'
 import { moved, renameOptionCode, updateChoice } from '../model/mutations'
 import { problemsAt } from '../model/validateForm'
 import { useDraft } from '../builder/formDraftContext'
@@ -34,7 +35,7 @@ function jumpLabel(form: FormV2, question: ChoiceQuestion, code: string): string
   if (jump.kind !== 'own') return null
   const at = form.questions.findIndex((q) => q.id === jump.target)
   if (at !== -1) return String(at + 1)
-  return textIn(form.endings.find((e) => e.id === jump.target)?.title, form.language)
+  return headlineShown(form.endings.find((e) => e.id === jump.target)?.title, form.language)
 }
 
 function useOptionEdits(question: ChoiceQuestion, focusAt: (index: number) => void) {

@@ -152,3 +152,29 @@ def test_without_the_start_function_the_stop_is_unavailable(lambda_context: Any,
     assert _call(lambda_context, 'POST', f'/agents/engineering/{RUN}/signals', body={'signal': 'save'})[0] == 503
     view = _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')[1]
     assert (view['stop_available'], view['signals_available']) == (False, False)
+
+
+def test_a_read_of_a_run_that_ended_done_ends_its_agents_run_at_once(lambda_context: Any, run: tuple[Any, Any]) -> None:
+    # (7.71.04) On b- the Bug fixer's agent run still read running once its run had ended done: the runtime's role
+    # writes nothing of voc-agents' runs, so its end waited for the heartbeat's next heal (every 15 minutes). The run
+    # workspace's read of the ended run ends it now, completed, its lock released; a second read writes nothing more.
+    env, engineering = run
+    agent_id, agent_run_id = _agent_run(env, engineering, lambda_context)
+    set_status(engineering.client, 'done')
+    for _ in range(2):
+        assert _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')[0] == 200
+    ended = store.get_run(env.agents, agent_id, agent_run_id)
+    assert ended is not None
+    assert (ended['status'], stored_agent(env.agents, agent_id).get('active_run_id')) == ('completed', None)
+    events = store.list_events(env.agents, agent_run_id, after=0, limit=50)
+    assert [event.get('summary') for event in events].count('Engineering run done') == 1
+
+
+def test_a_read_of_a_run_still_waiting_for_a_person_ends_no_agent_run(lambda_context: Any,
+                                                                      run: tuple[Any, Any]) -> None:
+    env, engineering = run
+    agent_id, agent_run_id = _agent_run(env, engineering, lambda_context)
+    assert _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')[0] == 200
+    still = store.get_run(env.agents, agent_id, agent_run_id)
+    assert still is not None
+    assert still['status'] == 'running'

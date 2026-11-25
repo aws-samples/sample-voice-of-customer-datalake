@@ -5,6 +5,7 @@ import { runAssistJob } from './assistJobs'
 import { parseSelectorAnalysis } from './assistResults'
 import { parseCsvDatasetPreview, parseCsvUploadResult } from './csvDatasetSchema'
 import type { CsvDatasetPreview, CsvUploadResult } from './csvDatasetSchema'
+import { RedactionUnavailableSchema } from './redactionUnavailable'
 import { normalizeScrapers, normalizeScraperRunStatus } from './scrapersSchema'
 import type { ScraperRunStatus } from './scrapersSchema'
 import type {
@@ -105,44 +106,52 @@ export const scrapersApi = {
       error?: string
     }>(`/scrapers/manual/parse/${jobId}`),
 
-  confirmManualImport: (jobId: string, reviews: Array<{
+  /** `redaction_unavailable`: the reviews the strict redaction left out, by their place among `reviews` (7.71.04). */
+  confirmManualImport: async (jobId: string, reviews: Array<{
     text: string;
     rating: number | null;
     author: string | null;
     date: string | null;
     title: string | null
-  }>) =>
-    fetchApi<{
+  }>) => {
+    const answer = await fetchApi<{
       success: boolean;
       imported_count?: number;
       s3_uri?: string;
       message?: string;
       error?: string;
-      errors?: string[]
+      errors?: string[];
+      redaction_unavailable?: unknown
     }>('/scrapers/manual/confirm', post({
         job_id: jobId,
         reviews,
-      })),
+      }))
+    return { ...answer, redaction_unavailable: RedactionUnavailableSchema.parse(answer.redaction_unavailable) }
+  },
 
   /**
    * `radarBrand`: a Radar brand key; the items then go to Radar only (docs/radar.md).
    * `assistant`: set by the assistant's `import_reviews`, so the import history names the
-   * method and the source the user gave (docs/import-history.md).
+   * method and the source the user gave (docs/import-history.md). `redaction_unavailable`: the items the strict
+   * redaction left out, by their place among `items` (7.71.04).
    */
-  uploadJsonFeedback: (items: Array<Record<string, unknown>>, sourceId?: string, radarBrand?: string,
-    assistant?: { sourceLabel: string }) =>
-    fetchApi<{
+  uploadJsonFeedback: async (items: Array<Record<string, unknown>>, sourceId?: string, radarBrand?: string,
+    assistant?: { sourceLabel: string }) => {
+    const answer = await fetchApi<{
       success: boolean;
       imported_count: number;
       total_items: number;
       s3_uri?: string;
-      errors?: string[]
+      errors?: string[];
+      redaction_unavailable?: unknown
     }>('/scrapers/manual/json-upload', post({
         items,
         ...(sourceId === undefined ? {} : { source_id: sourceId }),
         ...(radarBrand === undefined ? {} : { radar_brand: radarBrand }),
         ...(assistant === undefined ? {} : { import_origin: 'assistant', source_label: assistant.sourceLabel }),
-      })),
+      }))
+    return { ...answer, redaction_unavailable: RedactionUnavailableSchema.parse(answer.redaction_unavailable) }
+  },
   /**
    * `source_id`: the source profile the rows belong to (default `manual_import`);
    * `column_map`: `{<csv header>: <target>}` (see `CsvColumnTarget`). Headers not

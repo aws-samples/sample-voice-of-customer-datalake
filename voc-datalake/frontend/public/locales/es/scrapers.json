@@ -271,7 +271,10 @@
     "datesDefaulted_many": "{{count, number}} de reseñas no tenían fecha en el texto, así que usarán la fecha de importación de hoy. Puedes cambiarlas abajo.",
     "importFailed": "No se pudieron importar las reseñas",
     "clearDraft": "Borrar borrador",
-    "draftDropped": "Tu borrador guardado superaba los {{max}} caracteres y se ha borrado. Pega un texto más corto para continuar."
+    "draftDropped": "Tu borrador guardado superaba los {{max}} caracteres y se ha borrado. Pega un texto más corto para continuar.",
+    "imported_one": "{{count, number}} reseña importada.",
+    "imported_other": "{{count, number}} reseñas importadas.",
+    "imported_many": "{{count, number}} reseñas importadas."
   },
   "newSource": "Nueva fuente",
   "parsedReview": {
@@ -754,5 +757,21 @@
       "title": "Trae tus propias señales en minutos",
       "body": "Aún no hay opiniones aquí. Importa un CSV de reseñas de tiendas de apps, tickets de soporte o los resultados de otra herramienta de encuestas, y ve el sentimiento, los temas y el NPS en unos minutos."
     }
+  },
+  "unredacted": {
+    "rowsLeftOut_one": "Se dejó fuera {{count, number}} fila porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerla): fila {{list}}.",
+    "rowsLeftOut_other": "Se dejaron fuera {{count, number}} filas porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerlas): filas {{list}}.",
+    "rowsLeftOut_many": "Se dejaron fuera {{count, number}} filas porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerlas): filas {{list}}.",
+    "itemsLeftOut_one": "Se dejó fuera {{count, number}} elemento porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerlo): elemento {{list}}.",
+    "itemsLeftOut_other": "Se dejaron fuera {{count, number}} elementos porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerlos): elementos {{list}}.",
+    "itemsLeftOut_many": "Se dejaron fuera {{count, number}} elementos porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerlos): elementos {{list}}.",
+    "reviewsLeftOut_one": "Se dejó fuera {{count, number}} reseña porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerla): reseña {{list}}.",
+    "reviewsLeftOut_other": "Se dejaron fuera {{count, number}} reseñas porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerlas): reseñas {{list}}.",
+    "reviewsLeftOut_many": "Se dejaron fuera {{count, number}} reseñas porque no se pudieron revisar sus datos personales para ocultarlos (el servicio de ocultación no pudo leerlas): reseñas {{list}}.",
+    "more_one": "{{count, number}} más",
+    "more_other": "{{count, number}} más",
+    "more_many": "{{count, number}} más",
+    "sendAgain": "Vuelve a enviar solo lo que quedó fuera para importarlo.",
+    "quoted": "{{position}} («{{text}}»)"
   }
 }

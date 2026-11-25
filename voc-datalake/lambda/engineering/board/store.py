@@ -26,7 +26,8 @@
 - ``repost`` (the supervisor's, for an expired lease): the task is ``open`` again at ``attempt + 1``, its lease
   cleared, with a history row naming the supervisor and its reason; on its own row, not through ``post``, so the
   ``SPEC#`` dedupe does not stand in its way, and the next claim's lease takes the new attempt as its epoch. Never a
-  task a person holds.
+  task a person holds, and never one that ended, but (7.71.04, ``reopen``) the run's coordinate task its coordinator
+  ended done, for a person's Resume of a run whose flow did not finish.
 - A person's ``reprioritise``, ``block``, ``take`` and ``release`` (the Agents API's, as ``human:<subject>``; never
   the coordinate task): each conditional on the state and attempt read (a take, block or release also on the holder
   read: another person's hold is ended only with ``over``, and only the holder releases), with a history row. A take
@@ -603,7 +604,7 @@ class BoardStore:
             already=lambda _task: False, refusal='the lease is not yours, has run out, or the task has ended'))
 
     def repost(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None,
-               actor: str = 'supervisor') -> Task:
+               actor: str = 'supervisor', reopen: bool = False) -> Task:
         """The supervisor's re-post of the task at the ``attempt`` it judged (crashed, stalled, its lease run out):
         ``open`` again at the next attempt, the lease cleared, its reason in the history row. Only at that attempt,
         so a retried re-post never revokes the claim a new agent made meanwhile (a later attempt), and two re-posts
@@ -611,24 +612,29 @@ class BoardStore:
         which cannot tell a retry from a newer claim. An open task is re-posted only when an agent was launched for
         it at this attempt and never claimed it (it died or stalled first): the next attempt gets a new agent.
         ``actor``: who the task's row and history row name (D4): the supervisor, or the person whose Resume replaces
-        a failed run coordinator (``runtime/board_bus.BoardLeases.coordinator_to_start``)."""
-        return self.repost_change(ws, run_id, task_id, reason=reason, attempt=attempt, actor=actor).task
+        a failed run coordinator (``runtime/board_bus.BoardLeases.coordinator_to_start``). ``reopen`` (7.71.04): the
+        run's coordinate task is re-posted from ``done`` too, for a person's Resume of a run whose coordinator finished
+        on a flow that did not (never otherwise: a task that ended stays ended)."""
+        return self.repost_change(ws, run_id, task_id, reason=reason, attempt=attempt, actor=actor,
+                                  reopen=reopen).task
 
     def repost_change(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None,
-                      actor: str = 'supervisor') -> Reposted:
+                      actor: str = 'supervisor', reopen: bool = False) -> Reposted:
         """``repost``, and whether this call re-posted the task (``written``: False when the task was already open at
         the next attempt) and whether the task's last change is ``actor``'s own re-post (``own``: this call's, or an
         earlier one of the same attempt whose event may have been lost; never a person's release or another
         actor's re-post), so the caller publishes only its own change, again on a retry."""
         current = self.task(ws, run_id, task_id)
         unclaimed = current.state == OPEN and bool(current.launched_agent) and current.launched_attempt == current.attempt
+        # (7.71.04: the coordinate task its coordinator ended done, only when asked: a Resume's, never a lease's)
+        reopening = reopen and task_id == COORDINATE_TASK and current.state == DONE
         if attempt is None:
             if current.state == OPEN and current.attempt > 1 and not unclaimed:
                 return _reposted(current, actor, written=False)   # (a re-post landed already)
             attempt = current.attempt
         if current.state == OPEN and current.attempt == attempt + 1:
             return _reposted(current, actor, written=False)   # (a re-post or a release landed already)
-        if (current.state == OPEN and not unclaimed) or current.state in FINAL:
+        if (current.state == OPEN and not unclaimed) or (current.state in FINAL and not reopening):
             raise BoardError('conflict', f'a {current.state} task is not re-posted')
         if current.attempt != attempt:
             raise BoardError('conflict', f'the task is at attempt {current.attempt}, not the {attempt} judged')
@@ -643,39 +649,22 @@ class BoardStore:
             set_expr='SET #state = :open, attempt = attempt + :one, waiting = :no, updated_by = :actor, '
                      'updated_at = :at, updated_op = :op '
                      'REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
-            # Never a task a person took (their lease, held in the write too: a take between the read and this).
-            condition=(f'attempt = :attempt AND (NOT #state IN (:open, {", ".join(ended)}) '
+            # Never a task a person took (their lease, held in the write too: a take between the read and this). A
+            # reopened coordinate task only from done at that attempt, so a retried Resume reopens it once.
+            condition=('attempt = :attempt AND #state = :done' if reopening else
+                       f'attempt = :attempt AND (NOT #state IN (:open, {", ".join(ended)}) '
                        'OR (#state = :open AND launched_attempt = :attempt)) '
                        'AND (attribute_not_exists(lease_agent) OR NOT begins_with(lease_agent, :person))'),
             names={'#state': 'state'},
-            values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False},
-                    ':person': {'S': PERSON_PREFIX}, ':op': {'S': REPOST_OP},
+            values={**({':done': {'S': DONE}} if reopening else
+                       {**ended, ':person': {'S': PERSON_PREFIX}}),
+                    ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False}, ':op': {'S': REPOST_OP},
                     ':actor': {'S': actor}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
             # Another re-post of the same attempt (or a release) landed between the read and the write.
             already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
             refusal='the task moved on since it was read'),
             Move(task_id, OPEN, actor, at, attempt + 1, REPOST_OP, reason=why).item(ws, run_id))
         return _reposted(task, actor, written=written)
-
-    def reopen_coordinate(self, ws: str, run_id: str, *, attempt: int, actor: str, reason: str) -> Task:
-        """(7.71.03) The run's coordinate task, which its coordinator ended done at ``attempt`` on a flow that did not
-        finish, open again at the next attempt with its lease cleared, for a new coordinator (``launch_coordinator``
-        records it next): a person's Resume of the run (``runtime/board_bus.BoardLeases.coordinator_to_start``), never a
-        board op. Only from done at that attempt, so a retried Resume reopens it once (a retry finds it open at the next
-        attempt); ``reason`` goes on the history row, which names ``actor`` (D4)."""
-        at = self.now().isoformat()
-        task, _written = self._write_change(ws, run_id, COORDINATE_TASK, _Write(
-            set_expr='SET #state = :open, attempt = attempt + :one, waiting = :no, updated_by = :actor, '
-                     'updated_at = :at, updated_op = :op '
-                     'REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
-            condition='#state = :done AND attempt = :attempt', names={'#state': 'state'},
-            values={':open': {'S': OPEN}, ':done': {'S': DONE}, ':one': {'N': '1'}, ':no': {'BOOL': False},
-                    ':op': {'S': REPOST_OP}, ':actor': {'S': actor}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
-            already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
-            refusal='the coordinate task moved on since it was read'),
-            Move(COORDINATE_TASK, OPEN, actor, at, attempt + 1, REPOST_OP,
-                 reason=redact(reason.strip())[:MAX_LINE]).item(ws, run_id))
-        return task
 
     # ---- a person's board actions (the Agents API's, admins acting for themselves; plan v3 4.3) --------------------
 

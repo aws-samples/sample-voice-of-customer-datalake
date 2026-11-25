@@ -141,9 +141,9 @@ browser ──HTTPS──▶ projects API (/projects/{proxy+})  ── checks, e
    End stopping the runtime could cut short mid-write. A session whose End never arrived is saved the next time its
    starter reads it (`GET …/voice-sessions/{session}`) or opens the Talk dialog of any persona of its project (the
    offer saves the starter's five newest sessions there that ended without End, through the project's pointers); a URL
-   never used ends at the first read 70 seconds after it was made (its minute and the relay's 10 seconds for the
-   clocks, below). At the time limit, the session's cost cap or the budget the persona's goodbye, already sent, plays
-   out (at most 10 seconds) before the browser releases the audio.
+   never used ends at the first read 70 seconds after it was made (its row's `connect_by`: its minute and 10 seconds
+   for the clocks, below). At the time limit, the session's cost cap or the budget the persona's goodbye, already
+   sent, plays out (at most 10 seconds) before the browser releases the audio.
 8. **On the wire,** every end of a connection, a refusal or a session's, is `ended {reason}` then the close code, in
    that order (`lambda/stream/src/voice/wire-end.ts`, 7.71.02): nothing goes before the connection is a second old, then
    `ws` writes the two frames in that order, and destroys a socket whose close handshake has not finished five seconds
@@ -223,15 +223,17 @@ The only signatures a browser ever holds are the projects API's presigned URLs:
 **Authorization** stays in the projects API, before any URL exists: edit access to the project (its middleware), a
 person acting for themselves, consent, the budget and the limits. The relay then holds the session to it:
 
-- **single use:** it activates the row `minted → live` with a condition (`connect_by`, the mint's time plus the URL's
-  60 seconds, not passed by more than 10 seconds for the clocks); a second connection, or one after the session ended,
-  is refused (`refused`) with close code 1008;
+- **single use:** it activates the row `minted → live` with a condition (its `connect_by` not passed: the mint's time
+  plus the URL's 60 seconds and 10 seconds for the minting Lambda's clock and the relay's, `shared/voice_sessions.py`
+  `CONNECT_SKEW_SECONDS`); a second connection, or one after the session ended, is refused (`refused`) with close code
+  1008;
 - **its own expiry:** AgentCore accepted a URL 65.8 seconds after it was signed with `X-Amz-Expires=60` (the b-
   deployment, 2026-11-23: a grace of its own, not documented). The relay does not rely on it: a first connection more
   than 70 seconds after the mint fails that condition and is refused like a used one (`refused`, 1008). The projects
-  API ends such a row (`disconnected`, its place in the live set freed) at the first read after the same 70 seconds,
-  never sooner: `shared/voice_sessions.py` `CONNECT_SKEW_SECONDS` is the relay's 10 seconds, pinned by a test. (7.71.02
-  ended such a connection `expired`, a reason of its own, which 7.71.03 removed);
+  API ends such a row (`disconnected`, its place in the live set freed) at the first read once the same `connect_by`
+  has passed, never sooner. The row holds the one deadline, written by the mint and read as written by both, so
+  neither side keeps a skew of its own (since 7.71.04; 7.71.03 kept the 10 seconds in both languages, pinned alike by a
+  test, and 7.71.02 ended such a connection `expired`, a reason of its own, which 7.71.03 removed);
 - **bound to its project:** the evidence it reads must name its session id and the signed project scope, else 1008;
 - **bound to its pointer:** a session is answered, ended and saved only through its project's own pointer row, which
   the relay cannot write, so a session row cannot be moved to another project.

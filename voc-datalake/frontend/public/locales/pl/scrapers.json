@@ -287,7 +287,11 @@
     "datesRequired_few": "{{count, number}} recenzje wymagają daty przed uruchomieniem importu.",
     "datesRequired_many": "{{count, number}} recenzji wymaga daty przed uruchomieniem importu.",
     "datesDefaulted_few": "{{count, number}} recenzje nie miały daty w tekście, dlatego użyto dzisiejszej daty importu. Możesz je zmienić poniżej.",
-    "datesDefaulted_many": "{{count, number}} recenzji nie miało daty w tekście, dlatego użyto dzisiejszej daty importu. Możesz je zmienić poniżej."
+    "datesDefaulted_many": "{{count, number}} recenzji nie miało daty w tekście, dlatego użyto dzisiejszej daty importu. Możesz je zmienić poniżej.",
+    "imported_one": "Zaimportowano {{count, number}} recenzję.",
+    "imported_other": "Zaimportowano {{count, number}} recenzji.",
+    "imported_few": "Zaimportowano {{count, number}} recenzje.",
+    "imported_many": "Zaimportowano {{count, number}} recenzji."
   },
   "parsedReview": {
     "authorPlaceholder": "Autor",
@@ -792,5 +796,25 @@
       "title": "Wnieś własne sygnały w kilka minut",
       "body": "Nie ma tu jeszcze opinii. Zaimportuj plik CSV z recenzjami ze sklepów z aplikacjami, zgłoszeniami do wsparcia lub wynikami z innego narzędzia ankietowego i zobacz sentyment, tematy i NPS w kilka minut."
     }
+  },
+  "unredacted": {
+    "rowsLeftOut_one": "Pominięto {{count, number}} wiersz, ponieważ nie udało się sprawdzić jego danych osobowych do zredagowania (usługa redagowania nie mogła go odczytać): wiersz {{list}}.",
+    "rowsLeftOut_other": "Pominięto {{count, number}} wiersza, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): wiersze {{list}}.",
+    "rowsLeftOut_few": "Pominięto {{count, number}} wiersze, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): wiersze {{list}}.",
+    "rowsLeftOut_many": "Pominięto {{count, number}} wierszy, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): wiersze {{list}}.",
+    "itemsLeftOut_one": "Pominięto {{count, number}} element, ponieważ nie udało się sprawdzić jego danych osobowych do zredagowania (usługa redagowania nie mogła go odczytać): element {{list}}.",
+    "itemsLeftOut_other": "Pominięto {{count, number}} elementu, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): elementy {{list}}.",
+    "itemsLeftOut_few": "Pominięto {{count, number}} elementy, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): elementy {{list}}.",
+    "itemsLeftOut_many": "Pominięto {{count, number}} elementów, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): elementy {{list}}.",
+    "reviewsLeftOut_one": "Pominięto {{count, number}} recenzję, ponieważ nie udało się sprawdzić jej danych osobowych do zredagowania (usługa redagowania nie mogła jej odczytać): recenzja {{list}}.",
+    "reviewsLeftOut_other": "Pominięto {{count, number}} recenzji, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): recenzje {{list}}.",
+    "reviewsLeftOut_few": "Pominięto {{count, number}} recenzje, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): recenzje {{list}}.",
+    "reviewsLeftOut_many": "Pominięto {{count, number}} recenzji, ponieważ nie udało się sprawdzić ich danych osobowych do zredagowania (usługa redagowania nie mogła ich odczytać): recenzje {{list}}.",
+    "more_one": "jeszcze {{count, number}}",
+    "more_other": "jeszcze {{count, number}}",
+    "more_few": "jeszcze {{count, number}}",
+    "more_many": "jeszcze {{count, number}}",
+    "sendAgain": "Aby je zaimportować, wyślij ponownie tylko pominięte.",
+    "quoted": "{{position}} („{{text}}”)"
   }
 }

@@ -207,9 +207,10 @@ def test_the_understander_comments_on_and_labels_its_runs_issue_through_the_brok
     assert commented == {'url': 'https://code.example.com/issue/42#comment-1'}
     assert labelled == {'number': 42, 'labels': ['voc-triage/bug', 'voc-severity/s2']}
     assert host.writes() == ['post_comment', 'label_issue']
-    # (7.71.03) Another understander of the run gets the first one's labels back, and whose they are.
+    # (7.71.02) Another understander of the run gets the first one's labels back; (7.71.04) and nothing else, its
+    # tool comparing them with its own.
     again = _client(url, 'understander-4').label_issue(RUN, 'understander-4', number=42, labels=('voc-triage/bug',))
-    assert again == {'number': 42, 'labels': ['voc-triage/bug', 'voc-severity/s2'], 'set_by': 'understander-2'}
+    assert again == {'number': 42, 'labels': ['voc-triage/bug', 'voc-severity/s2']}
     assert host.writes() == ['post_comment', 'label_issue']
     with pytest.raises(ValueError, match="pull request or its issue"):
         understander.comment(RUN, 'understander-2', number=42, body='b', on='commit')

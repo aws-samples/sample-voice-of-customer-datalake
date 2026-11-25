@@ -13,6 +13,7 @@
  */
 import { z } from 'zod'
 import { parseEach } from './lenientFields'
+import { RedactionUnavailableSchema } from './redactionUnavailable'
 
 /** Longest dataset name (`DATASET_NAME_MAX_LENGTH`). */
 export const DATASET_NAME_MAX_LENGTH = 64
@@ -64,6 +65,8 @@ const UploadSchema = z.object({
   counts: CountsSchema.optional().catch(undefined),
   warnings: z.array(z.string()).optional().catch(undefined),
   errors: z.array(z.string()).optional().catch(undefined),
+  /** The rows the strict redaction left out, by their row numbers (7.71.04, api/redactionUnavailable.ts). */
+  redaction_unavailable: RedactionUnavailableSchema,
 })
 
 export type CsvUploadResult = z.infer<typeof UploadSchema>

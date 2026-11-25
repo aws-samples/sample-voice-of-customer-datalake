@@ -12,12 +12,13 @@ import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
 import { useInvalidateFeedbackData } from '../../api/invalidateFeedbackData'
 import {
-  parseJsonFeedback, downloadJsonTemplate, validateFileBasics,
+  filePositions, parseJsonFeedback, downloadJsonTemplate, validateFileBasics,
 } from './jsonUploadSchema'
 import type { JsonFeedbackItem, SkippedItem } from './jsonUploadSchema'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import SourceDialogHeader from './SourceDialogHeader'
 import JsonSkippedItems from './JsonSkippedItems'
+import UnredactedRows from './UnredactedRows'
 import RadarSourcePicker from './RadarSourcePicker'
 import { useRadarBrandLabel } from './useRadarBrands'
 import { Tooltip } from '../../components/Tooltip/Tooltip'
@@ -26,10 +27,17 @@ import { Tooltip } from '../../components/Tooltip/Tooltip'
 // Sub-components
 // ============================================
 
+/** The items the server left out for their redaction (7.71.04): how many, and the named ones by file position. */
+interface LeftOut {
+  readonly count: number
+  readonly names: readonly string[]
+}
+
 function SuccessView({
-  count, radarKey, onClose,
+  count, leftOut, radarKey, onClose,
 }: Readonly<{
   count: number;
+  leftOut: LeftOut | null;
   /** The Radar brand key the items went to, `''` for our own feedback. */
   radarKey: string;
   onClose: () => void
@@ -43,6 +51,7 @@ function SuccessView({
       <p className="text-sm text-muted mb-6">
         {radarBrand === undefined ? t('jsonUpload.pipelineNote') : t('csvUpload.pipelineNoteRadar', { brand: radarBrand })}
       </p>
+      {leftOut === null ? null : <UnredactedRows count={leftOut.count} names={leftOut.names} noun="items" />}
       <button onClick={onClose} className="btn btn-primary">{t('jsonUpload.done')}</button>
     </div>
   )
@@ -198,7 +207,8 @@ export default function JsonUploadModal({
   const [isUploading, setIsUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<{
     success: boolean;
-    count: number
+    count: number;
+    leftOut: LeftOut | null
   } | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -264,9 +274,11 @@ export default function JsonUploadModal({
     try {
       const result = await scrapersApi.uploadJsonFeedback(items.map((item) => ({ ...item })), undefined, radarKey === '' ? undefined : radarKey)
       if (result.success) {
+        const left = result.redaction_unavailable
         setUploadResult({
           success: true,
           count: result.imported_count,
+          leftOut: left === undefined ? null : { count: left.count, names: filePositions(left.rows, skipped).map(String) },
         })
         invalidateFeedbackData({ afterIngest: true })
       } else {
@@ -287,7 +299,7 @@ export default function JsonUploadModal({
     <ModalShell isOpen onClose={handleClose} ariaLabelledBy={titleId} dismissable={!isUploading} panelClassName="max-w-2xl max-h-[90vh]">
         <SourceDialogHeader titleId={titleId} title={t('jsonUpload.title')} icon={FileJson} onClose={handleClose} />
         <div className="dialog-body space-y-4">
-          {uploadResult?.success === true ? <SuccessView count={uploadResult.count} radarKey={radarKey} onClose={handleClose} /> : (
+          {uploadResult?.success === true ? <SuccessView count={uploadResult.count} leftOut={uploadResult.leftOut} radarKey={radarKey} onClose={handleClose} /> : (
             <>
               <FormatGuide />
               <RadarSourcePicker value={radarKey} onChange={setRadarKey} disabled={isUploading} />

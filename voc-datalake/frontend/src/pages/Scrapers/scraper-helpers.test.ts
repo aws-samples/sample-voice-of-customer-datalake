@@ -5,7 +5,7 @@ import i18n from 'i18next'
 import { useLocale } from '@test/i18n-locale'
 import scrapersPl from '../../../public/locales/pl/scrapers.json'
 import {
-  countDefaultedDates, getAppIdentifier, getFrequencyLabel,
+  countDefaultedDates, getAppIdentifier, getFrequencyLabel, leftOutNames,
 } from './scraper-helpers'
 
 describe('getAppIdentifier', () => {
@@ -61,5 +61,18 @@ describe('countDefaultedDates', () => {
       { text: '  ', date: '2026-10-06', date_defaulted: true },
       { text: 'd', date: null, date_defaulted: true },
     ])).toBe(1)
+  })
+})
+
+describe('leftOutNames (7.71.04)', () => {
+  const t = i18n.getFixedT('en', 'scrapers')
+
+  it('names a left-out review by its number in the list and its opening words, the empty reviews not sent', () => {
+    const reviews = [{ text: ' ' }, { text: 'Fast' }, { text: `  ${'x'.repeat(59)} and more  ` }]
+    expect(leftOutNames(t, reviews, [1, 2])).toStrictEqual(['2 (“Fast”)', `3 (“${'x'.repeat(59)}…”)`])
+  })
+
+  it('names a place it has no review for by its number alone', () => {
+    expect(leftOutNames(t, [{ text: 'Fast' }], [4])).toStrictEqual(['4'])
   })
 })

@@ -70,3 +70,24 @@ describe('scrapersApi.getScraperStatus normalization (issue #169)', () => {
     expect(status.errors).toStrictEqual([])
   })
 })
+
+describe('scrapersApi: an upload\'s redaction_unavailable (7.71.04)', () => {
+  beforeEach(() => {
+    mockFetchApi.mockReset()
+  })
+
+  it('reads the rows a paste, a JSON and a CSV upload left out for their redaction, a malformed row dropped', async () => {
+    mockFetchApi.mockResolvedValue({ success: true, imported_count: 1, total_items: 3, total_rows: 3, redaction_unavailable: { count: 2, rows: [2, 'x', 0, 3] } })
+    const left = { count: 2, rows: [2, 3] }
+    expect((await scrapersApi.confirmManualImport('job-1', [])).redaction_unavailable).toStrictEqual(left)
+    expect((await scrapersApi.uploadJsonFeedback([])).redaction_unavailable).toStrictEqual(left)
+    expect((await scrapersApi.uploadCsvFeedback({ csv_text: 'text\nhi\n' })).redaction_unavailable).toStrictEqual(left)
+  })
+
+  it('reads none when the upload left nothing out, or the field is not one', async () => {
+    mockFetchApi.mockResolvedValueOnce({ success: true, imported_count: 1, total_items: 1 })
+    mockFetchApi.mockResolvedValueOnce({ success: true, imported_count: 1, total_rows: 1, redaction_unavailable: { rows: [2] } })
+    expect((await scrapersApi.uploadJsonFeedback([])).redaction_unavailable).toBeUndefined()
+    expect((await scrapersApi.uploadCsvFeedback({ csv_text: 'text\nhi\n' })).redaction_unavailable).toBeUndefined()
+  })
+})

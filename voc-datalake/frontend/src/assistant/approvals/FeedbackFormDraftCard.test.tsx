@@ -124,6 +124,12 @@ describe('the draft_feedback_form args', () => {
     expect(parsed.error?.issues.map((issue) => issue.message)).toStrictEqual(['Q1: Write the question.'])
   })
 
+  it("names an ending's problem by its title, a recall placeholder as [id] (F7, 7.71.04)", () => {
+    const ending = { id: 'end_thanks', title: { en: 'Thanks, {{ user_id | friend }}!' }, button: { label: {}, url: 'https://example.com/help' } }
+    const parsed = draftFeedbackFormArgs.safeParse({ ...RAW, form: { ...RAW.form, endings: [ending] } })
+    expect(parsed.error?.issues.map((issue) => issue.message)).toStrictEqual(["Ending “Thanks, [user_id]!”: Write the button's label."])
+  })
+
   it('refuses args that are not a form at all, and unknown keys', () => {
     expect(draftFeedbackFormArgs.safeParse({ form: 'a form' }).success).toBe(false)
     expect(draftFeedbackFormArgs.safeParse({ ...RAW, extra: 1 }).success).toBe(false)

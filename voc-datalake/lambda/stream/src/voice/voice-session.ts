@@ -3,9 +3,9 @@
  * voice-personas.md → The relay). One per AgentCore session (one microVM per session id).
  *
  * - Start: the session row goes `minted` → `live` once (store.ts `activate`: the presigned URL is single use and
- *   lasts a minute, with 10 s for the clocks), then the projects API's input is read and must name this session and
- *   its signed scope; any refusal, a first connection after that minute's end included, is `ended {refused}` and
- *   close 1008. Then the first stream opens and the browser hears `ready`.
+ *   taken until the row's `connect_by`, its minute and 10 s for the clocks), then the projects API's input is read and
+ *   must name this session and its signed scope; any refusal, a first connection past `connect_by` included, is
+ *   `ended {refused}` and close 1008. Then the first stream opens and the browser hears `ready`.
  * - Rollover: a Bedrock stream lasts at most 8 minutes, so at the persona's first finished turn after 7:00 of a
  *   stream's life (or at 7:45 whatever it is doing) a new stream opens with the same prompt and the conversation so far
  *   as its chat history (transcript.ts `history`, within Nova Sonic's 200 KB), the microphone moves to it, the old one

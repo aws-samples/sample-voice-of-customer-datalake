@@ -2607,9 +2607,15 @@ def start_engineering_run():
 @tracer.capture_method
 def get_engineering_run(run_id: str):
     """The run monitor's view of a run: the run, its agents and their metering, the totals (cost and budget come with the run control).
-    Also the MCP tool ``engineering_run_get``'s (7.53.00), which keeps its status, steps, agents, cost and links."""
+    Also the MCP tool ``engineering_run_get``'s (7.53.00), which keeps its status, steps, agents, cost and links. A run
+    that has ended has its engineering agent's run ended with it at this read (7.71.04, ``_end_agent_run_of``, as
+    after a Stop): the run's own end is the runtime's, whose role writes nothing of voc-agents' runs, so it was left
+    to the heartbeat's next heal, up to 15 minutes later (the live Bug fixer run's agent run read running after its
+    run ended done)."""
     monitor = _monitor(run_id, 'run_get')
-    return _found(monitor.overview(run_id))
+    overview = _found(monitor.overview(run_id))
+    _end_agent_run_of(monitor, run_id, {'status': overview['run']['status']})
+    return overview
 
 
 @app.post('/agents/engineering/<run_id>/signals')
@@ -2632,10 +2638,11 @@ def signal_engineering_run(run_id: str):
 
 
 def _end_agent_run_of(monitor: Any, run_id: str, stopped: dict[str, Any]) -> dict[str, Any] | None:
-    """After a Stop that ended the run, its engineering agent's run ended at once (cancelled, its lock released:
-    ``eng_runs.end_agent_run``), so the agent may run again now rather than at the heartbeat's next heal, which would
-    do the same; None for a run no agent started, or a Stop still waiting for its agents. Best effort: a failure is
-    logged and left to the heartbeat."""
+    """After a Stop that ended the run, or (7.71.04) at a read of a run that ended (``stopped``: its ``status``), its
+    engineering agent's run ended at once (completed, failed or cancelled, its lock released:
+    ``eng_runs.end_agent_run``, a no-op once it has ended), so the agent may run again now rather than at the
+    heartbeat's next heal, which would do the same; None for a run no agent started, or one still under way (a Stop
+    still waiting for its agents). Best effort: a failure is logged and left to the heartbeat."""
     if stopped.get('status') not in eng_runs.AGENT_RUN_ENDS:
         return None
     try:
@@ -2648,7 +2655,7 @@ def _end_agent_run_of(monitor: Any, run_id: str, stopped: dict[str, Any]) -> dic
         ended = eng_runs.end_agent_run(table, via['agent_id'], via['agent_run_id'], str(stopped['status']),
                                        now=datetime.now(UTC))
     except (ApiError, ClientError, BotoCoreError, KeyError, ValueError):
-        logger.exception('engineering: the stopped run\'s agent run was not ended here; the heartbeat ends it',
+        logger.exception('engineering: the ended run\'s agent run was not ended here; the heartbeat ends it',
                          extra={'run_id': run_id})
         return None
     return {'agent_id': via['agent_id'], 'run_id': via['agent_run_id'], 'ended': ended}

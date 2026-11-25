@@ -448,7 +448,8 @@ def test_the_fill_and_the_launch_are_invocations_of_their_own(wired: Any, monkey
     monkeypatch.setattr('shared.aws.invoke_lambda_async', lambda name, event: handed.append({'to': name, **event}))
     handler.start_run(COORDINATED)
     assert handed == [{'to': 'voc-engineering-runtime', 'action': 'launch_coordinator', 'run_id': OTHER_RUN,
-                       'actor': '', 'filled': False, 'resume': False, 'background': False, 'board': False, 'asks': 0}]
+                       'actor': '', 'filled': False, 'resume': False, 'resumed': False, 'background': False,
+                       'board': False, 'asks': 0}]
     assert handler.launch_coordinator(handed[0]) == {'run_id': OTHER_RUN, 'status': 'filled'}
     assert (len(function.calls), handed[-1]['filled']) == (1, True)
     assert handler.launch_coordinator(handed[-1]) == {'run_id': OTHER_RUN, 'status': 'active'}

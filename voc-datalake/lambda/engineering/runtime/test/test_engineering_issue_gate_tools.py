@@ -87,21 +87,37 @@ def test_the_understander_labels_its_issue_with_the_allowlist_only(tmp_path: Any
                                 {'number': 1, 'labels': ['voc-triage/bug', 'voc-severity/s2']})]
 
 
-def test_labels_another_agent_of_the_run_put_first_are_said_to_be_theirs(tmp_path: Any) -> None:
-    # (7.71.03) The run labels its issue once: a second understander's call is answered with the first one's labels,
-    # and the tool says so, to the model and on the task, rather than as if its own were put.
-    class FirstLabels(FakeBroker):
-        def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
-            del run_id, agent_id, labels
-            return {'number': number, 'labels': ['voc-triage/bug', 'voc-severity/s2'], 'set_by': 'understander-2'}
+class FirstLabels(FakeBroker):
+    """The broker's answer to a call after the run's first: that call's labels (7.71.02), whoever put them."""
 
+    def label_issue(self, run_id: str, agent_id: str, *, number: int, labels: tuple[str, ...]) -> dict[str, Any]:
+        del run_id, agent_id, labels
+        return {'number': number, 'labels': ['voc-triage/bug', 'voc-severity/s2']}
+
+
+def _label_after_the_first(tmp_path: Any, labels: list[str]) -> tuple[Any, Any]:
+    """An understander's ``label_issue`` of ``labels`` answered with the run's first labels: its world and the call."""
     w = world(tmp_path, role='understander')
     w.session.context.broker = FirstLabels()
-    done = w.session.tools.call('label_issue', {'number': 1, 'labels': ['voc-triage/bug', 'voc-severity/s3']})
-    said = 'labels already set by understander-2: voc-triage/bug, voc-severity/s2'
+    return w, w.session.tools.call('label_issue', {'number': 1, 'labels': labels})
+
+
+def test_labels_other_than_the_ones_asked_are_said_to_be_set_already(tmp_path: Any) -> None:
+    # (7.71.04) The run labels its issue once: a call answered with other labels than it asked says so, to the model
+    # and on the task, rather than as if its own were put (the broker names no agent: 7.71.03's set_by is gone).
+    w, done = _label_after_the_first(tmp_path, ['voc-triage/bug', 'voc-severity/s3'])
+    said = ("labels already set: voc-triage/bug, voc-severity/s2 (the run's issue had its labels from an earlier "
+            'call; nothing was added)')
     assert (done.error, said in done.text, w.session.context.status.step) == (False, True, said)
     spec = next(spec for spec in w.session.tools.specs if spec.name == 'label_issue')
-    assert 'labels already set by <agent>' in spec.description
+    assert 'labels already set: ...' in spec.description
+
+
+def test_the_labels_asked_answered_in_any_order_are_said_to_be_labelled(tmp_path: Any) -> None:
+    # The same labels, whichever call of the run put them (this agent's own repeat included): labelled, not "set".
+    w, done = _label_after_the_first(tmp_path, ['voc-severity/s2', 'voc-triage/bug'])
+    step = 'labelled the issue voc-severity/s2, voc-triage/bug'
+    assert (done.error, 'already set' in done.text, w.session.context.status.step) == (False, False, step)
 
 
 def _final_go(tmp_path: Any) -> Any:
