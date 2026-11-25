@@ -21,7 +21,7 @@ import { parseToolInput, toolSpec } from '../spec.js';
 import { parseEach, serverTool } from './common.js';
 
 /** Items one search names, as one message mentions at most. */
-export const MAX_SEARCH_ITEMS = 3;
+const MAX_SEARCH_ITEMS = 3;
 const MAX_QUERY_CHARS = 500;
 const SLUG_CHARS = /^[a-z0-9-]{1,64}$/;
 
