@@ -4643,5 +4643,111 @@
         "path": "/feedback-forms/draft/job_probe"
       }
     ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "GET",
+    "call": "`/projects/library${listQuery(query)}`",
+    "probes": [
+      {
+        "path": "/projects/library"
+      },
+      {
+        "path": "/projects/library?q=market&tag=q3&sort=title&limit=10"
+      }
+    ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "GET",
+    "call": "`/projects/library/suggest?q=${encodeURIComponent(q)}`",
+    "probes": [
+      {
+        "path": "/projects/library/suggest?q=q3"
+      }
+    ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "POST",
+    "call": "'/projects/library'",
+    "probes": [
+      {
+        "path": "/projects/library",
+        "body": {
+          "filename": "notes.md",
+          "content_type": "text/markdown",
+          "bytes": 120,
+          "title": "Probe notes"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "POST",
+    "call": "`${itemPath(itemId)}/uploaded`",
+    "probes": [
+      {
+        "path": "/projects/library/lib_20261101090000_a1b2c3d4/uploaded"
+      }
+    ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "POST",
+    "call": "`${itemPath(itemId)}/retry`",
+    "probes": [
+      {
+        "path": "/projects/library/lib_20261101090000_a1b2c3d4/retry"
+      }
+    ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "GET",
+    "call": "itemPath(itemId)",
+    "probes": [
+      {
+        "path": "/projects/library/lib_20261101090000_a1b2c3d4"
+      }
+    ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "GET",
+    "call": "`${itemPath(itemId)}/text?page=${String(page)}`",
+    "probes": [
+      {
+        "path": "/projects/library/lib_20261101090000_a1b2c3d4/text?page=2"
+      }
+    ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "PUT",
+    "call": "itemPath(itemId)",
+    "probes": [
+      {
+        "path": "/projects/library/lib_20261110141500_c3d4e5f6",
+        "body": {
+          "expected_version": 1,
+          "tags": [
+            "pricing",
+            "faq"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/libraryApi.ts",
+    "method": "DELETE",
+    "call": "itemPath(itemId)",
+    "probes": [
+      {
+        "path": "/projects/library/lib_20260101000000_00000000"
+      }
+    ]
   }
 ]

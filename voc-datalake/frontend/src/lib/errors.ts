@@ -34,6 +34,11 @@ export class ApiError extends Error {
   }
 }
 
+/** The machine-readable code of a failed request (see `ApiError.code`), or null. */
+export function apiErrorCode(error: unknown): string | null {
+  return error instanceof ApiError ? error.code ?? null : null
+}
+
 /**
  * The server's own reason a request failed — the `error`/`message` of its 4xx
  * body, e.g. "No feedback data found for the given filters" — or null when it

@@ -1,0 +1,157 @@
+{
+  "title": "Documents library",
+  "subtitle": "Reports, research, decks and images the assistant can read when you name them in a chat.",
+  "configureFirst": "Connect the API endpoint in Administration → General first.",
+  "intro": {
+    "label": "About the library",
+    "notFeedback": "Library items are reference documents, not feedback: they never reach metrics, sentiment or categories. To import feedback from a CSV or JSON file, use",
+    "importLink": "Data sources",
+    "mention": "In the assistant, type # and an item's short name (for example #q3-market) to put that document into the chat."
+  },
+  "toolbar": {
+    "label": "Filter the library",
+    "search": "Search the library",
+    "searchPlaceholder": "Search titles, short names, sources and tags",
+    "tag": "Tag",
+    "anyTag": "Any tag",
+    "project": "Project",
+    "anyProject": "Any project",
+    "sort": "Sort",
+    "sorts": {
+      "newest": "Newest",
+      "oldest": "Oldest",
+      "title": "Title",
+      "docDate": "Document date"
+    }
+  },
+  "status": {
+    "pending": "Waiting for the file",
+    "extracting": "Reading",
+    "ready": "Ready",
+    "failed": "Failed"
+  },
+  "row": {
+    "dated": "Dated {{date}}",
+    "added": "Added {{date}}",
+    "addedBy": "Added {{date}} by {{name}}"
+  },
+  "list": {
+    "label": "Library items",
+    "loading": "Loading the library…",
+    "loadFailed": "The library could not be loaded. Check your connection and try again.",
+    "noMatch": "No library items match these filters.",
+    "loadMore": "Load more"
+  },
+  "empty": {
+    "title": "No documents yet",
+    "text": "Upload a report, a survey export, a deck or an image once, and name it in any chat with # and its short name.",
+    "textReadOnly": "Nobody has added a document to this library yet."
+  },
+  "upload": {
+    "open": "Upload files",
+    "title": "Upload to the library",
+    "description": "Each file becomes one library item. Its text is read once, after the upload.",
+    "dropHint": "Drop files here, or choose them.",
+    "choose": "Choose files",
+    "limits": "PDF, Word, Excel, PowerPoint, CSV, HTML, text, Markdown, or a PNG, JPEG, GIF or WebP image. Files up to 25 MB, images up to 3.75 MB.",
+    "filesLabel": "Files to upload",
+    "moreDetails": "More details",
+    "remove": "Remove {{name}}",
+    "progressLabel": "Upload of {{name}}",
+    "start": "Upload ({{count, number}})",
+    "cancel": "Cancel",
+    "done": "Done",
+    "phase": {
+      "creating": "Preparing the upload…",
+      "uploading": "Uploading… {{percent}}",
+      "finishing": "Starting to read the file…",
+      "done": "Uploaded. Its text is being read: the list shows when it is ready."
+    },
+    "refused": {
+      "unsupported": "This file type is not supported. Upload one of: {{accepted}}.",
+      "empty": "This file is empty.",
+      "tooLarge": "This file is larger than 25 MB, the most a library item can be.",
+      "imageTooLarge": "This image is larger than 3.75 MB, the most an image can be."
+    }
+  },
+  "fields": {
+    "title": "Title",
+    "slug": "Short name",
+    "slugHint": "What you type after # in a chat: lower-case letters, digits and hyphens. Left empty, it is made from the title.",
+    "source": "Source",
+    "docDate": "Document date",
+    "tags": "Tags",
+    "tagsHint": "Separated by commas, for example: market, q3.",
+    "project": "Project",
+    "noProject": "No project",
+    "titleRequired": "Give the item a title.",
+    "badSlug": "A short name is 1 to 64 lower-case letters, digits and hyphens, and starts and ends with a letter or digit.",
+    "tooManyTags": "An item has at most {{max, number}} tags.",
+    "tagTooLong": "A tag is at most {{max, number}} characters."
+  },
+  "errors": {
+    "slugTaken": "Another library item already has this short name. Choose another.",
+    "libraryFull": "This library holds 1,000 items, its most. Delete some first.",
+    "unsupported": "This file type is not supported.",
+    "tooLarge": "This file is too large: files can be at most 25 MB, images at most 3.75 MB.",
+    "stale": "This item was changed since you opened it. Reload it and try again.",
+    "notUploaded": "The file did not arrive. Try again.",
+    "uploadMismatch": "The uploaded file is not the one announced. Try again.",
+    "writeForbidden": "Only an admin or the person who uploaded this item can change or delete it.",
+    "deleteForbidden": "Only an admin or the person who uploaded it can delete this item.",
+    "notFound": "This library item no longer exists.",
+    "notFailed": "Only a failed item can be read again.",
+    "uploadRefused": "The file could not be uploaded. Try again.",
+    "network": "The upload stopped: check your connection and try again.",
+    "other": "Something went wrong. Try again."
+  },
+  "preview": {
+    "title": "Library item",
+    "loading": "Loading the item…",
+    "loadFailed": "This item could not be loaded. Check your connection and try again.",
+    "notFound": "This library item does not exist, or it was deleted.",
+    "pending": "Waiting for its file. If the upload did not finish, delete this item and upload the file again.",
+    "extracting": "Its text is being read. This page updates when it is ready.",
+    "failed": "Its text could not be read.",
+    "download": "Download the original",
+    "newTab": "(opens in a new tab)",
+    "retry": "Read it again",
+    "edit": "Edit details",
+    "delete": "Delete",
+    "mentionHint": "Type {{slug}} in the assistant to put this document into a chat."
+  },
+  "details": {
+    "none": "None",
+    "file": "File",
+    "pages": "Pages",
+    "assistant": "How the assistant reads it",
+    "native": "The file itself, when it is named in a chat",
+    "passages": "The passages of its text that match the question",
+    "added": "Added",
+    "changed": "Last changed",
+    "byOn": "{{name}}, {{date}}"
+  },
+  "edit": {
+    "label": "Edit the item's details",
+    "save": "Save",
+    "cancel": "Cancel",
+    "reload": "Reload"
+  },
+  "text": {
+    "title": "Text",
+    "loading": "Loading the text…",
+    "loadFailed": "The text could not be loaded. Try again.",
+    "empty": "No text was found on this page.",
+    "pagesLabel": "Pages of the text",
+    "pageOf": "Page {{current, number}} of {{total, number}}",
+    "partOf": "Part {{current, number}} of {{total, number}}",
+    "previous": "Previous",
+    "next": "Next",
+    "truncated": "This document is very long: only its first part was read."
+  },
+  "delete": {
+    "title": "Delete this library item?",
+    "message": "\"{{title}}\" is deleted for good, with its file and its text. Chats that named it keep what they said.",
+    "confirm": "Delete"
+  }
+}

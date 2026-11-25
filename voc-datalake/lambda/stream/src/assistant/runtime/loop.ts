@@ -16,7 +16,7 @@ import {
   INTERRUPT_REASON_TOOL_APPROVAL,
   INTERRUPT_TTL_MINUTES,
 } from '../contract.js';
-import type { AssistantRunContext, AssistantToolset, FeedbackSource, WebSourceRef } from '../types.js';
+import type { AssistantRunContext, AssistantToolset, FeedbackSource, LibrarySourceRef, WebSourceRef } from '../types.js';
 import type { ConverseStreamParams } from '../../bedrock/converse-stream.js';
 import type { TurnState } from '../../bedrock/stream-processor.js';
 import {
@@ -69,6 +69,7 @@ export interface LoopResult {
   usage: UsageTotals;
   sources: FeedbackSource[];
   webSources: WebSourceRef[];
+  librarySources: LibrarySourceRef[];
   /** The model that answered the last turn (differs from LoopInput.modelId after a fallback). */
   modelId: string;
   /** The user stopped the run: what streamed so far is the answer. */
@@ -265,6 +266,7 @@ async function runRound(input: LoopInput, messages: Message[], round: number, re
   const toolRound = await runToolCalls(state.toolUses, input.toolset, input.ctx, input.emitter, messageId);
   result.sources.push(...toolRound.sources);
   result.webSources.push(...toolRound.webSources);
+  result.librarySources.push(...toolRound.librarySources);
   if (toolRound.pending.length > 0) {
     const now = input.now();
     result.outcome = { type: 'interrupt', interrupts: toolRound.pending.map((p) => buildInterrupt(p, now)) };
@@ -307,7 +309,8 @@ async function roundOrStop(input: LoopInput, messages: Message[], round: number,
 
 export async function runAgentLoop(input: LoopInput): Promise<LoopResult> {
   const result: LoopResult = {
-    outcome: { type: 'success' }, usage: emptyUsage(), sources: [], webSources: [], modelId: input.modelId, stopped: false,
+    outcome: { type: 'success' }, usage: emptyUsage(), sources: [], webSources: [], librarySources: [],
+    modelId: input.modelId, stopped: false,
   };
   const conversation = { messages: input.messages, finished: false };
   for (const round of ROUNDS) {

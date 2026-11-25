@@ -13,9 +13,9 @@ import { at } from '@test/defined'
 const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8')
 const css = read('../index.css')
 
-/** Class string of ModalShell's outer `fixed inset-0` wrapper. */
+/** Class string of ModalShell's outer `fixed inset-0` wrapper (its `SHELL_WRAPPER`, whatever the placement). */
 function modalWrapperClass(): string {
-  const m = /<div className="(fixed inset-0 [^"]*)"/.exec(read('../components/ModalShell/ModalShell.tsx'))
+  const m = /const SHELL_WRAPPER = '(fixed inset-0 [^']*)'/.exec(read('../components/ModalShell/ModalShell.tsx'))
   if (m === null) throw new Error('ModalShell has no `fixed inset-0` wrapper')
   return at(m, 1)
 }

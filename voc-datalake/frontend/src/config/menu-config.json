@@ -13,6 +13,7 @@
   "participants": true,
   "feature-requests": true,
   "memory": true,
+  "library": true,
   "agents": true,
   "company": true,
   "connect": true,

@@ -68,7 +68,9 @@
       "saving": "저장 중…",
       "saved": "문서에 저장됨",
       "error": "저장 실패 – 다시 시도"
-    }
+    },
+    "librarySources": "사용한 라이브러리 문서",
+    "openLibraryItem": "라이브러리에서 {{name}}({{marker}}) 열기"
   },
   "toolStatus": {
     "streaming": "준비 중",
@@ -288,12 +290,14 @@
     },
     "limit": {
       "persona": "메시지당 페르소나는 최대 {{max, number}}개입니다.",
-      "document": "메시지당 문서는 최대 {{max, number}}개입니다."
+      "document": "메시지당 문서는 최대 {{max, number}}개입니다.",
+      "library": "메시지당 라이브러리 문서는 최대 {{max, number}}개입니다."
     },
     "loading": "프로젝트를 불러오는 중…",
     "empty": {
       "persona": "일치하는 페르소나가 없습니다.",
-      "document": "일치하는 문서가 없습니다."
+      "document": "일치하는 문서가 없습니다.",
+      "library": "일치하는 라이브러리 문서가 없습니다. 라이브러리 페이지에서 문서를 추가하세요."
     },
     "count_one": "추천 {{count, number}}개",
     "count_other": "추천 {{count, number}}개",
@@ -301,7 +305,14 @@
     "remove": "{{name}} 제거",
     "insertPersona": "페르소나 언급",
     "insertDocument": "문서 태그",
-    "allCapped": "@all은 페르소나 {{total, number}}개 중 처음 {{max, number}}개에 질문합니다: {{names}}."
+    "allCapped": "@all은 페르소나 {{total, number}}개 중 처음 {{max, number}}개에 질문합니다: {{names}}.",
+    "placeholderLibrary": "피드백, 프로젝트 또는 이 페이지에 대해 물어보세요. #를 입력해 라이브러리 문서를 지정…",
+    "sections": {
+      "library": "라이브러리"
+    },
+    "loadingLibrary": "라이브러리를 불러오는 중…",
+    "insertLibrary": "라이브러리 문서 언급",
+    "largeItem": "{{name}}은(는) 큰 문서입니다. 보낼 때마다 약 {{tokens, number}}개 토큰을 사용합니다."
   },
   "scope": {
     "title": "피드백 범위",

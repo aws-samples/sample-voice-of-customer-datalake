@@ -17,6 +17,60 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.05.00] - 2026-11-25
+
+**The Documents Library**: upload a market report, interview transcripts or a deck once, tag it, and mention it in
+any chat with `#slug`; the assistant reads the file itself when it fits, or searches it and cites the passages
+([documents-library.md](docs/documents-library.md), GitHub issue #566). Library items are never feedback. Ported from
+the `voc-multiplayer` branch's 7.62.00 and its later Library fixes, without its workspaces: a deployment has one
+library. No new API Gateway resource (the projects API's `/projects/{proxy+}`), no new stack, no fixed cost.
+
+### Added
+
+- **The Library page** (`/library`, **Library** in the menu): upload one or more files with progress (PDF, Word,
+  Excel, PowerPoint, CSV, HTML, text, Markdown up to 25 MB; PNG, JPEG, GIF, WebP up to 3.75 MB; other types refused
+  with a clear message), each with a title, a short name (`slug`), a source, a date, tags and an optional project;
+  search, tag and project filters and a sort; a side-sheet preview with the extracted text page by page and a 5-minute
+  download link; edit (a stale edit is refused), retry, and delete by an admin or the uploader. An item extracting, or
+  still waiting for its file, 16 minutes after it started reads **Stopped** and can be read again or deleted.
+- **Text extracted once** on the projects API's 15-minute assist twin: the standard library for text, Markdown, CSV,
+  HTML and Office XML, `pypdf` for a PDF's text layer, Amazon Bedrock (the Documents model) for a scanned PDF, a legacy
+  `.doc` / `.xls` and an image's description. Passages of about 1,800 characters, embedded with Titan Text Embeddings
+  V2 and ranked by cosine in the Lambda (no vector database).
+- **`#slug` in the assistant, on every page** (at most 3 a message; on a project page after the project's documents,
+  as a **Library** group): a file Converse reads natively, up to 4.5 MB, is attached to that message; otherwise its
+  best 8 passages (12,000 characters at most) go in a `<library>` data block with `[#slug p.N]` markers. The answer
+  shows **Library documents used**: chips that open the Library at the page cited. A large item says so in the
+  composer. The assistant can search the library again later with its `library_search` tool.
+- **`search_library`** on `/mcp/global`: passages for a query, in up to 3 named items or the best-matching ones,
+  read as the token's minter; never a file ([mcp.md](docs/mcp.md)).
+- Routes on `/projects/library…` (the list, `suggest`, create with a 15-minute presigned PUT bound to the file's
+  length, type and `If-None-Match: *`, `uploaded`, `retry`, one item, its `text`, edit, delete, `context`).
+- A reusable side sheet (`components/SideSheet`, `ModalShell` `placement="end"`), which the Library's upload and
+  preview use. A dialog no longer inherits the text alignment of the wrapper it is rendered in.
+
+### Changed
+
+- **The MCP `tools/list` budget goes from 4,000 to 10,000 estimated tokens** (owner decision;
+  `test_mcp_global_tools_budget.py`), the budget `voc-multiplayer` took in its 6.10.00. The list is about 4,200 today;
+  ChatGPT connectors are reported to refuse servers past about 5,000, so descriptions stay short.
+- The projects API's role gains the raw bucket's `library/*` (read, write, every version's delete) in its existing
+  object statement and `bedrock:InvokeModel` on the in-Region Titan Text Embeddings V2 model, beside the avatar model.
+
+### Upgrade notes
+
+- **New dependency**: `pypdf==7.1.1` (BSD-3-Clause, pinned exactly) in `lambda/layers/signing-deps`, the projects
+  API's layer ([dependencies.md](docs/dependencies.md)). The Cognito message trigger builds its own copy of that
+  layer and now carries pypdf too, unused. Install it in the local venv
+  (`.venv/bin/pip install -r lambda/layers/signing-deps/requirements.txt`).
+- **Bedrock**: the projects API now calls Titan Text Embeddings V2 (`amazon.titan-embed-text-v2:0`, in-Region; the
+  memory already uses it): enable model access in the deployment's Region if it is not yet.
+- Deploy as usual (`cdk deploy --all`); no data migration. Pay per use only: a natively attached 50-page PDF is
+  about 50,000 to 75,000 input tokens each time it is attached; a scanned PDF's reading costs about 1 to 3 cents per
+  10 pages.
+- Not in this release: Library items as evidence for PR/FAQ, PRD and research generation (mention them in the
+  assistant meanwhile), and an erasure by email listing the library items that hold the address.
+
 ## [7.04.00] - 2026-11-18
 
 Feedback Forms become a form builder. A form is now a flow of questions (schema version 2): a welcome screen, 1 to 30 questions of ten types, logic that jumps forward to a later question or to one of up to five endings, hidden fields the link or the app fills in, and its texts in any of the app's nine languages. It has a test link whose responses never count, per-question results with a drop-off funnel, twelve templates, and an AI that drafts a form from a description, in the builder and from the assistant. A form saved before keeps working: it is migrated when it is read and written back as version 2 on its next save. The release also carries a customer pilot's fix: a form without a rating shows its Question. Before release the builder went through a UX audit (28 findings, all in): the widget draws itself apart from the page it lands on, so the builder's preview, the template picker's preview and a script embed on a dark site show exactly what respondents get; the in-pane preview is an honest phone and a pop-out window shows the draft at real sizes; a form's colours are a Style panel beside the preview, with presets, a dark palette and Auto mode, fonts, sizes and a live contrast table, and unreadable text is refused at publish in the editor and on the server; the assistant button keeps clear of the preview; the phone's Next bar sticks; nothing overflows at 390 px; and the Share tab's script embed works as pasted, from a static file of the app's own CloudFront.

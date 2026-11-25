@@ -105,7 +105,44 @@
 
 Frontend design system:
 [kirodotdev/kirocrew](https://github.com/kirodotdev/kirocrew) - Apache-2.0 (Kiro colour tokens, component recipes and the Kiro ghost mark, adapted in voc-datalake/frontend/src/index.css and src/components/KiroGhost; the Nord, Dracula and High contrast palettes, adapted in src/styles/theme-palettes.css)
+
+Frontend components ported from KiroCrew (each says so in its header):
+[kirodotdev/KiroCrew](https://github.com/kirodotdev/KiroCrew) - Apache-2.0, Copyright Amazon.com, Inc. or its affiliates (its NOTICE: "This product includes software developed at Amazon.com, Inc."): `website/src/components/SideSheet.tsx` (the side sheet at the inline end: voc-datalake/frontend/src/components/SideSheet/SideSheet.tsx on ModalShell, 7.05.00).
 [@fontsource/space-grotesk@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
 [@fontsource/jetbrains-mono@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
 [@fontsource-variable/inter@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1 (the Quick theme's face)
 Quick theme: the palette, component look (src/styles/theme-palettes.css) and four-point spark mark (src/components/ThemeMark/QuickMark.tsx, public/favicons/quick.svg) are inspired by Quick
+
+[pypdf@7.1.1](https://github.com/py-pdf/pypdf) - BSD-3-Clause (the Documents Library's reader of a PDF's text layer: voc-datalake/lambda/layers/signing-deps, the projects API's own layer, used by lambda/shared/library_extract.py on its assist twin). Its licence, word for word:
+
+```
+Copyright (c) 2006-2008, Mathieu Fenniak
+Some contributions copyright (c) 2007, Ashish Kulkarni <kulkarni.ashish@gmail.com>
+Some contributions copyright (c) 2014, Steve Witham <switham_github@mac-guyver.com>
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+* Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+* The name of the author may not be used to endorse or promote products
+derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+```

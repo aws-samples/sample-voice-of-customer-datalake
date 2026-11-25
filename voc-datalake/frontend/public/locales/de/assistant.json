@@ -68,7 +68,9 @@
       "saving": "Wird gespeichert…",
       "saved": "In Dokumenten gespeichert",
       "error": "Speichern fehlgeschlagen – erneut versuchen"
-    }
+    },
+    "librarySources": "Verwendete Bibliotheksdokumente",
+    "openLibraryItem": "{{name}} ({{marker}}) in der Bibliothek öffnen"
   },
   "toolStatus": {
     "streaming": "wird vorbereitet",
@@ -288,12 +290,14 @@
     },
     "limit": {
       "persona": "Höchstens {{max, number}} Personas pro Nachricht.",
-      "document": "Höchstens {{max, number}} Dokumente pro Nachricht."
+      "document": "Höchstens {{max, number}} Dokumente pro Nachricht.",
+      "library": "Höchstens {{max, number}} Bibliotheksdokumente pro Nachricht."
     },
     "loading": "Projekt wird geladen…",
     "empty": {
       "persona": "Keine passende Persona.",
-      "document": "Kein passendes Dokument."
+      "document": "Kein passendes Dokument.",
+      "library": "Kein Bibliotheksdokument passt. Fügen Sie Dokumente auf der Seite Bibliothek hinzu."
     },
     "count_one": "{{count, number}} Vorschlag",
     "count_other": "{{count, number}} Vorschläge",
@@ -301,7 +305,14 @@
     "remove": "{{name}} entfernen",
     "insertPersona": "Persona erwähnen",
     "insertDocument": "Dokument markieren",
-    "allCapped": "@all fragt die ersten {{max, number}} von {{total, number}} Personas: {{names}}."
+    "allCapped": "@all fragt die ersten {{max, number}} von {{total, number}} Personas: {{names}}.",
+    "placeholderLibrary": "Fragen Sie zu Ihrem Feedback, Ihren Projekten oder dieser Seite. Tippen Sie # für ein Bibliotheksdokument…",
+    "sections": {
+      "library": "Bibliothek"
+    },
+    "loadingLibrary": "Bibliothek wird geladen…",
+    "insertLibrary": "Ein Bibliotheksdokument erwähnen",
+    "largeItem": "{{name}} ist groß: etwa {{tokens, number}} Tokens bei jedem Senden."
   },
   "scope": {
     "title": "Feedback-Umfang",

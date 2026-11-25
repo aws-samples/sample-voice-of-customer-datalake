@@ -109,6 +109,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'import-history': 'standard', // import runs (Data sources → Import history); a finished upload invalidates it
   'inline-image': 'config', // a presigned image read as a data: URL (hooks/useInlineImage)
   'integration-status': 'standard',
+  'library': 'live', // the Documents Library: items, their text and `#` suggestions (an upload's status moves while its text is extracted; the list polls only then)
   'logs': 'config', // ['logs', 'alerts']: the alerting switch and recipients
   'logs-summary': 'live',
   'memory': 'standard',

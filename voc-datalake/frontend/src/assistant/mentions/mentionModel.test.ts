@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  atLimit, documentLabel, documentMentionOptions, findTrigger, insertToken, mentionsForSend, personaMentionOptions, tokenOf,
+  LARGE_ITEM_TOKENS, LIBRARY_TRIGGERS, approximateTokens, atLimit, documentLabel, documentMentionOptions,
+  documentsFull, findTrigger, insertToken, libraryFull, libraryMentionOptions, libraryStart, mentionsForSend,
+  personaMentionOptions, tokenOf,
 } from './mentionModel'
 import { defined } from '@test/defined'
-import type { DocumentSource, MentionOption, MentionPick, PersonaSource } from './mentionModel'
+import type { DocumentSource, LibrarySource, MentionOption, MentionPick, PersonaSource } from './mentionModel'
 
 const PERSONAS: PersonaSource[] = [
   { persona_id: 'p1', name: 'Deadline Dana' },
@@ -59,8 +61,55 @@ describe('options', () => {
   it('stops offering once a message has reached a limit', () => {
     const all = pick(personaMentionOptions(PERSONAS, 'all', [], 'Every persona')[0])
     const docs = documentMentionOptions(DOCUMENTS, '', []).map(pick)
-    expect({ afterAll: atLimit('persona', [all]), threeDocs: atLimit('document', docs), twoDocs: atLimit('document', docs.slice(0, 2)) })
+    expect({ afterAll: atLimit('persona', [all]), threeDocs: documentsFull(docs), twoDocs: documentsFull(docs.slice(0, 2)) })
       .toStrictEqual({ afterAll: true, threeDocs: true, twoDocs: false })
+  })
+  it('keeps # open while the library can still be picked, and closes it when both groups are full', () => {
+    const docs = documentMentionOptions(DOCUMENTS, '', []).map(pick)
+    const items = libraryMentionOptions(LIBRARY, '', []).map(pick)
+    expect({
+      docsOnly: atLimit('document', docs),
+      both: atLimit('document', [...docs, ...items]),
+      itemsOffProject: atLimit('document', items, false),
+      libraryFull: libraryFull(items),
+    }).toStrictEqual({ docsOnly: false, both: true, itemsOffProject: true, libraryFull: true })
+  })
+})
+
+const LIBRARY: LibrarySource[] = [
+  { item_id: 'lib_20261101000000_0000a001', slug: 'q3-market', title: 'Q3 market report', extracted_chars: 200_000 },
+  { item_id: 'lib_20261101000000_0000a002', slug: 'delivery-study', title: 'Delivery study' },
+  { item_id: 'lib_20261101000000_0000a003', slug: 'pricing', title: '  ' },
+]
+
+describe('library items', () => {
+  it('are offered by slug or title, not twice, after the documents', () => {
+    const options = libraryMentionOptions(LIBRARY, 'Q3', [])
+    expect(options.map((option) => option.key)).toStrictEqual(['library:lib_20261101000000_0000a001'])
+    const documents = documentMentionOptions(DOCUMENTS, '', [])
+    const all = [...documents, ...libraryMentionOptions(LIBRARY, '', [])]
+    expect({ start: libraryStart(all), none: libraryStart(documents) }).toStrictEqual({ start: documents.length, none: -1 })
+    const picked = pick(options[0])
+    expect(libraryMentionOptions(LIBRARY, 'q3', [picked])).toStrictEqual([])
+  })
+
+  it('put their slug in the text, fall back to it as a label, and travel as item ids', () => {
+    const [first, , untitled] = libraryMentionOptions(LIBRARY, '', [])
+    const picked = pick(first)
+    expect({ token: picked.token, label: untitled?.label }).toStrictEqual({ token: '#q3-market', label: 'pricing' })
+    expect(mentionsForSend([picked], 'what does #q3-market say?'))
+      .toStrictEqual({ library: [{ item_id: 'lib_20261101000000_0000a001' }] })
+    expect(mentionsForSend([picked], 'the token was deleted')).toBeUndefined()
+  })
+
+  it('say when they are large', () => {
+    expect({ tokens: approximateTokens(200_000), large: approximateTokens(200_000) > LARGE_ITEM_TOKENS })
+      .toStrictEqual({ tokens: 50_000, large: true })
+  })
+
+  it('are the only # off a project page: @ is not a trigger there', () => {
+    expect({ hash: findTrigger('see #q3', 7, LIBRARY_TRIGGERS)?.kind, at: findTrigger('ask @Dea', 8, LIBRARY_TRIGGERS) })
+      .toStrictEqual({ hash: 'document', at: null })
   })
 })
 

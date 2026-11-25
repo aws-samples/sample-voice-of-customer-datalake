@@ -31,7 +31,8 @@
     "radar": "Radar",
     "featureRequests": "Tableaux de retours",
     "participants": "Participants",
-    "oauthConsent": "Approuver un assistant"
+    "oauthConsent": "Approuver un assistant",
+    "library": "Bibliothèque"
   },
   "cancel": "Annuler",
   "configureBrand": "Configurer la marque",
@@ -94,7 +95,8 @@
     "admin": "Administration",
     "connect": "MCP et compétences",
     "featureRequests": "Tableaux de retours",
-    "participants": "Participants"
+    "participants": "Participants",
+    "library": "Bibliothèque"
   },
   "partialCountsHint": "Approximatif : la période complète n'a pas pu être lue, les décomptes sont une borne inférieure",
   "problemAnalysisPage": {

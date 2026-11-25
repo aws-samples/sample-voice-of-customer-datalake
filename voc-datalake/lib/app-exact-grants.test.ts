@@ -109,7 +109,7 @@ describe('exact grants over the app', () => {
   });
 
   it.each([
-    ['ProjectsLambdaRole', ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*']],
+    ['ProjectsLambdaRole', ['avatars/*', 'library/*', 'projects/*/product_docs/*', 'prototypes/*']],
     ['PersonaGeneratorRole', ['avatars/*']],
     ['SettingsLambdaRole', ['company-context/design/logo_preview_*', 'company-context/design/icons_*']],
   ])('the workspace deleter %s: version deletes and listing on exactly its prefixes, never raw/', (role, prefixes) => {

@@ -22,6 +22,8 @@ export const ProjectDetail = lazy(() => import('./pages/ProjectDetail/ProjectDet
 export const Prioritization = lazy(() => import('./pages/Prioritization/Prioritization'))
 export const FeedbackForms = lazy(() => import('./pages/FeedbackForms/FeedbackForms'))
 export const DataExplorer = lazy(() => import('./pages/DataExplorer/DataExplorer'))
+// The Documents Library: its preview drawer is `?item=<id>&page=<n>` (Library/libraryParams.ts).
+export const Library = lazy(() => import('./pages/Library/Library'))
 export const Vote = lazy(() => import('./pages/Vote/Vote'))
 export const Memory = lazy(() => import('./pages/Memory/Memory'))
 export const Company = lazy(() => import('./pages/Company/Company'))

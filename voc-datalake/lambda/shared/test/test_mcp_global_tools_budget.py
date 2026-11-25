@@ -1,11 +1,15 @@
 """The context budget of the global MCP server's ``tools/list`` (shared/mcp_global_tools.py).
 
 Every connected client injects each tool's name, description and input schema
-into the model's context before the user types. ChatGPT connectors are reported
-to refuse servers whose definitions exceed about 5,000 tokens, and Anthropic
-recommends on-demand tool discovery past about 10,000. This pins the WHOLE
-catalogue (what an admin-minted write token is shown) under 4,000 tokens, so a
-wordy description or a new tool fails here rather than in a client.
+into the model's context before the user types. Clients cache the list, and a
+client that caches its prompt prefix pays for it once per conversation, not on
+every turn. Anthropic recommends on-demand tool discovery past about 10,000
+tokens, so this pins the WHOLE catalogue (what an admin-minted write token is
+shown) under 10,000 tokens (owner decision, 7.05.00; 4,000 before, the budget
+voc-multiplayer's 6.10.00 also took): a wordy description or a new tool fails
+here rather than in a client. ChatGPT connectors are reported to refuse servers
+whose definitions exceed about 5,000 tokens: a list that grows past that loses
+those clients, so keep descriptions short even under the budget.
 
 No tokenizer is a dependency of the Lambda bundle, so tokens are estimated at
 3 characters each over compact JSON — schema JSON is punctuation-dense and
@@ -17,7 +21,7 @@ import json
 
 from shared.mcp_global_tools import TOOLS
 
-TOKEN_BUDGET = 4_000
+TOKEN_BUDGET = 10_000
 CHARS_PER_TOKEN_ESTIMATE = 3
 
 

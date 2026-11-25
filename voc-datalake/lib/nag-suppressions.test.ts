@@ -227,7 +227,8 @@ describe('cdk-nag acknowledgements', () => {
       const used = new Set(shapes.flatMap((shape) => [...shape.used]));
       // The exact number of acknowledged findings, so a change that adds or removes an acknowledgement says so
       // in its diff (and a recorder that misses some fails). Update it with the acknowledgement.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 74, used: 74 });
+      // 74 -> 75: the Documents Library's `library/*` (the projects API's object grant).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 75, used: 75 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

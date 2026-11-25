@@ -31,7 +31,8 @@
     "radar": "レーダー",
     "featureRequests": "フィードバックボード",
     "participants": "参加者",
-    "oauthConsent": "アシスタントを承認"
+    "oauthConsent": "アシスタントを承認",
+    "library": "ライブラリ"
   },
   "cancel": "キャンセル",
   "configureBrand": "ブランドを設定",
@@ -91,7 +92,8 @@
     "admin": "管理",
     "connect": "MCP とスキル",
     "featureRequests": "フィードバックボード",
-    "participants": "参加者"
+    "participants": "参加者",
+    "library": "ライブラリ"
   },
   "partialCountsHint": "概算値: 期間全体を読み取れなかったため、件数は下限値です",
   "problemAnalysisPage": {

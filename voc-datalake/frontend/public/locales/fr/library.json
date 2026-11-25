@@ -1,0 +1,157 @@
+{
+  "title": "Bibliothèque de documents",
+  "subtitle": "Rapports, études, présentations et images que l'assistant peut lire quand vous les citez dans une conversation.",
+  "configureFirst": "Connectez d'abord le point de terminaison de l'API dans Administration → Général.",
+  "intro": {
+    "label": "À propos de la bibliothèque",
+    "notFeedback": "Les éléments de la bibliothèque sont des documents de référence, pas du feedback : ils n'entrent jamais dans les métriques, le sentiment ou les catégories. Pour importer du feedback depuis un fichier CSV ou JSON, utilisez",
+    "importLink": "Sources de données",
+    "mention": "Dans l'assistant, tapez # et le nom court d'un élément (par exemple #q3-market) pour ajouter ce document à la conversation."
+  },
+  "toolbar": {
+    "label": "Filtrer la bibliothèque",
+    "search": "Rechercher dans la bibliothèque",
+    "searchPlaceholder": "Rechercher des titres, noms courts, sources et étiquettes",
+    "tag": "Étiquette",
+    "anyTag": "Toutes les étiquettes",
+    "project": "Projet",
+    "anyProject": "Tous les projets",
+    "sort": "Trier",
+    "sorts": {
+      "newest": "Plus récents",
+      "oldest": "Plus anciens",
+      "title": "Titre",
+      "docDate": "Date du document"
+    }
+  },
+  "status": {
+    "pending": "En attente du fichier",
+    "extracting": "Lecture",
+    "ready": "Prêt",
+    "failed": "Échec"
+  },
+  "row": {
+    "dated": "Daté du {{date}}",
+    "added": "Ajouté le {{date}}",
+    "addedBy": "Ajouté le {{date}} par {{name}}"
+  },
+  "list": {
+    "label": "Éléments de la bibliothèque",
+    "loading": "Chargement de la bibliothèque…",
+    "loadFailed": "La bibliothèque n'a pas pu être chargée. Vérifiez votre connexion et réessayez.",
+    "noMatch": "Aucun élément de la bibliothèque ne correspond à ces filtres.",
+    "loadMore": "Charger plus"
+  },
+  "empty": {
+    "title": "Aucun document pour l'instant",
+    "text": "Importez une fois un rapport, un export d'enquête, une présentation ou une image, puis citez-le dans n'importe quelle conversation avec # et son nom court.",
+    "textReadOnly": "Personne n'a encore ajouté de document à cette bibliothèque."
+  },
+  "upload": {
+    "open": "Importer des fichiers",
+    "title": "Importer dans la bibliothèque",
+    "description": "Chaque fichier devient un élément de la bibliothèque. Son texte est lu une fois, après l'import.",
+    "dropHint": "Déposez des fichiers ici ou choisissez-les.",
+    "choose": "Choisir des fichiers",
+    "limits": "PDF, Word, Excel, PowerPoint, CSV, HTML, texte, Markdown, ou une image PNG, JPEG, GIF ou WebP. Fichiers jusqu'à 25 Mo, images jusqu'à 3,75 Mo.",
+    "filesLabel": "Fichiers à importer",
+    "moreDetails": "Plus de détails",
+    "remove": "Retirer {{name}}",
+    "progressLabel": "Import de {{name}}",
+    "start": "Importer ({{count, number}})",
+    "cancel": "Annuler",
+    "done": "Terminé",
+    "phase": {
+      "creating": "Préparation de l'import…",
+      "uploading": "Import en cours… {{percent}}",
+      "finishing": "Début de la lecture du fichier…",
+      "done": "Importé. Son texte est en cours de lecture : la liste indique quand il est prêt."
+    },
+    "refused": {
+      "unsupported": "Ce type de fichier n'est pas pris en charge. Importez l'un de ces types : {{accepted}}.",
+      "empty": "Ce fichier est vide.",
+      "tooLarge": "Ce fichier dépasse 25 Mo, la taille maximale d'un élément de la bibliothèque.",
+      "imageTooLarge": "Cette image dépasse 3,75 Mo, la taille maximale d'une image."
+    }
+  },
+  "fields": {
+    "title": "Titre",
+    "slug": "Nom court",
+    "slugHint": "Ce que vous tapez après # dans une conversation : lettres minuscules, chiffres et tirets. Laissé vide, il est créé à partir du titre.",
+    "source": "Provenance",
+    "docDate": "Date du document",
+    "tags": "Étiquettes",
+    "tagsHint": "Séparées par des virgules, par exemple : marché, q3.",
+    "project": "Projet",
+    "noProject": "Aucun projet",
+    "titleRequired": "Donnez un titre à l'élément.",
+    "badSlug": "Un nom court compte de 1 à 64 lettres minuscules, chiffres et tirets, et commence et finit par une lettre ou un chiffre.",
+    "tooManyTags": "Un élément a au plus {{max, number}} étiquettes.",
+    "tagTooLong": "Une étiquette compte au plus {{max, number}} caractères."
+  },
+  "errors": {
+    "slugTaken": "Un autre élément de la bibliothèque a déjà ce nom court. Choisissez-en un autre.",
+    "libraryFull": "Cette bibliothèque contient 1 000 éléments, son maximum. Supprimez-en d'abord quelques-uns.",
+    "unsupported": "Ce type de fichier n'est pas pris en charge.",
+    "tooLarge": "Ce fichier est trop volumineux : 25 Mo au plus pour un fichier, 3,75 Mo pour une image.",
+    "stale": "Cet élément a été modifié depuis que vous l'avez ouvert. Rechargez-le et réessayez.",
+    "notUploaded": "Le fichier n'est pas arrivé. Réessayez.",
+    "uploadMismatch": "Le fichier importé n'est pas celui annoncé. Réessayez.",
+    "writeForbidden": "Seul un administrateur ou la personne qui a importé cet élément peut le modifier ou le supprimer.",
+    "deleteForbidden": "Seul un administrateur ou la personne qui l'a importé peut supprimer cet élément.",
+    "notFound": "Cet élément de la bibliothèque n'existe plus.",
+    "notFailed": "Seul un élément en échec peut être relu.",
+    "uploadRefused": "Le fichier n'a pas pu être importé. Réessayez.",
+    "network": "L'import s'est arrêté : vérifiez votre connexion et réessayez.",
+    "other": "Une erreur s'est produite. Réessayez."
+  },
+  "preview": {
+    "title": "Élément de la bibliothèque",
+    "loading": "Chargement de l'élément…",
+    "loadFailed": "Cet élément n'a pas pu être chargé. Vérifiez votre connexion et réessayez.",
+    "notFound": "Cet élément de la bibliothèque n'existe pas ou a été supprimé.",
+    "pending": "En attente de son fichier. Si l'import n'a pas abouti, supprimez cet élément et importez à nouveau le fichier.",
+    "extracting": "Son texte est en cours de lecture. Cette page se met à jour quand il est prêt.",
+    "failed": "Son texte n'a pas pu être lu.",
+    "download": "Télécharger l'original",
+    "newTab": "(s'ouvre dans un nouvel onglet)",
+    "retry": "Relire",
+    "edit": "Modifier les détails",
+    "delete": "Supprimer",
+    "mentionHint": "Tapez {{slug}} dans l'assistant pour ajouter ce document à une conversation."
+  },
+  "details": {
+    "none": "Aucune",
+    "file": "Fichier",
+    "pages": "Nombre de pages",
+    "assistant": "Comment l'assistant le lit",
+    "native": "Le fichier lui-même, quand il est cité dans une conversation",
+    "passages": "Les passages de son texte qui répondent à la question",
+    "added": "Ajouté",
+    "changed": "Dernière modification",
+    "byOn": "{{name}}, {{date}}"
+  },
+  "edit": {
+    "label": "Modifier les détails de l'élément",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "reload": "Recharger"
+  },
+  "text": {
+    "title": "Texte",
+    "loading": "Chargement du texte…",
+    "loadFailed": "Le texte n'a pas pu être chargé. Réessayez.",
+    "empty": "Aucun texte n'a été trouvé sur cette page.",
+    "pagesLabel": "Pages du texte",
+    "pageOf": "Page {{current, number}} sur {{total, number}}",
+    "partOf": "Partie {{current, number}} sur {{total, number}}",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "truncated": "Ce document est très long : seule sa première partie a été lue."
+  },
+  "delete": {
+    "title": "Supprimer cet élément de la bibliothèque ?",
+    "message": "« {{title}} » est supprimé définitivement, avec son fichier et son texte. Les conversations qui le citaient gardent ce qu'elles ont dit.",
+    "confirm": "Supprimer"
+  }
+}

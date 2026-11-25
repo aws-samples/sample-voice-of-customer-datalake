@@ -89,6 +89,13 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         _object({'query': {'type': 'string', 'maxLength': 500},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': 20, 'default': 8}}, 'query'),
         False, False, False),
+    'search_library': (
+        'Search the library',
+        ('Search the Documents Library (uploaded reports, transcripts, decks; not feedback) for passages answering '
+         '`query`, in `items` (up to 3 ids or slugs) or the items whose title or tags match. Cite [#slug p.N].'),
+        _object({'query': {'type': 'string', 'maxLength': 500},
+                 'items': {'type': 'array', 'maxItems': 3, 'items': {'type': 'string'}}}, 'query'),
+        False, False, False),
     'get_company_context': (
         'Get company context',
         'The company vision and objectives.',
@@ -461,3 +468,19 @@ class TestProjections:
     def test_tools_without_a_projection_return_the_body_itself(self, name):
         payload = {'pk': 'route already public', 'url': 'u'}
         assert _shape(name, payload) is payload
+
+
+class TestTheLibraryTools:
+    """``search_library``: the projects API's library context route, read as the minter (an item's text page by page is the web app's)."""
+
+    def test_search_sends_ids_and_slugs_apart_and_never_asks_for_a_file(self):
+        request = _build('search_library', {'query': ' growth ', 'items': ['lib_20261101000000_0000a001', '#Q3-Market']})
+        assert (request.method, request.path) == ('POST', '/projects/library/context')
+        assert request.body == {'query': 'growth', 'native_slots': 0, 'item_ids': ['lib_20261101000000_0000a001'],
+                                'slugs': ['q3-market']}
+        assert _build('search_library', {'query': 'q'}).body == {'query': 'q', 'native_slots': 0}
+
+    @pytest.mark.parametrize('items', [[], ['a', 'b', 'c', 'd'], 'x', [' ']])
+    def test_search_refuses_items_it_cannot_send(self, items):
+        with pytest.raises(tools.InvalidToolArgument, match='items must list'):
+            _build('search_library', {'query': 'q', 'items': items})

@@ -25,6 +25,15 @@ describe('forwardedProps.mentions', () => {
     expect(propsFor({ kind: 'dashboard', path: '/' }, { personas: 'all' })).toBeUndefined()
   })
 
+  it('carries library items from any page, and drops a project page mention elsewhere', () => {
+    const library = [{ item_id: 'lib_20261101000000_0000a001' }]
+    expect({
+      dashboard: propsFor({ kind: 'dashboard', path: '/' }, { personas: 'all', library }),
+      project: propsFor(PROJECT, { documents: [{ document_id: 'd1' }], library }),
+      malformed: propsFor({ kind: 'dashboard', path: '/' }, { library: [{ item_id: 'proj_1' }] }),
+    }).toStrictEqual({ dashboard: { library }, project: { documents: [{ document_id: 'd1' }], library }, malformed: undefined })
+  })
+
   it('leaves out mentions the stream would refuse instead of failing the run', () => {
     expect(propsFor(PROJECT, { personas: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] })).toBeUndefined()
     expect(propsFor(PROJECT, {})).toBeUndefined()

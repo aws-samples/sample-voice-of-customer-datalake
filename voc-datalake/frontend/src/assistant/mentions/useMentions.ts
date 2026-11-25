@@ -1,5 +1,5 @@
 /**
- * @fileoverview Composer state for `@persona`, `@all` and `#document`: the trigger at the caret,
+ * @fileoverview Composer state for `@persona`, `@all`, `#document` and `#slug` (a library item): the trigger at the caret,
  * the menu (options, active option, keyboard), the picks and what a send carries.
  *
  * Keyboard (list autocomplete on the textbox): ArrowDown / ArrowUp move, Enter or Tab picks,
@@ -11,10 +11,11 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  atLimit, documentMentionOptions, findTrigger, insertToken, livePicks, mentionsForSend, personaMentionOptions, tokenOf,
+  LIBRARY_TRIGGERS, atLimit, documentMentionOptions, documentsFull, findTrigger, insertToken, libraryFull,
+  libraryMentionOptions, livePicks, mentionsForSend, personaMentionOptions, tokenOf,
 } from './mentionModel'
-import { useMentionSources } from './useMentionSources'
-import type { MentionSources } from './useMentionSources'
+import { useLibrarySuggestions, useMentionSources } from './useMentionSources'
+import type { LibrarySuggestions, MentionSources } from './useMentionSources'
 import type { KeyboardEvent, RefObject } from 'react'
 import type { Mentions } from '@stream/assistant/contract'
 import type { MentionOption, MentionPick, MentionTrigger } from './mentionModel'
@@ -25,11 +26,15 @@ export interface MentionMenuState {
   active: number
   limited: boolean
   loading: boolean
+  /** Off a project page `#` offers the library alone (its own empty and limit lines). */
+  libraryOnly: boolean
 }
 
 interface UseMentionsInput {
-  /** The project on screen; undefined = mentions are off (any other page). */
+  /** The project on screen; undefined = no persona or project document to mention (any other page). */
   projectId: string | undefined
+  /** `#slug` of a Documents Library item, on every page (off when the Library is not in the menu). */
+  libraryEnabled?: boolean
   text: string
   setText: (text: string) => void
   textareaRef: RefObject<HTMLTextAreaElement | null>
@@ -39,18 +44,27 @@ function caretOf(ref: RefObject<HTMLTextAreaElement | null>, fallback: number): 
   return ref.current?.selectionStart ?? fallback
 }
 
-/** The options for the trigger at the caret; none once the per-message limit is reached. */
-function optionsFor(trigger: MentionTrigger, sources: MentionSources, live: readonly MentionPick[], allLabel: string): MentionOption[] {
-  if (atLimit(trigger.kind, live)) return []
-  return trigger.kind === 'persona'
-    ? personaMentionOptions(sources.personas, trigger.query, live, allLabel)
-    : documentMentionOptions(sources.documents, trigger.query, live)
+/** The options for the trigger at the caret; none once the per-message limit is reached. `#` lists the project's
+ *  documents (on its page), then the library's items, each group until its own limit. */
+function optionsFor(trigger: MentionTrigger, sources: MentionSources, library: LibrarySuggestions,
+  live: readonly MentionPick[], allLabel: string): MentionOption[] {
+  if (trigger.kind === 'persona') {
+    return atLimit('persona', live) ? [] : personaMentionOptions(sources.personas, trigger.query, live, allLabel)
+  }
+  const documents = documentsFull(live) ? [] : documentMentionOptions(sources.documents, trigger.query, live)
+  const items = libraryFull(live) ? [] : libraryMentionOptions(library.items, trigger.query, live)
+  return [...documents, ...items]
+}
+
+function placeholderKeyOf(onProject: boolean, libraryEnabled: boolean): string {
+  if (onProject) return 'mentions.placeholder'
+  return libraryEnabled ? 'mentions.placeholderLibrary' : 'composer.placeholder'
 }
 
 /** Keys the open menu handles; anything else goes to the textarea. */
 const MENU_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'])
 
-export function useMentions({ projectId, text, setText, textareaRef }: UseMentionsInput) {
+export function useMentions({ projectId, libraryEnabled = false, text, setText, textareaRef }: UseMentionsInput) {
   const { t } = useTranslation('assistant')
   const sources = useMentionSources(projectId)
   const [caret, setCaret] = useState(text.length)
@@ -69,17 +83,21 @@ export function useMentions({ projectId, text, setText, textareaRef }: UseMentio
     area.setSelectionRange(target, target)
   })
 
-  const enabled = projectId !== undefined
-  const trigger = enabled ? findTrigger(text, caret) : null
+  const onProject = projectId !== undefined
+  const enabled = onProject || libraryEnabled
+  const allowedTriggers = onProject ? undefined : LIBRARY_TRIGGERS
+  const trigger = enabled ? findTrigger(text, caret, allowedTriggers) : null
   const open = trigger !== null && trigger.start !== dismissed
+  const library = useLibrarySuggestions(open && libraryEnabled && trigger.kind === 'document' ? trigger.query : null)
   const live = livePicks(picks, text)
   const menu: MentionMenuState | null = open
     ? {
       trigger,
-      options: optionsFor(trigger, sources, live, t('mentions.allLabel')),
+      options: optionsFor(trigger, sources, library, live, t('mentions.allLabel')),
       active,
-      limited: atLimit(trigger.kind, live),
-      loading: sources.loading,
+      limited: atLimit(trigger.kind, live, onProject),
+      loading: sources.loading || library.loading,
+      libraryOnly: !onProject,
     }
     : null
 
@@ -134,8 +152,10 @@ export function useMentions({ projectId, text, setText, textareaRef }: UseMentio
 
   return {
     enabled,
-    /** The composer placeholder: on a project page it says how to mention. */
-    placeholderKey: enabled ? 'mentions.placeholder' : 'composer.placeholder',
+    /** `@` (personas) is a project page's only. */
+    personasEnabled: onProject,
+    /** The composer placeholder: it says how to mention what this page can mention. */
+    placeholderKey: placeholderKeyOf(onProject, libraryEnabled),
     menu,
     picks: live,
     personaCount: sources.personas.length,

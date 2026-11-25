@@ -76,6 +76,11 @@ interface ModalShellBaseProps {
   /** Extra classes for the panel, e.g. a different max-width. */
   readonly panelClassName?: string
   /**
+   * Where the panel sits: `center` (the default), a dialog in the middle of the viewport; `end`, a SideSheet at the
+   * inline end, full height (`.sheet-panel`, components/SideSheet). Focus, Escape, the trap and stacking are the same.
+   */
+  readonly placement?: 'center' | 'end'
+  /**
    * Set false for modals that must not be dismissed casually (in-flight work).
    * Escape and overlay click are disabled together — leaving one active would be
    * an inconsistency users cannot see.
@@ -123,6 +128,22 @@ type ModalShellProps = ModalShellBaseProps & ModalShellNameProps
  */
 const openShells: HTMLElement[] = []
 
+/**
+ * The fixed wrapper of every shell. z-[70]: above the sidebar and the assistant launcher / floating panel (z-50) and
+ * the fullscreen assistant (z-[60]) — an aria-modal dialog must cover everything, or the launcher stays clickable over
+ * its backdrop. m-0: a consumer inside a `space-y-*` parent gave this fixed wrapper a margin-bottom (Tailwind v4
+ * spaces with margin-block-end), which shrank it and left an un-dimmed, clickable strip of page along the bottom edge.
+ * text-start (7.49.00): the shell renders where its trigger sits, so a trigger in a `text-right` (or centred) wrapper
+ * passed its alignment to every title, label and hint of the dialog; a dialog starts from the start.
+ */
+const SHELL_WRAPPER = 'fixed inset-0 z-[70] m-0 flex text-start'
+
+/** How the wrapper places the panel: centred with a margin, or flush against the inline end at full height. */
+const WRAPPER_PLACEMENT = { center: 'items-center justify-center p-4', end: 'items-stretch justify-end' } as const
+
+/** The panel's recipe per placement (`.dialog-panel` scales in; `.sheet-panel` slides in from the end). */
+const PANEL_PLACEMENT = { center: 'dialog-panel w-full', end: 'sheet-panel' } as const
+
 /** The open shell latest in document order, i.e. the one painted on top. */
 function topMostShell(): HTMLElement | undefined {
   return openShells.reduce<HTMLElement | undefined>(
@@ -142,6 +163,7 @@ export default function ModalShell({
   ariaLabelledBy,
   children,
   panelClassName,
+  placement = 'center',
   dismissable = true,
 }: ModalShellProps) {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -450,13 +472,8 @@ export default function ModalShell({
   if (!isOpen) return null
 
   return (
-    // z-[70]: above the sidebar and the assistant launcher / floating panel (z-50)
-    // and the fullscreen assistant (z-[60]) — an aria-modal dialog must cover
-    // everything, or the launcher stays clickable over its backdrop.
-    // m-0: a consumer inside a `space-y-*` parent gave this fixed wrapper a
-    // margin-bottom (Tailwind v4 spaces with margin-block-end), which shrank it
-    // and left an un-dimmed, clickable strip of page along the bottom edge.
-    <div className="fixed inset-0 z-[70] m-0 flex items-center justify-center p-4">
+    // (SHELL_WRAPPER says why z-[70], m-0 and text-start.)
+    <div className={clsx(SHELL_WRAPPER, WRAPPER_PLACEMENT[placement])}>
       {/* Overlay is a sibling of the panel, not its container, so clicks inside
           the panel are never mistaken for overlay clicks. */}
       {/* `absolute z-0` overrides the recipe's `fixed z-50`: the overlay sits
@@ -478,7 +495,7 @@ export default function ModalShell({
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
         tabIndex={-1}
-        className={clsx('dialog-panel w-full', panelClassName)}
+        className={clsx(PANEL_PLACEMENT[placement], panelClassName)}
       >
         {children}
       </div>

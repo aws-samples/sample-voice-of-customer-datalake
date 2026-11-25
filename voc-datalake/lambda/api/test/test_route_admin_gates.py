@@ -282,6 +282,12 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'PATCH /projects/prioritization/rows/<row_id>',
           'PUT /projects/prioritization/rows/<row_id>/lineage-ack', 'PUT /projects/prioritization',
           'PATCH /projects/prioritization'),
+    _open('the Documents Library (docs/documents-library.md): every signed-in user uploads, edits and retries the '
+          "deployment's library; a delete is an admin's or the uploader's (_may_delete, never a delegated "
+          'credential); the context POST only reads',
+          'library_routes.py', 'POST /projects/library', 'PUT /projects/library/<item_id>',
+          'DELETE /projects/library/<item_id>', 'POST /projects/library/<item_id>/uploaded',
+          'POST /projects/library/<item_id>/retry', 'POST /projects/library/context'),
     _open('resolved problems: shared team state, every signed-in user marks a problem resolved',
           'settings_handler.py', 'PUT /settings/resolved-problems'),
     _open("caller's own data: personal context and onboarding preference, self only",

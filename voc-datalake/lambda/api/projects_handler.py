@@ -92,6 +92,8 @@ from shared import (
     document_series,
     draft_intent,
     feature_request_context,
+    library_routes,
+    library_worker,
     methodology,
     model_profile,
     persona_copy_routes,
@@ -228,6 +230,10 @@ def project_access_middleware(app, next_middleware):
     caller = _caller_from_event(event.raw_event)
     access = None  # pragma: no mutate  every reader isinstance-checks, so any non-ProjectAccess is this
     route = project_access.project_route(event.path)
+    if (project_access.is_library_path(event.path)
+            and '<project_id>' in str(getattr(app.context.get('_route'), 'path', ''))):
+        # /projects/library/jobs reached a project route with the library's segment as its id: no such project.
+        raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
     if route is not None:
         # Powertools' `<project_id>` group captures exactly this path segment, so
         # the gate and the route address one project.
@@ -5169,6 +5175,8 @@ company_personas_routes.configure(company_personas_routes.PersonaOps(
 ))
 app.include_router(company_personas_routes.app)
 app.include_router(persona_copy_routes.app)
+# The Documents Library (shared/library_routes.py, docs/documents-library.md): its own roles, not a project's.
+app.include_router(library_routes.app)
 
 
 # ============================================
@@ -5225,6 +5233,8 @@ def lambda_handler(event: dict, context: Any) -> dict:
     """Main Lambda handler for projects API (and, in the assist twin, its assist worker)."""
     if assist_jobs.is_assist_event(event):
         return assist_jobs.run(event, ASSIST_WORK)
+    if library_worker.is_extract_event(event):
+        return library_worker.run(event)
     try:
         # Never log the raw event or the resolved result here (issue #245).
         # The event carries the caller's Authorization header (Cognito bearer

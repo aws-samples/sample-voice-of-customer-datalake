@@ -68,7 +68,9 @@
       "saving": "保存中…",
       "saved": "ドキュメントに保存しました",
       "error": "保存に失敗しました – 再試行"
-    }
+    },
+    "librarySources": "使用したライブラリの資料",
+    "openLibraryItem": "{{name}}（{{marker}}）をライブラリで開く"
   },
   "toolStatus": {
     "streaming": "準備中",
@@ -288,12 +290,14 @@
     },
     "limit": {
       "persona": "1 回のメッセージで指定できるペルソナは最大 {{max, number}} 件です。",
-      "document": "1 回のメッセージで指定できるドキュメントは最大 {{max, number}} 件です。"
+      "document": "1 回のメッセージで指定できるドキュメントは最大 {{max, number}} 件です。",
+      "library": "1 件のメッセージに含められるライブラリの資料は最大 {{max, number}} 件です。"
     },
     "loading": "プロジェクトを読み込み中…",
     "empty": {
       "persona": "一致するペルソナはありません。",
-      "document": "一致するドキュメントはありません。"
+      "document": "一致するドキュメントはありません。",
+      "library": "一致するライブラリの資料はありません。ライブラリページで資料を追加してください。"
     },
     "count_one": "候補 {{count, number}} 件",
     "count_other": "候補 {{count, number}} 件",
@@ -301,7 +305,14 @@
     "remove": "{{name}} を削除",
     "insertPersona": "ペルソナを指定",
     "insertDocument": "ドキュメントを指定",
-    "allCapped": "@all は {{total, number}} 件中、最初の {{max, number}} 件のペルソナに質問します: {{names}}。"
+    "allCapped": "@all は {{total, number}} 件中、最初の {{max, number}} 件のペルソナに質問します: {{names}}。",
+    "placeholderLibrary": "フィードバック、プロジェクト、このページについて質問できます。# でライブラリの資料を指定…",
+    "sections": {
+      "library": "ライブラリ"
+    },
+    "loadingLibrary": "ライブラリを読み込んでいます…",
+    "insertLibrary": "ライブラリの資料を指定",
+    "largeItem": "{{name}} は大きな資料です。送信のたびに約 {{tokens, number}} トークンを使います。"
   },
   "scope": {
     "title": "フィードバックの範囲",

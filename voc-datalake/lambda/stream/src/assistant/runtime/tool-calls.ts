@@ -33,6 +33,7 @@ import type {
   FeedbackSource,
   ServerToolDefinition,
   ServerToolResult,
+  LibrarySourceRef,
   WebSourceRef,
 } from '../types.js';
 import type { ToolUseBlock } from '../../bedrock/stream-processor.js';
@@ -55,6 +56,7 @@ export interface ToolRoundResult {
   pending: PendingApproval[];
   sources: FeedbackSource[];
   webSources: WebSourceRef[];
+  librarySources: LibrarySourceRef[];
 }
 
 const ERROR_STATUS: ToolResultStatus = 'error';
@@ -170,6 +172,7 @@ function settleServerTool(call: ToolUseBlock, outcome: ServerOutcome, c: CallCon
     respond(call, c, outcome.result.content, false);
     c.round.sources.push(...(outcome.result.sources ?? []));
     c.round.webSources.push(...(outcome.result.webSources ?? []));
+    c.round.librarySources.push(...(outcome.result.librarySources ?? []));
     return;
   }
   const errorKind = outcome.err instanceof Error ? outcome.err.name : 'unknown';
@@ -253,7 +256,7 @@ export async function runToolCalls(
   emitter: Emitter,
   parentMessageId: string,
 ): Promise<ToolRoundResult> {
-  const round: ToolRoundResult = { results: [], pending: [], sources: [], webSources: [] };
+  const round: ToolRoundResult = { results: [], pending: [], sources: [], webSources: [], librarySources: [] };
   const c: CallContext = { emitter, ctx, parentMessageId, round };
   // Server tools first, together: every server read of this turn has recorded
   // its project access before any client write of the same turn is validated.

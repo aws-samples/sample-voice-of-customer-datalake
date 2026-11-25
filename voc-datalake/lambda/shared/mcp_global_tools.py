@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
+from shared.library_keys import is_item_id
 from shared.mcp_global_kit import (
     BOOL_SCHEMA,
     DOMAIN_AGENTS,
@@ -369,6 +370,26 @@ def _search_feature_requests(args: Mapping[str, Any], _project: str | None) -> R
     return RouteRequest(DOMAIN_ENGAGEMENT, 'GET', '/feature-requests/search', query=query)
 
 
+#: Items one library search names, as one chat message mentions at most (shared/library_routes.py takes up to 5).
+MAX_LIBRARY_ITEMS: Final = 3
+
+
+def _search_library(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
+    """The library's passages for ``query`` (shared/library_routes.py ``library_context``, no file: ``native_slots`` 0),
+    in the named items (ids or slugs) or, without them, in those whose metadata shares the query's words."""
+    query = text_arg(args, 'query', max_length=MAX_QUERY_LENGTH, required=True)
+    items = args.get('items')
+    if items is not None and (not isinstance(items, list) or not 1 <= len(items) <= MAX_LIBRARY_ITEMS
+                              or not all(isinstance(item, str) and item.strip() for item in items)):
+        raise InvalidToolArgument(f'items must list 1 to {MAX_LIBRARY_ITEMS} item ids or slugs')
+    named = [item.strip().removeprefix('#') for item in items or []]
+    ids = [item for item in named if is_item_id(item)]
+    slugs = [item.lower() for item in named if not is_item_id(item)]
+    body: dict[str, Any] = {'query': query, 'native_slots': 0,
+                            **({'item_ids': ids} if ids else {}), **({'slugs': slugs} if slugs else {})}
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', '/projects/library/context', body=body)
+
+
 def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     return RouteRequest(DOMAIN_AGENTS, 'POST', f"/agents/{id_arg(args, 'agent_id')}/run")
 
@@ -408,6 +429,15 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': MAX_MEMORY_K, 'default': DEFAULT_MEMORY_K}}, ('query',)),
         _search_memory),
+    GlobalTool(
+        'search_library', 'Search the library',
+        'Search the Documents Library (uploaded reports, transcripts, decks; not feedback) for passages answering '
+        f'`query`, in `items` (up to {MAX_LIBRARY_ITEMS} ids or slugs) or the items whose title or tags match. '
+        'Cite [#slug p.N].',
+        schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
+                'items': {'type': 'array', 'maxItems': MAX_LIBRARY_ITEMS, 'items': {'type': 'string'}}},
+               ('query',)),
+        _search_library, stripped),
     GlobalTool(
         'get_company_context', 'Get company context',
         'The company vision and objectives.',
