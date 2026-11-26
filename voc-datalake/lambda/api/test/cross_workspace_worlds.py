@@ -30,6 +30,8 @@ import boto3
 from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
+#: Imported with the module, before conftest.py's autouse fixture replaces it for each test (``manual_import_world``).
+from shared.import_runs import _put_rows as _write_run_rows
 from shared.test.cognito_doubles import live_cognito
 from shared.test.mcp_oauth_fixtures import CLIENTS, WEB_CALLBACK, oauth_env
 
@@ -94,15 +96,26 @@ class RouteCase:
     #: Without a workspace the route is the deployment's ``admins`` group's (as before): check 3 expects 403 for a
     #: caller outside it.
     deployment_admins_without_a_workspace: bool = False
-    #: Set only on a route that refuses a workspace's ids deployment-wide (a write that answers a workspace's id the
-    #: unknown id's 404 there, feedback_form_handler.py ``_refuse_a_workspaces_id``): the ids check 3 sends without
-    #: the header, the deployment's own row's, named like ``ids``; check 3 then also proves A's ids are refused there
-    #: exactly as unknown ones. The world must hold a deployment row under each of A's ids, or that proof is vacuous
-    #: (test_cross_workspace_routes.py ``test_a_deployment_write_that_takes_a_workspaces_id_is_caught``). None:
-    #: check 3 sends A's ids.
+    #: Set only on a route that refuses a workspace's ids deployment-wide (it answers a workspace's id the unknown
+    #: id's 404 there: feedback_form_handler.py ``_refuse_a_workspaces_id``, manual_import_handler.py
+    #: ``_require_job``): the ids check 3 sends without the header, the deployment's own row's, named like ``ids``;
+    #: check 3 then also proves A's ids are refused there exactly as unknown ones. Without the refusal A's ids must
+    #: reach a row there (a deployment copy, or A's own row under a key shared by every place), or that proof is
+    #: vacuous (test_cross_workspace_routes.py ``test_a_deployment_request_that_takes_a_workspaces_id_is_caught``).
+    #: None: check 3 sends A's ids.
     deployment_ids: dict[str, str] | None = None
     #: A known gap, reported and open (with ``deployment_ids``): check 3 expects exactly these answers.
     known_gap: KnownGap | None = None
+    #: The rows outside A a request inside A may add or change (check 4: every other row it touches names A), by the
+    #: start of their ``pk`` and of their ``sk`` (so a row beside them that must name A still does: a plan's ``META``
+    #: beside its ``STEP#`` rows), each with why it is no workspace's: a caller's own per-person row, a deployment
+    #: counter.
+    outside_a: dict[tuple[str, str], str] = field(default_factory=dict)
+    #: A refusal that repeats the id it was sent (reported, open): why. Checks 2 and 3 then compare the answers with
+    #: each sent id's value read as its ``{name}`` (only the caller's own input; anything else in the answer still
+    #: counts), and expect the raw refusal to still hold an id it was sent, so the case fails, asking for this to go,
+    #: the day it stops.
+    echoes_its_ids: str = ''
 
 
 @dataclass(frozen=True)
@@ -124,6 +137,14 @@ def table_snapshot() -> dict[str, list[str]]:
         pages = client.get_paginator('scan').paginate(TableName=name, ConsistentRead=True)
         # ``default=repr``: a binary attribute (a memory's embedding) as its bytes' repr, the same every time.
         snapshot[name] = sorted(json.dumps(item, sort_keys=True, default=repr) for page in pages for item in page['Items'])
+    # And every object of every moto bucket (its key, ETag and time written: the same bytes written again count): a
+    # refused request writes no raw copy either.
+    s3 = boto3.client('s3', region_name='us-east-1')
+    for bucket in s3.list_buckets().get('Buckets', []):
+        name = bucket.get('Name', '')
+        pages = s3.get_paginator('list_objects_v2').paginate(Bucket=name)
+        snapshot[f's3://{name}'] = sorted(f"{obj.get('Key')} {obj.get('ETag')} {obj.get('LastModified')}"
+                                          for page in pages for obj in page.get('Contents', []))
     return snapshot
 
 
@@ -239,6 +260,9 @@ def _export_world(stack: ExitStack, workspaces_handler: Any) -> MagicMock:
 #: Why the resolved-problems routes answer without a workspace: the web app with no workspace and a deployment from
 #: before workspaces send no header (6.12.00 on the multi-workspace branch; decision 12), and get the deployment's row, as before.
 _AS_BEFORE = 'the deployment as before: its own row, no workspace\'s (shared/request_workspace.py)'
+#: A settings change in any place bumps the deployment's one configuration counter (a number the caches key on, no
+#: content of A's).
+_CONFIG_VERSION = {('METRIC#meta', 'config_version'): "the deployment's configuration counter (config_version), bumped by any place"}
 #: A resolved problem's key: a category, subcategory and problem text the user wrote, not a row of a workspace.
 PROBLEM_KEY = 'technical_support:response_time:slow replies'
 
@@ -807,9 +831,86 @@ def feedback_forms_world(lambda_context: Any) -> Generator[World]:
                     doubles={'cognito': cognito, 'sqs': wired['sqs']})
 
 
+# ── voc-manual-import-api (lambda/api/manual_import_handler.py): the import wizard and its history ──
+
+#: A parse job and an import run of each workspace and of the deployment. A job's key is its id alone
+#: (``MANUAL_IMPORT#{id}``), so only the job's ``workspace_id`` keeps it where it started (``_require_job``): without
+#: the header A's job is refused as an unknown one, and the deployment's own is read. A run lives in its place's
+#: partitions (shared/import_runs.py), so the deployment has its own run under A's run id, which a request without
+#: the header reads. Run ids are UUIDs (``get_import_run`` reads no other).
+JOB_A, JOB_B, JOB_DEPLOYMENT = 'job-a1', f'job-{B_MARK}1', 'job-d1'
+RUN_A = '00000000-0000-4000-8000-0000000000a1'
+RUN_B = '00000000-0000-4000-8000-0000000000b1'
+_JOB_IDS = {'A': {'job_id': JOB_A}, 'B': {'job_id': JOB_B}, UNKNOWN: {'job_id': 'job-nowhere'}}
+_RUN_IDS = {'A': {'run_id': RUN_A}, 'B': {'run_id': RUN_B},
+            UNKNOWN: {'run_id': '00000000-0000-4000-8000-0000000000ff'}}
+#: Without the header the imports are the deployment's, as before, and its ``admins``' (shared/workspace_request.py
+#: ``ResolvedRoutes.require_request_admin``).
+_DEPLOYMENT_IMPORTS = "the deployment as before: its own jobs, runs and queue, no workspace's (ResolvedRoutes)"
+_IMPORT_CSV = 'id,text,rating\n1,Login fails on iOS,2\n'
+_REVIEWED = {'text': 'Nice', 'date': '2026-03-01'}
+_REVIEW_LITERALS = {'Nice': 'a review the admin confirmed', '2026-03-01': 'its date'}
+
+
+def _import_profile(_table: object, source_id: object = None, scope: Any = None) -> dict:
+    """Every place keeps the whole file (allow), so each import writes its raw copy where it is made."""
+    from shared import source_profiles
+    return source_profiles.profile_for([{'id': 'manual_import', 'label': 'Manual', 'pii': 'allow'}],
+                                       str(source_id or 'manual_import'), workspace=scope is not None)
+
+
+def _seed_imports(aggregates: Any) -> None:
+    """The three places' parse jobs (completed) and import runs (summary and detail rows)."""
+    from shared.import_runs import ImportCounts, ImportRun, _rows
+    from shared.ws_repo import WorkspaceScope
+
+    for ws, job, run, mark in ((WS_A, JOB_A, RUN_A, A_MARK), (WS_B, JOB_B, RUN_B, B_MARK),
+                               (None, JOB_DEPLOYMENT, RUN_A, 'before_workspaces')):
+        job_row = {'pk': f'MANUAL_IMPORT#{job}', 'sk': 'JOB', 'status': 'completed', 'source_origin': 'example',
+                   'source_url': f'https://reviews.example.com/{mark}', 'raw_text': f'{mark} reviews', 'reviews': []}
+        aggregates.put_item(Item=job_row if ws is None else {**job_row, 'workspace_id': ws})
+        scope = WorkspaceScope(ws) if ws is not None else None
+        for row in _rows(ImportRun(method='csv', source=f'{mark} file', actor='sub-ada', started_at='2026-11-01T00:00:00+00:00',
+                                   counts=ImportCounts(received=1, imported=1), run_id=run),
+                         datetime(2026, 11, 1, tzinfo=UTC), scope):
+            aggregates.put_item(Item=row)
+
+
+@contextmanager
+def manual_import_world(lambda_context: Any) -> Generator[World]:
+    """The manual-import Lambda over two seeded workspaces (their admins only, ``require_request_admin``), each with a
+    parse job and an import run, and the deployment's own; raw copies to a moto bucket (in ``table_snapshot``), its
+    queue and the parse worker's start as doubles."""
+    import manual_import_handler as h
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        aggregates, feedback = pk_sk_table('aggregates'), pk_sk_table('feedback')
+        _seed_imports(aggregates)
+        s3 = boto3.client('s3', region_name='us-east-1')
+        s3.create_bucket(Bucket='raw')
+        sqs = MagicMock(name='sqs')
+        sqs.send_message_batch.side_effect = lambda Entries, **_k: {'Successful': [{'Id': e['Id']} for e in Entries]}
+        parse_worker = MagicMock(name='invoke_lambda_async')
+        resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: False)
+        for target, value in (('aggregates_table', aggregates), ('feedback_table', feedback), ('s3', s3),
+                              ('sqs', sqs), ('RAW_DATA_BUCKET', 'raw'), ('PROCESSING_QUEUE_URL', 'q'),
+                              ('MANUAL_IMPORT_PROCESSOR_FUNCTION', 'parser'), ('invoke_lambda_async', parse_worker)):
+            stack.enter_context(patch.object(h, target, value))
+        stack.enter_context(patch.object(h._request, 'workspace', resolver))
+        stack.enter_context(patch.object(h, 'upload_profile', side_effect=_import_profile))
+        # The real writer (conftest.py's autouse ``import_run_rows`` captures the rows): a run a refused request
+        # recorded would then be in ``table_snapshot``.
+        stack.enter_context(patch('shared.import_runs._put_rows', side_effect=_write_run_rows))
+        yield World(call=_caller(h, lambda_context), doubles={'cognito': cognito, 'sqs': sqs, 'parse': parse_worker})
+
+
 WORLDS: dict[str, Callable[[Any], Any]] = {
     'feedback_edit_handler.py': feedback_edit_world,
     'feedback_form_handler.py': feedback_forms_world,
+    'manual_import_handler.py': manual_import_world,
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
@@ -881,7 +982,9 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the token is new, the workspace is the header: check 1 (minted inside it, the token acts there)',
         body={'name': 'laptop', 'scope': 'read'}, ok_status=200,
         literals={'laptop': 'a name the person typed for their token', 'read': 'a token scope, the same everywhere'},
-        without_a_workspace=_AS_BEFORE),
+        without_a_workspace=_AS_BEFORE,
+        outside_a={('MCPGTOKEN', 'CREATOR#'): "the person's own index of the tokens they made (CREATOR#{sub}#TOKEN#{id}), per "
+                                'person; the token itself names A'}),
     ('mcp_oauth_consent_routes.py', 'POST /connect/oauth/consent'): RouteCase(
         no_ids='the sign-in request is a client of the deployment, the workspace is the header: check 1 (approved '
                'inside it, the sign-in acts there)',
@@ -893,7 +996,10 @@ CASES: dict[tuple[str, str], RouteCase] = {
         ids=_CONVERSATION_IDS, without_a_workspace=_AS_BEFORE),
     ('chat_handler.py', 'DELETE /chat/conversations/<conversation_id>'): RouteCase(
         # A delete of a conversation the caller has none of deletes nothing and answers success, as before.
-        ids=_CONVERSATION_IDS, refused_status=200, without_a_workspace=_AS_BEFORE),
+        ids=_CONVERSATION_IDS, refused_status=200, without_a_workspace=_AS_BEFORE,
+        # Reported to voc-lead 2026-11-26 (~/reports/mut-voc-mp2.md): a forms delete is audited in AUDIT#WS#{ws}.
+        outside_a={('AUDIT#delete', ''): "the deletes' audit partition, one for every place (shared/delete_audit.py): "
+                                         'its row names A only in its target (target.workspace)'}),
     ('chat_handler.py', 'PUT /chat/conversations/<conversation_id>/title'): RouteCase(
         ids=_CONVERSATION_IDS, body={'title': 'Renamed'},
         literals={'Renamed': 'a title the person typed, not a row of a workspace'}, without_a_workspace=_AS_BEFORE),
@@ -962,7 +1068,7 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('settings_handler.py', 'PUT /settings/brand'): RouteCase(
         no_ids='the brand is text the admin wrote, the workspace is the header: check 1',
         body={'brand_name': 'Trailhead'}, literals={'Trailhead': 'a brand name the admin typed, not a row of a workspace'},
-        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True, outside_a=_CONFIG_VERSION),
     # The categories, dimensions and source profiles (7.08.00): each workspace's own rows, the deployment's without
     # the header; any member reads, the workspace's admins write.
     ('settings_handler.py', 'GET /settings/categories'): RouteCase(
@@ -972,7 +1078,7 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the categories are names the admin typed, the workspace is the header: check 1',
         body={'categories': [{'name': 'trail_gear'}]},
         literals={'trail_gear': 'a category name the admin typed, not a row of a workspace'},
-        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True, outside_a=_CONFIG_VERSION),
     ('settings_handler.py', 'GET /settings/dimensions'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own dimensions)',
         without_a_workspace=_AS_BEFORE),
@@ -981,7 +1087,7 @@ CASES: dict[tuple[str, str], RouteCase] = {
         body={'dimensions': [{'key': 'terrain', 'values': [{'name': 'gravel'}]}]},
         literals={'terrain': 'a dimension key the admin typed, not a row of a workspace',
                   'gravel': 'a dimension value the admin typed, not a row of a workspace'},
-        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True, outside_a=_CONFIG_VERSION),
     # The category reprocess (7.13.00): each workspace's own job, its admins start, read and cancel it; without the
     # header the deployment's job, for the deployment's admins, as before.
     ('settings_handler.py', 'POST /settings/categories/reprocess'): RouteCase(
@@ -1047,7 +1153,8 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('settings_handler.py', 'PUT /settings/my-onboarding'): RouteCase(
         no_ids="the choice is a word of the app, the row the caller's own, the workspace is the header: check 1",
         body={'playbook': 'qa'}, literals={'qa': 'a playbook role, the same in every workspace'},
-        without_a_workspace=_AS_BEFORE),
+        without_a_workspace=_AS_BEFORE,
+        outside_a={('USERCTX#', 'onboarding'): "the caller's own onboarding row (USERCTX#{sub}), the same in every workspace"}),
     ('settings_handler.py', 'GET /settings/sources'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own source profiles)',
         without_a_workspace=_AS_BEFORE),
@@ -1056,7 +1163,7 @@ CASES: dict[tuple[str, str], RouteCase] = {
         body={'sources': [{'id': PLUGIN, 'pii': 'redact'}]},
         literals={PLUGIN: 'a plugin of the deployment, the same source id in every workspace',
                   'redact': 'a PII policy, the same words in every workspace'},
-        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True, outside_a=_CONFIG_VERSION),
     # 7.29.00: the approval resolves the workspace the plan will run in; a member approves there, nobody else.
     **{('library_routes.py', route): RouteCase(
         no_ids="the header is its only id: check 1 (each workspace's library is its own)", query=query,
@@ -1089,7 +1196,10 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('agents_handler.py', 'POST /agents/plans'): RouteCase(
         no_ids='the header is its only id: check 1 (the plan is kept with the workspace its approver is a member of)',
         body={'plan': _PLAN}, literals=_PLAN_LITERALS, ok_status=202,
-        without_a_workspace='a plan approved without a workspace is the deployment\'s, as before'),
+        without_a_workspace='a plan approved without a workspace is the deployment\'s, as before',
+        outside_a={('PLANCAP#', 'META'): "the approver's own count of live plans (PLANCAP#{sub}), per person",
+                   ('PLAN#', 'STEP#'): "the new plan's step rows, under its own new id (its own row names A)",
+                   ('PLAN#', 'EVT#'): "the new plan's event rows, under its own new id (its own row names A)"}),
     # A review's category and dimensions (shared/workspace_request.py RequestWorkspace, read afresh: an edit is a
     # write): A's member edits A's review only; B's review id is not found in A, as an id of no review.
     ('feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/category'): RouteCase(
@@ -1133,4 +1243,39 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('feedback_form_handler.py', 'POST /feedback-forms/<form_id>/import'): RouteCase(
         ids=_IMPORTED_IDS, body=_IMPORT_BODY, literals=_IMPORT_LITERALS, without_a_workspace=_DEPLOYMENT_FORMS,
         deployment_ids={'form_id': FORM_DEPLOYMENT2}, deployment_admins_without_a_workspace=True),
+    # The manual import (``ResolvedRoutes.middleware`` before every route; its admins only, the deployment's
+    # ``admins`` without the header): A's admin imports into A and reads A's jobs and runs only.
+    ('manual_import_handler.py', 'POST /scrapers/manual/parse'): RouteCase(
+        no_ids='the job is new, the workspace is the header: check 1',
+        body={'source_url': 'https://reviews.example.com/acme', 'raw_text': 'Great product'},
+        literals={'https://reviews.example.com/acme': 'the page the admin pasted from', 'Great product': 'its text'},
+        without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_admins_without_a_workspace=True),
+    ('manual_import_handler.py', 'GET /scrapers/manual/parse/<job_id>'): RouteCase(
+        ids=_JOB_IDS, without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_ids={'job_id': JOB_DEPLOYMENT},
+        deployment_admins_without_a_workspace=True,
+        echoes_its_ids="reported to voc-lead 2026-11-26 (~/reports/mut-voc-mp2.md, item 6): the 404 is "
+                       "f'Job {job_id} not found' (get_parse_status), the confirm's the fixed 'Job not found'"),
+    ('manual_import_handler.py', 'POST /scrapers/manual/confirm'): RouteCase(
+        ids=_JOB_IDS, body={'job_id': '{job_id}', 'reviews': [_REVIEWED]}, literals=_REVIEW_LITERALS,
+        without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_ids={'job_id': JOB_DEPLOYMENT},
+        deployment_admins_without_a_workspace=True),
+    ('manual_import_handler.py', 'POST /scrapers/manual/csv-upload'): RouteCase(
+        no_ids='the rows are new, the workspace is the header: check 1', body={'csv_text': _IMPORT_CSV},
+        literals={_IMPORT_CSV: 'the file the admin chose'}, without_a_workspace=_DEPLOYMENT_IMPORTS,
+        deployment_admins_without_a_workspace=True),
+    ('manual_import_handler.py', 'POST /scrapers/manual/json-upload'): RouteCase(
+        no_ids='the items are new, the workspace is the header: check 1',
+        body={'items': [{'id': 'r1', 'text': 'Nice', 'source': 'example', 'timestamp': '2026-03-01T00:00:00Z'}]},
+        literals={'r1': "the review's own id in the file", 'Nice': 'its text', 'example': 'its source',
+                  '2026-03-01T00:00:00Z': 'its time'},
+        without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_admins_without_a_workspace=True),
+    ('manual_import_handler.py', 'GET /scrapers/manual/history'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's runs; A lists its own)",
+        without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_admins_without_a_workspace=True),
+    ('manual_import_handler.py', 'GET /scrapers/manual/history/<run_id>'): RouteCase(
+        ids=_RUN_IDS, without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_admins_without_a_workspace=True),
+    ('manual_import_handler.py', 'POST /scrapers/manual/detect'): RouteCase(
+        no_ids='the sample is new and nothing is stored: check 1', body={'format': 'csv', 'sample': _IMPORT_CSV},
+        literals={'csv': 'the file format', _IMPORT_CSV: 'the file the admin chose'},
+        without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_admins_without_a_workspace=True),
 }

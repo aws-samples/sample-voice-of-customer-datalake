@@ -17,6 +17,44 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.72.03] - 2026-11-26
+
+Tests only: the manual import's 8 routes (`lambda/api/manual_import_handler.py`) leave the cross-workspace suite's
+pending list with their two-workspace cases. They resolve X-Workspace-Id before every route since 7.67.00, in the
+module's `ResolvedRoutes` middleware (`shared/workspace_request.py`), which the suite could not see. Pending 408 -> 400
+(phase 2: 71 -> 63).
+
+### Changed
+- The cross-workspace suite reads a module-level `ResolvedRoutes`, bound once as `_request = ResolvedRoutes(app)`
+  (its own `RequestWorkspace`; only its `clients` set after) and installed as the module's first middleware: every
+  route of the module resolves first, in the per-file detector and in the cross-module scan, for the files named in
+  `INSTANCE_RESOLVER_FILES`. A proof test pins `ResolvedRoutes.middleware` (it reads the membership through its
+  `RequestWorkspace` before the route runs), with 21 shape tests and a scan test. An object any of whose parts the
+  module changes (an inner attribute, `setattr`, `delattr`, `vars`; for `ResolvedRoutes` anything but its
+  `clients`), or a `ResolvedRoutes` made with anything but `app`, is not read: for both objects.
+- `table_snapshot` (what a refused request must leave as it was) also holds every object of every moto bucket, so a
+  refused request that writes a raw copy fails in every world.
+- Check 4 (inside A) also proves where the request lands: every row or object it adds, changes or removes is A's by
+  its key or its workspace stamp (A's id in its `pk` or `sk`, or as its `workspace_id` or `workspace`; an object
+  under `ws/{A}/`), or is one its case says is no workspace's (`RouteCase.outside_a`, by `pk` and `sk` prefix with
+  why, so the rows beside it still name A). Eight existing cases name theirs: a person's own rows (the `MCPGTOKEN`
+  `CREATOR#` index, `PLANCAP#`, `USERCTX#` `onboarding`), a new plan's `STEP#` and `EVT#` rows, the deployment's
+  `config_version` counter (`METRIC#meta`, bumped by any place's settings change), and a conversation's delete audit
+  in the one `AUDIT#delete` partition (it names A only in its target; reported).
+- Check 2 also sends the deployment's own ids (`deployment_ids`) under A's header and expects the unknown ids' answer:
+  a row of no workspace is never A's to read or confirm.
+- A manual-import world: a parse job and an import run of each workspace and of the deployment (its own run under
+  A's run id), raw copies to a moto bucket, the queue and the parse worker as doubles, the real import-run writer.
+  `_require_job`'s refusal (a job's key is its id alone, so only its `workspace_id` keeps it where it started) joins
+  the meta-test that takes each file's refusal out and expects check 3 to fail; two more meta-tests: a deployment job
+  let through inside A fails check 2, an upload inside A written as the deployment's fails check 4.
+
+### Known gap (reported, not fixed here)
+- `GET /scrapers/manual/parse/<job_id>`'s 404 repeats the id it was sent (`Job <id> not found`; the confirm's is the
+  fixed `Job not found`), which the suite's rule "a refusal does not repeat its ids" refuses. Its case says so
+  (`RouteCase.echoes_its_ids`): checks 2 and 3 compare the answers with the request's own ids masked, and fail,
+  asking for the note to go, the day the 404 stops repeating them (a meta-test proves both checks do).
+
 ## [7.72.02] - 2026-11-26
 
 Tests only: the feedback forms' 14 signed-in routes (`lambda/api/feedback_form_handler.py`, through `_request_scope`

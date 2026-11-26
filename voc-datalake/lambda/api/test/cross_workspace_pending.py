@@ -51,17 +51,6 @@ PHASE_2: dict[str, frozenset[str]] = {
         'PUT /sources/<source>/disable',
         'PUT /sources/<source>/enable',
     }),
-    # Resolves X-Workspace-Id since 7.67.00 (ResolvedRoutes, as the scrapers API): its two-workspace cases are owed.
-    'manual_import_handler.py': frozenset({
-        'POST /scrapers/manual/detect',
-        'GET /scrapers/manual/history',
-        'GET /scrapers/manual/history/<run_id>',
-        'GET /scrapers/manual/parse/<job_id>',
-        'POST /scrapers/manual/confirm',
-        'POST /scrapers/manual/csv-upload',
-        'POST /scrapers/manual/json-upload',
-        'POST /scrapers/manual/parse',
-    }),
     'metrics_handler.py': frozenset({
         'GET /feedback',
         'GET /feedback/<feedback_id>',
