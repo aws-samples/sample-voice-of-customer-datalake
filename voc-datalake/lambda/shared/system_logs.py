@@ -14,6 +14,11 @@ a finished query is not read again, and the first reads come sooner than the lat
 (most searches finish in 1 to 2 s). Rows are only ever returned redacted and
 are never logged. AWS error text is never returned either: a failure is `failed` with a
 fixed message.
+
+No workspace's content is shown (shared/system_log_scope.py, TENETS.md D8): a line that names a workspace is
+dropped and counted (`withheld_workspace_lines`); a line tagged as the deployment's, Lambda's own fixed lines and the
+API access log read as before; any other line shows its time, function, level and error type only (its group's
+`withheld`, its message the type alone, its sample empty).
 """
 from __future__ import annotations
 
@@ -38,8 +43,24 @@ from shared.system_log_groups import (
     LogLine,
     classify,
     group_lines,
+    json_object,
 )
-from shared.system_log_rows import HTTP_LEVEL, api_query, classify_api, classify_workflow, workflow_query
+from shared.system_log_rows import (
+    HTTP_LEVEL,
+    api_query,
+    classify_api,
+    classify_workflow,
+    workflow_details,
+    workflow_query,
+)
+from shared.system_log_scope import (
+    WORKSPACE_TAG,
+    error_type,
+    line_tag,
+    names_a_workspace,
+    runtime_line,
+    workflow_error,
+)
 from shared.system_log_sources import (
     SOURCE_API,
     SOURCE_LAMBDA,
@@ -49,6 +70,7 @@ from shared.system_log_sources import (
     discover,
     log_group_name,
 )
+from shared.usage_meter import DEPLOYMENT
 
 LEVELS: Final = {'error': (*ERROR_LEVELS, HTTP_LEVEL), 'warning': (*WARNING_LEVELS, HTTP_LEVEL)}
 # The raw `level` values the Insights filter selects: the TypeScript stream Lambda logs `WARN` /
@@ -73,7 +95,8 @@ DONE_FAILED: Final = frozenset({'Failed', 'Cancelled', 'Timeout', 'Unknown'})
 # Lambda's own lines carry no `level`; Node.js text lines carry it between tabs.
 _ERROR_TEXT: Final = PLATFORM_TEXT + r'|\tERROR\t|\tFATAL\t|^\[(ERROR|CRITICAL)\]'
 _WARNING_TEXT: Final = r'|\tWARN\t|^\[WARNING\]'
-_FIELDS: Final = 'fields @timestamp, @log, level, message, exception, function_request_id, @requestId, @message'
+_FIELDS: Final = ('fields @timestamp, @log, level, message, exception, exception_name, function_request_id, '
+                   f'@requestId, {WORKSPACE_TAG}, @message')
 
 
 @dataclass(frozen=True)
@@ -199,14 +222,40 @@ def _classify(row: dict[str, str], target: LogTarget, wanted: tuple[str, ...]) -
     return classify(row, target.function, wanted)
 
 
-def _lines(answers: list[dict], targets: dict[str, LogTarget], level: str) -> tuple[list[LogLine], bool]:
-    """Classified lines of every answer, and whether any query hit the row cap.
+def _kind(row: dict[str, str], line: LogLine) -> str:
+    """A withheld line's error type: a state machine failure's type and error (never its cause), else the record's
+    exception name or the text's leading ``Name:``."""
+    if line.source == SOURCE_WORKFLOW:
+        event_type, error, _cause, _arn = workflow_details(row)
+        shown = workflow_error(error)
+        return f'{event_type}: {shown}' if shown else event_type
+    recorded = row.get('exception_name') or (json_object(row.get('@message', '')) or {}).get('exception_name') or ''
+    return error_type(line.text, recorded if isinstance(recorded, str) else '')
+
+
+def _scoped(row: dict[str, str], line: LogLine) -> LogLine:
+    """``line`` as the deployment's admins may read it (``row`` names no workspace): an API access row, one of
+    Lambda's own fixed lines or a Lambda line tagged as the deployment's as it is; any other its time, function, level
+    and error type only."""
+    raw = row.get('@message', '')
+    if line.source == SOURCE_API or runtime_line(raw):
+        return line
+    if line.source == SOURCE_LAMBDA and line_tag(row, json_object(raw)) == DEPLOYMENT:
+        return line
+    return LogLine(function=line.function, level=line.level, text=_kind(row, line), sample='',
+                   timestamp=line.timestamp, request_id=line.request_id, source=line.source, withheld=True)
+
+
+def _lines(answers: list[dict], targets: dict[str, LogTarget], level: str) -> tuple[list[LogLine], bool, int]:
+    """Classified lines of every answer, whether any query hit the row cap, and how many lines named a workspace
+    (dropped: `_scoped` holds the rest to what the deployment's admins may read).
 
     A row from a log group outside this deployment is dropped: `GetQueryResults` is
     granted on `*`, so a query id is never trusted to belong to this search.
     """
     lines: list[LogLine] = []
     truncated = False
+    dropped = 0
     for answer in answers:
         results = answer.get('results') or []
         truncated = truncated or len(results) >= ROW_LIMIT
@@ -214,9 +263,13 @@ def _lines(answers: list[dict], targets: dict[str, LogTarget], level: str) -> tu
             row = result_row(fields)
             target = targets.get(log_group_name(row.get('@log', '')))
             line = _classify(row, target, LEVELS[level]) if target is not None else None
-            if line is not None:
-                lines.append(line)
-    return lines, truncated
+            if line is None:
+                continue
+            if names_a_workspace(' '.join(row.values())):
+                dropped += 1
+            else:
+                lines.append(_scoped(row, line))
+    return lines, truncated, dropped
 
 
 def _source_counts(targets: list[LogTarget]) -> dict[str, int]:
@@ -239,7 +292,8 @@ def search(client: Any, request: SearchRequest, *, now: float | None = None,
         base['log_groups'] = len(targets)
         base['log_groups_by_source'] = _source_counts(targets)
         if not targets:
-            return {**base, 'status': 'complete', 'truncated': False, 'count': 0, 'groups': []}
+            return {**base, 'status': 'complete', 'truncated': False, 'count': 0, 'groups': [],
+                    'withheld_workspace_lines': 0}
         end = int(time.time() if now is None else now)
         ids = request.query_ids or start_queries(client, query_plan(targets, request.level),
                                                  end - request.days * SECONDS_PER_DAY, end)
@@ -251,6 +305,7 @@ def search(client: Any, request: SearchRequest, *, now: float | None = None,
         return {**base, 'status': 'running', 'query_id': ','.join(ids)}
     if status == 'failed':
         return {**base, 'status': 'failed', 'message': FAILED_MESSAGE}
-    lines, truncated = _lines(answers, {target.name: target for target in targets}, request.level)
+    lines, truncated, dropped = _lines(answers, {target.name: target for target in targets}, request.level)
     groups = group_lines(lines)
-    return {**base, 'status': 'complete', 'truncated': truncated, 'count': len(groups), 'groups': groups}
+    return {**base, 'status': 'complete', 'truncated': truncated, 'count': len(groups), 'groups': groups,
+            'withheld_workspace_lines': dropped}

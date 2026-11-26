@@ -96,7 +96,8 @@ class TestRequestLookup:
         assert fake.started[0]['endTime'] == int(AT_EPOCH) + 60
 
     def test_more_than_the_cap_is_truncated_and_lines_are_cut(self):
-        rows = [row('projects-assist', '2026-10-27 08:44:41.000', 'x' * (MAX_LINE_CHARS + 5))] * (MAX_LINES + 1)
+        rows = [row('projects-assist', '2026-10-27 08:44:41.000', 'x' * (MAX_LINE_CHARS + 5),
+                    workspace_id='DEPLOYMENT')] * (MAX_LINES + 1)
         body = _lookup(FakeLogs([group('projects-assist')], rows=rows))
         assert body['truncated'] is True
         assert len(body['lines']) == MAX_LINES
@@ -179,7 +180,7 @@ class TestFailureQueues:
 
     def test_counts_ages_and_redacted_samples_without_deleting(self):
         body = '{"responsePayload": {"errorMessage": "Task timed out", "email": "jane.doe@example.com"}}'
-        sqs = FakeSqs({'voc-processing-dlq-1': 0, 'voc-api-async-failures-1': 2}, bodies=[body, 'y' * 3000],
+        sqs = FakeSqs({'voc-processing-dlq-1': 0, 'voc-api-async-failures-1': 2}, bodies=[body, f'{{"note": "{"y " * 1500}"}}'],
                       broken='voc-briefing-1')
         cloudwatch = FakeCloudWatch()
         queues = failure_queues(sqs, cloudwatch, now=datetime(2026, 10, 27, tzinfo=UTC))['queues']

@@ -114,7 +114,7 @@ from shared.dynamo_paging import iter_query
 from shared.review_share_audience import is_share_id, routing_of, share_key
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.trial_state import unchanged_check, unpaused_check
-from shared.workspace_ids import ACTIVE, is_workspace_id, ws_key
+from shared.workspace_ids import ACTIVE, WORKSPACE_FIELD, is_workspace_id, ws_key
 from shared.workspace_plugins import WORKSPACE_SORT_PREFIX, plugin_partition
 
 __all__ = [
@@ -189,8 +189,6 @@ __all__ = [
     'ws_table',
 ]
 
-#: The field an asynchronous message (SQS body, Lambda async payload) names its workspace in.
-WORKSPACE_FIELD: Final = 'workspace_id'
 #: The field every state of a project job's state machine (voc-document-workflow, voc-research-workflow) and of
 #: voc-agent-run passes its Lambda the run's workspace in (since 7.29.00): an object, ``{}`` for a run of the
 #: deployment, ``{workspace_id}`` for a workspace's. Its first states set it from the execution's input (an

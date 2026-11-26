@@ -21,6 +21,8 @@ from shared.system_logs import (
 from shared.test.system_logs_fake import PATTERN, FakeLogs, group, row
 
 NOW = 1_800_000_000.0
+#: The tag an API request puts on each of its lines (shared/system_log_scope.py): these rows are the deployment's.
+DEPLOYMENT = {'workspace_id': 'DEPLOYMENT'}
 QUERY_ID = '0b6a3f9e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'
 
 
@@ -90,7 +92,7 @@ class TestDiscoveryAndQueries:
         fake = FakeLogs([])
         assert _run(fake) == {'days': 1, 'level': 'error', 'log_groups': 0, 'status': 'complete',
                               'log_groups_by_source': {'lambda': 0, 'workflow': 0, 'api': 0},
-                              'truncated': False, 'count': 0, 'groups': []}
+                              'truncated': False, 'count': 0, 'groups': [], 'withheld_workspace_lines': 0}
         assert fake.started == []
 
     def test_a_slow_query_answers_running_with_its_ids(self):
@@ -108,7 +110,8 @@ class TestDiscoveryAndQueries:
         assert body['count'] == 1
 
     def test_a_poll_with_query_ids_reads_them_and_starts_nothing(self):
-        fake = FakeLogs([group('a')], rows=[row('a', '2026-10-27 08:00:00.000', level='ERROR', message='boom')])
+        fake = FakeLogs([group('a')], rows=[row('a', '2026-10-27 08:00:00.000', level='ERROR', message='boom',
+                                                **DEPLOYMENT)])
         body = _run(fake, query_ids=(QUERY_ID,))
         assert fake.started == []
         assert fake.polls == {QUERY_ID: 1}
@@ -204,7 +207,14 @@ class TestPolling:
         assert sorted(fake.stopped) == sorted(q['queryId'] for q in fake.started)
 
 
-def _groups(rows: list, level: str = 'error') -> list[dict]:
+def _groups(rows: list, level: str = 'error', *, tagged: bool = True) -> list[dict]:
+    """The groups of ``rows``, each tagged as the deployment's (``tagged``) unless it is a text line or carries a tag."""
+    def tag(fields: list[dict[str, str]]) -> list[dict[str, str]]:
+        names = {item['field'] for item in fields}
+        raw = next(item['value'] for item in fields if item['field'] == '@message')
+        return fields if 'workspace_id' in names or not ('level' in names or raw.startswith('{')) else [
+            *fields, {'field': 'workspace_id', 'value': 'DEPLOYMENT'}]
+    rows = [tag(fields) for fields in rows] if tagged else rows
     return _run(FakeLogs([group('projects-assist'), group('chat-stream'), group('ingestor-app_reviews')], rows=rows),
                 level=level)['groups']
 
@@ -247,20 +257,26 @@ class TestGrouping:
         messages = {g['message'] for g in groups}
         assert '<time> <id> Task timed out after <n> seconds' in messages
         assert 'REPORT: invocation ended with Status: timeout' in messages
-        assert 'Runtime.ImportModuleError: no module' in messages
+        # A crash line is not one of Lambda's fixed lines: its type only (shared/system_log_scope.py).
+        assert 'Runtime.ImportModuleError' in messages
         timed_out = next(g for g in groups if 'Task timed out' in g['message'])
         assert timed_out['request_id'] == 'req-t'
 
     def test_node_text_lines_and_raw_json_lines(self):
+        """A text line carries no tag (its text withheld, its level kept); a raw JSON line's own tag counts."""
         groups = _groups([
             row('chat-stream', '2026-10-27 08:00:00.000',
                 '2026-10-27T08:00:00.000Z\t1b2c3d4e-0000-4000-8000-000000000001\tERROR\tAssistant run failed: X'),
             row('chat-stream', '2026-10-27 08:00:01.000',
                 '2026-10-27T08:00:01.000Z\t1b2c3d4e-0000-4000-8000-000000000002\tINFO\tfine'),
-            row('chat-stream', '2026-10-27 08:00:02.000', '{"level": "ERROR", "message": "json boom"}'),
-        ])
-        assert sorted((g['level'], g['message']) for g in groups) == [
-            ('ERROR', 'Assistant run failed: X'), ('ERROR', 'json boom')]
+            row('chat-stream', '2026-10-27 08:00:02.000',
+                '{"level": "ERROR", "message": "json boom", "workspace_id": "DEPLOYMENT"}'),
+            row('chat-stream', '2026-10-27 08:00:03.000', '{"level": "ERROR", "message": "untagged json boom"}'),
+        ], tagged=False)
+        assert sorted((g['level'], g['message'], g['withheld']) for g in groups) == [
+            ('ERROR', '', True), ('ERROR', 'json boom', False)]
+        assert 'Assistant run failed' not in str(groups)
+        assert 'untagged' not in str(groups)
 
     def test_every_text_is_redacted_and_truncated(self):
         long_tail = 'x' * (MAX_SAMPLE_CHARS + 50)

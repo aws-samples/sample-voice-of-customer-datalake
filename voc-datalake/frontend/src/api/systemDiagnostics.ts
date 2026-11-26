@@ -25,6 +25,8 @@ const SystemRequestLineSchema = z.object({
   // Any level: INFO and DEBUG lines are the point of this view.
   level: z.string().min(1).catch('INFO'),
   message: lenientText,
+  // Its text not shown: it may name a workspace (lambda/shared/system_log_scope.py).
+  withheld: z.boolean().catch(false),
 })
 export type SystemRequestLine = z.output<typeof SystemRequestLineSchema>
 
@@ -33,6 +35,8 @@ const SystemRequestSchema = z.object({
   query_id: optionalText,
   lines: parsedList(SystemRequestLineSchema),
   truncated: z.boolean().catch(false),
+  // The request ran in a workspace: none of its lines is shown (lambda/shared/system_log_scope.py).
+  withheld_workspace_lines: z.number().int().nonnegative().catch(0),
 })
 export type SystemRequest = z.output<typeof SystemRequestSchema>
 
@@ -62,6 +66,8 @@ const SystemFailureQueueSchema = z.object({
   messages: z.number().int().nonnegative().nullable().catch(null),
   oldest_age_seconds: z.number().nonnegative().optional().catch(undefined),
   sample: z.array(z.string()).catch([]),
+  // Sampled messages not shown: they may name a workspace (lambda/shared/system_log_scope.py).
+  withheld: z.number().int().nonnegative().catch(0),
 })
 export type SystemFailureQueue = z.output<typeof SystemFailureQueueSchema>
 

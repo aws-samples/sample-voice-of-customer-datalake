@@ -39,6 +39,12 @@ const LEVEL_BADGE: Record<SystemLogLevel, string> = {
 
 const groupKey = (group: SystemLogGroup) => `${group.function}|${group.level}|${group.message}`
 
+/** A group's text: a withheld one's error type (when it has one) and a note saying why the rest is not shown. */
+function shownMessage(group: SystemLogGroup, note: string): string {
+  if (!group.withheld) return group.message
+  return group.message === '' ? note : `${group.message} — ${note}`
+}
+
 export default function SystemLogsPanel({ days }: { readonly days: number }) {
   const { t } = useTranslation('settings')
   const isAdmin = useIsAdmin()
@@ -122,6 +128,12 @@ function SystemLogsResult({ days, level }: { readonly days: number; readonly lev
           {t('logs.system.truncated', { rows: INSIGHTS_ROW_CAP })}
         </p>
       )}
+      {data.withheld_workspace_lines > 0 && (
+        <p className="flex items-center gap-2 text-xs text-muted">
+          <Info size={14} aria-hidden="true" />
+          {t('logs.system.withheld', { count: data.withheld_workspace_lines })}
+        </p>
+      )}
       {data.groups.length === 0
         ? <LogsEmptyState message={t('logs.system.empty')} icon={CheckCircle} />
         : <SystemLogGroupList groups={data.groups} />}
@@ -182,7 +194,7 @@ function SystemLogRow({ group, isExpanded, onToggle }: Readonly<{
             </Tooltip>
           )}
           <span className="text-xs font-mono text-text-strong flex-shrink-0">{group.function}</span>
-          <TruncatedText className="text-sm text-text truncate" text={group.message} />
+          <TruncatedText className="text-sm text-text truncate" text={shownMessage(group, t('logs.system.detailsWithheld'))} />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <Tooltip kind="description" content={t('logs.system.occurrences', { count: group.count })}>
@@ -203,7 +215,9 @@ function SystemLogDetail({ group }: { readonly group: SystemLogGroup }) {
   const { t, i18n } = useTranslation('settings')
   return (
     <div className="p-3 bg-bg-accent border-t border-border text-sm space-y-2">
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-text">{group.sample || group.message}</pre>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-text">
+        {group.sample || shownMessage(group, t('logs.system.detailsWithheld'))}
+      </pre>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="font-medium text-text">{t('logs.system.firstSeen')}</dt>
         <dd className="text-muted">{formatDateTime(group.first_seen, i18n.language, group.first_seen)}</dd>

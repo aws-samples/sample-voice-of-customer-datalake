@@ -627,6 +627,10 @@ def logs_world(lambda_context: Any) -> Generator[World]:
         cognito = _domain_resolution(stack)
         aggregates = pk_sk_table('aggregates')
         stack.enter_context(patch.object(logs_handler, 'aggregates_table', aggregates))
+        # A clear's audit row goes to this world's voc-workspaces (shared/tables.py caches a resource per process,
+        # which another test's moto session may have made).
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        stack.enter_context(patch.object(logs_handler, 'get_workspaces_table', return_value=workspaces))
         stack.enter_context(patch.dict('os.environ', {'ENABLED_SOURCES': f'["{LOG_SOURCE}"]'}))
         recent = datetime.now(UTC).isoformat()
         for side, workspace, mark in (('A', None, 'before workspaces'), ('A', WorkspaceScope(WS_A), A_MARK),

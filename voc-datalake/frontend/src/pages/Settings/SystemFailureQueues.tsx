@@ -81,24 +81,24 @@ function QueueRow({ queue }: { readonly queue: SystemFailureQueue }) {
           <ChevronDown size={14} className={clsx('transition-transform', open && 'rotate-180')} aria-hidden="true" />
         </span>
       </button>
-      {open && <QueueSamples samples={queue.sample} />}
+      {open && <QueueSamples samples={queue.sample} withheld={queue.withheld} />}
     </li>
   )
 }
 
-function QueueSamples({ samples }: { readonly samples: readonly string[] }) {
+function QueueSamples({ samples, withheld }: { readonly samples: readonly string[]; readonly withheld: number }) {
   const { t } = useTranslation('settings')
   return (
     <div className="p-2 bg-bg-accent border-t border-border space-y-2">
-      {samples.length === 0
-        ? <p className="text-xs text-muted">{t('logs.system.queues.noSample')}</p>
-        : samples.map((body, position) => (
-          <pre
-            // Samples are the newest first and have no id; position plus a prefix of the body keys them.
-            key={`${String(position)}:${body.slice(0, 32)}`}
-            className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-text"
-          >{body}</pre>
-        ))}
+      {withheld > 0 && <p className="text-xs text-muted">{t('logs.system.queues.withheld', { count: withheld })}</p>}
+      {samples.length === 0 && withheld === 0 && <p className="text-xs text-muted">{t('logs.system.queues.noSample')}</p>}
+      {samples.map((body, position) => (
+        <pre
+          // Samples are the newest first and have no id; position plus a prefix of the body keys them.
+          key={`${String(position)}:${body.slice(0, 32)}`}
+          className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-text"
+        >{body}</pre>
+      ))}
       <p className="text-xs text-muted">{t('logs.system.queues.peekNote')}</p>
     </div>
   )

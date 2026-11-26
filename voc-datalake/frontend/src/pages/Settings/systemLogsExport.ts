@@ -31,6 +31,9 @@ const HOW_TO_READ = [
   'of those message bodies. "build" is the deployed version and commit; "environment" is how it is configured (region, enabled sources, models, alarms). "validation_failures" are records',
   'rejected before processing (field names only, never values) and "processing_errors" are records the processor could not enrich.',
   '"truncated": true means only the newest lines were read. Personal data was redacted by the server before export.',
+  'No workspace\'s content is exported: "withheld_workspace_lines" counts lines left out because they name a workspace, a',
+  'group or line with "withheld": true shows only its time, function, level and error type, and a queue\'s "withheld" counts',
+  'messages not shown.',
 ].join(' ')
 
 function environmentObject(entries: readonly SystemEnvironmentEntry[] | undefined) {
@@ -68,13 +71,15 @@ async function buildSystemLogsExport(queryClient: QueryClient, input: SystemLogs
     build: { version: paddedVersion(BUILD_INFO.version), commit: BUILD_INFO.commit, built_at: BUILD_INFO.builtAt },
     log_groups: data.log_groups,
     truncated: data.truncated,
+    withheld_workspace_lines: data.withheld_workspace_lines,
     environment: environmentObject(queryClient.getQueryData<SystemEnvironmentEntry[]>(SYSTEM_ENVIRONMENT_KEY)),
     queues: queryClient.getQueryData<SystemFailureQueues>(SYSTEM_QUEUES_KEY)?.queues ?? null,
     groups: data.groups.map((group) => {
       const request = requests.get(group)
       return request === undefined
         ? group
-        : { ...group, request_lines: request.lines, request_lines_truncated: request.truncated }
+        : { ...group, request_lines: request.lines, request_lines_truncated: request.truncated,
+            request_lines_withheld: request.withheld_workspace_lines }
     }),
     validation_failures: settled(validation),
     processing_errors: settled(processing),

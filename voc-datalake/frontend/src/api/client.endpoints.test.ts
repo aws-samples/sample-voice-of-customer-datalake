@@ -174,7 +174,10 @@ const LOGS_CASES: EndpointCase[] = [
   {
     name: 'getSystemLogs (fresh search)',
     call: () => api.getSystemLogs({ days: 1, level: 'error' }),
-    response: { status: 'running', query_id: 'q-1', log_groups: 54, truncated: false, count: 0, groups: [] },
+    response: {
+      status: 'running', query_id: 'q-1', log_groups: 54, truncated: false, count: 0, groups: [],
+      withheld_workspace_lines: 0,
+    },
     url: `${API}/logs/system?days=1&level=error`,
     returnsResponse: true,
   },
@@ -182,8 +185,8 @@ const LOGS_CASES: EndpointCase[] = [
     name: 'getSystemLogs (poll)',
     call: () => api.getSystemLogs({ days: 7, level: 'warning', query_id: 'q-1,q-2' }),
     response: {
-      status: 'complete', log_groups: 54, truncated: false, count: 1,
-      groups: [{ function: 'processor', source: 'lambda', level: 'ERROR', message: 'boom', sample: 'boom', count: 2, first_seen: '2026-10-27T08:00:00Z', last_seen: '2026-10-27T09:00:00Z', request_id: null }],
+      status: 'complete', log_groups: 54, truncated: false, count: 1, withheld_workspace_lines: 3,
+      groups: [{ function: 'processor', source: 'lambda', level: 'ERROR', message: 'boom', sample: 'boom', count: 2, first_seen: '2026-10-27T08:00:00Z', last_seen: '2026-10-27T09:00:00Z', request_id: null, withheld: false }],
     },
     url: `${API}/logs/system?days=7&level=warning&query_id=q-1%2Cq-2`,
     returnsResponse: true,
@@ -193,14 +196,20 @@ const LOGS_CASES: EndpointCase[] = [
     call: () => api.getSystemRequest({
       function: 'projects-assist', request_id: '7f3c2a10-4b8e-4d1a-9c55-0e2b6d9a1f37', at: '2026-10-27T08:44:43Z', query_id: 'q-9',
     }),
-    response: { status: 'complete', lines: [{ timestamp: '2026-10-27T08:44:40Z', level: 'INFO', message: 'START' }], truncated: false },
+    response: {
+      status: 'complete', lines: [{ timestamp: '2026-10-27T08:44:40Z', level: 'INFO', message: 'START', withheld: false }],
+      truncated: false, withheld_workspace_lines: 0,
+    },
     url: `${API}/logs/system/request?function=projects-assist&request_id=7f3c2a10-4b8e-4d1a-9c55-0e2b6d9a1f37&at=2026-10-27T08%3A44%3A43Z&query_id=q-9`,
     returnsResponse: true,
   },
   {
     name: 'getSystemFailureQueues',
     call: () => api.getSystemFailureQueues(),
-    response: { queues: [{ name: 'voc-processing-dlq', messages: 2, oldest_age_seconds: 60, sample: ['{"id":"rev_1"}'] }] },
+    response: {
+      queues: [{ name: 'voc-processing-dlq', messages: 2, oldest_age_seconds: 60, sample: ['{"id":"rev_1"}'],
+        withheld: 1 }],
+    },
     url: `${API}/logs/system/queues`,
     returnsResponse: true,
   },
