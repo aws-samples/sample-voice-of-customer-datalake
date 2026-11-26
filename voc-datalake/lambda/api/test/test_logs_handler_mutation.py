@@ -317,7 +317,8 @@ class TestTheScraperListing:
             ScanIndexForward=False,
             Limit=50,
         )
-        assert body == {'scraper_id': 'scraper-123', 'logs': [], 'count': 0}
+        # The id is never echoed (another workspace's id answers exactly as an unknown one).
+        assert body == {'logs': [], 'count': 0}
 
     @pytest.mark.parametrize(('started_at', 'kept'), [
         pytest.param(CUTOFF_7D, True, id='exactly-at-the-cutoff-is-kept'),

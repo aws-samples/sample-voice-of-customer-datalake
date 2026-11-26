@@ -17,6 +17,44 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.75.00] - 2026-11-26
+
+Multi-workspace, phase 3: the logs per workspace. Inside a workspace, Administration → System → Logs shows that
+workspace's own validation failures, processing errors and scraper runs, the ones its ingestion wrote, and nothing of
+another workspace's or the deployment's trail ([docs/multi-workspace.md](docs/multi-workspace.md)). Outside a
+workspace nothing changes. The alerts and the system diagnostics stay the deployment's: they watch its own Lambdas.
+
+### Added
+
+- `GET /logs/validation`, `/logs/processing`, `/logs/summary` and `/logs/scraper/{id}` act in the workspace a request
+  names (`X-Workspace-Id`, resolved first; the one 404 for a workspace the caller is not in) and read its own rows.
+- `DELETE /logs/validation/{source}` inside a workspace clears that workspace's trail of the source, for its admins
+  only (the deployment's `admins` group grants nothing there; a delegated caller is refused; a platform admin enters
+  as an admin, live-checked and audited), each clear recorded first in the workspace's audit trail
+  (`validation_logs_cleared`: who, whether as a platform admin, which source, how many rows); a record that cannot be
+  written clears nothing. In the web app, Clear follows the workspace's admin role there.
+
+### Changed
+
+- `GET /logs/scraper/{id}` no longer repeats the scraper's id in its answer (`logs` and `count` only), so another
+  workspace's scraper id answers exactly as an unknown one. The web app never read it.
+
+### Not yet in a workspace
+
+- The Logs view is in Administration, which only the deployment's administrators open: a workspace's admins who are
+  not among them do not reach it yet (the routes already answer them).
+- The system diagnostics (System errors, failure queues, environment) stay the deployment's administrators', as before
+  workspaces: they span every workspace, and a failure queue's peeked messages may be a workspace's.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). IAM: the logs API's role gets the stack's workspace-resolution policy (its
+  `AUDIT#WS#*` put takes a clear's audit row) with `WORKSPACES_TABLE`, and its batch delete on voc-aggregates may also
+  reach one workspace id's `WS#{ws}#LOGS#validation#*` rows beside `LOGS#validation#*`. Its Cognito reads are
+  unchanged.
+- Nothing is migrated: a workspace's trail is what its own ingestion wrote; the deployment's is still shown outside
+  any workspace.
+
 ## [7.73.00] - 2026-11-26
 
 Multi-workspace, phase 3: Radar per workspace. Inside a workspace the Radar page, its brand list and settings are

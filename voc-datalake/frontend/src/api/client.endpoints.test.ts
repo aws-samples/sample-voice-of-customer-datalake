@@ -166,7 +166,7 @@ const LOGS_CASES: EndpointCase[] = [
   {
     name: 'getScraperLogs',
     call: () => api.getScraperLogs('scraper-123', { days: 7, limit: 10 }),
-    response: { scraper_id: 'scraper-123', logs: [{ run_id: 'run-1', status: 'completed', pages_scraped: 10 }], count: 1 },
+    response: { logs: [{ run_id: 'run-1', status: 'completed', pages_scraped: 10 }], count: 1 },
     url: `${API}/logs/scraper/scraper-123?days=7&limit=10`,
     returnsResponse: true,
   },

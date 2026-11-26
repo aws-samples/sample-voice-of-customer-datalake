@@ -55,9 +55,12 @@ export function userAdminEndpoints(fetchApi: FetchApi) {
 }
 
 /** `/logs/*` — validation failures, processing errors, scraper runs, system errors.
- *  The reads are open to every authenticated user except `GET /logs/system`;
- *  it and `DELETE /logs/validation/{source}` (the only delete route in
- *  `logs_handler.py`) are admin-only, enforced by the route. */
+ *  The trail is the current workspace's (the default request scope sends its
+ *  `X-Workspace-Id`; the deployment's outside one). The reads are open to every
+ *  authenticated user except `GET /logs/system*` (the deployment's diagnostics,
+ *  its `admins`'); `DELETE /logs/validation/{source}` (the only delete route in
+ *  `logs_handler.py`) is the workspace's admins' (the deployment's `admins`
+ *  outside one), enforced by the route. */
 export function logsEndpoints(fetchApi: FetchApi) {
   return {
     getValidationLogs: (params?: { source?: string; days?: number; limit?: number }) =>
@@ -71,7 +74,7 @@ export function logsEndpoints(fetchApi: FetchApi) {
       ),
 
     getScraperLogs: (scraperId: string, params?: { days?: number; limit?: number }) =>
-      fetchApi<{ scraper_id: string; logs: ScraperLogEntry[]; count: number }>(
+      fetchApi<{ logs: ScraperLogEntry[]; count: number }>(
         `/logs/scraper/${scraperId}?${buildSearchParams(params ?? {})}`,
       ),
 

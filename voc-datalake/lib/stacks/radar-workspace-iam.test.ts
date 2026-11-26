@@ -10,9 +10,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
-import { apiTemplate, policyStatementsOf } from '../test-support/api-stack-template';
+import { apiTemplate, expectRequestWorkspace, policyStatementsOf } from '../test-support/api-stack-template';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { RADAR_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { findWorkerFunction } from '../test-support/worker-function';
 
 const ONE_WORKSPACE = `ws_${'?'.repeat(26)}`;
@@ -37,13 +38,7 @@ describe('the Radar API in a workspace', () => {
   });
 
   it("resolves the request's workspace and live-checks a platform admin's entry", () => {
-    const actions = statements().flatMap((s) => s.actions);
-    expect(actions).toStrictEqual(expect.arrayContaining(['cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser']));
-    const env = z.object({ Properties: z.object({ Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }) }) })
-      .parse(Object.values(apiTemplate().findResources('AWS::Lambda::Function'))
-        .find((resource) => JSON.stringify(resource).includes('radar_handler.lambda_handler')))
-      .Properties.Environment.Variables;
-    expect(Object.keys(env)).toStrictEqual(expect.arrayContaining(['WORKSPACES_TABLE', 'USER_POOL_ID']));
+    expectRequestWorkspace(apiTemplate(), 'RadarLambdaRole', RADAR_API_FUNCTION_BASE_NAME);
   });
 });
 

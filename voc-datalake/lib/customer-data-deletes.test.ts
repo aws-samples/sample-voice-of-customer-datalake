@@ -67,7 +67,10 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
         + 'review, no content; the deployment\'s or the request\'s workspace\'s, DELETE /integrations/web_reviews/methods/{domain})',
     },
     ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, WORKSPACE_CIRCUIT_ROW])),
-    'VocApiStack/LogsLambdaRole': { scope: ['LOGS#validation#*'], why: 'DELETE /logs/validation/{source}' },
+    'VocApiStack/LogsLambdaRole': {
+      scope: ['LOGS#validation#*', `WS#${ONE_WORKSPACE}#LOGS#validation#*`],
+      why: 'DELETE /logs/validation/{source}: the deployment\'s validation trail or one workspace\'s (its admins\')',
+    },
     'VocApiStack/FeedbackFormLambdaRole': {
       scope: ['FEEDBACK_FORM', 'WS#ws_??????????????????????????#FEEDBACK_FORM',
         'FEEDBACK_FORM_TEST', 'WS#ws_??????????????????????????#FEEDBACK_FORM_TEST'],

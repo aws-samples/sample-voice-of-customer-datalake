@@ -256,13 +256,27 @@ read only and collapsed until asked for, each opened as a plain transcript and n
 the header), so nothing done inside the workspace writes to them. For a platform admin who is not a member, the
 chat routes' 404 is settled in the web app: the history says the conversations are not saved here, the conversation
 in view is marked unsaved, and nothing retries (`frontend/src/assistant/sessions/unsavedThreads.ts`).
-The logs API's readers (since 7.15.00) can read a workspace's own trail: the validation, processing and summary
-readers and the scraper runs' (`lambda/api/logs_handler.py`) take an optional workspace and read its
-`WS#{ws}#LOGS#{kind}#{source}` rows (`lambda/shared/processing_logs.py` `log_partition`, what the processor writes for
-a workspace's messages since 7.00.00) and `WS#{ws}#SCRAPER_RUN#{id}` runs through the layer's view of voc-aggregates.
-No route passes one: no workspace's ingestion runs until phase 2's cut-over, so every log row is still the
-deployment's, and `GET /logs/*` keeps reading it for everyone; the routes resolve the workspace with that cut-over,
-when the clear of a workspace's validation trail lands too (its admins', with an audit row). Memory's store
+Since 7.75.00 the logs routes act in the workspace a request names (`lambda/api/logs_handler.py`): `GET
+/logs/validation`, `/logs/processing`, `/logs/summary` and `/logs/scraper/{id}` resolve it first (the one 404 for a
+workspace the caller is not in) and read that workspace's own trail, its `WS#{ws}#LOGS#{kind}#{source}` rows
+(`lambda/shared/processing_logs.py` `log_partition`, what the processor writes for a workspace's messages) and its
+`WS#{ws}#SCRAPER_RUN#{id}` runs (what a workspace's scraper run writes), through the layer's view of voc-aggregates;
+the reads stay open to every member, as the deployment's are to everyone signed in. A scraper's runs no longer echo
+its id, so another workspace's scraper id answers exactly as an unknown one. `DELETE /logs/validation/{source}`
+resolves fresh and clears the workspace's trail of that source for its admins only (`require_settings_admin`: a
+viewer, an editor and a delegated caller get 403; the deployment's `admins` group grants nothing there; a platform
+admin enters as an admin, decision 2, live-checked and audited), each clear audited first in `AUDIT#WS#{ws}` (kind
+`validation_logs_cleared`: the actor's sub, whether as a platform admin, the source and how many rows; a row that
+cannot be written clears nothing); the logs role's batch delete is held to `LOGS#validation#*` and
+`WS#{one workspace id}#LOGS#validation#*` (lib/stacks/api-engagement-lambdas.ts). A request that names no workspace
+reads and clears the deployment's trail, as before. The alerts and the system diagnostics (`/logs/alerts*`,
+`/logs/system*`) stay the deployment's: they watch and read its own Lambdas, queues and environment, and resolve no
+workspace (the alerts' writes a platform admin's, below). Open (TENETS.md D8's gap): the system diagnostics stay
+the deployment's `admins`' as before workspaces, though their redacted lines and a failure queue's peeked bodies may
+hold a workspace's message; and the Logs view is in Administration, which only the deployment's `admins` open.
+In the web app the trail is the open workspace's
+(Administration → System → Logs sends its `X-Workspace-Id`), and Clear follows the workspace's admin role there
+(`useBrandEditRight`). Memory's store
 (since 7.15.00) can keep a workspace's memories: `lambda/shared/memory_store.py` builds every key inside the workspace's
 partitions when given one (`WS#{ws}#MEM#company`, `WS#{ws}#MEM#user#{sub}`, `WS#{ws}#MEMSTATUS#…` in `gsi1pk`,
 `WS#{ws}#MEMEVT#…`, `WS#{ws}#MEMCURSOR`, `WS#{ws}#MEMIMPORT`; a `Candidate` names its workspace), and every operation on
@@ -546,7 +560,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 | `appearance` | deployment | one logo and colour scheme (decision 7): a platform admin's setting, not a workspace admin's |
 | `model_default` | deployment | the model pinned at deploy (`-c defaultModelId`, `lambda/custom_resources/model_pin.py`), below every pick: split from `model` (7.01.00) so the picks can move into each workspace; a deployment from before the split keeps its pin in `model`'s `model_id`, which still outranks it |
 | `model_quotas`, `image_model_quota` | deployment | the AWS account's Bedrock quotas, cached; every workspace shares them (decision 10) |
-| `alerts` | deployment | alarms on the deployment's own Lambdas and their recipients: the deployment's operations |
+| `alerts` | deployment | alarms on the deployment's own Lambdas and their recipients: the deployment's operations (no alarm is about one workspace; a workspace's own trail is its logs, per workspace since 7.75.00) |
 | `engineering` (voc-agents, `SETTINGS#engineering`) | deployment | the engineering agents' hard cap at each flow's monthly budget (`lambda/engineering/settings.py`, only with `-c engineeringAgents=true`): the agents and their flows are the deployment's administrators' until agents move per workspace ([3g3](#the-project-plan-phase-3)); so are, since 7.50.00, their runs' transcripts, run manifests and the transcripts' index in voc-eng-workspace (`ws/default/runs/<run>/<agent>/commits/<sha>/_transcripts/`, `ws/default/runs/<run>/_manifest/`, `ws/default/transcripts-index/<flow>/<day>/<run>.json`), kept forever and in no workspace's export or delete until 3g3; and, since 7.51.00, a run's direction (`WS#default#RUN#<run>` / `DIRECTION#v<nnnnnn>`), its steps' assertion records (`ASSERT#<step>#<attempt>`), a parent's child runs (`CHILD#<child>`), the runs list (`WS#default#RUNLIST#<yyyy-mm>` / `RUN#<started_at>#<run>`) and a child run's seeds (`ws/default/runs/<run>/_seed/<task>/`); and, since 7.52.00, a repository connection's knowledge docs' renderings (`WS#default#REPO#<connection>` / `KDOCS`, `KDOCSLOG#<n>`), its tenets' versions (`TENETS`, `TENETS#<v>`, `TENETSLOG#<v>#<event>`, `TENETSRUN#<run>`), the docs writes' claims (`WS#default#DOCS#<connection>`) and the understanders' tenets records (`…/commits/<sha>/_tenets/`); and, since 7.52.00, the Registry's cards made from a skill (voc-engineering `WS#default#AGENTCARD#<id>`, `…#AGENTCARD#_list`); 7.52.00's integration adds no partition: a person's own skill version is a version row of the skills' partitions, and the gates' recorded tool versions, the template sources and a run's expansion are reads of these, the bundle and the runs' gate records |
 | `engineering_setup` (voc-agents, `SETTINGS#engineering_setup`) | deployment | the engineering setup guide's progress (7.50.00, `lambda/shared/agents_engineering_setup_routes.py`, only with `-c engineeringAgents=true`): what the deployment's administrators chose for each step of the guide, which sets up the deployment's engineering agents; it moves with them ([3g3](#the-project-plan-phase-3)) |
 
@@ -1853,7 +1867,7 @@ audit writer names it in the guard.
    profiles may not name a Radar brand yet, and the processor refuses a workspace message that carries one; its routes
    and scans are per workspace since 7.73.00), projects and their
    Step Functions, the assistant and its stream Lambda, memory, agents, workflows and plans, the briefing, the Data
-   Explorer, `GET /logs/*` and alerts, participants' asks, and the read caching's `config_version` (one counter every
+   Explorer, participants' asks, and the read caching's `config_version` (one counter every
    scope's settings save bumps). Browser-saved state still not keyed by workspace (the three persisted stores are since 6.15.00),
    each with its reason: the Memory page's list of the imports this browser started (`voc-memory-imports`), which follows the
    memory API when phase 3 keys it; the onboarding cache (`voc-onboarding:{sub}`), a cache of a per-person
@@ -1865,7 +1879,8 @@ audit writer names it in the guard.
    moves these keys to the workspace id.
 3. **Everything else**: settings, categories, dimensions, sources, Radar, projects and their Step Functions, the
    assistant and its stream Lambda, memory, agents, workflows and plans, MCP tokens, the read-caching version
-   counters ([Read Caching](caching.md)) per workspace, logs and alerts.
+   counters ([Read Caching](caching.md)) per workspace, and the logs (per workspace since 7.75.00; the alerts and
+   system diagnostics stay the deployment's: they watch its own Lambdas).
 4. **Lifecycle and cost**: export, delete, cost metering and the platform cost page. Open since a workspace ingests
    (7.14.00): a workspace's own whole-source erasure (its items of one source, its counters, a lock of its own and
    `ws/{ws}/raw/<source>/`); until then a whole-source erasure is the deployment's request only.

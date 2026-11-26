@@ -173,6 +173,12 @@ BY_DESIGN: dict[tuple[str, str], str] = {
             'PUT /logs/alerts', 'POST /logs/alerts/recipients', 'POST /logs/alerts/recipients/remove')],
         "the alarms on the deployment's own Lambdas and their recipients: a platform admin's, live-checked"),
     **dict.fromkeys(
+        [('logs_handler.py', route) for route in (
+            'GET /logs/system', 'GET /logs/system/request', 'GET /logs/system/queues', 'GET /logs/system/environment')],
+        "the deployment's own diagnostics: its Lambdas' redacted log lines, its failure queues and environment, "
+        "across every workspace (a failure queue's peeked bodies may hold a workspace's message): the deployment's "
+        "administrators, as before workspaces (a known D8 gap, TENETS.md)"),
+    **dict.fromkeys(
         [('mcp_oauth_routes.py', route) for route in (
             'GET /.well-known/oauth-protected-resource', 'GET /.well-known/oauth-protected-resource/mcp/global',
             'GET /.well-known/oauth-authorization-server', 'GET /.well-known/openid-configuration',

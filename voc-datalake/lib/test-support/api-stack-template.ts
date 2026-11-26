@@ -516,6 +516,16 @@ export function serviceEnvironment(template: Template, serviceName: string): Rec
   return fn ?? {};
 }
 
+/** Expects the API Lambda whose service is `serviceName` (role fragment `roleFragment`) to resolve a request's
+ *  `X-Workspace-Id` as the stack's domain APIs do (lib/utils/workspace-resolution-grants.ts grantRequestWorkspace):
+ *  the live platform-admin check's Cognito reads, `WORKSPACES_TABLE` and `USER_POOL_ID`. */
+export function expectRequestWorkspace(template: Template, roleFragment: string, serviceName: string): void {
+  expect(policyStatementsOf(template, roleFragment).flatMap((s) => s.actions))
+    .toStrictEqual(expect.arrayContaining(['cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser']));
+  expect(Object.keys(serviceEnvironment(template, serviceName)))
+    .toStrictEqual(expect.arrayContaining(['WORKSPACES_TABLE', 'USER_POOL_ID']));
+}
+
 const PolicyStatementsSchema = z.object({
   Properties: z.object({
     PolicyDocument: z.object({

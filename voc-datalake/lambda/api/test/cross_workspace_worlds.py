@@ -607,6 +607,40 @@ def radar_world(lambda_context: Any) -> Generator[World]:
         yield World(call=_caller(radar_handler, lambda_context), doubles={'cognito': cognito, 'scans': scans})
 
 
+# ── voc-logs-api (lambda/api/logs_handler.py): the logs routes (its alerts and system routes are the deployment's) ──
+
+#: The one source the logs world enables (``ENABLED_SOURCES``): a plugin of the deployment, the same in every workspace.
+LOG_SOURCE = 'webscraper'
+#: A scraper's id is its workspace's own; the deployment's runs sit under A's id (the words tell them apart).
+_LOG_SCRAPERS = {'A': {'scraper_id': 'scr_a1'}, 'B': {'scraper_id': 'scr_b1'}, UNKNOWN: {'scraper_id': 'scr_ff'}}
+
+
+@contextmanager
+def logs_world(lambda_context: Any) -> Generator[World]:
+    """The deployment's trail and each workspace's: a validation and a processing row of ``LOG_SOURCE`` and a
+    scraper's run, each marked with its scope's word (the deployment's carries none of A's or B's)."""
+    import logs_handler
+    from shared.processing_logs import log_partition
+    from shared.ws_repo import WorkspaceScope, scraper_run_pk
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        aggregates = pk_sk_table('aggregates')
+        stack.enter_context(patch.object(logs_handler, 'aggregates_table', aggregates))
+        stack.enter_context(patch.dict('os.environ', {'ENABLED_SOURCES': f'["{LOG_SOURCE}"]'}))
+        recent = datetime.now(UTC).isoformat()
+        for side, workspace, mark in (('A', None, 'before workspaces'), ('A', WorkspaceScope(WS_A), A_MARK),
+                                      ('B', WorkspaceScope(WS_B), B_MARK)):
+            for kind in ('validation', 'processing'):
+                aggregates.put_item(Item={'pk': log_partition(kind, LOG_SOURCE, workspace), 'sk': recent,
+                                          'message_id': f'msg-{mark}', 'timestamp': recent, 'log_type': kind,
+                                          'errors': ['text: too_short']})
+            scraper = _LOG_SCRAPERS[side]['scraper_id']
+            run_pk = f'SCRAPER_RUN#{scraper}' if workspace is None else scraper_run_pk(workspace, scraper)
+            aggregates.put_item(Item={'pk': run_pk, 'sk': f'run-{mark}', 'status': 'completed', 'started_at': recent})
+        yield World(call=_caller(logs_handler, lambda_context), doubles={'cognito': cognito})
+
+
 @contextmanager
 def memory_world(lambda_context: Any) -> Generator[World]:
     import memory_handler
@@ -890,6 +924,7 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'radar_handler.py': radar_world,
     # Included by the Radar handler: the Exa key routes, refused inside a workspace.
     'radar_exa_routes.py': radar_world,
+    'logs_handler.py': logs_world,
     'mcp_oauth_consent_routes.py': tokens_world,
     'agents_handler.py': agents_world,
     # Included by the settings handler (a feedback form's AI draft, 7.55.00; a form report's AI summary, 7.63.00).
@@ -948,6 +983,17 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('radar_exa_routes.py', 'DELETE /radar/settings/exa-key'): RouteCase(
         no_ids='the header is its only id: check 1 (refused inside a workspace)', ok_status=409,
         status_without_a_workspace=200, without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    **dict.fromkeys(
+        [('logs_handler.py', route) for route in ('GET /logs/validation', 'GET /logs/processing', 'GET /logs/summary')],
+        RouteCase(no_ids="the header is its only id: check 1 (each workspace has its own trail)",
+                  without_a_workspace=_AS_BEFORE)),
+    ('logs_handler.py', 'GET /logs/scraper/<scraper_id>'): RouteCase(
+        # A's member naming B's scraper reads A's runs of that id: none, exactly as for an unknown one.
+        ids=_LOG_SCRAPERS, refused_status=200, without_a_workspace=_AS_BEFORE),
+    ('logs_handler.py', 'DELETE /logs/validation/<source>'): RouteCase(
+        no_ids="the source is the deployment's, the workspace is the header: check 1 (A's admin clears A's trail)",
+        shared={'source': LOG_SOURCE}, literals={LOG_SOURCE: 'a source of the deployment, the same in every workspace'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     ('workspaces_handler.py', 'GET /me/workspaces/current'): RouteCase(
         no_ids='the header is its only id: check 1'),
     # The rename (7.40.00, shared/workspace_rename.py): A's META, A's listing row and A's members' rows only.

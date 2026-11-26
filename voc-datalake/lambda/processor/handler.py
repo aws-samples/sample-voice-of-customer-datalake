@@ -269,7 +269,7 @@ def _log_row_base(kind: str, source_platform: str, message_id: object, scope: Wo
     now = datetime.now(UTC)
     safe_id = str(message_id)[:MAX_LOGGED_MESSAGE_ID_LENGTH]
     return {
-        # A workspace message's row is the workspace's (``GET /logs/*`` reads the deployment's rows only, so far).
+        # A workspace message's row is the workspace's (``GET /logs/*`` reads it there: lambda/api/logs_handler.py).
         'pk': scope.key('LOGS', kind, source_platform or 'unknown') if scope else f"LOGS#{kind}#{source_platform}",
         'sk': f"{now.isoformat()}#{safe_id[:32]}",
         'source_platform': source_platform,

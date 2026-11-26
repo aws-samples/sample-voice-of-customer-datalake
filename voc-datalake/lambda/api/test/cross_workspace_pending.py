@@ -321,18 +321,6 @@ PHASE_3: dict[str, frozenset[str]] = {
     'feature_requests_search_routes.py': frozenset({
         'GET /feature-requests/search',
     }),
-    # Logs and alerts.
-    'logs_handler.py': frozenset({
-        'DELETE /logs/validation/<source>',
-        'GET /logs/processing',
-        'GET /logs/scraper/<scraper_id>',
-        'GET /logs/summary',
-        'GET /logs/system',
-        'GET /logs/system/environment',
-        'GET /logs/system/queues',
-        'GET /logs/system/request',
-        'GET /logs/validation',
-    }),
     # A token is minted inside a workspace and pins it.
     # The public unsubscribe finds the workspace from its token.
     'participants_ask_routes.py': frozenset({

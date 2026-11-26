@@ -1,6 +1,13 @@
 """
 Logs API Lambda - Handles /logs/*
 Provides access to validation failures and processing errors for user visibility.
+
+The trail is per workspace (7.75.00, docs/multi-workspace.md): each logs route resolves the workspace the request's
+``X-Workspace-Id`` names first (shared/request_workspace.py; the one 404 for a workspace the caller is not in) and
+reads that workspace's own ``WS#{ws}#LOGS#{kind}#{source}`` rows and ``WS#{ws}#SCRAPER_RUN#{id}`` runs, the ones its
+ingestion writes; only its admins clear its validation trail, each clear audited in ``AUDIT#WS#{ws}`` first. A
+request that names none reads and clears the deployment's trail, as before. The alerts and the system diagnostics
+stay the deployment's (its own Lambdas, queues and environment): they resolve no workspace.
 """
 
 import os
@@ -27,6 +34,7 @@ from shared.api import (
     validate_days,
     validate_limit,
 )
+from shared.audit_rows import put_new_audit_row
 from shared.concurrency import ordered_map
 from shared.dynamo_paging import iter_query
 from shared.enabled_sources import default_source_ids
@@ -44,6 +52,7 @@ from shared.platform_admin import require_platform_admin
 from shared.platform_admin_gate import require_live_platform_admin
 from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE, log_partition
 from shared.request_body import json_object_body
+from shared.request_workspace import request_workspace, require_settings_admin
 from shared.scraper_run_errors import ERROR_TYPE_SHAPE, MAX_RETURNED_ERRORS, redacted_scraper_errors
 from shared.system_environment import environment as system_environment
 from shared.system_logs import SearchRequest, parse_level, parse_query_ids
@@ -51,9 +60,11 @@ from shared.system_logs import search as search_system_logs
 from shared.system_queues import failure_queues
 from shared.system_request_log import lookup as lookup_request_lines
 from shared.system_request_log import parse_lookup
-from shared.tables import get_aggregates_table
+from shared.tables import configured_table, get_aggregates_table, get_workspaces_table
+from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
-from shared.ws_repo import WorkspaceScope, scraper_run_pk, ws_table
+from shared.workspace import WorkspaceContext, audit_key, audit_sort_key
+from shared.ws_repo import WorkspaceScope, optional_scope, scope_of, scraper_run_pk, ws_table
 
 # None when AGGREGATES_TABLE is unset; each route answers ConfigurationError then.
 aggregates_table = get_aggregates_table()
@@ -74,18 +85,17 @@ SUMMARY_COUNT_CAP = 1000
 # own TLS connection after an idle gap: 8 workers cost ~80 ms of CPU, 2 workers ~37 ms (6.04.03 measurement; the
 # function was 84 % CPU at one vCPU), and in the region 16 reads still take well under 100 ms on 2.
 LOG_READ_WORKERS = 2
+#: The fixed answer of a failed workspace look-up (the AWS error stays in the log).
+FAILED_WORKSPACE = 'Failed to open the logs'
+#: The audit row of a workspace's cleared validation trail (``AUDIT#WS#{ws}``): who, which source, how many rows.
+VALIDATION_LOGS_CLEARED = 'validation_logs_cleared'
 
 
 def _partition_page(workspace: WorkspaceScope | None, pk: str, *, since: str | None = None,
                     **options: Any) -> dict:
     """One page of partition ``pk`` (sort keys from ``since``): the same query as before on the table without a
     workspace; through the workspace's view of it inside one (it builds the key condition, and refuses a partition
-    outside the workspace before DynamoDB).
-
-    The routes pass no workspace yet: since 7.14.00 a workspace's own ingestion runs, and its messages and scraper
-    runs log in it (shared/processing_logs.py, shared/ws_repo.py ``scraper_run_pk``), but ``GET /logs/*`` still reads
-    only the deployment's trail, so a workspace's processing logs are written and not yet shown. The routes resolve
-    the workspace with the logs cut-over (docs/multi-workspace.md; TENETS.md, D8's gap)."""
+    outside the workspace before DynamoDB)."""
     if aggregates_table is None:
         raise ConfigurationError('Aggregates table not configured')
     if workspace is None:
@@ -105,6 +115,13 @@ def _scraper_runs(scraper_id: str, limit: int, workspace: WorkspaceScope | None 
     return _partition_page(workspace, pk, ScanIndexForward=False, Limit=limit).get('Items', [])
 
 
+def _logs_workspace(*, fresh: bool = False) -> WorkspaceContext | None:
+    """The workspace the request names, resolved before anything else the route does (fresh for the clear, so a
+    removed member or a demoted admin clears nothing there); None for a request that names none: the deployment's
+    trail."""
+    return request_workspace(app.current_event.raw_event, FAILED_WORKSPACE, fresh=fresh)
+
+
 def _days_param(params: dict) -> int:
     return validate_days(params.get('days'), default=DEFAULT_DAYS, min_val=1, max_val=MAX_FEEDBACK_WINDOW_DAYS)
 
@@ -112,19 +129,22 @@ def _days_param(params: dict) -> int:
 @app.get("/logs/validation")
 @tracer.capture_method
 def get_validation_logs():
-    """Get validation failure logs; query params as `_list_logs`."""
-    return _list_logs('validation')
+    """Get validation failure logs (the request's workspace's); query params as `_list_logs`."""
+    context = _logs_workspace()
+    return _list_logs('validation', optional_scope(context))
 
 
 @app.get("/logs/processing")
 @tracer.capture_method
 def get_processing_logs():
-    """Get processing error logs; query params as `_list_logs`."""
-    return _list_logs('processing')
+    """Get processing error logs (the request's workspace's); query params as `_list_logs`."""
+    context = _logs_workspace()
+    return _list_logs('processing', optional_scope(context))
 
 
-def _list_logs(log_type: str) -> dict:
-    """The listing both `/logs/validation` and `/logs/processing` answer.
+def _list_logs(log_type: str, workspace: WorkspaceScope | None) -> dict:
+    """The listing both `/logs/validation` and `/logs/processing` answer, of ``workspace``'s trail (the deployment's
+    with None).
 
     Query params:
     - source: Filter by source platform (optional; otherwise every known source,
@@ -142,7 +162,7 @@ def _list_logs(log_type: str) -> dict:
 
     try:
         if source:
-            logs = _query_logs_for_source(log_type, source, days, limit)
+            logs = _query_logs_for_source(log_type, source, days, limit, workspace)
         else:
             # Every enabled plugin plus `manual_import` (issue #256).
             sources = default_source_ids()
@@ -150,7 +170,7 @@ def _list_logs(log_type: str) -> dict:
             logs = [
                 log
                 for source_logs in ordered_map(
-                    lambda src: _query_logs_for_source(log_type, src, days, share), sources,
+                    lambda src: _query_logs_for_source(log_type, src, days, share, workspace), sources,
                     max_workers=LOG_READ_WORKERS)
                 for log in source_logs
             ]
@@ -176,12 +196,15 @@ def _list_logs(log_type: str) -> dict:
 @tracer.capture_method
 def get_scraper_logs(scraper_id: str):
     """
-    Get logs for a specific scraper.
+    Get logs for a specific scraper (the request's workspace's runs of that id).
 
     Query params:
     - days: Number of days to look back (default: 7)
     - limit: Max number of logs to return (default: 50)
+
+    The answer never repeats the id: another workspace's scraper id answers exactly as an unknown one.
     """
+    context = _logs_workspace()
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
 
@@ -193,7 +216,7 @@ def get_scraper_logs(scraper_id: str):
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
         logs = []
-        for item in _scraper_runs(scraper_id, limit):
+        for item in _scraper_runs(scraper_id, limit, optional_scope(context)):
             # Filter by lookback window — items older than `cutoff` are skipped.
             # (`cutoff` was previously computed but never applied, making the
             # `days` query param a no-op.) Runs missing `started_at` are kept.
@@ -211,7 +234,6 @@ def get_scraper_logs(scraper_id: str):
             })
 
         return {
-            'scraper_id': scraper_id,
             'logs': logs,
             'count': len(logs),
         }
@@ -228,8 +250,10 @@ def get_logs_summary():
     """
     Get a summary of recent logs across all sources.
 
-    Returns counts of validation failures and processing errors per source.
+    Returns counts of validation failures and processing errors per source (the request's workspace's).
     """
+    context = _logs_workspace()
+    workspace = optional_scope(context)
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
 
@@ -248,7 +272,8 @@ def get_logs_summary():
         # (results in (source, type) order, so the summary is built as before).
         sources = default_source_ids()
         pairs = [(source, log_type) for source in sources for log_type in ('validation', 'processing')]
-        results = ordered_map(lambda pair: _count_logs_for_source(pair[1], pair[0], days, SUMMARY_COUNT_CAP), pairs,
+        results = ordered_map(lambda pair: _count_logs_for_source(pair[1], pair[0], days, SUMMARY_COUNT_CAP, workspace),
+                              pairs,
                               max_workers=LOG_READ_WORKERS)
         by_pair = dict(zip(pairs, results, strict=True))
         for source in sources:
@@ -276,19 +301,26 @@ def get_logs_summary():
 @app.delete("/logs/validation/<source>")
 @tracer.capture_method
 def clear_validation_logs(source: str):
-    """Clear validation logs for a specific source.
+    """Clear validation logs for a specific source (the request's workspace's trail).
 
     Access decision (owner, 2026-10-04): every `/logs/*` READ is open to any
     signed-in user — rows are PII-free by construction and re-redacted on read —
     but a DELETE erases the shared operational trail for everyone, so it is
-    admin-only. This is the only DELETE route this handler serves (the API Gateway
-    `/logs/{proxy+}` forwards any method, so a new one must gate itself too).
+    admin-only: the deployment's `admins` for the deployment's trail, a workspace's
+    own admins for its trail (never a delegated caller; the deployment's group
+    grants nothing there), audited in `AUDIT#WS#{ws}` before anything is deleted
+    (a row that cannot be written clears nothing). This is the only DELETE route
+    this handler serves (the API Gateway `/logs/{proxy+}` forwards any method, so
+    a new one must gate itself too).
     """
-    require_admin(app.current_event.raw_event)
+    context = _logs_workspace(fresh=True)
+    require_settings_admin(app.current_event.raw_event, context)
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
 
     try:
+        if context is not None:
+            return {'success': True, 'deleted': _clear_workspace_validation(context, source)}
         deleted = 0
         with aggregates_table.batch_writer() as batch:
             for item in _validation_log_keys(source):
@@ -300,6 +332,23 @@ def clear_validation_logs(source: str):
         logger.exception(f"Failed to clear validation logs: {e}")
         raise ServiceError('Failed to clear logs') from e
     return {'success': True, 'deleted': deleted}
+
+
+def _clear_workspace_validation(context: WorkspaceContext, source: str) -> int:
+    """Delete every row of the workspace's `WS#{ws}#LOGS#validation#{source}` through its view (every page read, each
+    key checked in the workspace before any is sent), audited first: the ``AUDIT#WS#{ws}`` row (a new row, never an
+    overwrite) names who, whether as a platform admin, the source and how many rows; one that cannot be written clears
+    nothing. Answers how many. A clear that stops part way (a timeout) leaves the rest to a repeat."""
+    workspace = scope_of(context)
+    view = ws_table(workspace, aggregates_table)
+    keys = [{'pk': row['pk'], 'sk': row['sk']} for row in
+            view.iter_query('pk', log_partition('validation', source, workspace), ProjectionExpression='pk, sk')]
+    at = now_iso()
+    put_new_audit_row(configured_table(get_workspaces_table(), 'Workspaces'), {
+        'pk': audit_key(workspace.ws), 'sk': audit_sort_key(at), 'kind': VALIDATION_LOGS_CLEARED,
+        'actor': get_caller_subject(app.current_event.raw_event), 'platform_admin': context.platform_admin,
+        'source': source, 'count': len(keys), 'at': at})
+    return view.batch_delete(keys)
 
 
 def _validation_log_keys(source: str):
