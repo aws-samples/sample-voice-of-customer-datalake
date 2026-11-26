@@ -212,7 +212,7 @@ def test_an_extraction_that_outlived_its_worker_reads_stale_and_can_be_retried(l
     _started(library, item_id, 1)
     assert 'stale' not in library.call('GET', path)[1]['item']
     assert library.call('POST', f'{path}/retry') == (409, {'success': False, 'code': 'not_failed',
-                                                           'error': 'Only a failed item can be extracted again.'})
+                                                           'error': 'Only a failed or stopped item can be read again.'})
     _started(library, item_id, 17)
     assert library.call('GET', path)[1]['item']['stale'] is True
     library.invoke_async.reset_mock()

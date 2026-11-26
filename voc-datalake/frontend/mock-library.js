@@ -257,7 +257,7 @@ const ITEM_ACTIONS = {
   // As the server (library_routes.py retry): a failed item, or an extraction that outlived the worker (`stale`: the mock
   // keeps no clock, so a fixture marks it).
   'POST retry': (item) => (item.status === 'failed' || (item.status === 'extracting' && item.stale === true)
-    ? startReading(item) : bad(409, 'Only a failed item can be extracted again.', 'not_failed')),
+    ? startReading(item) : bad(409, 'Only a failed or stopped item can be read again.', 'not_failed')),
   'GET text': (item, { url }) => textRoute(item, url),
   'GET ': (item, { req }) => detailRoute(req, item),
   'PUT ': (item, { body }) => updateRoute(item, body),
