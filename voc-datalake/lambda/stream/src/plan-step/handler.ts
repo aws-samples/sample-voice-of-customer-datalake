@@ -19,7 +19,8 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
-import { getBedrockClient } from '../bedrock/converse-stream.js';
+import { meteredConverse } from '../bedrock/converse-stream.js';
+import { resetAttribution } from '../lib/usage-meter.js';
 import { CHAT_SURFACE_DEFAULT } from '../bedrock/model-fallback.js';
 import { resolveModelOverride } from '../bedrock/model-override.js';
 import { getDefaultCatalogue } from '../assistant/tools/catalogue.js';
@@ -47,12 +48,15 @@ const deps: PlanStepDeps = {
   get catalogue() {
     return getDefaultCatalogue();
   },
-  converse: (command) => getBedrockClient(PLAN_STEP_BEDROCK_TIMEOUT_MS).send(command),
+  // Metered: its bedrock_usage line (lib/usage-meter.ts).
+  converse: (command) => meteredConverse(command, PLAN_STEP_BEDROCK_TIMEOUT_MS),
   resolveModel: async () => (await resolveModelOverride(docClient, AGGREGATES_TABLE, PLAN_STEP_SURFACE)) ?? AGENT_WORKER_DEFAULT,
   lookupStoreApp,
 };
 
 export async function handler(event: unknown, context?: unknown): Promise<PlanStepAnswer> {
+  // Nothing of the last invocation's workspace: the step's claims attribute this one (run-step.ts).
+  resetAttribution();
   const deadlineMs = invocationDeadlineMs(context, Date.now());
   const result = await runPlanStep(event, deps, deadlineMs === undefined ? {} : { deadlineMs });
   // Ids and kinds only — never arguments, outputs or claims.

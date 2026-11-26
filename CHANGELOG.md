@@ -17,6 +17,30 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.82.00] - 2026-11-26
+
+Multi-workspace, phase 4: the assistant's model calls are counted in the cost estimate. The streaming assistant,
+its persona consults and focus groups, and the plans' steps run in the TypeScript stream Lambda, which logged no
+usage line, so the platform console's cost per workspace left them out
+([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- The stream Lambda logs the same `bedrock_usage` line as the Python Lambdas (`lambda/stream/src/lib/usage-meter.ts`,
+  its message and fields held equal to `lambda/shared/usage_meter.py`'s by a test): one per streamed turn and one
+  per plain Converse call, with the model id as sent and token counts only, never a prompt or an answer.
+- Its calls are counted to the workspace the request names (`X-Workspace-Id`; an entered platform admin's
+  included), the deployment for a request that names none; a plan step's to the workspace its plan was approved in.
+  Each invocation starts unattributed.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). No IAM change: the daily rollup's query already reads the stream
+  Lambda's log groups. Calls made before the deploy are not counted; a backfill counts only the days after it.
+- After the deploy, check once that the rollup counts the stream Lambda (its first run, or a manual one): the day's
+  rows name `voc-chat-stream`'s models, or run the rollup's query on `voc-chat-stream`'s and `voc-plan-step`'s log
+  groups and see their `bedrock_usage` rows. A turn stopped before its last event is not counted.
+
 ## [7.79.00] - 2026-11-26
 
 Multi-workspace, phase 4: the cost estimate gets real prices. The platform console's cost figures

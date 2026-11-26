@@ -27,6 +27,7 @@ import { customContextWindow, shownModelId } from '../../bedrock/custom-models.j
 import { historyBudgetFor } from '../../history-budget.js';
 import { profiledModelId } from '../../bedrock/model-profile.js';
 import { ValidationError } from '../../lib/errors.js';
+import { attributeFrom } from '../../lib/usage-meter.js';
 import { ProjectAccessLedger } from '../tools/project-access.js';
 import { withoutDocumentGeneration, withoutProjectWrites } from '../tools/registry.js';
 import { events, type Emitter } from './emitter.js';
@@ -263,6 +264,9 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
   emitter.emit(events.runStarted(input.threadId, input.runId, AGUI_PROTOCOL_VERSION));
 
   const claims = extractCallerClaims(event);
+  // Every model call of the run counts to the workspace it acts in (lib/usage-meter.ts): a run its membership check
+  // refuses makes none.
+  attributeFrom(claims);
   const props = parseForwardedProps(input);
   enforceLimits(input);
   enforceMentionsPage(props);

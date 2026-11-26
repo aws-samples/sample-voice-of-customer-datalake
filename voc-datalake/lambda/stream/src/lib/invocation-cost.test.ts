@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { COST_LINE, invocationCostFields, MB_PER_VCPU, measureInvocationCost, memoryMb, type CostClock } from './invocation-cost.js';
+import { attributeFrom, currentAttribution } from './usage-meter.js';
 
 function fakeClock(memory: number | undefined): CostClock & { lines: string[] } {
   const lines: string[] = [];
@@ -64,6 +65,18 @@ describe('measureInvocationCost', () => {
     });
     expect(clock.lines[0]).not.toContain('secret');
   });
+
+  it("starts each invocation unattributed, so a warm container never counts a call to the last one's workspace",
+    async () => {
+      attributeFrom({ 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
+      let seen = '';
+      const handler = measureInvocationCost(() => {
+        seen = currentAttribution();
+        return Promise.resolve(0);
+      }, fakeClock(1024));
+      await handler();
+      expect(seen).toBe('UNATTRIBUTED');
+    });
 
   it('still logs when the handler throws', async () => {
     const clock = fakeClock(1024);

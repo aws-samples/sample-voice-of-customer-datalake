@@ -32,7 +32,10 @@ vi.mock('@aws-sdk/client-bedrock-runtime', () => {
   };
 });
 
-import { converseStream, getBedrockClient, resolveChatModelId, supportsPromptCache, type ConverseStreamParams } from './converse-stream.js';
+import {
+  converseStream, getBedrockClient, meteredConverse, resolveChatModelId, supportsPromptCache, type ConverseStreamParams,
+} from './converse-stream.js';
+import { attributeFrom, resetAttribution } from '../lib/usage-meter.js';
 import { nth } from '../lib/nth-fixtures.js';
 
 /** Drain the stream, discarding events — these tests assert on the mocks, not the yields. */
@@ -309,5 +312,61 @@ describe('converseStream — history checkpoint bounds', () => {
     expect(await messagesSent([{ role: 'user', content: undefined }], 0)).toStrictEqual([
       { role: 'user', content: [{ cachePoint: { type: 'default' } }] },
     ]);
+  });
+});
+
+/** The `bedrock_usage` lines written to stdout while `run` ran (lib/usage-meter.ts). */
+async function usageLinesOf(run: () => Promise<unknown>): Promise<unknown[]> {
+  const log = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  try {
+    await run();
+    return log.mock.calls.map(([line]) => (typeof line === 'string' ? JSON.parse(line) as unknown : line))
+      .filter((line) => z.object({ message: z.literal('bedrock_usage') }).safeParse(line).success);
+  } finally {
+    log.mockRestore();
+  }
+}
+
+describe('the bedrock_usage line (lib/usage-meter.ts: the cost rollup counts the assistant\'s calls)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAttribution();
+  });
+
+  it('logs one line per streamed turn from its metadata, the model id as sent, in the run\'s workspace', async () => {
+    attributeFrom({ 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
+    mockSend.mockResolvedValueOnce({ stream: (async function* () {
+      await Promise.resolve();
+      yield { contentBlockDelta: { delta: { text: 'hi' }, contentBlockIndex: 0 } };
+      yield { metadata: { usage: { inputTokens: 120, outputTokens: 30, cacheReadInputTokens: 7 } } };
+    })() });
+    const lines = await usageLinesOf(() => drainStream(converseStream({ messages: HI, systemPrompt: 'test' })));
+    const sent = z.object({ modelId: z.string() }).parse(nth(mockConverseStreamCommandCtor.mock.calls, 0)[0]).modelId;
+    expect(lines).toStrictEqual([{
+      message: 'bedrock_usage', workspace_id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', model_id: sent,
+      operation: 'ConverseStream', service_tier: 'default', input_tokens: 120, output_tokens: 30,
+      cache_read_tokens: 7, cache_write_tokens: 0,
+    }]);
+  });
+
+  it('logs nothing for a stream that sent no usage', async () => {
+    mockSend.mockResolvedValueOnce({ stream: (async function* () {})() });
+    expect(await usageLinesOf(() => drainStream(converseStream({ messages: HI, systemPrompt: 'test' })))).toStrictEqual([]);
+  });
+
+  it('a metered Converse call answers as sent and logs its usage', async () => {
+    attributeFrom({});
+    const output = { usage: { inputTokens: 3, outputTokens: 1 }, output: { message: { role: 'assistant', content: [] } } };
+    mockSend.mockResolvedValueOnce(output);
+    let answer: unknown;
+    const lines = await usageLinesOf(async () => {
+      answer = await meteredConverse({ input: { modelId: 'global.anthropic.claude-haiku-5-5' } } as never);
+    });
+    expect(answer).toBe(output);
+    expect(lines).toStrictEqual([{
+      message: 'bedrock_usage', workspace_id: 'DEPLOYMENT', model_id: 'global.anthropic.claude-haiku-5-5',
+      operation: 'Converse', service_tier: 'default', input_tokens: 3, output_tokens: 1, cache_read_tokens: 0,
+      cache_write_tokens: 0,
+    }]);
   });
 });

@@ -15,7 +15,8 @@ calls ``remember_request`` with the model id and the tier as sent. The line has 
 Converse reads the response's ``usage``; InvokeModel the ``x-amzn-bedrock-*-token-count`` headers. A response that
 cannot be read logs ``bedrock_usage_unreadable`` with the operation and the reason; logging never raises into the
 caller. Not metered here: ConverseStream (no Python code streams; the streaming assistant is the TypeScript stream
-Lambda); a voice session's stream is logged by ``log_stream_usage`` from the relay's meter and the image clients of shared/avatar.py and shared/image_model_status.py (an image is priced per image, a
+Lambda, which writes the same line itself since 7.82.00: lambda/stream/src/lib/usage-meter.ts, held equal to
+``USAGE_FIELDS`` by its test); a voice session's stream is logged by ``log_stream_usage`` from the relay's meter and the image clients of shared/avatar.py and shared/image_model_status.py (an image is priced per image, a
 follow-up).
 
 ATTRIBUTION. The call's workspace is this context's ``attribute`` value, set only where a workspace resolves:

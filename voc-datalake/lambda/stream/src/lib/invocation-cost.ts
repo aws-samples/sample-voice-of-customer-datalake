@@ -11,6 +11,7 @@
  * `process.cpuUsage()` is the whole process (user + system), which is right
  * here: a Lambda execution environment runs one invocation at a time.
  */
+import { resetAttribution } from './usage-meter.js';
 
 /** The message Logs Insights filters on. */
 export const COST_LINE = 'invocation_cost';
@@ -65,6 +66,8 @@ export function measureInvocationCost<A extends unknown[], R>(
   clock: CostClock = realClock,
 ): (...args: A) => Promise<R> {
   return async (...args: A): Promise<R> => {
+    // A warm container never counts this invocation's model calls to the last one's workspace (lib/usage-meter.ts).
+    resetAttribution();
     const cpuStart = clock.cpuUsage();
     const wallStart = clock.nowMs();
     try {

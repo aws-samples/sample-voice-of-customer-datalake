@@ -7,6 +7,7 @@ import { AssistantToolError } from '../assistant/tools/errors.js';
 import type { ApiCall } from '../assistant/tools/internal-api.js';
 import { fakeDeps } from '../assistant/tools/test-fixtures.js';
 import { SAMPLE_WORKFLOW } from '../assistant/tools/client/new-tools-fixtures.js';
+import { currentAttribution, resetAttribution } from '../lib/usage-meter.js';
 import type { PlanStepDeps } from './deps.js';
 import { MAX_FREE_FIELD_CHARS, cleanFreeText } from './free-fields.js';
 import { matchesDefinition } from './matching.js';
@@ -76,6 +77,16 @@ describe('write steps that match their definition', () => {
     await runPlanStep(event(writeStep('create_project', { name: 'Ancillaries' }), { claims }), h.deps);
     expect(h.calls[0]?.claims).toStrictEqual(claims);
   });
+
+  it("count the step's model calls to the workspace the plan was approved in, else the deployment (lib/usage-meter.ts)",
+    async () => {
+      resetAttribution();
+      const claims = { ...USER_CLAIMS, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' };
+      await runPlanStep(event(writeStep('create_project', { name: 'Ancillaries' }), { claims }), harness(CREATED).deps);
+      expect(currentAttribution()).toBe('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8');
+      await runPlanStep(event(writeStep('create_project', { name: 'Ancillaries' })), harness(CREATED).deps);
+      expect(currentAttribution()).toBe('DEPLOYMENT');
+    });
 
   it('report the methodology block a methodology step\u2019s route answered, for the conductor to journal', async () => {
     const block = { step: 'prd', skipped: [{ step: 'prfaq', reason: 'missing' }], warnings: [{ code: 'missing_upstream', message: 'm', step: 'prfaq' }], evidence: null };

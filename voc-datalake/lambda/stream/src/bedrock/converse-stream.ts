@@ -25,7 +25,10 @@ import {
   type SystemContentBlock,
   type Tool,
   type ConverseStreamOutput,
+  type ConverseCommand,
+  type ConverseCommandOutput,
 } from '@aws-sdk/client-bedrock-runtime';
+import { currentAttribution, logBedrockUsage } from '../lib/usage-meter.js';
 import { capOutputTokens } from './custom-models.js';
 import { invocationModelId, takesThinkingBudget } from './model-override.js';
 import { CHAT_SURFACE_DEFAULT } from './model-fallback.js';
@@ -177,11 +180,26 @@ export async function* converseStream(
   });
 
   const bedrockClient = getBedrockClient();
+  const attribution = currentAttribution();
   const response = await bedrockClient.send(command, params.abortSignal ? { abortSignal: params.abortSignal } : {});
 
-  if (response.stream) {
-    for await (const event of response.stream) {
-      yield event;
-    }
+  if (response.stream) yield* meteredEvents(response.stream, command.input.modelId ?? '', attribution);
+}
+
+/** The stream's events as Bedrock sent them; the turn's usage, in its last event, logged as its bedrock_usage line
+ *  (lib/usage-meter.ts), with the model id as sent. */
+async function* meteredEvents(stream: AsyncIterable<ConverseStreamOutput>, modelId: string,
+  attribution: string): AsyncGenerator<ConverseStreamOutput> {
+  for await (const event of stream) {
+    if (event.metadata?.usage) logBedrockUsage(modelId, 'ConverseStream', event.metadata.usage, attribution);
+    yield event;
   }
+}
+
+/** One Converse call on the stream's client, its usage logged as the cost rollup reads it (lib/usage-meter.ts). */
+export async function meteredConverse(command: ConverseCommand, requestTimeoutMs?: number): Promise<ConverseCommandOutput> {
+  const attribution = currentAttribution();
+  const output = await getBedrockClient(requestTimeoutMs).send(command);
+  logBedrockUsage(command.input.modelId ?? '', 'Converse', output.usage, attribution);
+  return output;
 }

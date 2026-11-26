@@ -22,13 +22,12 @@
  */
 import { ApiError } from '../../lib/errors.js';
 import { parseGroups } from '../runtime/event.js';
+import { WORKSPACE_ID } from '../../lib/workspace-id.js';
 import type { CallerClaims } from '../types.js';
 import { readWorkspaceRow, readWorkspaceStatus, type StatusDocClient } from './workspace-status.js';
 
 /** LOCKSTEP with lambda/shared/workspace.py `NOT_FOUND`. */
 export const WORKSPACE_NOT_FOUND = 'Workspace not found';
-/** LOCKSTEP with lambda/shared/workspace_ids.py `_WORKSPACE_ID`: `ws_` + a ULID. */
-const WORKSPACE_ID = /^ws_[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
 /** LOCKSTEP with lambda/shared/workspace.py `ROLES`. */
 const ROLES: ReadonlySet<string> = new Set(['viewer', 'editor', 'admin']);
 /** LOCKSTEP with lambda/shared/platform_admin.py `PLATFORM_ADMIN_GROUP`. */

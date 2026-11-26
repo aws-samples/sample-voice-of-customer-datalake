@@ -5,7 +5,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { ConverseCommand, ConverseCommandOutput } from '@aws-sdk/client-bedrock-runtime';
-import { getBedrockClient } from '../../bedrock/converse-stream.js';
+import { meteredConverse } from '../../bedrock/converse-stream.js';
 import { resolveAvatarUrl } from '../../context/avatar-url.js';
 import { executeSearchFeedback } from '../../tools/search-feedback.js';
 import { executeWebSearch, type WebSource } from '../../tools/web-search.js';
@@ -61,7 +61,8 @@ function createDefaultDeps(): ToolDeps {
     invoke: getInternalApiInvoker(),
     searchFeedback: (input, filters) => executeSearchFeedback(docClient, feedbackTable, input, filters),
     webSearch: (input) => executeWebSearch(input),
-    converse: (command) => getBedrockClient().send(command),
+    // Metered: its bedrock_usage line (lib/usage-meter.ts).
+    converse: (command) => meteredConverse(command),
     resolveAvatar: resolveAvatarUrl,
     fallbackModelId: process.env.BEDROCK_MODEL_ID,
     searchAppStore: (term, country) => searchAppStore(term, country),

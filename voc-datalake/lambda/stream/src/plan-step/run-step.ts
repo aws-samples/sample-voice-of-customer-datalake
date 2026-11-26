@@ -5,6 +5,7 @@
  * answer carries `model_calls` — the Converse calls made through `deps`
  * (free-field fills, think-step rounds) — for the plan's model-call cap.
  */
+import { attributeFrom } from '../lib/usage-meter.js';
 import { DEFAULT_PLAN_DAYS } from '../assistant/plan/write-requests.js';
 import type { WriteEnv } from '../assistant/plan/write-routes.js';
 import { isAdminCaller } from '../assistant/runtime/event.js';
@@ -68,6 +69,8 @@ function memo(load: () => Promise<string>): () => Promise<string> {
 
 async function dispatch(deps: PlanStepDeps, event: PlanStepEvent, limits: RunLimits): Promise<PlanStepResult> {
   const claims = claimsOf(event);
+  // Every model call of the step counts to the workspace the plan was approved in (lib/usage-meter.ts).
+  attributeFrom(claims);
   const isAdmin = isAdminCaller(claims);
   const env = envOf(event, claims);
   // The approver's e2e profile rides the claims the conductor built from Cognito (bedrock/model-profile.ts).

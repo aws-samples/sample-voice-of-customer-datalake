@@ -22,7 +22,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@aws-sdk/client-dynamodb', () => ({ DynamoDBClient: class FakeDynamoDBClient {} }));
 vi.mock('@aws-sdk/lib-dynamodb', () => ({ DynamoDBDocumentClient: { from: h.from } }));
-vi.mock('../../bedrock/converse-stream.js', () => ({ getBedrockClient: () => ({ send: h.send }) }));
+// A Converse call goes through the metered send (its bedrock_usage line, lib/usage-meter.ts).
+vi.mock('../../bedrock/converse-stream.js', () => ({ meteredConverse: (command: unknown) => h.send(command) }));
 vi.mock('../../context/avatar-url.js', () => ({ resolveAvatarUrl: h.avatar }));
 vi.mock('../../tools/search-feedback.js', () => ({ executeSearchFeedback: h.search }));
 vi.mock('../../tools/web-search.js', () => ({ executeWebSearch: h.web }));

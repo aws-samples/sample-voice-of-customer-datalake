@@ -1295,8 +1295,17 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
   `bedrock_usage_unreadable` with the operation and the reason, and the call goes on: logging never raises into the
   caller. The product-document extractor, which cannot import `shared/`, logs the same line for its one Converse
   call (counted `UNATTRIBUTED`; `product_doc_extractor/test/test_usage_lockstep.py` pins the fields).
-- **Not counted yet.** ConverseStream is not metered on the Python side: no Python code streams (the streaming
-  assistant is the TypeScript stream Lambda, whose mirror of the line is its owner's follow-up). The image clients of
+- **The stream Lambda's line** (since 7.82.00). ConverseStream is not metered on the Python side: no Python code
+  streams. The TypeScript stream Lambda writes the same line itself (`lambda/stream/src/lib/usage-meter.ts`, its
+  message and fields held equal to `usage_meter.py`'s by a test): one per streamed turn (from the turn's last event,
+  operation `ConverseStream`) and one per plain Converse call (the persona consult, the focus group, the plan step;
+  `meteredConverse`), with the model id as sent. Its attribution is the request's: the workspace `X-Workspace-Id`
+  names (an entered platform admin's included, as `resolve_workspace` attributes it), `DEPLOYMENT` for a run that
+  names none, `UNATTRIBUTED` for anything else; a plan step's is the workspace its plan was approved in. Every
+  invocation starts `UNATTRIBUTED`; a call counts to the attribution current when it started. The line is written
+  raw to stdout, one JSON log event with no runtime prefix, as a Python Lambda's line is. A turn stopped or cut before
+  its last event (where its usage comes) is not counted: an undercount, never a guess.
+- **Not counted yet.** The image clients of
   `shared/avatar.py` and `shared/image_model_status.py` are not counted either: an image is priced per image, a
   follow-up.
 - **The attribution rule.** A call is counted to the workspace its context names, `DEPLOYMENT`, or `UNATTRIBUTED`.
@@ -1308,9 +1317,7 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
   `shared/concurrency.py` runs each task in a copy of its caller's context, and a raw thread pool's tasks never
   attribute (pinned by the test above), so their calls stay `UNATTRIBUTED`, never a wrong workspace. So an area whose handler resolves its workspace another way stays `UNATTRIBUTED` until its owner
   calls `usage_meter.attribute(scope)` at its handler entry: the project, document, research, competitive-watch,
-  briefing, memory and agent handlers. The stream Lambda (TypeScript) logs no line yet: neither its streaming
-  assistant nor its plain Converse calls (the persona consult and the plan step); its mirror of the line comes in
-  its own slice.
+  briefing, memory and agent handlers. The stream Lambda (TypeScript) logs its own line since 7.82.00 (above).
 - Slice A logs tokens only and prices nothing. Slice B adds the dated price list, the daily rollup that uses it,
   `GET /platform/costs` and its stack.
 - **The price list (slice B).** `shared/model_prices.py` holds one dated `PriceList`: when and where it was read
