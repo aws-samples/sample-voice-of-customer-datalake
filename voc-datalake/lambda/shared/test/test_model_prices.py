@@ -23,10 +23,46 @@ def test_every_allowed_model_is_priced_or_unpriced_with_a_reason(model_id):
 
 
 def test_the_list_is_dated_and_sourced():
-    assert PRICE_LIST.as_of == '2026-11-14'
+    assert PRICE_LIST.as_of == '2026-11-16'
     assert PRICE_LIST.source_url == 'https://aws.amazon.com/bedrock/pricing/'
-    assert 'US East' in PRICE_LIST.basis
-    assert 'on-demand' in PRICE_LIST.basis
+    assert 'Price List API' in PRICE_LIST.basis
+    assert 'global' in PRICE_LIST.basis
+    assert 'standard' in PRICE_LIST.basis
+
+
+#: The three models whose figures were read (2026-11-16, the AWS Price List API: engineering/runtime/caps.py).
+PRICED = ('global.anthropic.claude-haiku-5-5', 'global.anthropic.claude-sonnet-5-5', 'global.anthropic.claude-opus-5-5')
+
+
+@pytest.mark.parametrize('model_id', PRICED)
+def test_the_read_models_are_priced_on_the_standard_tier_as_the_engineering_caps_are(model_id):
+    """LOCKSTEP with engineering/runtime/caps.py DEFAULT_TOKEN_PRICES (the same read, the engineering images ship
+    without shared/): one figure per model and part, wherever it is used."""
+    from engineering.runtime.caps import DEFAULT_TOKEN_PRICES
+
+    caps = DEFAULT_TOKEN_PRICES[model_id]
+    prices = PRICE_LIST.prices[model_id]['default']
+    assert (prices.input, prices.output, prices.cache_read, prices.cache_write) == (
+        caps.input, caps.output, caps.cache_read, caps.cache_write)
+    assert model_id not in UNPRICED
+
+
+def test_the_priced_models_are_exactly_the_engineering_caps_read():
+    from engineering.runtime.caps import DEFAULT_TOKEN_PRICES
+
+    assert set(PRICE_LIST.prices) == set(DEFAULT_TOKEN_PRICES) == set(PRICED)
+
+
+def test_every_other_allowed_model_is_unpriced_until_its_figures_are_read():
+    assert sorted(UNPRICED) == sorted(m['id'] for m in ALLOWED_MODELS if m['id'] not in PRICED)
+    assert all('not read' in reason for reason in UNPRICED.values())
+
+
+def test_a_priced_models_call_has_a_cost():
+    # Sonnet 5.5: 2.00 in, 10.00 out, 0.10 cache read, 2.50 cache write per million tokens.
+    tokens = {'input_tokens': 1_000_000, 'output_tokens': 100_000, 'cache_read_tokens': 1_000_000,
+              'cache_write_tokens': 0}
+    assert estimated_usd('global.anthropic.claude-sonnet-5-5', 'default', tokens) == Decimal('3.10')
 
 
 def test_every_price_is_a_non_negative_decimal():

@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.79.00] - 2026-11-26
+
+Multi-workspace, phase 4: the cost estimate gets real prices. The platform console's cost figures
+(`GET /platform/costs`, the daily rollup) were all unpriced; three models now carry their list prices
+([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Changed
+
+- The price list (`lambda/shared/model_prices.py`) prices Haiku 5.5, Sonnet 5.5 and Opus 5.5 on the standard tier
+  of the global (cross-region) inference profiles, USD per million tokens, read on 2026-11-16 from the AWS Price
+  List API: the same read as the engineering agents' cost caps (`lambda/engineering/runtime/caps.py`), held equal by
+  a test. A day whose counted calls are all on those models now has an estimate with its counted calls priced.
+- The other allowlisted models stay unpriced (their figures not read yet), with that reason, and so do an EU
+  deployment's `eu.…` calls; their calls are still counted, their lines' estimate is `null`, and a day with them
+  sums the priced models and reads incomplete, never a guess.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). No IAM or stored-data change. Days rolled up before the deploy keep their
+  `null` estimates until a backfill reruns them (the rollup's manual run, at most 29 days back).
+- `complete` means every counted call is priced, not that every call is counted: the TypeScript stream
+  Lambda's calls (the streaming assistant, persona consults, plan steps), the product-document extractor's calls and image calls are not counted yet.
+
 ## [7.78.00] - 2026-11-26
 
 Multi-workspace, phase 3: the read caching's settings counter per workspace. A settings save inside a workspace

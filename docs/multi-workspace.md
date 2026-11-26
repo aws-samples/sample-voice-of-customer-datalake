@@ -1316,9 +1316,14 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
 - **The price list (slice B).** `shared/model_prices.py` holds one dated `PriceList`: when and where it was read
   (`as_of`, `source_url`: the public Amazon Bedrock pricing page), its basis (region and tier), and USD per million
   tokens by model id as sent, then service tier (input, output, cache read, cache write; `Decimal`). A figure comes
-  only from that page, never from memory. **Every model is unpriced today**: the page could not be fetched when the
-  list was written, so each allowlisted model is in `unpriced` with that reason, every estimate with calls in it is
-  `null` and every day reads `complete: false`; the tokens are still counted. To fill it in, a deployer reads the page for their
+  only from that page or the AWS Price List API that publishes it, never from memory. **Since 7.79.00 three models
+  are priced**: Haiku 5.5, Sonnet 5.5 and Opus 5.5, on the standard tier of the global (cross-region) inference
+  profiles, read on 2026-11-16 from the Price List API (the engineering agents' cost caps' read,
+  `lambda/engineering/runtime/caps.py`, held equal by a test). The other allowlisted models are in `unpriced` (their
+  figures not read yet): their lines' `estimated_usd` is `null`, a day's is the priced models' sum and reads
+  `complete: false`; the tokens are still counted. An EU deployment's `eu.…` ids have no price either. `complete`
+  means every counted call is priced, not that every call is counted (the stream Lambda, the product-document
+  extractor and images are not counted yet: above, and the rollup below). To fill it in, a deployer reads the page for their
   region, adds each model id their deployment sends (the `model_id` of the `bedrock_usage` lines: `eu.…` in an EU
   deployment) with its four prices per tier, removes it from `unpriced`, sets `as_of` to the day read and `basis` to
   the region, and redeploys; a test fails for an allowlisted model that is neither priced nor unpriced with a reason.

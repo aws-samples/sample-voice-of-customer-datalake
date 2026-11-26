@@ -32,7 +32,7 @@ from jobs.cost_rollup.handler import (
 )
 from shared import usage_meter
 from shared.exceptions import ConfigurationError
-from shared.model_prices import PriceList, TokenPrices
+from shared.model_prices import PRICE_LIST, PriceList, TokenPrices
 from shared.system_logs import ROW_LIMIT
 from shared.test.moto_tables import create_pk_sk_table
 from shared.test.system_logs_fake import PATTERN, FakeLogs, group
@@ -133,7 +133,7 @@ def test_the_scheduled_run_writes_yesterday_and_the_day_before_for_each_workspac
     assert second['by_model'] == [{'model_id': MODEL, 'service_tier': 'default', 'calls': 3, 'input_tokens': 1200,
                                    'output_tokens': 300, 'cache_read_tokens': 50, 'cache_write_tokens': 7,
                                    'estimated_usd': None}]
-    assert {second['schema'], second['workspace_id'], second['price_as_of']} == {1, ACME, '2026-11-14'}
+    assert {second['schema'], second['workspace_id'], second['price_as_of']} == {1, ACME, PRICE_LIST.as_of}
     assert second['rolled_up_at'] == NOW.isoformat()
     assert 'ttl' not in second
     assert [row['totals']['calls'] for row in world.rows('DEPLOYMENT#COST')] == [1]

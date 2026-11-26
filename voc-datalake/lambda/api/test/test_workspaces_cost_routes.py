@@ -16,6 +16,7 @@ from moto_helpers import invoke, pk_sk_table, rest_event
 import workspaces_handler
 from shared import platform_admin_gate, platform_costs
 from shared.exceptions import ValidationError
+from shared.model_prices import PRICE_LIST
 from shared.platform_costs import (
     DEPLOYMENT_COST_PARTITION,
     ESTIMATE_LABEL,
@@ -99,7 +100,7 @@ def test_a_platform_admin_reads_every_workspaces_estimate_and_the_deployments_on
 
     assert status == 200
     assert {key: body[key] for key in ('estimate', 'label', 'currency', 'price_as_of', 'next_cursor')} == {
-        'estimate': True, 'label': ESTIMATE_LABEL, 'currency': 'USD', 'price_as_of': '2026-11-14',
+        'estimate': True, 'label': ESTIMATE_LABEL, 'currency': 'USD', 'price_as_of': PRICE_LIST.as_of,
         'next_cursor': None}
     by_id = {entry['id']: entry for entry in body['workspaces']}
     assert sorted(by_id) == sorted([acme, birch])

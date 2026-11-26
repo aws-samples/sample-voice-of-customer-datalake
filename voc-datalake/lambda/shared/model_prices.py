@@ -1,15 +1,19 @@
 """The Bedrock list prices the cost estimate uses, dated (docs/multi-workspace.md, "Cost per workspace").
 
-One ``PriceList``: when it was read (``as_of``), where (``source_url``, the public Amazon Bedrock pricing page), on
-what basis (``basis``: the region and tier), and the prices, keyed by the model id as sent (the ``bedrock_usage``
-line's ``model_id``, shared/usage_meter.py), then by service tier, in USD per million tokens (``Decimal``, never a
-float). A figure comes only from that page, read on ``as_of``; never from memory. A model whose figures could not be
-read is in ``unpriced`` with the reason: its tokens are still counted, and its cost is ``None`` (the day it is used in
-is then incomplete), never a guess.
+One ``PriceList``: when it was read (``as_of``), where (``source_url``, the public Amazon Bedrock pricing page whose
+figures the AWS Price List API publishes), on what basis (``basis``: how it was read, the inference profile and the
+tier), and the prices, keyed by the model id as sent (the ``bedrock_usage`` line's ``model_id``,
+shared/usage_meter.py), then by service tier, in USD per million tokens (``Decimal``, never a float). A figure comes
+only from that source, read on ``as_of``; never from memory. A model whose figures were not read is in ``unpriced``
+with the reason: its tokens are still counted, and its cost is ``None`` (the day it is used in is then incomplete),
+never a guess.
 
-As of 2026-11-14 the page could not be fetched from the build session (the fetch was refused), so every allowlisted
-model is unpriced for that reason and every estimate is ``None`` until the page is read and the figures recorded
-here with its date.
+Since 7.79.00 the three models whose figures were read on 2026-11-16 from the AWS Price List API (the engineering
+agents' cost caps' read, engineering/runtime/caps.py ``DEFAULT_TOKEN_PRICES``, held equal by
+shared/test/test_model_prices.py) are priced on the standard tier: Haiku 5.5, Sonnet 5.5 and Opus 5.5. The other
+allowlisted models are unpriced until their figures are read and recorded here with the date. A deployment that
+calls a model through another inference profile (an ``eu.`` id as sent in an EU deployment) has no price for it
+either: its cost reads unpriced, never the global profile's figure.
 
 The deployment's own models (``-c customModels``, shared/custom_models.py, 7.65.00) carry their price in the registry,
 required at synth: ``price.in`` per million input tokens, ``price.out`` per million output tokens, on every tier (the
@@ -60,14 +64,28 @@ class PriceList:
     unpriced: Mapping[str, str] = field(default_factory=dict)
 
 
-_UNFETCHED: Final = 'the pricing page could not be fetched on 2026-11-14 (the fetch was refused in the build session)'
+#: Read on 2026-11-16 from the AWS Price List API (pricing:GetProducts, read only; service code
+#: AmazonBedrockFoundationModels, regionCode us-west-2, the *_global_standard usage types for input, output, cache read
+#: and cache write tokens; published 2026-11-09T22:43:12Z), USD per million tokens. LOCKSTEP with
+#: engineering/runtime/caps.py DEFAULT_TOKEN_PRICES (the same read).
+_READ_PRICES: Final = {
+    'global.anthropic.claude-haiku-5-5': TokenPrices(Decimal('0.10'), Decimal('0.50'), Decimal('0.01'), Decimal('0.125')),
+    'global.anthropic.claude-sonnet-5-5': TokenPrices(Decimal('2.00'), Decimal('10.00'), Decimal('0.10'),
+                                                      Decimal('2.50')),
+    'global.anthropic.claude-opus-5-5': TokenPrices(Decimal('4.00'), Decimal('20.00'), Decimal('0.20'), Decimal('5.00')),
+}
+#: The service tier the read figures are for (the ``bedrock_usage`` line's ``default``: no flex tier is sent).
+_STANDARD_TIER: Final = 'default'
+_NOT_READ: Final = 'its figures were not read from the AWS Price List API with the others on 2026-11-16'
 
 PRICE_LIST: Final = PriceList(
-    as_of='2026-11-14',
+    as_of='2026-11-16',
     source_url='https://aws.amazon.com/bedrock/pricing/',
-    basis='US East (N. Virginia), standard on-demand tier, USD per million tokens',
-    prices=MappingProxyType({}),
-    unpriced=MappingProxyType(dict.fromkeys(sorted(ALLOWED_MODEL_IDS), _UNFETCHED)),
+    basis=('read from the AWS Price List API: the global (cross-region) inference profiles, standard tier '
+           '(regionCode us-west-2, applied to the global profile from any source region), USD per million tokens'),
+    prices=MappingProxyType({model_id: MappingProxyType({_STANDARD_TIER: prices})
+                             for model_id, prices in _READ_PRICES.items()}),
+    unpriced=MappingProxyType(dict.fromkeys(sorted(set(ALLOWED_MODEL_IDS) - set(_READ_PRICES)), _NOT_READ)),
 )
 
 
