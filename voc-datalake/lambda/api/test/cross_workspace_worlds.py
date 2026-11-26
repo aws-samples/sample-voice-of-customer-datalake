@@ -97,6 +97,26 @@ class RouteCase:
     #: Without a workspace the route answers this instead of ``ok_status`` (one that refuses inside a workspace what
     #: it does for the deployment, and says so): check 3 expects it.
     status_without_a_workspace: int | None = None
+    #: Set only on a route that refuses a workspace's ids deployment-wide (a write that answers a workspace's id the
+    #: unknown id's 404 there, feedback_form_handler.py ``_refuse_a_workspaces_id``): the ids check 3 sends without
+    #: the header, the deployment's own row's, named like ``ids``; check 3 then also proves A's ids are refused there
+    #: exactly as unknown ones. The world must hold a deployment row under each of A's ids, or that proof is vacuous
+    #: (test_cross_workspace_routes.py ``test_a_deployment_write_that_takes_a_workspaces_id_is_caught``). None:
+    #: check 3 sends A's ids.
+    deployment_ids: dict[str, str] | None = None
+    #: A known gap, reported and open (with ``deployment_ids``): check 3 expects exactly these answers.
+    known_gap: KnownGap | None = None
+
+
+@dataclass(frozen=True)
+class KnownGap:
+    """A route that, without the header, still answers a workspace's ids otherwise than unknown ones: why, and the
+    two answers exactly (both still change nothing and answer nothing of A's or B's). Any other pair fails check 3: a
+    worse answer, and the day the route answers both alike, when this is to go."""
+
+    reason: str
+    a_answer: tuple[int, Any]
+    unknown_answer: tuple[int, Any]
 
 
 def table_snapshot() -> dict[str, list[str]]:
@@ -746,7 +766,122 @@ def library_world(lambda_context: Any) -> Generator[World]:
                     doubles={'cognito': cognito, 'extraction': invoke_async})
 
 
+# ── voc-feedback-edit-api (lambda/api/feedback_edit_handler.py): a review's category and dimensions ──
+
+#: A review of each workspace, and the deployment's copy under A's id (a request that names no workspace edits it).
+FEEDBACK_A = 'fa1'
+FEEDBACK_B = f'{B_MARK}-fb1'
+_FEEDBACK_IDS = {'A': {'feedback_id': FEEDBACK_A}, 'B': {'feedback_id': FEEDBACK_B},
+                 UNKNOWN: {'feedback_id': 'f-nowhere'}}
+#: The deployment edits as before without the header: its own review under A's id, no workspace's.
+_DEPLOYMENT_REVIEW = "the deployment as before: its own review under that id, no workspace's (shared/workspace_request.py)"
+
+
+def _review(prefix: str, feedback_id: str, text: str) -> dict[str, Any]:
+    return {'pk': f'{prefix}SOURCE#web', 'sk': f'FEEDBACK#{feedback_id}', 'feedback_id': feedback_id,
+            'gsi4pk': f'{prefix}FEEDBACK#{feedback_id}', 'gsi2pk': f'{prefix}CATEGORY#delivery',
+            'gsi2sk': '-0.5#2026-01-01T00:00:00Z', 'category': 'delivery', 'subcategory': 'late', 'text': text}
+
+
+@contextmanager
+def feedback_edit_world(lambda_context: Any) -> Generator[World]:
+    """The feedback edit Lambda over two seeded workspaces, each with one review, and the deployment's review under
+    A's id; its resolver (shared/workspace_request.py ``RequestWorkspace``) reads the seeded workspaces afresh."""
+    from category_access_fixtures import CATEGORIES_CONFIG
+    from moto_helpers import feedback_by_id_table
+
+    import feedback_edit_handler
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        stack.enter_context(patch.object(feedback_edit_handler, '_workspace', RequestWorkspace(table=lambda: workspaces)))
+        feedback, aggregates = feedback_by_id_table(), pk_sk_table('aggregates')
+        aggregates.put_item(Item=CATEGORIES_CONFIG)
+        feedback.put_item(Item=_review('', FEEDBACK_A, 'the deployment review'))
+        feedback.put_item(Item=_review(f'WS#{WS_A}#', FEEDBACK_A, f'{A_MARK} parcel came late'))
+        feedback.put_item(Item=_review(f'WS#{WS_B}#', FEEDBACK_B, f'{B_MARK} chain slipped'))
+        yield World(call=_caller(feedback_edit_handler, lambda_context, feedback=feedback, aggregates=aggregates),
+                    doubles={'cognito': cognito})
+
+
+# ── voc-feedback-forms-api (lambda/api/feedback_form_handler.py): the signed-in routes of a workspace's forms ──
+
+#: Two forms of each workspace (the second for a comparison), one in none; the deployment's copies of A's two ids (a
+#: read without the header reads them; a write there refuses them, ``_refuse_a_workspaces_id``, and only a copy
+#: makes that refusal observable) and two forms of the deployment only (a write without the header names them).
+#: Every id here has the workspace shape (``_ROUTABLE_FORM_ID``), so the deployment's are looked up and missed; a
+#: deployment form of the older shape skips the lookup (test_feedback_form_workspace.py covers that path).
+FORM_A, FORM_A2 = 'ff_' + 'a1' * 16, 'ff_' + 'a2' * 16
+FORM_B, FORM_B2 = 'ff_' + 'b1' * 16, 'ff_' + 'b2' * 16
+FORM_DEPLOYMENT, FORM_DEPLOYMENT2 = 'ff_' + 'd1' * 16, 'ff_' + 'd2' * 16
+_DEPLOYMENT_COPIES = (FORM_A, FORM_A2)
+_FORM_IDS = {'A': {'form_id': FORM_A}, 'B': {'form_id': FORM_B}, UNKNOWN: {'form_id': 'ff_' + 'f' * 32}}
+#: The second forms (and the deployment's second) were made by the import wizard: the import takes their rows.
+_IMPORTED_FORMS = frozenset({FORM_A2, FORM_B2, FORM_DEPLOYMENT2})
+#: Without the header, a delete of A's id is the 404 (``_refuse_a_workspaces_id``), of an unknown one the
+#: deployment's idempotent success.
+_DELETE_GAP = KnownGap(
+    reason="reported to voc-lead 2026-11-26 (~/reports/mut-voc-mp2.md, item 6): it tells a workspace's form ids from "
+           'unknown ones; nothing read or changed',
+    a_answer=(404, {'success': False, 'error': 'Form not found'}), unknown_answer=(200, {'success': True}))
+_IMPORTED_IDS = {'A': {'form_id': FORM_A2}, 'B': {'form_id': FORM_B2}, UNKNOWN: {'form_id': 'ff_' + 'e' * 32}}
+_COMPARED_IDS = {'A': {'form_id': FORM_A, 'other': FORM_A2}, 'B': {'form_id': FORM_B, 'other': FORM_B2},
+                 UNKNOWN: {'form_id': 'ff_' + 'f' * 32, 'other': 'ff_' + 'e' * 32}}
+_DEPLOYMENT_FORM = {'form_id': FORM_DEPLOYMENT}
+#: Without the header the forms are the deployment's, as before (shared/workspace_request.py).
+_DEPLOYMENT_FORMS = "the deployment as before: its own forms, no workspace's (shared/workspace_request.py)"
+
+
+#: An import's dry run (it checks the rows and writes nothing): one row of the form's rating question.
+_IMPORT_BODY = {'rows': [{'Rating': '4'}], 'mapping': {'Rating': 'q_rating'}, 'dry_run': True,
+                'file': {'name': 'export.csv', 'format': 'csv', 'content': 'Rating\n4\n'}}
+_IMPORT_LITERALS = {'Rating': 'a column of the uploaded file', '4': 'an answer in the file',
+                    'q_rating': "the form's own question id, the same in every form made from the default",
+                    'export.csv': 'the file name the admin chose', 'csv': 'the file format',
+                    'Rating\n4\n': "the file's text"}
+
+
+def _seeded_form(pk: str, form_id: str, name: str) -> dict[str, Any]:
+    form = {'pk': pk, 'sk': f'FORM#{form_id}', 'form_id': form_id, 'name': name, 'title': name, 'enabled': True,
+            'brand_name': 'Acme', 'created_at': '2026-11-01T00:00:00+00:00', 'updated_at': '2026-11-01T00:00:00+00:00'}
+    if form_id in _IMPORTED_FORMS:
+        # Made by the import wizard (``imported``): the import route takes its rows (and it has no test link).
+        form['imported'] = {'from': 'csv', 'at': '2026-11-01T00:00:00+00:00', 'filename': 'export.csv'}
+    return form
+
+
+@contextmanager
+def feedback_forms_world(lambda_context: Any) -> Generator[World]:
+    """The forms Lambda over two seeded workspaces, each with two forms and their lookup rows (``FORM#{id}``), and the
+    deployment's forms (copies under A's two ids, and two of its own); its resolver reads the seeded workspaces."""
+    from test_feedback_form_workspace import wire_form_handler
+
+    import feedback_form_handler
+    from shared.test.source_profile_fixtures import seeded_source_profiles
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        # No source profiles configured (the import reads them for its redaction policy).
+        stack.enter_context(seeded_source_profiles())
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        aggregates, feedback = pk_sk_table('aggregates'), pk_sk_table('feedback')
+        for ws, mark, forms in ((WS_A, A_MARK, (FORM_A, FORM_A2)), (WS_B, B_MARK, (FORM_B, FORM_B2))):
+            for form_id in forms:
+                aggregates.put_item(Item=_seeded_form(f'WS#{ws}#FEEDBACK_FORM', form_id, f'{mark} survey'))
+                workspaces.put_item(Item={'pk': f'FORM#{form_id}', 'sk': 'META', 'workspace_id': ws,
+                                          'created_at': '2026-11-01T00:00:00+00:00'})
+        for form_id in (*_DEPLOYMENT_COPIES, FORM_DEPLOYMENT, FORM_DEPLOYMENT2):
+            aggregates.put_item(Item=_seeded_form('FEEDBACK_FORM', form_id, 'the deployment survey'))
+        wired = wire_form_handler(stack, {'aggregates': aggregates, 'feedback': feedback, 'workspaces': workspaces})
+        yield World(call=_caller(feedback_form_handler, lambda_context),
+                    doubles={'cognito': cognito, 'sqs': wired['sqs']})
+
+
 WORLDS: dict[str, Callable[[Any], Any]] = {
+    'feedback_edit_handler.py': feedback_edit_world,
+    'feedback_form_handler.py': feedback_forms_world,
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
@@ -1072,4 +1207,47 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the header is its only id: check 1 (the plan is kept with the workspace its approver is a member of)',
         body={'plan': _PLAN}, literals=_PLAN_LITERALS, ok_status=202,
         without_a_workspace='a plan approved without a workspace is the deployment\'s, as before'),
+    # A review's category and dimensions (shared/workspace_request.py RequestWorkspace, read afresh: an edit is a
+    # write): A's member edits A's review only; B's review id is not found in A, as an id of no review.
+    ('feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/category'): RouteCase(
+        ids=_FEEDBACK_IDS, body={'category': 'billing'},
+        literals={'billing': 'a category of the configuration, the same name in every workspace'},
+        without_a_workspace=_DEPLOYMENT_REVIEW),
+    ('feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/dimensions'): RouteCase(
+        ids=_FEEDBACK_IDS, body={'tags': ['checked']},
+        literals={'checked': 'a tag the editor typed, not a row of a workspace'},
+        without_a_workspace=_DEPLOYMENT_REVIEW),
+    # A workspace's forms (``_request_scope``, shared/workspace_request.py RequestWorkspace; a write reads the role
+    # afresh): A's member reads and changes A's forms only; B's form id is not found in A, as an id of no form.
+    ('feedback_form_handler.py', 'GET /feedback-forms'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's forms; A lists its own)",
+        without_a_workspace=_DEPLOYMENT_FORMS),
+    ('feedback_form_handler.py', 'POST /feedback-forms'): RouteCase(
+        no_ids='the form is new, the workspace is the header: check 1', body={'name': 'Spring survey'},
+        literals={'Spring survey': 'the name the editor typed'}, without_a_workspace=_DEPLOYMENT_FORMS),
+    **{('feedback_form_handler.py', f'GET /feedback-forms/<form_id>{tail}'): RouteCase(
+        ids=_FORM_IDS, without_a_workspace=_DEPLOYMENT_FORMS)
+       for tail in ('', '/stats', '/submissions', '/results', '/report', '/responses')},
+    # Without the header the comparison reads the deployment's copies of A's two ids, and nothing of A's.
+    ('feedback_form_handler.py', 'GET /feedback-forms/<form_id>/compare'): RouteCase(
+        ids=_COMPARED_IDS, query={'with': '{other}'}, without_a_workspace=_DEPLOYMENT_FORMS),
+    ('feedback_form_handler.py', 'PUT /feedback-forms/<form_id>'): RouteCase(
+        ids=_FORM_IDS, body={'title': 'Spring survey'}, literals={'Spring survey': 'the title the editor typed'},
+        without_a_workspace=_DEPLOYMENT_FORMS, deployment_ids=_DEPLOYMENT_FORM),
+    ('feedback_form_handler.py', 'DELETE /feedback-forms/<form_id>'): RouteCase(
+        ids=_FORM_IDS, without_a_workspace=_DEPLOYMENT_FORMS, deployment_ids=_DEPLOYMENT_FORM, known_gap=_DELETE_GAP),
+    # The admin-only writes (``_require_test_link_admin``, ``_require_import_admin``; deleting test responses, an admin
+    # or the form's creator): without the header only a deployment admin may make them.
+    ('feedback_form_handler.py', 'POST /feedback-forms/<form_id>/test-link'): RouteCase(
+        ids=_FORM_IDS, body={}, without_a_workspace=_DEPLOYMENT_FORMS, deployment_ids=_DEPLOYMENT_FORM,
+        deployment_admins_without_a_workspace=True),
+    ('feedback_form_handler.py', 'DELETE /feedback-forms/<form_id>/responses'): RouteCase(
+        ids=_FORM_IDS, query={'test': 'true'}, literals={'true': 'the test-responses switch, the same everywhere'},
+        without_a_workspace=_DEPLOYMENT_FORMS, deployment_ids=_DEPLOYMENT_FORM,
+        deployment_admins_without_a_workspace=True),
+    # A dry run only (it checks the rows and writes nothing): the refusals and reads are proven here, the import's
+    # writes in one workspace (its ``ws/{ws}/raw/`` archive, its queue messages) by test_feedback_form_import.py.
+    ('feedback_form_handler.py', 'POST /feedback-forms/<form_id>/import'): RouteCase(
+        ids=_IMPORTED_IDS, body=_IMPORT_BODY, literals=_IMPORT_LITERALS, without_a_workspace=_DEPLOYMENT_FORMS,
+        deployment_ids={'form_id': FORM_DEPLOYMENT2}, deployment_admins_without_a_workspace=True),
 }

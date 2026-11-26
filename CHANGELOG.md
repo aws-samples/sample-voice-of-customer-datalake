@@ -69,6 +69,309 @@ workspace nothing changes.
 - Nothing is migrated: inside a workspace Radar starts empty; the deployment's Radar is kept and still shown outside
   any workspace.
 
+## [7.72.03] - 2026-11-26
+
+The follow-ups 7.72.00's review left open, all in the erasure by email: a job that skipped a malformed row in
+voc-participants no longer says it erased everyone; the boards' customer-contact pass judges a +1 as it is when read
+again, not as the scan saw it; and a +1's re-key no longer overwrites an edit that lands between its read and its
+write; and a board row's raw folder is swept again after its change, whether the change held or not, so an edit archived meanwhile goes too. The
+order of a contact-only row's erasure (its raw copies, then its contact) was checked and stays, its trade-off now
+written down.
+
+### Fixed
+
+- **`participants_complete` counts a skipped malformed row** (`lambda/jobs/retention/runs.py` `participant_fields`):
+  a guard, a people-index row or a workspace's saved row naming no person is counted
+  (`participant_guards_malformed`) and skipped, and a skipped saved row may still name a person whose tail stays; the
+  job said `participants_complete: true` all the same. That count now leaves `participants_complete: false`, beside
+  `participants_not_erased` and `participant_index_rows_kept`.
+- **A +1's contact is judged on the +1 as read again** (`lambda/jobs/retention/boards.py` `_erase_row`): a +1 whose
+  own address and contact both matched at the scan had its `contact_email` dropped because the scan's row held the
+  address there; it is now dropped only while the re-read row still holds a spelling of the address, and a +1 re-keyed
+  for its own address whose re-read contact is the address loses that too.
+- **A +1's re-key no longer loses an edit made after its read** (`lambda/jobs/retention/boards_rekey.py` `rekey`):
+  the transaction put the +1 as read under its new id and deleted the old row on its existence alone, so an edit
+  landing between the read and the write (a new contact, a changed field) was overwritten. The Delete now holds only
+  while the row is as read (`updated_at = :seen`, or `attribute_not_exists(updated_at)` for a row that had none) and
+  asks for the old row on a failed condition (`ReturnValuesOnConditionCheckFailure` `ALL_OLD`, within the GetItem the
+  worker already holds); the cancellation's reasons tell a gone row (skipped, as before) from a changed one, which is
+  read again and tried again, at most 3 times (`boards.MAX_TRIES`), then the job fails (`SupportKeptChanging`, its
+  message naming the request, never the +1's id or the address) and an admin runs it again.
+- **A board row's raw folder is swept again after its change, whatever the change did** (`boards.py` `erase`): the
+  boards' edit routes write, then archive (`put_support_route`: `put_support` then `archive_support`; `put_request`:
+  `update_request` then `archive_request`), so an edit landing between the erasure's folder delete and its change
+  (the very edits the re-key's retry reads again) archived a version naming the address into the old folder, and
+  nothing swept it; so did one followed by a second edit or a delete that made the change not hold. Every matched
+  row's folder is now swept once more after its change (a re-key, a contact's REMOVE, a request's de-identify), held
+  or not: one more ListObjectVersions page per matched row; a row whose change did not hold is still not counted.
+  Checked, no change needed: a later edit of a re-keyed +1's old id is refused (`put_support(replacing=True)` is
+  conditional on the row existing: 404, nothing archived), and a request's edit (`update_request`, conditional the
+  same way) after its de-identify archives the row as it now is, without the reporter. What remains
+  (docs/multi-workspace.md 3g2-raw), and only this: (a) an edit whose write lands before the erasure's change (or its
+  attempt) and whose archive lands after the second sweep, i.e. the erasure's read, write and sweep all between the
+  route's write and its one S3 put; (b) a version archived before a job that crashed between its change and its
+  second sweep. Either copy names the address, and no rerun finds it once the row no longer matches. Not reached
+  either, and older than this release (3g2-orphan): the raw copies of a request or a +1 deleted before the erasure,
+  whose folder is found only through a row that no longer exists.
+
+### Not changed (a follow-up declined)
+
+- **A contact-only row's raw copies still go before its contact's REMOVE** (`boards.py` `erase`): a board row's raw
+  copies hold every field of the row (`shared/feature_requests_raw.py`), so the version the scan matched names the
+  address even when the contact changed since, and a crash between the sweep and the REMOVE leaves a row a rerun
+  still matches. The trade-off, for a +1 and a contact-only request alike: the folder is deleted whole, every
+  version, the versions an edit wrote after the contact changed included, which no longer name the address, so the
+  supporter's or reporter's own submission is gone from the archive while the row keeps it (and the row is not
+  counted in `board_items_deidentified`). The contact-only record (`{request id}#contact#{token}`) stands for the
+  attempt and covers those copies.
+
+### Tests
+
+- `lambda/jobs/retention/test/test_participant_erasure.py`: a malformed workspace saved row leaves the job and audit
+  rows not complete; `participant_fields` for each of the three counters; a +1 whose contact changed between the scan
+  and the re-key keeps its new contact; one whose contact became the address on the re-read row loses it with the
+  re-key; an edit between the re-read and the transaction is read again (its new contact kept, or the address
+  erased); a +1 that keeps changing fails the job, naming no address; a contact-only +1's raw copies deleted before
+  its contact's REMOVE and again after it; a contact-only +1 whose contact changed loses both its raw versions (the
+  edit's too), keeps its new contact and is not counted.
+- `lambda/api/test/test_board_erasure_route_race.py` (the boards' real routes, raw copies on): a +1 edited through
+  `put_support_route` between the folder delete and its re-key, a contact-only +1 edited between the folder delete and
+  its REMOVE, and a request edited through `put_request` between the folder delete and its de-identify each leave no
+  copy naming the address; so do an edit keeping the contact followed by one changing it, and an edit followed by the
+  +1's delete (the REMOVE does not hold either time); a re-keyed +1's old id refuses a later edit (404) and archives
+  nothing; a change that does not hold is still swept twice and not counted.
+- `lambda/jobs/retention/test/test_board_rekey.py`: an edit between the read and the write cancels the move and
+  stands; the cancellation reasons (gone, changed, a conflict, a taken id, none) and any other reason raising.
+- Role names in the erasure tests (`test_every_copy.py`, `test_board_rekey.py`, `test_settings_classification.py`):
+  the fixtures' first names and addresses are replaced with role names.
+- The synth baseline regenerated: two template hashes (VocApiStack, VocProcessingStack), from the version bump; no
+  name changed.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:all`). VocProcessingStack gets the retention worker's code; VocApiStack a
+  version-only update (its code changes by a comment in `settings_handler.py` alone). No data migration, no grant
+  change, no resource renamed.
+- Every job row with `participants_complete: true` and `participant_guards_malformed` above 0 (written by 7.72.00) did
+  not erase everyone. Malformed, an operator first: inspect the guard, index or saved row the count names in
+  voc-participants and mend it, or erase by id the person it names, then run the erasure again; the job reads complete
+  only once no malformed row remains. Refused or kept (`participants_not_erased`, `participant_index_rows_kept`): run
+  the erasure again. Either way a workspace's own erasure is run again by that workspace's admin, the deployment's
+  only where the deployment has its own request for the address (the job keeps only the address's hash: submit it
+  again with its address and legal basis).
+
+## [7.72.02] - 2026-11-26
+
+Tests only: the feedback forms' 14 signed-in routes (`lambda/api/feedback_form_handler.py`, through `_request_scope`
+and the same `RequestWorkspace` object) leave the cross-workspace suite's pending list with their two-workspace cases.
+Pending 422 -> 408 (phase 2: 85 -> 71); the four public routes (config, iframe, submit, events) stay pending.
+
+### Changed
+- `feedback_form_handler.py` joins `INSTANCE_RESOLVER_FILES`; a forms world seeds two forms in each workspace (the
+  second made by the import wizard), their `FORM#{id}` lookup rows, and the deployment's forms (copies under A's two
+  ids, two of its own).
+- Check 3 (no header) of a write that refuses a workspace's ids deployment-wide (`_refuse_a_workspaces_id`: the
+  form's update, delete, test link, test-responses delete and import) sends the deployment's own ids
+  (`RouteCase.deployment_ids`) and proves A's ids are refused there exactly as unknown ones, answering nothing of A's.
+  A meta-test takes the refusal out and expects check 3 to fail for each such route, so the proof is not vacuous.
+  The import, the test link and deleting test responses are a deployment admin's without the header (403 otherwise).
+  The import's case is a dry run: its refusals and reads; its writes stay with `test_feedback_form_import.py`.
+
+### Known gap (reported, not fixed here)
+- `DELETE /feedback-forms/<form_id>` without the header answers 404 for a workspace's form id and the deployment's
+  idempotent 200 for an unknown one, so it tells another workspace's ids from unknown ones (nothing read or changed).
+  Its case pins the two answers (`RouteCase.known_gap`, `KnownGap`): any other pair fails check 3, including the day
+  the route answers both alike, when the note is to go.
+
+## [7.72.01] - 2026-11-26
+
+Tests only: the feedback edits' two routes leave the cross-workspace suite's pending list with their two-workspace
+cases. `PUT /feedback/{id}/category` and `PUT /feedback/{id}/dimensions` already resolved the workspace first, through
+the data path's resolver object (`shared/workspace_request.py` `RequestWorkspace`), which the suite could not see.
+
+### Changed
+- The cross-workspace suite reads a module-level `RequestWorkspace` (`_workspace = RequestWorkspace()`, bound once):
+  its `context` and `scope` count as the resolver, in the per-file detector and in the cross-module scan, for the files
+  named in `INSTANCE_RESOLVER_FILES` (`lambda/api/test/test_cross_workspace_routes.py`). The list grows one route
+  family a slice, with that family's cases, so a file whose cases are not written yet stays pending as before.
+  `test_the_data_path_resolver_resolves_first` proves `RequestWorkspace.context` resolves first on every path but the
+  one that names no workspace (on the real module, its own import of the resolver, and the guard's own test pinned);
+  the instance counts only when the module binds the class's name only by its import and the instance's only by its
+  assignment, every way Python binds a name, and never sets an attribute of it. The detector's table of shapes covers
+  it (aliased, rebound by an assignment, import, def, except or global, a method replaced, the class rebound,
+  shadowed, another module, a conditional call, a write before it).
+- `feedback_edit_handler.py`'s world (`cross_workspace_worlds.py`): two workspaces with a review each and the
+  deployment's review under A's id. Both routes pass every generated check: B's header the one 404, B's review id
+  refused in A exactly as an unknown one, without the header the deployment's review only, A's request works, B's id
+  works in B. Pending routes: 422 (85 of them phase 2).
+- The synth baseline regenerated on a real vite build for the new version (two template hashes, no name changed).
+
+## [7.72.00] - 2026-11-25
+
+Multi-workspace, phase 3g2: an erasure by email reaches the participants. Until now a participant was erased by its
+id only, so an erasure by email left the person in voc-participants, and the same address in two workspaces was two
+people erased one by one. An erasure by email without a source now finds the person the address names in the
+deployment and in every listed workspace (a workspace's own erasure in its own), and erases each as the participant
+erasure does, under the erasure's legal basis. The ids are saved before anything is erased, so an erasure that
+failed after a person's guard went, or after the person's own row went, is finished by the next erasure of the
+address. Because the boards are de-identified first, a +1's customer contact included, a later promote no longer
+makes an erased supporter or contact a participant again. 3h, the switch, no longer waits for 3g2 (it still waits
+for 3g-ui, 3g3 and 3g-d2) ([docs/multi-workspace.md](docs/multi-workspace.md#the-project-plan-phase-3)).
+
+### Added
+
+- Added: the erasure worker's `participants` phase (`voc-datalake/lambda/jobs/retention/participants.py`), after
+  `workspace_projects` and before the raw sweep, the exports and the lineage passes (the `exports` phase sweeps what
+  it closes), for every erasure by email without a source when `PARTICIPANTS_TABLE` is set (now on voc-retention).
+  The address is normalised as the guard holds it (`shared/engagement_common.py` `normalize_email`: trimmed and
+  lower-cased, not the walks' `casefold`); an address that rule refuses can be no participant's, and the phase reads
+  nothing. The deployment's job reads the deployment's scope, then walks the platform's workspace listing as the
+  projects walk does (`jobs/retention/workspaces.py` `start`: its pages, then its re-walk of the workspaces renamed
+  or created meanwhile); a workspace's own job reads its own workspace only, and its cursor may name no other. In
+  each scope, one strongly consistent GetItem of the guard (`EMAIL#<sha>` / `PERSON`, `WS#<ws>#EMAIL#<sha>`) and one
+  Query of the scope's people index (`gsi1`, `PEOPLE` or `WS#<ws>#PEOPLE`, the lower-cased address its sort key, the
+  key alone asked for), their ids united, so a person whose erasure was cut after its guard went is still found,
+  beside a newer person's guard too; no Scan. The index Query follows its pages (`LastEvaluatedKey`), at most 10,
+  and fails the job, named, past them. Without voc-workspaces (`WORKSPACES_TABLE` unset) the deployment's job reads
+  the deployment's scope only and says `participants_walked: false`, never complete.
+- Added: each person found is erased by `shared/participants_erasure.py` `erase_person` in that person's scope, under
+  the job's legal basis; the actor is the job (`{sub: the admin who started it, kind: erasure, job_id}`), so each
+  gets the participant's tombstone and `AUDIT#delete` row before their guard, memberships, project links, tokens and
+  person row go. A workspace's exports are closed before its person is saved, and before an entry read from a saved
+  row is erased; the `exports` phase deletes them, as for a matched item (a workspace's export may hold the person).
+  A "not found" counts as done only once a strongly consistent read of the person agrees (the erasure's own read is
+  eventually consistent; it is tried once more), and the tail of an erasure cut after the person's row went is
+  finished before the entry is forgotten (`shared/participants_erasure.py` `finish_erasure`: the memberships an add
+  committed late, each list's `member_count` down by one, and in a workspace the guard's row in its index, unlisted
+  while no guard of the address is back). A guard's index row kept after every try to unlist it conflicted, with no
+  guard back, keeps the entry saved, is counted in `participant_index_rows_kept` and makes the job
+  `participants_complete: false`; the next erasure of the address unlists it. One kept because a guard is back lists
+  that newer person, and is neither counted nor left saved. Only a refusal that does not clear within the run is
+  kept: a workspace person holding asks or tokens (`NotPerWorkspaceError`, which cannot happen until the asks move
+  into their workspace) and a person still there after two "not found". Such an entry is saved again on the job's
+  own row (its `ttl` pushed forward), counted in `participants_not_erased`, the walk goes on and the job completes
+  with `participants_complete: false`; every later erasure of the address tries it again. Any other error (a
+  throttle, a service fault, a configuration error: `ParticipantNotErased`; an AWS error) fails the job, the entry
+  still saved for the next erasure of the address. More than 500 people refused in one run fail the job, named.
+- Added: the resolved ids are saved before any is erased, in the job's own partition of voc-aggregates
+  (`JOB#erasure`, a workspace's `WS#<ws>#JOB#erasure`) under the guard's hash, `PARTICIPANTS#<sha>`: a string set
+  `people` of `<workspace id or deployment>#<person id>`, added to with `ADD` and taken from with a conditional
+  `DELETE`, so two jobs of one address never drop each other's ids and a gone row is never re-created. A step saves
+  every person one listing page (or the deployment's scope) names and carries at most 500 on; the rest wait in the
+  saved row. The deployment's walk also reads each listed workspace's own saved row (so three reads per listed
+  workspace: the guard, the index, the saved row), and finishes what a workspace's failed job left; a workspace's
+  row of the wrong shape is counted and skipped. When its walk ends, the phase reads its own row again and erases
+  whom it still names (at most 500 at a time; what it refused in this run is skipped). Every save sets the row's
+  `ttl` 30 days ahead, so a failed job's row is removed by the table's TTL, usually within a few days after its
+  `ttl`; an emptied row (the job's, or a workspace's the deployment's walk emptied) has its `ttl` brought to one day
+  ahead. The key holds the address's unsalted SHA-256, as the guard's own key and the job row's `value_hash` do, and
+  goes with the row. Its sort key never starts `er_`, so no job list shows it. The cursor carries the listing walk,
+  `deployment_done`, and at most 500 people to erase and 500 refused; a carried or saved person of the wrong shape,
+  or outside a one-workspace job's workspace, fails the job.
+- Added: the job and audit rows of every erasure by email without a source (the deployment's and a workspace's own)
+  say `participants_walked` (true once the phase ended; false for a job handed over past it across the upgrade, with
+  voc-participants not configured, or for the deployment's job without voc-workspaces; `jobs/retention/runs.py`
+  `participant_fields`) and `participants_complete` (walked, nobody refused and no guard's index row left holding the
+  address: the field the rerun rule reads; it speaks for voc-participants only, and 7.48.00's rule,
+  `deployment_projects_walked`, still applies beside it), and count, once above 0, `participants_erased` (a lower
+  bound across retries: a person a cut erasure had mostly erased is counted by the job that finishes it),
+  `participants_not_erased`, `participant_guards_malformed` (a guard or index row naming no person id, and a
+  workspace's saved row of the wrong shape) and `participant_index_rows_kept` (a workspace guard's index row left
+  holding the address after every try conflicted, no guard back; `erase_person` now answers `index_rows_kept` in a
+  workspace). The erasure job's API view (`GET /settings/erasure`, `erasure_job_view`) returns them all.
+  Administration's erasure panel does not show them yet (3g-ui, whose scope now names them); the job-end notice
+  carries the job's status only, as before.
+
+### Changed
+
+- Changed: the `boards` phase also matches a customer contact's address: a +1's `contact_email` and a request's
+  `fields.contact_email` (both stored lower-cased; `voc-datalake/lambda/jobs/retention/boards.py`). A row that names
+  the address only as its contact gets this job's own record, `{request id}#contact#{token}` (never under a +1's own
+  id, which derives from its supporter's address: the supporter is not erased), written with the page's tombstones
+  before anything changes; a request also gets its request-id tombstone, so the artifacts that cite it are marked
+  like any erased request's. Its raw copies are deleted, and that one field is REMOVEd only while it still holds a
+  spelling of the address; its id stays. A +1 whose own address and contact are both the erased one is re-keyed
+  without either. A request's request-id tombstone is now put only if new: a later erasure that meets the request
+  again never overwrites the first's record (the lineage pass reads the key's existence alone); so each erasure that
+  changes a request also puts its own record of each field it removes, `{request id}#reporter#{token}` or
+  `{request id}#contact#{token}` (the job, its legal basis, the field), and a reporter erased after the request's
+  contact is still recorded. The scan projects the four address fields, so the code knows which one matched. The
+  grants are unchanged (the table's UpdateItem has no attribute limit, and aggregates' PutItem takes a condition).
+- Changed: as a consequence of the new phase, a board supporter or a +1's customer contact whom a promote made a
+  participant (`shared/feature_requests_promote.py` `promoted_emails` reads each +1's `email` and `contact_email`; a
+  request's own contact is never promoted) and who is erased by email is no longer made a participant again by a
+  later promote of that request: the `boards` phase de-identifies those +1s first, then the `participants` phase
+  erases the participant. An erasure by id (`DELETE /participants/people/{id}`) still leaves their +1s; erase a
+  supporter by email. Not reached: a promote already running while the erasure runs (it read the +1s before the
+  boards were de-identified, and may add the person after their participant was erased): run the erasure again once
+  it has finished. Checked: the promote's own guard since 7.31.00 covers only a person erased between its upsert and
+  its add (the add's transaction checks the person's row), never an earlier erasure by id.
+- Changed (IAM, VocProcessingStack): the retention worker gains voc-participants, in the participant erasure's
+  statements (`voc-datalake/lib/stacks/retention-worker.ts` `PARTICIPANT_ACCESS`), each pinned by
+  `dynamodb:LeadingKeys` to the deployment's and one workspace id's partitions it names (the one-workspace-id pattern
+  matches any workspace id; only the code holds a job to its own): GetItem, Query and ConditionCheckItem of `EMAIL#*`
+  and `PERSON#*` (one statement: a Query of a guard's partition or a condition check reaches only what the GetItem
+  reads); the people index's Query of `PEOPLE` and `WS#<one id>#PEOPLE` only, of `pk`, `gsi1pk` and `gsi1sk` only
+  with `dynamodb:Select` `SPECIFIC_ATTRIBUTES` required (the code sends it); GetItem of `AUDIT#tombstone#participant`
+  (the workspace layer's tombstone put asks for the row already there, `ReturnValuesOnConditionCheckFailure`
+  `ALL_OLD`; granted rather than relied on without it); PutItem of `AUDIT#tombstone#participant` and `AUDIT#delete`
+  only (IAM cannot stop a put there from overwriting a row: only the code's `attribute_not_exists` conditions do);
+  UpdateItem of `list_ids`, `member_count`, `response_token_hash` and `error` only (`dynamodb:Attributes`, no
+  returned values) on `PERSON#*`, `LIST#*` and the deployment's `ASK#*` (IAM cannot tell a REMOVE from a SET of those
+  attributes on an ask's rows: only the code removes); DeleteItem of `EMAIL#*`, `PERSON#*`, `LIST#*` (a list's `META`
+  too in IAM, which cannot pin the sort key: only the code deletes its `MEMBER#` rows alone) and a workspace's
+  `PARTICIPANTS` (any row of that index partition in IAM: only the code deletes the guard's own row, and only while
+  no guard is back); BatchWriteItem of the deployment's `TOKEN#*` and both scopes' `PROJECT#*` and `PERSON#*` (IAM
+  cannot tell a batch's deletes from its puts, so this would also allow puts there; the code sends deletes only, and
+  a test records every batch request). The audit-row guard names it a writer of voc-participants' audit rows in those
+  two partitions only (`lib/utils/audit-row-guard.ts`: a writer may now be held to a list of exact partitions); it
+  may change or remove none. A test records every call the job sends on voc-participants and holds it to that list.
+  To keep the role's inline policy under its size quota with every delete and audit put in it: its feedback grant
+  names the table only, no longer its indexes (no code of the worker names an index of it; a test records every call
+  on voc-feedback for each kind of erasure), and the erasure walks' reads and updates that delete or put nothing (the
+  Scan, the two Queries and the two UpdateItems on voc-projects, the read of the product documents and the library's
+  extracted text, the participants' reads and the people index's Query) are in a customer-managed policy of their own
+  attached to the role, `RetentionWalksPolicy` (one more resource in VocProcessingStack; without it CDK would split
+  the role's policy and move its last statements, the raw bucket's deletes among them, to an overflow policy of its
+  own choosing).
+- Docs: docs/multi-workspace.md's 7.72.00 row; the plan's 3g2 marked done (lifting `upsert_person`'s refusal of a
+  new person in a workspace is now unblocked by it, and not done here; that lift and the asks' move into their
+  workspace must first have `erase_person` erase a workspace person's asks and tokens, and keep the erasure's cap of
+  500 refusals a run, which holds only while no workspace person holds asks), 3g-ui's scope (the new counters and
+  `participants_complete`) and 3h's blockers (3g-ui, 3g3, 3g-d2); TENETS.md D5 (the participants and the board
+  contacts are reached by an erasure by email; an erasure by id leaves the +1s) and tenet 6 (what IAM cannot pin on
+  voc-participants); docs/source-policies.md, docs/participants.md and docs/feature-requests.md (the erasure by email
+  and the promote: only a +1's contact is promoted, never a request's own); `.kiro/steering/tech.md`'s retention
+  role and its load.
+- Internal: `lib/test-support/baseline.json` regenerated. The projects walk, the memberships, the participants phase
+  and the deployment fields share one test of an erasure by email without a source (`jobs/retention/runs.py`
+  `email_without_source`); the projects walk, the participants phase and the lineage pass share one first cursor
+  (`jobs/retention/workspaces.py` `start`, with `DEPLOYMENT_DONE` there); `lib/utils/table-write-grants.ts` gains
+  `keyScopedWriteStatement` (the key-scoped write as a statement for a managed policy).
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:all`). VocProcessingStack changes the retention worker (its code, its
+  `PARTICIPANTS_TABLE`, its grants on voc-participants and the new `RetentionWalksPolicy`); every function whose
+  bundle holds `lambda/shared/` gets new code (`shared/retention.py` gains the counters, `shared/participants_erasure.py`
+  its `index_rows_kept` and `finish_erasure`). No data migration.
+- Run again every erasure by email without a source whose row does not say `participants_complete: true` (every one
+  that finished before this release, one handed over past its `workspace_projects` phase while the release
+  deployed, one that refused a person or left an index row). `participants_complete` speaks for voc-participants
+  only: 7.48.00's rule (`deployment_projects_walked`) still applies beside it. A workspace's own erasure is run again
+  by that workspace's admin; the deployment's erasure is run again only where the deployment has its own request for
+  the address (it then reaches every listed workspace too). The job keeps only the address's hash, so an admin
+  submits the erasure again, with its address and legal basis.
+- A non-zero `participant_guards_malformed` or `participant_index_rows_kept` needs an operator to look at the rows
+  in voc-participants (a rerun does not mend a malformed guard or index row; a kept index row is tried again by the
+  next erasure of the address, and one a rerun reports again stays until an operator removes it). Administration's
+  erasure panel will show both (3g-ui).
+- Every erasure that was running while the release deployed (started before the deploy, finished after it) read its
+  earlier `boards` pages with the old filter, which did not match a customer contact (`contact_email`), and may have
+  passed its `participants` phase's place before the new code ran: run it again too.
+- Run again every erasure by email limited to the `feature_requests` source that finished before this release: it
+  did not match a customer contact either.
+
 ## [7.71.04] - 2026-11-25
 
 The findings 7.71.03's review gate deferred, and what the live Bug fixer runs on b- with 7.71.03 showed: a fresh run

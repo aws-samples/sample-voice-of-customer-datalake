@@ -246,7 +246,19 @@ writes per changed row; the three registries are single partitions (a Scale note
 written once per project create, `DOCSHARE_IDS` once per link create, `COMMENT_SERIES_IDS` read once per new thread
 (once per persona review, however many threads it files) and written once per first thread of a series (a
 single-partition write), far below a partition's limit; the fallback Scans are strongly consistent and read six
-attributes of each row), the
+attributes of each row), (since 7.72.00, the same erasures) the participants (`lambda/jobs/retention/participants.py`:
+the address, normalised as the guard is, looked up in the deployment's guard and people index and each listed
+workspace's, a workspace's own job its own; a workspace's exports closed first; each person found saved first in the
+job's partition, `PARTICIPANTS#{guard hash}` (its `ttl` 30 days after its last save; removed by the table's TTL,
+usually within a few days after its `ttl`), then erased by `shared/participants_erasure.py` `erase_person` (a person
+found gone has a cut erasure's tail finished, `finish_erasure`), a refusal that does not clear within the run or a
+guard's index row kept with no guard back left saved and counted (`participants_complete` false; since 7.72.03 a
+malformed guard, index or saved row skipped and counted, `participant_guards_malformed`, too), any other error
+failing the job; without voc-workspaces the deployment's job reads its own scope only and says
+`participants_walked: false`; load: three reads per listed workspace (the guard's GetItem, one people-index Query, at
+most 10 pages, the GetItem of its saved row), two for the deployment, the listing walked again (one Query per 100
+workspaces plus its re-walk), one UpdateItem per page that finds anyone and one or two per person erased, the
+participant erasure's own reads and writes per person, and one GetItem of the job's saved row at the end), the
 whole-source raw sweep, then (an erasure only) the
 exports of every workspace whose item it deleted, membership it de-identified or project row it changed, a derived
 copy (`lambda/jobs/retention/exports.py`:
@@ -260,16 +272,20 @@ library, each project's partition by filtered Query pages of 100: one Query for 
 de-identified a board request or passed 500, the listing walked as for the addresses: its projects through its
 registry and its persona library, by Query, a
 review's tombstones its own, a board request's the deployment's, writes through `ws_table`; the exports' workspace
-list it carries is not capped, about 8,000 workspaces against the 256 KB hand-over payload limit the code assumes). A workspace's exports are already closed
+list it carries is not capped, about 8,000 workspaces against the 256 KB hand-over payload limit the code assumes;
+since 7.72.00 the participants phase adds every workspace it finds a person in to that list, and its own cursor may
+carry up to 500 people to erase and 500 refused, about 45 KB more, so the bound is lower when both are full). A workspace's exports are already closed
 (the lock taken, every export marked `erased`, so no link is signed) when the run first meets the workspace, before
 its item goes, its membership or a project row changes, and closed again at each hand-over (the lock renewed, any
 export that slipped in marked); a job that names one workspace closes them at its start (so it deletes them even
-when it matches nothing) and walks the items, (by email) its projects' addresses, the exports and its projects'
+when it matches nothing) and walks the items, (by email) its projects' addresses and its participants, the exports and its projects'
 lineage only. Whole-file uploads (`raw/csv_upload/*`,
 `raw/json_upload/*`) are deleted only by a whole-source erasure of their source,
 else listed as `files_needing_review`. A whole-source erasure (`field: 'source'`) scans by
 `source_platform`, then sweeps `raw/{source}/` (every version), writing progress
-to the job row. Permissions: feedback Get/Query/Scan/DeleteItem,
+to the job row. Permissions (since 7.72.00 the voc-projects, product-document and participants' read grants below,
+reads and updates that delete nothing, are in the walks' own managed policy, `RetentionWalksPolicy`, so the inline
+policy that keeps every delete and audit put stays under its size quota): feedback Get/Query/Scan/DeleteItem (the table only, since 7.72.00),
 aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones one PutItem each; no BatchWrite, which would allow deletes),
 radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan (since 7.48.00 only the deployment walks' way
 of finding its links, series and projects until the backfill runs: the table only, six attributes,
@@ -285,7 +301,16 @@ GetObject of `ws/{one id}/projects/*/product_docs/raw/*.md`, `ws/{one id}/projec
 workspaces Scan + UpdateItem
 pinned to `WS#*` and the attributes `email` and `name` (since 6.11.00 an erasure by email without a source
 de-identifies the person's `MEMBER#` rows, `lambda/jobs/retention/members.py`), GetItem of a `META`'s status and
-(since 7.43.00) Query of the `WORKSPACES` listing only, raw bucket
+(since 7.43.00) Query of the `WORKSPACES` listing only, (since 7.72.00) participants: the participant erasure's
+statements (`PARTICIPANT_ACCESS`), each pinned by `dynamodb:LeadingKeys` to the deployment's and one workspace id's
+partitions it names (the pattern matches any one workspace id; only the code holds a job to its own: GetItem, Query
+and ConditionCheckItem of `EMAIL#*`, `PERSON#*`; the people index `gsi1`'s Query of `PEOPLE` and
+`WS#{one id}#PEOPLE`, of `pk`, `gsi1pk`, `gsi1sk` only, `SPECIFIC_ATTRIBUTES` required; GetItem of
+`AUDIT#tombstone#participant` (the workspace layer's tombstone put asks for a taken key's row); PutItem `AUDIT#tombstone#participant` and `AUDIT#delete` only, its audit-row guard held to
+those two; UpdateItem of `list_ids`, `member_count`, `response_token_hash` and `error` on `PERSON#*`, `LIST#*` and the
+deployment's `ASK#*`; DeleteItem `EMAIL#*`, `PERSON#*`, `LIST#*` and a workspace's `PARTICIPANTS`; BatchWriteItem the
+deployment's `TOKEN#*` and both scopes' `PROJECT#*` and `PERSON#*`, which IAM would let put there too: the code sends
+deletes only), raw bucket
 `s3:DeleteObject`/`DeleteObjectVersion` on `raw/*`, `silver/*` and (since 7.03.00: an erasure by email and a
 retention window reach a workspace's items, tombstoned `AUDIT#tombstone#{source}` / `{ws}#{feedback_id}`) each
 workspace's `ws/{ws}/raw/*` and `ws/{ws}/silver/*` and (since 7.17.00) `ws/{ws}/exports/*` (one workspace id per

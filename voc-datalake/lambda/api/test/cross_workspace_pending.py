@@ -27,33 +27,13 @@ PHASE_2: dict[str, frozenset[str]] = {
         'PUT /data-explorer/feedback',
         'PUT /data-explorer/s3',
     }),
-    'feedback_edit_handler.py': frozenset({
-        'PUT /feedback/<feedback_id>/category',
-        'PUT /feedback/<feedback_id>/dimensions',
-    }),
     # The public form routes find the workspace from FORM#{id}.
+    # (The signed-in routes resolve X-Workspace-Id, `_request_scope`, and have their cases since 7.72.02.)
     'feedback_form_handler.py': frozenset({
-        'DELETE /feedback-forms/<form_id>',
-        'GET /feedback-forms',
         'GET /feedback-forms/<form_id>/config',
         'GET /feedback-forms/<form_id>/iframe',
-        'GET /feedback-forms/<form_id>/stats',
-        'GET /feedback-forms/<form_id>/submissions',
-        'POST /feedback-forms',
         'POST /feedback-forms/<form_id>/submit',
         'POST /feedback-forms/<form_id>/events',
-        'PUT /feedback-forms/<form_id>',
-        # Schema version 2 (7.55.00): resolve X-Workspace-Id like the routes above (`_request_scope`).
-        'DELETE /feedback-forms/<form_id>/responses',
-        'GET /feedback-forms/<form_id>',
-        'GET /feedback-forms/<form_id>/responses',
-        'GET /feedback-forms/<form_id>/results',
-        'POST /feedback-forms/<form_id>/test-link',
-        # 7.63.00: the report and the comparison (`_request_scope`, as the results; every compared form the scope's).
-        'GET /feedback-forms/<form_id>/compare',
-        'GET /feedback-forms/<form_id>/report',
-        # 7.67.00: an imported form's rows (`_request_scope(write=True)`, its admins; the messages name its workspace).
-        'POST /feedback-forms/<form_id>/import',
     }),
     # Credentials move to the workspace secret.
     'integrations_handler.py': frozenset({

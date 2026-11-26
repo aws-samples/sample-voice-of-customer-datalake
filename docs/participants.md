@@ -159,3 +159,12 @@ stay the deployment's ([multi-workspace.md](multi-workspace.md#the-project-plan-
   Some HTTP clients, proxies and API tools drop the body of a `DELETE` request (RFC 9110 gives it no defined
   meaning) and send none: the route then answers **400** (no `legal_basis`) and deletes nothing. Send the body with
   `Content-Type: application/json` from a client that keeps it (the SPA, `curl -X DELETE -d '{…}'`, `fetch`).
+- **Erasure by email** (since 7.72.00): an erasure by email without a source (Administration → Privacy & access,
+  `POST /settings/erasure`) erases, the same way, every person the address names in the deployment and in every
+  listed workspace (a workspace's own erasure: in that workspace): the one its guard names and any the scope's people
+  index lists under the address (a person whose cut erasure already removed its guard), with the job as the actor
+  (`{sub, kind: erasure, job_id}`). The deployment's erasure also de-identifies the person's board +1s first (the
+  boards are the deployment's: a workspace's own erasure has no boards step), its customer contacts included, so a
+  later promote of a request they supported, or named as its contact, does not make them a participant again. An
+  erasure by id here leaves their +1s: for a board supporter or contact, erase by email
+  ([source-policies.md](source-policies.md)).

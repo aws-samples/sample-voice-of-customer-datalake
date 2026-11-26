@@ -204,8 +204,8 @@ How it works:
   runs; `artifacts_marked` on the job). Its text is never rewritten (it belongs to its owner); the
   update is conditional, so an artifact regenerated meanwhile is left for the next run.
 - The worker walks its phases in order (`items`, `form_tests` when the run reaches the `feedback_form` source,
-  `radar`, `boards` for an email erasure, `members` and
-  `workspace_projects` for an email erasure without a source, `raw` for a whole source, `exports` for an erasure
+  `radar`, `boards` for an email erasure, `members`,
+  `workspace_projects` and (since 7.72.00) `participants` for an email erasure without a source, `raw` for a whole source, `exports` for an erasure
   that reached a workspace, `lineage`, `workspace_lineage` for a run that deleted a workspace's item) and
   hands over to a fresh invocation of itself, with its phase and cursor, before its 15-minute timeout.
 - `POST /settings/erasure` answers 202 `{job}`. `GET /settings/erasure` lists the newest 20
@@ -258,7 +258,25 @@ How it works:
   tombstoned (`AUDIT#tombstone#feature_requests`), their raw copies under
   `raw/feature_requests/` deleted (every version) and the rows de-identified (email and name
   removed; the request text stays; a +1, whose id derives from the email, is re-keyed under a
-  new random id and still counts as a supporter). Counted as `board_items_deidentified`; artifacts that read
+  new random id and still counts as a supporter). Since 7.72.00 a +1 or a request that names the address as its
+  customer contact (`contact_email`) gets a record of this job's (keyed by its request and a random token), its raw
+  copies deleted, and that field removed while it still holds the address, its id kept. Since 7.72.03 a +1's contact
+  is judged on the +1 as read again (a +1 whose own address and contact both matched is re-keyed without the contact
+  only while the re-read row still holds it, and loses it when the re-read row's contact is the address), and the
+  re-key holds only while the +1 is as read (an edit between the read and the write is read again, at most 3 times,
+  then the job fails). A row's raw folder goes whole: for a row whose contact changed since the scan, the versions the
+  edit wrote, which no longer name the address, go too, so the supporter's or reporter's own submission is gone from
+  the archive while the row keeps it (the version the scan matched names the address). The boards' edit routes
+  write, then archive, so every matched row's folder is swept once more after its change (a re-key, a contact's
+  removal, a request's de-identify), held or not, and a re-keyed +1's old id refuses a later edit; what remains, and
+  only this: (a) an edit whose write lands before the change (or its attempt) and whose archive lands after the
+  second sweep; (b) a version archived before a job that crashed between its change and its second sweep. Either
+  copy names the address and no rerun finds it (follow-up 3g2-raw, [multi-workspace.md](multi-workspace.md)). The raw
+  copies of a request or a +1 deleted before the erasure are never reached: their folder is found only through a row
+  that no longer exists (3g2-orphan). A request's own tombstone is
+  put only if new, so the artifacts that cite it are marked as for any erased request, and each erasure that changes
+  a request also leaves its own record of each field it removes (`{request id}#reporter#{token}`,
+  `{request id}#contact#{token}`). Counted as `board_items_deidentified`; artifacts that read
   such a request (`input_feature_request_ids`) are marked like for an erased review
   ([feature-requests.md → Erasure](feature-requests.md#erasure)).
 - **Workspace memberships** (since 6.11.00). An `email` erasure without a source also reaches
@@ -405,6 +423,46 @@ How it works:
   `result` in voc-jobs (lineage ids, until the job row's 7-day `ttl`; 3g-lin2); a deleted project's product
   documents folder is listed as not checked (an object its delete could not remove outlives its record); and a deleted project's threads and links stay
   until an erasure or the planned delete sweep (multi-workspace.md, 3g-p).
+- **Participants** (since 7.72.00; [multi-workspace.md](multi-workspace.md#the-project-plan-phase-3), 3g2). An `email`
+  erasure without a source also reaches `voc-participants`, after the boards and the projects (phase
+  `participants`): the address, trimmed and lower-cased as the participants' address guard holds it, is looked up in
+  the deployment's scope and in every workspace the platform lists (a workspace's own erasure: its own only), never a
+  Scan: per scope one read of the guard and one Query of its people index (so a half-erased person is found, beside a
+  newer person's guard too), and for the deployment's erasure one read of each workspace's saved row (three reads per
+  listed workspace); each person found is erased exactly as `DELETE /participants/people/{id}` erases them
+  ([participants.md → Erasure](participants.md)), under the job's legal basis, with the participant's tombstone and
+  delete record first (their actor the job: who started it, `kind` `erasure`, the job id), and a workspace's exports
+  closed first and deleted by the `exports` phase (an export may hold the person). The ids are saved before any is
+  erased, in the job's partition (`PARTICIPANTS#<hash of the address>`, a set of `<scope>#<person id>`, its `ttl` 30
+  days after its last save, removed by the table's TTL, usually within a few days after its `ttl`), and each is taken
+  off once erased, so an erasure that failed after a person's guard went is finished, by id, by the next erasure of
+  the address (the deployment's erasure also reads each workspace's saved row); a person found already gone has the
+  tail of a cut erasure finished first (its late memberships, each list's count down by one, and in a workspace the
+  guard's index row, unlisted while no guard of the address is back). An emptied row's `ttl` is brought to a day
+  ahead. A person the participant erasure refuses (a workspace person holding asks or tokens, which cannot happen
+  until the asks move into their workspace; a person still there after two "not found": a refusal that does not clear
+  within the run), and a guard's index row every try to unlist conflicted on with no guard back, are saved again,
+  counted (`participants_not_erased`, `participant_index_rows_kept`), and do not stop the job, whose row then says
+  `participants_complete: false`; every later erasure of the address tries them again. Any other error fails the job,
+  the ids still saved. The job also counts `participants_erased` and `participant_guards_malformed` (a guard, index
+  or saved row naming no person, skipped; since 7.72.03 a non-zero count also leaves `participants_complete: false`,
+  as a skipped saved row may still name a person whose tail stays), and every email
+  erasure without a source says `participants_walked` (false for the deployment's erasure without voc-workspaces) and
+  `participants_complete` (the job's API view returns them). Run again every erasure by email without a source whose
+  row does not say `participants_complete: true`; that field speaks for voc-participants only, and the 7.48.00 rule
+  (`deployment_projects_walked`) still applies beside it. A workspace's own erasure is run again by that workspace's
+  admin; the deployment's erasure only where the deployment has its own request for the address. Malformed, an
+  operator first: a non-zero `participant_guards_malformed` needs an operator to inspect the guard, index or saved row
+  and mend it, or erase by id the person it names, before the erasure is run again (a rerun does not mend it; the job
+  reads complete only once no malformed row remains); every row with `participants_complete: true` and
+  `participant_guards_malformed` above 0 (written by 7.72.00) is such a job. Refused or kept, run again: a refused
+  person or a non-zero `participant_index_rows_kept` needs only the erasure run again (it tries a kept index row
+  again; one it reports kept again stays for an operator). The same scope rule holds for both. Not reached: a
+  board promote already running while the erasure runs (it may add the person back: run the erasure again once it
+  has finished).
+  A board supporter, or a +1's customer contact, promoted to a list is a participant too: the `boards` phase first
+  re-keys the person's +1s without the address and removes a matching `contact_email` from a +1 or a request, so a
+  later promote cannot make them a participant again. A person erased by id keeps their +1s (erase them by email).
 - **S3 import originals.** The `s3_import` plugin keeps each imported file as uploaded under
   `raw/s3_import/…` (`ws/{ws}/raw/s3_import/…` for a run in a workspace) when its profile keeps whole files,
   and no row links an item to the file it came from. An erasure (by email, author, …) that deletes an S3 import's
@@ -553,11 +611,14 @@ the worker removes their ids from these lists and marks the artefact with `erase
 Record what you removed by hand next to the erasure job: the job row keeps only the value's
 hash and the legal basis, so it is safe to reference.
 
-Least-privilege grants (`lib/stacks/retention-worker.ts`):
+Least-privilege grants (`lib/stacks/retention-worker.ts`; since 7.72.00 the projects table's grants, the product
+documents' and the library's text reads and the participants' reads, reads and updates that delete nothing, are in
+the role's managed policy `RetentionWalksPolicy`, every other one in its inline policy):
 
 | Resource | Allowed actions |
 |---|---|
-| Feedback table | `GetItem`, `Query`, `Scan`, `DeleteItem` |
+| Feedback table | `GetItem`, `Query`, `Scan`, `DeleteItem`, on the table only (since 7.72.00; no index) |
+| Participants table (since 7.72.00) | The participant erasure's calls only, each pinned by `dynamodb:LeadingKeys` to the deployment's and one workspace id's partitions (the pattern matches any one workspace id; only the code holds a job to its own): `GetItem`, `Query` and `ConditionCheckItem` of the address guards and people (`EMAIL#*`, `PERSON#*`); `Query` of the people index's `PEOPLE` partitions, of `pk`, `gsi1pk` and `gsi1sk` only (`SPECIFIC_ATTRIBUTES` required); `GetItem` of `AUDIT#tombstone#participant` (the workspace layer's tombstone put asks for a taken key's row); `PutItem` of `AUDIT#tombstone#participant` and `AUDIT#delete` only; `UpdateItem` of a person's `list_ids`, a list's `member_count` and an ask recipient's `response_token_hash` and `error` only (`PERSON#*`, `LIST#*`, the deployment's `ASK#*`; no returned values); `DeleteItem` of `EMAIL#*`, `PERSON#*`, `LIST#*` and a workspace's `PARTICIPANTS`; `BatchWriteItem` of the deployment's `TOKEN#*` and both scopes' `PROJECT#*` and `PERSON#*` (which would also allow puts there: the code sends deletes only). No Scan. What only the code limits (IAM cannot pin the sort key, nor stop a put from overwriting): the DeleteItem of any row of a workspace's `WS#<ws>#PARTICIPANTS` index (the code deletes the guard's own row, only while no guard is back); the DeleteItem of a list's `META` in `LIST#*` (the code deletes `MEMBER#` rows only); the UpdateItem of an ask's rows, which IAM lets SET those attributes too (the code REMOVEs them); the PutItem of `AUDIT#tombstone#participant` and `AUDIT#delete`, which IAM lets overwrite a row (the code puts only if new) |
 | Radar table | `Scan`, `DeleteItem`; `UpdateItem` on the `SETTINGS#radar` partition only (the Radar cache version) |
 | Projects table | `Scan` (since 7.48.00 only the deployment walks' way of finding its links, comment partitions and projects until their backfill has run: on the table only, and of six attributes only), `UpdateItem` (since 7.43.00 only of the lineage lists, `erased_evidence` and the address and name fields an erasure rewrites; since 7.48.00 only on the deployment's and one workspace id's project, comment and link partitions; no delete, no put); since 7.43.00 `Query` of one workspace id's `PROJECT_IDS`, `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions (a workspace's lineage marks and addresses), and since 7.48.00 of the deployment's `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE#*`, `PROJECT_IDS`, `DOCSHARE_IDS` and `COMMENT_SERIES_IDS`, of the attributes its reads project only (`dynamodb:Attributes`, with `dynamodb:Select` `SPECIFIC_ATTRIBUTES` required); no index. Its attribute-limited UpdateItems ask for no returned values (`dynamodb:ReturnValues` `NONE`) |
 | Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |

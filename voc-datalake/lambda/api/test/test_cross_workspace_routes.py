@@ -58,7 +58,12 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from cross_workspace_closure import first_app_middleware, routes_reaching_the_resolver
+from cross_workspace_closure import (
+    INSTANCE_RESOLVER,
+    INSTANCE_RESOLVER_METHODS,
+    first_app_middleware,
+    routes_reaching_the_resolver,
+)
 from cross_workspace_pending import PHASE_2, PHASE_3
 from cross_workspace_worlds import (
     A_MARK,
@@ -72,6 +77,7 @@ from cross_workspace_worlds import (
     WS_A,
     WS_B,
     WS_UNKNOWN,
+    KnownGap,
     RouteCase,
     World,
     table_snapshot,
@@ -96,6 +102,15 @@ RESOLVER_MODULE = 'shared.workspace'
 #: resolves first itself: the tests below prove it.
 RESOLVERS: dict[str, str] = {RESOLVER: RESOLVER_MODULE, 'request_workspace': 'shared.request_workspace',
                              'pinned_workspace': 'shared.mcp_workspace_pin'}
+#: The data path's resolver object (cross_workspace_closure.py ``INSTANCE_RESOLVER``, shared/workspace_request.py
+#: ``RequestWorkspace``): a module-level instance of it, bound once (``_workspace = RequestWorkspace(...)``), resolves
+#: first through ``<instance>.context(event)`` and ``<instance>.scope(event)`` (``INSTANCE_RESOLVER_METHODS``;
+#: test_the_data_path_resolver_resolves_first proves both).
+#: The files whose ``RequestWorkspace`` instance the detector reads: a file joins in the change that writes its
+#: routes' cases and takes them off cross_workspace_pending.py (one route family a slice). A file not named here
+#: resolves through its instance unseen and stays pending, as before this list existed; the list only grows, until
+#: every file using the instance is in it and it can go.
+INSTANCE_RESOLVER_FILES = frozenset({'feedback_edit_handler.py', 'feedback_form_handler.py'})
 MISSING_HEADER = 'The X-Workspace-Id header is required'
 #: Calls that write: one of them before the resolution means the route may act before it knows the workspace.
 WRITE_CALLS = frozenset({'put_item', 'update_item', 'delete_item', 'transact_write_items', 'batch_writer',
@@ -214,13 +229,69 @@ def _writes(node: ast.AST, writing: set[str]) -> bool:
 
 
 def _bare_call(stmt: ast.stmt) -> str | None:
-    """``f`` for an unconditional ``f(...)``, ``x = f(...)``, ``x: T = f(...)`` or ``return f(...)`` statement."""
+    """``f`` for an unconditional ``f(...)``, ``x = f(...)``, ``x: T = f(...)`` or ``return f(...)`` statement, and
+    ``name.method`` for the same statements calling ``name.method(...)`` (a module-level instance's method)."""
     if not isinstance(stmt, ast.Expr | ast.Assign | ast.AnnAssign | ast.Return):
         return None
     value = stmt.value
     if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
         return value.func.id
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
+            and isinstance(value.func.value, ast.Name)):
+        return f'{value.func.value.id}.{value.func.attr}'
     return None
+
+
+def _bindings(tree: ast.Module) -> dict[str, int]:
+    """How many times the module binds each name, every way Python binds one: an assignment or other store target
+    (``for``, ``with``, a walrus), a parameter, an import, a ``def`` or ``class`` at any depth, an ``except … as``, a
+    ``match`` capture, a ``global`` or ``nonlocal`` (which lets a function rebind it)."""
+    counts: dict[str, int] = {}
+    for node in ast.walk(tree):
+        for name in _bound_by(node):
+            if name:
+                counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def _bound_by(node: ast.AST) -> list[str | None]:
+    """The names one node binds (``_bindings``)."""
+    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
+        return [node.id]
+    if isinstance(node, ast.arg):
+        return [node.arg]
+    if isinstance(node, ast.Import | ast.ImportFrom):
+        return [alias.asname or alias.name.split('.')[0] for alias in node.names]
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.ExceptHandler | ast.MatchAs
+                  | ast.MatchStar):
+        return [node.name]
+    if isinstance(node, ast.MatchMapping):
+        return [node.rest]
+    if isinstance(node, ast.Global | ast.Nonlocal):
+        return list(node.names)
+    return []
+
+
+def _instance_resolvers(tree: ast.Module) -> set[str]:
+    """``name.context`` and ``name.scope`` for every module-level ``name = RequestWorkspace(...)`` (the class imported
+    from shared/workspace_request.py under its own name) when the module binds the class's name only by that import
+    and the instance's only by that assignment, and never sets an attribute of the instance: a name bound twice, or
+    an instance whose method is replaced, may not be the resolver it looks like."""
+    module, cls = INSTANCE_RESOLVER
+    imported = any(isinstance(stmt, ast.ImportFrom) and stmt.module == module
+                   and any(alias.name == cls and alias.asname is None for alias in stmt.names) for stmt in tree.body)
+    bindings = _bindings(tree)
+    if not imported or bindings.get(cls) != 1:
+        return set()
+    patched = {node.value.id for node in ast.walk(tree)
+               if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store | ast.Del)
+               and isinstance(node.value, ast.Name)}
+    names = {stmt.targets[0].id for stmt in tree.body
+             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name)
+             and isinstance(stmt.value, ast.Call) and isinstance(stmt.value.func, ast.Name)
+             and stmt.value.func.id == cls and bindings.get(stmt.targets[0].id) == 1
+             and stmt.targets[0].id not in patched}
+    return {f'{name}.{method}' for name in names for method in INSTANCE_RESOLVER_METHODS}
 
 
 def _reraises(handler: ast.ExceptHandler, writing: set[str]) -> bool:
@@ -275,15 +346,18 @@ def _none_for_platform_admins(fn: ast.FunctionDef, resolving: set[str], writing:
                     for h in stmt.handlers))
 
 
-def resolving_functions(tree: ast.Module, none_for_platform_admins: frozenset[str] = frozenset()) -> tuple[set[str], set[str]]:
+def resolving_functions(tree: ast.Module, none_for_platform_admins: frozenset[str] = frozenset(),
+                        instance_resolvers: bool = False) -> tuple[set[str], set[str]]:
     """``(resolving, writing)``: the resolver (when imported from shared/workspace.py) plus every module function that
     resolves the workspace first, and every module function that writes. Both err towards "not resolving first": a
     name the module rebinds anywhere never resolves, while every function by that name that writes counts as one.
-    A function named in ``none_for_platform_admins`` counts only in its shape (``_none_for_platform_admins``)."""
+    A function named in ``none_for_platform_admins`` counts only in its shape (``_none_for_platform_admins``).
+    With ``instance_resolvers`` (a file of ``INSTANCE_RESOLVER_FILES``) a module-level ``RequestWorkspace``'s
+    ``context`` and ``scope`` count as the resolver too (``_instance_resolvers``)."""
     every = _module_functions(tree)
     writing = _fixed_point(every, set(), lambda fn, names: any(_writes(stmt, names) for stmt in fn.body))
     rebound = _rebound(tree)
-    seeds = _imported_resolvers(tree) - rebound
+    seeds = (_imported_resolvers(tree) - rebound) | (_instance_resolvers(tree) if instance_resolvers else set())
     if not seeds:
         return set(), writing
     functions = {name: fn for name, fn in every.items() if name not in rebound}
@@ -292,11 +366,12 @@ def resolving_functions(tree: ast.Module, none_for_platform_admins: frozenset[st
     return resolving, writing
 
 
-def routes_resolving_the_workspace(source: str, none_for_platform_admins: frozenset[str] = frozenset()) -> dict[str, bool]:
+def routes_resolving_the_workspace(source: str, none_for_platform_admins: frozenset[str] = frozenset(),
+                                   instance_resolvers: bool = False) -> dict[str, bool]:
     """Every route of ``source`` -> whether it resolves the workspace first: in its body, or in the module's first
     ``app.use`` middleware."""
     tree = ast.parse(source)
-    resolving, writing = resolving_functions(tree, none_for_platform_admins)
+    resolving, writing = resolving_functions(tree, none_for_platform_admins, instance_resolvers)
     module_wide = first_app_middleware(tree) in resolving
     return {key: module_wide or _resolves_in(fn.body, resolving, writing)
             for fn in _module_functions(tree).values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
@@ -308,7 +383,8 @@ def inventory() -> dict[tuple[str, str], bool]:
     return {(path.name, key): resolves
             for path in [*_handler_files(), *_router_files()]
             for key, resolves in routes_resolving_the_workspace(
-                path.read_text(encoding='utf-8'), NONE_FOR_PLATFORM_ADMINS.get(path.name, frozenset())).items()}
+                path.read_text(encoding='utf-8'), NONE_FOR_PLATFORM_ADMINS.get(path.name, frozenset()),
+                path.name in INSTANCE_RESOLVER_FILES).items()}
 
 
 def classification() -> dict[tuple[str, str], list[str]]:
@@ -383,7 +459,7 @@ def test_every_route_that_reaches_the_resolver_through_any_module_is_workspace_s
     """The detector above reads one file at a time; cross_workspace_closure.py follows the resolver through every
     module of lambda/ (6.14.00's registry check), so a resolution behind a helper of another module cannot leave a
     route pending or unclassified."""
-    reaching = routes_reaching_the_resolver(API_DIR.parent)
+    reaching = routes_reaching_the_resolver(API_DIR.parent, INSTANCE_RESOLVER_FILES)
     assert sorted(reaching - WORKSPACE_SCOPED) == [], (
         'These routes reach resolve_workspace (through helpers in any module) but are not workspace-scoped')
     assert sorted(WORKSPACE_SCOPED - reaching) == [], 'These workspace-scoped routes reach no resolver'
@@ -405,6 +481,13 @@ def test_the_scan_follows_a_module_wide_middleware_that_resolves(tmp_path):
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_text(source, encoding='utf-8')
     assert routes_reaching_the_resolver(tmp_path) == {('notes_handler.py', 'GET /notes')}
+
+
+def _write_tree(root: Any, files: dict[str, str]) -> None:
+    """A source tree under ``root``, ``{relative path: text}``, for the scan."""
+    for rel, text in files.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding='utf-8')
 
 
 def test_the_scan_follows_resolvers_across_modules_aliases_and_routers(tmp_path):
@@ -438,14 +521,34 @@ def test_the_scan_follows_resolvers_across_modules_aliases_and_routers(tmp_path)
         # Served under /me/workspaces/current: scoped whatever it calls.
         'api/teams_handler.py': "@app.get('/me/workspaces/current/notes')\ndef notes():\n    return {}\n",
     }
-    for rel, text in files.items():
-        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / rel).write_text(text, encoding='utf-8')
+    _write_tree(tmp_path, files)
     assert routes_reaching_the_resolver(tmp_path) == {
         ('boards_routes.py', 'GET /boards'), ('votes_handler.py', 'POST /votes'), ('polls_handler.py', 'GET /polls'),
         ('polls_handler.py', 'GET /surveys'), ('forms_handler.py', 'GET /forms'), ('forms_handler.py', 'GET /answers'),
         ('ballot_routes.py', 'GET /ballots'), ('ballot_routes.py', 'GET /tallies'),
         ('teams_handler.py', 'GET /me/workspaces/current/notes')}
+
+
+def test_the_scan_follows_the_data_path_resolver_in_the_files_named(tmp_path):
+    """A route that resolves through a module-level ``RequestWorkspace`` (``context`` or ``scope``, directly or in a
+    helper) reaches the resolver in a file the scan is told to follow, and only there; another method of it does not."""
+    files = {
+        'shared/workspace.py': 'def resolve_workspace(table, event, cache):\n    return None\n',
+        'shared/workspace_request.py': 'class RequestWorkspace:\n    pass\n',
+        'api/edits_handler.py': ('from shared.workspace_request import RequestWorkspace\n\n'
+                                 '_workspace = RequestWorkspace()\n\n'
+                                 'def _scope(event):\n    return _workspace.context(event)\n\n'
+                                 "@app.put('/edits')\ndef edits():\n    return _scope(None)\n\n"
+                                 "@app.get('/edits')\ndef read():\n    return _workspace.scope(None)\n\n"
+                                 "@app.get('/cache')\ndef cache():\n    return _workspace.memberships(None)\n"),
+        'api/forms_handler.py': ('from shared.workspace_request import RequestWorkspace\n\n'
+                                 '_workspace = RequestWorkspace()\n\n'
+                                 "@app.get('/forms')\ndef forms():\n    return _workspace.context(None)\n"),
+    }
+    _write_tree(tmp_path, files)
+    assert routes_reaching_the_resolver(tmp_path, frozenset({'edits_handler.py'})) == {
+        ('edits_handler.py', 'PUT /edits'), ('edits_handler.py', 'GET /edits')}
+    assert routes_reaching_the_resolver(tmp_path) == set()
 
 
 #: Every route-registering method of a Powertools resolver or router.
@@ -553,6 +656,10 @@ def case_problems(route: str, case: RouteCase) -> list[str]:
             problems.append('no_ids on a request that carries ids')
     elif case.ids or not case.no_ids.strip():
         problems.append('a request with no id but the header says why in no_ids, and has no ids')
+    if case.deployment_ids is not None and (set(case.deployment_ids) != named or not case.without_a_workspace):
+        problems.append(f'deployment_ids must name {sorted(named)}, on a route kept without a workspace')
+    if case.known_gap is not None and (case.deployment_ids is None or not case.known_gap.reason.strip()):
+        problems.append('known_gap only on a route with deployment_ids, with its reason')
     return problems
 
 
@@ -577,8 +684,16 @@ _ROLE_IDS = {'A': {'sub': 'a'}, 'B': {'sub': f'{B_MARK}-b'}, UNKNOWN: {'sub': 'u
                body={'role': 'editor'}), 'shared'),
     (RouteCase(no_ids='none', shared={'sub': 'sub-vic'}, body={'role': 'editor'}, literals={'editor': 'a role'}),
      "'sub-vic' is neither"),
+    (RouteCase(ids=_ROLE_IDS, without_a_workspace='as before', deployment_ids={'sub': 'd', 'other': 'e'}),
+     'deployment_ids must name'),
+    (RouteCase(ids=_ROLE_IDS, deployment_ids={'sub': 'd'}), 'deployment_ids must name'),
+    (RouteCase(ids=_ROLE_IDS, without_a_workspace='as before', known_gap=KnownGap('open', (404, {}), (200, {}))),
+     'known_gap only'),
+    (RouteCase(ids=_ROLE_IDS, without_a_workspace='as before', deployment_ids={'sub': 'd'},
+               known_gap=KnownGap(' ', (404, {}), (200, {}))), 'known_gap only'),
 ], ids=['an-id-as-a-literal', 'a-number', 'a-placeholder-not-in-ids', 'ids-and-no-ids', 'path-ids-missing',
-        'a-shared-name-that-is-no-path-parameter', 'a-shared-value-with-no-reason'])
+        'a-shared-name-that-is-no-path-parameter', 'a-shared-value-with-no-reason', 'deployment-ids-naming-more',
+        'deployment-ids-on-a-route-not-kept', 'a-gap-without-deployment-ids', 'a-gap-without-a-reason'])
 def test_a_case_that_does_not_name_its_ids_is_caught(case, problem):
     assert [p for p in case_problems(_ROLE_ROUTE, case) if problem in p] != []
 
@@ -670,13 +785,16 @@ def _workspace_rows() -> dict[str, list[str]]:
 def check_missing_header(world: World, case: RouteCase, route: str, caller: dict = ADA) -> None:
     """Check 3: no header -> the 400 of shared/workspace.py, nothing changed; for a route that keeps the deployment's
     row without a workspace, its normal status (403 for a caller outside the deployment's ``admins`` when the case
-    says the route is theirs without a workspace), no row of A or B changed, nothing of A's or B's answered."""
+    says the route is theirs without a workspace), no row of A or B changed, nothing of A's or B's answered; for one
+    that refuses a workspace's ids there (``deployment_ids``), that request names the deployment's own row, and A's
+    ids are refused exactly as unknown ones, nothing changed."""
     if not case.without_a_workspace:
         answer = _refused(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=caller)
         assert answer == (400, {'success': False, 'error': MISSING_HEADER}), f'{route}: {answer}'
         return
     before = _workspace_rows()
-    status, body = _send(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=caller)
+    ids = case.deployment_ids if case.deployment_ids is not None else case.ids.get('A', {})
+    status, body = _send(world, case, route, ws=None, ids=ids, caller=caller)
     in_admins = 'admins' in get_caller_groups({'requestContext': {'authorizer': {'claims': caller}}})
     normal = case.ok_status if case.status_without_a_workspace is None else case.status_without_a_workspace
     expected = 403 if case.deployment_admins_without_a_workspace and not in_admins else normal
@@ -684,6 +802,18 @@ def check_missing_header(world: World, case: RouteCase, route: str, caller: dict
     assert _workspace_rows() == before, f'{route} without a workspace changed a workspace row'
     assert not _holds_b(body), f'{route} answered with B data without a workspace: {body}'
     assert not _holds_a(body), f'{route} answered with A data without a workspace: {body}'
+    if case.deployment_ids is not None:
+        # A route that refuses a workspace's ids deployment-wide: A's are refused there exactly as unknown ones.
+        answer = _refused(world, case, route, ws=None, ids=case.ids['A'], caller=caller)
+        assert not _holds_a(answer[1]), f"{route} answered A's ids with A data without a workspace: {answer}"
+        unknown = _refused(world, case, route, ws=None, ids=case.ids[UNKNOWN], caller=caller)
+        if case.known_gap is not None:
+            gap = case.known_gap
+            assert (answer, unknown) == (gap.a_answer, gap.unknown_answer), (
+                f"{route} without a workspace answers A's ids {answer} and unknown ones {unknown}, not its known gap"
+                + (': it is closed, drop known_gap' if answer == unknown else ''))
+        else:
+            assert answer == unknown, f"{route} without a workspace tells A's ids from unknown ones: {answer}"
 
 
 def check_inside_a(world: World, case: RouteCase, route: str) -> None:
@@ -904,6 +1034,52 @@ def test_an_answer_that_tells_b_ids_from_unknown_ones_is_caught(lambda_context):
         check_other_workspace_ids(world, CASES[_ROLE], _ROLE[1])
 
 
+_REFUSING = sorted(key for key, case in CASES.items() if case.deployment_ids is not None)
+
+
+def test_every_route_that_refuses_a_workspaces_id_is_a_form_route():
+    """The proof below patches the forms' refusal: a route of another file with ``deployment_ids`` needs its own."""
+    assert _REFUSING
+    assert {file for file, _ in _REFUSING} == {'feedback_form_handler.py'}
+
+
+@pytest.mark.parametrize(('file', 'route'), _REFUSING)
+def test_a_deployment_write_that_takes_a_workspaces_id_is_caught(file, route, lambda_context):
+    """Without ``_refuse_a_workspaces_id`` a deployment-wide write takes A's id (the deployment's copy there): check 3
+    fails, so its proof that A's ids are refused as unknown ones is not vacuous (every case's A ids have a copy)."""
+    import feedback_form_handler
+
+    with WORLDS[file](lambda_context) as world, \
+            patch.object(feedback_form_handler, '_refuse_a_workspaces_id', lambda *_args: None), \
+            pytest.raises(AssertionError, match=r"changed a table|tells A's ids from unknown ones|not its known gap"):
+        check_missing_header(world, CASES[(file, route)], route, ADA)
+
+
+@pytest.mark.parametrize(('refusal', 'found'), [
+    (f'Form of {WS_A}', 'with A data'),
+    ('Gone', 'not its known gap'),
+], ids=['naming-a', 'another-answer'])
+def test_a_known_gap_answering_otherwise_is_caught(refusal, found, lambda_context):
+    """The form's delete without the header: any other refusal of A's id than its known gap's fails check 3 (a
+    pinned pair, not "any two answers that differ"); one that names A fails as A data."""
+    import feedback_form_handler
+    from shared.exceptions import NotFoundError
+
+    route = 'DELETE /feedback-forms/<form_id>'
+    case = CASES[('feedback_form_handler.py', route)]
+    real = feedback_form_handler._refuse_a_workspaces_id
+
+    def answering_otherwise(form_id: str, failure_message: str) -> None:
+        if form_id == case.ids['A']['form_id']:
+            raise NotFoundError(refusal)
+        real(form_id, failure_message)
+
+    with WORLDS['feedback_form_handler.py'](lambda_context) as world, \
+            patch.object(feedback_form_handler, '_refuse_a_workspaces_id', answering_otherwise), \
+            pytest.raises(AssertionError, match=found):
+        check_missing_header(world, case, route, ADA)
+
+
 _IMPORT = 'from shared.workspace import resolve_workspace\n\n\n'
 
 
@@ -977,6 +1153,69 @@ def test_the_mcp_credentials_resolver_resolves_first():
     function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'pinned_workspace')
     function.body = [function.body[0], ast.Return(value=ast.Constant(value=None))]
     assert 'pinned_workspace' not in resolving_functions(tree)[0]
+
+
+def _method(tree: ast.Module, cls: str, name: str) -> ast.FunctionDef:
+    klass = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == cls)
+    return next(node for node in klass.body if isinstance(node, ast.FunctionDef) and node.name == name)
+
+
+def test_the_data_path_resolver_resolves_first():
+    """shared/workspace_request.py ``RequestWorkspace.context`` counts as a resolver: after its docstring, its one
+    guard answers ``None`` for a request that names no workspace before any read or write (the deployment as before;
+    check 3 runs that path), and every other path resolves first (``resolve_workspace``, in a ``try`` whose handler
+    only logs and re-raises); ``scope``'s first statement is ``context``. Either change would fail here."""
+    tree = ast.parse((API_DIR.parent / 'shared' / 'workspace_request.py').read_text(encoding='utf-8'))
+    context = _method(tree, 'RequestWorkspace', 'context')
+    docstring, guard, *rest = context.body
+    assert isinstance(docstring, ast.Expr)
+    assert ast.unparse(guard) == 'if not names_a_workspace(event):\n    return None'
+    # The guard's own test: a header that is there, empty or not, is never read as "no header".
+    names = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'names_a_workspace')
+    assert ast.unparse(names.body[-1]) == 'return request_header(event, WORKSPACE_HEADER) is not None'
+    # The real module, with the method's body after its guard lifted to a module function: it resolves first through
+    # the module's own import of the resolver (from shared/workspace.py, never rebound there).
+    tree.body.append(ast.FunctionDef(name='lifted_context', args=context.args, body=[docstring, *rest],
+                                     decorator_list=[], returns=None, type_params=[]))
+    ast.fix_missing_locations(tree)
+    assert 'lifted_context' in resolving_functions(tree)[0]
+    scope = _method(tree, 'RequestWorkspace', 'scope')
+    assert ast.unparse(scope.body[1]) == 'context = self.context(event)'
+
+
+_INSTANCE = 'from shared.workspace_request import RequestWorkspace\n\n_workspace = RequestWorkspace()\n\n\n'
+
+
+@pytest.mark.parametrize(('source', 'resolves'), [
+    (_INSTANCE + '@app.put("/x")\ndef r():\n    context = _workspace.context(e, fresh=True)\n    return {}\n', True),
+    (_INSTANCE + '@app.get("/x")\ndef r():\n    scope = _workspace.scope(e)\n    return {}\n', True),
+    (_INSTANCE + 'def _scope(e):\n    context = _workspace.context(e)\n    if context is None:\n        return None\n'
+     '    return context\n\n\n@app.get("/x")\ndef r():\n    s = _scope(e)\n    return {}\n', True),
+    (_INSTANCE + '@app.get("/x")\ndef r():\n    t.put_item(Item=i)\n    _workspace.context(e)\n', False),
+    (_INSTANCE + '@app.get("/x")\ndef r():\n    _workspace.memberships(e)\n    return {}\n', False),
+    (_INSTANCE + '_workspace = other\n\n\n@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+    (_INSTANCE + '@app.get("/x")\ndef r(_workspace=noop):\n    _workspace.context(e)\n', False),
+    (_INSTANCE.replace('import RequestWorkspace', 'import RequestWorkspace as R').replace('= RequestWorkspace', '= R')
+     + '@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+    (_INSTANCE.replace('shared.workspace_request', 'shared.other')
+     + '@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+    (_INSTANCE + '@app.get("/x")\ndef r():\n    if q:\n        _workspace.context(e)\n    return {}\n', False),
+    (_INSTANCE + 'from x import y as _workspace\n\n\n@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+    (_INSTANCE + 'def _workspace():\n    return 1\n\n\n@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+    (_INSTANCE + 'try:\n    pass\nexcept E as _workspace:\n    pass\n\n\n'
+     '@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+    (_INSTANCE + '_workspace.context = noop\n\n\n@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+    (_INSTANCE.replace('_workspace = RequestWorkspace()', 'RequestWorkspace = Fake\n_workspace = RequestWorkspace()')
+     + '@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+    (_INSTANCE + 'def f():\n    global _workspace\n    _workspace = other\n\n\n'
+     '@app.get("/x")\ndef r():\n    _workspace.context(e)\n', False),
+], ids=['context', 'scope', 'a-helper-whose-none-is-the-deployment', 'write-before', 'not-a-resolving-method',
+        'rebound', 'shadowed-by-a-parameter', 'aliased-class', 'another-module', 'conditional', 'rebound-by-an-import',
+        'rebound-by-a-def', 'rebound-by-an-except', 'a-method-replaced', 'the-class-rebound', 'rebound-by-a-global'])
+def test_the_detector_reads_the_data_path_resolver_only_where_listed(source, resolves):
+    assert routes_resolving_the_workspace(source, instance_resolvers=True) == {f'{source.split("@app.")[1][:3].upper()} /x': resolves}
+    # A file not in INSTANCE_RESOLVER_FILES: its instance is not read (the route stays pending).
+    assert routes_resolving_the_workspace(source) == {f'{source.split("@app.")[1][:3].upper()} /x': False}
 
 
 def test_a_route_calling_the_shared_resolver_resolves_the_workspace():

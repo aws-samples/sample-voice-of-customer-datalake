@@ -24,7 +24,7 @@ and, when the list is the platform's, where its listing is:
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
@@ -100,6 +100,18 @@ def listing_start(now: datetime) -> dict[str, Any]:
 def one_start(ws: str) -> dict[str, Any]:
     """The cursor of a walk over one workspace."""
     return {'ws': [ws], 'listing_done': True, 'at': {}}
+
+
+#: The flag a walk's cursor carries once the deployment's own part is done (the projects walk, project_people.py, and
+#: the participants', participants.py; a one-workspace job's cursor has none).
+DEPLOYMENT_DONE: Final = 'deployment_done'
+
+
+def start(run: Mapping[str, Any], clock: Callable[[], datetime]) -> dict[str, Any]:
+    """The first cursor of a walk of the run's workspaces: the one a job names (``one_start``), else the platform's
+    listing, begun now (``listing_start``)."""
+    only = named(run)
+    return one_start(only) if only is not None else listing_start(clock())
 
 
 def checked_page(run: Mapping[str, Any], here: Mapping[str, Any]) -> list[str]:

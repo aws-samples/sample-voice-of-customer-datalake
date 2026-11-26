@@ -127,13 +127,12 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from jobs.retention import exports, workspaces
-from jobs.retention.boards import ERASE_FIELD
 from jobs.retention.copies import tombstone_record
 from jobs.retention.members import MEMBER_PERSON_FIELDS, STORE_MEMBERS
 from jobs.retention.runs import (
     DEPLOYMENT_FOUND,
     DEPLOYMENT_WALKED,
-    MODE_ERASE,
+    email_without_source,
     note_review_file,
     note_unchecked_file,
 )
@@ -190,9 +189,10 @@ STORE_PROJECTS: Final = 'workspace_projects'
 #: The tombstones' source and partition of the deployment's rows (``AUDIT#tombstone#deployment_projects``, 7.48.00).
 STORE_DEPLOYMENT_PROJECTS: Final = 'deployment_projects'
 #: The part of the phase's cursor that walks the deployment's own projects (first, before the listed workspaces), and
-#: the flag the cursor carries once they are done (a cursor with neither walks them first).
+#: the flag the cursor carries once they are done (workspaces.py ``DEPLOYMENT_DONE``; a cursor with neither walks them
+#: first).
 DEPLOYMENT: Final = 'deployment'
-DEPLOYMENT_DONE: Final = 'deployment_done'
+DEPLOYMENT_DONE: Final = workspaces.DEPLOYMENT_DONE
 #: Set in the ``deployment`` part of a cursor carried from 7.43.00 (its listing already under way, kept as it is).
 _CARRIED: Final = 'carried'
 #: A row that changed meanwhile is read again and rewritten at most this many times, then the job fails.
@@ -246,8 +246,7 @@ def applies(run: Mapping[str, Any], tables: Mapping[str, Any]) -> bool:
     """An erasure by email that is not limited to a source, with voc-projects configured: a workspace's own erasure
     walks that workspace; the deployment's walks its own projects (since 7.48.00) and then, with voc-workspaces
     configured, every listed workspace's."""
-    return (run.get('mode') == MODE_ERASE and run.get('field') == ERASE_FIELD and not run.get('source')
-            and 'projects' in tables)
+    return email_without_source(run) and 'projects' in tables
 
 
 def decoded_text(data: bytes) -> str | None:
@@ -299,12 +298,7 @@ class ProjectPeopleEraser:
         the cursor says ``deployment_done``), then the listed workspaces. A deployment job's cursor that says neither
         (a 7.43.00 hand-over carried across the upgrade) walks the deployment first, then goes on where it was."""
         only = workspaces.named(self._run)
-        if cursor:
-            here = dict(cursor)
-        elif only:
-            here = workspaces.one_start(only)
-        else:
-            here = workspaces.listing_start(self._clock())
+        here = dict(cursor) if cursor else workspaces.start(self._run, self._clock)
         if only is None and DEPLOYMENT not in here and here.get(DEPLOYMENT_DONE) is not True:
             # A carried 7.43.00 cursor keeps its listing state as it is; a fresh one takes it again at the end.
             here[DEPLOYMENT] = {_CARRIED: True} if cursor else {}

@@ -6,7 +6,9 @@ phase therefore moves the de-identified +1 to a NEW random support id, in ONE Tr
 
 - Put the de-identified row under ``SUP#{new id}`` (same request, same field values, ``is_reporter``
   and ``created_at`` kept, no email, no name, ``deidentified_at`` set), only where none is;
-- Delete the old ``SUP#{old id}`` row, only while it still exists.
+- Delete the old ``SUP#{old id}`` row, only while it is still the row as read (since 7.72.03: its ``updated_at``
+  unchanged, so an edit between the read and the write is never lost; the boards phase reads it again and tries
+  again, at most ``boards.MAX_TRIES`` times, then fails the job, ``SupportKeptChanging``).
 
 The request row stores no support id (its own id is random), so nothing else carries the old id.
 The tombstone names the new id only. The request's totals are then recomputed by the store's own
@@ -44,11 +46,13 @@ def new_support_id() -> str:
     return new_id(SUPPORT_PREFIX)
 
 
-def deidentified_support(row: Mapping[str, Any], support_id: str) -> dict[str, Any]:
-    """The +1 under ``support_id``: every value but the person's, the old key and the old id."""
+def deidentified_support(row: Mapping[str, Any], support_id: str,
+                         also: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """The +1 under ``support_id``: every value but the person's (and ``also``: its ``contact_email`` when the erased
+    address is that too, 7.72.00), the old key and the old id."""
     request_id = str(row.get('request_id') or str(row['pk']).removeprefix('FR#'))
     now = now_iso()
-    kept = {key: value for key, value in row.items() if key not in _DROPPED}
+    kept = {key: value for key, value in row.items() if key not in _DROPPED | also}
     return {**kept, **support_key(request_id, support_id), 'support_id': support_id, 'request_id': request_id,
             DEIDENTIFIED_FIELD: now, 'updated_at': now}
 
@@ -61,23 +65,61 @@ def current_support(table: Any, request_id: str, support_id: str) -> dict[str, A
         return None
 
 
-def rekey(table: Any, row: Mapping[str, Any], support_id: str) -> bool:
-    """Move the +1 ``row`` (read by ``current_support``) to ``support_id`` without its email and name.
+class SupportKeptChanging(RuntimeError):
+    """A +1 changed between its read and every one of the boards phase's re-key tries: the job fails, naming its
+    request (never the +1's id, which derives from the supporter's address, nor the address), and an admin reruns it."""
 
-    False when it was removed or re-keyed between the read and the write (the transaction's conditions).
-    """
+
+#: ``rekey``'s outcomes: moved; the old row gone (removed or re-keyed meanwhile: nothing to do); the old row changed
+#: since it was read (or the transaction met a concurrent write, or the new id was taken: read it again and retry).
+SUPPORT_REKEYED: Final = 'support_rekeyed'
+SUPPORT_GONE: Final = 'support_gone'
+SUPPORT_CHANGED: Final = 'support_changed'
+_OLD_ROW: Final = 1  # the Delete's place in the transaction, and so in ``CancellationReasons``
+_RETRIED: Final = frozenset({'None', 'ConditionalCheckFailed', 'TransactionConflict'})
+
+
+def _cancelled(error: ClientError) -> str:
+    """What a cancelled re-key's ``CancellationReasons`` say: ``SUPPORT_GONE`` when the Delete's condition failed with
+    no old row returned (``ReturnValuesOnConditionCheckFailure``: the row is not there), ``SUPPORT_CHANGED`` for every
+    other condition failure or conflict, and missing or short reasons (the caller's next read decides); any other code
+    raises the error."""
+    reasons = list(error.response.get('CancellationReasons') or [])
+    if not {str(reason.get('Code') or 'None') for reason in reasons} <= _RETRIED:
+        raise error
+    old = reasons[_OLD_ROW] if len(reasons) > _OLD_ROW else {}
+    if old.get('Code') == 'ConditionalCheckFailed' and not old.get('Item'):
+        return SUPPORT_GONE
+    return SUPPORT_CHANGED
+
+
+def rekey(table: Any, row: Mapping[str, Any], support_id: str, also: frozenset[str] = frozenset()) -> str:
+    """Move the +1 ``row`` (read by ``current_support``) to ``support_id`` without its email and name (and ``also``):
+    ``SUPPORT_REKEYED``, ``SUPPORT_GONE`` or ``SUPPORT_CHANGED``.
+
+    The Delete of the old row holds only while it is the row as read (7.72.03): its ``updated_at`` the one read
+    (``attribute_not_exists`` when it had none; the store's writers of a +1 set it), so an edit landing after the read
+    cancels the move instead of being overwritten by the read's values; the cancellation's reasons tell a gone row
+    from a changed one (``_cancelled``)."""
     old_key = {'pk': row['pk'], 'sk': row['sk']}
+    seen = row.get('updated_at')
+    unchanged = ('attribute_exists(pk) AND updated_at = :seen' if seen is not None
+                 else 'attribute_exists(pk) AND attribute_not_exists(updated_at)')
+    delete: dict[str, Any] = {'TableName': table.name, 'Key': old_key, 'ConditionExpression': unchanged,
+                              'ReturnValuesOnConditionCheckFailure': 'ALL_OLD'}
+    if seen is not None:
+        delete['ExpressionAttributeValues'] = {':seen': seen}
     try:
         table.meta.client.transact_write_items(TransactItems=[
-            {'Put': {'TableName': table.name, 'Item': deidentified_support(row, support_id),
+            {'Put': {'TableName': table.name, 'Item': deidentified_support(row, support_id, also),
                      'ConditionExpression': 'attribute_not_exists(pk)'}},
-            {'Delete': {'TableName': table.name, 'Key': old_key, 'ConditionExpression': 'attribute_exists(pk)'}},
+            {'Delete': delete},
         ])
     except ClientError as error:
         if error.response.get('Error', {}).get('Code') == 'TransactionCanceledException':
-            return False  # the +1 was removed (or re-keyed) meanwhile
+            return _cancelled(error)
         raise
-    return True
+    return SUPPORT_REKEYED
 
 
 def recount(table: Any, request_id: str) -> None:

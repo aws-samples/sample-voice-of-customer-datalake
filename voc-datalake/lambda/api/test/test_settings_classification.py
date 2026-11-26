@@ -112,17 +112,17 @@ class TestSources:
 class TestErasure:
     def test_start_stores_only_the_hash_and_invokes_the_worker(self, route, invoke, table):
         response, body = route('POST', '/settings/erasure',
-                               body={'field': 'email', 'legal_basis': BASIS, 'value': ' ana@example.com ', 'source': 'support_tickets'})
+                               body={'field': 'email', 'legal_basis': BASIS, 'value': ' account.manager@example.com ', 'source': 'support_tickets'})
         assert response['statusCode'] == 202
         job = body['job']
         assert job['job_id'].startswith('er_')
         assert job['status'] == 'queued'
-        assert job['value_hash'] == hashlib.sha256(b'ana@example.com').hexdigest()
+        assert job['value_hash'] == hashlib.sha256(b'account.manager@example.com').hexdigest()
         assert (job['deleted_items'], job['deleted_objects'], job['source']) == (0, 0, 'support_tickets')
         invoke.assert_called_once_with(
-            'voc-retention', {'mode': 'erase', 'job_id': job['job_id'], 'value': 'ana@example.com'})
+            'voc-retention', {'mode': 'erase', 'job_id': job['job_id'], 'value': 'account.manager@example.com'})
         stored = table.get_item(Key={'pk': 'JOB#erasure', 'sk': job['job_id']})['Item']
-        assert 'ana@example.com' not in str(stored)
+        assert 'account.manager@example.com' not in str(stored)
 
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize('body', [
@@ -139,7 +139,7 @@ class TestErasure:
 
     @pytest.mark.parametrize('basis', [None, '', '   ', 7, 'b' * 301])
     def test_an_erasure_without_a_legal_basis_is_400_and_starts_nothing(self, route, invoke, table, basis):
-        body = {'field': 'author', 'value': 'Jane', **({} if basis is None else {'legal_basis': basis})}
+        body = {'field': 'author', 'value': 'Account manager', **({} if basis is None else {'legal_basis': basis})}
         response, answer = route('POST', '/settings/erasure', body=body)
         assert response['statusCode'] == 400
         assert 'legal_basis' in answer['error']
@@ -149,7 +149,7 @@ class TestErasure:
     @pytest.mark.usefixtures('invoke')
     def test_the_legal_basis_is_stored_trimmed_on_the_job_and_shown_in_its_view(self, route, table):
         response, body = route('POST', '/settings/erasure',
-                               body={'field': 'author', 'value': 'Jane', 'legal_basis': f'  {BASIS} '})
+                               body={'field': 'author', 'value': 'Account manager', 'legal_basis': f'  {BASIS} '})
         assert (response['statusCode'], body['job']['legal_basis']) == (202, BASIS)
         stored = table.get_item(Key={'pk': 'JOB#erasure', 'sk': body['job']['job_id']})['Item']
         assert stored['legal_basis'] == BASIS
@@ -158,7 +158,7 @@ class TestErasure:
 
     @pytest.mark.usefixtures('invoke')
     def test_the_starter_sub_is_kept_for_its_end_notice_and_never_shown(self, route, table):
-        _, body = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'Jane', 'legal_basis': BASIS})
+        _, body = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'Account manager', 'legal_basis': BASIS})
         stored = table.get_item(Key={'pk': 'JOB#erasure', 'sk': body['job']['job_id']})['Item']
         assert stored['started_by_sub']
         _, listed = route('GET', '/settings/erasure')
@@ -194,6 +194,18 @@ class TestErasure:
         assert (view['deployment_projects_walked'], view['deployment_rows_found']) == (False, 'scan')
         bare = settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
         assert [name for name in bare if name.startswith('deployment_')] == []
+
+    def test_the_job_view_says_whether_the_participants_were_reached_and_how_many_were_erased(self):
+        """7.72.00 (3g2): the participants an erasure by email erased, and whether it looked in voc-participants."""
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'participants_walked': True, 'participants_complete': False,
+            'participants_erased': 3, 'participants_not_erased': 1})
+        assert (view['participants_walked'], view['participants_complete'], view['participants_erased'],
+                view['participants_not_erased']) == (True, False, 3, 1)
+        assert settings_handler.erasure_job_view({'job_id': 'er_000000000002', 'participants_walked': False})[
+            'participants_walked'] is False
+        bare = settings_handler.erasure_job_view({'job_id': 'er_000000000003'})
+        assert [name for name in bare if name.startswith('participants_')] == []
 
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize('field', ['source_id', 'csv_row_id'])

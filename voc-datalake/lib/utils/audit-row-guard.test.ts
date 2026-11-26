@@ -28,7 +28,9 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
     // A workspace's hard delete: its tombstones (AUDIT#tombstone#* only, the one-partition Deny below).
     'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole'],
   ProjectsTable: ['VocApiStack/PersonaGeneratorRole', 'VocApiStack/ProjectsLambdaRole'],
-  ParticipantsTable: ['VocApiStack/EngagementLambdaRole'],
+  // voc-retention since 7.72.00 (projects 3g2): a participant's tombstone and delete record, its PutItem pinned to
+  // those two partitions (lib/stacks/retention-worker.ts).
+  ParticipantsTable: ['VocApiStack/EngagementLambdaRole', 'VocProcessingStack/RetentionWorkerRetentionRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
   ConversationsTable: ['VocApiStack/ChatLambdaRole'],
   // A platform admin's entry, a workspace's creation and its membership changes (AUDIT#WS#<ws>); the users API a
@@ -124,11 +126,19 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings, users and feedback-form APIs, the workspace-resolution policy, the trial expiry and the workspace delete carry a one-partition deny', () => {
+  it('only the settings, users and feedback-form APIs, the workspace-resolution policy, voc-retention, the trial expiry and the workspace delete carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
     expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual(['VocApiStack/FeedbackFormLambdaRole',
       'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
-      'VocProcessingStack/TrialExpiryRole', 'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
+      'VocProcessingStack/RetentionWorkerRetentionRole', 'VocProcessingStack/TrialExpiryRole',
+      'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
+  });
+
+  it('voc-retention may put only a participant\'s tombstone and delete record in voc-participants (7.72.00)', () => {
+    expect(partitionLimits('VocProcessingStack/RetentionWorkerRetentionRole')).toStrictEqual([
+      { tables: ['ParticipantsTable'], condition: { ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#participant', 'AUDIT#delete'] } } },
+    ]);
   });
 
   it('the feedback forms put only a deployment form\'s AUDIT#delete in voc-aggregates and AUDIT#WS#* in voc-workspaces', () => {
@@ -231,7 +241,7 @@ describe('audit rows (AUDIT#*) across every stack', () => {
 
 describe('applyAuditRowGuard (one stack)', () => {
   function guarded(grant: (table: dynamodb.Table, role: iam.Role) => void, writerSuffixes: string[] = [],
-    partitionKey?: string): Template {
+    partitionKey?: string | string[]): Template {
     const app = new cdk.App();
     const stack = new cdk.Stack(app, 'S');
     const table = new dynamodb.Table(stack, 'T', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
@@ -266,13 +276,16 @@ describe('applyAuditRowGuard (one stack)', () => {
       .toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID]);
   });
 
-  it('a writer of one audit partition pattern is denied puts outside it with StringNotLike', () => {
-    const template = guarded((table, role) => table.grant(role, 'dynamodb:PutItem'), ['/R'], 'AUDIT#WS#*');
+  // A pattern is matched with StringNotLike; a few exact partitions (7.72.00) are all listed, with StringNotEquals.
+  it.each([
+    ['one audit partition pattern', 'AUDIT#WS#*', 'ForAnyValue:StringNotLike', ['AUDIT#WS#*']],
+    ['a few exact audit partitions', ['AUDIT#a', 'AUDIT#b'], 'ForAnyValue:StringNotEquals', ['AUDIT#a', 'AUDIT#b']],
+  ])('a writer of %s is denied puts outside it', (_what, partitionKey, operator, keys) => {
+    const template = guarded((table, role) => table.grant(role, 'dynamodb:PutItem'), ['/R'], partitionKey);
     const deny = Object.values(template.findResources('AWS::IAM::Policy'))
       .flatMap((policy) => IamPolicySchema.parse(policy).Properties.PolicyDocument.Statement)
       .find((statement) => statement.Sid === AUDIT_DENY_OTHER_PARTITION_SID);
-    expect(deny?.Condition).toStrictEqual({ ...AUDIT_CONDITION,
-      'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } });
+    expect(deny?.Condition).toStrictEqual({ ...AUDIT_CONDITION, [operator]: { 'dynamodb:LeadingKeys': keys } });
   });
 
   it('a reader of the guarded table gets nothing (the unguarded table it writes does not count)', () => {
