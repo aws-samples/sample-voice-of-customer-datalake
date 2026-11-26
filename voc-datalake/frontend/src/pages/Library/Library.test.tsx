@@ -1,5 +1,5 @@
 /**
- * @fileoverview The Library page (7.62.00): the list with its filters as the list's query, paging, the empty and
+ * @fileoverview The Library page: the list with its filters as the list's query, paging, the empty and
  * failed states, a viewer's read-only page, the refetch while an item is read, and the preview drawer opened by a
  * row and by `?item=&page=` (the assistant's citation chips), with its delete confirmation.
  */

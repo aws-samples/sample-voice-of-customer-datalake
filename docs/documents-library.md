@@ -1,7 +1,7 @@
 # Documents Library
 
 The Documents Library is one place for the documents a team works from that are not customer feedback: a market
-report, interview transcripts, a strategy deck, a survey export. You upload a file once, give it a title and tags,
+report, interview transcripts, a strategy deck. You upload a file once, give it a title and tags,
 and from then on any chat can use it: type `#` and its short name (`#q3-market`) in the AI assistant, and the
 assistant reads the file itself or searches it, and cites what it used.
 
@@ -99,8 +99,11 @@ raised the `tools/list` budget from 4,000 to 10,000 estimated tokens (owner deci
 | Upload, edit, retry | every signed-in user |
 | Delete | a member of the `admins` group (acting for themselves) or the uploader; never a delegated credential (an MCP token) |
 
-Category access (a person restricted to some feedback categories) does not apply to the library: an item is not
-feedback and has no category; everyone who can read the library reads all of its items.
+Category and source access (a person restricted to some feedback categories or sources) does not apply to the
+library: an item is not feedback and has no category; everyone who can read the library, and every MCP token, reads
+all of its items. So **customer feedback belongs in an import, never in the library**: a CSV or survey export of a
+restricted source uploaded here would be readable by everyone, outside that source's access and outside erasure
+(TENETS.md D5, known gaps).
 
 Linking an item to a project is only offered for a project you can see. An item linked to a private project stays
 visible in the library to everyone who can read the library; the link names the project's id only.

@@ -95,7 +95,7 @@ export function useMentions({ projectId, libraryEnabled = false, text, setText, 
       trigger,
       options: optionsFor(trigger, sources, library, live, t('mentions.allLabel')),
       active,
-      limited: atLimit(trigger.kind, live, onProject),
+      limited: atLimit(trigger.kind, live, onProject, libraryEnabled),
       loading: sources.loading || library.loading,
       libraryOnly: !onProject,
     }

@@ -221,8 +221,8 @@ def upload_is_over(item: Mapping[str, Any]) -> bool:
 def sent_as_a_file(item: Mapping[str, Any]) -> bool:
     """Whether the assistant may get the item's file itself: a native one, but never a scanned PDF (its text came from
     Amazon Bedrock, ``MODEL_METHOD``: a PDF sent with no citations is read by its empty text layer), whose passages
-    are searched instead (7.66.00). The one rule of the assistant's context (shared/library_routes.py) and of what an
-    item says of it (``public_view``'s ``native``, 7.71.00)."""
+    are searched instead. The one rule of the assistant's context (shared/library_routes.py) and of what an
+    item says of it (``public_view``'s ``native``)."""
     return bool(item.get('native')) and not (item.get('format') == 'pdf' and item.get('method') == MODEL_METHOD)
 
 

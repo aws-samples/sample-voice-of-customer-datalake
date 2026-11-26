@@ -299,8 +299,9 @@ and `scope.filters` intersect into a floor (`tools/server/feedback-floor.ts`) th
 outside it matches nothing, a filter a route cannot apply is refused; `limit` (default 1000) caps the
 reviews one read uses. The panel's live count reads `GET /metrics/sentiment`.
 **Mentions** (5.46, docs/assistant-mentions.md): on a project page the composer's `@` / `#` lists put
-`forwardedProps.mentions = {personas?: [ids] | 'all', documents?: [{document_id, version?}]}` (≤ 6 / ≤ 3,
-`mentionsSchema`, lockstepped; refused off a project page). Before the model's turn the stream runs a persona
+`forwardedProps.mentions = {personas?: [ids] | 'all', documents?: [{document_id, version?}], library?: [{item_id}]}`
+(≤ 6 / ≤ 3 / ≤ 3, `mentionsSchema`, lockstepped; personas and documents refused off a project page, a Documents
+Library item's `#slug` on every page: docs/documents-library.md). Before the model's turn the stream runs a persona
 round (`runtime/persona-round.ts`): one `consult_personas` call per persona (ids `mention_…`, one assistant
 message, review only, grounded on the tagged documents), then a `<mentions>` data block for a short synthesis.
 `consult_personas` takes `document_ids` (≤ 3). Persona results are stored JSON-safe (32,000 chars,

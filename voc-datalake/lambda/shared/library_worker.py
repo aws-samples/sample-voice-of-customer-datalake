@@ -110,7 +110,7 @@ def _fail(table: Any, item_id: str, token: str, message: str) -> None:
 def _still_claimed(table: Any, item_id: str) -> bool:
     """Whether a claim still holds the item after this run's ready write was refused: another run's (a retry's
     token), or this run's own token on an item already ready (a duplicate delivery of the same event, overlapping this
-    one, finished first: 7.66.00). Either keeps the passages and the text; only an item gone, or one whose claim a
+    one, finished first). Either keeps the passages and the text; only an item gone, or one whose claim a
     delete revoked (no token: shared/library_store.py ``revoke_claim``), drops them."""
     current = get_item(table, item_id, consistent=True)
     held = current.get('extract_token') if current is not None else None

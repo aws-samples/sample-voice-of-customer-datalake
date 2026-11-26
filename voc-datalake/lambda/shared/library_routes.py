@@ -347,7 +347,7 @@ def delete_library_item(item_id: str):
     delete_chunks(_table(), item_id)
     refused = LibraryObjects().delete_item(item_id)
     if refused:
-        # (7.66.00: the rows stay, so the item is there to delete again: never files that no item names)
+        # (the rows stay, so the item is there to delete again: never files that no item names)
         logger.warning('Some versions of a deleted library item were refused', extra={'refused': refused})
         raise ServiceUnavailableError('Some of the file could not be deleted yet. Delete the item again.')
     store.delete_item_rows(_table(), item)

@@ -520,9 +520,9 @@ function spyOnObservers(): { readonly live: () => number; readonly restore: () =
   }
 }
 
-describe('ModalShell alignment (7.49.00)', () => {
-  // The shell renders where its trigger sits (no portal): a control in a `text-right` wrapper (Agents → the agent's
-  // Set up, 7.47.00) right-aligned every title, label and hint of its dialog. The shell starts its text from the start.
+describe('ModalShell alignment', () => {
+  // The shell renders where its trigger sits (no portal): a control in a `text-right` wrapper right-aligned every
+  // title, label and hint of its dialog. The shell starts its text from the start.
   it('never inherits the alignment of the wrapper it is rendered in', () => {
     render(
       <div className="text-right">

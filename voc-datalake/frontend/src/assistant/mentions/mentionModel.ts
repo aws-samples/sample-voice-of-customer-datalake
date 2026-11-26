@@ -113,9 +113,10 @@ export function libraryFull(picks: readonly MentionPick[]): boolean {
 }
 
 /** Whether nothing more of a trigger's kinds may be picked (`#`: neither a document nor a library item; `@all` counts
- *  as full). `withDocuments` false: off a project page, `#` offers the library alone. */
-export function atLimit(kind: MentionKind, picks: readonly MentionPick[], withDocuments = true): boolean {
-  if (kind === 'document') return (!withDocuments || documentsFull(picks)) && libraryFull(picks)
+ *  as full). `withDocuments` false: off a project page, `#` offers the library alone; `withLibrary` false: the
+ *  Library is switched off (`menuStatus.library`), so `#` offers the project's documents alone. */
+export function atLimit(kind: MentionKind, picks: readonly MentionPick[], withDocuments = true, withLibrary = true): boolean {
+  if (kind === 'document') return (!withDocuments || documentsFull(picks)) && (!withLibrary || libraryFull(picks))
   return picks.some((pick) => pick.kind === 'all')
     || picks.filter((pick) => pick.kind === 'persona').length >= MENTION_LIMITS.maxPersonas
 }

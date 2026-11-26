@@ -31,8 +31,9 @@ library. No new API Gateway resource (the projects API's `/projects/{proxy+}`), 
   Excel, PowerPoint, CSV, HTML, text, Markdown up to 25 MB; PNG, JPEG, GIF, WebP up to 3.75 MB; other types refused
   with a clear message), each with a title, a short name (`slug`), a source, a date, tags and an optional project;
   search, tag and project filters and a sort; a side-sheet preview with the extracted text page by page and a 5-minute
-  download link; edit (a stale edit is refused), retry, and delete by an admin or the uploader. An item extracting, or
-  still waiting for its file, 16 minutes after it started reads **Stopped** and can be read again or deleted.
+  download link; edit (a stale edit is refused), retry, and delete by an admin or the uploader. An item still
+  extracting 16 minutes after it started reads **Stopped** and can be read again; one still waiting for its file 16
+  minutes after it was added reads **Stopped** too, and is deleted and uploaded again (its upload link lasts 15).
 - **Text extracted once** on the projects API's 15-minute assist twin: the standard library for text, Markdown, CSV,
   HTML and Office XML, `pypdf` for a PDF's text layer, Amazon Bedrock (the Documents model) for a scanned PDF, a legacy
   `.doc` / `.xls` and an image's description. Passages of about 1,800 characters, embedded with Titan Text Embeddings
