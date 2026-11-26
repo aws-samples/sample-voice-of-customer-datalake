@@ -260,7 +260,7 @@ def retry_library_item(item_id: str):
         raise ConflictError('The file never arrived. Delete this item and upload it again.', code='not_uploaded')
     if status == 'failed' or store.extraction_is_over(item):
         return _start_extraction(item, when=(str(status),))
-    raise ConflictError('Only a failed item can be extracted again.', code='not_failed')
+    raise ConflictError('Only a failed or stopped item can be read again.', code='not_failed')
 
 
 # ── Read one ────────────────────────────────────────────────────────────────────────────────────────────────────
