@@ -674,7 +674,48 @@ def library_world(lambda_context: Any) -> Generator[World]:
                     doubles={'cognito': cognito, 'extraction': invoke_async})
 
 
+# ── voc-feedback-edit-api (lambda/api/feedback_edit_handler.py): a review's category and dimensions ──
+
+#: A review of each workspace, and the deployment's copy under A's id (a request that names no workspace edits it).
+FEEDBACK_A = 'fa1'
+FEEDBACK_B = f'{B_MARK}-fb1'
+_FEEDBACK_IDS = {'A': {'feedback_id': FEEDBACK_A}, 'B': {'feedback_id': FEEDBACK_B},
+                 UNKNOWN: {'feedback_id': 'f-nowhere'}}
+#: The deployment edits as before without the header: its own review under A's id, no workspace's.
+_DEPLOYMENT_REVIEW = "the deployment as before: its own review under that id, no workspace's (shared/workspace_request.py)"
+
+
+def _review(prefix: str, feedback_id: str, text: str) -> dict[str, Any]:
+    return {'pk': f'{prefix}SOURCE#web', 'sk': f'FEEDBACK#{feedback_id}', 'feedback_id': feedback_id,
+            'gsi4pk': f'{prefix}FEEDBACK#{feedback_id}', 'gsi2pk': f'{prefix}CATEGORY#delivery',
+            'gsi2sk': '-0.5#2026-01-01T00:00:00Z', 'category': 'delivery', 'subcategory': 'late', 'text': text}
+
+
+@contextmanager
+def feedback_edit_world(lambda_context: Any) -> Generator[World]:
+    """The feedback edit Lambda over two seeded workspaces, each with one review, and the deployment's review under
+    A's id; its resolver (shared/workspace_request.py ``RequestWorkspace``) reads the seeded workspaces afresh."""
+    from category_access_fixtures import CATEGORIES_CONFIG
+    from moto_helpers import feedback_by_id_table
+
+    import feedback_edit_handler
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        stack.enter_context(patch.object(feedback_edit_handler, '_workspace', RequestWorkspace(table=lambda: workspaces)))
+        feedback, aggregates = feedback_by_id_table(), pk_sk_table('aggregates')
+        aggregates.put_item(Item=CATEGORIES_CONFIG)
+        feedback.put_item(Item=_review('', FEEDBACK_A, 'the deployment review'))
+        feedback.put_item(Item=_review(f'WS#{WS_A}#', FEEDBACK_A, f'{A_MARK} parcel came late'))
+        feedback.put_item(Item=_review(f'WS#{WS_B}#', FEEDBACK_B, f'{B_MARK} chain slipped'))
+        yield World(call=_caller(feedback_edit_handler, lambda_context, feedback=feedback, aggregates=aggregates),
+                    doubles={'cognito': cognito})
+
+
 WORLDS: dict[str, Callable[[Any], Any]] = {
+    'feedback_edit_handler.py': feedback_edit_world,
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
@@ -955,4 +996,14 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the header is its only id: check 1 (the plan is kept with the workspace its approver is a member of)',
         body={'plan': _PLAN}, literals=_PLAN_LITERALS, ok_status=202,
         without_a_workspace='a plan approved without a workspace is the deployment\'s, as before'),
+    # A review's category and dimensions (shared/workspace_request.py RequestWorkspace, read afresh: an edit is a
+    # write): A's member edits A's review only; B's review id is not found in A, as an id of no review.
+    ('feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/category'): RouteCase(
+        ids=_FEEDBACK_IDS, body={'category': 'billing'},
+        literals={'billing': 'a category of the configuration, the same name in every workspace'},
+        without_a_workspace=_DEPLOYMENT_REVIEW),
+    ('feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/dimensions'): RouteCase(
+        ids=_FEEDBACK_IDS, body={'tags': ['checked']},
+        literals={'checked': 'a tag the editor typed, not a row of a workspace'},
+        without_a_workspace=_DEPLOYMENT_REVIEW),
 }

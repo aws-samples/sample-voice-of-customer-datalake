@@ -68,9 +68,27 @@ def _read_module(file: Path, package: str) -> _Module:
     return module
 
 
-def _callees(module_name: str, module: _Module, fn: _Function) -> set[FunctionKey]:
+#: The data path's resolver object (shared/workspace_request.py ``RequestWorkspace``) and the methods that resolve
+#: first (test_cross_workspace_routes.py proves it): followed in the files the caller names (``instance_files``).
+INSTANCE_RESOLVER: FunctionKey = ('shared.workspace_request', 'RequestWorkspace')
+INSTANCE_RESOLVER_METHODS = frozenset({'context', 'scope'})
+
+
+def _resolver_instances(module: _Module) -> set[str]:
+    """Every module-level ``name = RequestWorkspace(...)`` of ``module`` (the class imported from
+    shared/workspace_request.py, under any local name). Neither an alias nor whether the name is bound only there is
+    checked here: a wrong instance can only make the scan find MORE routes, which the per-file detector
+    (test_cross_workspace_routes.py ``_instance_resolvers``, which checks both) then fails on, both ways."""
+    return {stmt.targets[0].id for stmt in module.tree.body
+            if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name)
+            and isinstance(stmt.value, ast.Call) and isinstance(stmt.value.func, ast.Name)
+            and module.names.get(stmt.value.func.id) == INSTANCE_RESOLVER}
+
+
+def _callees(module_name: str, module: _Module, fn: _Function, instances: frozenset[str] = frozenset()) -> set[FunctionKey]:
     """Every function ``fn`` calls, or is wrapped by as a bare decorator (``@in_workspace``, which calls it), that
-    the module's own names and imports resolve to."""
+    the module's own names and imports resolve to; a resolving method of one of ``instances`` (the module's
+    ``RequestWorkspace`` objects, in a file followed) as the resolver itself."""
     targets = [node.func for node in ast.walk(fn) if isinstance(node, ast.Call)]
     targets += [d for d in fn.decorator_list if isinstance(d, ast.Name | ast.Attribute)]
     found: set[FunctionKey] = set()
@@ -80,7 +98,10 @@ def _callees(module_name: str, module: _Module, fn: _Function) -> set[FunctionKe
             found.add((module_name, name) if name in module.functions else module.names.get(name, ('', name)))
         elif isinstance(target, ast.Attribute):
             base = ast.unparse(target.value)   # `workspace`, `shared.board_access` (other receivers match nothing)
-            found.add((module.modules.get(base, base), target.attr))
+            if base in instances and target.attr in INSTANCE_RESOLVER_METHODS:
+                found.add(RESOLVER)
+            else:
+                found.add((module.modules.get(base, base), target.attr))
     return found
 
 
@@ -116,16 +137,20 @@ def _first_middleware(module_name: str, module: _Module) -> FunctionKey | None:
     return (module_name, name) if name in module.functions else module.names.get(name)
 
 
-def routes_reaching_the_resolver(lambda_dir: Path) -> set[tuple[str, str]]:
+def routes_reaching_the_resolver(lambda_dir: Path,
+                                 instance_files: frozenset[str] = frozenset()) -> set[tuple[str, str]]:
     """(file name, ``"METHOD /path"``) of every route in ``lambda_dir`` whose function reaches the resolver through
-    any module, or that is served under /me/workspaces/current."""
+    any module, or that is served under /me/workspaces/current. In a file of ``instance_files`` a module-level
+    ``RequestWorkspace``'s resolving methods count as the resolver (``INSTANCE_RESOLVER``)."""
     modules: dict[str, _Module] = {}
     for file in sorted(lambda_dir.rglob('*.py')):
         if NOT_PRODUCTION.isdisjoint(file.relative_to(lambda_dir).parts[:-1]) and not file.name.startswith('test_'):
             module = _read_module(file, '.'.join(file.relative_to(lambda_dir).parts[:-1]))
             for name in _module_names(lambda_dir, file):
                 modules[name] = module
-    calls = {(name, fn_name): _callees(name, module, fn)
+    instances = {name: frozenset(_resolver_instances(module)) if module.file.name in instance_files else frozenset()
+                 for name, module in modules.items()}
+    calls = {(name, fn_name): _callees(name, module, fn, instances[name])
              for name, module in modules.items() for fn_name, fn in module.functions.items()}
     resolvers = {RESOLVER}
     while more := {key for key, callees in calls.items() if callees & resolvers} - resolvers:
@@ -137,5 +162,5 @@ def routes_reaching_the_resolver(lambda_dir: Path) -> set[tuple[str, str]]:
             for name, module in modules.items()
             for fn in ast.walk(module.tree) if isinstance(fn, _Function)
             for route in _routes(fn)
-            if name in module_wide or (name, fn.name) in resolvers or _callees(name, module, fn) & resolvers
+            if name in module_wide or (name, fn.name) in resolvers or _callees(name, module, fn, instances[name]) & resolvers
             or route.split(maxsplit=1)[1].startswith(SCOPED_PREFIX)}

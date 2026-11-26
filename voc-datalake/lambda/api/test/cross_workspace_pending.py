@@ -27,10 +27,6 @@ PHASE_2: dict[str, frozenset[str]] = {
         'PUT /data-explorer/feedback',
         'PUT /data-explorer/s3',
     }),
-    'feedback_edit_handler.py': frozenset({
-        'PUT /feedback/<feedback_id>/category',
-        'PUT /feedback/<feedback_id>/dimensions',
-    }),
     # The public form routes find the workspace from FORM#{id}.
     'feedback_form_handler.py': frozenset({
         'DELETE /feedback-forms/<form_id>',

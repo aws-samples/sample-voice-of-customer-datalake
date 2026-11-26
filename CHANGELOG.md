@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.71.05] - 2026-11-26
+
+Tests only: the feedback edits' two routes leave the cross-workspace suite's pending list with their two-workspace
+cases. `PUT /feedback/{id}/category` and `PUT /feedback/{id}/dimensions` already resolved the workspace first, through
+the data path's resolver object (`shared/workspace_request.py` `RequestWorkspace`), which the suite could not see.
+
+### Changed
+- The cross-workspace suite reads a module-level `RequestWorkspace` (`_workspace = RequestWorkspace()`, bound once):
+  its `context` and `scope` count as the resolver, in the per-file detector and in the cross-module scan, for the files
+  named in `INSTANCE_RESOLVER_FILES` (`lambda/api/test/test_cross_workspace_routes.py`). The list grows one route
+  family a slice, with that family's cases, so a file whose cases are not written yet stays pending as before.
+  `test_the_data_path_resolver_resolves_first` proves `RequestWorkspace.context` resolves first on every path but the
+  one that names no workspace (on the real module, its own import of the resolver, and the guard's own test pinned);
+  the instance counts only when the module binds the class's name only by its import and the instance's only by its
+  assignment, every way Python binds a name, and never sets an attribute of it. The detector's table of shapes covers
+  it (aliased, rebound by an assignment, import, def, except or global, a method replaced, the class rebound,
+  shadowed, another module, a conditional call, a write before it).
+- `feedback_edit_handler.py`'s world (`cross_workspace_worlds.py`): two workspaces with a review each and the
+  deployment's review under A's id. Both routes pass every generated check: B's header the one 404, B's review id
+  refused in A exactly as an unknown one, without the header the deployment's review only, A's request works, B's id
+  works in B. Pending routes: 422 (85 of them phase 2).
+- The synth baseline regenerated on a real vite build for the new version (two template hashes, no name changed).
+
 ## [7.71.04] - 2026-11-25
 
 The findings 7.71.03's review gate deferred, and what the live Bug fixer runs on b- with 7.71.03 showed: a fresh run
