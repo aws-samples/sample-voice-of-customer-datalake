@@ -35,6 +35,7 @@ import {
 } from './engineering-broker';
 import { appTokensFunctionName, grantAppTokensInvoke } from './engineering-app-tokens';
 import { grantEngineeringReadiness } from './api-engineering-readiness';
+import { grantPrdProjectCheck } from './api-engineering-prd-check';
 import { grantIssuesSourceFollow } from './api-engineering-issues-sync';
 import { grantEngineeringRunReads } from './api-engineering-run-reads';
 import { agentsApiRole, grantEngineeringVoice } from './api-engineering-voice';
@@ -199,8 +200,11 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   const issues = grantIssuesSourceFollow(ctx, role);
   // A person's steering and answers on the engineering bus, and nothing else there (7.51.02, api-engineering-voice.ts).
   const voice = grantEngineeringVoice(ctx, role);
+  // A PRD's project, one of the deployment's own (7.80.00, api-engineering-prd-check.ts).
+  const prdCheck = grantPrdProjectCheck(role, ctx.props.projectsTable);
   return {
     ...readiness,
+    ...prdCheck,
     ...issues,
     ...voice,
     ENGINEERING_AGENTS: 'on',

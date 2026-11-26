@@ -74,6 +74,10 @@ vi.mock('../services/auth', () => ({
 }))
 
 import { api, fetchApi, getDateRangeParams } from './client'
+import { agentsApi } from './agentsApi'
+import { workflowDefinitionSchema, workflowsApi } from './workflowsApi'
+import type { WorkflowDefinition } from './workflowsApi'
+import { MINI_WORKFLOW } from '../test/workflowFixtures'
 import { ALL_TIME_CUSTOM_DAYS, getDaysFromRange, MAX_CUSTOM_DAYS, WIDEST_PRESET_DAYS } from './baseUrl'
 import { ApiError, apiErrorCode } from '../lib/errors'
 import { apiErrorStatus } from './apiErrorStatus'
@@ -364,6 +368,48 @@ describe('the deployment-only operator calls name no workspace, inside one too',
     mockJsonOnce({})
     await api.runSource('webscraper')
     expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
+  })
+})
+
+describe("the agents and workflows calls name no workspace, inside one too (7.80.00)", () => {
+  // The agents API acts in the workspace a request names since 7.80.00 (docs/multi-workspace.md 3g3-a), but the web
+  // app keeps the deployment's agents and workflows until the workspace Agents page ships (3g3-ui-agents): every call
+  // of agentsApi and workflowsApi goes in the deployment's scope. The answer's shape does not matter here.
+  afterEach(() => setCurrentWorkspace(null))
+
+  const AGENT = 'ag_0123456789ab'
+  const WORKFLOW = 'wf_0123456789ab'
+  const RUN = 'ar_019a2b3c4d5e0123'
+  const DEFINITION: WorkflowDefinition = workflowDefinitionSchema.parse(MINI_WORKFLOW)
+  // (an answer of the wrong shape makes the call reject: only the request it sent is checked here)
+  const answerShapeIgnored = (): null => null
+  const calls: [string, () => Promise<unknown>][] = [
+    ['agents: list', () => agentsApi.list()], ['agents: get', () => agentsApi.get(AGENT)],
+    ['agents: create', () => agentsApi.create({ name: 'Scout' })], ['agents: update', () => agentsApi.update(AGENT, {})],
+    ['agents: archive', () => agentsApi.archive(AGENT)], ['agents: enable', () => agentsApi.enable(AGENT)],
+    ['agents: disable', () => agentsApi.disable(AGENT)], ['agents: pause', () => agentsApi.pause(AGENT)],
+    ['agents: resume', () => agentsApi.resume(AGENT)], ['agents: run', () => agentsApi.run(AGENT)],
+    ['agents: runs', () => agentsApi.listRuns(AGENT)], ['agents: a run', () => agentsApi.getRun(AGENT, RUN)],
+    ['agents: events', () => agentsApi.listEvents(AGENT, RUN, 0)], ['agents: cancel', () => agentsApi.cancelRun(AGENT, RUN)],
+    ['agents: decision', () => agentsApi.decideRun(AGENT, RUN, 'stop')],
+    ['workflows: list', () => workflowsApi.list()], ['workflows: get', () => workflowsApi.get(WORKFLOW)],
+    ['workflows: a revision', () => workflowsApi.getRevision(WORKFLOW, 1)],
+    ['workflows: create', () => workflowsApi.create(DEFINITION)],
+    ['workflows: save', () => workflowsApi.save(WORKFLOW, DEFINITION, 1)],
+    ['workflows: expanded', () => workflowsApi.expanded(WORKFLOW)],
+    ['workflows: duplicate', () => workflowsApi.duplicate(WORKFLOW)],
+    ['workflows: rename', () => workflowsApi.rename(WORKFLOW, 'Renamed')],
+    ['workflows: archive', () => workflowsApi.archive(WORKFLOW)],
+    ['workflows: export', () => workflowsApi.exportDefinition(WORKFLOW)],
+    ['workflows: validate', () => workflowsApi.validate({})],
+  ]
+
+  it.each(calls)('%s', async (_name, call) => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    await call().catch(answerShapeIgnored)
+    expect(fetchMock()).toHaveBeenCalledTimes(1)
+    expect(requestHeaders(0)['X-Workspace-Id']).toBeUndefined()
   })
 })
 

@@ -10,7 +10,7 @@ import { synthProcessingTemplate } from '../test-support/processing-stack-fixtur
 import { expectSelfInvokeOnly, findWorkerFunction, workerSettings } from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
 import {
-  CONTROL_PARTITIONS, CONVERSANTS_ATTRIBUTES, CONVERSANTS_PARTITION, CONVERSATION_OWNER_PARTITIONS, EXPORT_JOB_PARTITION, MEMORY_TABLE_PARTITIONS, PROJECT_PARTITIONS, PROJECT_TABLE_PARTITIONS, WORKSPACE_DATE_PARTITIONS,
+  AGENT_TABLE_PARTITIONS, CONTROL_PARTITIONS, CONVERSANTS_ATTRIBUTES, CONVERSANTS_PARTITION, CONVERSATION_OWNER_PARTITIONS, EXPORT_JOB_PARTITION, MEMORY_TABLE_PARTITIONS, PROJECT_PARTITIONS, PROJECT_TABLE_PARTITIONS, WORKSPACE_DATE_PARTITIONS,
   WORKSPACE_EXPORT_MAX_EVENT_AGE_MINUTES,
   WORKSPACE_EXPORT_RESERVED_CONCURRENCY,
 } from './workspace-export-worker';
@@ -133,6 +133,16 @@ describe('the voc-workspace-export job', () => {
   it('is told the project tables', () => {
     expect(Object.keys(worker().Environment.Variables)).toStrictEqual(expect.arrayContaining([
       'PROJECTS_TABLE', 'JOBS_TABLE', 'PARTICIPANTS_TABLE']));
+  });
+
+  it('only Queries one workspace\'s agents registry, agents and workflows of voc-agents, on the table (7.80.00)', () => {
+    expect(AGENT_TABLE_PARTITIONS).toStrictEqual([`WS#${ONE_WORKSPACE}#AGENT_REGISTRY`, `WS#${ONE_WORKSPACE}#AGENT#*`,
+      `WS#${ONE_WORKSPACE}#WORKFLOW#*`]);
+    // Never a run's journal, the deployment's agents, workflows, plans or engineering rows, nor the listing index.
+    expect(on('Agents')).toStrictEqual([{ actions: ['dynamodb:Query'], condition: keys(AGENT_TABLE_PARTITIONS) }]);
+    expect(allowed().filter((s) => s.resource.includes('Agents')).map((s) => s.resource))
+      .not.toContainEqual(expect.stringContaining('/index/'));
+    expect(worker().Environment.Variables).toHaveProperty('AGENTS_TABLE');
   });
 
   it('holds no Scan, BatchWrite or table delete, and deletes only its own work objects', () => {

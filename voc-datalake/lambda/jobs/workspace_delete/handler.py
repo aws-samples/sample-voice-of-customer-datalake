@@ -39,7 +39,7 @@ events older than 40 minutes dropped, at most ``MAX_GENERATIONS``, two invocatio
 
 Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``WATERMARKS_TABLE``, ``RADAR_TABLE``,
 ``WORKSPACES_TABLE``, ``PROJECTS_TABLE``, ``JOBS_TABLE``, ``PARTICIPANTS_TABLE``, ``CONVERSATIONS_TABLE``,
-``RAW_DATA_BUCKET``, ``WORKSPACE_PARAMETER_PREFIX``, ``PLUGIN_IDS`` (the deployment's plugin ids, a JSON list),
+``AGENTS_TABLE`` (7.80.00), ``RAW_DATA_BUCKET``, ``WORKSPACE_PARAMETER_PREFIX``, ``PLUGIN_IDS`` (the deployment's plugin ids, a JSON list),
 ``WORKSPACE_HARD_DELETE`` (``true``: the job is built only with ``-c workspaceHardDelete=true``, and refuses every
 event without it).
 """
@@ -108,6 +108,8 @@ PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE = (
     os.environ.get(name, '') for name in ('PROJECTS_TABLE', 'JOBS_TABLE', 'PARTICIPANTS_TABLE'))
 #: voc-conversations: the members' conversations in the workspace and their owner list (sweeps.py ``conversations``).
 CONVERSATIONS_TABLE: Final = os.environ.get('CONVERSATIONS_TABLE', '')
+#: voc-agents (7.80.00): the workspace's agents, workflows and their registry (sweeps.py ``agents``).
+AGENTS_TABLE: Final = os.environ.get('AGENTS_TABLE', '')
 
 #: Hand over to a fresh invocation when less than this remains (a page's tombstones, its deletes, the checkpoint and
 #: the invoke all fit in it).
@@ -237,7 +239,8 @@ class DeleteRun:
             participants=ingest_table(scope, resource, PARTICIPANTS_TABLE),
             # The registry's read and the ids' claims, each built by the layer (sweeps.py Context.project_claims).
             project_claims=resource.Table(PROJECTS_TABLE),
-            conversations=ingest_table(scope, resource, CONVERSATIONS_TABLE), counts=run.counts,
+            conversations=ingest_table(scope, resource, CONVERSATIONS_TABLE),
+            agents=ingest_table(scope, resource, AGENTS_TABLE), counts=run.counts,
             time_left=lambda: has_time_left(context, TIME_RESERVE_MS))
         self._take_phase_from_the_row()
 

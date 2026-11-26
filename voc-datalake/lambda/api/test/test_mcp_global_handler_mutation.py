@@ -655,6 +655,21 @@ class TestToolGating:
         assert self._check(RUN_AGENT, row) == 'agents_run is not available to a project-scoped token'
         rig.cognito.admin_list_groups_for_user.assert_not_called()
 
+    def test_run_agent_is_neither_offered_nor_allowed_to_a_workspace_token(self, rig: Rig):
+        """7.80.00: a token minted inside a workspace sends its X-Workspace-Id to the agents API too, where a
+        delegated caller writes nothing (shared/agents_gate.py) and no run starts: agents_run would always be 403, so
+        it is not offered and is refused before Cognito is asked. agents_list stays (the workspace's own agents), and
+        the engineering tools stay (their routes are the deployment's and read no header)."""
+        row = _row(scope='write', minted_by_admin=True, **{gt.WORKSPACE_ATTRIBUTE: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'})
+        assert h._may_offer(RUN_AGENT, row) is False
+        assert self._check(RUN_AGENT, row) == h.REFUSED_INSIDE_A_WORKSPACE.format(tool='agents_run')
+        rig.cognito.admin_list_groups_for_user.assert_not_called()
+        assert h._may_offer(TOOLS_BY_NAME['agents_list'], row) is True
+        assert h._may_offer(TOOLS_BY_NAME['agents_get_run'], row) is True
+        assert h._may_offer(TOOLS_BY_NAME['engineering_run_get'], row) is True
+        assert gt.token_view(row, T0)['can_run_agents'] is False
+        assert gt.token_view({**row, gt.WORKSPACE_ATTRIBUTE: None}, T0)['can_run_agents'] is True
+
     def test_run_agent_needs_an_admin_mint_and_a_current_admin(self, rig: Rig):
         assert self._check(RUN_AGENT, _row(scope='write')) == ADMIN_REFUSAL
         rig.cognito.admin_list_groups_for_user.assert_not_called()
@@ -746,6 +761,17 @@ class TestRunTool:
         h._run_tool(h.ToolCall(self._shaping(), {'project_id': 'proj_a', 'workspace_id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'},
                                'proj_a'), row)
         assert rig.call_domain.call_args.kwargs['workspace'] == ws
+
+    def test_a_workspace_tokens_agents_list_asks_for_the_workspaces_agents(self, rig: Rig,
+                                                                          monkeypatch: pytest.MonkeyPatch):
+        """7.80.00: agents_list from a token minted in a workspace is GET /agents with that workspace's header (its
+        own agents, test_agents_workspace.py), never the deployment's."""
+        ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+        monkeypatch.setenv('AGENTS_FUNCTION', 'agents-fn')
+        h._run_tool(h.ToolCall(TOOLS_BY_NAME['agents_list'], {}, None), _row(**{gt.WORKSPACE_ATTRIBUTE: ws}))
+        sent = rig.call_domain.call_args
+        assert (sent.args[0].function_name, sent.args[0].method, sent.args[0].path, sent.kwargs['workspace']) == (
+            'agents-fn', 'GET', '/agents', ws)
 
     def test_an_unset_function_env_is_the_empty_name(self, rig: Rig, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv('PROJECTS_FUNCTION', raising=False)

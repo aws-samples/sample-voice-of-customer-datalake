@@ -348,7 +348,7 @@ export class VocProcessingStack extends VocStack {
       workspacesTable: props.workspacesTable,
       memoryTable: props.memoryTable,
       conversationsTable: props.conversationsTable, projectsTable, jobsTable, participantsTable: props.participantsTable,
-      rawDataBucket,
+      agentsTable: props.agentsTable, rawDataBucket,
     });
     // An export's end reaches the admin who started it (lambda/jobs/workspace_export/handler.py, docs/realtime.md).
     grantRealtimePublish(props.realtime, 'jobs', [workspaceExportWorker]);
@@ -369,7 +369,7 @@ export class VocProcessingStack extends VocStack {
         kmsKey, feedbackTable, aggregatesTable, workspacesTable: props.workspacesTable,
         memoryTable: props.memoryTable, watermarksTable: props.watermarksTable, radarTable: props.radarTable,
         projectsTable, jobsTable, participantsTable: props.participantsTable,
-        conversationsTable: props.conversationsTable, rawDataBucket,
+        conversationsTable: props.conversationsTable, agentsTable: props.agentsTable, rawDataBucket,
         pluginIds: loadPlugins(path.join(__dirname, '../../plugins')).map((plugin) => plugin.id),
       });
     }

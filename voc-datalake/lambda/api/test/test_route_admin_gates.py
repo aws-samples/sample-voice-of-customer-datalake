@@ -50,8 +50,11 @@ TWO_PATH_GATE = 'require_request_admin'
 # `require_erasure_admin` (``shared.erasure_scope``): the erasure routes' gate on both paths, `require_admin` without
 # X-Workspace-Id and `require_workspace_admin` with it (both branches pinned below, WORKSPACE_PARTIAL).
 ERASURE_GATE = 'require_erasure_admin'
+# `require_agents_admin` (``shared.agents_gate``, 7.80.00): the agents and workflows routes' gate on both paths,
+# `require_admin_caller` without X-Workspace-Id and the workspace's admin acting for themselves with it (pinned below).
+AGENTS_GATE = 'require_agents_admin'
 GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin', 'require_settings_admin',
-                             TWO_PATH_GATE, ERASURE_GATE})
+                             TWO_PATH_GATE, ERASURE_GATE, AGENTS_GATE})
 # Shared resolver middlewares that gate a whole module (checked the same way, below).
 GATE_MIDDLEWARES = frozenset({'admins_only'})
 SHARED_DIR = API_DIR.parent / 'shared'
@@ -1370,22 +1373,33 @@ def test_every_shared_gate_primitive_is_an_admin_check():
     # require_settings_admin (shared/request_workspace.py): its whole body is one `if` that calls require_admin on one
     # branch and, on the other, the workspace branch: require_workspace_admin (itself an `if ...: raise
     # AuthorizationError`) as its first statement, then an `if` that raises for a delegated caller (7.08.00).
-    settings = _module_functions(ast.parse((SHARED_DIR / 'request_workspace.py').read_text(encoding='utf-8')))
-    body = settings['require_settings_admin'].body[1:]   # after its docstring
+    _assert_two_branch_gate('request_workspace.py', 'require_settings_admin', GATE_PRIMITIVE,
+                            '_require_workspace_settings_admin')
+    workspace = _module_functions(ast.parse((SHARED_DIR / 'workspace.py').read_text(encoding='utf-8')))
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
+               for stmt in workspace['require_workspace_admin'].body)
+    # require_agents_admin (shared/agents_gate.py, 7.80.00): the same shape, require_admin_caller (itself an admin
+    # check) on the deployment's branch.
+    _assert_two_branch_gate('agents_gate.py', AGENTS_GATE, 'require_admin_caller', '_require_workspace_agents_admin')
+
+
+def _assert_two_branch_gate(module: str, gate: str, deployment_gate: str, workspace_branch: str) -> None:
+    """A two-path gate's shape: its whole body is one `if` that calls ``deployment_gate`` on one branch and, on the
+    other, ``workspace_branch``: require_workspace_admin (itself an `if ...: raise AuthorizationError`) as its first
+    statement, then an `if` that raises for a delegated caller."""
+    functions = _module_functions(ast.parse((SHARED_DIR / module).read_text(encoding='utf-8')))
+    body = functions[gate].body[1:]   # after its docstring
     assert len(body) == 1
     assert isinstance(body[0], ast.If)
     # Each branch is exactly one bare call: a return or a nested `if` before the gate would leave it dead.
     parts = (body[0].body, body[0].orelse)
     assert [[type(stmt) for stmt in part] for part in parts] == [[ast.Expr], [ast.Expr]]
     calls = [part[0].value for part in parts if isinstance(part[0], ast.Expr)]
-    assert [_called_name(call) for call in calls] == [GATE_PRIMITIVE, '_require_workspace_settings_admin']
-    branch = settings['_require_workspace_settings_admin'].body[1:]   # after its docstring
+    assert [_called_name(call) for call in calls] == [deployment_gate, workspace_branch]
+    branch = functions[workspace_branch].body[1:]   # after its docstring
     assert isinstance(branch[0], ast.Expr)
     assert _called_name(branch[0].value) == 'require_workspace_admin'
     assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body) for stmt in branch[1:])
-    workspace = _module_functions(ast.parse((SHARED_DIR / 'workspace.py').read_text(encoding='utf-8')))
-    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
-               for stmt in workspace['require_workspace_admin'].body)
 
 
 def test_the_shared_admin_middleware_gates_every_route_of_its_module():

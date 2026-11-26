@@ -20,7 +20,7 @@ from suite_clock import suite_midday
 from jobs.test.lambda_budget import LambdaBudget
 from jobs.workspace_export import handler
 from jobs.workspace_export.zip_stream import PartSink
-from shared.indexes import FEEDBACK_BY_DATE_INDEX, MEMORY_BY_STATUS_INDEX
+from shared.indexes import AGENTS_LISTING_INDEX, FEEDBACK_BY_DATE_INDEX, MEMORY_BY_STATUS_INDEX
 from shared.test.export_s3_double import ExportS3
 from shared.test.moto_tables import create_pk_sk_table, create_table_with_gsi1
 
@@ -32,6 +32,7 @@ WORKSPACES_TABLE = 'test-workspaces'
 MEMORY_TABLE = 'test-memory'
 CONVERSATIONS_TABLE = 'test-conversations'
 PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE = 'test-projects', 'test-jobs', 'test-participants'
+AGENTS_TABLE = 'test-agents'
 #: The suite clock's noon (conftest.py at the root): this conftest may load before the clock travels (a run naming
 #: this folder loads it first), and the claim's freshness compares the row's created_at with the handler's clock.
 CREATED = suite_midday()
@@ -65,6 +66,8 @@ class World:
     projects: Any
     jobs: Any
     participants: Any
+    #: voc-agents (7.80.00, jobs/workspace_export/agents.py), with its listing index.
+    agents: Any = None
 
 
 def memory_item(ws: str, owner: str | None, memory_id: str, status: str = 'active') -> dict[str, Any]:
@@ -175,9 +178,11 @@ def world() -> Iterator[World]:
         conversations = create_pk_sk_table(CONVERSATIONS_TABLE, resource)
         projects, jobs, participants = (create_pk_sk_table(name, resource)
                                         for name in (PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE))
+        agents = create_table_with_gsi1(resource, AGENTS_TABLE, AGENTS_LISTING_INDEX)
         s3 = ExportS3(BUCKET, min_part=SMALL_MIN)
         invoke, notify = MagicMock(), MagicMock(return_value=True)
         with patch.object(handler, 'get_dynamodb_resource', return_value=resource), \
+                patch.object(handler, 'AGENTS_TABLE', AGENTS_TABLE), \
                 patch.object(handler, 'MEMORY_TABLE', MEMORY_TABLE), \
                 patch.object(handler, 'CONVERSATIONS_TABLE', CONVERSATIONS_TABLE), \
                 patch.object(handler, 'PROJECTS_TABLE', PROJECTS_TABLE), \
@@ -190,7 +195,7 @@ def world() -> Iterator[World]:
                 patch.object(handler, 'notify', notify), \
                 patch.object(handler, 'PartSink', partial(PartSink, part_size=SMALL_PART, min_part=SMALL_MIN)):
             yield World(feedback, aggregates, workspaces, s3, invoke, notify, memory, conversations, projects, jobs,
-                        participants)
+                        participants, agents)
 
 
 class Budget(LambdaBudget):

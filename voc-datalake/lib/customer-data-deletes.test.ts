@@ -154,7 +154,15 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   },
   // Memory forgets by tombstone and agents archive; only a workspace's hard delete removes a workspace's memory.
   MemoryTable: { [DELETE_ROLE]: WORKSPACE_DELETE },
-  AgentsTable: {},
+  // A workspace's hard delete (7.80.00, lambda/jobs/workspace_delete/sweeps.py `agents`): its agents registry and the
+  // agents', workflows' and runs' partitions it names, never the deployment's agents, plans or engineering rows.
+  AgentsTable: {
+    [DELETE_ROLE]: {
+      scope: [`WS#${ONE_WORKSPACE}#AGENT#*`, `WS#${ONE_WORKSPACE}#AGENT_REGISTRY`, `WS#${ONE_WORKSPACE}#RUN#*`,
+        `WS#${ONE_WORKSPACE}#WORKFLOW#*`],
+      why: 'a workspace\'s hard delete (decision 17): its agents, their history, workflows and runs, and their registry',
+    },
+  },
   RadarTable: {
     [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure and retention reach Radar reviews and their dedupe markers (docs/radar.md)' },
     // A workspace's hard delete: its Radar rows (settings, scan rows, the partitions its owner list names), one

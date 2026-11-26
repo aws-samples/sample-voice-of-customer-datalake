@@ -13,7 +13,7 @@
 import { del, post, put } from './requestKit'
 import { z } from 'zod'
 import { AGENT_SCHEDULE_EVERY, AGENT_THRESHOLD_PER, AGENT_VISIBILITIES } from '@stream/assistant/tools/agent-limits'
-import { fetchApi } from './client'
+import { fetchApi as fetchInScope } from './client'
 import { nextAfterOf } from './seqPages'
 import { lenientList } from './lenientFields'
 import { optionalMethodologyBlock } from './methodologySchema'
@@ -423,6 +423,13 @@ export const agentsKeys = {
   runs: (id: string) => ['agents', 'runs', id] as const,
   run: (id: string, runId: string) => ['agents', 'run', id, runId] as const,
 }
+
+/**
+ * Every agents call goes in the deployment's scope (no `X-Workspace-Id`), inside a workspace too: since 7.80.00 the
+ * agents API acts in the workspace a request names (docs/multi-workspace.md 3g3-a), and the web app keeps the
+ * deployment's agents until a workspace's Agents page ships (3g3-ui-agents).
+ */
+const fetchApi = <T,>(endpoint: string, options?: RequestInit): Promise<T> => fetchInScope<T>(endpoint, options, 'deployment')
 
 const agentApiPath = (id: string, suffix = '') => `/agents/${encodeURIComponent(id)}${suffix}`
 const runPath = (id: string, runId: string, suffix = '') => agentApiPath(id, `/runs/${encodeURIComponent(runId)}${suffix}`)

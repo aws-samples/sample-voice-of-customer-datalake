@@ -17,7 +17,12 @@ Permissions:
 - an engineering agent (7.47.00: its ``engineering`` settings; the seeded Bug fixer and Feature builder) is listed and
   read by administrators acting for themselves only, where the engineering agents are on (404 for anyone else); its
   Run now is theirs alone too (never a delegated credential), through voc-engineering-start, and its runs take only the
-  deployment's feedback (D8, until agents move per workspace);
+  deployment's feedback (D8, until the engineering agents move per workspace, 3g3-c);
+- inside a workspace (7.80.00, 3g3-a: ``X-Workspace-Id``, resolved first in each agents and workflows route) the
+  agents, their history, the workflows and the runs' rows are that workspace's own: any member reads, its admins acting
+  for themselves write (shared/agents_gate.py), no agent is seeded, an engineering agent or flow is refused, and no
+  run starts (enable, Run now, cancel and decision answer 409 ``runs_not_in_workspace``); the engineering routes and
+  the plans' reads and actions read no header;
 - workflows hold no customer data, so every signed-in user may read and
   validate them; the default engineering flows (``GET /workflows/templates``) are listed for
   administrators only, where the engineering agents are on (404 elsewhere), as the library offers them;
@@ -137,10 +142,11 @@ from shared import (
 )
 from shared import agents_store as store
 from shared import engineering_agent_runs as eng_runs
+from shared.agents_gate import FAILED_WORKSPACE, require_agents_admin
 from shared.agents_store import require_agents_table as _agents_table
 from shared.api import api_handler, create_api_resolver, validate_int
 from shared.aws import get_dynamodb_resource
-from shared.category_access import CategoryScope
+from shared.category_access import UNRESTRICTED, CategoryScope
 from shared.category_gate import read_categories_config, scope_for_caller
 from shared.engineering_agent_runs import start_client as _start_client
 from shared.engineering_agents import engineering_agents_on
@@ -161,12 +167,14 @@ from shared.plan_schema import ADMIN_ONLY_PACKS, PACKS, is_plan_id, validate_pla
 from shared.project_access import Caller
 from shared.project_gate import acts_as_admin, caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
-from shared.request_workspace import request_workspace
+from shared.request_workspace import is_current_member, request_workspace
 from shared.route_answers import json_response as _json
 from shared.route_answers import query_text
 from shared.row_ids import LONG_OPAQUE_ID_RE
-from shared.tables import get_aggregates_table
+from shared.tables import get_aggregates_table, get_projects_table
 from shared.warm_init import warm_at_init
+from shared.workspace import WorkspaceContext
+from shared.ws_repo import WorkspaceScope, optional_scope
 
 if TYPE_CHECKING:
     from engineering.connectors.connections import Kind
@@ -195,20 +203,74 @@ def _caller() -> Caller:
     return caller_from_event(app.current_event.raw_event)
 
 
-def _require_run_permission(caller: Caller) -> None:
-    """Run now: an admin, or a global-MCP write token its admin minter still backs.
+def _require_run_permission(caller: Caller, context: WorkspaceContext | None = None) -> None:
+    """Run now and cancel: an admin, or, without a workspace, a global-MCP write token its admin minter still backs.
 
     The second case is the only delegated path to an admin action. It is not a
     group claim — the credential is still not an admin anywhere else — and it is
     honoured only for an `mcp:` principal (never an `agent:` one), with the claim
     the MCP Lambda adds after re-checking the minter in Cognito
-    (`project_access.delegated_op_allowed`, for `agents_run` alone).
+    (`project_access.delegated_op_allowed`, for `agents_run` alone). In a workspace (``context``) only its admin acting
+    for themselves (``require_agents_admin``).
     """
-    if caller.delegated and not caller.agent_id and project_access.delegated_op_allowed(
+    if context is None and caller.delegated and not caller.agent_id and project_access.delegated_op_allowed(
         project_access.claims_from_event(app.current_event.raw_event), 'agents_run',
     ):
         return
-    require_admin_caller(caller)
+    require_agents_admin(app.current_event.raw_event, context)
+
+
+# --------------------------------------------------------------------------
+# The workspace a request acts in (7.80.00, docs/multi-workspace.md, the project plan 3g3-a). The agents and workflows
+# routes resolve X-Workspace-Id first (``_agents_workspace``: the one 404 for a non-member, a malformed id or an
+# unknown or deleting workspace; a platform admin enters only as a member, ``elevate=False``, as the plan approval
+# does) and act on that workspace's own rows (shared/agents_store.py ``workspace=``): any member reads, its admins
+# acting for themselves write (shared/agents_gate.py ``require_agents_admin``). A request that names none keeps the
+# deployment's rows and rules, as before. The engineering routes (/agents/engineering/*) read no header: the
+# engineering agents stay the deployment's (3g3-c), and build the deployment's PRDs only (``_require_deployment_prd``).
+# --------------------------------------------------------------------------
+
+#: Why no run starts in a workspace (owner decision, 3g3-a): the heartbeat and the run interpreter read the
+#: deployment's partitions only, so an agent of a workspace turned on would never run.
+RUNS_NOT_IN_WORKSPACE: Final = ("an automation inside a workspace is kept and edited here, and is not turned on or "
+                                "run yet: runs inside a workspace come with a later release")
+RUNS_NOT_IN_WORKSPACE_CODE: Final = 'runs_not_in_workspace'
+ENGINEERING_NOT_IN_WORKSPACE: Final = ("an engineering agent or flow is the deployment's: set it up on the Agents page "
+                                       'outside a workspace')
+
+
+def _agents_workspace(*, write: bool = False) -> WorkspaceContext | None:
+    """The workspace the request names and the caller's role there (None: the deployment's, as before). ``write``:
+    the role read from the table, never the warm cache, so a member demoted a moment ago writes nothing."""
+    return request_workspace(app.current_event.raw_event, FAILED_WORKSPACE, fresh=write, elevate=False)
+
+
+def _scope(context: WorkspaceContext | None) -> WorkspaceScope | None:
+    return optional_scope(context)
+
+
+def _in(context: WorkspaceContext | None) -> dict[str, Any]:
+    """``workspace=`` for a store call inside a workspace, nothing outside one (the deployment's calls as they always
+    were)."""
+    workspace = _scope(context)
+    return {} if workspace is None else {'workspace': workspace}
+
+
+def _admin(caller: Caller, context: WorkspaceContext | None) -> bool:
+    """An administrator of the request's scope acting for themselves: the workspace's admin in one (the deployment's
+    ``admins`` group grants nothing there), the deployment's without one."""
+    return acts_as_admin(caller) if context is None else context.role == 'admin' and not caller.delegated
+
+
+def _refuse_runs_in_workspace(context: WorkspaceContext | None) -> None:
+    """409 in a workspace for anything that would turn an agent on or touch a run (before any write)."""
+    if context is not None:
+        raise ConflictError(RUNS_NOT_IN_WORKSPACE, code=RUNS_NOT_IN_WORKSPACE_CODE)
+
+
+def _categories(context: WorkspaceContext | None) -> list[dict]:
+    """The request's scope's categories (the workspace's own in one)."""
+    return read_categories_config(_aggregates_table(), _scope(context))
 
 
 def _aggregates_table() -> Any:
@@ -222,50 +284,58 @@ def _query(name: str) -> str | None:
     return query_text(app.current_event, name)
 
 
-def _viewer_scope(caller: Caller) -> CategoryScope:
-    return scope_for_caller(caller, _aggregates_table())
+def _viewer_scope(caller: Caller, context: WorkspaceContext | None = None) -> CategoryScope:
+    """The categories ``caller`` sees: against the workspace's own categories in one, where its admin acting for
+    themselves sees every agent."""
+    if context is not None and _admin(caller, context):
+        return UNRESTRICTED
+    return scope_for_caller(caller, _aggregates_table(), _scope(context))
 
 
 # --------------------------------------------------------------------------
 # Agents.
 # --------------------------------------------------------------------------
 
-def _stored_agent(agent_id: str, *, include_archived: bool = False) -> dict:
-    """The agent row, or 404 (also for a malformed id or, unless asked, an archived agent)."""
+def _stored_agent(agent_id: str, *, include_archived: bool = False, context: WorkspaceContext | None = None) -> dict:
+    """The agent row of the request's scope, or 404 (also for a malformed id or, unless asked, an archived agent)."""
     if not store.is_agent_id(agent_id):
         raise NotFoundError(AGENT_NOT_FOUND)
-    agent = store.get_agent(_agents_table(), agent_id)
+    agent = store.get_agent(_agents_table(), agent_id, **_in(context))
     if agent is None or (not include_archived and agent.get('status') == store.AGENT_STATUS_ARCHIVED):
         raise NotFoundError(AGENT_NOT_FOUND)
     return agent
 
 
-def _lists_engineering(agent: Mapping[str, Any], caller: Caller) -> bool:
-    """An engineering agent is an administrator's alone (acting for themselves), and only where the module is on."""
-    return not store.is_engineering_agent(agent) or (acts_as_admin(caller) and engineering_agents_on())
+def _lists_engineering(agent: Mapping[str, Any], caller: Caller, context: WorkspaceContext | None = None) -> bool:
+    """An engineering agent is an administrator's alone (acting for themselves), and only where the module is on;
+    and the deployment's only (a workspace holds none until 3g3-c)."""
+    return not store.is_engineering_agent(agent) or (context is None and acts_as_admin(caller)
+                                                    and engineering_agents_on())
 
 
-def _visible_agent(agent_id: str, caller: Caller) -> dict:
+def _visible_agent(agent_id: str, caller: Caller, context: WorkspaceContext | None = None) -> dict:
     """The agent if ``caller`` may read it; 404 otherwise (no existence leak)."""
-    agent = _stored_agent(agent_id, include_archived=caller.is_admin and not caller.delegated)
-    if not store.agent_visible(_viewer_scope(caller), agent) or not _lists_engineering(agent, caller):
+    agent = _stored_agent(agent_id, include_archived=_admin(caller, context), context=context)
+    if not store.agent_visible(_viewer_scope(caller, context), agent) or not _lists_engineering(agent, caller, context):
         raise NotFoundError(AGENT_NOT_FOUND)
     return agent
 
 
-def _find_workflow(workflow_id: object, *, include_archived: bool = False) -> dict | None:
-    """The workflow's CURRENT row; None for a malformed or unknown id, or (unless asked) an archived one."""
+def _find_workflow(workflow_id: object, *, include_archived: bool = False,
+                   context: WorkspaceContext | None = None) -> dict | None:
+    """The workflow's CURRENT row of the request's scope; None for a malformed or unknown id, or (unless asked) an
+    archived one."""
     if not store.is_workflow_id(workflow_id):
         return None
-    workflow = store.get_workflow(_agents_table(), str(workflow_id))
+    workflow = store.get_workflow(_agents_table(), str(workflow_id), **_in(context))
     if workflow is None or (not include_archived and store.is_archived_workflow(workflow)):
         return None
     return workflow
 
 
-def _sees_archived(caller: Caller) -> bool:
-    """Only a non-delegated admin reads an archived workflow (like an archived agent)."""
-    return acts_as_admin(caller)
+def _sees_archived(caller: Caller, context: WorkspaceContext | None = None) -> bool:
+    """Only a non-delegated admin of the request's scope reads an archived workflow (like an archived agent)."""
+    return _admin(caller, context)
 
 
 def _engineering_flow(workflow: Mapping[str, Any]) -> bool:
@@ -275,10 +345,11 @@ def _engineering_flow(workflow: Mapping[str, Any]) -> bool:
     return definition.get('schema') == workflow_schema.SCHEMA_V2
 
 
-def _require_workflow(workflow_id: str, *, engineering: bool = False) -> None:
-    """A workflow an agent body names must exist and be of the agent's kind (400, it is a field of the request): an
-    engineering flow for an engineering agent (its ``engineering`` settings, 7.47.00), an agents workflow otherwise."""
-    workflow = _find_workflow(workflow_id)
+def _require_workflow(workflow_id: str, *, engineering: bool = False, context: WorkspaceContext | None = None) -> None:
+    """A workflow an agent body names must exist in the request's scope and be of the agent's kind (400, it is a
+    field of the request): an engineering flow for an engineering agent (its ``engineering`` settings, 7.47.00), an
+    agents workflow otherwise."""
+    workflow = _find_workflow(workflow_id, context=context)
     if workflow is None:
         raise ValidationError('workflow_id does not name a workflow')
     if _engineering_flow(workflow) and not engineering:
@@ -371,23 +442,47 @@ def _run_as(caller: Caller) -> dict[str, Any]:
     return {'owner_sub': caller.subject, 'owner_username': caller.username or caller.subject}
 
 
-def _default_workflow_for(name: str, caller: Caller) -> str:
-    """A fresh, editable copy of the built-in template for a new agent."""
-    return agent_seed.default_workflow_copy(_agents_table(), name, caller)
+def _default_workflow_for(name: str, caller: Caller, context: WorkspaceContext | None = None) -> str:
+    """A fresh, editable copy of the built-in template for a new agent, in the request's scope's library."""
+    return agent_seed.default_workflow_copy(_agents_table(), name, caller, **_in(context))
+
+
+#: An agent of a workspace whose ``owner_sub`` names no current member of it (7.80.00).
+OWNER_NOT_A_MEMBER: Final = "owner_sub names who this agent's runs act as: one of this workspace's members"
+
+
+def _workspace_agent_fields(fields: Mapping[str, Any], context: WorkspaceContext | None,
+                            body: Mapping[str, Any]) -> None:
+    """What an agent of a workspace may not be (before anything is written): an engineering agent (400: the
+    deployment's until 3g3-c), turned on (409: no run starts in a workspace yet), or acting as anyone but one of the
+    workspace's current members (400: an ``owner_sub`` the request names, checked by shared/request_workspace.py
+    ``is_current_member``, its ``MEMBER#`` row and the workspace's ``META``, each read strongly consistent; one it does
+    not name is the stored one, or the creator's on a create)."""
+    if context is None:
+        return
+    if fields.get('engineering') is not None:
+        raise ValidationError(ENGINEERING_NOT_IN_WORKSPACE)
+    owner = fields.get('owner_sub')
+    if 'owner_sub' in body and owner is not None and not is_current_member(context.ws, owner):
+        raise ValidationError(OWNER_NOT_A_MEMBER)
+    if fields.get('enabled') is True:
+        _refuse_runs_in_workspace(context)
 
 
 @app.get('/agents')
 @tracer.capture_method
 def list_agents():
     """Agents the caller may see, by name, the engineering agents after the others with the seeded ones first in the
-    loop's order (``agent_seed.list_order``). Admins may add ``?include_archived=true``."""
+    loop's order (``agent_seed.list_order``). Admins may add ``?include_archived=true``. In a workspace, its own agents
+    (none is seeded there)."""
+    context = _agents_workspace()
     caller = _caller()
     include_archived = _query('include_archived') == 'true'
     if include_archived:
-        require_admin_caller(caller)
-    scope = _viewer_scope(caller)
+        require_agents_admin(app.current_event.raw_event, context)
+    scope = _viewer_scope(caller, context)
     table = _agents_table()
-    if caller.is_admin and not caller.delegated:
+    if context is None and caller.is_admin and not caller.delegated:
         # Once per deployment: the default agents (shared/agent_seed.py; never fails the listing), the engineering
         # ones only where the engineering module is on.
         def categories() -> list[dict]:   # (read only when an agent is created)
@@ -398,9 +493,9 @@ def list_agents():
             agent_seed.ensure_engineering_agents(table, caller, categories)
     now = store.utc_now()
     agents = [
-        store.agent_view(agent, now) for agent in store.list_agents(table)
+        store.agent_view(agent, now) for agent in store.list_agents(table, **_in(context))
         if (include_archived or agent.get('status') != store.AGENT_STATUS_ARCHIVED)
-        and store.agent_visible(scope, agent) and _lists_engineering(agent, caller)
+        and store.agent_visible(scope, agent) and _lists_engineering(agent, caller, context)
     ]
     agents.sort(key=agent_seed.list_order)
     return {'items': agents, 'count': len(agents)}
@@ -410,16 +505,19 @@ def list_agents():
 @tracer.capture_method
 def create_agent():
     """Create an agent (admin). Without ``workflow_id`` it gets its own copy of the template."""
+    context = _agents_workspace(write=True)
     caller = _caller()
-    require_admin_caller(caller)
-    fields = store.normalize_agent(json_object_body(app), read_categories_config(_aggregates_table()))
+    require_agents_admin(app.current_event.raw_event, context)
+    body = json_object_body(app)
+    fields = store.normalize_agent(body, _categories(context))
+    _workspace_agent_fields(fields, context, body)
     engineering = fields['engineering'] is not None
     if fields['workflow_id'] is None:
         if engineering:
             raise ValidationError('an engineering agent names its engineering flow: workflow_id')
-        fields['workflow_id'] = _default_workflow_for(fields['name'], caller)
+        fields['workflow_id'] = _default_workflow_for(fields['name'], caller, context)
     else:
-        _require_workflow(fields['workflow_id'], engineering=engineering)
+        _require_workflow(fields['workflow_id'], engineering=engineering, context=context)
     _check_engineering(fields, enabling=False)
     if engineering and fields['owner_sub'] is not None:
         raise ValidationError(RUNS_AS_ENABLER)
@@ -428,7 +526,8 @@ def create_agent():
         if refused is not None:
             return refused
         fields.update(_run_as(caller))
-    agent = store.create_agent(_agents_table(), fields, created_by=caller.subject, now=store.utc_now())
+    agent = store.create_agent(_agents_table(), fields, created_by=caller.subject, now=store.utc_now(),
+                               **_in(context))
     logger.info('Agent created', extra={'agent_id': agent['agent_id']})
     return _json(201, {'agent': store.agent_view(agent)})
 
@@ -436,23 +535,26 @@ def create_agent():
 @app.get('/agents/<agent_id>')
 @tracer.capture_method
 def get_agent(agent_id: str):
-    return {'agent': store.agent_view(_visible_agent(agent_id, _caller()))}
+    context = _agents_workspace()
+    return {'agent': store.agent_view(_visible_agent(agent_id, _caller(), context))}
 
 
 @app.put('/agents/<agent_id>')
 @tracer.capture_method
 def update_agent(agent_id: str):
     """Update an agent (admin); omitted fields keep their stored values."""
+    context = _agents_workspace(write=True)
     caller = _caller()
-    require_admin_caller(caller)
-    existing = _stored_agent(agent_id)
+    require_agents_admin(app.current_event.raw_event, context)
+    existing = _stored_agent(agent_id, context=context)
     body = json_object_body(app)
-    fields = store.normalize_agent(body, read_categories_config(_aggregates_table()), base=existing)
+    fields = store.normalize_agent(body, _categories(context), base=existing)
+    _workspace_agent_fields(fields, context, body)
     engineering = fields['engineering'] is not None
     if fields['workflow_id'] is None:
         fields['workflow_id'] = existing.get('workflow_id') or workflow_schema.DEFAULT_WORKFLOW_ID
     if fields['workflow_id'] != existing.get('workflow_id') or engineering != store.is_engineering_agent(existing):
-        _require_workflow(fields['workflow_id'], engineering=engineering)
+        _require_workflow(fields['workflow_id'], engineering=engineering, context=context)
     _check_engineering(fields, enabling=False)
     if engineering and 'owner_sub' in body:
         raise ValidationError(RUNS_AS_ENABLER)
@@ -463,20 +565,22 @@ def update_agent(agent_id: str):
         if refused is not None:
             return refused
         fields.update(_run_as(caller))
-    updated = store.update_agent(_agents_table(), agent_id, fields, updated_by=caller.subject, now=store.utc_now())
-    return {'agent': store.agent_view(_pause_ended_if_off(updated, caller))}
+    updated = store.update_agent(_agents_table(), agent_id, fields, updated_by=caller.subject, now=store.utc_now(),
+                                 **_in(context))
+    return {'agent': store.agent_view(_pause_ended_if_off(updated, caller, context))}
 
 
 @app.delete('/agents/<agent_id>')
 @tracer.capture_method
 def archive_agent(agent_id: str):
     """Archive (never delete) an agent (admin): disabled, hidden, its runs kept."""
+    context = _agents_workspace(write=True)
     caller = _caller()
-    require_admin_caller(caller)
-    _stored_agent(agent_id, include_archived=True)
+    require_agents_admin(app.current_event.raw_event, context)
+    _stored_agent(agent_id, include_archived=True, context=context)
     updated = store.update_agent(
         _agents_table(), agent_id, {'status': store.AGENT_STATUS_ARCHIVED, 'enabled': False},
-        updated_by=caller.subject, now=store.utc_now(), allow_archived=True,
+        updated_by=caller.subject, now=store.utc_now(), allow_archived=True, **_in(context),
     )
     logger.info('Agent archived', extra={'agent_id': agent_id})
     return {'agent': store.agent_view(updated)}
@@ -485,33 +589,39 @@ def archive_agent(agent_id: str):
 def _set_enabled(agent_id: str, enabled: bool) -> dict | Response:
     """Enable or disable (admin). An engineering agent is enabled only once it is set up (400 otherwise) and its
     required readiness checks pass (409 with the failing ones, 7.50.00: ``_not_ready``), and from then runs as the
-    administrator who enabled it (``owner_sub``, ``owner_username``)."""
+    administrator who enabled it (``owner_sub``, ``owner_username``). In a workspace an agent is found, then refused
+    its enable (409: no run starts there yet); its disable is a plain update."""
+    context = _agents_workspace(write=True)
     caller = _caller()
-    require_admin_caller(caller)
-    agent = _stored_agent(agent_id)
+    require_agents_admin(app.current_event.raw_event, context)
+    agent = _stored_agent(agent_id, context=context)
+    if enabled:
+        _refuse_runs_in_workspace(context)
     change: dict[str, Any] = {'enabled': enabled}
     if enabled and store.is_engineering_agent(agent):
-        fields = store.normalize_agent({}, read_categories_config(_aggregates_table()), base=agent)
+        fields = store.normalize_agent({}, _categories(context), base=agent)
         _check_engineering(fields, enabling=True)
         if agent.get('enabled') is not True:
             refused = _not_ready({**agent, **fields}, caller)
             if refused is not None:
                 return refused
             change.update(_run_as(caller))
-    updated = store.update_agent(_agents_table(), agent_id, change, updated_by=caller.subject, now=store.utc_now())
-    return {'agent': store.agent_view(_pause_ended_if_off(updated, caller))}
+    updated = store.update_agent(_agents_table(), agent_id, change, updated_by=caller.subject, now=store.utc_now(),
+                                 **_in(context))
+    return {'agent': store.agent_view(_pause_ended_if_off(updated, caller, context))}
 
 
-def _pause_ended_if_off(agent: dict, caller: Caller) -> dict:
+def _pause_ended_if_off(agent: dict, caller: Caller, context: WorkspaceContext | None = None) -> dict:
     """An agent just turned off ends its pause (7.52.00: only an automation that is on is paused), logged as resumed
-    ``via: disabled``; the agent as it is now."""
+    ``via: disabled``, in its own scope; the agent as it is now."""
     if agent.get('enabled') is True or agent.get('paused') is not True:
         return agent
     try:
         return store.set_paused(_agents_table(), str(agent['agent_id']), False, by=caller.subject,
-                                username=caller.username or caller.subject, now=store.utc_now(), via='disabled')
+                                username=caller.username or caller.subject, now=store.utc_now(), via='disabled',
+                                **_in(context))
     except ConflictError:   # (someone resumed it meanwhile)
-        return store.get_agent(_agents_table(), str(agent['agent_id'])) or agent
+        return store.get_agent(_agents_table(), str(agent['agent_id']), **_in(context)) or agent
 
 
 @app.post('/agents/<agent_id>/enable')
@@ -536,10 +646,15 @@ def disable_agent(agent_id: str):
 def run_agent(agent_id: str):
     """Run now (admin): unlimited — not counted against the scheduled daily cap.
 
-    409 while the agent already has a queued or running run.
+    409 while the agent already has a queued or running run. In a workspace the agent is found, then refused (409:
+    no run starts there yet), nothing written.
     """
+    context = _agents_workspace(write=True)
     caller = _caller()
-    _require_run_permission(caller)
+    _require_run_permission(caller, context)
+    if context is not None:
+        _stored_agent(agent_id, context=context)
+        _refuse_runs_in_workspace(context)
     if not store.state_machine_arn():
         raise ConfigurationError('Agent runtime not configured')
     table = _agents_table()
@@ -573,6 +688,34 @@ def _run_prd(body: Mapping[str, Any]) -> dict[str, str] | None:
 
     return {'project_id': validated_row_id(raw['project_id'], field='project_id'),
             'document_id': validated_row_id(raw['document_id'], field='document_id')}
+
+
+#: A PRD whose project is not one of the deployment's (7.80.00): none, being deleted, or a workspace's. One answer for
+#: all three, so it never tells a workspace's project from no project.
+PRD_PROJECT_NOT_FOUND: Final = "No such project: an engineering agent builds a PRD of the deployment's own projects"
+
+
+#: The deployment names no projects table, so a PRD cannot be checked (a misconfigured stack: never a pass).
+PRD_CHECK_UNCONFIGURED: Final = 'a PRD cannot be checked here: the deployment names no projects table'
+
+
+def _require_deployment_prd(prd: Mapping[str, str]) -> None:
+    """404 unless the PRD's project is one of the deployment's (7.80.00, 3g3-a: shared/project_writes.py
+    ``deployment_project_live``, its ``PROJECT#{id}`` ``META``). The engineering agents are the deployment's and a
+    run's goal names the PRD by its ids alone, so a workspace's project (its rows are ``WS#{ws}#PROJECT#{id}``, never
+    this key) is refused here, Run now's and a run request's alike, before anything is asked or started. The company
+    persona library's container is never a project."""
+    from shared.company_personas import is_company_container
+    from shared.project_writes import deployment_project_live
+
+    project_id = prd['project_id']
+    if is_company_container(project_id):
+        raise NotFoundError(PRD_PROJECT_NOT_FOUND)
+    table = get_projects_table()   # (the deployment's project, by design: counted in test_ws_raw_access.py)
+    if table is None:
+        raise ConfigurationError(PRD_CHECK_UNCONFIGURED)
+    if not deployment_project_live(table, project_id):
+        raise NotFoundError(PRD_PROJECT_NOT_FOUND)
 
 
 def _engineering_sentence(settings: Mapping[str, Any], repository: str, issue: int | None,
@@ -614,10 +757,13 @@ def _run_engineering_agent(table: Any, agent: dict, caller: Caller, body: Mappin
     issue, prd = _start_issue(body), _run_prd(body)
     model = agents_engineering_run_routes.requested_model(body)
     repository, stage = str(row.get('repository', '')), _issue_stage(agent)
+    sentence = _engineering_sentence(settings, repository, issue, prd, stage)
+    if prd is not None:
+        _require_deployment_prd(prd)
     started = eng_runs.start_agent_run(
         table, agent, _find_workflow(agent.get('workflow_id')), row,
         eng_runs.AgentStart(trigger=store.TRIGGER_MANUAL, requested_by=caller.subject, actor=caller.subject,
-                            sentence=_engineering_sentence(settings, repository, issue, prd, stage), prd=prd,
+                            sentence=sentence, prd=prd,
                             claim=False, stage=stage,
                             issue=None if issue is None else eng_runs.IssueRef(repository, issue),
                             model_choice=model),
@@ -636,9 +782,10 @@ def _run_engineering_agent(table: Any, agent: dict, caller: Caller, body: Mappin
     return _json(202, {'run': store.run_view(current)})
 
 
-def _visible_run(agent_id: str, run_id: str, caller: Caller) -> dict:
-    _visible_agent(agent_id, caller)
-    run = store.get_run(_agents_table(), agent_id, run_id) if store.is_run_id(run_id) else None
+def _visible_run(agent_id: str, run_id: str, caller: Caller, context: WorkspaceContext | None = None) -> dict:
+    _visible_agent(agent_id, caller, context)
+    run = (store.get_run(_agents_table(), agent_id, run_id, **_in(context))
+           if store.is_run_id(run_id) else None)
     if run is None:
         raise NotFoundError(RUN_NOT_FOUND)
     return run
@@ -648,36 +795,51 @@ def _visible_run(agent_id: str, run_id: str, caller: Caller) -> dict:
 @tracer.capture_method
 def list_runs(agent_id: str):
     """Newest-first runs; ``?limit=&cursor=``."""
-    _visible_agent(agent_id, _caller())
+    context = _agents_workspace()
+    _visible_agent(agent_id, _caller(), context)
     limit = validate_int(_query('limit'), default=DEFAULT_RUNS_PAGE, min_val=1, max_val=MAX_RUNS_PAGE)
-    items, next_cursor = store.list_runs(_agents_table(), agent_id, limit=limit, cursor=_query('cursor'))
+    items, next_cursor = store.list_runs(_agents_table(), agent_id, limit=limit, cursor=_query('cursor'),
+                                         **_in(context))
     return {'items': [store.run_view(item) for item in items], 'next_cursor': next_cursor}
 
 
 @app.get('/agents/<agent_id>/runs/<run_id>')
 @tracer.capture_method
 def get_run(agent_id: str, run_id: str):
-    return {'run': store.run_view(_visible_run(agent_id, run_id, _caller()))}
+    context = _agents_workspace()
+    return {'run': store.run_view(_visible_run(agent_id, run_id, _caller(), context))}
 
 
 @app.get('/agents/<agent_id>/runs/<run_id>/events')
 @tracer.capture_method
 def list_run_events(agent_id: str, run_id: str):
     """Journal events with ``seq > after`` (oldest first), for polling."""
-    _visible_run(agent_id, run_id, _caller())
+    context = _agents_workspace()
+    _visible_run(agent_id, run_id, _caller(), context)
     after = validate_int(_query('after'), default=0, min_val=0, max_val=99_999_998)
     limit = validate_int(_query('limit'), default=MAX_EVENTS_PAGE, min_val=1, max_val=MAX_EVENTS_PAGE)
-    items = store.list_events(_agents_table(), run_id, after=after, limit=limit)
+    items = store.list_events(_agents_table(), run_id, after=after, limit=limit, **_in(context))
     return {'items': items, 'next_after': items[-1]['seq'] if items else after}
+
+
+def _run_to_act_on(agent_id: str, run_id: str) -> tuple[Caller, dict]:
+    """A cancel's or a decision's caller and run: the workspace resolved first (fresh), the scope's admin acting for
+    themselves, the run read in the scope (404 for another scope's), then refused in a workspace (409, nothing
+    written)."""
+    context = _agents_workspace(write=True)
+    caller = _caller()
+    require_agents_admin(app.current_event.raw_event, context)
+    run = _visible_run(agent_id, run_id, caller, context)
+    _refuse_runs_in_workspace(context)
+    return caller, run
 
 
 @app.post('/agents/<agent_id>/runs/<run_id>/cancel')
 @tracer.capture_method
 def cancel_run(agent_id: str, run_id: str):
-    """Cancel a queued or running run (admin); 409 once it has finished."""
-    caller = _caller()
-    require_admin_caller(caller)
-    run = _visible_run(agent_id, run_id, caller)
+    """Cancel a queued or running run (admin); 409 once it has finished. In a workspace the run is found, then
+    refused (409: no run acts there yet), nothing written or stopped."""
+    _, run = _run_to_act_on(agent_id, run_id)
     if run.get('kind') == store.RUN_KIND_ENGINEERING:
         # (its run monitor's Stop ends the engineering run; the heartbeat then ends this one)
         raise ConflictError(STOP_FROM_MONITOR)
@@ -710,11 +872,10 @@ def decide_run(agent_id: str, run_id: str):
     """A human's decision on a needs_human run (admin): ``{decision, note?}`` → ``{run}``.
 
     ``stop`` closes it; ``accept`` / ``another_round`` resume it in a new execution
-    (shared/agent_run_resume.py, docs/autonomous-agents.md "When a run needs a human").
+    (shared/agent_run_resume.py, docs/autonomous-agents.md "When a run needs a human"). In a workspace the run is
+    found, then refused (409: no run acts there yet), nothing written.
     """
-    caller = _caller()
-    require_admin_caller(caller)
-    run = _visible_run(agent_id, run_id, caller)
+    caller, run = _run_to_act_on(agent_id, run_id)
     decision, note = agent_run_decisions.parse_decision(json_object_body(app))
     view = store.run_view(run)
     if run.get('status') != store.RUN_NEEDS_HUMAN or view['decision'] is not None:
@@ -739,9 +900,9 @@ def decide_run(agent_id: str, run_id: str):
 # Workflows.
 # --------------------------------------------------------------------------
 
-def _workflow(workflow_id: str, *, include_archived: bool = False) -> dict:
-    """The workflow a path names, or 404."""
-    workflow = _find_workflow(workflow_id, include_archived=include_archived)
+def _workflow(workflow_id: str, *, include_archived: bool = False, context: WorkspaceContext | None = None) -> dict:
+    """The workflow a path names in the request's scope, or 404."""
+    workflow = _find_workflow(workflow_id, include_archived=include_archived, context=context)
     if workflow is None:
         raise NotFoundError(WORKFLOW_NOT_FOUND)
     return workflow
@@ -790,24 +951,26 @@ def _used_by_automation(agent: Mapping[str, Any]) -> dict[str, Any]:
             'connection': settings.get('connection'), 'language': settings.get('language')}
 
 
-def _used_by(caller: Caller, workflows: list[dict] | None = None) -> dict[str, dict[str, list[dict[str, Any]]]]:
+def _used_by(caller: Caller, workflows: list[dict] | None = None,
+             context: WorkspaceContext | None = None) -> dict[str, dict[str, list[dict[str, Any]]]]:
     """Each workflow's users (7.52.00, "Used by"): ``{workflow_id: {automations: [{agent_id, name, kind, connection,
     language}], flows: [{workflow_id, name, revision}]}}``. The automations that run it, as ``caller`` may see them
     (archived ones left out, by name); the saved flows whose current revision calls it (``call_flow``), each with the
-    revision of it that it pins (archived ones left out). ``workflows``: the library's rows, when already read."""
+    revision of it that it pins (archived ones left out). ``workflows``: the library's rows, when already read. All of
+    the request's scope (a workspace's own agents and flows in one)."""
     scope: CategoryScope | None = None
     found: dict[str, dict[str, list[dict[str, Any]]]] = {}
-    for agent in store.list_agents(_agents_table()):
+    for agent in store.list_agents(_agents_table(), **_in(context)):
         workflow_id = agent.get('workflow_id')
         if (agent.get('status') == store.AGENT_STATUS_ARCHIVED or not isinstance(workflow_id, str)
-                or not _lists_engineering(agent, caller)):
+                or not _lists_engineering(agent, caller, context)):
             continue
-        if not acts_as_admin(caller):
-            scope = scope or _viewer_scope(caller)
+        if not _admin(caller, context):
+            scope = scope or _viewer_scope(caller, context)
             if not store.agent_visible(scope, agent):
                 continue
         found.setdefault(workflow_id, {'automations': [], 'flows': []})['automations'].append(_used_by_automation(agent))
-    rows = workflows if workflows is not None else store.list_workflows(_agents_table())
+    rows = workflows if workflows is not None else store.list_workflows(_agents_table(), **_in(context))
     for row in rows:
         if store.is_archived_workflow(row):
             continue
@@ -825,17 +988,24 @@ def _used_by(caller: Caller, workflows: list[dict] | None = None) -> dict[str, d
             for workflow_id, users in found.items()}
 
 
-def _uses(caller: Caller, workflow_id: str) -> dict[str, list[dict[str, Any]]]:
+def _uses(caller: Caller, workflow_id: str, context: WorkspaceContext | None = None) -> dict[str, list[dict[str, Any]]]:
     """One workflow's users (``_used_by``), nobody's when it has none."""
-    return _used_by(caller).get(workflow_id) or {'automations': [], 'flows': []}
+    return _used_by(caller, context=context).get(workflow_id) or {'automations': [], 'flows': []}
 
 
-def _create_from(raw: object, derived_from: str | None) -> Response:
+def _refuse_engineering_flow_in_workspace(definition: Mapping[str, Any], context: WorkspaceContext | None) -> None:
+    """409 for an engineering flow (voc-workflow/2) in a workspace's library: the deployment's until 3g3-c."""
+    if context is not None and definition.get('schema') == workflow_schema.SCHEMA_V2:
+        raise ConflictError(ENGINEERING_NOT_IN_WORKSPACE)
+
+
+def _create_from(raw: object, derived_from: str | None, context: WorkspaceContext | None = None) -> Response:
     caller = _caller()
-    require_admin_caller(caller)
+    require_agents_admin(app.current_event.raw_event, context)
     definition = _valid_definition(raw)
     if isinstance(definition, Response):
         return definition
+    _refuse_engineering_flow_in_workspace(definition, context)
     if definition['schema'] == workflow_schema.SCHEMA_V2 and not engineering_agents_on():
         # Every way to a new workflow comes here (POST /workflows: New, the editor's Save as, an imported draft saved
         # as new, the assistant's create card; and the assistant's …/duplicate): a NEW engineering flow only where the
@@ -846,7 +1016,8 @@ def _create_from(raw: object, derived_from: str | None) -> Response:
     if refused is not None:
         return refused
     created = store.create_workflow(_agents_table(), definition, created_by=caller.subject,
-                                    username=caller.username, now=store.utc_now(), derived_from=derived_from)
+                                    username=caller.username, now=store.utc_now(), derived_from=derived_from,
+                                    **_in(context))
     logger.info('Workflow created', extra={'workflow_id': created['workflow_id']})
     return _json(201, {'workflow': store.workflow_view(created)})
 
@@ -856,18 +1027,19 @@ def _create_from(raw: object, derived_from: str | None) -> Response:
 def list_workflows():
     """The library: the built-in template first, then by name (no definitions).
 
-    Archived workflows are hidden; an admin may add ``?include_archived=true``.
+    Archived workflows are hidden; an admin may add ``?include_archived=true``. In a workspace, its own library.
     """
+    context = _agents_workspace()
     caller = _caller()
     include_archived = _query('include_archived') == 'true'
     if include_archived:
-        require_admin_caller(caller)
+        require_agents_admin(app.current_event.raw_event, context)
     # Both kinds are listed, each with its `kind`: the editor opens either; an agent's picker offers only `agents`.
-    every = store.list_workflows(_agents_table())
+    every = store.list_workflows(_agents_table(), **_in(context))
     rows = [row for row in every if include_archived or not store.is_archived_workflow(row)]
     builtin, stored = rows[:1], sorted(rows[1:], key=lambda row: str(row.get('gsi1sk') or ''))
     # (7.52.00: each with the automations that run it, as the caller may see them, and the flows that call it)
-    users = _used_by(caller, every)
+    users = _used_by(caller, every, context)
     items = [{**store.workflow_view(row, include_definition=False),
               'used_by': users.get(str(row.get('workflow_id'))) or {'automations': [], 'flows': []}}
              for row in builtin + stored]
@@ -877,8 +1049,10 @@ def list_workflows():
 @app.post('/workflows')
 @tracer.capture_method
 def create_workflow():
-    """Create a library workflow (admin): ``{definition}``."""
-    return _create_from(json_object_body(app).get('definition'), None)
+    """Create a library workflow (admin): ``{definition}``; in a workspace an agents workflow only (409 for an
+    engineering flow, the deployment's until 3g3-c)."""
+    context = _agents_workspace(write=True)
+    return _create_from(json_object_body(app).get('definition'), None, context)
 
 
 @app.post('/workflows/validate')
@@ -886,7 +1060,9 @@ def create_workflow():
 def validate_workflow():
     """``{definition, workflow_id?}`` → ``{valid, errors, diff?}``; the diff is against that workflow's current revision.
     For an administrator (who saves), an engineering flow's errors include what its save would be refused for (its
-    calls expanded, its Registry cards: ``_save_issues``)."""
+    calls expanded, its Registry cards: ``_save_issues``); in a workspace an engineering flow is not valid (the
+    deployment's until 3g3-c), and ``workflow_id`` names a workflow of that workspace."""
+    context = _agents_workspace()
     caller = _caller()
     body = json_object_body(app)
     result = workflow_schema.validate_definition(body.get('definition'))
@@ -897,13 +1073,15 @@ def validate_workflow():
     agents_flow = definition is not None and definition['schema'] == workflow_schema.SCHEMA
     response['warnings'] = workflow_methodology.methodology_warnings(definition) if definition and agents_flow else []
     workflow_id = body.get('workflow_id')
-    if definition is not None and not agents_flow and acts_as_admin(caller):
+    if definition is not None and not agents_flow and context is not None:
+        response['valid'], response['errors'] = False, [{'message': ENGINEERING_NOT_IN_WORKSPACE}]
+    elif definition is not None and not agents_flow and acts_as_admin(caller):
         # (7.52.00: what its save would be refused for beyond its rules: its calls expanded, its Registry cards)
         issues = _save_issues(definition, workflow_id if store.is_workflow_id(workflow_id) else None)
         if issues:
             response['valid'], response['errors'] = False, issues
     if workflow_id is not None and isinstance(body.get('definition'), Mapping):
-        current = workflow_schema.decode_definition(_workflow(str(workflow_id)).get('definition'))
+        current = workflow_schema.decode_definition(_workflow(str(workflow_id), context=context).get('definition'))
         response['diff'] = workflow_schema.diff_definitions(current, result.definition or body['definition'])
         stored_kind = (current or {}).get('schema', workflow_schema.SCHEMA)   # as the save reads it
         if result.definition is not None and result.definition['schema'] != stored_kind:
@@ -936,10 +1114,11 @@ def list_workflow_templates():
 def get_workflow(workflow_id: str):
     """The current revision (with its definition and, 7.52.00, the automations that run it: ``used_by``) and the
     revision list."""
+    context = _agents_workspace()
     caller = _caller()
-    workflow = _workflow(workflow_id, include_archived=_sees_archived(caller))
-    return {'workflow': {**store.workflow_view(workflow), 'used_by': _uses(caller, workflow_id)},
-            'revisions': store.list_revisions(_agents_table(), workflow_id)}
+    workflow = _workflow(workflow_id, include_archived=_sees_archived(caller, context), context=context)
+    return {'workflow': {**store.workflow_view(workflow), 'used_by': _uses(caller, workflow_id, context)},
+            'revisions': store.list_revisions(_agents_table(), workflow_id, **_in(context))}
 
 
 _ASCII_DIGITS = re.compile(r'[0-9]+')
@@ -959,10 +1138,11 @@ def _revision_number(raw: str) -> int:
 @tracer.capture_method
 def get_workflow_revision(workflow_id: str, revision: str):
     """One saved revision with its definition (read-only history); the same read rule as ``GET /workflows/{id}``."""
+    context = _agents_workspace()
     caller = _caller()
     number = _revision_number(revision)
-    _workflow(workflow_id, include_archived=_sees_archived(caller))
-    found = store.get_revision(_agents_table(), workflow_id, number)
+    _workflow(workflow_id, include_archived=_sees_archived(caller, context), context=context)
+    found = store.get_revision(_agents_table(), workflow_id, number, **_in(context))
     if found is None:
         raise NotFoundError('Workflow revision not found')
     return found
@@ -977,8 +1157,9 @@ def save_workflow(workflow_id: str):
     from) changes each of them from its next run, so its save needs ``confirm_shared: true``: without it, 409
     ``{code: shared_flow, used_by}`` and nothing is saved. An engineering flow's calls are expanded first, as a run's
     start will (400 for one that cannot be)."""
+    context = _agents_workspace(write=True)
     caller = _caller()
-    require_admin_caller(caller)
+    require_agents_admin(app.current_event.raw_event, context)
     body = json_object_body(app)
     expected = body.get('expected_revision')
     if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
@@ -986,7 +1167,7 @@ def save_workflow(workflow_id: str):
     confirmed, from_agent = body.get('confirm_shared', False), body.get('agent_id')
     if not isinstance(confirmed, bool) or (from_agent is not None and not store.is_agent_id(from_agent)):
         raise ValidationError('confirm_shared is true or false, and agent_id the automation the edit comes from')
-    current = workflow_schema.decode_definition(_workflow(workflow_id).get('definition')) or {}
+    current = workflow_schema.decode_definition(_workflow(workflow_id, context=context).get('definition')) or {}
     definition = _valid_definition(body.get('definition'))
     if isinstance(definition, Response):
         return definition
@@ -997,11 +1178,12 @@ def save_workflow(workflow_id: str):
     if refused is not None:
         return refused
     # (the flows that call it pin a revision of it: a save changes none of them, so only automations hold it)
-    users = _uses(caller, workflow_id)
+    users = _uses(caller, workflow_id, context)
     if not confirmed and any(user['agent_id'] != from_agent for user in users['automations']):
         return _json(409, {'success': False, 'error': SHARED_FLOW, 'code': 'shared_flow', 'used_by': users})
     saved = store.save_revision(_agents_table(), workflow_id, definition, expected_revision=expected,
-                                saved_by=caller.subject, username=caller.username, now=store.utc_now())
+                                saved_by=caller.subject, username=caller.username, now=store.utc_now(),
+                                **_in(context))
     return {'workflow': {**store.workflow_view(saved), 'used_by': users}}
 
 
@@ -1009,14 +1191,15 @@ def save_workflow(workflow_id: str):
 @tracer.capture_method
 def duplicate_workflow(workflow_id: str):
     """Save as (admin): a new workflow from the current revision; ``{name?}``."""
-    require_admin_caller(_caller())
-    definition = workflow_schema.decode_definition(_workflow(workflow_id).get('definition')) or {}
+    context = _agents_workspace(write=True)
+    require_agents_admin(app.current_event.raw_event, context)
+    definition = workflow_schema.decode_definition(_workflow(workflow_id, context=context).get('definition')) or {}
     name = json_object_body(app).get('name')
     if name is not None:
         definition['name'] = name
     else:
         definition['name'] = f"{definition.get('name', 'Workflow')} (copy)"[:workflow_schema.MAX_NAME_CHARS]
-    return _create_from(definition, workflow_id)
+    return _create_from(definition, workflow_id, context)
 
 
 def _workflow_name(raw: object) -> str:
@@ -1036,10 +1219,11 @@ def rename_workflow(workflow_id: str):
     renamed (``save_revision`` keeps the definition as stored). 409 for the built-in
     template and when someone saved meanwhile; renaming to the same name is a no-op.
     """
+    context = _agents_workspace(write=True)
     caller = _caller()
-    require_admin_caller(caller)
+    require_agents_admin(app.current_event.raw_event, context)
     name = _workflow_name(json_object_body(app).get('name'))
-    workflow = _workflow(workflow_id)
+    workflow = _workflow(workflow_id, context=context)
     if workflow.get('builtin'):
         raise ConflictError('The built-in workflow cannot be renamed; duplicate it to get your own copy')
     definition = workflow_schema.decode_definition(workflow.get('definition'))
@@ -1050,7 +1234,8 @@ def rename_workflow(workflow_id: str):
     definition['name'] = name
     saved = store.save_revision(_agents_table(), workflow_id, definition,
                                 expected_revision=store.plain(workflow.get('revision')) or 1,
-                                saved_by=caller.subject, username=caller.username, now=store.utc_now())
+                                saved_by=caller.subject, username=caller.username, now=store.utc_now(),
+                                **_in(context))
     logger.info('Workflow renamed', extra={'workflow_id': workflow_id})
     return {'workflow': store.workflow_view(saved)}
 
@@ -1063,19 +1248,20 @@ def archive_workflow(workflow_id: str):
     Refused (409) while an active agent still runs it — archive or repoint that
     agent first — and for the built-in template. Archiving twice is a no-op.
     """
+    context = _agents_workspace(write=True)
     caller = _caller()
-    require_admin_caller(caller)
-    if _workflow(workflow_id, include_archived=True).get('builtin'):
+    require_agents_admin(app.current_event.raw_event, context)
+    if _workflow(workflow_id, include_archived=True, context=context).get('builtin'):
         raise ConflictError('The built-in workflow cannot be archived')
     users = sorted(
         str(agent.get('name') or agent.get('agent_id'))
-        for agent in store.list_agents(_agents_table())
+        for agent in store.list_agents(_agents_table(), **_in(context))
         if agent.get('workflow_id') == workflow_id and agent.get('status') != store.AGENT_STATUS_ARCHIVED
     )
     if users:
         raise ConflictError(f"The workflow is used by {', '.join(users)}; archive those agents or change their workflow first")
     archived = store.archive_workflow(_agents_table(), workflow_id, archived_by=caller.subject,
-                                      username=caller.username, now=store.utc_now())
+                                      username=caller.username, now=store.utc_now(), **_in(context))
     logger.info('Workflow archived', extra={'workflow_id': workflow_id})
     return {'workflow': store.workflow_view(archived, include_definition=False)}
 
@@ -1084,7 +1270,8 @@ def archive_workflow(workflow_id: str):
 @tracer.capture_method
 def export_workflow(workflow_id: str):
     """The current revision as an importable file."""
-    workflow = _workflow(workflow_id, include_archived=_sees_archived(_caller()))
+    context = _agents_workspace()
+    workflow = _workflow(workflow_id, include_archived=_sees_archived(_caller(), context), context=context)
     definition = workflow_schema.decode_definition(workflow.get('definition')) or {}
     return workflow_schema.export_document(
         definition, workflow_id=workflow_id, revision=store.plain(workflow.get('revision')) or 1,
@@ -1884,6 +2071,8 @@ def _request_body(body: Mapping[str, Any]) -> tuple[dict, dict[str, Any], str]:
     run_now = {name: body[name] for name in ('issue', 'prd') if name in body}
     issue, prd = _start_issue(run_now), _run_prd(run_now)
     _engineering_sentence(agent.get('engineering') or {}, '', issue, prd, _issue_stage(agent))   # (its own 400s)
+    if prd is not None:
+        _require_deployment_prd(prd)   # (its 404: a request names one of the deployment's PRDs, as Run now does)
     return agent, {**({'issue': issue} if issue is not None else {}), **({'prd': prd} if prd else {})}, note.strip()
 
 

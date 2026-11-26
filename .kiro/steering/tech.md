@@ -68,7 +68,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-manual-import-api` | `manual_import_handler.py` | `/scrapers/manual/*` (admin-only) | DynamoDB (aggregates RW; feedback `BatchGetItem` only, for a CSV dataset preview, docs/csv-import.md), SQS, S3 |
 | `voc-feedback-edit-api` | `feedback_edit_handler.py` | `PUT /feedback/{id}/category`, `PUT /feedback/{id}/dimensions` (correct a review's category / dimensions + tags) | DynamoDB (feedback RW, aggregates read) |
 | `voc-memory-api` | `memory_handler.py` | `/memory`, `/memory/{proxy+}` (inside a workspace, its memories: `WS#{ws}#MEM…`, its admins curating) | DynamoDB (memory Get/Put/Update/Query — no delete, aggregates read), the stack's workspace-resolution managed policy and Cognito `AdminListGroupsForUser`/`AdminGetUser` (a platform admin's entry, live-checked), SQS memory-extract, S3 `memory-imports/*` read+put and a workspace's `ws/{ws}/memory-imports/*` put, Bedrock + Titan Embed V2 |
-| `voc-agents-api` | `agents_handler.py` | `/agents/*` (incl. `/agents/plans*`, not admin-only), `/workflows/*` | DynamoDB (agents Get/Put/Update/Query, aggregates read), Step Functions start/stop on `voc-agent-run` only |
+| `voc-agents-api` | `agents_handler.py` | `/agents/*` (incl. `/agents/plans*`, not admin-only), `/workflows/*`; since 7.80.00 the agents and workflows routes act in the workspace `X-Workspace-Id` names (its own `WS#{ws}#AGENT#…`, `#WORKFLOW#…` rows and registry; no run starts there; load: an agent create there is one two-item transaction, a workflow create three items, all on the workspace's own partitions, its listing partition `WS#{ws}#AGENTS` small by design; with the engineering module a PRD run's project is checked to be the deployment's, one GetItem) | DynamoDB (agents Get/Put/Update/Query, aggregates read; with the engineering module a projected GetItem of voc-projects' `PROJECT#*` only), Step Functions start/stop on `voc-agent-run` only |
 | `voc-mcp-global-api` | `mcp_global_handler.py` | `POST /mcp/global` (global MCP token) | DynamoDB projects `MCPGTOKEN` Get/Update, jobs audit Put; Cognito AdminGetUser/AdminListGroupsForUser; `lambda:InvokeFunction` on exactly Metrics/Settings/Memory/Projects/Agents/Engagement/Radar/FeedbackEdit/Integrations/FeedbackForm APIs |
 | `voc-mcp-tokens-api` | `mcp_tokens_handler.py` | `/connect/tokens/*` (Cognito) | DynamoDB projects `MCPGTOKEN` Query/Get/Put/Update + `PROJECT#*` Get (pin check), jobs audit Query; voc-workspaces GetItem on `WS#*` (a mint inside a workspace pins it, with the minter's own membership: `lambda/shared/request_workspace.py` `elevate=False`) |
 | `voc-engagement-api` | `engagement_handler.py` (routers in `shared/*_routes.py`) | `/participants/*`, `/feature-requests/*` (board authorizer: app + board pools), public `POST /unsubscribe` | DynamoDB participants + feature-requests RW, projects read, aggregates GetItem, KMS, `ses:SendEmail` (only with `-c emailFrom`, `ses:FromAddress` pinned), invoke itself (async send slices, no retries) |
@@ -173,8 +173,10 @@ on `#DOCSHARE#*` in voc-projects, and DeleteItem alone on `DOCSHARE#*` (a link's
 only the code, which deletes a route only while it names this workspace, of an id from its own registry, keeps it to
 its own); for its people and lists (7.31.00) Query (keys only) and BatchWriteItem on `WS#{one id}#PARTICIPANTS`,
 `#LIST#*`, `#PERSON#*` and `#EMAIL#*` in voc-participants; for its members' conversations (7.28.00) Query (keys
-only) and BatchWriteItem on `WS#{one id}#CONVERSANTS` and `#USER#*` in voc-conversations; KMS; invoke itself. No
-Scan.
+only) and BatchWriteItem on `WS#{one id}#CONVERSANTS` and `#USER#*` in voc-conversations; for its agents and
+workflows (7.80.00) Query (keys only) and BatchWriteItem on `WS#{one id}#AGENT_REGISTRY`, `#AGENT#*`, `#WORKFLOW#*`
+and `#RUN#*` in voc-agents (load: one keys-only Query a page per listed partition, then the registry); KMS; invoke
+itself. No Scan.
 
 Not behind API Gateway (Processing stack): `voc-workspace-export` — `lambda/jobs/workspace_export/handler.py`
 (phase 4a, docs/multi-workspace.md "Export and delete"; `lib/stacks/workspace-export-worker.ts`), async invoke by
@@ -207,7 +209,10 @@ Query only, of `WS#{one id}#PROJECT_IDS`, `#PROJECT#*`, `#DOCUMENT_VERSIONS#PROJ
 `#DOCSHARE_IDS` and `#DOCSHARE#*`, and voc-jobs and voc-participants Query only, of `WS#{one id}#PROJECT#*`
 (`{one id}` any one workspace id: only the workspace layer holds an export to its own; `projects.py`: the projects
 through the registry, no row of a deleted one exported, each entity's listed or classified fields only, never a
-review link's id or a reviewer's email digest); workspaces Query on `WS#{one id}` and
+review link's id or a reviewer's email digest); voc-agents (7.80.00) Query only, of `WS#{one id}#AGENT_REGISTRY`,
+`#AGENT#*` and `#WORKFLOW#*` on the table (`agents.py`: the agents and workflows through the registry, each row kind's
+listed fields only; load: one Query per 100 registry rows and two per agent and per workflow, the workspace's own
+partitions, read once an export, none hot); workspaces Query on `WS#{one id}` and
 `AUDIT#WS#{one id}` only; raw bucket `s3:PutObject`, `PutObjectTagging`, `GetObject`, `AbortMultipartUpload`,
 `ListMultipartUploadParts` under `ws/{one id}/exports/*` only, and `s3:DeleteObject` on its own work objects
 (`ws/{one id}/exports/*/work/*`) only; read-only on the workspace's own objects: `s3:ListBucket` with `s3:prefix`

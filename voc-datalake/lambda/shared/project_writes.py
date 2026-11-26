@@ -15,11 +15,12 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
+from shared.gate_reads import read_gate_item
 from shared.ids import write_with_fresh_id
 from shared.project_keys import deployment_project_item, project_pk, project_registry_key
 from shared.timestamps import now_iso
@@ -69,6 +70,23 @@ def is_project_tombstone(item: dict[str, Any] | None) -> bool:
         PROJECT_DELETION_ATTRIBUTE in item
         or item.get('status') in PROJECT_TERMINAL_STATUSES
     )
+
+
+#: What ``deployment_project_live`` reads of a project's META (its projection): the key, the status and the deletion
+#: mark. lib/stacks/api-engineering-prd-check.ts holds the agents API's GetItem to exactly these attributes.
+LIVE_PROJECTION: Final = 'pk, sk, #status, #deleting'
+
+
+def deployment_project_live(table: Any, project_id: str) -> bool:
+    """Whether ``project_id`` is one of the deployment's projects, not being deleted (7.80.00): its ``PROJECT#{id}``
+    ``META`` (never a workspace's ``WS#{ws}#PROJECT#{id}``), strongly consistent and projected to
+    ``LIVE_PROJECTION``. False for no row and for a tombstone (a deletion mark or a terminal status); a failed read is
+    a ServiceError, never an answer. The agents API's PRD check (agents_handler.py ``_require_deployment_prd``)."""
+    meta = read_gate_item(
+        table, log_message='PRD project read failed', error_message='Could not check the PRD. Please retry.',
+        Key=project_meta_key(project_id), ConsistentRead=True, ProjectionExpression=LIVE_PROJECTION,
+        ExpressionAttributeNames={'#status': 'status', '#deleting': PROJECT_DELETION_ATTRIBUTE})
+    return meta is not None and not is_project_tombstone(meta)
 
 
 def is_verification_fixture(item: dict[str, Any] | None) -> bool:

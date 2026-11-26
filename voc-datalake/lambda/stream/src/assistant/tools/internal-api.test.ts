@@ -92,6 +92,24 @@ describe('buildProxyEvent', () => {
     expect(event.headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Workspace-Id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
     expect(event.requestContext).toStrictEqual({ authorizer: { claims: CLAIMS }, stage: 'v1' });
   });
+
+  // 7.80.00 (3g3-a): the agents and workflows routes act in the workspace a request names, but the web app and the
+  // assistant keep the deployment's agents until the workspace Agents page ships (3g3-ui-agents): an agents call goes
+  // without the header, a plan's (the approver's own, its workspace on its META) keeps it.
+  it.each([
+    ['/agents', '/agents'], ['/agents/ag_0123456789ab', '/agents/{id}'], ['/agents/ag_0123456789ab/runs', '/agents/{id}/runs'],
+    ['/workflows', '/workflows'], ['/workflows/wf_0123456789ab', '/workflows/{id}'], ['/workflows/validate', '/workflows/validate'],
+  ])('sends an agents call to %s without the workspace header', (path, resource) => {
+    const event = buildProxyEvent({ fn: 'agents', method: 'GET', path, resource },
+      { ...CLAIMS, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
+    expect(event.headers).toStrictEqual({ 'Content-Type': 'application/json' });
+  });
+
+  it("keeps the workspace header on a plan's call", () => {
+    const event = buildProxyEvent({ fn: 'agents', method: 'GET', path: '/agents/plans/pl_0123456789ab', resource: '/agents/{proxy+}' },
+      { ...CLAIMS, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
+    expect(event.headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Workspace-Id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
+  });
 });
 
 describe('createInternalApiInvoker', () => {

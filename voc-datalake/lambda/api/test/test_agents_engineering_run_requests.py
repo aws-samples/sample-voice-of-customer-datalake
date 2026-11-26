@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 import readiness_fakes
-from agents_handler_fixtures import ADMIN, USER
+from agents_handler_fixtures import ADMIN, USER, deployment_projects
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 from test_agents_engineering_agents import START_FUNCTION, Start
@@ -52,6 +52,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, Start, Any]]:
         agents_env.agents.put_item(Item={
             'pk': 'CONNECTIONS#default', 'sk': 'CONNECTION#shop', 'connection_id': 'shop', 'host': 'github',
             'repository': 'example-org/shop', 'default_branch': 'main', 'credential_set': True, 'version': 1})
+        deployment_projects(agents_env, monkeypatch, 'proj_1')
         with patch('shared.aws.get_dynamodb_client', return_value=engineering):
             yield agents_env, client, engineering
 
@@ -220,6 +221,32 @@ def test_a_refused_start_is_recorded_on_the_request(lambda_context: Any, env: tu
     assert (status, refused['error']) == (409, 'issue #7 of example-org/shop is closed')
     (stored,) = _call(lambda_context, 'GET', REQUESTS)[1]['requests']
     assert (stored['status'], stored['outcome']) == ('confirmed', 'refused: issue #7 of example-org/shop is closed')
+
+
+def test_a_prd_that_is_not_one_of_the_deployments_projects_is_neither_asked_nor_run(
+        lambda_context: Any, env: tuple[Any, Start, Any], automations: dict[str, dict]) -> None:
+    """7.80.00 (3g3-a): a request names a PRD of the deployment's own projects only, as Run now does: a workspace's
+    project (its rows and its id's claim) or no project is 404 and nothing is asked; a project deleted after the ask is
+    refused at the confirm, recorded on the request, and nothing starts."""
+    _, client, engineering = env
+    feature = automations['Feature builder']['agent_id']
+    projects = agents_handler.get_projects_table()
+    projects.put_item(Item={'pk': 'WS#ws_0123456789abcdef#PROJECT#proj_ws', 'sk': 'META'})
+    projects.put_item(Item={'pk': 'PROJECT_ID#proj_ws', 'sk': 'CLAIM', 'workspace_id': 'ws_0123456789abcdef'})
+    for project_id in ('proj_ws', 'proj_none'):
+        status, refused = _ask(lambda_context, {'agent_id': feature,
+                                                'prd': {'project_id': project_id, 'document_id': 'prd_1'}})
+        assert (status, refused['error']) == (404, agents_handler.PRD_PROJECT_NOT_FOUND)
+    assert engineering.query(TableName=TABLE, KeyConditionExpression='pk = :pk',
+                             ExpressionAttributeValues={':pk': {'S': PK}})['Items'] == []
+    status, body = _ask(lambda_context, {'agent_id': feature, 'prd': {'project_id': 'proj_1', 'document_id': 'prd_1'}})
+    assert status == 202, body
+    projects.update_item(Key={'pk': 'PROJECT#proj_1', 'sk': 'META'}, UpdateExpression='SET deletion_started_at = :at',
+                         ExpressionAttributeValues={':at': '2026-11-01T00:00:00Z'})
+    status, refused = _call(lambda_context, 'POST', f"{REQUESTS}/{body['request']['request_id']}/confirm", body={})
+    assert (status, refused['error'], client.requests) == (404, agents_handler.PRD_PROJECT_NOT_FOUND, [])
+    (stored,) = _call(lambda_context, 'GET', REQUESTS)[1]['requests']
+    assert stored['outcome'] == f'refused: {agents_handler.PRD_PROJECT_NOT_FOUND}'
 
 
 @pytest.mark.usefixtures('automations')

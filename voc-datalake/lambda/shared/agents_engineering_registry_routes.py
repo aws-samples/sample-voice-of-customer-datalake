@@ -59,8 +59,10 @@
 
 Administrators only, acting for themselves (403 for anyone else, a delegated credential included). The
 ``/agents/engineering/*`` routes answer 404 while the engineering agents are off; a flow's expansion and the pause do
-not need them. 503 when a table cannot be read or written. The deployment's, like the agents (phase 3 of
-docs/multi-workspace.md). Registered by ``agents_handler.py`` before its ``/agents/engineering/<run_id>`` routes, which
+not need them. 503 when a table cannot be read or written. The deployment's, like the engineering agents (phase 3 of
+docs/multi-workspace.md, 3g3-c), but for the pause and resume: since 7.80.00 (3g3-a) they act on the agent of the
+workspace ``X-Workspace-Id`` names, resolved first, by that workspace's admins (shared/agents_gate.py), its history row
+in the agent's partition there. Registered by ``agents_handler.py`` before its ``/agents/engineering/<run_id>`` routes, which
 would otherwise take ``registry``, ``gates`` and ``assertions`` for a run id.
 
 Kept in ``shared/`` because an API bundle ships ``api/<handler>.py`` and ``shared/`` only
@@ -80,6 +82,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agents_store as store
 from shared import engineering_templates, flow_expand
+from shared.agents_gate import FAILED_WORKSPACE, require_agents_admin
 from shared.agents_store import require_agents_table as _agents_table
 from shared.engineering_agent_runs import CONNECTION_ROW_PREFIX, CONNECTIONS_PARTITION, revision_reader
 from shared.engineering_agents import ENGINEERING_TABLE_ENV, engineering_agents_on
@@ -94,9 +97,12 @@ from shared.exceptions import (
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
+from shared.request_workspace import request_workspace
 from shared.route_answers import json_response as _json
 from shared.route_answers import query_text
 from shared.workflow_engineering import AGENT_REF, CARD_REF, GATE_AGENTS, SCHEMA_V2
+from shared.workspace import WorkspaceContext
+from shared.ws_repo import optional_scope
 
 __all__ = ['app', 'card_issues']
 
@@ -483,10 +489,14 @@ def get_expanded_workflow(workflow_id: str):
             'steps': len(expanded.definition['nodes'])}
 
 
-def _pause(agent_id: str, paused: bool) -> dict[str, Any]:
+def _pause(agent_id: str, paused: bool, context: WorkspaceContext | None) -> dict[str, Any]:
+    """The pause or resume of the request's scope's agent (7.80.00: a workspace's own agent and history row in one)."""
     caller = caller_from_event(app.current_event.raw_event)
     table = _agents_table()
-    agent = store.get_agent(table, agent_id) if store.is_agent_id(agent_id) else None
+    workspace = optional_scope(context)
+    # (``workspace=`` only inside one: the deployment's calls as they always were)
+    scoped: dict[str, Any] = {} if workspace is None else {'workspace': workspace}
+    agent = store.get_agent(table, agent_id, **scoped) if store.is_agent_id(agent_id) else None
     if agent is None or agent.get('status') == store.AGENT_STATUS_ARCHIVED:
         raise NotFoundError('Agent not found')
     if (agent.get('paused') is True) == paused:   # (already as asked: answered as it is, nothing written)
@@ -494,7 +504,7 @@ def _pause(agent_id: str, paused: bool) -> dict[str, Any]:
     if paused and agent.get('enabled') is not True:
         raise ConflictError(store.NOT_ON)
     updated = store.set_paused(table, agent_id, paused, by=caller.subject, username=caller.username or caller.subject,
-                               now=store.utc_now())
+                               now=store.utc_now(), **scoped)
     logger.info('Agent paused' if paused else 'Agent resumed', extra={'agent_id': agent_id})
     return {'agent': store.agent_view(updated)}
 
@@ -502,17 +512,21 @@ def _pause(agent_id: str, paused: bool) -> dict[str, Any]:
 @app.post('/agents/<agent_id>/pause')
 @tracer.capture_method
 def pause_agent(agent_id: str):
-    """Pause an automation that is on (409 for one that is off): no run starts by itself until it is resumed."""
-    require_admin_caller(caller_from_event(app.current_event.raw_event))
-    return _pause(agent_id, True)
+    """Pause an automation that is on (409 for one that is off): no run starts by itself until it is resumed. In a
+    workspace (``X-Workspace-Id``, resolved first) its own agent, by its admins: an agent there is never on yet, so
+    the 409."""
+    context = request_workspace(app.current_event.raw_event, FAILED_WORKSPACE, fresh=True, elevate=False)
+    require_agents_admin(app.current_event.raw_event, context)
+    return _pause(agent_id, True, context)
 
 
 @app.post('/agents/<agent_id>/resume')
 @tracer.capture_method
 def resume_agent(agent_id: str):
     """Resume a paused automation: its triggers start runs again from the next tick."""
-    require_admin_caller(caller_from_event(app.current_event.raw_event))
-    return _pause(agent_id, False)
+    context = request_workspace(app.current_event.raw_event, FAILED_WORKSPACE, fresh=True, elevate=False)
+    require_agents_admin(app.current_event.raw_event, context)
+    return _pause(agent_id, False, context)
 
 
 def _named_cards(definition: Mapping[str, Any]) -> list[tuple[Mapping[str, Any], str, str, int, str]]:

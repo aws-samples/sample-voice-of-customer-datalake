@@ -71,6 +71,13 @@ FAMILIES: Final = {
     # The workspace's Documents Library (7.62.00, shared/library_keys.py): its items, slug guards and count, and each
     # item's passages (listed by its item row).
     'library_pk': 'library', 'chunks_pk': 'library',
+    # The workspace's agents and workflows in voc-agents (7.80.00, shared/ws_repo.py): each agent's partition (its
+    # META, history and runs), each workflow's (its CURRENT row and revisions) and a run's journal, every one listed in
+    # the registry WS#{ws}#AGENT_REGISTRY, the registry last. The listing index's partitions (agents_index_pk, the
+    # agents, workflows and active runs listings) are no rows of their own: they go with their base rows (an agent's
+    # META, a workflow's CURRENT, an active run), as a project's by-type index goes with its META.
+    'agent_pk': 'agents', 'workflow_pk': 'agents', 'agent_run_pk': 'agents', 'agents_index_pk': 'agents',
+    'agent_registry_pk': 'agents',
     # A member's assists outside a project in voc-jobs (7.29.00, shared/assist_jobs.py owner_pk; no route writes one
     # yet): their rows hold the assist's input and answer for a day.
     'owner_pk': ('TTL: voc-jobs WS#{ws}#ASSIST#{sub} assist rows expire a day after they start (ASSIST_JOB_TTL); '

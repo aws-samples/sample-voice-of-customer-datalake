@@ -420,9 +420,20 @@ def _minter_still_admin(row: Mapping[str, Any]) -> bool:
     return any(g.get('GroupName') == ADMIN_GROUP for g in groups.get('Groups', []) if isinstance(g, dict))
 
 
+#: The tools a token minted inside a workspace is never offered (7.80.00): it sends that workspace's X-Workspace-Id
+#: to the agents API too, where a delegated caller writes nothing and no run starts (shared/agents_gate.py,
+#: agents_handler.py ``RUNS_NOT_IN_WORKSPACE``), so ``agents_run`` would always be refused. Its ``agents_list`` is the
+#: workspace's own agents; the engineering tools stay (their routes are the deployment's and read no header).
+NOT_OFFERED_TO_A_WORKSPACE_TOKEN: Final = frozenset({'agents_run'})
+REFUSED_INSIDE_A_WORKSPACE: Final = ('{tool} is not available to a token made inside a workspace: agents there do not '
+                                    'run yet')
+
+
 def _may_offer(tool: GlobalTool, row: Mapping[str, Any]) -> bool:
     """Whether `tools/list` shows ``tool`` to this token (no network call)."""
     if tool.needs_write_token and not gt.scope_allows_write(row.get('scope')):
+        return False
+    if tool.name in NOT_OFFERED_TO_A_WORKSPACE_TOKEN and gt.token_workspace(row) is not None:
         return False
     if tool.admin_only:
         return bool(row.get('minted_by_admin')) and gt.pinned_project(row) is None
@@ -459,6 +470,8 @@ def _check_allowed(call: ToolCall, row: Mapping[str, Any]) -> None:
         raise ToolDenied(f'{tool.name} needs a read-write token; this token is read-only')
     if tool.workspace_wide and gt.pinned_project(row) is not None:
         raise ToolDenied(f'{tool.name} reaches every project you can see; this token is scoped to one project')
+    if tool.name in NOT_OFFERED_TO_A_WORKSPACE_TOKEN and gt.token_workspace(row) is not None:
+        raise ToolDenied(REFUSED_INSIDE_A_WORKSPACE.format(tool=tool.name))
     if tool.admin_only:
         if gt.pinned_project(row) is not None:
             raise ToolDenied(f'{tool.name} is not available to a project-scoped token')

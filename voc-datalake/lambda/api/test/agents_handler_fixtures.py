@@ -61,6 +61,20 @@ def engineering_agents(monkeypatch: pytest.MonkeyPatch) -> Generator[AgentsEnv, 
         yield env
 
 
+def deployment_projects(env: AgentsEnv, monkeypatch: pytest.MonkeyPatch, *project_ids: str) -> Any:
+    """voc-projects on moto, the one a PRD's project is checked in (7.80.00, ``agents_handler._require_deployment_prd``
+    through shared/project_writes.py ``deployment_project_live``), with the deployment's ``PROJECT#{id}`` ``META`` of
+    each of ``project_ids``; the table, for a test's own rows."""
+    projects = env.resource.create_table(
+        TableName='test-projects-agents', BillingMode='PAY_PER_REQUEST',
+        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
+        AttributeDefinitions=[{'AttributeName': name, 'AttributeType': 'S'} for name in ('pk', 'sk')])
+    for project_id in project_ids:
+        projects.put_item(Item={'pk': f'PROJECT#{project_id}', 'sk': 'META', 'status': 'active'})
+    monkeypatch.setattr(agents_handler, 'get_projects_table', lambda: projects)
+    return projects
+
+
 def call(lambda_context: Any, method: str, path: str, **kwargs: Any) -> tuple[int, dict]:
     """One handler call; the status code and the decoded JSON body."""
     response = agents_handler.lambda_handler(event(method, path, **kwargs), lambda_context)

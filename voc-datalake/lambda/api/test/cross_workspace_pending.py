@@ -49,13 +49,13 @@ PHASE_2: dict[str, frozenset[str]] = {
 PHASE_3: dict[str, frozenset[str]] = {
     # Also POST /mcp/global (mcp_global_handler.py, not a route resolver: test_route_admin_gates.py
     # NON_RESOLVER_HANDLERS), which the inventory cannot list: its token row pins the workspace it was minted in.
-    # Since 7.47.00 the agents routes also carry the engineering agents (Bug fixer, Feature builder: the deployment's
-    # agents with engineering settings, their ISSUE_RUN# claims in voc-agents): they move with the other agents in 3g3,
-    # and until then their runs take only the deployment's feedback (D8).
+    # Since 7.80.00 (3g3-a) the agents and workflows routes resolve X-Workspace-Id (cross_workspace_worlds.py CASES).
+    # What stays here: the engineering agents' routes (Bug fixer, Feature builder: the deployment's agents with
+    # engineering settings, their ISSUE_RUN# claims in voc-agents, 3g3-c; until then their runs take only the
+    # deployment's feedback, D8), the engineering flow templates, and the plans' reads and actions (the assistant's
+    # plan mode: each plan is its approver's, its workspace on its META since 7.29.00).
     'agents_handler.py': frozenset({
-        'DELETE /agents/<agent_id>',
         'DELETE /agents/plans/<plan_id>',
-        'DELETE /workflows/<workflow_id>',
         # The engineering agents' routes (voc-autonomous, merged in 7.35.00): administrators only, the deployment's
         # engineering runs, flows' runs, connections, skills and spend; with the other agents routes, phase 3.
         'DELETE /agents/engineering/connections/<connection_id>',
@@ -116,34 +116,14 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /agents/engineering/connections/<connection_id>',
         'PUT /agents/engineering/connections/<connection_id>/issues',
         'PUT /agents/engineering/settings',
+        # The engineering flow templates (the bundle's, administrators only where the engineering agents are on).
         'GET /workflows/templates',
-        'GET /agents',
-        'GET /agents/<agent_id>',
-        'GET /agents/<agent_id>/runs',
-        'GET /agents/<agent_id>/runs/<run_id>',
-        'GET /agents/<agent_id>/runs/<run_id>/events',
         'GET /agents/plans',
         'GET /agents/plans/<plan_id>',
-        'GET /workflows',
-        'GET /workflows/<workflow_id>',
-        'GET /workflows/<workflow_id>/export',
-        'GET /workflows/<workflow_id>/revisions/<revision>',
-        'POST /agents',
-        'POST /agents/<agent_id>/disable',
-        'POST /agents/<agent_id>/enable',
-        'POST /agents/<agent_id>/run',
-        'POST /agents/<agent_id>/runs/<run_id>/cancel',
-        'POST /agents/<agent_id>/runs/<run_id>/decision',
         # POST /agents/plans resolves its workspace since 7.29.00 (cross_workspace_worlds.py CASES).
         'POST /agents/plans/<plan_id>/cancel',
         'POST /agents/plans/<plan_id>/steps/<step_id>/approve',
         'POST /agents/plans/<plan_id>/steps/<step_id>/decline',
-        'POST /workflows',
-        'POST /workflows/<workflow_id>/duplicate',
-        'POST /workflows/<workflow_id>/rename',
-        'POST /workflows/validate',
-        'PUT /agents/<agent_id>',
-        'PUT /workflows/<workflow_id>',
     }),
     # The engineering setup guide's progress (7.50.00, included by agents_handler.py): the deployment's, like the
     # engineering agents it sets up, so it moves with them in 3g3.
@@ -181,8 +161,9 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/docs/<connection_id>/preview',
         'POST /agents/engineering/docs/<connection_id>/publish',
     }),
-    # The Registry, the gates, the assertions, a flow's expansion and an automation's pause (7.52.00, included by
-    # agents_handler.py): the deployment's, like the agents and their flows, so they move with them in 3g3.
+    # The Registry, the gates, the assertions and a flow's expansion (7.52.00, included by agents_handler.py): the
+    # engineering agents' and their flows', the deployment's until 3g3-c. (An automation's pause and resume resolve the
+    # workspace since 7.80.00, 3g3-a: cross_workspace_worlds.py CASES.)
     'agents_engineering_registry_routes.py': frozenset({
         'GET /agents/engineering/assertions',
         'GET /agents/engineering/gates',
@@ -193,8 +174,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /agents/engineering/skill-library/<name>',
         'GET /agents/engineering/templates/<kind>/<template_id>/source',
         'GET /workflows/<workflow_id>/expanded',
-        'POST /agents/<agent_id>/pause',
-        'POST /agents/<agent_id>/resume',
         'POST /agents/engineering/registry/cards',
         # (7.58.00) A role's model in this deployment: one SETTINGS#engineering ROLE_MODELS row beside the hard cap's,
         # an administrator's, deployment-wide like the agents it sets.

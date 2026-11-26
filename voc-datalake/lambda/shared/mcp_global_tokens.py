@@ -203,8 +203,10 @@ def token_view(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         'last_used_at': row.get('last_used_at'),
         'revoked_at': row.get('revoked_at'),
         'status': token_status(row, now),
-        # Whether agents_run CAN be offered (still re-checked against Cognito per call).
-        'can_run_agents': bool(row.get('minted_by_admin')) and scope_allows_write(row.get('scope')),
+        # Whether agents_run CAN be offered (still re-checked against Cognito per call); never to a token minted inside
+        # a workspace, where agents do not run yet (7.80.00, api/mcp_global_handler.py NOT_OFFERED_TO_A_WORKSPACE_TOKEN).
+        'can_run_agents': (bool(row.get('minted_by_admin')) and scope_allows_write(row.get('scope'))
+                           and token_workspace(row) is None),
         # The workspace it was minted in (None: the deployment's, as before).
         'workspace_id': token_workspace(row),
     }

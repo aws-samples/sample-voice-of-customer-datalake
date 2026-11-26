@@ -97,6 +97,10 @@ export const CONVERSATION_PARTITIONS = [`WS#${ONE}#CONVERSANTS`, `WS#${ONE}#USER
  * (lambda/shared/participants_keys.py), never the deployment's `LIST#`, `PERSON#` or `EMAIL#` rows. */
 export const PARTICIPANT_PARTITIONS = [`WS#${ONE}#PARTICIPANTS`, `WS#${ONE}#LIST#*`, `WS#${ONE}#PERSON#*`,
   `WS#${ONE}#EMAIL#*`];
+/** voc-agents (7.80.00, lambda/shared/ws_repo.py): a workspace's registry of its agents' and workflows' partitions
+ * and the partitions it names (an agent's, a workflow's, a run's journal), never the deployment's rows. */
+export const AGENT_PARTITIONS = [`WS#${ONE}#AGENT_REGISTRY`, `WS#${ONE}#AGENT#*`, `WS#${ONE}#WORKFLOW#*`,
+  `WS#${ONE}#RUN#*`];
 /** What a keys-only Query may read of a row: its key alone (lambda/jobs/workspace_delete/sweeps.py `KEYS_ONLY`). */
 const KEY_ATTRIBUTES = ['pk', 'sk'];
 
@@ -120,6 +124,8 @@ export interface WorkspaceDeleteWorkerProps {
   participantsTable: dynamodb.ITable;
   /** voc-conversations: the members' conversations in the workspace and their owner list (the `conversations` grant). */
   conversationsTable: dynamodb.ITable;
+  /** voc-agents: the workspace's agents, workflows and their registry (the `agents` grant, 7.80.00). */
+  agentsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
   /** Every plugin id of the deployment (its PLUGIN#{p} rows and per-plugin partitions are found by them). */
   pluginIds: readonly string[];
@@ -225,17 +231,30 @@ function grantOnAggregates(role: iam.Role, which: DeleteGrant, aggregatesTable: 
   }
 }
 
+/** The keys-only Query statements of each role, added after every other statement (`addDeferredReads`): reads only,
+ * so when the role's statements are past what CDK keeps inline it is these reads, never a delete, that CDK moves to the
+ * role's managed overflow policy (lib/customer-data-deletes.test.ts keeps every delete inline). */
+const deferredReads = new WeakMap<iam.Role, iam.PolicyStatement[]>();
+
 /** Batch deletes of `partitions` of `table`, and a Query of them for the keys alone (`dynamodb:Attributes` pk and sk,
- * which must be named, and SPECIFIC_ATTRIBUTES: nothing else of a row is ever read; sweeps.py KEYS_ONLY). */
+ * which must be named, and SPECIFIC_ATTRIBUTES: nothing else of a row is ever read; sweeps.py KEYS_ONLY), the Query
+ * deferred to the end of the role's policy (`deferredReads`). */
 function sweepKeysOnly(role: iam.Role, table: dynamodb.ITable, partitions: readonly string[]): void {
   sweep(role, [table], partitions, []);
-  role.addToPolicy(new iam.PolicyStatement({ actions: ['dynamodb:Query'], resources: [table.tableArn],
+  const reads = deferredReads.get(role) ?? [];
+  deferredReads.set(role, reads);
+  reads.push(new iam.PolicyStatement({ actions: ['dynamodb:Query'], resources: [table.tableArn],
     conditions: {
       ...keys(partitions),
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': KEY_ATTRIBUTES },
       StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
       Null: { 'dynamodb:Attributes': 'false' },
     } }));
+}
+
+/** The role's deferred keys-only reads (`sweepKeysOnly`), after every other statement. */
+function addDeferredReads(role: iam.Role): void {
+  for (const statement of deferredReads.get(role) ?? []) role.addToPolicy(statement);
 }
 
 /** The `projects` grant (lib/utils/workspace-delete-grants.ts): the registry and each project's partitions read and
@@ -273,6 +292,9 @@ const KEYS_ONLY_SWEEPS: Partial<Record<DeleteGrant,
   // One workspace's owner list and its owners' partitions, never the deployment's USER#{sub}: no message, title or
   // first_at is ever read.
   conversations: (props) => [props.conversationsTable, CONVERSATION_PARTITIONS],
+  // One workspace's agents registry and the partitions it names, never the deployment's agents, workflows, runs,
+  // plans or engineering rows: no instructions, flow or history is ever read.
+  agents: (props) => [props.agentsTable, AGENT_PARTITIONS],
 };
 
 /** Each grant's statements (lib/utils/workspace-delete-grants.ts). */
@@ -356,6 +378,8 @@ export function createWorkspaceDeleteWorker(scope: Construct, id: string,
     resources: [workspacesTable.tableArn], conditions: keys([DELETE_AUDIT_PARTITION]) }));
   kmsKey.grantEncryptDecrypt(role);
   grantInvokeByName(cdk.Stack.of(worker), role, [functionName], 'SelfInvoke');
+  // (last: reads only, so an overflow into the role's managed policy never takes a delete; 7.80.00)
+  addDeferredReads(role);
 
   return new lambda.Function(worker, 'Delete', {
     functionName,
@@ -382,6 +406,7 @@ export function createWorkspaceDeleteWorker(scope: Construct, id: string,
       JOBS_TABLE: props.jobsTable.tableName,
       PARTICIPANTS_TABLE: props.participantsTable.tableName,
       CONVERSATIONS_TABLE: props.conversationsTable.tableName,
+      AGENTS_TABLE: props.agentsTable.tableName,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
       PLUGIN_IDS: JSON.stringify([...props.pluginIds].sort(byCodeUnit)),
       // Built only with the flag on (lib/utils/workspace-hard-delete.ts); the job refuses to run without it.

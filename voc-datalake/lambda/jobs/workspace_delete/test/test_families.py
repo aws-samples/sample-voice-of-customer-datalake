@@ -5,8 +5,10 @@ families.py without a seed here fails, so the seeds follow the registry (test_re
 code)."""
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
@@ -22,6 +24,7 @@ from jobs.workspace_delete.test.conftest import (
     seed_workspace,
 )
 from jobs.workspace_delete.test.families import FAMILIES
+from shared import agents_store, workflow_schema
 from shared.adoption import rollup_partition
 from shared.company_context import my_context_key, put_my_context
 from shared.conversations import conversant_key, conversation_partition
@@ -51,6 +54,9 @@ from shared.workspace_settings import settings_key
 from shared.ws_repo import (
     WATERMARK_DIRECTORY,
     WorkspaceScope,
+    agent_registry_pk,
+    agent_run_pk,
+    agents_index_pk,
     category_pk,
     channel_pk,
     control_partition,
@@ -147,6 +153,39 @@ def _library_passage(world: World) -> Probe:
     """A passage of a library item, listed by the item's row (as the extraction writes them)."""
     world.projects.put_item(Item={**library_item_key(_FAM_ITEM, workspace=SCOPE), 'item_id': _FAM_ITEM})
     return _put(world, 'projects', {'pk': library_chunks_pk(_FAM_ITEM, workspace=SCOPE), 'sk': 'C#00001', 'text': 'x'})
+
+
+_FAM_STAMP = datetime(2026, 11, 2, tzinfo=UTC)
+
+
+def _agent(world: World) -> Probe:
+    """An agent of the workspace created through the store (its META and registry row): the probe of its ``META``
+    (its history rows: test_the_agents_sweep_reaches_the_deleted_workspaces_agents_only)."""
+    fields = agents_store.normalize_agent({'name': 'Fam scout'}, [])
+    agent = agents_store.create_agent(world.agents, fields, created_by='sub-fam', now=_FAM_STAMP, workspace=SCOPE)
+    return Probe('agents', agents_store.agent_key(agent['agent_id'], workspace=SCOPE))
+
+
+def _workflow(world: World, *, row: str = 'REV') -> Probe:
+    """A workflow of the workspace created through the store: its first revision, its registry row, or its
+    ``CURRENT`` row, the base row that carries the listing index's ``WS#{ws}#WORKFLOWS`` (``agents_index_pk``: an
+    index partition goes with its base rows)."""
+    created = agents_store.create_workflow(world.agents, workflow_schema.default_template(), created_by='sub-fam',
+                                           username='fam', now=_FAM_STAMP, workspace=SCOPE)
+    if row == 'REGISTRY':
+        return Probe('agents', {'pk': agent_registry_pk(SCOPE), 'sk': f"WORKFLOW#{created['workflow_id']}"})
+    if row == 'CURRENT':
+        key = agents_store.workflow_current_key(created['workflow_id'], workspace=SCOPE)
+        assert world.agents.get_item(Key=key)['Item']['gsi1pk'] == agents_index_pk(SCOPE, 'WORKFLOWS')
+        return Probe('agents', key)
+    return Probe('agents', agents_store.workflow_revision_key(created['workflow_id'], 1, workspace=SCOPE))
+
+
+def _run_journal(world: World) -> Probe:
+    """A run's journal event, its partition listed in the registry (the row a run started in a workspace writes)."""
+    run_id = 'ar_019a2b3c4d5e0123'
+    _put(world, 'agents', {'pk': agent_registry_pk(SCOPE), 'sk': f'RUN#{run_id}'})
+    return _put(world, 'agents', {'pk': agent_run_pk(SCOPE, run_id), 'sk': 'EVT#00000001', 'kind': 'message'})
 
 
 #: A project of the workspace the family seeds sit in: registered (its registry row and claim), as a create writes.
@@ -318,6 +357,13 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     # A library item's row and one of its passages (7.62.00): the passages through the item, the item last.
     'library_pk': lambda w: _put(w, 'projects', {**library_item_key(_FAM_ITEM, workspace=SCOPE), 'item_id': _FAM_ITEM}),
     'chunks_pk': _library_passage,
+    # The workspace's agents and workflows (7.80.00), as shared/agents_store.py writes them (each listed in the
+    # registry in its first row's transaction); a run's journal through a registry row of its own (RUN#{run}).
+    'agent_pk': _agent,
+    'agents_index_pk': lambda w: _workflow(w, row='CURRENT'),
+    'workflow_pk': _workflow,
+    'agent_registry_pk': lambda w: _workflow(w, row='REGISTRY'),
+    'agent_run_pk': _run_journal,
     # A member's assist outside a project (7.29.00): its row expires a day after it starts (TTL).
     'owner_pk': None,
     # A conversation owner's row, and a conversation and its Stop marker in that owner's partition, as the writers
@@ -341,6 +387,40 @@ def _radar(world: World, partition: str, sort_key: str) -> Probe:
     pk = scoped_pk(SCOPE, partition)
     world.radar.put_item(Item=owned_row(SCOPE, pk))
     return _put(world, 'radar', {'pk': pk, 'sk': sort_key})
+
+
+def test_the_agents_sweep_reaches_the_deleted_workspaces_agents_only(world):
+    """7.80.00: the workspace's agents, their pause history, workflows and registry go; another workspace's and the
+    deployment's stay; a registry row of an unknown kind or naming a malformed id names no partition (and goes with
+    the registry)."""
+    seed_workspace(world, WS, status='deleting')
+    seed_workspace(world, OTHER, status='active')
+    seed_deployment(world)
+    event = request_job(world)
+    kept = []
+    for scope in (SCOPE, WorkspaceScope(OTHER), None):
+        scoped: dict[str, Any] = {} if scope is None else {'workspace': scope}
+        fields = agents_store.normalize_agent({'name': 'Scout', 'enabled': True}, [])
+        agent = agents_store.create_agent(world.agents, fields, created_by='s', now=_FAM_STAMP, **scoped)
+        # (its history row, LOG#: a pause and a resume)
+        for paused in (True, False):
+            agents_store.set_paused(world.agents, agent['agent_id'], paused, by='s', username='s', now=_FAM_STAMP,
+                                    **scoped)
+        agents_store.create_workflow(world.agents, workflow_schema.default_template(), created_by='s', username='s',
+                                     now=_FAM_STAMP, **scoped)
+        if scope is not SCOPE:
+            kept.append(agents_store.agent_key(agent['agent_id'], **scoped))
+    world.agents.put_item(Item={'pk': agent_registry_pk(SCOPE), 'sk': 'PLAN#pl_0123456789ab'})
+    world.agents.put_item(Item={'pk': agent_registry_pk(SCOPE), 'sk': 'AGENT#ag_x'})
+    before_other = sorted(json.dumps(row, sort_keys=True, default=str) for row in world.agents.scan()['Items']
+                          if not str(row['pk']).startswith(f'WS#{WS}#'))
+
+    assert run_to_the_end(world, event)[-1]['status'] == 'completed'
+
+    rows = world.agents.scan()['Items']
+    assert [row for row in rows if str(row['pk']).startswith(f'WS#{WS}#')] == []
+    assert sorted(json.dumps(row, sort_keys=True, default=str) for row in rows) == before_other
+    assert all('Item' in world.agents.get_item(Key=key) for key in kept)
 
 
 def _present(world: World, probe: Probe) -> bool:

@@ -138,6 +138,9 @@ class RouteCase:
     #: refusal's own message, as ``module.NAME`` of its constant; check 4 expects exactly it, so no other 4xx of the
     #: same code (a validation, a missing schedule) passes for the refusal.
     refusal: str = ''
+    #: The refusal's machine-readable ``code`` beside its message, for one that answers with one (agents_handler.py
+    #: ``RUNS_NOT_IN_WORKSPACE_CODE``, 7.80.00); check 4 then expects exactly both. Only with ``refusal``.
+    refusal_code: str = ''
 
 
 @dataclass(frozen=True)
@@ -768,16 +771,109 @@ _PLAN_LITERALS = {
 }
 
 
+#: The agents and workflows each route acts on (7.80.00, 3g3-a), in A, in B and in neither: an agent and the workflow
+#: it runs, a spare workflow no agent runs (an archive needs one), a run waiting for a human (its journal holds one
+#: event) and a queued one (a cancel needs one). The deployment holds A's ids too (check 3 reads them there).
+_AGENT_IDS = {
+    side: {'agent_id': f'ag_{digit * 12}', 'workflow_id': f'wf_{digit * 12}', 'spare_id': f'wf_{digit * 11}1',
+           'run_id': f'ar_{digit * 12}', 'queued_id': f'ar_{digit * 11}1'}
+    for side, digit in (('A', 'a'), ('B', 'b'), (UNKNOWN, 'f'))
+}
+#: Without the header the agents are the deployment's, as before (shared/request_workspace.py).
+_DEPLOYMENT_AGENTS = "the deployment as before: its own agents and workflows, no workspace's (shared/request_workspace.py)"
+#: Inside a workspace an agent is kept and edited, never turned on or run yet (owner decision, 3g3-a): enable, Run
+#: now, cancel and decision find the agent or run, then answer 409; without the header they act as before.
+_RUNS_REFUSED = 409
+#: Its message (check 4 expects exactly it): no run starts in a workspace yet.
+_RUNS_REFUSAL = 'agents_handler.RUNS_NOT_IN_WORKSPACE'
+_RUNS_REFUSAL_CODE = 'runs_not_in_workspace'   # (agents_handler.RUNS_NOT_IN_WORKSPACE_CODE)
+
+
+def _agent_case(names: tuple[str, ...], **kwargs: Any) -> RouteCase:
+    """A case whose path or body names ``names`` of ``_AGENT_IDS`` (a route's own names: ``workflow_id`` for the
+    spare workflow on the archive)."""
+    rename = kwargs.pop('rename', {})
+    return RouteCase(ids={side: {name: ids[rename.get(name, name)] for name in names}
+                          for side, ids in _AGENT_IDS.items()},
+                     without_a_workspace=_DEPLOYMENT_AGENTS, **kwargs)
+
+
+def _trail_definition() -> dict[str, Any]:
+    """The built-in template, named: the definition a save or a create sends."""
+    from shared import workflow_schema
+
+    return {**workflow_schema.default_template(), 'name': 'Trail flow'}
+
+
+def _definition_literals(value: Any) -> dict[str, str]:
+    """Every leaf of the definition (strings, numbers as text), each a part of the built-in template."""
+    if isinstance(value, dict):
+        return {leaf: why for item in value.values() for leaf, why in _definition_literals(item).items()}
+    if isinstance(value, list):
+        return {leaf: why for item in value for leaf, why in _definition_literals(item).items()}
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return {str(value): 'a part of the built-in template the admin saved, the same in every workspace'}
+    return {value: 'a part of the built-in template the admin saved, the same in every workspace'} \
+        if isinstance(value, str) else {}
+
+
+def _seed_agents(table: Any, scope: Any, ids: dict[str, str], mark: str, owner: str) -> None:
+    """One agent of ``scope`` (None: the deployment's) running its workflow, a spare workflow, a run waiting for a
+    human with one journal event and a queued run, as shared/agents_store.py writes them (keys from the store)."""
+    from shared import agents_store as store
+    from shared import workflow_schema
+    from shared.ws_repo import agent_registry_pk, agents_index_pk
+
+    stamp = '2026-11-20T09:00:00+00:00'
+
+    def listing(name: str) -> str:
+        return name if scope is None else agents_index_pk(scope, name)
+
+    for workflow_id in (ids['workflow_id'], ids['spare_id']):
+        definition = {**workflow_schema.default_template(), 'name': f'{mark} flow'}
+        revision = {'revision': 1, 'definition': workflow_schema.encode_definition(definition), 'name': definition['name'],
+                    'saved_at': stamp, 'saved_by': owner, 'saved_by_username': owner}
+        table.put_item(Item={**store.workflow_current_key(workflow_id, workspace=scope), 'gsi1pk': listing('WORKFLOWS'),
+                             'gsi1sk': f'{mark} flow#{workflow_id}', 'workflow_id': workflow_id, 'slug': 'flow',
+                             'description': '', 'derived_from': None, 'created_at': stamp, 'created_by': owner,
+                             'updated_at': stamp, 'updated_by_username': owner, **revision})
+        table.put_item(Item={**store.workflow_revision_key(workflow_id, 1, workspace=scope), 'workflow_id': workflow_id,
+                             **revision})
+    fields = store.normalize_agent({'name': f'{mark} scout', 'workflow_id': ids['workflow_id']}, [])
+    table.put_item(Item={**store.agent_key(ids['agent_id'], workspace=scope), 'gsi1pk': listing('AGENTS'),
+                         'gsi1sk': fields['name'], 'agent_id': ids['agent_id'], **fields, 'owner_sub': owner,
+                         'status': 'active', 'created_by': owner, 'created_at': stamp, 'updated_by': owner,
+                         'updated_at': stamp, 'last_run_cursor': stamp, 'runs_total': 2})
+    for run_id, status in ((ids['run_id'], 'needs_human'), (ids['queued_id'], 'queued')):
+        table.put_item(Item={**store.run_key(ids['agent_id'], run_id, workspace=scope), 'run_id': run_id,
+                             'agent_id': ids['agent_id'], 'status': status, 'trigger': 'manual', 'started_at': stamp,
+                             'workflow_id': ids['workflow_id'], 'workflow_revision': 1, 'model_calls': 0,
+                             'event_seq': 1, 'requested_by': owner})
+    events_pk = f'RUN#{ids["run_id"]}' if scope is None else f'{scope.prefix}RUN#{ids["run_id"]}'
+    table.put_item(Item={'pk': events_pk, 'sk': 'EVT#00000001', 'run_id': ids['run_id'], 'seq': 1, 'at': stamp,
+                         'kind': 'message', 'summary': f'{mark} read the reviews'})
+    if scope is not None:
+        for sort_key in (f'AGENT#{ids["agent_id"]}', f'WORKFLOW#{ids["workflow_id"]}', f'WORKFLOW#{ids["spare_id"]}'):
+            table.put_item(Item={'pk': agent_registry_pk(scope), 'sk': sort_key, 'created_at': stamp})
+
+
 @contextmanager
 def agents_world(lambda_context: Any) -> Generator[World]:
+    """The agents Lambda over two seeded workspaces (since 7.80.00 each with its own agent, workflows and runs, and
+    the deployment's copies under A's ids), and a plan's approval (7.29.00)."""
     import agents_handler
     from shared import agent_seed, agents_store
     from shared.test.agents_fixtures import CATEGORIES, STATE_MACHINE_ARN
+    from shared.ws_repo import WorkspaceScope
 
     with ExitStack() as stack:
         cognito = _domain_resolution(stack)
         resource = boto3.resource('dynamodb', region_name='us-east-1')
-        pk_sk_table('agents', gsi1_index=agents_store.AGENTS_INDEX)
+        agents = pk_sk_table('agents', gsi1_index=agents_store.AGENTS_INDEX)
+        for scope, ids, mark, owner in ((None, _AGENT_IDS['A'], 'before workspaces', 'sub-ada'),
+                                        (WorkspaceScope(WS_A), _AGENT_IDS['A'], A_MARK, 'sub-ada'),
+                                        (WorkspaceScope(WS_B), _AGENT_IDS['B'], B_MARK, f'sub-{B_MARK}-bea')):
+            _seed_agents(agents, scope, ids, mark, owner)
         aggregates = pk_sk_table('aggregates')
         aggregates.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': CATEGORIES})
         sfn = MagicMock(name='stepfunctions')
@@ -1357,6 +1453,8 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'logs_handler.py': logs_world,
     'mcp_oauth_consent_routes.py': tokens_world,
     'agents_handler.py': agents_world,
+    # Included by the agents handler (an automation's pause and resume, 7.80.00).
+    'agents_engineering_registry_routes.py': agents_world,
     # Included by the settings handler (a feedback form's AI draft, 7.55.00; a form report's AI summary, 7.63.00).
     'forms_v2_draft_routes.py': settings_world,
     'forms_report_routes.py': settings_world,
@@ -1693,6 +1791,68 @@ CASES: dict[tuple[str, str], RouteCase] = {
         outside_a={('PLANCAP#', 'META'): "the approver's own count of live plans (PLANCAP#{sub}), per person",
                    ('PLAN#', 'STEP#'): "the new plan's step rows, under its own new id (its own row names A)",
                    ('PLAN#', 'EVT#'): "the new plan's event rows, under its own new id (its own row names A)"}),
+    # The agents and workflows (7.80.00, 3g3-a): each workspace's own agents, history, workflows and runs; any member
+    # reads, its admins write; without the header the deployment's, for the deployment's admins (the writes).
+    ('agents_handler.py', 'GET /agents'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's agent; A lists its own, none seeded there)",
+        without_a_workspace=_DEPLOYMENT_AGENTS),
+    ('agents_handler.py', 'POST /agents'): RouteCase(
+        no_ids='the agent is new (with its own copy of the template), the workspace is the header: check 1',
+        body={'name': 'Trail scout'}, literals={'Trail scout': 'the name the admin typed'}, ok_status=201,
+        without_a_workspace=_DEPLOYMENT_AGENTS, deployment_admins_without_a_workspace=True),
+    **{('agents_handler.py', route): _agent_case(names)
+       for route, names in (('GET /agents/<agent_id>', ('agent_id',)),
+                            ('GET /agents/<agent_id>/runs', ('agent_id',)),
+                            ('GET /agents/<agent_id>/runs/<run_id>', ('agent_id', 'run_id')),
+                            ('GET /agents/<agent_id>/runs/<run_id>/events', ('agent_id', 'run_id')))},
+    ('agents_handler.py', 'PUT /agents/<agent_id>'): _agent_case(
+        ('agent_id',), body={'name': 'Renamed scout'}, literals={'Renamed scout': 'the name the admin typed'},
+        deployment_admins_without_a_workspace=True),
+    **{('agents_handler.py', route): _agent_case(('agent_id',), deployment_admins_without_a_workspace=True)
+       for route in ('DELETE /agents/<agent_id>', 'POST /agents/<agent_id>/disable')},
+    # Found in the workspace, then refused (no run starts there yet); the deployment's agent is turned on and run.
+    ('agents_handler.py', 'POST /agents/<agent_id>/enable'): _agent_case(
+        ('agent_id',), ok_status=_RUNS_REFUSED, refusal=_RUNS_REFUSAL, refusal_code=_RUNS_REFUSAL_CODE, status_without_a_workspace=200,
+        deployment_admins_without_a_workspace=True),
+    ('agents_handler.py', 'POST /agents/<agent_id>/run'): _agent_case(
+        ('agent_id',), ok_status=_RUNS_REFUSED, refusal=_RUNS_REFUSAL, refusal_code=_RUNS_REFUSAL_CODE, status_without_a_workspace=202,
+        deployment_admins_without_a_workspace=True),
+    ('agents_handler.py', 'POST /agents/<agent_id>/runs/<run_id>/cancel'): _agent_case(
+        ('agent_id', 'run_id'), rename={'run_id': 'queued_id'}, ok_status=_RUNS_REFUSED, refusal=_RUNS_REFUSAL, refusal_code=_RUNS_REFUSAL_CODE,
+        status_without_a_workspace=200, deployment_admins_without_a_workspace=True),
+    ('agents_handler.py', 'POST /agents/<agent_id>/runs/<run_id>/decision'): _agent_case(
+        ('agent_id', 'run_id'), body={'decision': 'stop'}, literals={'stop': 'a decision, the same everywhere'},
+        ok_status=_RUNS_REFUSED, refusal=_RUNS_REFUSAL, refusal_code=_RUNS_REFUSAL_CODE, status_without_a_workspace=200, deployment_admins_without_a_workspace=True),
+    # An automation's pause needs one that is on: none is in a workspace, nor the deployment's copy (409 both ways).
+    ('agents_engineering_registry_routes.py', 'POST /agents/<agent_id>/pause'): _agent_case(
+        ('agent_id',), ok_status=409, refusal='shared.agents_store.NOT_ON', deployment_admins_without_a_workspace=True),
+    ('agents_engineering_registry_routes.py', 'POST /agents/<agent_id>/resume'): _agent_case(
+        ('agent_id',), deployment_admins_without_a_workspace=True),
+    ('agents_handler.py', 'GET /workflows'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's flows; A lists the built-in and its own)",
+        without_a_workspace=_DEPLOYMENT_AGENTS),
+    ('agents_handler.py', 'POST /workflows'): RouteCase(
+        no_ids='the workflow is new, the workspace is the header: check 1',
+        body={'definition': _trail_definition()}, literals=_definition_literals(_trail_definition()), ok_status=201,
+        without_a_workspace=_DEPLOYMENT_AGENTS, deployment_admins_without_a_workspace=True),
+    # (an empty definition: not valid, and its diff against the workflow the body names, read in the scope)
+    ('agents_handler.py', 'POST /workflows/validate'): _agent_case(
+        ('workflow_id',), body={'definition': {}, 'workflow_id': '{workflow_id}'}),
+    **{('agents_handler.py', route): _agent_case(('workflow_id',))
+       for route in ('GET /workflows/<workflow_id>', 'GET /workflows/<workflow_id>/export')},
+    ('agents_handler.py', 'GET /workflows/<workflow_id>/revisions/<revision>'): _agent_case(
+        ('workflow_id',), shared={'revision': '1'}, literals={'1': "a revision number, every workflow's first"}),
+    ('agents_handler.py', 'PUT /workflows/<workflow_id>'): _agent_case(
+        ('workflow_id',), body={'definition': _trail_definition(), 'expected_revision': 1, 'confirm_shared': True},
+        literals={**_definition_literals(_trail_definition()), '1': 'the revision the admin edited'},
+        deployment_admins_without_a_workspace=True),
+    ('agents_handler.py', 'POST /workflows/<workflow_id>/duplicate'): _agent_case(
+        ('workflow_id',), body={}, ok_status=201, deployment_admins_without_a_workspace=True),
+    ('agents_handler.py', 'POST /workflows/<workflow_id>/rename'): _agent_case(
+        ('workflow_id',), body={'name': 'Renamed flow'}, literals={'Renamed flow': 'the name the admin typed'},
+        deployment_admins_without_a_workspace=True),
+    ('agents_handler.py', 'DELETE /workflows/<workflow_id>'): _agent_case(
+        ('workflow_id',), rename={'workflow_id': 'spare_id'}, deployment_admins_without_a_workspace=True),
     # A review's category and dimensions (shared/workspace_request.py RequestWorkspace, read afresh: an edit is a
     # write): A's member edits A's review only; B's review id is not found in A, as an id of no review.
     ('feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/category'): RouteCase(

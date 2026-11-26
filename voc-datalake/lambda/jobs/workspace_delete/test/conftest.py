@@ -1,6 +1,7 @@
 """Fixtures for the workspace delete job: every table it reaches in moto (voc-feedback with ``gsi1-by-date``,
 voc-aggregates with ``gsi1-by-metric-type``, voc-memory with ``gsi1-by-memory-status``, voc-watermarks, voc-workspaces,
-voc-radar, voc-projects with ``gsi1-by-type``, voc-jobs, voc-participants, voc-conversations), a versioned bucket, SSM, and two
+voc-radar, voc-projects with ``gsi1-by-type``, voc-jobs, voc-participants, voc-conversations, voc-agents with
+``gsi1-by-agents-listing``), a versioned bucket, SSM, and two
 workspaces seeded with a row of every family beside the deployment's own rows.
 
 The fictional workspaces: Acme Outfitters (``acme``, the one deleted) and Birch Bakery (``birch``, which must not
@@ -21,7 +22,7 @@ from moto import mock_aws
 
 from jobs.test.lambda_budget import LambdaBudget
 from jobs.workspace_delete import handler
-from shared.indexes import FEEDBACK_BY_DATE_INDEX, MEMORY_BY_STATUS_INDEX
+from shared.indexes import AGENTS_LISTING_INDEX, FEEDBACK_BY_DATE_INDEX, MEMORY_BY_STATUS_INDEX
 from shared.participants_lists import add_member, create_list
 from shared.participants_store import create_person
 from shared.project_keys import (
@@ -51,6 +52,7 @@ PROJECTS_TABLE: Final = 'test-projects'
 JOBS_TABLE: Final = 'test-jobs'
 PARTICIPANTS_TABLE: Final = 'test-participants'
 CONVERSATIONS_TABLE: Final = 'test-conversations'
+AGENTS_TABLE: Final = 'test-agents'
 #: Per workspace, the people who kept conversations there (a former member's too), each with these rows.
 CONVERSANTS: Final = ('sub-ada', 'sub-vic', 'sub-former')
 CONVERSATION_ROWS: Final = ('CONV#c1', 'CONV#c2', 'RUNCANCEL#c1')
@@ -82,6 +84,8 @@ class World:
     jobs: Any = None
     participants: Any = None
     conversations: Any = None
+    #: voc-agents (7.80.00, the ``agents`` sweep), with its listing index.
+    agents: Any = None
 
 
 def _watermarks_table(resource: Any) -> Any:
@@ -106,6 +110,7 @@ def world() -> Iterator[World]:
         jobs = create_pk_sk_table(JOBS_TABLE, resource)
         participants = create_pk_sk_table(PARTICIPANTS_TABLE, resource)
         conversations = create_pk_sk_table(CONVERSATIONS_TABLE, resource)
+        agents = create_table_with_gsi1(resource, AGENTS_TABLE, AGENTS_LISTING_INDEX)
         s3 = boto3.client('s3', region_name='us-east-1')
         s3.create_bucket(Bucket=BUCKET)
         s3.put_bucket_versioning(Bucket=BUCKET, VersioningConfiguration={'Status': 'Enabled'})
@@ -123,11 +128,12 @@ def world() -> Iterator[World]:
                 patch.object(handler, 'JOBS_TABLE', JOBS_TABLE), \
                 patch.object(handler, 'PARTICIPANTS_TABLE', PARTICIPANTS_TABLE), \
                 patch.object(handler, 'CONVERSATIONS_TABLE', CONVERSATIONS_TABLE), \
+                patch.object(handler, 'AGENTS_TABLE', AGENTS_TABLE), \
                 patch.object(handler, 'RAW_DATA_BUCKET', BUCKET), \
                 patch.object(handler, 'PARAMETER_PREFIX', PREFIX), \
                 patch.dict('os.environ', {'PLUGIN_IDS': json.dumps(list(PLUGINS)), 'WORKSPACE_HARD_DELETE': 'true'}):
             yield World(feedback, aggregates, memory, watermarks, workspaces, s3, ssm, invoke, radar, projects, jobs,
-                        participants, conversations)
+                        participants, conversations, agents)
 
 
 class Budget(LambdaBudget):
