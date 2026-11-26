@@ -59,12 +59,17 @@ BEA = {'sub': f'sub-{B_MARK}-bea', 'cognito:username': f'{B_MARK}-bea', 'cognito
 class World:
     """One handler over two seeded workspaces. ``call(method, path, *, ws, body, query, caller)`` runs one request.
 
-    A refused request must change nothing, and the suite sees only DynamoDB (``table_snapshot``) and ``doubles``:
-    a world whose handler writes S3, SQS or Secrets Manager under moto widens ``table_snapshot`` to cover them."""
+    A refused request must change nothing: the suite sees moto's DynamoDB tables, S3 objects, SSM parameters and
+    secrets (``table_snapshot``) and the ``doubles``; a world whose handler writes anywhere else (SQS, a model) makes
+    that a double."""
 
     call: Callable[..., tuple[int, Any]]
-    #: The handler's doubles (Cognito here): any call that is not a read, on a refused request, fails the suite.
+    #: The handler's doubles (Cognito here): any call that is not a read, on a refused request, fails the suite; any
+    #: call inside A that names B fails check 4.
     doubles: dict[str, MagicMock] = field(default_factory=dict)
+    #: A word every deployment row of the world holds (its names, its texts), and no workspace's: check 4 expects an
+    #: answer inside A to hold none of it ('' in a world whose deployment rows are not all marked yet).
+    deployment_mark: str = ''
 
 
 @dataclass(frozen=True)
@@ -114,11 +119,18 @@ class RouteCase:
     #: beside its ``STEP#`` rows), each with why it is no workspace's: a caller's own per-person row, a deployment
     #: counter.
     outside_a: dict[tuple[str, str], str] = field(default_factory=dict)
-    #: A refusal that repeats the id it was sent (reported, open): why. Checks 2 and 3 then compare the answers with
-    #: each sent id's value read as its ``{name}`` (only the caller's own input; anything else in the answer still
-    #: counts), and expect the raw refusal to still hold an id it was sent, so the case fails, asking for this to go,
-    #: the day it stops.
+    #: An answer to another place's or an unknown id that repeats the id it was sent: why (a refusal that should not
+    #: is reported and open; a view that names the id asked about, by design). Checks 2 and 3 then compare the
+    #: answers with each sent id's value read as its ``{name}`` (only the caller's own input; anything else in the
+    #: answer still counts), and expect the raw answer to still hold an id it was sent, so the case fails, asking for
+    #: this to go, the day it stops.
     echoes_its_ids: str = ''
+    #: A route that acts on any id inside the header's place and checks none (why): check 2 then sends B's ids and
+    #: unknown ones inside A and expects each to work as in A, change only A's rows and answer nothing of B's.
+    accepts_any_id: str = ''
+    #: The double (by its ``World.doubles`` name) whose call carries the request's place on to another process (an
+    #: invoke payload): check 4 expects its last call to name A as ``workspace_id``.
+    payload_names_a: str = ''
 
 
 @dataclass(frozen=True)
@@ -148,7 +160,24 @@ def table_snapshot() -> dict[str, list[str]]:
         pages = s3.get_paginator('list_objects_v2').paginate(Bucket=name)
         snapshot[f's3://{name}'] = sorted(f"{obj.get('Key')} {obj.get('ETag')} {obj.get('LastModified')}"
                                           for page in pages for obj in page.get('Contents', []))
+    # And every moto SSM parameter (a workspace's credentials and settings: ``/voc/ws/{ws}/…``) and secret (the
+    # deployment's shared credentials), by name, version and time written (one deleted and made again counts): a
+    # refused request saves no setting either.
+    ssm = boto3.client('ssm', region_name='us-east-1')
+    parameters = [p for page in ssm.get_paginator('describe_parameters').paginate() for p in page.get('Parameters', [])]
+    snapshot['ssm'] = sorted(f"{p.get('Name')} {p.get('Version')} {p.get('LastModifiedDate')}" for p in parameters)
+    secrets = boto3.client('secretsmanager', region_name='us-east-1')
+    listed = [s for page in secrets.get_paginator('list_secrets').paginate() for s in page.get('SecretList', [])]
+    snapshot['secretsmanager'] = sorted(f"{s.get('Name')} {_secret_version(secrets, s.get('ARN', ''))}" for s in listed)
     return snapshot
+
+
+def _secret_version(secrets: Any, arn: str) -> str:
+    """The current version of a moto secret ('' for one made with no value yet)."""
+    try:
+        return str(secrets.get_secret_value(SecretId=arn).get('VersionId', ''))
+    except secrets.exceptions.ResourceNotFoundException:
+        return ''
 
 
 def _caller(handler: Any, lambda_context: Any, **tables: Any) -> Callable[..., tuple[int, Any]]:
@@ -976,13 +1005,111 @@ def manual_import_world(lambda_context: Any) -> Generator[World]:
         # The real writer (conftest.py's autouse ``import_run_rows`` captures the rows): a run a refused request
         # recorded would then be in ``table_snapshot``.
         stack.enter_context(patch('shared.import_runs._put_rows', side_effect=_write_run_rows))
-        yield World(call=_caller(h, lambda_context), doubles={'cognito': cognito, 'sqs': sqs, 'parse': parse_worker})
+        yield World(call=_caller(h, lambda_context), doubles={'cognito': cognito, 'sqs': sqs, 'parse': parse_worker},
+                    deployment_mark='before_workspaces')
+
+
+# ── voc-scrapers-api (lambda/api/scrapers_handler.py): a workspace's scrapers, their runs, the URL assist ──
+
+#: A scraper of each workspace (its config row ``WS#{ws}#PLUGIN_CONFIG`` / ``webscraper``) and the deployment's copy of
+#: A's id in the shared secret (a request without the header names it); a run row of each under its id, an app
+#: connector and a learned review-site method of each place. The parameters' prefix and key are CDK's.
+SCRAPER_A, SCRAPER_B = 'acme-reviews', f'{B_MARK}-reviews'
+_SCRAPER_IDS = {'A': {'scraper_id': SCRAPER_A}, 'B': {'scraper_id': SCRAPER_B}, UNKNOWN: {'scraper_id': 'nowhere'}}
+#: An assist (the URL analysis) of A's admin and of B's: the caller's own, in its starter's ``ASSIST#{sub}``.
+ASSIST_A, ASSIST_B = 'job_00000000000000c1', 'job_00000000000000c2'
+_ASSIST_IDS = {'A': {'job_id': ASSIST_A}, 'B': {'job_id': ASSIST_B}, UNKNOWN: {'job_id': 'job_00000000000000cf'}}
+#: The deployment's shared credentials store (a Secrets Manager name, made up; it holds no credential here).
+_DEPLOYMENT_STORE = 'shared-api-credentials'
+_PARAMETER_PREFIX = '/voc/ws'
+#: Without the header the scrapers are the deployment's, in its shared secret, as before (ResolvedRoutes).
+_DEPLOYMENT_SCRAPERS = "the deployment as before: its shared secret's scrapers and its run rows (ResolvedRoutes)"
+#: An assist is its starter's own (``ASSIST#{sub}``), the same in every place (scrapers_handler.py ``analyze_url``).
+_OWN_ASSIST = "the caller's own assist (ASSIST#{sub}), the same in every place, as before"
+#: What every deployment row of the scrapers world holds (``World.deployment_mark``).
+_DEPLOYMENT_MARK = 'deploymentonly'
+
+
+def _scraper(scraper_id: str, mark: str) -> dict[str, Any]:
+    return {'id': scraper_id, 'name': f'{mark} reviews', 'base_url': f'https://reviews.example.com/{scraper_id}',
+            'extraction_method': 'jsonld', 'enabled': True}
+
+
+def _seed_scrapers(aggregates: Any, workspaces: Any, jobs: Any) -> dict[str, str]:
+    """Every place's scrapers, app connectors, learned methods and run rows; the webscraper enabled in A and B; the
+    two admins' assists. Returns the deployment's shared secret (``<plugin>_configs``)."""
+    for ws, scraper_id, mark in ((WS_A, SCRAPER_A, A_MARK), (WS_B, SCRAPER_B, B_MARK)):
+        aggregates.put_item(Item={'pk': f'WS#{ws}#PLUGIN_CONFIG', 'sk': 'webscraper',
+                                  'configs': json.dumps([_scraper(scraper_id, mark)])})
+        aggregates.put_item(Item={'pk': f'WS#{ws}#PLUGIN_CONFIG', 'sk': 'app_reviews_ios',
+                                  'configs': json.dumps([{'id': f'{mark}-app', 'app_name': f'{mark} app'}])})
+        aggregates.put_item(Item={'pk': f'WS#{ws}#WEB_REVIEWS#METHODS', 'sk': f'{mark}.example.com',
+                                  'best_method': 'browser', 'learned_at': '2026-11-15T10:00:00+00:00', 'methods': {}})
+        aggregates.put_item(Item={'pk': f'WS#{ws}#SCRAPER_RUN#{scraper_id}', 'sk': 'run_1', 'status': 'completed',
+                                  'pages_scraped': 3, 'errors': []})
+        workspaces.put_item(Item={'pk': 'PLUGIN#webscraper', 'sk': f'WS#{ws}', 'enabled_by': 'sub-ada',
+                                  'enabled_at': '2026-11-13T00:00:00+00:00'})
+    aggregates.put_item(Item={'pk': 'WEB_REVIEWS#METHODS', 'sk': f'{_DEPLOYMENT_MARK}.example.com',
+                              'best_method': 'browser', 'learned_at': '2026-11-15T10:00:00+00:00', 'methods': {}})
+    # (its sk is what the status answers as execution_id: the mark shows there)
+    aggregates.put_item(Item={'pk': f'SCRAPER_RUN#{SCRAPER_A}', 'sk': f'run_{_DEPLOYMENT_MARK}', 'status': 'completed',
+                              'pages_scraped': 1, 'errors': []})
+    # (A's admin's own assist is the person's, not A's: it holds no mark; B's admin's holds B's, so a leak shows.)
+    for sub, job_id, mark in (('sub-ada', ASSIST_A, 'trail'), (BEA['sub'], ASSIST_B, B_MARK)):
+        jobs.put_item(Item={'pk': f'ASSIST#{sub}', 'sk': f'JOB#{job_id}', 'job_id': job_id,
+                            'job_type': 'assist_analyze_url', 'status': 'completed',
+                            'created_at': '2026-11-18T00:00:00+00:00', 'updated_at': '2026-11-18T00:01:00+00:00',
+                            'result': {'success': True, 'container_selector': f'.{mark}-review'}})
+    return {'webscraper_configs': json.dumps([_scraper(SCRAPER_A, _DEPLOYMENT_MARK)]),
+            'app_reviews_ios_configs': json.dumps([{'id': f'{_DEPLOYMENT_MARK}-app',
+                                                     'app_name': f'{_DEPLOYMENT_MARK} app'}])}
+
+
+@contextmanager
+def scrapers_world(lambda_context: Any) -> Generator[World]:
+    """The scrapers Lambda over two seeded workspaces (their admins write, any member reads): their scraper configs
+    and connectors in their own rows, the deployment's in the shared secret (moto's, in ``table_snapshot``); the
+    webscraper, the assist worker and the URL check as doubles."""
+    import scrapers_handler as h
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        aggregates, jobs = pk_sk_table('aggregates'), pk_sk_table('jobs')
+        secrets = boto3.client('secretsmanager', region_name='us-east-1')
+        secrets.create_secret(Name=_DEPLOYMENT_STORE, SecretString=json.dumps(_seed_scrapers(aggregates, workspaces, jobs)))
+        ssm = boto3.client('ssm', region_name='us-east-1')
+        webscraper, assist = MagicMock(name='webscraper'), MagicMock(name='assist_worker')
+        resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: False)
+        stack.enter_context(patch.dict('os.environ', {'WORKSPACE_PARAMETER_PREFIX': _PARAMETER_PREFIX,
+                                                      'WORKSPACE_PARAMETER_KEY_ARN': 'arn:aws:kms:us-east-1:1:key/k',
+                                                      'ASSIST_WORKER_FUNCTION': 'voc-scrapers-assist',
+                                                      # (the workspace store opens voc-aggregates by its name)
+                                                      'AGGREGATES_TABLE': 'aggregates'}))
+        for target, value in (('secretsmanager', secrets), ('ssm', ssm), ('SECRETS_ARN', _DEPLOYMENT_STORE),
+                              ('lambda_client', webscraper), ('WEBSCRAPER_FUNCTION_NAME', 'voc-ingestor-webscraper')):
+            stack.enter_context(patch.object(h, target, value))
+        stack.enter_context(patch.object(h._request, 'workspace', resolver))
+        stack.enter_context(patch.object(h, 'validate_url', return_value=(True, '')))
+        stack.enter_context(patch.object(h, 'get_aggregates_table', return_value=aggregates))
+        for target in ('shared.tables.get_aggregates_table', 'shared.plugin_circuit.get_aggregates_table'):
+            stack.enter_context(patch(target, return_value=aggregates))
+        stack.enter_context(patch('shared.tables.get_workspaces_table', return_value=workspaces))
+        stack.enter_context(patch('shared.workspace_plugin_store.get_dynamodb_resource',
+                                  return_value=boto3.resource('dynamodb', region_name='us-east-1')))
+        stack.enter_context(patch('shared.assist_jobs.get_jobs_table', return_value=jobs))
+        stack.enter_context(patch('shared.assist_jobs.invoke_lambda_async', assist))
+        yield World(call=_caller(h, lambda_context),
+                    doubles={'cognito': cognito, 'webscraper': webscraper, 'assist': assist},
+                    deployment_mark=_DEPLOYMENT_MARK)
 
 
 WORLDS: dict[str, Callable[[Any], Any]] = {
     'feedback_edit_handler.py': feedback_edit_world,
     'feedback_form_handler.py': feedback_forms_world,
     'manual_import_handler.py': manual_import_world,
+    'scrapers_handler.py': scrapers_world,
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
@@ -1395,4 +1522,43 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the sample is new and nothing is stored: check 1', body={'format': 'csv', 'sample': _IMPORT_CSV},
         literals={'csv': 'the file format', _IMPORT_CSV: 'the file the admin chose'},
         without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_admins_without_a_workspace=True),
+    # The scrapers (``ResolvedRoutes.middleware`` before every route): any member reads A's scrapers, connectors,
+    # learned methods and runs; A's admins save, delete and run A's scrapers; without the header the deployment's.
+    **{('scrapers_handler.py', f'GET /scrapers{tail}'): RouteCase(
+        no_ids=f"the header is its only id: check 1 ({what})", without_a_workspace=_DEPLOYMENT_SCRAPERS)
+       for tail, what in (('', "B's scrapers; A lists its own"), ('/connectors', "B's app connectors"),
+                          ('/review-methods', "the review sites B's runs learned"),
+                          ('/templates', 'the same templates in every place'))},
+    ('scrapers_handler.py', 'POST /scrapers'): RouteCase(
+        no_ids="the scraper is new in A's own list, the workspace is the header: check 1",
+        body={'scraper': {'id': 'trail-reviews', 'name': 'Trail reviews', 'base_url': 'https://reviews.example.com/t',
+                          'extraction_method': 'jsonld'}},
+        literals={'trail-reviews': "an id the admin chose, unique only within A's own list",
+                  'Trail reviews': 'the name the admin typed', 'https://reviews.example.com/t': 'the page to read',
+                  'jsonld': 'an extraction method, the same in every place'},
+        without_a_workspace=_DEPLOYMENT_SCRAPERS, deployment_admins_without_a_workspace=True),
+    # An id A's list does not hold deletes nothing and answers success, B's as an unknown one.
+    ('scrapers_handler.py', 'DELETE /scrapers/<scraper_id>'): RouteCase(
+        ids=_SCRAPER_IDS, refused_status=200, without_a_workspace=_DEPLOYMENT_SCRAPERS,
+        deployment_admins_without_a_workspace=True),
+    # The run checks no id: the webscraper looks it up in the run's own place's list (A's), so an id A does not hold is
+    # a run in A that finds nothing; the header is what keeps it in A (its run row, its payload).
+    ('scrapers_handler.py', 'POST /scrapers/<scraper_id>/run'): RouteCase(
+        ids=_SCRAPER_IDS, without_a_workspace=_DEPLOYMENT_SCRAPERS, deployment_admins_without_a_workspace=True,
+        accepts_any_id="the run starts in the header's place with any id (scrapers_handler.py run_scraper: the "
+                       "webscraper finds the id in that place's own list, or nothing)",
+        payload_names_a='webscraper'),
+    # A's run rows only: B's id in A has none there, as an unknown one (``never_run``, naming the id asked about).
+    ('scrapers_handler.py', 'GET /scrapers/<scraper_id>/status'): RouteCase(
+        ids=_SCRAPER_IDS, refused_status=200, without_a_workspace=_DEPLOYMENT_SCRAPERS,
+        echoes_its_ids="the status view names the scraper id asked about ({'scraper_id': …, 'status': 'never_run'}): "
+                       'a view of the id, no refusal; nothing of B'),
+    ('scrapers_handler.py', 'POST /scrapers/analyze-url'): RouteCase(
+        no_ids="the URL is new, the assist the caller's own: check 1", body={'url': 'https://reviews.example.com/t'},
+        literals={'https://reviews.example.com/t': 'the page the admin wants read'}, ok_status=202,
+        without_a_workspace=_OWN_ASSIST, deployment_admins_without_a_workspace=True,
+        outside_a={('ASSIST#', 'JOB#'): _OWN_ASSIST}),
+    # The caller's own assist: B's admin's is not A's admin's to read, in A as nowhere (the unknown job's 404).
+    ('scrapers_handler.py', 'GET /scrapers/jobs/<job_id>'): RouteCase(
+        ids=_ASSIST_IDS, without_a_workspace=_OWN_ASSIST),
 }

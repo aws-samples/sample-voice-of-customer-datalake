@@ -17,6 +17,39 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.73.02] - 2026-11-26
+
+Tests only: the scrapers' 10 routes (`lambda/api/scrapers_handler.py`) leave the cross-workspace suite's pending list
+with their two-workspace cases; they resolve X-Workspace-Id in the module's `ResolvedRoutes` middleware, which the
+suite reads since 7.73.01. Pending 385 -> 375 (phase 2: 63 -> 53).
+
+### Changed
+- `table_snapshot` (what a refused request must leave as it was, and what check 4 reads) also holds every moto SSM
+  parameter and Secrets Manager secret, by name and version: a workspace's settings live in its own parameters and
+  rows, the deployment's in the shared secret.
+- A scrapers world: each workspace's scraper, app connector, learned review-site method and run row, and the
+  deployment's in the shared secret and its own rows; the webscraper enabled in A and B; each admin's own URL assist;
+  the webscraper, the assist worker and the URL check as doubles. A meta-test opens the settings store as the
+  deployment's inside A and expects check 4 to fail for a save and a delete.
+- `POST /scrapers/<scraper_id>/run` checks no id (the webscraper looks it up in the run's own place):
+  `RouteCase.accepts_any_id` makes check 2 send B's id and an unknown one inside A and expect each to work there,
+  change only A's rows, call no double naming B and answer nothing of B's. `GET /scrapers/<scraper_id>/status` answers
+  `never_run` naming the id asked about (`echoes_its_ids`: a view of the id, no refusal); the URL assist is its
+  starter's own `ASSIST#{sub}` in every place, by design (`outside_a`).
+- Check 4 also proves the request's place reaches what it starts: no call to a double inside A names B, and a case's
+  `payload_names_a` double (the scraper run's webscraper invoke) carries A on as `workspace_id`. In a world whose
+  deployment rows all hold one word (`World.deployment_mark`: the scrapers' and the manual import's), an answer inside
+  A holds none of it.
+- Check 5, when a refusal answers as a success does (`refused_status == ok_status`), also needs B's ids to be seen to
+  name a row: the request changes something, or answers otherwise than an unknown id.
+- `_names_a` counts an SSM parameter under A's own path (`/…/{A}/…`) as A's, never one under B's.
+- Meta-tests: a read of the deployment's scrapers inside A, and a run whose payload names no place or B, fail check 4;
+  B's ids that name nothing in B fail check 5.
+
+### Follow-up (recorded here and in the session report)
+- Twelve of the fourteen worlds do not yet mark every deployment row with one word, so `World.deployment_mark` is
+  unset there and a read inside A of the deployment's rows is caught only by their own per-handler tests.
+
 ## [7.73.01] - 2026-11-26
 
 Tests only: the manual import's 8 routes (`lambda/api/manual_import_handler.py`) leave the cross-workspace suite's

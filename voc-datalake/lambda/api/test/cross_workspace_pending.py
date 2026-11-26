@@ -80,18 +80,6 @@ PHASE_2: dict[str, frozenset[str]] = {
         'POST /s3-import/sources',
         'POST /s3-import/upload-url',
     }),
-    'scrapers_handler.py': frozenset({
-        'DELETE /scrapers/<scraper_id>',
-        'GET /scrapers',
-        'GET /scrapers/<scraper_id>/status',
-        'GET /scrapers/connectors',
-        'GET /scrapers/jobs/<job_id>',
-        'GET /scrapers/review-methods',
-        'GET /scrapers/templates',
-        'POST /scrapers',
-        'POST /scrapers/<scraper_id>/run',
-        'POST /scrapers/analyze-url',
-    }),
 }
 
 PHASE_3: dict[str, frozenset[str]] = {

@@ -54,6 +54,7 @@ import importlib
 import json
 import re
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import replace
 from functools import cache
 from typing import Any
 from unittest.mock import patch
@@ -117,7 +118,7 @@ RESOLVERS: dict[str, str] = {RESOLVER: RESOLVER_MODULE, 'request_workspace': 'sh
 #: resolves through its instance unseen and stays pending, as before this list existed; the list only grows, until
 #: every file using the instance is in it and it can go.
 INSTANCE_RESOLVER_FILES = frozenset({'feedback_edit_handler.py', 'feedback_form_handler.py',
-                                     'manual_import_handler.py'})
+                                     'manual_import_handler.py', 'scrapers_handler.py'})
 MISSING_HEADER = 'The X-Workspace-Id header is required'
 #: Calls that write: one of them before the resolution means the route may act before it knows the workspace.
 WRITE_CALLS = frozenset({'put_item', 'update_item', 'delete_item', 'transact_write_items', 'batch_writer',
@@ -846,11 +847,12 @@ def _refused(world: World, case: RouteCase, route: str, *, ws: str | None, ids: 
 
 def _unechoed(body: Any, ids: dict[str, str]) -> Any:
     """``body`` with each value of ``ids`` (what the request itself sent) read as its ``{name}``, wherever it stands
-    whole (not inside a longer word: ``job-a1`` stays in ``job-a10``): an answer that only repeats its own request's
-    ids then equals another's; anything else it says still counts."""
+    whole (not inside a longer id: ``job-a1`` stays in ``job-a10``; an id joined by ``_``, as in a run's
+    ``run_{id}_{time}``, is read): an answer that only repeats its own request's ids then equals another's; anything
+    else it says still counts."""
     text = json.dumps(body)
     for name, value in sorted(ids.items(), key=lambda item: -len(item[1])):
-        text = re.sub(rf'(?<![\w-]){re.escape(json.dumps(value)[1:-1])}(?![\w-])', f'{{{name}}}', text)
+        text = re.sub(rf'(?<![A-Za-z0-9-]){re.escape(json.dumps(value)[1:-1])}(?![A-Za-z0-9-])', f'{{{name}}}', text)
     return json.loads(text)
 
 
@@ -873,7 +875,13 @@ def check_other_workspace_header(world: World, case: RouteCase, route: str, call
 
 def check_other_workspace_ids(world: World, case: RouteCase, route: str, caller: dict = ADA) -> None:
     """Check 2: A in the header, B's ids in the path, body or query -> refused, exactly as for unknown ids; so are
-    the deployment's own (``deployment_ids``: a row a request without the header names), never A's to read."""
+    the deployment's own (``deployment_ids``: a row a request without the header names), never A's to read. A route
+    that ``accepts_any_id``: B's ids and unknown ones each work inside A, as in A, landing only in A."""
+    if case.accepts_any_id:
+        for ids in (case.ids['B'], case.ids[UNKNOWN]):
+            status, body = _lands_in_a(world, case, route, ids=ids, caller=caller)
+            assert status == case.ok_status, f'{route} inside A with {ids}: {status} {body}'
+        return
     answer = _refused(world, case, route, ws=WS_A, ids=case.ids['B'], caller=caller)
     assert answer[0] == case.refused_status, f'{route}: {answer}'
     assert _refused(world, case, route, ws=WS_A, ids=case.ids[UNKNOWN], caller=caller) == answer, (
@@ -927,19 +935,55 @@ def check_missing_header(world: World, case: RouteCase, route: str, caller: dict
 
 
 def check_inside_a(world: World, case: RouteCase, route: str) -> None:
-    """Check 4: the same request inside A works, holds nothing of B's, and every row or object it adds, changes or
-    removes is A's (``_names_a``), or one the case says is no workspace's (``outside_a``): nothing of the
-    deployment's or B's."""
-    before = table_snapshot()
-    status, body = _send(world, case, route, ws=WS_A, ids=case.ids.get('A', {}), caller=ADA)
+    """Check 4: the same request inside A works, holds nothing of B's (nor of the deployment's, in a world that marks
+    its rows: ``World.deployment_mark``), every row or object it adds, changes or removes is A's (``_names_a``) or
+    one the case says is no workspace's (``outside_a``), no call to a double names B, and a payload the case names
+    (``payload_names_a``) carries A on."""
+    since = {name: len(double.mock_calls) for name, double in world.doubles.items()}
+    status, body = _lands_in_a(world, case, route, ids=case.ids.get('A', {}))
     assert status == case.ok_status, f'{route} inside A: {status} {body}'
-    assert not _holds_b(body), f'{route} answered A with B data: {body}'
+    if world.deployment_mark:
+        assert world.deployment_mark not in json.dumps(body), f"{route} answered A with the deployment's data: {body}"
+    if case.payload_names_a:
+        double = world.doubles[case.payload_names_a]
+        assert len(double.mock_calls) > since[case.payload_names_a], f'{route} inside A never called it'
+        assert _payload(double.mock_calls[-1]).get('workspace_id') == WS_A, (
+            f'{route} inside A carried another place on: {double.mock_calls[-1]}')
+
+
+def _lands_in_a(world: World, case: RouteCase, route: str, *, ids: dict[str, str],
+                caller: dict = ADA) -> tuple[int, Any]:
+    """Send ``ids`` inside A as ``caller`` (A's admin); prove the answer holds nothing of B's (but the request's own
+    ids, for a case that ``echoes_its_ids`` or ``accepts_any_id``), every change is A's or ``outside_a``'s, and no
+    call to a double holds anything of B's."""
+    before = table_snapshot()
+    since = {name: len(double.mock_calls) for name, double in world.doubles.items()}
+    status, body = _send(world, case, route, ws=WS_A, ids=ids, caller=caller)
+    shown = _unechoed(body, ids) if case.echoes_its_ids or case.accepts_any_id else body
+    assert not _holds_b(shown), f'{route} answered A with B data: {body}'
     after = table_snapshot()
     outside = {name: sorted(row for row in set(before.get(name, [])) ^ set(after.get(name, []))
                             if not _names_a(row) and not _excepted(row, case.outside_a))
                for name in set(before) | set(after)}
     assert {name: rows for name, rows in outside.items() if rows} == {}, (
         f"{route} inside A changed rows that are not A's (name each that is no workspace's in outside_a)")
+    calls = [_unechoed(str(call), ids) for name, double in world.doubles.items()
+             for call in double.mock_calls[since[name]:]]
+    assert not any(_holds_b(call) for call in calls), f'{route} inside A called a double naming B: {calls}'
+    return status, body
+
+
+def _payload(call: Any) -> dict:
+    """The JSON payload of a double's call (``Payload=`` of an invoke, or its second argument), {} when none."""
+    _name, args, kwargs = call
+    raw = kwargs.get('Payload', args[1] if len(args) > 1 else None)
+    if isinstance(raw, bytes | str):
+        try:
+            loaded = json.loads(raw)
+        except ValueError:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+    return raw if isinstance(raw, dict) else {}
 
 
 def _key(row: str) -> tuple[str, str, Any]:
@@ -957,10 +1001,13 @@ def _names_a(row: str) -> bool:
     """Whether a row is A's by its key or its workspace stamp, not by any value that merely mentions A: A's id in its
     ``pk`` (``WS#{A}#…``, ``AUDIT#WS#{A}``…) or ``sk`` (an index row: ``USER#{sub}`` / ``WS#{A}``), or as its
     ``workspace_id`` or ``workspace`` (a row whose key every place shares: a parse job, a token, an audit row); an S3
-    object under A's own prefix (``ws/{A}/…``). Never a row that also names B, by its key or a stamp."""
+    object under A's own prefix (``ws/{A}/…``); an SSM parameter under A's own path (``/…/{A}/…``, its credentials
+    and settings). Never a row that also names B, by its key or a stamp."""
     pk, sk, item = _key(row)
     if item is None:
-        return pk.startswith(f'ws/{WS_A}/')
+        if WS_B in pk:
+            return False
+        return pk.startswith(f'ws/{WS_A}/') or (pk.startswith('/') and f'/{WS_A}/' in pk)
     stamps = {item.get(name, {}).get('S') for name in _WORKSPACE_STAMPS}
     if WS_B in pk or WS_B in sk or WS_B in stamps:
         return False
@@ -997,9 +1044,14 @@ def _row(pk: str, sk: str, **values: str) -> str:
     (_row('MANUAL_IMPORT#job', 'JOB'), False),
     (f'raw/ws/{WS_A}/x.json "etag" 2026', False),
     (f'ws/{WS_B}/raw/{WS_A}.json "etag" 2026', False),
+    (f'/voc/ws/{WS_A}/credentials/webscraper 1 2026', True),
+    (f'/voc/ws/{WS_B}/credentials/{WS_A} 1 2026', False),
+    ('/voc/shared/credentials 1 2026', False),
+    (f'shared-api-credentials-{WS_A} v1', False),
 ], ids=['its-pk', 'its-sk', 'its-workspace-id', 'its-workspace', 'an-object-under-a', 'a-only-in-a-value',
         'a-only-in-a-note', 'b-key-with-a-sort-key', 'a-key-stamped-b', 'no-place', 'an-object-not-at-a',
-        'an-object-under-b'])
+        'an-object-under-b', 'a-parameter-of-a', 'a-parameter-of-b', 'a-parameter-of-no-place',
+        'a-secret-named-after-a'])
 def test_a_row_is_as_by_its_key_or_stamp_only(row, names_a):
     assert _names_a(row) is names_a
 
@@ -1021,9 +1073,19 @@ def test_an_exception_names_only_its_rows(row, excepted):
 
 
 def check_b_ids_inside_b(world: World, case: RouteCase, route: str) -> None:
-    """Check 5: B's ids work inside B, for B's admin: they name B's real rows, so check 2 refused real ones."""
+    """Check 5: B's ids work inside B, for B's admin: they name B's real rows, so check 2 refused real ones. When a
+    refusal answers as a success does (``refused_status == ok_status``), the status proves nothing, so B's ids must
+    also be seen to name a row: the request changes something, or answers otherwise than an unknown id."""
+    before = table_snapshot()
     status, body = _send(world, case, route, ws=WS_B, ids=case.ids['B'], caller=BEA)
     assert status == case.ok_status, f'{route} inside B: {status} {body}'
+    if case.refused_status != case.ok_status or case.accepts_any_id or table_snapshot() != before:
+        return
+    _status, unknown = _send(world, case, route, ws=WS_B, ids=case.ids[UNKNOWN], caller=BEA)
+    if case.echoes_its_ids:
+        body, unknown = _unechoed(body, case.ids['B']), _unechoed(unknown, case.ids[UNKNOWN])
+    assert body != unknown, (
+        f"{route} inside B changed nothing and answers B's ids as unknown ones: check 2 proves nothing")
 
 
 _SCOPED = sorted(CASES)
@@ -1287,6 +1349,76 @@ def test_an_import_inside_a_that_lands_in_the_deployment_is_caught(route, lambda
             patch.object(manual_import_handler, 'scope_of', lambda _context: None), \
             pytest.raises(AssertionError, match="changed rows that are not A's"):
         check_inside_a(world, CASES[('manual_import_handler.py', route)], route)
+
+
+@pytest.mark.parametrize(('route', 'found'), [
+    ('POST /scrapers', "changed rows that are not A's"),
+    ('DELETE /scrapers/<scraper_id>', "changed rows that are not A's"),
+    ('GET /scrapers', "the deployment's data"),
+], ids=['a-save', 'a-delete', 'a-read'])
+def test_a_scrapers_store_opened_deployment_wide_inside_a_is_caught(route, found, lambda_context):
+    """The request's settings store opened as the deployment's inside A (the shared secret, not A's rows): a save
+    lands outside A, a delete of A's id removes the deployment's copy under it, and the list answers the deployment's
+    scrapers (nothing of B's, but the world's deployment mark): check 4 fails for each."""
+    from shared import workspace_request
+
+    real = workspace_request.credentials_store
+
+    def deployment_wide(_context: Any, clients: Any, plugins: Any = (), *, actor: Any) -> Any:
+        return real(None, clients, plugins, actor=actor)
+
+    with WORLDS['scrapers_handler.py'](lambda_context) as world, \
+            patch.object(workspace_request, 'credentials_store', deployment_wide), \
+            pytest.raises(AssertionError, match=found):
+        check_inside_a(world, CASES[('scrapers_handler.py', route)], route)
+
+
+def test_a_status_read_inside_a_of_the_deployments_run_is_caught(lambda_context):
+    """The scraper's status read with no place inside A answers the deployment's run (its execution id holds the
+    world's deployment mark): check 4 fails."""
+    import scrapers_handler
+
+    route = 'GET /scrapers/<scraper_id>/status'
+    with WORLDS['scrapers_handler.py'](lambda_context) as world, \
+            patch.object(scrapers_handler._request, 'scope', lambda: None), \
+            pytest.raises(AssertionError, match="the deployment's data"):
+        check_inside_a(world, CASES[('scrapers_handler.py', route)], route)
+
+
+def test_the_mask_hides_only_the_requests_own_id():
+    """``_unechoed`` reads the request's own id as ``{name}``, joined by ``_`` too (a run's ``run_{id}_{time}``),
+    but never another value that only contains it, so B's data that merely holds that id still shows."""
+    ids = {'scraper_id': f'{B_MARK}-reviews'}
+    assert _unechoed({'id': f'run_{B_MARK}-reviews_1'}, ids) == {'id': 'run_{scraper_id}_1'}
+    assert _holds_b(_unechoed({'id': f'{B_MARK}-reviews-2', 'name': f'{B_MARK} trail'}, ids))
+
+
+_RUN = 'POST /scrapers/<scraper_id>/run'
+
+
+@pytest.mark.parametrize('stand_in', [lambda payload, _context: payload,
+                                      lambda payload, _context: {**payload, 'workspace_id': WS_B}],
+                         ids=['a-payload-without-a', 'a-payload-naming-b'])
+def test_a_run_inside_a_whose_payload_leaves_a_is_caught(stand_in, lambda_context):
+    """A run inside A whose invoke payload carries no place on, or B: check 4 fails (the run row is still A's: the
+    workspace layer itself refuses one written elsewhere, so only the payload can go wrong unseen)."""
+    import scrapers_handler
+
+    case = CASES[('scrapers_handler.py', _RUN)]
+    with WORLDS['scrapers_handler.py'](lambda_context) as world, \
+            patch.object(scrapers_handler, 'workspace_payload', stand_in), \
+            pytest.raises(AssertionError, match=r'carried another place on|a double naming B'):
+        check_inside_a(world, case, _RUN)
+
+
+def test_b_ids_that_name_nothing_in_b_fail_check_5_when_a_refusal_looks_like_success(lambda_context):
+    """The scraper's status answers 200 for any id: with B's id naming no run in B, check 5 fails (check 2 would
+    otherwise have refused nothing real)."""
+    route = 'GET /scrapers/<scraper_id>/status'
+    case = CASES[('scrapers_handler.py', route)]
+    hollow = replace(case, ids={**case.ids, 'B': {'scraper_id': f'{B_MARK}-never-ran'}})
+    with WORLDS['scrapers_handler.py'](lambda_context) as world, pytest.raises(AssertionError, match='proves nothing'):
+        check_b_ids_inside_b(world, hollow, route)
 
 
 @pytest.mark.parametrize('route', ['GET /scrapers/manual/parse/<job_id>', 'POST /scrapers/manual/confirm'])
