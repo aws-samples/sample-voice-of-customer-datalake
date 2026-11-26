@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
@@ -6,6 +7,9 @@ export default defineConfig({
   // shared modules as `@stream/...` (frontend/streamSource.ts); the alias resolves them here too.
   resolve: { alias: { '@stream': fileURLToPath(new URL('./src', import.meta.url)) } },
   test: {
+    // At most 32 workers (vitest's default scaled with every CPU of a big machine); availableParallelism honours taskset's
+    // pin. On a small machine this is its CPU count, one more than vitest's default.
+    maxWorkers: Math.min(32, availableParallelism()),
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],

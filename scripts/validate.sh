@@ -26,9 +26,11 @@
 # local AI reviews, scripts/ai-review/: against TENETS.md, and of the whole change; need kiro-cli or claude, else skipped);
 # audit = every code-audit detector step, or one family: audit-py-synth, audit-callers, audit-patterns,
 # audit-clones-py, audit-clones-ts, audit-ts, audit-unions, audit-locale, audit-tools (docs/code-audit.md).
-# Env: VALIDATE_PYTEST_WORKERS (pytest-xdist workers; default: CPUs - 4, at least 2),
+# Env: VALIDATE_PYTEST_WORKERS (pytest-xdist workers; default: CPUs - 4, at least 2, at most 32),
+#      VALIDATE_ESLINT_CONCURRENCY (eslint's worker threads; default half the CPUs, 1-8), VALIDATE_CPUS (the CPU count; default
+#      `nproc`, the CPUs this run may use: taskset's affinity counts, `getconf` would count every core),
 #      VALIDATE_LOG_DIR (default $VALIDATE_LOG_ROOT/<timestamp>), PYTHON_BIN,
-#      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs),
+#      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs, at most 16),
 #      AI_REVIEW=auto|kiro|claude|off (the AI reviews; scripts/ai-review/review.mjs),
 #      VALIDATE_LOG_ROOT (where runs are logged and --failed looks for the newest one; default .cache/validate/logs).
 # A big machine (one setting per machine, e.g. in its shell profile; unset on a laptop and in CI = the lanes above):
@@ -37,7 +39,11 @@
 #        commands, same report and exit code; the first failure stops the run (--keep-going: every step whose
 #        prerequisites passed still runs). CodeQL's two languages run side by side, the CDK suite on
 #        VALIDATE_CDK_VITEST_WORKERS (CPUs/6, 4-32) workers, the detector tests on VALIDATE_AUDIT_TEST_WORKERS
-#        (CPUs/12, 2-16) xdist workers; pytest on CPUs/2 workers and CodeQL on CPUs/4 threads a language, unless set.
+#        (CPUs/12, 2-16) xdist workers; pytest on CPUs/2 workers (at most 32) and CodeQL on CPUs/4 threads (at most
+#        16) a language, unless set.
+#      On a machine with more than one NUMA node (/sys/devices/system/node/node1), a run not already pinned re-runs
+#        itself under `taskset -c <node 0's cpulist>`, so it shares node 0's CPUs and leaves the other nodes' to other work
+#        (VALIDATE_PINNED=1 marks it; skipped in CI, or without taskset). A laptop and CI have one node: no change.
 #      VOC_VALIDATE_RAM=<dir>|off: the rebuildable caches (.cache/{codeql,coverage,audit,validate/tsc}) and every
 #        step's TMPDIR in RAM, the old paths kept as links (scripts/validate-ram.sh). Default with the pool:
 #        /dev/shm/voc-validate-<uid> when /dev/shm exists, else off; used only when it is this user's own (mode
@@ -48,6 +54,20 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT="$PWD"
+# On a machine of several NUMA nodes, run on node 0 alone (see the header): not when already pinned (a caller's taskset
+# leaves fewer CPUs than the machine has, or this is the re-run), in CI, or without taskset; and only when taskset
+# accepts node 0's CPUs here (a cpuset that excludes them leaves the run as it is). nproc without OMP_* (GNU nproc
+# reads them; --all does not). VALIDATE_NPROC_ALL stands in for `nproc --all` (the tests).
+NUMA_ROOT="${VALIDATE_NUMA_ROOT:-/sys/devices/system/node}"
+if [[ -z "${VALIDATE_PINNED:-}" && -z "${GITHUB_ACTIONS:-}" && -d "$NUMA_ROOT/node1" && -s "$NUMA_ROOT/node0/cpulist" ]] \
+   && command -v taskset >/dev/null 2>&1 && command -v nproc >/dev/null 2>&1 \
+   && [[ "$(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc)" -eq "${VALIDATE_NPROC_ALL:-$(nproc --all)}" ]]; then
+  NODE0_CPUS="$(tr -d '[:space:]' < "$NUMA_ROOT/node0/cpulist")"
+  if [[ -n "$NODE0_CPUS" ]] && taskset -c "$NODE0_CPUS" true >/dev/null 2>&1; then
+    export VALIDATE_PINNED=1
+    exec taskset -c "$NODE0_CPUS" "$BASH" "$ROOT/scripts/validate.sh" "$@"
+  fi
+fi
 CDK="$ROOT/voc-datalake"
 FRONTEND="$CDK/frontend"
 STREAM="$CDK/lambda/stream"
@@ -60,11 +80,17 @@ if [[ -z "${PYTHON_BIN:-}" ]]; then
   if [[ -x "$CDK/.venv/bin/python" ]]; then PYTHON_BIN="$CDK/.venv/bin/python"; else PYTHON_BIN="$(command -v python3)"; fi
 fi
 PATH="$(dirname "$PYTHON_BIN"):$PATH"   # ruff, vulture, pytest from the same environment
-CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+# The CPUs this run may use: nproc honours taskset's affinity (getconf counts every core of the machine).
+CPUS="${VALIDATE_CPUS:-$(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc 2>/dev/null \
+  || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 PYTEST_WORKERS_GIVEN="${VALIDATE_PYTEST_WORKERS:+1}"   # the pool sizes them itself unless given
 if [[ -z "${VALIDATE_PYTEST_WORKERS:-}" ]]; then
   VALIDATE_PYTEST_WORKERS=$(( CPUS > 6 ? CPUS - 4 : 2 ))
+  (( VALIDATE_PYTEST_WORKERS > 32 )) && VALIDATE_PYTEST_WORKERS=32   # more workers than this only contend
 fi
+# eslint's typed lint on worker threads: half the CPUs (what `auto` took on a small machine), at most 8 (`auto` took
+# half of every core on a big one), at least 1.
+VALIDATE_ESLINT_CONCURRENCY="${VALIDATE_ESLINT_CONCURRENCY:-$(( CPUS / 2 > 8 ? 8 : (CPUS / 2 > 1 ? CPUS / 2 : 1) ))}"
 # The CDK suite keeps vitest's 5 s default for local runs (a hung test reports fast). Here it runs
 # beside three other lanes, and its in-process VocApiStack synths take 1–3 s on an idle machine, so
 # load alone could cross 5 s. A per-test timeout is not an assertion: nothing a test checks changes.
@@ -74,6 +100,7 @@ VALIDATE_VITEST_TIMEOUT_MS="${VALIDATE_VITEST_TIMEOUT_MS:-30000}"
 # step, so the one-line fix lands in the commit; CI cannot edit files and stays strict (docs/coverage-gate.md).
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then COVERAGE_PRUNE=""; else COVERAGE_PRUNE="--prune-graduated"; fi
 export ROOT CDK FRONTEND STREAM KNIP_PROD TSC_CACHE PYTHON_BIN PATH VALIDATE_PYTEST_WORKERS VALIDATE_VITEST_TIMEOUT_MS CPUS COVERAGE_PRUNE
+export VALIDATE_ESLINT_CONCURRENCY
 
 # ---- Options ----
 SERIAL=0; FAIL_FAST=1; ONLY=""; LANE_ONLY=""; LIST=0; PYTEST_FIRST=0; DRY_RUN=0; FAILED_ONLY=0
@@ -112,9 +139,9 @@ VALIDATE_POOL=""
 if [[ "$POOL_JOBS" -gt 1 ]]; then
   VALIDATE_POOL=1
   export CODEQL_PARALLEL="${CODEQL_PARALLEL:-1}"
-  export CODEQL_THREADS="${CODEQL_THREADS:-$(clamp "CPUS / 4" 1 4096)}"
+  export CODEQL_THREADS="${CODEQL_THREADS:-$(clamp "CPUS / 4" 1 16)}"
   # (--pytest-first runs it alone, before the pool: it keeps every core then)
-  [[ -n "$PYTEST_WORKERS_GIVEN" || "$PYTEST_FIRST" -eq 1 ]] || VALIDATE_PYTEST_WORKERS="$(clamp "CPUS / 2" 2 4096)"
+  [[ -n "$PYTEST_WORKERS_GIVEN" || "$PYTEST_FIRST" -eq 1 ]] || VALIDATE_PYTEST_WORKERS="$(clamp "CPUS / 2" 2 32)"
   VALIDATE_CDK_VITEST_WORKERS="${VALIDATE_CDK_VITEST_WORKERS:-$(clamp "CPUS / 6" 4 32)}"
   VALIDATE_AUDIT_TEST_WORKERS="${VALIDATE_AUDIT_TEST_WORKERS:-$(clamp "CPUS / 12" 2 16)}"
 fi
@@ -123,7 +150,7 @@ export VALIDATE_CDK_VITEST_WORKERS VALIDATE_AUDIT_TEST_WORKERS VALIDATE_POOL
 # ---- Steps: lane | groups | name | command (run with `bash -euo pipefail -c`) ----
 # Lanes (measured: their critical paths are about equal): py (Python lint, types, pytest-xdist),
 # tsc (type checks, knip, small node checks, most code-audit detectors), lint (eslint — typed, on
-# `--concurrency auto` worker threads — jscpd, gitleaks, ts_reachability), test (vite build, the
+# `--concurrency $VALIDATE_ESLINT_CONCURRENCY` (half the CPUs, at most 8) worker threads — jscpd, gitleaks, ts_reachability), test (vite build, the
 # synth-based audit detectors, then the CDK and stream vitest suites: the CDK stacks and the audit synth
 # stage frontend/dist as an asset), web (the frontend vitest suite, which needs no build); sec (CodeQL).
 # CI runs each lane as its own job (.github/workflows/quality-gates.yml, `--lane <name>`), so a lane's
@@ -183,16 +210,16 @@ def lint repo                               "gitleaks: working tree"            
 # accepted findings in scripts/codeql-summary.mjs). Its own lane: ~5 min on half the cores. Skipped on
 # GitHub Actions, where the repository's CodeQL code scanning runs the same analysis on every PR;
 # locally a missing CLI fails (brew install codeql). VALIDATE_SKIP_CODEQL=1 skips it on purpose.
-def sec  codeql                             "codeql: security and quality"       'cd "$ROOT" && if [ -n "${GITHUB_ACTIONS:-}" ] || [ "${VALIDATE_SKIP_CODEQL:-0}" = 1 ]; then echo "codeql: skipped (GitHub code scanning / VALIDATE_SKIP_CODEQL)"; else CODEQL_STRICT=1 CODEQL_THREADS="${CODEQL_THREADS:-$(( CPUS / 2 > 1 ? CPUS / 2 : 1 ))}" bash scripts/codeql.sh; fi'
+def sec  codeql                             "codeql: security and quality"       'cd "$ROOT" && if [ -n "${GITHUB_ACTIONS:-}" ] || [ "${VALIDATE_SKIP_CODEQL:-0}" = 1 ]; then echo "codeql: skipped (GitHub code scanning / VALIDATE_SKIP_CODEQL)"; else CODEQL_STRICT=1 CODEQL_THREADS="${CODEQL_THREADS:-$(( CPUS / 2 > 16 ? 16 : (CPUS / 2 > 1 ? CPUS / 2 : 1) ))}" bash scripts/codeql.sh; fi'
 # TypeScript. `tsc -b` gets --force: its up-to-date check trusts the shared node_modules/.tmp buildinfo.
 def tsc  frontend,frontend-static           "tsc: frontend app + node configs"   'cd "$FRONTEND" && npx tsc -b --noEmit --force'
 def tsc  frontend,frontend-static           "tsc: frontend specs"                'cd "$FRONTEND" && npx tsc -p tsconfig.test.json --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/frontend-specs.tsbuildinfo"'
 def tsc  stream,stream-static               "tsc: stream Lambda"                 'cd "$STREAM" && npx tsc --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/stream.tsbuildinfo"'
 def tsc  cdk,cdk-static                     "tsc: CDK app"                       'cd "$CDK" && npx tsc -p tsconfig.json --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/cdk.tsbuildinfo"'
 def tsc  cdk,cdk-static                     "tsc: CDK scripts + configs"         'cd "$CDK" && npx tsc -p tsconfig.tools.json'
-def lint cdk,cdk-static                     "eslint: CDK app"                    'cd "$CDK" && npx eslint . --max-warnings 0 --concurrency auto'
-def lint frontend,frontend-static           "eslint: frontend"                   'cd "$FRONTEND" && npx eslint . --max-warnings 0 --concurrency auto'
-def lint stream,stream-static               "eslint: stream Lambda"              'cd "$STREAM" && npx eslint . --max-warnings 0 --concurrency auto'
+def lint cdk,cdk-static                     "eslint: CDK app"                    'cd "$CDK" && npx eslint . --max-warnings 0 --concurrency "$VALIDATE_ESLINT_CONCURRENCY"'
+def lint frontend,frontend-static           "eslint: frontend"                   'cd "$FRONTEND" && npx eslint . --max-warnings 0 --concurrency "$VALIDATE_ESLINT_CONCURRENCY"'
+def lint stream,stream-static               "eslint: stream Lambda"              'cd "$STREAM" && npx eslint . --max-warnings 0 --concurrency "$VALIDATE_ESLINT_CONCURRENCY"'
 # The gate code itself (eslint-rules/eslint.config.mjs): no package config can reach outside its directory.
 def lint repo,cdk,cdk-static                 "eslint: gate rules (eslint-rules/)"  'cd "$ROOT/eslint-rules" && "$CDK/node_modules/.bin/eslint" . --max-warnings 0'
 def tsc  cdk,cdk-static                     "knip: CDK app"                      'cd "$CDK" && npx knip --no-progress'

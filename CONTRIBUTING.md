@@ -234,6 +234,19 @@ nothing to do by hand. To put a cache back on disk, remove its link (`rm .cache/
 makes it a plain folder. Measured on a 192-core machine that other work kept busy: the lanes 498-534 s, the pool
 257-310 s, both green on the same tree (CHANGELOG 7.40.01). The banner says which mode ran (`validate: pool of 32 jobs, …, caches and TMPDIR in RAM (…)`).
 
+A machine shared with other work keeps the gate to its share (since 7.82.01). `validate.sh` counts the CPUs it may run
+on with `nproc` (taskset's affinity counts; `getconf` counted every core of the machine), caps pytest-xdist at 32
+workers in both modes (`VALIDATE_PYTEST_WORKERS` still overrides), runs eslint on half the CPUs, at most 8 worker
+threads (`VALIDATE_ESLINT_CONCURRENCY`, not `--concurrency auto`, which took half of every core) and CodeQL on at most
+16 threads a language (`CODEQL_THREADS` overrides); the frontend's and the stream Lambda's vitest cap themselves at 32
+workers, and jscpd runs on one. On a machine of more than one NUMA node (`/sys/devices/system/node/node1` exists) a run not already pinned re-runs
+itself under `taskset -c <node 0's cpulist>` (`VALIDATE_PINNED=1` marks the re-run; a caller's own `taskset` that
+leaves fewer CPUs than the machine has counts as pinned), so the gate shares node 0's CPUs and leaves the other nodes'
+to the machine's other work (its memory is not bound to node 0); CI (`GITHUB_ACTIONS`) and a machine without `taskset` never re-run. A command run by hand on such
+a machine takes the same care: `taskset -c 0-95 <command>`, pytest with `-n 32` or less, eslint with
+`--concurrency 8`. A laptop and CI (one node, fewer than 32 CPUs) keep their worker counts but for small differences
+(eslint on a small package, the stream suite's vitest), with the same results.
+
 pytest runs in several processes in any order, so a test must not depend on another test having run or on a
 fixed path; tests that must share one process are marked `@pytest.mark.xdist_group('<name>')`. Parametrize ids
 must be the same in every process (no random values in an id: pass `ids=`). An order audit, on demand (not a gate,

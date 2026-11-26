@@ -14,9 +14,14 @@ after(() => rmSync(logRoot, { recursive: true, force: true }));
 
 // The lanes unless a test asks for the pool: a machine whose profile sets VOC_VALIDATE_JOBS runs this file too.
 // The values a pool exports to its steps are cleared too: this file runs as one of them on such a machine.
+// No NUMA node 1 under VALIDATE_NUMA_ROOT: a test run never re-execs itself onto node 0 (its own tests below do).
+const ONE_NODE = mkdtempSync(join(tmpdir(), 'validate-numa-'));
+after(() => rmSync(ONE_NODE, { recursive: true, force: true }));
 const LANES = {
   VOC_VALIDATE_JOBS: '', VOC_VALIDATE_RAM: 'off', CODEQL_PARALLEL: '', CODEQL_THREADS: '', VALIDATE_PYTEST_WORKERS: '',
-  VALIDATE_CDK_VITEST_WORKERS: '', VALIDATE_AUDIT_TEST_WORKERS: '',
+  VALIDATE_CDK_VITEST_WORKERS: '', VALIDATE_AUDIT_TEST_WORKERS: '', VALIDATE_ESLINT_CONCURRENCY: '', VALIDATE_CPUS: '',
+  VALIDATE_PINNED: '', VALIDATE_NUMA_ROOT: ONE_NODE, VALIDATE_NPROC_ALL: '', GITHUB_ACTIONS: '',
+  OMP_NUM_THREADS: '', OMP_THREAD_LIMIT: '',
 };
 let runs = 0;
 /** Progress lines and exit status of a dry run with `args`; `fail` names the step that exits 1. */
@@ -125,7 +130,8 @@ describe('validate.sh coverage baseline mode (local prunes graduated rows, CI st
   const banner = (env) => {
     runs += 1;
     const result = spawnSync('/bin/bash', [SCRIPT, '--dry-run', '--lane', 'web'], {
-      encoding: 'utf8', env: { ...env, ...LANES, VALIDATE_LOG_DIR: join(logRoot, `banner-${runs}`) },
+      // LANES clears GITHUB_ACTIONS (the NUMA tests); these cases set it themselves.
+      encoding: 'utf8', env: { ...env, ...LANES, GITHUB_ACTIONS: env.GITHUB_ACTIONS ?? '', VALIDATE_LOG_DIR: join(logRoot, `banner-${runs}`) },
     });
     return result.stdout.split('\n')[0];
   };
@@ -307,29 +313,97 @@ describe('validate.sh pool (VOC_VALIDATE_JOBS: every step its own job)', () => {
     assert.equal(status, 0, lines.join('\n'));
     return Object.fromEntries(readFileSync(out, 'utf8').trim().split('\n').map((l) => [l.split('=')[0], l.slice(l.indexOf('=') + 1)]));
   }
-  const cpus = Number(spawnSync('getconf', ['_NPROCESSORS_ONLN'], { encoding: 'utf8' }).stdout.trim()) || 4;
+  // The CPUs this process may run on (nproc honours taskset; getconf counts every core of the machine).
+  // The script's own count, its fallback included (stock macOS has no nproc: getconf).
+  const cpus = Number(spawnSync('/bin/sh', ['-c',
+    'env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4'],
+  { encoding: 'utf8' }).stdout.trim()) || 4;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.floor(v)));
+  const lanesPytest = (n) => Math.min(32, n > 6 ? n - 4 : 2);
 
   it('gives the steps exactly the old environment without the pool', () => {
     const env = stepEnv({});
     for (const name of ['CODEQL_PARALLEL', 'CODEQL_THREADS', 'VALIDATE_POOL', 'VALIDATE_CDK_VITEST_WORKERS', 'VALIDATE_AUDIT_TEST_WORKERS']) {
       assert.equal(env[name] ?? '', '', name);
     }
-    assert.equal(env.VALIDATE_PYTEST_WORKERS, String(cpus > 6 ? cpus - 4 : 2));
+    assert.equal(env.VALIDATE_PYTEST_WORKERS, String(lanesPytest(cpus)));
   });
 
   it('sizes the pool\'s suites from the cores, and keeps what was set by hand', () => {
     const sized = stepEnv({ VOC_VALIDATE_JOBS: '8' });
     assert.equal(sized.VALIDATE_POOL, '1');
     assert.equal(sized.CODEQL_PARALLEL, '1');
-    assert.equal(sized.CODEQL_THREADS, String(clamp(cpus / 4, 1, 4096)));
-    assert.equal(sized.VALIDATE_PYTEST_WORKERS, String(clamp(cpus / 2, 2, 4096)));
+    assert.equal(sized.CODEQL_THREADS, String(clamp(cpus / 4, 1, 16)));
+    assert.equal(sized.VALIDATE_PYTEST_WORKERS, String(clamp(cpus / 2, 2, 32)));
     assert.equal(sized.VALIDATE_CDK_VITEST_WORKERS, String(clamp(cpus / 6, 4, 32)));
     assert.equal(sized.VALIDATE_AUDIT_TEST_WORKERS, String(clamp(cpus / 12, 2, 16)));
     const given = stepEnv({ VOC_VALIDATE_JOBS: '8', VALIDATE_PYTEST_WORKERS: '7', CODEQL_THREADS: '3', VALIDATE_CDK_VITEST_WORKERS: '5' });
     assert.deepEqual([given.VALIDATE_PYTEST_WORKERS, given.CODEQL_THREADS, given.VALIDATE_CDK_VITEST_WORKERS], ['7', '3', '5']);
     // --pytest-first: pytest runs alone before the pool, on the lanes' count.
-    assert.equal(stepEnv({ VOC_VALIDATE_JOBS: '8' }, ['--pytest-first']).VALIDATE_PYTEST_WORKERS, String(cpus > 6 ? cpus - 4 : 2));
+    assert.equal(stepEnv({ VOC_VALIDATE_JOBS: '8' }, ['--pytest-first']).VALIDATE_PYTEST_WORKERS, String(lanesPytest(cpus)));
+  });
+
+  it('caps every worker count on a big machine, and keeps what was set by hand', () => {
+    const lanes = stepEnv({ VALIDATE_CPUS: '192' });
+    assert.deepEqual([lanes.VALIDATE_PYTEST_WORKERS, lanes.VALIDATE_ESLINT_CONCURRENCY], ['32', '8']);
+    // A CI runner's 4 CPUs: eslint on 2 threads, as `auto` gave it.
+    assert.equal(stepEnv({ VALIDATE_CPUS: '4' }).VALIDATE_ESLINT_CONCURRENCY, '2');
+    const pool = stepEnv({ VALIDATE_CPUS: '192', VOC_VALIDATE_JOBS: '8' });
+    assert.deepEqual([pool.VALIDATE_PYTEST_WORKERS, pool.CODEQL_THREADS], ['32', '16']);
+    // A laptop and CI (fewer than 32 CPUs) see what they saw.
+    assert.equal(stepEnv({ VALIDATE_CPUS: '12' }).VALIDATE_PYTEST_WORKERS, '8');
+    const given = stepEnv({ VALIDATE_CPUS: '192', VALIDATE_PYTEST_WORKERS: '64', VALIDATE_ESLINT_CONCURRENCY: '3' });
+    assert.deepEqual([given.VALIDATE_PYTEST_WORKERS, given.VALIDATE_ESLINT_CONCURRENCY], ['64', '3']);
+  });
+
+  it("gives eslint its capped concurrency, never 'auto'", () => {
+    const script = readFileSync(SCRIPT, 'utf8');
+    assert.ok(!/--concurrency auto/.test(script), 'no step runs eslint on every core');
+    assert.equal(script.match(/--concurrency "\$VALIDATE_ESLINT_CONCURRENCY"/g)?.length, 3);
+  });
+
+  const taskset = spawnSync('taskset', ['--version'], { encoding: 'utf8' }).status === 0;
+  /** The first CPU this process may run on (a run pinned elsewhere may not use CPU 0). */
+  const firstCpu = () => {
+    const allowed = /^Cpus_allowed_list:\s*(\d+)/m.exec(existsSync('/proc/self/status')
+      ? readFileSync('/proc/self/status', 'utf8') : '');
+    return allowed?.[1] ?? '0';
+  };
+  it('counts the CPUs it may run on, as taskset left them', { skip: !taskset && 'no taskset here' }, () => {
+    const out = join(logRoot, `env-pinned-${runs + 1}.txt`);
+    runs += 1;
+    const result = spawnSync('taskset', ['-c', firstCpu(), '/bin/bash', SCRIPT, '--dry-run', '--only', 'python-tests'], {
+      encoding: 'utf8',
+      env: { ...process.env, ...LANES, VALIDATE_LOG_DIR: join(logRoot, String(runs)), OUT: out,
+        VALIDATE_DRY_RUN_CMD: '[ "$VALIDATE_STEP" != pytest ] || env > "$OUT"' },
+    });
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+    assert.match(readFileSync(out, 'utf8'), /^VALIDATE_PYTEST_WORKERS=2$/m);
+  });
+
+  /** A fake /sys/devices/system/node with `nodes` nodes, node 0 on this process's first CPU only. */
+  function numaRoot(nodes) {
+    const root = mkdtempSync(join(ONE_NODE, 'fake-'));
+    for (let n = 0; n < nodes; n += 1) mkdirSync(join(root, `node${n}`));
+    writeFileSync(join(root, 'node0', 'cpulist'), `${firstCpu()}\n`);
+    return root;
+  }
+  // "Not pinned yet": the machine's count is this process's own (a gate run already pinned to node 0 runs these too).
+  const unpinned = { VALIDATE_NPROC_ALL: String(cpus) };
+
+  it('re-runs itself on NUMA node 0 on a machine with more than one node', { skip: !taskset && 'no taskset here' }, () => {
+    const pinned = stepEnv({ VALIDATE_NUMA_ROOT: numaRoot(2), ...unpinned });
+    assert.deepEqual([pinned.VALIDATE_PINNED, pinned.VALIDATE_PYTEST_WORKERS], ['1', '2']);
+  });
+
+  it('stays as it is on one node, on CI, or when already pinned', () => {
+    assert.equal(stepEnv({ VALIDATE_NUMA_ROOT: numaRoot(1), ...unpinned }).VALIDATE_PINNED ?? '', '');
+    assert.equal(stepEnv({ VALIDATE_NUMA_ROOT: numaRoot(2), ...unpinned, GITHUB_ACTIONS: 'true' }).VALIDATE_PINNED ?? '', '');
+    assert.equal(stepEnv({ VALIDATE_NUMA_ROOT: numaRoot(2), ...unpinned, VALIDATE_PINNED: '1' }).VALIDATE_PYTEST_WORKERS,
+      String(lanesPytest(cpus)));
+    // A caller's own taskset (fewer CPUs than the machine has) counts as pinned.
+    assert.equal(stepEnv({ VALIDATE_NUMA_ROOT: numaRoot(2), VALIDATE_NPROC_ALL: String(cpus + 96) }).VALIDATE_PINNED ?? '',
+      '');
   });
 
   it('names RAM in its banner, and a dry run never touches it', () => {

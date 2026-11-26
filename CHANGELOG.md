@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.82.01] - 2026-11-26
+
+Tooling only: the gate keeps to its share of a big shared machine. On a 192-core build machine the gate's eslint
+(`--concurrency auto`) and pytest (196 workers) took every core beside other work (CONTRIBUTING.md, "On a big
+machine"). A laptop and CI keep their worker counts but for small differences (eslint may use 2 threads on a small
+package where `auto` used none, the stream suite one more vitest worker); their results are the same.
+
+### Changed
+
+- `scripts/validate.sh` counts the CPUs with `nproc`, which honours `taskset`, instead of `getconf`, which counted
+  every core; caps pytest-xdist at 32 workers by default in the lanes and the pool (`VALIDATE_PYTEST_WORKERS` still
+  overrides); runs eslint with `--concurrency $VALIDATE_ESLINT_CONCURRENCY` (default half the CPUs, at most 8;
+  `auto` took up to half the CPUs, fewer for a small package) instead of `auto`; caps CodeQL at 16 threads a language (`CODEQL_THREADS` still
+  overrides); the stream Lambda's vitest caps itself at 32 workers, as the frontend's does.
+- On a machine with more than one NUMA node, a run not already pinned re-runs itself on node 0's CPUs
+  (`taskset -c <node 0's cpulist>`); never in CI or without `taskset`. Tests: `scripts/validate.test.mjs`.
+
 ## [7.82.00] - 2026-11-26
 
 Multi-workspace, phase 4: the assistant's model calls are counted in the cost estimate. The streaming assistant,
