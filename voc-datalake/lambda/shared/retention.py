@@ -154,10 +154,20 @@ DOCS_NOT_CHECKED_COUNTER: Final = 'product_docs_not_checked'
 # A feedback form's test responses a run deleted (the deployment's and the workspaces' forms partitions, never feedback
 # items: jobs/retention/form_tests.py, since 7.55.00's AI review).
 FORM_TEST_COUNTER: Final = 'form_test_responses_deleted'
+# The participants an erasure by email erased in voc-participants (7.72.00, projects 3g2: each person the address's
+# guard named, in the deployment and in each walked workspace; jobs/retention/participants.py).
+PARTICIPANT_COUNTER: Final = 'participants_erased'
+# The participants the participant erasure refused (kept saved for a later erasure), the guard or people-index rows
+# naming no person id, and the workspace guards' index rows left holding the address (kept after every try conflicted,
+# no guard back: the entry stays saved and the next erasure unlists them).
+NOT_ERASED_COUNTER: Final = 'participants_not_erased'
+GUARD_MALFORMED_COUNTER: Final = 'participant_guards_malformed'
+INDEX_KEPT_COUNTER: Final = 'participant_index_rows_kept'
 # The counters on the job and audit rows only once above 0 (a run that touched none reads as before).
 ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER,
                                     EXPORT_OBJECT_COUNTER, PROJECT_COUNTER, MALFORMED_ID_COUNTER,
-                                    DOCS_NOT_CHECKED_COUNTER, FORM_TEST_COUNTER)
+                                    DOCS_NOT_CHECKED_COUNTER, FORM_TEST_COUNTER, PARTICIPANT_COUNTER,
+                                    NOT_ERASED_COUNTER, GUARD_MALFORMED_COUNTER, INDEX_KEPT_COUNTER)
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'

@@ -307,7 +307,7 @@ def _start(run: Mapping[str, Any], workspaces_table: Any, now: datetime) -> dict
     if _walks_listing(run, workspaces_table):
         if workspaces_table is None:
             raise ListingUnavailable('The workspaces to mark cannot be listed: voc-workspaces is not configured')
-        return {**workspaces.listing_start(now), 'mode': 'listing'}
+        return {**workspaces.start(run, lambda: now), 'mode': 'listing'}
     return {'mode': 'pending', 'at': {}}
 
 

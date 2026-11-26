@@ -24,7 +24,7 @@ from shared.aws import is_conditional_check_failure
 from shared.erasure_jobs import job_key
 from shared.ingest_tables import table_view
 from shared.logging import logger
-from shared.retention import ERASURE_JOB_COUNTERS, ERASURE_OPTIONAL_COUNTERS
+from shared.retention import ERASURE_JOB_COUNTERS, ERASURE_OPTIONAL_COUNTERS, INDEX_KEPT_COUNTER, NOT_ERASED_COUNTER
 from shared.timestamps import now_iso
 from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
 
@@ -68,6 +68,16 @@ _CARRIED_WORKSPACE_LISTS: Final = (ERASED_WORKSPACES, LINEAGE_WORKSPACES, UNCHEC
 #: data which jobs to submit again (one that did not walk them never reached them).
 DEPLOYMENT_FOUND: Final = 'deployment_rows_found'
 DEPLOYMENT_WALKED: Final = 'deployment_projects_walked'
+#: Whether an erasure by email without a source looked the address up in voc-participants and erased whom it found
+#: (7.72.00, projects 3g2; participants.py): on the job and audit rows of every such job, the deployment's and a
+#: workspace's own (``participant_fields``), so an admin can tell which jobs to submit again.
+PARTICIPANTS_WALKED: Final = 'participants_walked'
+#: ``PARTICIPANTS_WALKED``, no participant refused (``participants_not_erased`` 0) and no guard's index row left
+#: holding the address (``participant_index_rows_kept`` 0): the job erased every person the address named in
+#: voc-participants (that store only). The rerun rule reads it: every such erasure whose row does not say
+#: ``participants_complete: true``.
+PARTICIPANTS_COMPLETE: Final = 'participants_complete'
+_CARRIED_FLAGS: Final = (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED, PARTICIPANTS_WALKED)
 #: The field of an erasure by email (boards.py ``ERASE_FIELD``; that module imports this one).
 _EMAIL_FIELD: Final = 'email'
 # ``workspace_id``: the one workspace a job named (its row's, checked by the handler's ``_named_workspace``).
@@ -94,7 +104,7 @@ def new_run(event: Mapping[str, Any], mode: str) -> dict[str, Any]:
         listed = carried.get(name)
         if isinstance(listed, list) and listed:
             run[name] = [str(ws) for ws in listed]
-    for flag in (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED):
+    for flag in _CARRIED_FLAGS:
         if carried.get(flag) is True:
             run[flag] = True
     if carried.get(DEPLOYMENT_FOUND) in ('registry', 'scan'):
@@ -110,7 +120,7 @@ def carried_state(run: Mapping[str, Any]) -> dict[str, Any]:
         **{name: list(run[name]) for name in _CARRIED_LISTS},
         'review_files_more': run['review_files_more'],
         **{name: list(run[name]) for name in _CARRIED_WORKSPACE_LISTS if run.get(name)},
-        **{flag: True for flag in (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED) if run.get(flag) is True},
+        **{flag: True for flag in _CARRIED_FLAGS if run.get(flag) is True},
         **({DEPLOYMENT_FOUND: run[DEPLOYMENT_FOUND]} if run.get(DEPLOYMENT_FOUND) else {}),
     }
 
@@ -121,11 +131,36 @@ def deployment_fields(run: Mapping[str, Any]) -> dict[str, Any]:
     true or false (a job handed over past its ``workspace_projects`` phase across the upgrade finishes with false),
     and ``DEPLOYMENT_FOUND`` once known. Nothing for any other run: a retention run, an erasure by another field or of
     one source, a workspace's own."""
-    if (run.get('mode') != MODE_ERASE or run.get('field') != _EMAIL_FIELD or run.get('source')
-            or run.get(WORKSPACE_FIELD)):
+    if not email_without_source(run) or run.get(WORKSPACE_FIELD):
         return {}
     found = {DEPLOYMENT_FOUND: run[DEPLOYMENT_FOUND]} if run.get(DEPLOYMENT_FOUND) else {}
     return {DEPLOYMENT_WALKED: run.get(DEPLOYMENT_WALKED) is True, **found}
+
+
+def email_without_source(run: Mapping[str, Any]) -> bool:
+    """An erasure by email that is not limited to a source, the deployment's or a workspace's own: the runs that walk
+    the projects (project_people.py) and the participants (participants.py)."""
+    return run.get('mode') == MODE_ERASE and run.get('field') == _EMAIL_FIELD and not run.get('source')
+
+
+def participant_fields(run: Mapping[str, Any]) -> dict[str, Any]:
+    """What an erasure by email without a source, the deployment's or a workspace's own, says of voc-participants on
+    its job and audit rows (7.72.00): ``PARTICIPANTS_WALKED``, true once its ``participants`` phase ended (false for a
+    job handed over past that phase across the upgrade, a run where voc-participants is not configured, or the
+    deployment's run without voc-workspaces), and ``PARTICIPANTS_COMPLETE``, walked, nobody refused and no guard's
+    index row left holding the address (kept after every try conflicted, no guard back: the next erasure unlists it).
+    Nothing for any other run."""
+    if not email_without_source(run):
+        return {}
+    walked = run.get(PARTICIPANTS_WALKED) is True
+    left = int(run.get(NOT_ERASED_COUNTER) or 0) + int(run.get(INDEX_KEPT_COUNTER) or 0)
+    return {PARTICIPANTS_WALKED: walked, PARTICIPANTS_COMPLETE: walked and not left}
+
+
+def _job_fields(run: Mapping[str, Any]) -> dict[str, Any]:
+    """The fields of the job and audit rows that say what an erasure by email walked (``deployment_fields``,
+    ``participant_fields``)."""
+    return {**deployment_fields(run), **participant_fields(run)}
 
 
 def optional_counts(run: Mapping[str, Any]) -> dict[str, int]:
@@ -201,7 +236,7 @@ def write_audit(aggregates_table: Any, run: Mapping[str, Any], status: str, erro
         'status': status, **{counter: run[counter] for counter in COUNTERS}, **optional_counts(run),
         'started_at': run['started_at'], 'finished_at': now,
         **{key: run[key] for key in _AUDIT_OPTIONAL if run.get(key)},
-        **deployment_fields(run),
+        **_job_fields(run),
         **({'files_needing_review': review} if review else {}),
         **({'files_not_checked': unchecked} if unchecked else {}),
         **({'error': error} if error else {}),
@@ -265,7 +300,7 @@ def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: st
     names = {'#status': 'status'}
     values.update({':status': status, ':now': now_iso()})
     expression = f'SET #status = :status, {clauses}, finished_at = :now'
-    for n, (name, value) in enumerate(deployment_fields(run).items()):
+    for n, (name, value) in enumerate(_job_fields(run).items()):
         expression += f', {name} = :deployment{n}'
         values[f':deployment{n}'] = value
     review = files_needing_review(run)

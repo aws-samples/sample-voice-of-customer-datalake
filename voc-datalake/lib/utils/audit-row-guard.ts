@@ -76,8 +76,8 @@ export interface AuditRowTables {
 export interface NamedAuditWriter {
   readonly table: dynamodb.ITable;
   readonly rolePathSuffixes: readonly string[];
-  /** The one audit partition it may put; absent = any `AUDIT#*` partition. */
-  readonly partitionKey?: string;
+  /** The one audit partition it may put (or the few exact ones); absent = any `AUDIT#*` partition. */
+  readonly partitionKey?: string | readonly string[];
 }
 
 export interface AuditGuardOptions {
@@ -88,7 +88,7 @@ export interface AuditGuardOptions {
 /** Every audit writer, per table (lambda/shared/delete_audit.py's callers, voc-retention, shared/workspace.py). Each entry is pinned over
  *  the whole app by audit-row-guard.test.ts. */
 const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly rolePathSuffix: string;
-  readonly partitionKey?: string }[] = [
+  readonly partitionKey?: string | readonly string[] }[] = [
   // voc-retention: AUDIT#retention (run rows) and AUDIT#tombstone#<source> (one per deleted item, batched).
   { table: 'aggregatesTable', rolePathSuffix: '/RetentionWorker/RetentionRole' },
   // The settings API (and its assist twin, same role): the AUDIT#delete row of an archived design reference's copies.
@@ -104,6 +104,11 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   { table: 'projectsTable', rolePathSuffix: '/PersonaGeneratorRole' },
   // Lists, people (participant erasure tombstones too), boards, requests and +1s.
   { table: 'participantsTable', rolePathSuffix: '/EngagementLambdaRole' },
+  // voc-retention (7.72.00, projects 3g2): an erasure by email's participant erasure writes the person's tombstone
+  // (AUDIT#tombstone#participant) and delete record (AUDIT#delete), each put only if new; those two partitions only
+  // (its PutItem grant names them too: lib/stacks/retention-worker.ts `PARTICIPANT_ACCESS`).
+  { table: 'participantsTable', rolePathSuffix: '/RetentionWorker/RetentionRole',
+    partitionKey: ['AUDIT#tombstone#participant', 'AUDIT#delete'] },
   { table: 'featureRequestsTable', rolePathSuffix: '/EngagementLambdaRole' },
   // A deleted conversation.
   { table: 'conversationsTable', rolePathSuffix: '/ChatLambdaRole' },
@@ -181,7 +186,8 @@ const PUT_ACTIONS = ['dynamodb:PutItem', 'dynamodb:BatchWriteItem'];
 const CHANGE_ACTIONS = ['dynamodb:DeleteItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem'];
 
 /** What a role may put in each table it writes: every audit partition, one, or none. */
-type PutRight = { readonly kind: 'any' } | { readonly kind: 'one'; readonly partitionKey: string } | { readonly kind: 'none' };
+type PutRight = { readonly kind: 'any' } | { readonly kind: 'one'; readonly partitionKey: string | readonly string[] }
+  | { readonly kind: 'none' };
 
 function putRight(holder: GuardedHolder, arn: string, writers: readonly NamedAuditWriter[]): PutRight {
   const named = writers.find((writer) => writer.table.tableArn === arn
@@ -210,14 +216,15 @@ function guardHolder(holder: GuardedHolder, written: ReadonlySet<string>, writer
   }
   //  - a writer limited to one partition: no put on any other audit partition. A pattern (`AUDIT#WS#*`, one
   //    workspace's audit partition each) is matched with StringNotLike, an exact key with StringNotEquals. A role
-  //    limited in two tables gets one statement per table, the second Sid numbered (Sids are unique in a policy).
-  const limited = rights.flatMap(({ arn, right }) => (right.kind === 'one' ? [{ arn, partitionKey: right.partitionKey }] : []));
-  limited.forEach(({ arn, partitionKey }, index) => {
-    const operator = partitionKey.includes('*') ? 'ForAnyValue:StringNotLike' : 'ForAnyValue:StringNotEquals';
+  //    limited in two tables gets one statement per table, the second Sid numbered (Sids are unique in a policy). A
+  //    writer of a few exact partitions lists them all: a negated operator holds when a key matches none of them.
+  const limited = rights.flatMap(({ arn, right }) => (right.kind === 'one' ? [{ arn, partitionKeys: [right.partitionKey].flat() }] : []));
+  limited.forEach(({ arn, partitionKeys }, index) => {
+    const operator = partitionKeys.some((key) => key.includes('*')) ? 'ForAnyValue:StringNotLike' : 'ForAnyValue:StringNotEquals';
     const sid = index === 0 ? AUDIT_DENY_OTHER_PARTITION_SID : `${AUDIT_DENY_OTHER_PARTITION_SID}${index + 1}`;
     holder.add(denyOnAuditRows(sid, PUT_ACTIONS, [arn], {
       ...AUDIT_KEYS,
-      [operator]: { 'dynamodb:LeadingKeys': [partitionKey] },
+      [operator]: { 'dynamodb:LeadingKeys': partitionKeys },
     }));
   });
 }

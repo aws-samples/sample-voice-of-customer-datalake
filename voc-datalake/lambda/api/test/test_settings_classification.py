@@ -195,6 +195,18 @@ class TestErasure:
         bare = settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
         assert [name for name in bare if name.startswith('deployment_')] == []
 
+    def test_the_job_view_says_whether_the_participants_were_reached_and_how_many_were_erased(self):
+        """7.72.00 (3g2): the participants an erasure by email erased, and whether it looked in voc-participants."""
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'participants_walked': True, 'participants_complete': False,
+            'participants_erased': 3, 'participants_not_erased': 1})
+        assert (view['participants_walked'], view['participants_complete'], view['participants_erased'],
+                view['participants_not_erased']) == (True, False, 3, 1)
+        assert settings_handler.erasure_job_view({'job_id': 'er_000000000002', 'participants_walked': False})[
+            'participants_walked'] is False
+        bare = settings_handler.erasure_job_view({'job_id': 'er_000000000003'})
+        assert [name for name in bare if name.startswith('participants_')] == []
+
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize('field', ['source_id', 'csv_row_id'])
     def test_an_id_erasure_names_its_source(self, route, field):

@@ -8,7 +8,8 @@ real, and it is RECORDED in the table that held the artifact:
   again until it finishes (a participant's erasure, since 7.31.00) uses ``record_delete_once``'s deterministic
   ``sk '{kind}#{id}'`` instead, so it has exactly one row;
 - ``kind`` (what was deleted, e.g. ``persona``), ``target`` (ids only, never content),
-  ``actor`` (``{sub, kind}``; kind is ``user | admin | agent | mcp | plan | system``,
+  ``actor`` (``{sub, kind}``; kind is ``user | admin | agent | mcp | plan | system``, or since 7.72.00 ``erasure``
+  with the erasure job's ``job_id``: a participant erased by an erasure by email, jobs/retention/participants.py;
   never an email), ``reason`` (optional), ``count`` (optional: how many rows one delete removes, e.g. a form's
   test responses), ``deleted_at``.
 

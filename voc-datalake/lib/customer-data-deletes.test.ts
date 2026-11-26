@@ -126,6 +126,15 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
         `WS#${ONE_WORKSPACE}#PERSON#*`, `WS#${ONE_WORKSPACE}#PROJECT#*`],
       why: 'a workspace\'s hard delete: its projects\' list links, and its people and lists',
     },
+    // 7.72.00 (projects 3g2): an erasure by email erases each participant its address names, the deployment's and one
+    // workspace id's (lambda/shared/participants_erasure.py `erase_person`): the guard, the person's rows and
+    // memberships, its project links and tokens, and a workspace guard's index row. A legal obligation (D5).
+    [RETENTION_ROLE]: {
+      scope: ['EMAIL#*', 'LIST#*', 'PERSON#*', 'PROJECT#*', 'TOKEN#*', `WS#${ONE_WORKSPACE}#EMAIL#*`,
+        `WS#${ONE_WORKSPACE}#LIST#*`, `WS#${ONE_WORKSPACE}#PARTICIPANTS`, `WS#${ONE_WORKSPACE}#PERSON#*`,
+        `WS#${ONE_WORKSPACE}#PROJECT#*`],
+      why: 'an erasure by email erases the participants its address names, in the deployment and in each workspace',
+    },
   },
   FeatureRequestsTable: {
     [ENGAGEMENT_API]: { scope: WHOLE_TABLE, why: 'board, request and +1 deletes' },
@@ -446,6 +455,30 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     });
   });
 
+  it('voc-retention reaches voc-participants only through the participant erasure\'s calls, each on its partitions', () => {
+    const walks = 'VocProcessingStack/RetentionWorkerRetentionWalksPolicy';
+    const onParticipants = grants.filter((g) => g.role === RETENTION_ROLE || g.role === walks)
+      .filter(onTable('ParticipantsTable'));
+    // 7.72.00 (projects 3g2): no Scan, every statement pinned by LeadingKeys (lib/stacks/retention-worker.ts); the one
+    // index read is the people index's Query, in the walks' policy, which holds no write.
+    expect([...new Set(onParticipants.flatMap((g) => g.actions))].sort(byCodeUnit)).toStrictEqual([
+      'dynamodb:BatchWriteItem', 'dynamodb:ConditionCheckItem', 'dynamodb:DeleteItem', 'dynamodb:GetItem',
+      'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem',
+    ]);
+    expect(onParticipants.filter((g) => g.condition === undefined)).toStrictEqual([]);
+    // Its only puts: the participant's tombstone and delete record (it is their audit writer there).
+    expect(onParticipants.filter((g) => g.actions.includes('dynamodb:PutItem')).map(scopeOf))
+      .toStrictEqual([['AUDIT#delete', 'AUDIT#tombstone#participant']]);
+  });
+
+  it('voc-retention\'s walks policy reads voc-participants only, its one index read the people index\'s Query', () => {
+    const walks = 'VocProcessingStack/RetentionWorkerRetentionWalksPolicy';
+    const onParticipants = grants.filter((g) => g.role === walks).filter(onTable('ParticipantsTable'));
+    expect(onParticipants.filter((g) => g.resource.includes('/index/')).map((g) => g.actions))
+      .toStrictEqual([['dynamodb:Query']]);
+    expect(onParticipants.flatMap((g) => g.actions).filter((a) => DYNAMO_WRITE.test(a))).toStrictEqual([]);
+  });
+
   it('no role deletes bucket-wide in the raw bucket', () => {
     const bucketWide = grants.filter((g) => g.actions.some((a) => S3_DELETE.test(a)) && rawBucketGlobs(g).includes('*'));
     expect(bucketWide.map((g) => g.role)).toStrictEqual([]);
@@ -471,16 +504,18 @@ describe('the Documents Library is reached by the projects API alone (7.62.00, d
 
   // The admin data explorer reads the whole raw bucket by design (admins only, api/data_explorer_handler.py).
   const DATA_EXPLORER = 'VocApiStack/DataExplorerLambdaRole';
+  // voc-retention's text read is in its erasure walks' managed policy, attached to its role (7.72.00).
+  const RETENTION_WALKS = 'VocProcessingStack/RetentionWorkerRetentionWalksPolicy';
 
   it("the deployment's library: the projects API (and its assist twin, the same role), voc-retention's text read", () => {
-    expect(reachers(keys('library/'))).toStrictEqual([DATA_EXPLORER, PROJECTS_API, RETENTION_ROLE].sort(byCodeUnit));
+    expect(reachers(keys('library/'))).toStrictEqual([DATA_EXPLORER, PROJECTS_API, RETENTION_WALKS].sort(byCodeUnit));
     // voc-retention reads the extracted text only, never an original (an erasure lists a match for review).
     expect(reachers([`library/${ITEM}/original`])).toStrictEqual([DATA_EXPLORER, PROJECTS_API].sort(byCodeUnit));
   });
 
   it("a workspace's library: the projects API, and the roles that hold the whole of one workspace's objects", () => {
     expect(reachers(keys('ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/library/'))).toStrictEqual([
-      DATA_EXPLORER, PROJECTS_API, RETENTION_ROLE, 'VocProcessingStack/WorkspaceExportWorkerExportRole', DELETE_ROLE,
+      DATA_EXPLORER, PROJECTS_API, RETENTION_WALKS, 'VocProcessingStack/WorkspaceExportWorkerExportRole', DELETE_ROLE,
     ].sort(byCodeUnit));
   });
 

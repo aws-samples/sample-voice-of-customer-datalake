@@ -1,7 +1,7 @@
 """Promote a feature request into a project (``POST /feature-requests/{id}/promote``, admin).
 
-Every distinct supporter email and every contact email becomes a person (origin
-``feature_request``; an existing person is reused). External contacts are skipped
+Every distinct supporter email and every +1's contact email (``contact_email``; a request's own
+contact is not read) becomes a person (origin ``feature_request``; an existing person is reused). External contacts are skipped
 when the engagement settings turn external people off, and reported. They all join
 the list ``Requests: {title}`` (kind ``requesters``, created once, then reused through
 the request's ``list_id``), which is linked to the project. The request records

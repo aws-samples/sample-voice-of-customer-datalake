@@ -23,6 +23,12 @@ const RuleSchema = z.object({
   }),
 });
 
+const ManagedPolicySchema = z.object({
+  Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(z.object({
+    Effect: z.string(), Action: z.union([z.string(), z.array(z.string())]),
+  })) }) }),
+});
+
 let template: Template;
 beforeAll(() => { template = synthProcessingTemplate({ withIndexes: true }); });
 
@@ -45,6 +51,7 @@ describe('voc-retention worker', () => {
     const variables = worker().Environment.Variables;
     expect(Object.keys(variables)).toStrictEqual(expect.arrayContaining([
       'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE', 'FEATURE_REQUESTS_TABLE',
+      'PARTICIPANTS_TABLE',
     ]));
     expect(variables).not.toHaveProperty('RETENTION_FUNCTION');
   });
@@ -135,14 +142,76 @@ describe('voc-retention worker', () => {
     }));
   });
 
-  it('asks for no returned values on its attribute-limited updates: the two on projects and the membership one', () => {
+  it('asks for no returned values on its attribute-limited updates: the two on projects, the membership one and the participants one', () => {
     // An UpdateItem limited to some attributes could otherwise read the whole row back (ALL_OLD, ALL_NEW).
     const policy = JSON.stringify(template.toJSON().Resources);
     const noReturn = JSON.stringify({ StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] } }).slice(1, -1);
-    expect(policy.split(noReturn).length - 1).toBe(3);
+    expect(policy.split(noReturn).length - 1).toBe(4);
     const limited = statements().filter((s) => s.effect === 'Allow' && s.actions.includes('dynamodb:UpdateItem')
-      && (s.resource.includes('Projects') || s.resource.includes('Workspaces')));
-    expect(limited).toHaveLength(3);
+      && ['Projects', 'Workspaces', 'Participants'].some((table) => s.resource.includes(table)));
+    expect(limited).toHaveLength(4);
+  });
+
+  it('erases participants with exactly the participant erasure\'s calls, each pinned to its partitions (7.72.00)', () => {
+    expect(worker().Environment.Variables).toHaveProperty('PARTICIPANTS_TABLE');
+    const onParticipants = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Participants')
+      && s.actions.some((a) => a.startsWith('dynamodb:')));
+    // No Scan: each write in a statement of its own on the table (the role's own policy), then the reads together on
+    // the table and the people index's Query (the walks' policy). BatchWriteItem would also allow puts in its
+    // partitions (IAM cannot tell a batch's deletes from its puts); the code sends deletes only.
+    const byStatement = (a: unknown, b: unknown) => byCodeUnit(JSON.stringify(a), JSON.stringify(b));
+    expect(onParticipants.map((s) => [[...s.actions].sort(byCodeUnit), s.resource.includes('/index/')]).sort(byStatement))
+      .toStrictEqual([
+        [['dynamodb:PutItem'], false], [['dynamodb:UpdateItem'], false], [['dynamodb:DeleteItem'], false],
+        [['dynamodb:BatchWriteItem'], false], [['dynamodb:Query'], true], [['dynamodb:GetItem'], false],
+        [['dynamodb:ConditionCheckItem', 'dynamodb:GetItem', 'dynamodb:Query'], false],
+      ].sort(byStatement));
+    const ws = `WS#ws_${'?'.repeat(26)}`;
+    const json = JSON.stringify(template.toJSON());
+    const keys = (partitions: string[]) => JSON.stringify({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } });
+    for (const partitions of [
+      ['EMAIL#*', 'PERSON#*', `${ws}#EMAIL#*`, `${ws}#PERSON#*`],
+      ['AUDIT#tombstone#participant', 'AUDIT#delete'],
+      ['EMAIL#*', 'PERSON#*', 'LIST#*', `${ws}#EMAIL#*`, `${ws}#PERSON#*`, `${ws}#LIST#*`, `${ws}#PARTICIPANTS`],
+      ['TOKEN#*', 'PROJECT#*', 'PERSON#*', `${ws}#PROJECT#*`, `${ws}#PERSON#*`],
+    ]) {
+      expect(json).toContain(keys(partitions));
+    }
+    // The updates: a person's lists, a list's count, an ask recipient's token hash and error, nothing returned.
+    expect(json).toContain(JSON.stringify({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PERSON#*', 'LIST#*', 'ASK#*', `${ws}#PERSON#*`,
+        `${ws}#LIST#*`] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'list_ids', 'member_count',
+        'response_token_hash', 'error'] },
+      StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] },
+    }));
+  });
+
+  it('reads the participants\' people index for its key alone, and a participant\'s tombstone only (7.72.00)', () => {
+    const ws = `WS#ws_${'?'.repeat(26)}`;
+    const json = JSON.stringify(template.toJSON());
+    // The people index's Query: its partitions, the key it reads and the index keys only, SPECIFIC_ATTRIBUTES required.
+    expect(json).toContain(JSON.stringify({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PEOPLE', `${ws}#PEOPLE`] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'gsi1pk', 'gsi1sk'] },
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    }));
+    // The GetItem of a participant's tombstone the workspace layer's put asks back (ALL_OLD on a taken key).
+    expect(json).toContain(JSON.stringify({
+      'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#participant'] } }));
+  });
+
+  it('keeps every delete and put in its own inline policy; the walks\' managed policy reads and updates only (7.72.00)', () => {
+    const managed = Object.entries(template.findResources('AWS::IAM::ManagedPolicy'))
+      .filter(([id]) => id.startsWith('RetentionWorker'));
+    // One policy of its own, never a CDK overflow (which would move the role's last statements, deletes included).
+    expect(managed.map(([id]) => id.replace(/[0-9A-F]{8}$/, ''))).toStrictEqual(['RetentionWorkerRetentionWalksPolicy']);
+    const allowed = managed.flatMap(([, resource]) => ManagedPolicySchema.parse(resource).Properties.PolicyDocument.Statement)
+      .filter((statement) => statement.Effect === 'Allow').flatMap((statement) => [statement.Action].flat());
+    expect([...new Set(allowed)].sort(byCodeUnit)).toStrictEqual(['dynamodb:ConditionCheckItem', 'dynamodb:GetItem',
+      'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem', 's3:GetObject']);
+    expect(Object.keys(template.findResources('AWS::IAM::ManagedPolicy'))
+      .filter((id) => id.startsWith('RetentionWorkerRetentionRoleOverflow'))).toStrictEqual([]);
   });
 
   it('scans projects on the table only, for the attributes the backfill\'s Scan projects (7.48.00)', () => {
