@@ -17,8 +17,8 @@ A workspace's profiles are ``WS#{ws}#SETTINGS#sources`` (shared/workspace_config
 requests only; a workspace that saved none has none, never the deployment's: its sources take the defaults below
 except that their PII is REDACTED (``WORKSPACE_DEFAULT_PII``, privacy by default). Its profiles set
 no retention window and no Radar brand (``workspace_profiles_problem``): voc-retention applies the deployment's
-windows to every item, a workspace's included (so a workspace's own window would delete nothing), and Radar is not
-keyed by workspace; ``cached_source_profile_strict`` gives a workspace's source the deployment's window.
+windows to every item, a workspace's included (so a workspace's own window would delete nothing), and a workspace's
+Radar takes no reviews yet; ``cached_source_profile_strict`` gives a workspace's source the deployment's window.
 
 A source without a profile gets ``profile_for``'s defaults: PII allowed, kept
 forever, not restricted, no defaults (``email_intake``, the public inbox, defaults to redact). Validation normalises (every field is
@@ -251,7 +251,7 @@ def workspace_profiles_problem(value: object) -> str | None:
                 if kind == 'retention':
                     return (f"{what}: retention windows are the deployment's and apply to every workspace's items, "
                             f'so a workspace profile cannot set {field} (leave it empty)')
-                return (f'{what}: Radar is not kept per workspace yet, so a workspace profile cannot set {field}')
+                return f"{what}: a workspace's Radar takes no reviews yet, so a workspace profile cannot set {field}"
     return None
 
 

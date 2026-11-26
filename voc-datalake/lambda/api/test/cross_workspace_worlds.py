@@ -94,6 +94,9 @@ class RouteCase:
     #: Without a workspace the route is the deployment's ``admins`` group's (as before): check 3 expects 403 for a
     #: caller outside it.
     deployment_admins_without_a_workspace: bool = False
+    #: Without a workspace the route answers this instead of ``ok_status`` (one that refuses inside a workspace what
+    #: it does for the deployment, and says so): check 3 expects it.
+    status_without_a_workspace: int | None = None
 
 
 def table_snapshot() -> dict[str, list[str]]:
@@ -515,6 +518,75 @@ _MEMORY_IDS = {
 _IMPORT_IDS = {'A': {'import_id': 'imp_a'}, 'B': {'import_id': 'imp_b'}, UNKNOWN: {'import_id': 'imp_unknown'}}
 
 
+# ── voc-radar-api (lambda/api/radar_handler.py, lambda/shared/radar_exa_routes.py) ──
+
+#: A brand's id is its label's slug, so the deployment's brand has A's label and id (as the memory world's rows have
+#: A's ids): what tells them apart is their reviews' and releases' words (``A_MARK``, ``B_MARK``, none).
+_RADAR_LABELS = {'A': 'Ridgeway Gear', 'B': 'Northfork Bikes'}
+_RADAR_IDS = {
+    'A': {'brand_key': 'ridgeway-gear', 'feedback_id': 'fb_a'},
+    'B': {'brand_key': 'northfork-bikes', 'feedback_id': 'fb_b'},
+    UNKNOWN: {'brand_key': 'no-such-brand', 'feedback_id': 'fb_unknown'},
+}
+_RADAR_BRANDS = {'brands': [{'label': 'Trailhead Supply', 'domains': ['trailhead.example']}]}
+_RADAR_SETTINGS = {'cadence': 'weekly', 'max_brands': 5, 'query_cap': 20}
+_EXA_KEY = 'example-exa-key-0123'
+
+
+def _seed_radar_review(radar: Any, radar_store: Any, brand: str, label: str, review: dict,
+                       workspace: Any) -> None:
+    """A stored review, its marker and its daily total, inside ``workspace``'s partitions (the deployment's keys with
+    its prefix, as shared/radar_reads.py reads them): what a workspace's producer will write (none does yet)."""
+    from shared.scoped_keys import scoped_pk
+
+    item = radar_store.radar_item(review, brand, label)
+    stored = {**item, 'pk': scoped_pk(workspace, item['pk'])}
+    marker = radar_store.marker_key(brand, review['feedback_id'])
+    radar.put_item(Item=stored)
+    radar.put_item(Item={'pk': scoped_pk(workspace, marker['pk']), 'sk': marker['sk'], 'item_pk': stored['pk'],
+                         'item_sk': stored['sk']})
+    radar.put_item(Item={'pk': scoped_pk(workspace, radar_store.counter_pk(brand, 'daily_total')),
+                         'sk': item['radar_day'], 'count': 1})
+
+
+@contextmanager
+def radar_world(lambda_context: Any) -> Generator[World]:
+    """The deployment's Radar and each workspace's: a brand list, a review and a release each, marked with the
+    workspace's word (the deployment's carries none of A's or B's)."""
+    import radar_handler
+    from shared import radar_exa_key, radar_releases, radar_store
+    from shared.radar_keys import radar_settings_key
+    from shared.ws_repo import WorkspaceScope
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        radar = pk_sk_table('radar')
+        aggregates = pk_sk_table('aggregates')
+        stack.enter_context(patch.object(radar_handler, 'get_radar_table', return_value=radar))
+        stack.enter_context(patch.object(radar_handler, 'get_aggregates_table', return_value=aggregates))
+        stack.enter_context(patch.object(radar_handler, 'RADAR_SCAN_FUNCTION', 'voc-radar-scan'))
+        scans = MagicMock(return_value={})
+        stack.enter_context(patch.object(radar_handler, 'invoke_lambda_async', scans))
+        stack.enter_context(patch.dict('os.environ', {'RADAR_EXA_PARAMETER': '/voc/radar/exa-api-key'}))
+        radar_exa_key._ssm.cache_clear()
+        stack.callback(radar_exa_key._ssm.cache_clear)
+        today = datetime.now(UTC).date().isoformat()
+        for side, workspace, mark in (('A', None, 'before workspaces'), ('A', WorkspaceScope(WS_A), A_MARK),
+                                      ('B', WorkspaceScope(WS_B), B_MARK)):
+            ids, label = _RADAR_IDS[side], _RADAR_LABELS[side]
+            brand = ids['brand_key']
+            radar.put_item(Item={**radar_settings_key('brands', workspace), 'brands': [
+                {'label': label, 'domains': [f'{brand}.example']}]})
+            review = {'feedback_id': ids['feedback_id'], 'date': today, 'source_created_at': today,
+                      'category': 'delivery', 'sentiment_label': 'negative', 'original_text': f'{mark} parcel late'}
+            _seed_radar_review(radar, radar_store, brand, label, review, workspace)
+            radar.put_item(Item={'pk': radar_releases.release_pk(brand, workspace), 'sk': f'{today}#r1',
+                                 'release_id': 'r1', 'brand': brand, 'brand_label': label,
+                                 'feature': f'{mark} dark mode', 'summary': mark, 'release_date': today,
+                                 'urls': [f'https://{brand}.example/news'], 'source_kind': 'official'})
+        yield World(call=_caller(radar_handler, lambda_context), doubles={'cognito': cognito, 'scans': scans})
+
+
 @contextmanager
 def memory_world(lambda_context: Any) -> Generator[World]:
     import memory_handler
@@ -680,6 +752,9 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'mcp_tokens_handler.py': tokens_world,
     'chat_handler.py': chat_world,
     'memory_handler.py': memory_world,
+    'radar_handler.py': radar_world,
+    # Included by the Radar handler: the Exa key routes, refused inside a workspace.
+    'radar_exa_routes.py': radar_world,
     'mcp_oauth_consent_routes.py': tokens_world,
     'agents_handler.py': agents_world,
     # Included by the settings handler (a feedback form's AI draft, 7.55.00; a form report's AI summary, 7.63.00).
@@ -695,7 +770,49 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
 }
 
 #: (handler file, "METHOD /path") -> how to call it: exactly the workspace-scoped routes.
+def _radar_brand_case(**options: Any) -> RouteCase:
+    return RouteCase(ids={side: {'brand_key': ids['brand_key']} for side, ids in _RADAR_IDS.items()},
+                     without_a_workspace=_AS_BEFORE, **options)
+
+
 CASES: dict[tuple[str, str], RouteCase] = {
+    ('radar_handler.py', 'GET /radar'): RouteCase(
+        no_ids="the header is its only id: check 1 (each workspace has its own brands, last scan and settings)",
+        without_a_workspace=_AS_BEFORE),
+    ('radar_handler.py', 'GET /radar/all'): RouteCase(
+        no_ids='the header is its only id: check 1', without_a_workspace=_AS_BEFORE),
+    ('radar_handler.py', 'GET /radar/brands'): RouteCase(
+        no_ids='the header is its only id: check 1', without_a_workspace=_AS_BEFORE),
+    ('radar_handler.py', 'PUT /radar/brands'): RouteCase(
+        no_ids='the brands are names and domains the admin typed, the workspace is the header: check 1',
+        body=_RADAR_BRANDS, literals={'Trailhead Supply': 'a brand name the admin typed',
+                                      'trailhead.example': "a brand's domain the admin typed"},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('radar_handler.py', 'GET /radar/brands/<brand_key>'): _radar_brand_case(),
+    ('radar_handler.py', 'GET /radar/brands/<brand_key>/releases'): _radar_brand_case(),
+    ('radar_handler.py', 'GET /radar/brands/<brand_key>/compare'): _radar_brand_case(),
+    ('radar_handler.py', 'GET /radar/brands/<brand_key>/page'): _radar_brand_case(),
+    ('radar_handler.py', 'GET /radar/brands/<brand_key>/reviews'): _radar_brand_case(),
+    ('radar_handler.py', 'GET /radar/brands/<brand_key>/reviews/<feedback_id>'): RouteCase(
+        ids=_RADAR_IDS, without_a_workspace=_AS_BEFORE),
+    ('radar_handler.py', 'GET /radar/settings'): RouteCase(
+        no_ids='the header is its only id: check 1', without_a_workspace=_AS_BEFORE),
+    ('radar_handler.py', 'PUT /radar/settings'): RouteCase(
+        no_ids='the settings are values the admin chose, the workspace is the header: check 1',
+        body=_RADAR_SETTINGS, literals={'weekly': 'a cadence the admin chose', '5': 'a brand count the admin chose',
+                                        '20': 'a query cap the admin chose'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('radar_handler.py', 'POST /radar/scan'): RouteCase(
+        no_ids='the header is its only id: check 1 (the scan event names the workspace)', ok_status=202,
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('radar_exa_routes.py', 'PUT /radar/settings/exa-key'): RouteCase(
+        no_ids='the key is text the admin pasted, the workspace is the header: check 1 (refused inside one)',
+        body={'api_key': _EXA_KEY}, literals={_EXA_KEY: 'an API key the admin pasted, not a row of a workspace'},
+        ok_status=409, status_without_a_workspace=200, without_a_workspace=_AS_BEFORE,
+        deployment_admins_without_a_workspace=True),
+    ('radar_exa_routes.py', 'DELETE /radar/settings/exa-key'): RouteCase(
+        no_ids='the header is its only id: check 1 (refused inside a workspace)', ok_status=409,
+        status_without_a_workspace=200, without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     ('workspaces_handler.py', 'GET /me/workspaces/current'): RouteCase(
         no_ids='the header is its only id: check 1'),
     # The rename (7.40.00, shared/workspace_rename.py): A's META, A's listing row and A's members' rows only.

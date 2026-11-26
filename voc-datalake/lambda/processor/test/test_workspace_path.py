@@ -226,7 +226,7 @@ class TestLogRows:
 
 class TestRadar:
     def test_a_stamped_workspace_message_is_refused_and_stored_nowhere(self):
-        """Its own config named a Radar brand (``radar_brand_key``): Radar is not keyed by workspace."""
+        """Its own config named a Radar brand (``radar_brand_key``): a workspace's Radar takes no reviews yet."""
         radar = MagicMock()
         with world_with_logs() as (feedback, llm, _aggregates), ExitStack() as stack:
             stack.enter_context(patch.object(handler, 'radar_table', radar))

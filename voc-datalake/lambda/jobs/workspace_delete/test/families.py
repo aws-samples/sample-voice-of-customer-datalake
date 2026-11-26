@@ -12,11 +12,6 @@ from shared.import_runs import LIST_PK
 from shared.onboarding import FEEDBACK_FORM_PK
 from shared.ws_repo import WATERMARK_DIRECTORY
 
-#: Why Radar's data rows in a workspace are not swept: none is written yet.
-_RADAR_DATA_GAP: Final = ("GAP: voc-radar data rows in a workspace (items, review markers, counters, releases): read "
-                          "with a workspace, written by nothing yet; the change that writes them lists their "
-                          "partitions for the radar sweep")
-
 FAMILIES: Final = {
     'feedback_key': 'feedback', 'SOURCE': 'feedback',
     'date_pk': 'feedback', 'category_pk': 'feedback', 'urgency_pk': 'feedback', 'feedback_id_pk': 'feedback',
@@ -39,7 +34,7 @@ FAMILIES: Final = {
     'delete_work_pk': WORK_PARTITION,
     's3_key': 'objects', 's3_prefix': 'objects', 'exports_prefix': 'objects',
     'control_partition': 'control_rows',
-    # voc-radar: the workspace's Radar settings (shared/radar_keys.py, config and brands).
+    # voc-radar: the workspace's Radar settings (shared/radar_keys.py, config, brands and version).
     'SETTINGS#radar': 'radar',
     # A workspace's settings rows (WS#{ws}#SETTINGS#{kind}, shared/workspace_settings.py), by kind: test_registry.py
     # finds each kind from the settings builders' call sites, and sweeps.py lists the same kinds.
@@ -80,8 +75,11 @@ FAMILIES: Final = {
     # yet): their rows hold the assist's input and answer for a day.
     'owner_pk': ('TTL: voc-jobs WS#{ws}#ASSIST#{sub} assist rows expire a day after they start (ASSIST_JOB_TTL); '
                  'no route writes one yet'),
-    'scoped_key': _RADAR_DATA_GAP, '_releases_since': _RADAR_DATA_GAP, 'daily_rows': _RADAR_DATA_GAP,
-    'item_partitions': _RADAR_DATA_GAP,
+    # voc-radar's rows in a workspace (shared/radar_keys.py, shared/radar_store.py, shared/radar_releases.py): its
+    # settings and scan rows, and every per-brand partition its owner list WS#{ws}#RADAR_OWNED names (each writer
+    # names its partitions there first), deleted by the radar sweep, the list last.
+    'scoped_key': 'radar', 'daily_rows': 'radar', 'item_partitions': 'radar', 'RADAR_OWNED': 'radar',
+    'brand_state_key': 'radar', 'release_pk': 'radar', 'scan_key': 'radar',
 }
 #: The most ``GAP: `` entries there may be: lower it when a gap closes, never raise it.
-MAX_GAPS: Final = 4
+MAX_GAPS: Final = 0

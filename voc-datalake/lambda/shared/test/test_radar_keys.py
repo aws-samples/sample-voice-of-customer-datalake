@@ -8,10 +8,10 @@ from moto import mock_aws
 
 from briefing import radar_cards
 from shared.data_version import RADAR_VERSION_KEY
-from shared.radar_brands import BRAND_LIST_KEY, load_brand_list
+from shared.radar_brands import load_brand_list
 from shared.radar_keys import radar_settings_key
 from shared.radar_routing import BrandLabels, RadarBrandListUnavailableError, UnknownRadarBrandError
-from shared.radar_settings import DEFAULT_SETTINGS, SETTINGS_KEY, load_settings
+from shared.radar_settings import DEFAULT_SETTINGS, load_settings
 from shared.test.radar_fixtures import radar_pk_sk_table
 from shared.workspace_config import get_scoped_item
 from shared.ws_repo import OutOfScopeError, WorkspaceScope
@@ -27,8 +27,8 @@ def table():
 
 
 def test_the_deployments_keys_are_unchanged():
-    assert SETTINGS_KEY == {'pk': 'SETTINGS#radar', 'sk': 'config'}
-    assert BRAND_LIST_KEY == {'pk': 'SETTINGS#radar', 'sk': 'brands'}
+    assert radar_settings_key('config') == {'pk': 'SETTINGS#radar', 'sk': 'config'}
+    assert radar_settings_key('brands') == {'pk': 'SETTINGS#radar', 'sk': 'brands'}
     assert RADAR_VERSION_KEY == {'pk': 'SETTINGS#radar', 'sk': 'version'}
 
 
@@ -39,21 +39,22 @@ def test_a_workspaces_keys_are_in_its_own_partitions():
     assert not B.owns(radar_settings_key('config', A)['pk'])
 
 
-def test_a_workspace_has_no_version_row_of_its_own_yet():
-    with pytest.raises(ValueError, match='version'):
-        radar_settings_key('version', A)
+def test_a_workspace_has_its_own_version_row_and_no_other_kind():
+    assert radar_settings_key('version', A) == {'pk': f'WS#{A.ws}#SETTINGS#radar', 'sk': 'version'}
+    with pytest.raises(ValueError, match='lock'):
+        radar_settings_key('lock', A)
 
 
 def test_a_key_outside_the_workspace_never_reaches_dynamodb(table):
     with patch.object(table, 'get_item') as get_item, pytest.raises(OutOfScopeError):
         get_scoped_item(table, radar_settings_key('config', B), A)
     with pytest.raises(OutOfScopeError):
-        get_scoped_item(table, SETTINGS_KEY, A)
+        get_scoped_item(table, radar_settings_key('config'), A)
     get_item.assert_not_called()
 
 
 def test_the_settings_are_each_workspaces_own(table):
-    table.put_item(Item={**SETTINGS_KEY, 'cadence': 'daily', 'max_brands': 3, 'query_cap': 9})
+    table.put_item(Item={**radar_settings_key('config'), 'cadence': 'daily', 'max_brands': 3, 'query_cap': 9})
     table.put_item(Item={**radar_settings_key('config', A), 'cadence': 'monthly', 'max_brands': 5, 'query_cap': 7})
     assert load_settings(table) == {'cadence': 'daily', 'max_brands': 3, 'query_cap': 9}
     assert load_settings(table, A) == {'cadence': 'monthly', 'max_brands': 5, 'query_cap': 7}
@@ -62,7 +63,7 @@ def test_the_settings_are_each_workspaces_own(table):
 
 
 def test_the_brand_list_is_each_workspaces_own(table):
-    table.put_item(Item={**BRAND_LIST_KEY, 'brands': [{'label': 'Northwind', 'domains': ['northwind.example']}]})
+    table.put_item(Item={**radar_settings_key('brands'), 'brands': [{'label': 'Northwind', 'domains': ['northwind.example']}]})
     table.put_item(Item={**radar_settings_key('brands', A),
                          'brands': [{'label': 'Contoso', 'domains': ['contoso.example']}]})
     assert [brand['label'] for brand in load_brand_list(table)] == ['Northwind']
@@ -72,7 +73,7 @@ def test_the_brand_list_is_each_workspaces_own(table):
 
 class TestBrandLabels:
     def _lists(self, table):
-        table.put_item(Item={**BRAND_LIST_KEY, 'brands': [{'label': 'Northwind', 'domains': ['northwind.example']}]})
+        table.put_item(Item={**radar_settings_key('brands'), 'brands': [{'label': 'Northwind', 'domains': ['northwind.example']}]})
         table.put_item(Item={**radar_settings_key('brands', A),
                              'brands': [{'label': 'Contoso', 'domains': ['contoso.example']}]})
 

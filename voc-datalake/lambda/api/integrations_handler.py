@@ -13,7 +13,7 @@ live-checked and audited; a write resolves the role from the table, never the 30
   ``{prefix}/{ws}/credentials/{source}``, and app connectors to its config row ``WS#{ws}#PLUGIN_CONFIG`` /
   ``{source}`` (shared/workspace_plugin_store.py: the names from the resolved workspace and the route's validated
   source only), seen by the routes as ``<plugin>_<key>`` as before; nothing saved yet reads as nothing configured, and
-  credentials over the 4096 bytes of one parameter are refused (400); an app connector or a page naming a Radar brand is refused (400: Radar is not keyed by workspace yet), and so is a
+  credentials over the 4096 bytes of one parameter are refused (400); an app connector or a page naming a Radar brand is refused (400: a workspace's Radar takes no reviews yet), and so is a
   ``configs`` key on the credentials route (``CONFIGS_HAVE_THEIR_OWN_ROUTES``: the lists are saved through the
   routes that check each entry);
 * Run now invokes the plugin's ingestor with the RESOLVED workspace's id in ``workspace_id``
@@ -842,7 +842,7 @@ def save_app_config(source: str):
     if not app_config.get('app_name'):
         raise ValidationError('app_name is required')
     app_config = _validated_app_config(source, app_config)
-    # In a workspace no Radar brand (Radar is not keyed by workspace: its messages would be refused).
+    # In a workspace no Radar brand (a workspace's Radar takes no reviews yet: its messages would be refused).
     _request.refuse_radar_brand(app_config.get('radar_brand'))
 
     try:

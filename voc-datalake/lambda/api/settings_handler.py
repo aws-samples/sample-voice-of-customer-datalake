@@ -1994,7 +1994,7 @@ def put_sources_route():
     """Replace the source profiles (an admin's: the workspace's with ``X-Workspace-Id``, the deployment's without
     it). ``dimension_defaults`` must name configured dimensions/values (the same scope's). A workspace's profile sets
     no retention window and no Radar brand (400, shared/source_profiles.py ``workspace_profiles_problem``): the
-    deployment's window binds every item, and Radar is not kept per workspace."""
+    deployment's window binds every item, and a workspace's Radar takes no reviews yet."""
     event = app.current_event.raw_event
     # A write: the caller's role from the table, not the warm cache.
     context = request_workspace(event, FAILED_SOURCES_SAVE, fresh=True)

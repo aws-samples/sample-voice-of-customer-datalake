@@ -9,8 +9,8 @@ a partition or a cursor outside the workspace. Both build the key condition the 
 (shared/ws_repo.py ``partition_query``); the reader adds its own options (order, page size, cursor, projection) and
 pages as it did.
 
-No reader passes a workspace yet: Radar's routes, the brief and the processor stay the deployment's and move together
-at the phase-2 cut-over (shared/radar_keys.py).
+The Radar routes pass the request's workspace since 7.73.00 (api/radar_handler.py); the brief and the processor
+still read the deployment's (a workspace's reviews arrive with their producer: shared/radar_keys.py).
 """
 from __future__ import annotations
 

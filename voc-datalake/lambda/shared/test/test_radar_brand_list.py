@@ -6,7 +6,6 @@ from botocore.exceptions import ClientError
 
 from shared.ingest_schemas import safe_validate_message
 from shared.radar_brands import (
-    BRAND_LIST_KEY,
     RadarBrand,
     effective_brands,
     is_brand_key,
@@ -15,13 +14,14 @@ from shared.radar_brands import (
     radar_stamp,
     validate_brand_list,
 )
+from shared.radar_keys import radar_settings_key
 from shared.radar_routing import BrandLabels, RadarBrandListUnavailableError, UnknownRadarBrandError
 from shared.web_review_targets import TargetError, validated_target
 
 
 def _table(brands):
     table = MagicMock()
-    table.get_item.return_value = {'Item': {**BRAND_LIST_KEY, 'brands': brands}} if brands is not None else {}
+    table.get_item.return_value = {'Item': {**radar_settings_key('brands'), 'brands': brands}} if brands is not None else {}
     return table
 
 

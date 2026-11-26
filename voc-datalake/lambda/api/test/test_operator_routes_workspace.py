@@ -841,7 +841,7 @@ class TestAWorkspaceWithNothingSavedYet:
 
 
 class TestNoRadarBrandInAWorkspace:
-    """Radar is not keyed by workspace (phase 3): the processor refuses a workspace's message stamped with a Radar
+    """a workspace's Radar takes no reviews yet (phase 3): the processor refuses a workspace's message stamped with a Radar
     brand, so every save that would stamp one is refused (400), and the credentials route takes no `configs` list in
     a workspace. Without the header the brand is saved as before. (A deployment source profile's Radar brand claims
     no workspace message: lambda/processor/test/test_workspace_path.py.)"""

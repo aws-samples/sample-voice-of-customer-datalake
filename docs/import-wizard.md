@@ -167,7 +167,7 @@ and history. This closes a D8 gap ([multi-workspace.md](multi-workspace.md)):
 - **What it uses and writes.** The workspace's own source profiles, its raw copies under `ws/{ws}/raw/…`, every
   queued message stamped with the resolved `workspace_id` (never a body field), its dataset rows read in its own
   partitions, and its runs in `WS#{ws}#IMPORT_RUN`, which its history lists.
-- **What it refuses.** A Radar brand: Radar is not keyed by workspace.
+- **What it refuses.** A Radar brand: a workspace's Radar takes no reviews yet.
 - **A paste's parse job.** The job row stays deployment-wide for its hour, naming the workspace it was started in.
   Read or confirmed from any other place, it answers the unknown job's 404.
 

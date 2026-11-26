@@ -486,27 +486,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /projects/prioritization/config',
         'PUT /projects/prioritization/rows/<row_id>/lineage-ack',
     }),
-    # The search key moves to the workspace secret.
-    'radar_exa_routes.py': frozenset({
-        'DELETE /radar/settings/exa-key',
-        'PUT /radar/settings/exa-key',
-    }),
-    # Radar is per workspace (decision 13).
-    'radar_handler.py': frozenset({
-        'GET /radar',
-        'GET /radar/all',
-        'GET /radar/brands',
-        'GET /radar/brands/<brand_key>',
-        'GET /radar/brands/<brand_key>/compare',
-        'GET /radar/brands/<brand_key>/page',
-        'GET /radar/brands/<brand_key>/releases',
-        'GET /radar/brands/<brand_key>/reviews',
-        'GET /radar/brands/<brand_key>/reviews/<feedback_id>',
-        'GET /radar/settings',
-        'POST /radar/scan',
-        'PUT /radar/brands',
-        'PUT /radar/settings',
-    }),
     # Settings and models (the brand, the resolved problems, and since 7.08.00 the categories, dimensions and
     # sources, and since 7.13.00 the category reprocess, are workspace-scoped). The categories' generate stays the
     # deployment's for now.

@@ -17,6 +17,58 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.73.00] - 2026-11-26
+
+Multi-workspace, phase 3: Radar per workspace. Inside a workspace the Radar page, its brand list and settings are
+that workspace's own: its admins choose the brands to track and the cadence and start a scan, every member reads
+what its scans found, and nothing of another workspace or of the deployment's Radar is shown
+([docs/radar.md](docs/radar.md#in-a-workspace), [docs/multi-workspace.md](docs/multi-workspace.md)). Outside a
+workspace nothing changes.
+
+### Added
+
+- Every `/radar` route acts in the workspace a request names (`X-Workspace-Id`, resolved first: fresh for a write,
+  from the warm cache for a read): its brand list, settings, last scan, releases, reviews and comparisons. Its admins
+  change the brand list and settings and start a scan; the deployment's `admins` group grants nothing there.
+- The Radar scan runs in the workspace its event names: its brands, source profiles and settings, its own lock,
+  cadence and brand states, and its own release timeline. "Scan now" in a workspace scans that workspace. The daily
+  schedule starts one scan per active workspace, then scans the deployment's as before; a fault listing or starting
+  the workspaces' scans is logged and counted (`RadarScanFanOutFailures`) and never stops the deployment's scan. A
+  workspace's scan writes only while the workspace is active (checked before it writes and before each brand, as
+  every writer of a workspace's data checks), and a run that waited over an hour to start is dropped.
+- A workspace's Radar has its own cache version (`WS#{ws}#SETTINGS#radar` / `version`), so a change in one workspace
+  refreshes only that workspace's cached Radar reads.
+- The workspace hard delete removes a workspace's whole Radar: its settings, scan rows, releases and brand states
+  (each per-brand partition a workspace's Radar writes is listed first in `WS#{ws}#RADAR_OWNED`).
+- Internal: two helpers of the scan and the release store have names of their own (`_put_scan_row`,
+  `_put_release`): the stored-attributes audit matches write helpers by name across the tree.
+
+### Changed
+
+- Inside a workspace, saving a scraper, an app connector, an upload or a source profile that names a Radar brand is
+  still refused (400), now saying why in today's terms: a workspace's Radar takes no other brands' reviews yet.
+
+### Not yet in a workspace
+
+- A workspace keeps no Exa key: `PUT` and `DELETE /radar/settings/exa-key` answer 409 inside one, and a workspace's
+  scans use web search and the brands' feeds.
+- Other brands' reviews: a workspace's scrapers, app connectors, uploads and source profiles still cannot name a Radar
+  brand, so a workspace's Radar has its news scan and releases, not reviews.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). IAM:
+  - the Radar API's role gets the stack's workspace-resolution policy and Cognito's live platform-admin check
+    (`AdminListGroupsForUser`, `AdminGetUser`), with `WORKSPACES_TABLE` and `USER_POOL_ID`;
+  - its `PutItem` on voc-radar is now limited to the settings partitions, `SETTINGS#radar` and one workspace id's
+    `WS#{ws}#SETTINGS#radar`;
+  - both Radar roles may bump a workspace's own Radar version row;
+  - the scan's role may Query voc-workspaces' `WORKSPACES` listing only, read a workspace's status (the stack's
+    status read) and invoke its own function, with `WORKSPACES_TABLE`; the function's asynchronous runs wait at most
+    an hour (`MaximumEventAgeInSeconds` 3600).
+- Nothing is migrated: inside a workspace Radar starts empty; the deployment's Radar is kept and still shown outside
+  any workspace.
+
 ## [7.71.04] - 2026-11-25
 
 The findings 7.71.03's review gate deferred, and what the live Bug fixer runs on b- with 7.71.03 showed: a fresh run

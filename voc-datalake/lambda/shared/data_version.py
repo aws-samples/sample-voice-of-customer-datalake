@@ -28,8 +28,9 @@ must not cache that request) and falls back to the plain watermark read.
 
 A workspace (docs/multi-workspace.md) has its own ``data_version`` and watermark under
 ``WS#{ws}#METRIC#meta`` (``scope``): a workspace's feedback write bumps only its own, and a
-read in the workspace keys its cache on its own. ``config_version`` and Radar's counter stay
-the deployment's, like the settings they count (phase 3 moves the settings).
+read in the workspace keys its cache on its own. Radar's counter is each workspace's too
+(``WS#{ws}#SETTINGS#radar`` / ``version``, ``radar_version_key``, since 7.73.00); ``config_version`` stays the
+deployment's, like the settings it counts.
 
 Data-layer only (no API-resolver imports), so the aggregator and the job workers
 can use it.
@@ -102,9 +103,16 @@ def bump_config_version(aggregates_table: Any) -> bool:
     return _bump(aggregates_table, CONFIG_VERSION_KEY, 'config')
 
 
-def bump_radar_version(radar_table: Any) -> bool:
-    """Radar data (reviews, releases, the brand list, the scan settings or outcome) changed."""
-    return _bump(radar_table, RADAR_VERSION_KEY, 'radar')
+def radar_version_key(scope: WorkspaceScope | None = None) -> dict[str, str]:
+    """The Radar counter's row: the deployment's (``RADAR_VERSION_KEY``) or the workspace's
+    (``WS#{ws}#SETTINGS#radar`` / ``version``)."""
+    return dict(RADAR_VERSION_KEY) if scope is None else radar_settings_key('version', scope)
+
+
+def bump_radar_version(radar_table: Any, scope: WorkspaceScope | None = None) -> bool:
+    """Radar data (reviews, releases, the brand list, the scan settings or outcome) changed: the deployment's, or
+    with ``scope`` the workspace's own counter."""
+    return _bump(radar_table, radar_version_key(scope), 'radar', scope)
 
 
 class BatchBump:
@@ -204,7 +212,10 @@ def _batch_request(aggregates_table: Any, radar_table: Any, scope: WorkspaceScop
         ws_table(scope, aggregates_table).check_keys(keys[0::2])
     request: dict[str, Any] = {aggregates_table.name: {'Keys': keys, 'ConsistentRead': True}}
     if radar_table is not None:
-        request[radar_table.name] = {'Keys': [dict(RADAR_VERSION_KEY)], 'ConsistentRead': True}
+        radar_key = radar_version_key(scope)
+        if scope is not None:
+            ws_table(scope, radar_table).check_keys([radar_key])
+        request[radar_table.name] = {'Keys': [radar_key], 'ConsistentRead': True}
     return request
 
 
@@ -231,8 +242,9 @@ def _parse(response: object, aggregates_table: Any, radar_table: Any,
     config = _counter(_row(rows, CONFIG_VERSION_KEY))
     radar: int | None = None
     if radar_table is not None:
-        radar_rows = _rows_by_sk(responses.get(radar_table.name), RADAR_VERSION_KEY['pk'])
-        radar = _counter(radar_rows.get(RADAR_VERSION_KEY['sk']))
+        radar_key = radar_version_key(scope)
+        radar_rows = _rows_by_sk(responses.get(radar_table.name), radar_key['pk'])
+        radar = _counter(radar_rows.get(radar_key['sk']))
         if radar is None:
             return None
     if data is None or config is None:

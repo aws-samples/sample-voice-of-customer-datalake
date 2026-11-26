@@ -6,7 +6,7 @@ from category_access_fixtures import RESTRICTED_CLAIMS, RESTRICTED_SUB
 from test_radar_handler import ADMIN, PROFILES, _call, _today, radar_tables
 
 from shared.category_access import access_key
-from shared.radar_brands import BRAND_LIST_KEY
+from shared.radar_keys import radar_settings_key
 from shared.radar_store import radar_item, store_item
 
 LISTED = [{'label': 'Initech', 'domains': ['initech.com']}, {'label': 'Acme', 'domains': ['acme.io']}]
@@ -26,7 +26,7 @@ def _detail_review(feedback_id='i1', category='billing'):
 @pytest.fixture
 def tables():
     with radar_tables() as (radar, aggregates):
-        radar.put_item(Item={**BRAND_LIST_KEY, 'brands': LISTED, 'updated_at': 'then', 'updated_by': 'ada'})
+        radar.put_item(Item={**radar_settings_key('brands'), 'brands': LISTED, 'updated_at': 'then', 'updated_by': 'ada'})
         store_item(radar, 'initech', radar_item(_detail_review(), 'initech', 'Initech'))
         yield radar, aggregates
 
@@ -93,7 +93,7 @@ class TestSaving:
         radar, _ = tables
         status, _, _ = _call(tables, lambda_context, 'PUT', '/radar/brands', claims=ADMIN, body={'brands': brands})
         assert status == 400
-        assert radar.get_item(Key=BRAND_LIST_KEY)['Item']['brands'] == LISTED
+        assert radar.get_item(Key=radar_settings_key('brands'))['Item']['brands'] == LISTED
 
     def test_removing_a_brand_keeps_its_reviews_and_the_scan_settings(self, tables, lambda_context):
         radar, _ = tables
@@ -106,7 +106,7 @@ class TestSaving:
     def test_saving_the_scan_settings_never_clobbers_the_list(self, tables, lambda_context):
         radar, _ = tables
         _call(tables, lambda_context, 'PUT', '/radar/settings', claims=ADMIN, body={'cadence': 'monthly'})
-        assert radar.get_item(Key=BRAND_LIST_KEY)['Item']['brands'] == LISTED
+        assert radar.get_item(Key=radar_settings_key('brands'))['Item']['brands'] == LISTED
 
     def test_scan_now_covers_a_listed_brand_without_any_radar_profile(self, tables, lambda_context):
         _, aggregates = tables

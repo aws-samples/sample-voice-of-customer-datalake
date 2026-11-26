@@ -145,7 +145,8 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   AgentsTable: {},
   RadarTable: {
     [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure and retention reach Radar reviews and their dedupe markers (docs/radar.md)' },
-    // A workspace's hard delete: its Radar settings (WS#{one id}#SETTINGS#radar), one workspace's partitions only.
+    // A workspace's hard delete: its Radar rows (settings, scan rows, the partitions its owner list names), one
+    // workspace's partitions only.
     [DELETE_ROLE]: WORKSPACE_DELETE,
   },
   // The multi-workspace control plane (docs/multi-workspace.md). Membership rows are access configuration, not

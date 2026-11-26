@@ -66,10 +66,10 @@ from shared.indexes import MEMORY_BY_STATUS_INDEX
 from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.scope_names import HiddenNames
-from shared.scoped_keys import scoped_pk
+from shared.scoped_keys import named_in, scoped_pk
 from shared.timestamps import now_iso
 from shared.update_expressions import set_clause
-from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, partition_scope, s3_key, ws_table
+from shared.ws_repo import WorkspaceScope, partition_scope, s3_key, ws_table
 
 MEMORY_TABLE_ENV: Final = 'MEMORY_TABLE'
 # The voc-memory GSI over gsi1pk/gsi1sk — named in lib/stacks/core-stack.ts.
@@ -1119,8 +1119,7 @@ def save_cursor(table, session_id: str, fields: Mapping[str, Any], *, now: datet
 def session_message(session_id: str, owner_sub: str, workspace: WorkspaceScope | None = None) -> dict[str, str]:
     """The extractor's message for an idle assistant session: a workspace's names it (``workspace_id``, from its
     verified scope: the extractor reads the conversation and writes the memories there)."""
-    message = {'kind': 'session', 'session_id': session_id, 'owner_sub': owner_sub}
-    return message if workspace is None else {**message, WORKSPACE_FIELD: workspace.ws}
+    return named_in({'kind': 'session', 'session_id': session_id, 'owner_sub': owner_sub}, workspace)
 
 
 def import_message(import_id: str, chunk: int, notify: str | None,
@@ -1130,7 +1129,7 @@ def import_message(import_id: str, chunk: int, notify: str | None,
     message: dict[str, Any] = {'kind': 'import', 'import_id': import_id, 'chunk': chunk}
     if notify:
         message['notify'] = notify
-    return message if workspace is None else {**message, WORKSPACE_FIELD: workspace.ws}
+    return named_in(message, workspace)
 
 
 def import_object_key(import_id: str, workspace: WorkspaceScope | None = None) -> str:

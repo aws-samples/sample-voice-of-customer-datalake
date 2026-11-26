@@ -58,8 +58,10 @@ from shared.workspace import (
     resolve_workspace,
     stored_role,
 )
+from shared.ws_repo import WorkspaceScope, scope_of
 
-__all__ = ['is_current_member', 'request_workspace', 'require_settings_admin', 'require_workspace_writer']
+__all__ = ['is_current_member', 'request_workspace', 'require_settings_admin', 'require_workspace_writer',
+           'route_kwargs', 'route_scope', 'route_workspace']
 
 #: This warm container's resolved memberships (30 s, shared/workspace.py).
 _MEMBERSHIPS: Final = MembershipCache()
@@ -88,6 +90,26 @@ def request_workspace(event: dict, public_error: str, *, fresh: bool = False,
         # A failed read, live check or entry audit row: the entry is refused, the AWS error stays in the log.
         logger.exception('Error resolving the workspace')
         raise ServiceError(public_error) from exc
+
+
+def route_workspace(app: Any) -> WorkspaceContext | None:
+    """The workspace a handler's first middleware resolved for this request (its ``workspace`` context), or None
+    for a request that names none."""
+    context = app.context.get('workspace')
+    return context if isinstance(context, WorkspaceContext) else None
+
+
+def route_scope(app: Any) -> WorkspaceScope | None:
+    """``route_workspace``'s scope, for the stores (None: the deployment's)."""
+    context = route_workspace(app)
+    return None if context is None else scope_of(context)
+
+
+def route_kwargs(app: Any) -> dict[str, Any]:
+    """``workspace=`` for a store call inside the request's workspace, nothing outside one (the deployment's calls
+    as they always were)."""
+    workspace = route_scope(app)
+    return {} if workspace is None else {'workspace': workspace}
 
 
 def _workspaces_table() -> Any:

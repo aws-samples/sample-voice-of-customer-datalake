@@ -111,7 +111,7 @@ export interface WorkspaceDeleteWorkerProps {
   workspacesTable: dynamodb.ITable;
   memoryTable: dynamodb.ITable;
   watermarksTable: dynamodb.ITable;
-  /** voc-radar: a workspace's Radar settings (`WS#{id}#SETTINGS#radar`). */
+  /** voc-radar: a workspace's Radar rows (settings, scan rows, the partitions its owner list `WS#{id}#RADAR_OWNED` names). */
   radarTable: dynamodb.ITable;
   /** voc-projects, voc-jobs, voc-participants: a workspace's projects, their registry and claims (the `projects` grant);
    * voc-participants also its people and lists (the `participants` grant). */

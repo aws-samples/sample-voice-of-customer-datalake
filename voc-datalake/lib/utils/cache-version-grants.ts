@@ -30,6 +30,21 @@ export function grantCacheVersionBump(table: dynamodb.ITable, grantee: iam.IGran
   }));
 }
 
+/**
+ * `voc-radar`: a workspace's own Radar settings partition, `WS#{ws}#SETTINGS#radar` (its `version` row; the API's
+ * settings rows too), one workspace id (lambda/shared/radar_keys.py).
+ */
+export const WORKSPACE_RADAR_SETTINGS_PARTITION = `WS#${WORKSPACE_ID_PATTERN}#SETTINGS#radar`;
+
+/** The Radar version bump on a workspace's own row (`StringLike` over {@link WORKSPACE_RADAR_SETTINGS_PARTITION}). */
+export function grantWorkspaceRadarVersionBump(table: dynamodb.ITable, grantee: iam.IGrantable): void {
+  grantee.grantPrincipal.addToPrincipalPolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:UpdateItem'],
+    resources: [table.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [WORKSPACE_RADAR_SETTINGS_PARTITION] } },
+  }));
+}
+
 /** The same bump on a workspace's version row (`StringLike` over {@link WORKSPACE_AGGREGATES_VERSION_PARTITION}). */
 export function grantWorkspaceCacheVersionBump(table: dynamodb.ITable, grantee: iam.IGrantable): void {
   grantee.grantPrincipal.addToPrincipalPolicy(new iam.PolicyStatement({

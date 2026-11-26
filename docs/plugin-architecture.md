@@ -612,7 +612,7 @@ field), and writes and reads `WS#{ws}#SOURCE_RUN#<source>`; `GET /sources/status
 schedule rule and the workspace's breaker; **Reset** clears the workspace's breaker only; **enable**
 and **disable** answer 400, because the schedule rule serves every workspace (which plugins a
 workspace runs is its plugin settings', the `PLUGIN#` rows its admins enable on Workspace settings). Also refused there (400): an app connector or a review page
-that names a `radar_brand` (Radar is not keyed by workspace yet), a `configs` key on
+that names a `radar_brand` (a workspace's Radar takes no reviews yet), a `configs` key on
 `PUT /integrations/<source>/credentials` (save the lists through `POST /scrapers` and `POST
 /integrations/<source>/apps`, which check each entry), and a **Run now** of `s3_import` (the import bucket is not
 keyed by workspace). The credentials routes, `GET /integrations/status`, the app connector routes and the scrapers

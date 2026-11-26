@@ -7,12 +7,12 @@ Radar's and memory's rows (shared/radar_reads.py, shared/memory_store.py), like 
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
 
-__all__ = ['scoped_object_key', 'scoped_pk']
+__all__ = ['named_in', 'scoped_object_key', 'scoped_pk']
 
 
 def scoped_pk(workspace: WorkspaceScope | None, pk: str) -> str:
@@ -29,3 +29,13 @@ def scoped_object_key(workspace: WorkspaceScope | None, key: str) -> str:
     from shared.ws_repo import s3_prefix
 
     return f'{s3_prefix(workspace)}{key}'
+
+
+def named_in(message: dict[str, Any], workspace: WorkspaceScope | None) -> dict[str, Any]:
+    """An asynchronous message as it goes out: ``message`` itself for the deployment's, and for a workspace's the
+    workspace named (``workspace_id``, from its verified scope; the receiver reads it with ``message_scope``)."""
+    if workspace is None:
+        return message
+    from shared.ws_repo import WORKSPACE_FIELD
+
+    return {**message, WORKSPACE_FIELD: workspace.ws}

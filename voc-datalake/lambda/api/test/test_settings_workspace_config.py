@@ -182,7 +182,7 @@ class TestWrites:
     @pytest.mark.parametrize(('profile', 'says'), [
         ({'id': 'webscraper', 'retention_days': 90, 'retention_legal_basis': 'contract: support terms'},
          "retention windows are the deployment's"),
-        ({'id': 'radar_example', 'radar_brand': 'Example Air'}, 'Radar is not kept per workspace'),
+        ({'id': 'radar_example', 'radar_brand': 'Example Air'}, "Radar takes no reviews yet"),
         # Sent alone, each would be dropped by normalising: refused as sent.
         ({'id': 'webscraper', 'retention_legal_basis': 'contract: support terms'}, 'cannot set retention_legal_basis'),
         ({'id': 'webscraper', 'radar_domains': ['example.com']}, 'cannot set radar_domains'),

@@ -235,8 +235,8 @@ grants nothing), "Any user" any member. The scraper list, saves and deletes use 
 is not in SSM; the limits below hold as in the shared secret; nothing saved yet lists no scrapers), which the
 webscraper's run in that workspace reads; a run invokes the webscraper with the request's resolved workspace in
 `workspace_id` (never a body field) and writes and reads `WS#{ws}#SCRAPER_RUN#<scraper id>`; the connectors listing
-reads the workspace's connector rows too. A scraper that names a `radar_brand` is refused there (400): Radar is not keyed by
-workspace yet. Without the header, every route is as above.
+reads the workspace's connector rows too. A scraper that names a `radar_brand` is refused there (400): a workspace's Radar
+takes no other brands' reviews yet. Without the header, every route is as above.
 
 The same URL prefix also serves the import routes, from a second Lambda
 (`manual_import_handler.py`). Every one is **admin-only**, enforced by one middleware for the whole module,
