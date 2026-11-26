@@ -133,7 +133,7 @@ const openShells: HTMLElement[] = []
  * the fullscreen assistant (z-[60]) — an aria-modal dialog must cover everything, or the launcher stays clickable over
  * its backdrop. m-0: a consumer inside a `space-y-*` parent gave this fixed wrapper a margin-bottom (Tailwind v4
  * spaces with margin-block-end), which shrank it and left an un-dimmed, clickable strip of page along the bottom edge.
- * text-start (7.49.00): the shell renders where its trigger sits, so a trigger in a `text-right` (or centred) wrapper
+ * text-start: the shell renders where its trigger sits, so a trigger in a `text-right` (or centred) wrapper
  * passed its alignment to every title, label and hint of the dialog; a dialog starts from the start.
  */
 const SHELL_WRAPPER = 'fixed inset-0 z-[70] m-0 flex text-start'

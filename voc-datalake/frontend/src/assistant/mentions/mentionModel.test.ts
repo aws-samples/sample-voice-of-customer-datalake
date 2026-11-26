@@ -71,8 +71,9 @@ describe('options', () => {
       docsOnly: atLimit('document', docs),
       both: atLimit('document', [...docs, ...items]),
       itemsOffProject: atLimit('document', items, false),
+      docsWithLibraryOff: atLimit('document', docs, true, false),
       libraryFull: libraryFull(items),
-    }).toStrictEqual({ docsOnly: false, both: true, itemsOffProject: true, libraryFull: true })
+    }).toStrictEqual({ docsOnly: false, both: true, itemsOffProject: true, docsWithLibraryOff: true, libraryFull: true })
   })
 })
 

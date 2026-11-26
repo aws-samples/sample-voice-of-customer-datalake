@@ -45,7 +45,7 @@ Exact pins worth knowing (not holds; Dependabot still proposes their minor and p
 - `mutmut` (`requirements-dev.txt`) is pinned exactly: `scripts/mutate-python.sh` drives mutmut 3 through
   `scripts/mutmut_run.py`, which feeds the `--patch` / `--lines` spans to mutmut's own line filter through its
   internals (`mutmut.__main__.gather_coverage`). Re-run the script on one module before accepting a new release.
-- `pypdf` (`voc-datalake/lambda/layers/signing-deps/requirements.txt`, BSD-3-Clause, 7.62.00) is pinned exactly: it
+- `pypdf` (`voc-datalake/lambda/layers/signing-deps/requirements.txt`, BSD-3-Clause, 7.05.00) is pinned exactly: it
   reads files people upload to the Documents Library ([documents-library.md](documents-library.md)), so a release is
   taken deliberately, its changelog's security entries read (most are hardenings against crafted PDFs), and
   `lambda/shared/test/test_library_extract.py` run on it. It sits in the projects API's own layer (VocApiStack has no

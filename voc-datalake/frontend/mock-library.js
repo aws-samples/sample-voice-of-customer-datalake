@@ -236,7 +236,7 @@ function textRoute(item, url) {
   if (item.status !== 'ready') return bad(409, 'This item has no text yet.', 'not_ready');
   const parts = pagesOf(item);
   const page = Number(url.searchParams.get('page') || 1);
-  if (!Number.isInteger(page) || page < 1 || page > parts.length) return bad(400, `page must be a whole number from 0 to ${parts.length}`);
+  if (!Number.isInteger(page) || page < 1 || page > parts.length) return bad(400, `page must be a whole number from 1 to ${parts.length}`);
   return [200, { item_id: item.item_id, page, parts: parts.length, paged: Boolean(item.pages), text: parts[page - 1] }];
 }
 
@@ -254,7 +254,9 @@ const ITEM_ACTIONS = {
     if (item.status !== 'pending') return [202, { item: publicView(item) }];
     return item.uploaded ? startReading(item) : bad(409, 'The file has not arrived yet. Upload it again.', 'not_uploaded');
   },
-  'POST retry': (item) => (item.status === 'failed'
+  // As the server (library_routes.py retry): a failed item, or an extraction that outlived the worker (`stale`: the mock
+  // keeps no clock, so a fixture marks it).
+  'POST retry': (item) => (item.status === 'failed' || (item.status === 'extracting' && item.stale === true)
     ? startReading(item) : bad(409, 'Only a failed item can be extracted again.', 'not_failed')),
   'GET text': (item, { url }) => textRoute(item, url),
   'GET ': (item, { req }) => detailRoute(req, item),

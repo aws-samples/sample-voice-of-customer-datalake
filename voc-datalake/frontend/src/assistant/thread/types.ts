@@ -51,7 +51,7 @@ export interface LibrarySourceRef {
 export interface MessageSources {
   feedback: FeedbackSourceRef[]
   web: WebSourceRef[]
-  /** Absent in a conversation saved before 7.62.00. */
+  /** Absent in a conversation saved before 7.05.00. */
   library?: LibrarySourceRef[]
 }
 

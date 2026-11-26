@@ -6,7 +6,7 @@ primitive of CloudFront signed URLs (persona avatars, prototypes). Deployed as
 sign: `SIGNING_LAYER_FUNCTION_IDS` in `lib/utils/dependency-layers.ts`. The other
 API and processing Lambdas no longer unzip ~16 MB they never import.
 
-Since 7.62.00 it also carries pypdf, the Documents Library's PDF text reader
+Since 7.05.00 it also carries pypdf, the Documents Library's PDF text reader
 (`shared/library_extract.py`): the layer is the projects API's own (the projects API
 and its assist twin are the functions that extract), and VocApiStack has no room for
 a layer of its own. The engineering broker's copy of this directory carries it unused

@@ -1,5 +1,5 @@
 /**
- * @fileoverview The Documents Library (7.62.00, docs/documents-library.md): reference documents the assistant can
+ * @fileoverview The Documents Library (docs/documents-library.md): reference documents the assistant can
  * read (`#short-name` in a chat), at `/library`: the list with its search, tag, project and sort, the upload sheet,
  * and the preview drawer of one item, which `?item=<id>&page=<n>` opens (libraryParams.ts).
  *

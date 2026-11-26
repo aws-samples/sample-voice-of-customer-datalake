@@ -184,7 +184,7 @@ def _started(library: Library, item_id: str, minutes_ago: int) -> None:
 
 
 def test_a_pending_item_whose_upload_link_expired_reads_stale(library):
-    """Review round 2 (7.66.00): a pending item older than its PUT's lifetime gets no file, so it reads ``stale`` (no
+    """Review round 2: a pending item older than its PUT's lifetime gets no file, so it reads ``stale`` (no
     longer in flight: the SPA stops polling it) and is not retried (409 ``not_failed``: delete it, upload again)."""
     from shared.library_objects import UPLOAD_SECONDS
     from shared.library_store import STALE_UPLOAD_SECONDS
@@ -354,6 +354,16 @@ def test_the_uploader_deletes_their_own(library):
     assert library.call('DELETE', f"/projects/library/{item['item_id']}")[0] == 200
 
 
+def test_an_mcp_token_never_deletes_even_its_minters_own_item(library):
+    """A delegated credential (an MCP token, ``mcp:`` subject acting for its minter) is never the uploader nor an
+    admin (library_routes.py ``_may_delete``): the item stays."""
+    item = library.upload(REPORT, extract=False)
+    for minter in (ADA, ADMIN):
+        token = {**minter, 'sub': 'mcp:gmt_tok1', 'voc:acting_subject': minter['sub']}
+        assert library.call('DELETE', f"/projects/library/{item['item_id']}", caller=token)[0] == 403
+    assert library.call('GET', f"/projects/library/{item['item_id']}")[0] == 200
+
+
 def _extract_and_meanwhile(library: Any, meanwhile: Callable[[str], object]) -> str:
     """Upload the report unextracted and run its extraction, ``meanwhile(item_id)`` right after the passages are
     written (a delete, a retry's claim, a revoked claim): the item's id."""
@@ -403,7 +413,7 @@ def _assert_output_kept(library: Any, item_id: str) -> None:
 
 
 def test_a_duplicate_delivery_of_one_claim_keeps_the_ready_items_output(library):
-    """Review round 1 of the second gate (7.66.00): the same event delivered twice, its runs overlapping (one token):
+    """Review round 1 of the second gate: the same event delivered twice, its runs overlapping (one token):
     the second finishes first and the item is ready; the first's ready write is refused, and it keeps the passages and
     the text (the item is still claimed), never dropping a ready item's output."""
     events = [call.args[1] for call in library.invoke_async.call_args_list]
@@ -448,7 +458,7 @@ def test_a_delete_that_fails_part_way_leaves_the_item_to_delete_again(library):
 
 
 def test_a_delete_whose_object_versions_were_refused_is_503_and_keeps_the_rows(library):
-    """Review round 1 of the second gate (7.66.00): refused version deletes answer 503 before the rows go, so the item
+    """Review round 1 of the second gate: refused version deletes answer 503 before the rows go, so the item
     is there to delete again."""
     item = library.upload(REPORT)
     item_id, path = item['item_id'], f"/projects/library/{item['item_id']}"
@@ -477,7 +487,7 @@ def test_the_context_signs_native_items_and_searches_the_others(library):
 
 
 def test_a_scanned_pdf_is_never_sent_as_a_file_its_passages_are_searched(library):
-    """Review round 1 of the second gate (7.66.00): a PDF whose text Amazon Bedrock read (``method: model``) has no
+    """Review round 1 of the second gate: a PDF whose text Amazon Bedrock read (``method: model``) has no
     text layer, and a PDF sent without citations is read by it: such an item is searched, never attached."""
     scanned = library.upload(REPORT, slug='scanned-survey')
     library.table.update_item(Key=item_key(scanned['item_id']), UpdateExpression='SET #f = :pdf, #m = :model',
@@ -488,7 +498,7 @@ def test_a_scanned_pdf_is_never_sent_as_a_file_its_passages_are_searched(library
         'item_ids': [scanned['item_id']], 'query': 'faster delivery south', 'native_slots': 3})[1]
     assert body['native'] == []
     assert {passage['item_id'] for passage in body['passages']} == {scanned['item_id']}
-    # (7.71.00: what the item says of it follows the same rule, library_store.sent_as_a_file: its details read
+    # (what the item says of it follows the same rule, library_store.sent_as_a_file: its details read
     # "passages", never that the assistant reads the file itself)
     assert library.call('GET', f"/projects/library/{scanned['item_id']}")[1]['item']['native'] is False
 
