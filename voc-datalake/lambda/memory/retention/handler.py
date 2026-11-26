@@ -30,10 +30,10 @@ from shared import memory_store as store
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
-from shared.platform_workspaces import list_workspaces
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
-from shared.ws_repo import WorkspaceScope, partition_scope, scope_from_message
+from shared.workspace_listing import active_workspaces
+from shared.ws_repo import WorkspaceScope, partition_scope
 
 SWEPT_STATUSES: Final = (policy.STATUS_ACTIVE, policy.STATUS_PROPOSED, policy.STATUS_CONFLICT)
 SAFETY_MARGIN_MS: Final = 15_000
@@ -57,21 +57,6 @@ def archive(table, item: Mapping[str, Any], reason: str, now: datetime) -> bool:
     store.append_event(table, str(item.get('memory_id')), 'archived', detail={'reason': reason}, now=now,
                        **in_workspace)
     return True
-
-
-#: A page of the platform's listing of workspaces.
-LISTING_PAGE: Final = 100
-
-
-def active_workspaces(workspaces_table) -> list[WorkspaceScope]:
-    """Every active workspace, from the platform's listing (one Query a page; never a Scan)."""
-    found: list[WorkspaceScope] = []
-    cursor = None
-    while True:
-        page, cursor = list_workspaces(workspaces_table, limit=LISTING_PAGE, cursor=cursor)
-        found += [scope_from_message({'workspace_id': row['id']}) for row in page if row.get('status') == 'active']
-        if not cursor:
-            return found
 
 
 def sweep(table, now: datetime, time_left_ms,

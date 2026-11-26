@@ -8,7 +8,8 @@ from unittest.mock import MagicMock, patch
 from moto import mock_aws
 
 from jobs.radar_scan import extract, handler, scan, windows
-from shared.radar_brands import BRAND_LIST_KEY, RadarBrand
+from shared.radar_brands import RadarBrand
+from shared.radar_keys import radar_settings_key
 from shared.test.radar_fixtures import radar_pk_sk_table
 
 
@@ -18,7 +19,7 @@ def acme_world(brand: dict[str, Any]) -> Generator[Any, None, None]:
     with mock_aws():
         radar = radar_pk_sk_table('radar')
         radar_pk_sk_table('aggregates')
-        radar.put_item(Item={**BRAND_LIST_KEY, 'brands': [brand]})
+        radar.put_item(Item={**radar_settings_key('brands'), 'brands': [brand]})
         with patch.object(handler, 'RADAR_TABLE', 'radar'), patch.object(handler, 'AGGREGATES_TABLE', 'aggregates'):
             yield radar
 

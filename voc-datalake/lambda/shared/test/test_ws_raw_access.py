@@ -280,7 +280,7 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/jobs/document_generator/handler.py': (3, {'Table': 6, 'delete_objects': 1, 'get_jobs_table': 2, 'put_object': 1}),
     'lambda/jobs/document_merger/handler.py': (3, {'Table': 2}),
     'lambda/jobs/persona_importer/handler.py': (3, {'Table': 1}),
-    'lambda/jobs/radar_scan/handler.py': (3, {'Table': 2}),
+    'lambda/jobs/radar_scan/handler.py': (3, {'Table': 1}),
     'lambda/jobs/retention/boards.py': (3, {'raw/': 1}),
     'lambda/jobs/retention/boards_rekey.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/jobs/retention/handler.py': (3, {'Table': 3}),

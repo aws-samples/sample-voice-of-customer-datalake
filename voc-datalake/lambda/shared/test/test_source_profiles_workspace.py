@@ -113,8 +113,8 @@ def test_a_workspaces_read_fails_closed_when_the_deployments_window_is_unreadabl
     ([{'id': 'webscraper', 'retention_days': None, 'retention_legal_basis': ' ', 'radar_domains': []}], None),
     ([{'id': 'webscraper', 'retention_days': 30}], "Source \"webscraper\": retention windows are the deployment's"),
     ([{'id': 'webscraper', 'retention_legal_basis': 'contract'}], "Source \"webscraper\": retention windows"),
-    ([{'id': 'radar_example', 'radar_brand': 'Example Air'}], 'Source "radar_example": Radar is not kept'),
-    ([{'id': 'radar_example', 'radar_domains': ['example.com']}], 'Source "radar_example": Radar is not kept'),
+    ([{'id': 'radar_example', 'radar_brand': 'Example Air'}], 'Source "radar_example": a workspace\'s Radar takes no reviews yet'),
+    ([{'id': 'radar_example', 'radar_domains': ['example.com']}], 'Source "radar_example": a workspace\'s Radar takes no reviews yet'),
     ('not a list', None),
 ], ids=['plain', 'a-window', 'a-legal-basis', 'a-radar-brand', 'radar-domains', 'not-a-list'])
 def test_what_a_workspace_profile_cannot_set(profiles, problem):

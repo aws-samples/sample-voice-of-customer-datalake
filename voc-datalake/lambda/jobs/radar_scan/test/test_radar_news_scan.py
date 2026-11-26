@@ -13,7 +13,8 @@ from jobs.radar_scan.test.fakes import acme_world, lambda_context, run_scan
 from shared.exa_search import ExaSearchError
 from shared.memory_store import encode_embedding
 from shared.radar_brand_fields import LANGUAGES
-from shared.radar_brands import BRAND_LIST_KEY, RadarBrand
+from shared.radar_brands import RadarBrand
+from shared.radar_keys import radar_settings_key
 from shared.radar_releases import ReleaseCandidate, list_releases, public_release, store_candidate
 from shared.test.radar_fixtures import radar_pk_sk_table
 
@@ -229,7 +230,7 @@ class TestHandler:
         assert (int(first), int(second)) == (2, 4)  # 4 = 1 feed + 1 news + 1 own domain + 1 more news, twice
 
     def test_with_no_source_at_all_the_scan_records_why(self, world):
-        world.put_item(Item={**BRAND_LIST_KEY, 'brands': [{'label': 'Acme'}]})
+        world.put_item(Item={**radar_settings_key('brands'), 'brands': [{'label': 'Acme'}]})
         with patch.object(handler, 'is_web_search_configured', return_value=False), \
              patch.object(handler, 'load_exa_key', return_value=None):
             assert handler.handle_event({'mode': 'manual'}, self._context())['reason'] == 'web_search_unavailable'

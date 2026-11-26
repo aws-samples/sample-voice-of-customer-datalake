@@ -14,8 +14,8 @@ header, the one 404 for a non-member; a write resolves the role from the table).
 admin or an entered platform admin; the deployment's `admins` group grants nothing inside a workspace), under its own
 source profiles (a source it saved none for redacts), its raw copies under `ws/{ws}/raw/…`, every queued message
 stamped with its `workspace_id` (`workspace_payload`, set last), its dataset rows read in its own partitions, its
-import runs in `WS#{ws}#IMPORT_RUN` and its history read from there; a Radar brand is refused (Radar is not keyed by
-workspace). A paste's parse job row stays deployment-wide for its hour (`MANUAL_IMPORT#{job}`, ttl) and names the
+import runs in `WS#{ws}#IMPORT_RUN` and its history read from there; a Radar brand is refused (a workspace's Radar
+takes no reviews yet). A paste's parse job row stays deployment-wide for its hour (`MANUAL_IMPORT#{job}`, ttl) and names the
 workspace it was started in: read or confirmed from any other place it is the unknown job's 404. Without the header,
 everything is deployment-wide as before.
 
@@ -771,7 +771,7 @@ def _upload_context(body: dict, scope: WorkspaceScope | None = None) -> tuple[di
 
 def _upload_radar_stamp(body: dict, scope: WorkspaceScope | None = None) -> dict[str, str]:
     """The optional ``radar_brand`` of a CSV / JSON upload (a Radar brand key, docs/radar.md) as a message stamp; 400 when malformed,
-    or in a workspace (``scope``: Radar is not keyed by workspace)."""
+    or in a workspace (``scope``: a workspace's Radar takes no reviews yet)."""
     if scope is not None and body.get('radar_brand'):
         raise ValidationError(RADAR_NOT_IN_WORKSPACES)
     try:

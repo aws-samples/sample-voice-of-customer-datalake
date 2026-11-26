@@ -133,7 +133,7 @@ export default function SourceProfileEditor({
         </div>
       </div>
       {/* A workspace's profile sets no retention window and no Radar brand (the server refuses both): the
-          deployment's window applies to its items, and Radar is not kept per workspace yet. */}
+          deployment's window applies to its items, and a workspace's Radar takes no reviews yet. */}
       {inWorkspace ? (
         <p className="text-xs text-muted">{tAll('workspaces.config.retentionDeployment')}</p>
       ) : (

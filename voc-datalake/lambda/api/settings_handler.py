@@ -1994,7 +1994,7 @@ def put_sources_route():
     """Replace the source profiles (an admin's: the workspace's with ``X-Workspace-Id``, the deployment's without
     it). ``dimension_defaults`` must name configured dimensions/values (the same scope's). A workspace's profile sets
     no retention window and no Radar brand (400, shared/source_profiles.py ``workspace_profiles_problem``): the
-    deployment's window binds every item, and Radar is not kept per workspace."""
+    deployment's window binds every item, and a workspace's Radar takes no reviews yet."""
     event = app.current_event.raw_event
     # A write: the caller's role from the table, not the warm cache.
     context = request_workspace(event, FAILED_SOURCES_SAVE, fresh=True)
@@ -2089,8 +2089,9 @@ ERASURE_VIEW_FIELDS = (
     # 7.72.00 (3g2): whether an erasure by email without a source (the deployment's or a workspace's own) looked the
     # address up in voc-participants and erased whom it found (jobs/retention/runs.py `participant_fields`); the people
     # it erased are the optional counter `participants_erased`; `participants_complete`: walked, nobody refused
-    # (`participants_not_erased` 0) and no guard's index row left holding the address (`participant_index_rows_kept`
-    # 0), the field the rerun rule reads.
+    # (`participants_not_erased` 0), no guard's index row left holding the address (`participant_index_rows_kept` 0)
+    # and, since 7.72.03, no malformed guard, index or saved row skipped (`participant_guards_malformed` 0), the field
+    # the rerun rule reads.
     'participants_walked', 'participants_complete',
 )
 # The erasure routes' workspace (shared/erasure_scope.py): read afresh per request, members only (no platform-admin

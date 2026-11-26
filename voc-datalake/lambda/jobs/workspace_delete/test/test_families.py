@@ -44,7 +44,8 @@ from shared.project_keys import (
     review_link_registry_key,
     version_partition_key,
 )
-from shared.radar_keys import radar_settings_key
+from shared.radar_keys import owned_row, radar_settings_key, scan_key
+from shared.scoped_keys import scoped_pk
 from shared.web_review_methods import methods_partition
 from shared.workspace_settings import settings_key
 from shared.ws_repo import (
@@ -323,8 +324,23 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     # keep them (shared/conversations.py: the owner listed first).
     'conversants_pk': lambda w: _put(w, 'conversations', {**conversant_key(SCOPE, 'sub-fam'), 'first_at': 'x'}),
     'USER': _conversation,
-    **dict.fromkeys(('scoped_key', '_releases_since', 'daily_rows', 'item_partitions')),
+    # voc-radar's rows in a workspace, each per-brand partition named in the owner list first, as the writers do.
+    'scoped_key': lambda w: _radar(w, 'RADAR#fam#daily_total', '2026-11-20'),
+    'daily_rows': lambda w: _radar(w, 'RADAR#fam#daily_sentiment#negative', '2026-11-20'),
+    'item_partitions': lambda w: _radar(w, 'RADAR#fam#ITEMS#2026-11', '2026-11-20#fam-r1'),
+    'release_pk': lambda w: _radar(w, 'RELEASE#fam', '2026-11-20#r1'),
+    'brand_state_key': lambda w: _radar(w, 'RADARSCAN#fam', 'STATE'),
+    'RADAR_OWNED': lambda w: _put(w, 'radar', owned_row(SCOPE, SCOPE.key('RELEASE#fam-gone'))),
+    'scan_key': lambda w: _put(w, 'radar', {**scan_key('LAST', SCOPE), 'status': 'completed'}),
 }
+
+
+def _radar(world: World, partition: str, sort_key: str) -> Probe:
+    """A row of a workspace's per-brand Radar partition (``partition`` the deployment's spelling), named in the
+    workspace's owner list first (shared/radar_keys.py ``owned_row``)."""
+    pk = scoped_pk(SCOPE, partition)
+    world.radar.put_item(Item=owned_row(SCOPE, pk))
+    return _put(world, 'radar', {'pk': pk, 'sk': sort_key})
 
 
 def _present(world: World, probe: Probe) -> bool:

@@ -406,7 +406,7 @@ export class VocProcessingStack extends VocStack {
     grantRealtimePublish(props.realtime, 'jobs', [briefingWorker]);
     createRadarScanWorker(this, 'RadarScanWorker', {
       uniqueName, layer: processingLayer, kmsKey, radarTable: props.radarTable, aggregatesTable,
-      deploymentPrefix: this.deploymentPrefix,
+      deploymentPrefix: this.deploymentPrefix, workspacesTable: props.workspacesTable,
       webSearch: props.webSearchGatewayUrl && props.webSearchGatewayArn && props.webSearchToolName
         ? { url: props.webSearchGatewayUrl, arn: props.webSearchGatewayArn, toolName: props.webSearchToolName }
         : undefined,

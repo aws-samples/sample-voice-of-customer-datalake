@@ -20,7 +20,7 @@ There are three layers:
 |---|---|---|
 | `voc-aggregates` `METRIC#meta / data_version` | feedback data | the aggregator, once per DynamoDB Streams batch that carried a feedback write; the category-reprocess worker at each page checkpoint and when an invocation ends (completion, hand-over, cancel, failure); `voc-retention` after a run that deleted something; `PUT /feedback/{id}/category`, `PUT /feedback/{id}/dimensions` and `PUT /data-explorer/feedback`, so a person sees their own correction straight away instead of after the stream catches up |
 | `voc-aggregates` `METRIC#meta / config_version` | settings that change what reads return | `PUT /settings/categories`, `/settings/brand`, `/settings/sources`, `/settings/dimensions` (also the inbox's "add feedback type" dimension), `/settings/model`, `PUT /users/{u}/category-access` |
-| `voc-radar` `SETTINGS#radar / version` | Radar data | the processor, once per SQS batch that stored a Radar review; the Radar scan when it records its outcome (after it has filed the releases); `PUT /radar/brands`, `PUT /radar/settings` |
+| `voc-radar` `SETTINGS#radar / version` (a workspace's own: `WS#{ws}#SETTINGS#radar / version`) | Radar data | the processor, once per SQS batch that stored a Radar review; the Radar scan when it records its outcome (after it has filed the releases); `PUT /radar/brands`, `PUT /radar/settings`; inside a workspace, the workspace's row (its scan, its routes) |
 
 Each row holds `v` (incremented with `ADD`) and `updated_at`. A bump never fails the
 write it follows: if it fails, the error is logged and cached answers fall back on
@@ -111,7 +111,8 @@ the metrics and Radar entries depend on.
 - The bumps need `UpdateItem`, and each grant added for them is pinned by
   `dynamodb:LeadingKeys` to the version partition: feedback edit, data explorer and
   users on aggregates `METRIC#meta`, and the Radar API and Radar scan on Radar
-  `SETTINGS#radar`.
+  `SETTINGS#radar` and one workspace id's `WS#{ws}#SETTINGS#radar` (each workspace's own Radar counter, since
+  7.73.00).
 - The Radar API holds `BatchGetItem` on both tables.
 - Every other writer already holds `UpdateItem` (the processing role, reprocess,
   retention and settings). The metrics role holds `BatchGetItem`.

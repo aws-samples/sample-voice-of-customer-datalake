@@ -62,13 +62,19 @@ from shared.memory_categories import category_ids, classify_statement
 from shared.project_access import Caller
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
-from shared.request_workspace import request_workspace, require_workspace_writer
+from shared.request_workspace import (
+    request_workspace,
+    require_workspace_writer,
+    route_kwargs,
+    route_scope,
+    route_workspace,
+)
 from shared.scope_names import HiddenNames, hidden_names_for
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
 from shared.workspace import WorkspaceContext
-from shared.ws_repo import WorkspaceScope, scope_of
+from shared.ws_repo import WorkspaceScope
 
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
@@ -113,19 +119,16 @@ app.use(middlewares=[workspace_middleware])
 
 
 def _workspace_context() -> WorkspaceContext | None:
-    context = app.context.get('workspace')
-    return context if isinstance(context, WorkspaceContext) else None
+    return route_workspace(app)
 
 
 def _workspace() -> WorkspaceScope | None:
-    context = _workspace_context()
-    return None if context is None else scope_of(context)
+    return route_scope(app)
 
 
 def _in_workspace() -> dict[str, Any]:
     """``workspace=`` for a store call inside a workspace, nothing outside one (the calls as they always were)."""
-    workspace = _workspace()
-    return {} if workspace is None else {'workspace': workspace}
+    return route_kwargs(app)
 
 
 # ── Tables + caller ──────────────────────────────────────────────────────────

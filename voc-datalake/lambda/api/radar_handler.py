@@ -6,6 +6,13 @@ plus our aggregates for the "us" side of a comparison (only the categories the c
 and the source profiles. Every signed-in user may read; the brand list, the scan settings, the
 Exa key and "Scan now" are admin-only.
 
+Inside a workspace (``X-Workspace-Id``; docs/multi-workspace.md, decision 13) every route acts on that workspace's
+Radar: resolved first, before anything else (fresh for a write, from the warm cache for a read), its brand list,
+settings, reviews, releases, last scan and version (shared/radar_keys.py, shared/radar_store.py), its source profiles
+and its own numbers for the comparison. Its admins change the brand list and settings and start a scan (the
+deployment's ``admins`` group grants nothing there); a workspace keeps no Exa key yet (shared/radar_exa_routes.py
+answers 409 there). A request that names no workspace keeps the deployment's Radar, as before.
+
 Routes:
     GET  /radar                                 brands (with 90-day totals), last scan, settings
     GET  /radar/all?days=                       every brand side by side + one release feed (shared/radar_all.py)
@@ -37,7 +44,7 @@ from typing import Any, Final
 from aws_lambda_powertools.event_handler import Response, content_types
 
 from shared import category_access, radar_exa_routes
-from shared.api import api_handler, create_api_resolver, get_raw_categories_config, require_admin, validate_int
+from shared.api import api_handler, create_api_resolver, get_raw_categories_config, validate_int
 from shared.aws import get_dynamodb_resource, invoke_lambda_async
 from shared.category_access import CategoryScope
 from shared.category_gate import scope_for_caller
@@ -48,18 +55,17 @@ from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
 from shared.radar_all import all_brands_view
 from shared.radar_brands import (
-    BRAND_LIST_KEY,
     RadarBrand,
     brand_view,
     effective_brands,
     load_brand_list,
     validate_brand_list,
 )
-from shared.radar_exa_routes import settings_view
+from shared.radar_exa_routes import FAILED_WORKSPACE, settings_view
+from shared.radar_keys import radar_settings_key, scan_key
 from shared.radar_releases import list_releases
 from shared.radar_reviews import review_detail_view, reviews_page, stored_review
-from shared.radar_settings import SETTINGS_KEY, validate_settings
-from shared.radar_store import LAST_SCAN_KEY
+from shared.radar_settings import validate_settings
 from shared.radar_views import (
     compare,
     configured_category_names,
@@ -69,12 +75,22 @@ from shared.radar_views import (
     window,
 )
 from shared.request_body import json_body_value
+from shared.request_workspace import (
+    request_workspace,
+    require_settings_admin,
+    route_kwargs,
+    route_scope,
+    route_workspace,
+)
 from shared.response_cache import memoized_route, request_versions
+from shared.scoped_keys import named_in
 from shared.source_profiles import load_source_profiles
 from shared.tables import cached_table as _table
 from shared.tables import get_aggregates_table
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope, ws_table
 
 RADAR_TABLE = os.environ.get('RADAR_TABLE', '')
 RADAR_SCAN_FUNCTION = os.environ.get('RADAR_SCAN_FUNCTION', '')
@@ -88,7 +104,29 @@ _SCAN_TEXT_FIELDS: Final = ('status', 'mode', 'reason', 'started_at', 'finished_
 _SCAN_COUNT_FIELDS: Final = ('brands', 'queries', 'added', 'merged')
 
 app = create_api_resolver()
+
+
+def workspace_middleware(app, next_middleware):
+    """Every route acts in the workspace the request names: resolved first (fresh for a write, so a removed member
+    or a demoted admin changes nothing there; a read from the warm cache), kept for the route in the request's
+    context. None for a request that names none: the deployment's Radar."""
+    context = request_workspace(app.current_event.raw_event, FAILED_WORKSPACE,
+                                fresh=app.current_event.http_method != 'GET')
+    app.append_context(workspace=context)
+    return next_middleware(app)
+
+
+app.use(middlewares=[workspace_middleware])
 app.include_router(radar_exa_routes.app)
+
+
+def _workspace() -> WorkspaceScope | None:
+    return route_scope(app)
+
+
+def _in() -> dict[str, Any]:
+    """``workspace=`` for a reader inside a workspace, nothing outside one (the deployment's calls as before)."""
+    return route_kwargs(app)
 
 
 def get_radar_table() -> Any:
@@ -116,23 +154,31 @@ def _scope() -> CategoryScope:
     """The caller's scope, resolved once per request (the resolver context is cleared after each one)."""
     scope = app.context.get('category_scope')
     if not isinstance(scope, CategoryScope):
-        scope = scope_for_caller(caller_from_event(app.current_event.raw_event), _aggregates())
+        caller, workspace = caller_from_event(app.current_event.raw_event), _workspace()
+        # Inside a workspace, its categories and restricted sources (shared/category_gate.py).
+        scope = scope_for_caller(caller, _aggregates()) if workspace is None else scope_for_caller(
+            caller, _aggregates(), workspace)
         app.append_context(category_scope=scope)
     return scope
 
 
 def _versions() -> VersionRead:
     """Data + config (ours, for the comparison and the brands' profiles) + Radar versions: one BatchGetItem."""
-    return request_versions(app, _aggregates(), get_radar_table())
+    workspace = _workspace()
+    if workspace is None:
+        return request_versions(app, _aggregates(), get_radar_table())
+    return request_versions(app, _aggregates(), get_radar_table(), workspace)
 
 
-# Opt-in warm-container memo for the read routes (shared/response_cache.py, docs/caching.md).
-_memoized = memoized_route(app, scope=_scope, versions=_versions)
+# Opt-in warm-container memo for the read routes (shared/response_cache.py, docs/caching.md), keyed per workspace.
+_memoized = memoized_route(app, scope=_scope, versions=_versions, workspace=_workspace)
 
 
 def _profiles() -> list[dict[str, Any]]:
+    workspace = _workspace()
     try:
-        return load_source_profiles(_aggregates())
+        return load_source_profiles(_aggregates()) if workspace is None else load_source_profiles(_aggregates(),
+                                                                                                  workspace)
     except ValueError as exc:
         raise ServiceError('The source settings are invalid. Ask an admin to save them again.') from exc
 
@@ -149,7 +195,9 @@ def _visible_brands(scope: CategoryScope, brands: list[RadarBrand] | None = None
 
 def _effective_brands() -> list[RadarBrand]:
     try:
-        listed = load_brand_list(get_radar_table())
+        workspace = _workspace()
+        listed = load_brand_list(get_radar_table()) if workspace is None else load_brand_list(get_radar_table(),
+                                                                                              workspace)
     except ValueError as exc:
         raise ServiceError('The Radar brand list is invalid. Ask an admin to save it again.') from exc
     return effective_brands(listed, _profiles())
@@ -168,7 +216,8 @@ def _days(default: int = DEFAULT_DAYS) -> int:
 
 
 def _last_scan(table: Any) -> dict[str, Any] | None:
-    if not (item := table.get_item(Key=LAST_SCAN_KEY).get('Item')):
+    workspace = _workspace()
+    if not (item := get_scoped_item(table, scan_key('LAST', workspace), workspace)):
         return None
     view: dict[str, Any] = {key: str(item[key]) for key in _SCAN_TEXT_FIELDS if key in item}
     view.update({key: int(item[key]) for key in _SCAN_COUNT_FIELDS if key in item})
@@ -183,9 +232,9 @@ def overview():
     table = get_radar_table()
     days = window(DEFAULT_DAYS, datetime.now(UTC).date())
     scope = _scope()
-    brands = [{**brand_view(brand), **counted_totals(table, brand.key, *days, scope, with_trend=False)}
+    brands = [{**brand_view(brand), **counted_totals(table, brand.key, *days, scope, with_trend=False, **_in())}
               for brand in _visible_brands(scope)]
-    return {'brands': brands, 'last_scan': _last_scan(table), 'settings': settings_view(table)}
+    return {'brands': brands, 'last_scan': _last_scan(table), 'settings': settings_view(table, **_in())}
 
 
 @app.get('/radar/all')
@@ -194,12 +243,14 @@ def overview():
 def all_brands():
     """The "All brands" view: every visible brand's totals and latest release over ``days``, one release feed."""
     scope = _scope()
-    return all_brands_view(get_radar_table(), _visible_brands(scope), scope, _days(), datetime.now(UTC).date())
+    return all_brands_view(get_radar_table(), _visible_brands(scope), scope, _days(), datetime.now(UTC).date(),
+                           **_in())
 
 
 def _admin_body(validate: Callable[[object], Any]) -> Any:
-    """Admin only: the request body through ``validate`` (its ValueError is the 400)."""
-    require_admin(app.current_event.raw_event)
+    """Admin only (the workspace's admins inside one): the request body through ``validate`` (its ValueError is
+    the 400)."""
+    require_settings_admin(app.current_event.raw_event, route_workspace(app))
     try:
         return validate(json_body_value(app))
     except ValueError as exc:
@@ -207,11 +258,23 @@ def _admin_body(validate: Callable[[object], Any]) -> Any:
 
 
 def _put_signed(item: dict[str, Any]) -> None:
-    """Write one settings row with who saved it and when."""
+    """Write one settings row with who saved it and when (through the workspace's view inside one)."""
     caller = caller_from_event(app.current_event.raw_event)
-    get_radar_table().put_item(Item={
-        **item, 'updated_at': now_iso(), 'updated_by': caller.username or caller.subject,
-    })
+    signed = {**item, 'updated_at': now_iso(), 'updated_by': caller.username or caller.subject}
+    workspace = _workspace()
+    if workspace is None:
+        get_radar_table().put_item(Item=signed)
+    else:
+        ws_table(workspace, get_radar_table()).put_item(signed)
+
+
+def _bump() -> None:
+    """The Radar version changed: the deployment's, or the workspace's own counter."""
+    workspace = _workspace()
+    if workspace is None:
+        bump_radar_version(get_radar_table())
+    else:
+        bump_radar_version(get_radar_table(), workspace)
 
 
 @app.get('/radar/brands')
@@ -227,8 +290,8 @@ def list_brands():
 def put_brands():
     """Admin: replace the brand list (Administration -> Sources -> Radar). Stored reviews are never deleted."""
     brands = _admin_body(validate_brand_list)
-    _put_signed({**BRAND_LIST_KEY, 'brands': brands})
-    bump_radar_version(get_radar_table())
+    _put_signed({**radar_settings_key('brands', _workspace()), 'brands': brands})
+    _bump()
     logger.info('Radar brand list saved', extra={'brands': len(brands)})
     return {'success': True, **list_brands()}
 
@@ -238,26 +301,30 @@ def _detail_body(scope: CategoryScope, brand: RadarBrand, days: int) -> dict[str
     start, end = window(days, datetime.now(UTC).date())
     return {
         'brand': brand_view(brand), 'days': days,
-        **counted_totals(table, brand.key, start, end, scope, with_trend=True),
-        **themes(table, brand.key, start, end, scope),
+        **counted_totals(table, brand.key, start, end, scope, with_trend=True, **_in()),
+        **themes(table, brand.key, start, end, scope, **_in()),
     }
 
 
 def _releases_body(brand: RadarBrand, days: int) -> dict[str, Any]:
     start, _ = window(days, datetime.now(UTC).date())
     return {'brand': brand_view(brand), 'days': days,
-            'releases': list_releases(get_radar_table(), brand.key, start, MAX_RELEASES, brand.citation_match)}
+            'releases': list_releases(get_radar_table(), brand.key, start, MAX_RELEASES, brand.citation_match,
+                                      **_in())}
 
 
 def _compare_body(scope: CategoryScope, brands: list[RadarBrand], brand: RadarBrand, days: int) -> dict[str, Any]:
     """``brands``: the effective list (its sources tell whether "ours" may include a Radar source)."""
     start, end = window(days, datetime.now(UTC).date())
     aggregates = _aggregates()
-    categories = configured_category_names(get_raw_categories_config(aggregates))
+    workspace = _workspace()
+    raw = get_raw_categories_config(aggregates) if workspace is None else get_raw_categories_config(aggregates,
+                                                                                                   workspace)
+    categories = configured_category_names(raw)
     radar_sources = [source for each in brands for source in each.sources]
     return {'brand': brand_view(brand), 'days': days,
             **compare(get_radar_table(), aggregates, brand.key, categories, start, end, scope,
-                      ours_available=ours_visible(scope, radar_sources))}
+                      ours_available=ours_visible(scope, radar_sources), **_in())}
 
 
 @app.get('/radar/brands/<brand_key>')
@@ -315,7 +382,8 @@ def brand_reviews(brand_key: str):
     brand = _brand(scope, brand_key)
     params = app.current_event.query_string_parameters or {}
     try:
-        page = reviews_page(get_radar_table(), brand.key, scope, params, window(_days(), datetime.now(UTC).date()))
+        page = reviews_page(get_radar_table(), brand.key, scope, params, window(_days(), datetime.now(UTC).date()),
+                            **_in())
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     return {'brand': brand_view(brand), **page}
@@ -327,7 +395,7 @@ def brand_review(brand_key: str, feedback_id: str):
     """One review of the brand, with its enrichment (the review modal); 404 when absent or out of scope."""
     scope = _scope()
     brand = _brand(scope, brand_key)
-    item = stored_review(get_radar_table(), brand.key, feedback_id)
+    item = stored_review(get_radar_table(), brand.key, feedback_id, **_in())
     if item is None or not category_access.admits_item(scope, item):
         raise NotFoundError('Radar review not found')
     return {'brand': {'key': brand.key, 'label': brand.label}, 'review': review_detail_view(item)}
@@ -336,7 +404,7 @@ def brand_review(brand_key: str, feedback_id: str):
 @app.get('/radar/settings')
 @tracer.capture_method
 def get_settings():
-    return {'settings': settings_view(get_radar_table())}
+    return {'settings': settings_view(get_radar_table(), **_in())}
 
 
 @app.put('/radar/settings')
@@ -344,8 +412,8 @@ def get_settings():
 def put_settings():
     """Admin: cadence, max_brands, query_cap (Settings -> Radar)."""
     settings = _admin_body(validate_settings)
-    _put_signed({**SETTINGS_KEY, **settings})
-    bump_radar_version(get_radar_table())
+    _put_signed({**radar_settings_key('config', _workspace()), **settings})
+    _bump()
     return {'success': True, 'settings': settings}
 
 
@@ -367,8 +435,9 @@ def _scan_brand_from_body(body: object, brands: list[RadarBrand]) -> str | None:
 @app.post('/radar/scan')
 @tracer.capture_method
 def start_scan():
-    """Admin: "Scan now" for every brand (or ``{brand}``), ignoring the cadence; 202 while it runs."""
-    require_admin(app.current_event.raw_event)
+    """Admin: "Scan now" for every brand (or ``{brand}``), ignoring the cadence; 202 while it runs. Inside a
+    workspace its admins', and the scan is the workspace's (the event names it)."""
+    require_settings_admin(app.current_event.raw_event, route_workspace(app))
     if not RADAR_SCAN_FUNCTION:
         raise ConfigurationError('Radar scan worker not configured')
     caller = caller_from_event(app.current_event.raw_event)
@@ -376,10 +445,9 @@ def start_scan():
     brand = _scan_brand_from_body(json_body_value(app), brands)
     if not brands:
         raise ValidationError('No Radar brand yet: add the brands to track in Administration → Sources → Radar first')
-    payload: dict[str, Any] = {'mode': 'manual', 'requested_by': caller.subject, **payload_fields()}
-    if brand:
-        payload['brand'] = brand
-    invoke_lambda_async(RADAR_SCAN_FUNCTION, payload)
+    # The event names the request's workspace (shared/scoped_keys.py ``named_in``, from its resolved scope).
+    payload = {'mode': 'manual', 'requested_by': caller.subject, **payload_fields(), **({'brand': brand} if brand else {})}
+    invoke_lambda_async(RADAR_SCAN_FUNCTION, named_in(payload, _workspace()))
     logger.info('Radar scan started', extra={'brand': brand or '*'})
     return Response(status_code=202, content_type=content_types.APPLICATION_JSON,
                     body=json.dumps({'success': True, 'status': 'started', 'brand': brand}))

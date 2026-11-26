@@ -260,7 +260,20 @@ How it works:
   removed; the request text stays; a +1, whose id derives from the email, is re-keyed under a
   new random id and still counts as a supporter). Since 7.72.00 a +1 or a request that names the address as its
   customer contact (`contact_email`) gets a record of this job's (keyed by its request and a random token), its raw
-  copies deleted, and that field removed while it still holds the address, its id kept; a request's own tombstone is
+  copies deleted, and that field removed while it still holds the address, its id kept. Since 7.72.03 a +1's contact
+  is judged on the +1 as read again (a +1 whose own address and contact both matched is re-keyed without the contact
+  only while the re-read row still holds it, and loses it when the re-read row's contact is the address), and the
+  re-key holds only while the +1 is as read (an edit between the read and the write is read again, at most 3 times,
+  then the job fails). A row's raw folder goes whole: for a row whose contact changed since the scan, the versions the
+  edit wrote, which no longer name the address, go too, so the supporter's or reporter's own submission is gone from
+  the archive while the row keeps it (the version the scan matched names the address). The boards' edit routes
+  write, then archive, so every matched row's folder is swept once more after its change (a re-key, a contact's
+  removal, a request's de-identify), held or not, and a re-keyed +1's old id refuses a later edit; what remains, and
+  only this: (a) an edit whose write lands before the change (or its attempt) and whose archive lands after the
+  second sweep; (b) a version archived before a job that crashed between its change and its second sweep. Either
+  copy names the address and no rerun finds it (follow-up 3g2-raw, [multi-workspace.md](multi-workspace.md)). The raw
+  copies of a request or a +1 deleted before the erasure are never reached: their folder is found only through a row
+  that no longer exists (3g2-orphan). A request's own tombstone is
   put only if new, so the artifacts that cite it are marked as for any erased request, and each erasure that changes
   a request also leaves its own record of each field it removes (`{request id}#reporter#{token}`,
   `{request id}#contact#{token}`). Counted as `board_items_deidentified`; artifacts that read
@@ -431,14 +444,20 @@ How it works:
   within the run), and a guard's index row every try to unlist conflicted on with no guard back, are saved again,
   counted (`participants_not_erased`, `participant_index_rows_kept`), and do not stop the job, whose row then says
   `participants_complete: false`; every later erasure of the address tries them again. Any other error fails the job,
-  the ids still saved. The job also counts `participants_erased` and `participant_guards_malformed`, and every email
+  the ids still saved. The job also counts `participants_erased` and `participant_guards_malformed` (a guard, index
+  or saved row naming no person, skipped; since 7.72.03 a non-zero count also leaves `participants_complete: false`,
+  as a skipped saved row may still name a person whose tail stays), and every email
   erasure without a source says `participants_walked` (false for the deployment's erasure without voc-workspaces) and
   `participants_complete` (the job's API view returns them). Run again every erasure by email without a source whose
   row does not say `participants_complete: true`; that field speaks for voc-participants only, and the 7.48.00 rule
   (`deployment_projects_walked`) still applies beside it. A workspace's own erasure is run again by that workspace's
-  admin; the deployment's erasure only where the deployment has its own request for the address. A non-zero
-  `participant_guards_malformed` or `participant_index_rows_kept` needs an operator to look at the rows (a rerun does
-  not mend a malformed guard; it tries a kept index row again, and one it reports kept again stays). Not reached: a
+  admin; the deployment's erasure only where the deployment has its own request for the address. Malformed, an
+  operator first: a non-zero `participant_guards_malformed` needs an operator to inspect the guard, index or saved row
+  and mend it, or erase by id the person it names, before the erasure is run again (a rerun does not mend it; the job
+  reads complete only once no malformed row remains); every row with `participants_complete: true` and
+  `participant_guards_malformed` above 0 (written by 7.72.00) is such a job. Refused or kept, run again: a refused
+  person or a non-zero `participant_index_rows_kept` needs only the erasure run again (it tries a kept index row
+  again; one it reports kept again stays for an operator). The same scope rule holds for both. Not reached: a
   board promote already running while the erasure runs (it may add the person back: run the erasure again once it
   has finished).
   A board supporter, or a +1's customer contact, promoted to a list is a participant too: the `boards` phase first

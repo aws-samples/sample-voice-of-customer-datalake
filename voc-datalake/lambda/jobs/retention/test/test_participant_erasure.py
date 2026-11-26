@@ -27,8 +27,8 @@ import pytest
 from boto3.dynamodb.conditions import Attr, ConditionBase, Key
 from botocore.exceptions import ClientError
 
-from jobs.retention import boards, exports, handler, participants, runs, workspaces
-from jobs.retention.test.conftest import erasure_job, erasure_rows, put_feedback
+from jobs.retention import boards, boards_rekey, exports, handler, participants, runs, workspaces
+from jobs.retention.test.conftest import BUCKET, erasure_job, erasure_rows, put_feedback
 from jobs.retention.test.test_export_erasure import DONE, RUNNING, _seed_exports, _uploads
 from jobs.retention.test.test_export_erasure import _statuses as _export_statuses
 from jobs.retention.test.test_named_workspace_erasure import _job as _named_job
@@ -526,6 +526,160 @@ class TestTheBoards:
         support = aws['feature_requests'].get_item(Key=support_key(self.REQUEST, support_id))['Item']
         assert support['contact_email'] == 'someone.else@example.com'
 
+    def _eraser(self, aws, run: dict[str, Any] | None = None) -> boards.BoardEraser:
+        return boards.BoardEraser(run if run is not None else _run(), {
+            'feature_requests': aws['feature_requests'], 'aggregates': aws['aggregates']}, aws['s3'], BUCKET, ADDRESS)
+
+    def _row(self, aws, support_id: str) -> dict[str, Any]:
+        return aws['feature_requests'].get_item(Key=support_key(self.REQUEST, support_id))['Item']
+
+    def _change_contact(self, aws, support_id: str) -> None:
+        aws['feature_requests'].update_item(Key=support_key(self.REQUEST, support_id),
+                                            UpdateExpression='SET contact_email = :c',
+                                            ExpressionAttributeValues={':c': 'someone.else@example.com'})
+
+    def _raw_copy(self, aws, row: Mapping[str, Any]) -> str:
+        folder = boards.raw_folder(row)
+        assert folder is not None
+        aws['s3'].put_object(Bucket=BUCKET, Key=f'{folder}abc.json', Body=b'{"v": 1}')
+        return folder
+
+    def _versions(self, aws, folder: str) -> int:
+        return len(aws['s3'].list_object_versions(Bucket=BUCKET, Prefix=folder).get('Versions', []))
+
+    def test_a_plus_one_whose_contact_changed_since_the_scan_is_rekeyed_keeping_its_new_contact(self, aws):
+        """The scan saw the address as both the supporter's and the contact; the +1 read again names someone else as
+        its contact now: the re-key drops the supporter's address only."""
+        self._request(aws)
+        old = self._support(aws, ADDRESS, contact_email=ADDRESS)
+        scanned = self._row(aws, old)
+        self._change_contact(aws, old)
+
+        self._eraser(aws).erase(scanned)
+
+        [support] = self._supports(aws)
+        assert support['support_id'] != old
+        assert ('email' in support, support['contact_email']) == (False, 'someone.else@example.com')
+
+    def test_a_plus_one_whose_contact_became_the_address_since_the_scan_loses_it_with_the_rekey(self, aws):
+        """The scan matched its own address only; the +1 read again names the address as its contact too: the
+        re-key drops both."""
+        self._request(aws)
+        old = self._support(aws, ADDRESS, contact_email=OTHER)
+        scanned = self._row(aws, old)
+        aws['feature_requests'].update_item(Key=support_key(self.REQUEST, old), UpdateExpression='SET contact_email = :c',
+                                            ExpressionAttributeValues={':c': ADDRESS})
+
+        self._eraser(aws).erase(scanned)
+
+        [support] = self._supports(aws)
+        assert not {'email', 'contact_email'} & set(support)
+
+    @staticmethod
+    def _edit_after_each_read(contacts: list[str]) -> tuple[Any, list[int]]:
+        """``current_support`` as the eraser calls it, with the +1 edited (a new ``updated_at`` and the next of
+        ``contacts`` as its contact, as the edit route writes it) right after each read: the row the eraser holds is
+        stale by the time its transaction runs. The reads counted."""
+        real = boards_rekey.current_support
+        reads: list[int] = []
+
+        def racing(table: Any, request_id: str, support_id: str) -> dict[str, Any] | None:
+            row = real(table, request_id, support_id)
+            reads.append(1)
+            if row is not None and contacts:
+                table.update_item(Key=support_key(request_id, support_id),
+                                  UpdateExpression='SET contact_email = :c, updated_at = :u',
+                                  ExpressionAttributeValues={':c': contacts.pop(0),
+                                                             ':u': f'2026-11-26T10:00:0{len(reads)}+00:00'})
+            return row
+
+        return racing, reads
+
+    @pytest.mark.parametrize(('edited', 'kept'), [('someone.else@example.com', 'someone.else@example.com'),
+                                                  (ADDRESS, None)])
+    def test_an_edit_between_the_reread_and_the_rekey_is_read_again_never_lost(self, aws, edited, kept):
+        """The transaction's Delete holds only while the +1 is as read (its ``updated_at``): an edit landing between
+        the re-read and the write cancels it, the +1 is read again and re-keyed as it now is: a new contact kept, the
+        address erased."""
+        self._request(aws)
+        old = self._support(aws, ADDRESS)
+        scanned = self._row(aws, old)
+        racing, reads = self._edit_after_each_read([edited])
+
+        with patch.object(boards_rekey, 'current_support', racing):
+            self._eraser(aws).erase(scanned)
+
+        [support] = self._supports(aws)
+        assert (support['support_id'] != old, 'email' in support, support.get('contact_email')) == (True, False, kept)
+        assert len(reads) == 2
+
+    @pytest.mark.usefixtures('people')
+    def test_a_plus_one_that_keeps_changing_fails_the_job_naming_no_address(self, aws, worker_context):
+        self._request(aws)
+        old = self._support(aws, ADDRESS)
+        racing, reads = self._edit_after_each_read(['someone.else@example.com'] * 10)
+
+        with patch.object(boards_rekey, 'current_support', racing):
+            result = _erase(aws, worker_context)
+
+        assert result['status'] == 'failed'
+        assert len(reads) == boards.MAX_TRIES
+        job, audit = erasure_rows(aws, JOB_ID)
+        assert (job['error'], audit['error']) == ('Run failed (SupportKeptChanging)',) * 2
+        assert self._row(aws, old)['email'] == ADDRESS  # left as it is, for the admin's rerun
+        with pytest.raises(boards_rekey.SupportKeptChanging) as raised, \
+                patch.object(boards_rekey, 'current_support', self._edit_after_each_read([OTHER] * 10)[0]):
+            self._eraser(aws).erase(self._row(aws, old))
+        assert self.REQUEST in str(raised.value)
+        assert ADDRESS not in str(raised.value)
+        assert old not in str(raised.value)
+
+    def test_a_contact_only_plus_one_loses_its_raw_copies_before_its_contact(self, aws):
+        """The copies first: a crash between the sweep and the REMOVE leaves a row a rerun still matches."""
+        self._request(aws)
+        support_id = self._support(aws, OTHER, contact_email=ADDRESS)
+        row = self._row(aws, support_id)
+        folder = self._raw_copy(aws, row)
+        order: list[str] = []
+        real_remove, real_delete = boards.remove_fields, boards._delete_folder
+        run = _run()
+
+        def remove(*args: Any, **kwargs: Any) -> bool:
+            order.append('remove')
+            return real_remove(*args, **kwargs)
+
+        def delete(*args: Any) -> int:
+            order.append('copies')
+            return real_delete(*args)
+
+        with patch.object(boards, 'remove_fields', remove), patch.object(boards, '_delete_folder', delete):
+            self._eraser(aws, run).erase(row)
+
+        # And once more after the REMOVE held: an edit archived between the first sweep and the REMOVE goes too.
+        assert order == ['copies', 'remove', 'copies']
+        assert (self._versions(aws, folder), run['deleted_objects'], run[boards.BOARD_COUNTER]) == (0, 1, 1)
+        assert 'contact_email' not in self._row(aws, support_id)
+
+    def test_a_contact_only_plus_one_whose_contact_changed_still_loses_its_raw_copies_and_is_not_counted(self, aws):
+        """Its copies hold the version the scan matched, which names the address: they go; the row keeps its new
+        contact and is not counted. The trade-off, pinned: the version the edit wrote (archive_support's copy of the
+        +1 with its new contact, which no longer names the address) goes too, so the supporter's submission is gone
+        from the archive while the row keeps it."""
+        self._request(aws)
+        support_id = self._support(aws, OTHER, contact_email=ADDRESS)
+        scanned = self._row(aws, support_id)
+        folder = self._raw_copy(aws, scanned)
+        self._change_contact(aws, support_id)
+        edited = {key: value for key, value in self._row(aws, support_id).items() if key not in ('pk', 'sk')}
+        aws['s3'].put_object(Bucket=BUCKET, Key=f'{folder}def.json', Body=json.dumps(edited, default=str).encode())
+        assert self._versions(aws, folder) == 2
+        run = _run()
+
+        self._eraser(aws, run).erase(scanned)
+
+        assert (self._versions(aws, folder), run['deleted_objects'], boards.BOARD_COUNTER in run) == (0, 2, False)
+        assert self._row(aws, support_id)['contact_email'] == 'someone.else@example.com'
+
     @pytest.mark.usefixtures('people')
     def test_a_reporter_erased_after_the_contact_leaves_a_record_of_its_own_job(self, aws, worker_context):
         """The request-id tombstone is the contact's job's (put only if new); the reporter's job still leaves its
@@ -854,8 +1008,16 @@ class TestAcrossScopes:
         assert _erase(aws, worker_context)['status'] == 'completed'
 
         assert _gone(people, A, ids[WS])
-        job, _audit = erasure_rows(aws, JOB_ID)
+        job, audit = erasure_rows(aws, JOB_ID)
         assert job[GUARD_MALFORMED_COUNTER] == 1
+        # The skipped row may still name a person whose tail stays: the job never reads complete.
+        assert (job[runs.PARTICIPANTS_COMPLETE], audit[runs.PARTICIPANTS_COMPLETE]) == (False, False)
+
+    @pytest.mark.parametrize(('counter', 'complete'), [
+        (None, True), (GUARD_MALFORMED_COUNTER, False), (NOT_ERASED_COUNTER, False), (INDEX_KEPT_COUNTER, False)])
+    def test_complete_means_walked_with_nothing_left(self, counter, complete):
+        run = {**_run(), runs.PARTICIPANTS_WALKED: True, **({counter: 1} if counter else {})}
+        assert runs.participant_fields(run)[runs.PARTICIPANTS_COMPLETE] is complete
 
     def test_a_page_finding_more_than_max_saved_carries_max_saved_and_the_rest_waits_saved(self, aws, people):
         ids = _seed(aws, people)

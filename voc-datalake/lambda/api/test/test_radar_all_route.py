@@ -12,7 +12,8 @@ import pytest
 from test_radar_handler import ADMIN, PROFILES, _call, _review, radar_tables
 
 from shared import radar_all
-from shared.radar_brands import BRAND_LIST_KEY, validate_brand_list
+from shared.radar_brands import validate_brand_list
+from shared.radar_keys import radar_settings_key
 from shared.radar_releases import ReleaseCandidate, store_candidate
 from shared.radar_store import radar_item, store_item
 
@@ -35,7 +36,7 @@ def all_tables():
     """Acme (visible: 2 reviews today, 1 forty days ago; 2 releases), Globex (restricted; 1 release),
     Initech (listed, no reviews, no releases)."""
     with radar_tables() as (radar, aggregates):
-        radar.put_item(Item={**BRAND_LIST_KEY, 'brands': [{'label': 'Initech', 'domains': []}]})
+        radar.put_item(Item={**radar_settings_key('brands'), 'brands': [{'label': 'Initech', 'domains': []}]})
         for n, label in enumerate(('positive', 'negative')):
             store_item(radar, 'acme', radar_item(_review(n, label, 'delivery', f'Quote {n}'), 'acme', 'Acme'))
         old = {**_review(5, 'positive', 'billing', 'Old quote'), 'date': _ago(40)}

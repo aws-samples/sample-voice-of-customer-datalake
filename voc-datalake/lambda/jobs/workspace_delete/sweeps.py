@@ -92,7 +92,7 @@ from shared.project_keys import (
     review_link_registry_pk,
 )
 from shared.project_tables import iter_registered_project_ids
-from shared.radar_keys import radar_settings_key
+from shared.radar_keys import radar_owned_pk, radar_settings_key, scan_key
 from shared.radar_store import SENTIMENT_LABELS
 from shared.retention import STORE_FEEDBACK, UNKNOWN_SOURCE, item_feedback_id, item_source
 from shared.review_share_audience import is_share_id
@@ -207,7 +207,8 @@ class Context:
     aggregates: WorkspaceTable
     memory: WorkspaceTable
     watermarks: WorkspaceTable
-    #: voc-radar: the workspace's Radar settings (``WS#{ws}#SETTINGS#radar``).
+    #: voc-radar: the workspace's Radar rows (settings, scan rows, every partition its owner list
+    #: ``WS#{ws}#RADAR_OWNED`` names).
     radar: WorkspaceTable
     workspaces: Any
     objects: WorkspaceObjectVersions
@@ -1156,6 +1157,15 @@ def _settings(ctx: Context) -> Iterator[str]:
     yield rollup_partition(ctx.scope)
 
 
+def _radar_partitions(ctx: Context) -> list[str]:
+    """The workspace's Radar partitions: the fixed ones, each one its owner list names (read for keys alone; only
+    the workspace's), then the list."""
+    owned = radar_owned_pk(ctx.scope)
+    listed = sorted({str(row['sk']) for row in ctx.radar.iter_query('pk', owned, **KEYS_ONLY)
+                     if ctx.scope.owns(str(row.get('sk') or '')) and row['sk'] != owned})
+    return [radar_settings_key('config', ctx.scope)['pk'], scan_key('LAST', ctx.scope)['pk'], *listed, owned]
+
+
 #: The aggregates families swept partition by partition (``_partitions_sweep``), in order, with how each finds its
 #: partitions: by source or plugin id, by the scraper ids of the config lists (before those lists go), or fixed.
 PARTITION_FAMILIES: Final[dict[str, Callable[[Context], Iterable[str]]]] = {
@@ -1173,8 +1183,10 @@ PARTITION_FAMILIES: Final[dict[str, Callable[[Context], Iterable[str]]]] = {
     'reprocess_jobs': lambda ctx: [reprocess_job_pk(ctx.scope)],
     # What the workspace's web_reviews runs learned of each review site (7.44.00, shared/web_review_methods.py).
     'web_review_methods': lambda ctx: [methods_partition(ctx.scope)],
-    # voc-radar: the workspace's Radar settings, config and brands (shared/radar_keys.py, decision 13).
-    'radar': lambda ctx: [radar_settings_key('config', ctx.scope)['pk']],
+    # voc-radar: the workspace's Radar settings (config, brands, version), its scan rows, every per-brand partition
+    # its owner list names (releases, scan state; a review's when written; shared/radar_keys.py), then
+    # the list itself, last.
+    'radar': _radar_partitions,
     # The workspace's own settings: after every reader of them (the counters).
     'settings': _settings,
 }

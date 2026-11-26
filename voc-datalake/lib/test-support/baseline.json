@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "c07b51d5818f876f4990771abe3762d9ecca7484b1643f65952866632a8fb651",
+      "templateSha256": "a4dfadcbe3e711439a73820d67e7e33b551101cff107cd89b355c9aef88deda4",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -356,7 +356,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "93c3d75f5a05de2936a47910c733fbd6ea9fb2bd9643a0d0afb5807d34101b5d",
+      "templateSha256": "f9e428c1c8955ce9817b929221040b8cd28d8934360f0aac0a487dfcf0b84c8f",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-adoption-rollup-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -433,6 +433,7 @@
           "arn:aws:lambda:us-east-1:111111111111:function:voc-memory-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-metrics-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-projects-api-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-radar-scan-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-retention-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-settings-api-<AWS::AccountId>-<AWS::Region>",

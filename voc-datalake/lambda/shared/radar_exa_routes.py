@@ -9,6 +9,10 @@ echoed in an error. A change bumps the Radar version, so the cached ``GET /radar
 
 ``settings_view`` is the ``settings`` object ``GET /radar`` and ``GET /radar/settings`` answer: the
 scan settings plus ``exa_configured``.
+
+A workspace keeps no Exa key yet (docs/radar.md): inside one (``X-Workspace-Id``) both routes answer 409 and change
+nothing, so a workspace admin never sets or removes the deployment's key; its settings say ``exa_configured: false``
+and its scan uses web search and feeds only.
 """
 
 from __future__ import annotations
@@ -20,13 +24,15 @@ from aws_lambda_powertools.event_handler.api_gateway import Router
 
 from shared.api import require_admin
 from shared.data_version import bump_radar_version
-from shared.exceptions import ValidationError
+from shared.exceptions import ConflictError, ValidationError
 from shared.logging import logger, tracer
 from shared.radar_exa_key import delete_exa_key, exa_key_configured, put_exa_key, validate_exa_key
 from shared.radar_settings import load_settings
 from shared.request_body import json_body_value
+from shared.request_workspace import request_workspace
+from shared.ws_repo import WorkspaceScope
 
-__all__ = ['app', 'bind_radar_table', 'settings_view']
+__all__ = ['FAILED_WORKSPACE', 'app', 'bind_radar_table', 'settings_view']
 
 app = Router()
 _radar_table: dict[str, Callable[[], Any]] = {}
@@ -41,15 +47,34 @@ def _table() -> Any:
     return _radar_table['source']()
 
 
-def settings_view(table: Any) -> dict[str, Any]:
-    """The scan settings and whether an Exa key is stored."""
-    return {**load_settings(table), 'exa_configured': exa_key_configured()}
+#: The routes' answer inside a workspace.
+NO_WORKSPACE_KEY = ('A workspace has no Exa key of its own yet: its Radar scans use web search and the brands\' '
+                    'feeds. The deployment\'s key is set outside any workspace.')
+#: A request whose workspace could not be resolved (a DynamoDB fault).
+FAILED_WORKSPACE = 'Failed to open Radar'
+
+
+def settings_view(table: Any, workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The scan settings (``workspace``'s with one) and whether an Exa key is stored (never inside a workspace)."""
+    if workspace is None:
+        return {**load_settings(table), 'exa_configured': exa_key_configured()}
+    return {**load_settings(table, workspace), 'exa_configured': False}
+
+
+def _deployment_only() -> None:
+    """409 inside a workspace, before anything else. The including handler's middleware has just resolved the request
+    fresh (lambda/api/radar_handler.py); this read is served from the warm cache that read filled, so it reads no row
+    again and a platform admin's entry is checked and audited once."""
+    context = request_workspace(app.current_event.raw_event, FAILED_WORKSPACE)
+    if context is not None:
+        raise ConflictError(NO_WORKSPACE_KEY)
 
 
 @app.put('/radar/settings/exa-key')
 @tracer.capture_method
 def put_key():
-    """Admin: store (or replace) the Exa API key."""
+    """Admin: store (or replace) the Exa API key (the deployment's; 409 inside a workspace)."""
+    _deployment_only()
     require_admin(app.current_event.raw_event)
     try:
         key = validate_exa_key(json_body_value(app))
@@ -64,7 +89,8 @@ def put_key():
 @app.delete('/radar/settings/exa-key')
 @tracer.capture_method
 def delete_key():
-    """Admin: remove the Exa API key (the scan stops using Exa)."""
+    """Admin: remove the Exa API key (the scan stops using Exa; 409 inside a workspace)."""
+    _deployment_only()
     require_admin(app.current_event.raw_event)
     delete_exa_key()
     bump_radar_version(_table())

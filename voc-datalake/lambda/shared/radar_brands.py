@@ -40,7 +40,6 @@ from shared.workspace_config import get_scoped_item
 from shared.ws_repo import WorkspaceScope
 
 __all__ = [
-    'BRAND_LIST_KEY',
     'RadarBrand',
     'brand_key',
     'brand_view',
@@ -55,7 +54,6 @@ __all__ = [
 MAX_BRAND_CHARS: Final = 64
 MAX_BRAND_DOMAINS: Final = 10
 MAX_LIST_BRANDS: Final = 25
-BRAND_LIST_KEY: Final = radar_settings_key('brands')
 #: Keys no listed brand may take: ``all`` names the Radar page's "All brands" view (GET /radar/all).
 RESERVED_BRAND_KEYS: Final = frozenset({'all'})
 #: A brand key as a scraper / connector config and a queue message carry it (``IngestMessage.radar_brand_key``).

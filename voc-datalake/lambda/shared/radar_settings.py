@@ -22,14 +22,12 @@ from shared.workspace_config import get_scoped_item
 from shared.ws_repo import WorkspaceScope
 
 __all__ = [
-    'SETTINGS_KEY',
     'cadence_interval',
     'load_settings',
     'per_brand_queries',
     'validate_settings',
 ]
 
-SETTINGS_KEY: Final = radar_settings_key('config')
 CADENCES: Final = ('daily', 'weekly', 'monthly')
 _INTERVALS: Final = {'daily': timedelta(days=1), 'weekly': timedelta(days=7), 'monthly': timedelta(days=30)}
 MAX_BRANDS_LIMIT: Final = 25

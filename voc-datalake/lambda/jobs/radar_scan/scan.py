@@ -56,6 +56,7 @@ from shared.radar_brands import RadarBrand
 from shared.radar_feeds import feed_results
 from shared.radar_releases import ReleaseCandidate, store_candidate
 from shared.web_search import WebSearchError
+from shared.ws_repo import WorkspaceScope
 
 RESULTS_PER_QUERY: Final = 8
 #: Exa's ``excludeText`` takes one phrase of at most this many words.
@@ -105,6 +106,7 @@ class _Run:
     sources: ScanSources
     table: Any
     now_iso: str
+    workspace: WorkspaceScope | None = None
     stats: BrandScanStats = field(default_factory=BrandScanStats)
     dated: bool = False
 
@@ -136,7 +138,8 @@ def _file(run: _Run, step: str, via: str, results: list[dict[str, Any]]) -> None
         if candidate.release_date and via != 'feed':
             run.dated = True
         vector = embed_text(f'{candidate.brand_label}: {candidate.feature}')
-        outcome = store_candidate(run.table, candidate, vector, run.ctx.today, run.now_iso)
+        outcome = store_candidate(run.table, candidate, vector, run.ctx.today, run.now_iso,
+                                  **({} if run.workspace is None else {'workspace': run.workspace}))
         if outcome == 'added':
             run.stats.added += 1
         else:
@@ -252,12 +255,13 @@ def _log(run: _Run) -> None:
 
 
 def scan_brand(brand: RadarBrand, *, window: BrandWindow, budget: Budget, ctx: ExtractContext, table: Any,
-               now_iso: str, sources: ScanSources) -> BrandScanStats:
-    """Run the brand's steps within ``budget`` and file what they find; the scan's stats.
+               now_iso: str, sources: ScanSources, workspace: WorkspaceScope | None = None) -> BrandScanStats:
+    """Run the brand's steps within ``budget`` and file what they find (in ``workspace``'s timeline with one);
+    the scan's stats.
 
     ``stats.cursor`` is the plan position the next scan starts at.
     """
-    run = _Run(brand, window, budget, ctx, sources, table, now_iso)
+    run = _Run(brand, window, budget, ctx, sources, table, now_iso, workspace)
     run.stats.cursor = window.cursor
     plan = rotated(query_plan(brand.label, brand.effective_language), window.cursor) if sources.search else []
     first = max(1, budget.remaining // FIRST_STEP_DIVISOR)

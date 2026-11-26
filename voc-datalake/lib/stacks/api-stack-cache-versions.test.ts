@@ -58,11 +58,14 @@ describe('cache version bumps are the only aggregates write of read-mostly API r
   });
 });
 
+/** A workspace's own Radar settings partition, one id (lambda/shared/radar_keys.py). */
+const WORKSPACE_RADAR = `WS#ws_${'?'.repeat(26)}#SETTINGS#radar`;
+
 describe('the Radar API', () => {
   const radarStatements = () => policyStatementsOf(apiTemplate(), 'RadarLambdaRole');
 
-  it('bumps only the SETTINGS#radar partition', () => {
-    expect(updatePartitions(radarStatements(), 'Radar')).toStrictEqual([['SETTINGS#radar']]);
+  it("bumps only the SETTINGS#radar partition and one workspace's own", () => {
+    expect(updatePartitions(radarStatements(), 'Radar')).toStrictEqual([['SETTINGS#radar'], [WORKSPACE_RADAR]]);
   });
 
   it('reads the versions with BatchGetItem on both tables', () => {
@@ -73,11 +76,11 @@ describe('the Radar API', () => {
 });
 
 describe('the Radar scan worker', () => {
-  it('bumps only the SETTINGS#radar partition', () => {
+  it("bumps only the SETTINGS#radar partition and one workspace's own", () => {
     const role = findWorkerFunction(processing, 'voc-radar-scan-').Role['Fn::GetAtt'][0];
     // The policy's logical id is the role's path without its 8-hex hash suffix + "DefaultPolicy…".
     const statements = policyStatementsOf(processing, `${role.slice(0, -8)}DefaultPolicy`);
-    expect(updatePartitions(statements, 'Radar')).toStrictEqual([['SETTINGS#radar']]);
+    expect(updatePartitions(statements, 'Radar')).toStrictEqual([['SETTINGS#radar'], [WORKSPACE_RADAR]]);
   });
 });
 

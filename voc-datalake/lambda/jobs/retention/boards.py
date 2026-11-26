@@ -24,14 +24,36 @@ the table with a bounded, paged Scan (no index holds the email). For each matchi
 A customer contact (since 7.72.00): a +1's own ``contact_email`` and a request's ``fields.contact_email`` (an address
 the person filing it typed; both stored lower-cased) match too. A row that names the address only as its contact gets
 its raw copies deleted and that one field REMOVEd (only while it still holds a spelling of the address); its id stays.
-A +1 whose own address and contact are both the erased one is re-keyed without either.
+Its raw copies go before the REMOVE, whatever the REMOVE does: they hold the version the scan matched, which names the
+address, so a row whose contact changed since keeps its new contact, loses those copies and is not counted. The
+trade-off (a +1 and a contact-only request alike): a raw folder is deleted whole, every version in it, the versions an
+edit wrote after the contact changed included, which no longer name the address; so the supporter's or reporter's own
+submission is gone from the archive while the row keeps it. A +1's re-key judges its contact on the +1 as read again
+(since 7.72.03), never as the scan saw it: a +1 whose own address and contact are both the erased one is re-keyed
+without either, one whose contact changed since the scan keeps its new contact, and one re-keyed for its own address
+whose contact became the address since the scan loses that too. A row the transaction finds changed since the read is
+read again and tried again (``MAX_TRIES``), then the job fails (``boards_rekey.SupportKeptChanging``).
+
+A second sweep (7.72.03): the boards' edit routes write, then archive (``put_support_route``: ``put_support`` then
+``archive_support``; ``put_request``: ``update_request`` then ``archive_request``), so an edit landing between the
+first sweep and the change (a re-key, a contact's REMOVE, a request's de-identify) would leave its version, naming the
+address, in the folder, even when a later edit or a delete then made the change not hold; so every matched row's folder
+is swept once more after the change, whatever it did (one more ListObjectVersions page per matched row). An edit of a
+re-keyed +1's old id is refused (``put_support(replacing=True)`` holds only while the row is there: 404, nothing
+archived); a request edited after its de-identify archives the row as it now is, without the reporter. What remains
+(docs/multi-workspace.md 3g2-raw), and only this: (a) an edit whose write lands before the erasure's change (or its
+attempt) and whose archive lands after the second sweep, i.e. the eraser's read, write and sweep all between the
+route's DynamoDB write and its one S3 put; (b) a version archived before a job that crashed between its change and its
+second sweep. Either copy names the address, and no rerun finds it once the row no longer matches.
 
 Records (since 7.72.00): a request's id tombstone is put only if new (the lineage pass reads its existence alone, so
 a request whose contact alone matched marks the artifacts that cite it, as any erased request), and each erasure also
 puts its own record of each field it removes from a request (``{request id}#reporter#{token}``,
 ``{request id}#contact#{token}``: the job, its legal basis), so a second erasure meeting the request is recorded too;
 a +1 whose contact alone matched gets ``{request id}#contact#{token}``, never its own id, which derives from its
-supporter's address (the supporter is not erased). A promote (shared/feature_requests_promote.py) makes each +1's
+supporter's address (the supporter is not erased). That record stands for the attempt, written before anything of the
+page changes: it covers the row's raw copies, deleted whatever the REMOVE then does, and is kept when the REMOVE does
+not hold (the contact changed since the scan). A promote (shared/feature_requests_promote.py) makes each +1's
 contact a participant, so after this no later promote finds the address again.
 
 On voc-feature-requests the worker reads (Scan, GetItem, Query), updates, and puts / deletes rows
@@ -66,6 +88,9 @@ BOARDS_SOURCE: Final = FEATURE_REQUESTS_SOURCE
 STORE_BOARDS: Final = FEATURE_REQUESTS_SOURCE
 ERASE_FIELD: Final = 'email'
 PAGE_SIZE: Final = 100
+#: How many times a +1's re-key is tried when the +1 changed between its read and the write (boards_rekey.rekey);
+#: past them the job fails (``boards_rekey.SupportKeptChanging``) and an admin runs it again.
+MAX_TRIES: Final = 3
 _SUPPORT_SK_PREFIX: Final = 'SUP#'
 # The request row's sort key, as its store writes it.
 _REQUEST_SK: Final = request_key('_')['sk']
@@ -274,13 +299,28 @@ class BoardEraser:
                 raise
 
     def erase(self, row: Mapping[str, Any]) -> None:
-        """The row's raw copies (every version), then its email and name (a +1: re-keyed without them)."""
+        """The row's raw copies (every version), then its email and name (a +1: re-keyed without them), then its raw
+        copies again, whatever that change did. The copies go first: they hold the version the scan matched, which
+        names the address (a +1's copies hold its ``contact_email`` too, shared/feature_requests_raw.py), even when the
+        row changed or went since, and a crash between the sweep and the change leaves a row a rerun still matches.
+        The second sweep takes what a route's edit archived meanwhile, the change held or not (the module's docstring
+        says what remains). A row whose change does not hold (gone, or its contact changed meanwhile) is not
+        counted."""
+        self._sweep(row)
+        changed = self._erase_row(row)
+        # Once more, whatever the change did (7.72.03): the routes write, then archive (put_support_route,
+        # put_request), so an edit landing between the first sweep and the change left its version here, even when a
+        # later edit or a delete then made the change not hold.
+        self._sweep(row)
+        if changed:
+            self._run[BOARD_COUNTER] = int(self._run.get(BOARD_COUNTER) or 0) + 1
+            note_erased_source(self._run, BOARDS_SOURCE)
+
+    def _sweep(self, row: Mapping[str, Any]) -> None:
+        """Every version under the row's raw folder (none without a readable ``created_at`` or a bucket)."""
         folder = raw_folder(row)
         if folder is not None and self._bucket:
             self._run['deleted_objects'] += _delete_folder(self._s3, self._bucket, folder)
-        if self._erase_row(row):
-            self._run[BOARD_COUNTER] = int(self._run.get(BOARD_COUNTER) or 0) + 1
-            note_erased_source(self._run, BOARDS_SOURCE)
 
     def _erase_row(self, row: Mapping[str, Any]) -> bool:
         own, contact = self.matched(row)
@@ -288,20 +328,34 @@ class BoardEraser:
             changed = deidentify(self._table, row) if own else False
             # A request naming the address as its contact (7.72.00) loses that field only; its tombstone is the page's.
             return (_remove_request_contact(self._table, row, sorted(self._wanted)) if contact else False) or changed
-        # Read first: a +1 removed since the scan gets no tombstone naming an id that is never stored. The
-        # tombstone still precedes the change; the transaction's conditions cover the race left after the read.
-        current = boards_rekey.current_support(self._table, _request_id(row), _item_id(row))
+        # Read first: a +1 removed since the scan gets no tombstone naming an id that is never stored. The tombstone
+        # still precedes the change. The read leaves a race until the write: the transaction's Delete holds only while
+        # the +1 is as read (its updated_at, boards_rekey.rekey), so an edit landing between them cancels it, and the +1
+        # is read again and tried again, at most MAX_TRIES times (then the job fails, SupportKeptChanging).
+        request_id = _request_id(row)
+        current = boards_rekey.current_support(self._table, request_id, _item_id(row))
         if current is None:
             return False
         if not own:
             return self._erase_contact(current)
         support_id = boards_rekey.new_support_id()
-        self._aggregates.put_item(Item=tombstone(self._run, current, now_iso(), support_id))
-        also = {'also': frozenset({_CONTACT})} if contact else {}
-        if not boards_rekey.rekey(self._table, current, support_id, **also):
-            return False
-        boards_rekey.recount(self._table, _request_id(row))
-        return True
+        for attempt in range(MAX_TRIES):
+            if attempt:
+                current = boards_rekey.current_support(self._table, request_id, _item_id(row))
+                if current is None:
+                    return False  # its tombstone names an id never stored: random, it ties nobody to the +1
+            # The same new id each try: the tombstone's put is the same key, so the +1 keeps one tombstone.
+            self._aggregates.put_item(Item=tombstone(self._run, current, now_iso(), support_id))
+            # The contact as the +1 holds it now (7.72.03), not as the scan saw it: one changed since keeps its value.
+            also = {'also': frozenset({_CONTACT})} if self.matched(current)[1] else {}
+            outcome = boards_rekey.rekey(self._table, current, support_id, **also)
+            if outcome == boards_rekey.SUPPORT_GONE:
+                return False
+            if outcome == boards_rekey.SUPPORT_REKEYED:
+                boards_rekey.recount(self._table, request_id)
+                return True
+        raise boards_rekey.SupportKeptChanging(f'A +1 of request {request_id} kept changing while an address was '
+                                               'being erased from it')
 
     def _erase_contact(self, current: Mapping[str, Any]) -> bool:
         """A +1 that names the address as its customer contact only (7.72.00): its ``contact_email`` REMOVEd, its id

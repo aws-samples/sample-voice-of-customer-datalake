@@ -5,13 +5,13 @@ import pytest
 
 from shared.radar_brand_fields import LANGUAGES, effective_language
 from shared.radar_brands import (
-    BRAND_LIST_KEY,
     RadarBrand,
     brand_view,
     effective_brands,
     load_brand_list,
     validate_brand_list,
 )
+from shared.radar_keys import radar_settings_key
 
 
 def _one(**fields):
@@ -77,7 +77,7 @@ class TestFeedUrls:
 class TestStoredAndViewed:
     def test_a_list_saved_before_the_fields_still_loads_and_views_as_auto_without_feeds(self):
         table = MagicMock()
-        table.get_item.return_value = {'Item': {**BRAND_LIST_KEY, 'brands': [{'label': 'Acme', 'domains': ['acme.cz']}]}}
+        table.get_item.return_value = {'Item': {**radar_settings_key('brands'), 'brands': [{'label': 'Acme', 'domains': ['acme.cz']}]}}
         [brand] = effective_brands(load_brand_list(table), [])
         view = brand_view(brand)
         assert (view['language'], view['effective_language'], view['feed_urls']) == (None, 'cs', [])

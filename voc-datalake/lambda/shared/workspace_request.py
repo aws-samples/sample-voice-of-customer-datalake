@@ -29,7 +29,7 @@ middleware, admin gate, stored credentials and Radar refusal); its rules:
 * ``workspace_payload`` (shared/workspace_routing.py): the one way a request-facing module names a workspace on an asynchronous invoke payload,
   from the request's RESOLVED membership (a ``WorkspaceContext``, which only shared/workspace.py and
   shared/workspace_members.py build), set after every other field, so a body's ``workspace_id`` never chooses it;
-* ``ResolvedRoutes.refuse_radar_brand``: a workspace cannot save a Radar brand (Radar is not keyed by workspace; the processor would
+* ``ResolvedRoutes.refuse_radar_brand``: a workspace cannot save a Radar brand (a workspace's Radar takes no reviews yet; the processor would
   refuse every message it stamped);
 * ``ResolvedRoutes.require_plugin_enabled``: a run in a workspace runs only a plugin the workspace enabled
   (shared/workspace_plugin_settings.py ``PLUGIN_NOT_ENABLED``, 409), before anything is read, written or invoked;
@@ -133,8 +133,9 @@ WORKSPACE_CONTEXT_KEY: Final = 'workspace_context'
 WORKSPACE_NOT_RESOLVED: Final = 'Could not open the workspace. Please retry.'
 
 
-#: Radar is not keyed by workspace (phase 3): the processor refuses a workspace's message stamped with a brand.
-RADAR_NOT_IN_WORKSPACES: Final = ('Radar is not keyed by workspace yet: a workspace cannot name a Radar brand. '
+#: a workspace's Radar takes no reviews yet (phase 3): the processor refuses a workspace's message stamped with a brand.
+RADAR_NOT_IN_WORKSPACES: Final = ("A workspace's Radar takes no other brands' reviews yet: a workspace cannot name a "
+                                  'Radar brand. '
                                   'Save this without radar_brand, or send the request without X-Workspace-Id.')
 
 

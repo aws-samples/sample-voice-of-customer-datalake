@@ -32,6 +32,20 @@ Nothing runs and nothing costs until a brand is listed (or a legacy profile name
 
 Before the brand list, a source profile became a Radar source with **Radar source: tracks another brand** (`radar_brand`, `radar_domains` on the profile). Those profiles keep working: every brand a profile names is merged into the list by key (`origin: 'profile'` in `GET /radar/brands`, shown as "Source profile" under **Brands tracked**), its reviews keep routing to it, and the scan covers it. A profile brand that is also listed keeps the list's name and gains the profile's domains; loading one is not an unsaved change, and the next **Save brands** (after a real edit) writes it into the list. A **restricted** legacy profile still hides its brand from users who have not been granted that source. Source policies no longer offer the checkbox; a profile that already names a brand shows it read-only.
 
+## In a workspace
+
+Radar is each workspace's ([multi-workspace.md](multi-workspace.md), decision 13). Inside a workspace (the web app
+always enters one) the Radar page, the brand list and the settings are that workspace's: its admins add the brands to
+track, choose the cadence and start a scan, and every member reads what its scans found; nothing of another workspace,
+nor of the deployment's Radar, is shown. Each workspace's scan runs on its own schedule check, lock and brand states.
+
+Not yet in a workspace:
+
+- **Exa.** A workspace keeps no Exa key: the key routes answer 409 inside one, and its scans use web search and the
+  brands' feeds. The deployment's key is set outside any workspace.
+- **Reviews.** A workspace's scrapers, app connectors, uploads and source profiles cannot name a Radar brand yet, so
+  its Radar has no other brands' reviews: its news scan and releases only.
+
 ## How Radar data stays out of your numbers
 
 The brand of a review is decided at ingestion:
@@ -59,6 +73,10 @@ Table layout (`lambda/shared/radar_store.py`, `lambda/shared/radar_releases.py`)
 | `RADARSCAN#{brand}` | `STATE` | when the brand was last scanned (`last_scan_at`), where its query plan resumes (`query_cursor`) and the day each of its searches last ran (`since_by_step`: `<language>:<type>` such as `pl:features`, `own_domains`, `exa`) |
 | `SETTINGS#radar` | `config` | the scan settings (Administration → Sources → Radar) |
 | `SETTINGS#radar` | `brands` | the brand list `{brands: [{label, domains, language?, feed_urls?, search_terms?, exclude_terms?}], updated_at, updated_by}` (`lambda/shared/radar_brands.py`, `radar_brand_fields.py`, `radar_brand_terms.py`) |
+| `WS#{ws}#RADAR_OWNED` | `{partition}` | a workspace's list of the per-brand partitions it wrote (its hard delete reads it) |
+
+Inside a workspace every key above carries the workspace's prefix, `WS#{ws}#` (`lambda/shared/radar_keys.py`), and
+`SETTINGS#radar` also holds the workspace's own `version` row.
 
 The `voc-radar` table is in VocCoreStack: on demand, KMS, point-in-time recovery, retained on replacement, and protected by `-c protectData` (on by default) like the other data tables.
 
@@ -256,7 +274,9 @@ With no Radar source yet, the page explains how to add one. Admins get a **Set u
 
 ## Cost
 
-- Nothing runs without a Radar brand: the daily tick is two settings reads.
+- Nothing runs without a Radar brand: the deployment's daily check is two settings reads. The tick also lists the
+  active workspaces (one Query a page) and starts one scan run per workspace; a run with no brand, or not due yet,
+  costs a status read and its settings reads.
 - A scan costs at most `query_cap` paid calls (web searches, Exa searches at about $5 per 1,000, feed fetches), at most 5 model calls per brand (one per step with results), one embedding per item found, and at most 5 article page fetches.
 - The Exa key is a standard SSM parameter: no monthly cost.
 - Reviews of a Radar source cost the same enrichment as your own.

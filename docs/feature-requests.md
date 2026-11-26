@@ -279,8 +279,12 @@ Nothing more than the row stores: no status, totals or bookkeeping, so an admin'
 The copies are **opt-in**: none is written until an admin saves a `feature_requests` source profile (Administration → Privacy & access → Source policies) that permits one; under `redact` or `summary_only` none is written either, and an
 unreadable profile writes none. Opt-in because the copies hold reporters' and supporters' emails. Deleting a request or
 a +1 (`DELETE /feature-requests/{id}`, `DELETE …/supports/{id}`) does not delete its raw copies (the raw lake keeps
-history); an erasure by email removes the copies of that person's requests and +1s ([Erasure](#erasure)), and a
-whole-source erasure of `feature_requests` removes them all. Board requests are NOT queued into `voc-feedback`: they
+history); an erasure by email removes the copies of that person's requests and +1s that still exist
+([Erasure](#erasure)), and a whole-source erasure of `feature_requests` removes them all. The copies of a request or a
++1 deleted before an erasure by email are never reached by it: the erasure finds a row's raw folder through the row,
+which no longer exists (a gap older than 7.72.03; follow-up 3g2-orphan,
+[multi-workspace.md](multi-workspace.md)). Until it is built, a whole-source erasure of `feature_requests` is the one
+way to remove them. Board requests are NOT queued into `voc-feedback`: they
 are their own evidence source, with their own [enrichment](#enrichment).
 
 ## Enrichment
@@ -359,7 +363,7 @@ without a source, or with the source `feature_requests`, also reaches the boards
    email can recompute. The worker therefore **re-keys** it (`lambda/jobs/retention/boards_rekey.py`): one
    `TransactWriteItems` puts the de-identified +1 under a new random support id (same request, same field values,
    `is_reporter` and `created_at` kept, no `email` / `name`, `deidentified_at` set) and deletes the old `SUP#` row
-   (only while it still exists). The request's totals are then recomputed: a de-identified +1 still counts as one
+   (only while it still exists and, since 7.72.03, is still the row as read: its `updated_at` unchanged). The request's totals are then recomputed: a de-identified +1 still counts as one
    supporter, so the +1 count does not drop. The request's title, description and fields stay: they are the
    board's shared content. The request row itself stores no support id (its own id is random).
 
@@ -379,7 +383,22 @@ request also leaves its own record of each field it removes, `{request id}#repor
 `{request id}#contact#{token}`), so the artifacts that cite it are marked as for any erased request. A contact-only
 match deletes the row's raw copies (every version), the other person's submission among them (a raw object is
 write-once and cannot lose one field), and removes that one field, only while it still holds the address; the row's
-id and everything else stay. A +1 whose own address and contact are both the erased one is re-keyed without either.
+id and everything else stay. The raw copies go first, whatever the removal then does: they hold the version the scan
+matched, which names the address. So for a +1 or a request whose contact changed since the scan the whole folder still
+goes, the versions the edit wrote, which no longer name the address, included: the supporter's or reporter's own
+submission is gone from the archive while the row keeps it, and the row is not counted. The contact-only record
+stands for that attempt and covers those copies. A +1 whose own address and contact are both the erased one is
+re-keyed without either; since 7.72.03 the contact is judged on the +1 as read again, so one whose contact changed
+since the scan keeps its new contact, and one re-keyed for its own address whose contact became the address loses that
+too. The re-key holds only while the +1 is as read (its `updated_at`): an edit landing between the read and the write
+is read again and tried again, at most 3 times, then the job fails and an admin runs it again. The edit routes write,
+then archive (a +1's edit, a request's edit), so since 7.72.03 every matched row's raw folder is swept once more
+after its re-key, contact removal or de-identify, whether that change held or not (a later edit, or a delete, may
+have made it not hold after an earlier edit archived). A later edit of a re-keyed +1's old id is refused (404), and a
+request edited after its de-identify archives the row without its reporter. What remains, and only this: (a) an edit
+whose write lands before the change (or its attempt) and whose archive lands after the second sweep; (b) a version
+archived before a job that crashed between its change and its second sweep. Either copy names the address and no
+rerun finds it ([multi-workspace.md](multi-workspace.md), follow-up 3g2-raw).
 
 A promote makes each supporter and each +1's contact a participant (above; a request's own contact is never
 promoted). Since 7.72.00 the same erasure by email, after the boards, also erases the participant the address names,

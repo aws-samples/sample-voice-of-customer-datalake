@@ -54,7 +54,7 @@ from shared.radar_reads import SortRange, partition_query
 from shared.radar_release_merge import OFFICIAL, collapse, feature_key, padded_titles, same_name
 from shared.radar_store import query_all
 from shared.scoped_keys import scoped_pk
-from shared.ws_repo import WorkspaceScope
+from shared.ws_repo import WorkspaceScope, ws_table
 
 __all__ = [
     'ReleaseCandidate',
@@ -108,8 +108,9 @@ def _found_via(*sources: object) -> list[str]:
     return [via for via in FOUND_VIA if via in seen] or list(LEGACY_FOUND_VIA)
 
 
-def release_pk(brand: str) -> str:
-    return f'RELEASE#{brand}'
+def release_pk(brand: str, workspace: WorkspaceScope | None = None) -> str:
+    """The partition of ``brand``'s release timeline: the deployment's, or the workspace's ``WS#{ws}#RELEASE#…``."""
+    return scoped_pk(workspace, f'RELEASE#{brand}')
 
 
 def source_kind(urls: Iterable[str], domains: Iterable[str]) -> str:
@@ -183,10 +184,11 @@ def _merged(row: dict[str, Any], candidate: ReleaseCandidate, now_iso: str) -> d
     return merged
 
 
-def _new_record(candidate: ReleaseCandidate, vector: list[float], day: date, now_iso: str) -> dict[str, Any]:
+def _new_record(candidate: ReleaseCandidate, vector: list[float], day: date, now_iso: str,
+                workspace: WorkspaceScope | None = None) -> dict[str, Any]:
     digest = hashlib.sha256(f'{candidate.brand}\n{candidate.feature}\n{day.isoformat()}'.encode()).hexdigest()[:16]
     return {
-        'pk': release_pk(candidate.brand), 'sk': f'{day.isoformat()}#{digest}',
+        'pk': release_pk(candidate.brand, workspace), 'sk': f'{day.isoformat()}#{digest}',
         'release_id': digest, 'brand': candidate.brand, 'brand_label': candidate.brand_label,
         'feature': candidate.feature, 'summary': candidate.summary,
         'release_date': day.isoformat(), 'date_approximate': candidate.release_date is None,
@@ -198,24 +200,39 @@ def _new_record(candidate: ReleaseCandidate, vector: list[float], day: date, now
     }
 
 
-def store_candidate(table: Any, candidate: ReleaseCandidate, vector: list[float], today: date, now_iso: str) -> str:
+def store_candidate(table: Any, candidate: ReleaseCandidate, vector: list[float], today: date, now_iso: str,
+                    workspace: WorkspaceScope | None = None) -> str:
     """File ``candidate`` (its feature's unit ``vector``): ``'merged'`` into a record of the same feature name
-    (any date), else one citing the same page, else a near-duplicate; else ``'added'``."""
+    (any date), else one citing the same page, else a near-duplicate; else ``'added'``. With ``workspace``, in the
+    workspace's own timeline, read and written through the layer."""
     day = date.fromisoformat(candidate.release_date) if candidate.release_date else today
     # The brand's whole timeline (a few hundred rows at most), read once: a record of the SAME
     # NAME is the feature at any date (radar_release_merge), so it is matched first.
-    timeline = query_all(table, Key('pk').eq(release_pk(candidate.brand)))
+    if workspace is None:
+        timeline = query_all(table, Key('pk').eq(release_pk(candidate.brand)))
+    else:
+        timeline = dynamo_paging.query_all(
+            partition_query(table, workspace, release_pk(candidate.brand, workspace), None), {})
     named = same_name(timeline, candidate.feature)
     # An undated candidate has no day to window on: "today" is only when we found
     # it, so it is matched against the brand's whole timeline and joins the dated
     # record of the same feature instead of filing a scan-day duplicate.
     rows = _nearby(timeline, day) if candidate.release_date else timeline
     match = dict(named) if named is not None else (_same_page(rows, candidate) or _best_match(rows, vector))
+    writer = table if workspace is None else ws_table(workspace, table)
     if match is not None:
-        table.put_item(Item=_merged(match, candidate, now_iso))
+        _put_release(writer, _merged(match, candidate, now_iso), workspace)
         return 'merged'
-    table.put_item(Item=_new_record(candidate, vector, day, now_iso))
+    _put_release(writer, _new_record(candidate, vector, day, now_iso, workspace), workspace)
     return 'added'
+
+
+def _put_release(writer: Any, item: dict[str, Any], workspace: WorkspaceScope | None) -> None:
+    """The deployment's ``put_item(Item=…)`` as before; a workspace's through its view, which checks the key."""
+    if workspace is None:
+        writer.put_item(Item=item)
+    else:
+        writer.put_item(item)
 
 
 def public_release(row: dict[str, Any], match: BrandMatch | None = None) -> dict[str, Any]:
@@ -247,7 +264,7 @@ def _without_hub_titles(views: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _releases_since(table: Any, brand: str, start: date, workspace: WorkspaceScope | None) -> Any:
     """The query of ``brand``'s records filed since ``start`` (``workspace``'s with one)."""
-    return partition_query(table, workspace, scoped_pk(workspace, release_pk(brand)), SortRange(start.isoformat()))
+    return partition_query(table, workspace, release_pk(brand, workspace), SortRange(start.isoformat()))
 
 
 def list_releases(table: Any, brand: str, start: date, limit: int, match: BrandMatch | None = None,

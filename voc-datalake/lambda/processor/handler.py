@@ -16,7 +16,7 @@ Two paths (docs/multi-workspace.md, phase 2), chosen per message by ``workspace_
   that classify it, the dimensions, and the source profile whose PII policy, raw-copy policy, defaults and tags
   apply (a workspace that saved none of a kind gets the built-in defaults, never the deployment's rows). A message
   stamped with a Radar brand (``radar_brand_key``) is refused (the record fails, and after its retries the queue's
-  DLQ holds it): Radar is not keyed by workspace yet (phase 3), and a workspace's review is never written to the
+  DLQ holds it): a workspace's Radar takes no reviews yet (phase 3), and a workspace's review is never written to the
   deployment's voc-radar. A deployment source profile's ``radar_brand`` claims no workspace message: that is the
   deployment's Radar setting, so such a message is stored as the workspace's own feedback.
 * A message that names none is stored deployment-wide exactly as before (``SOURCE#{source}``, ``LOGS#…``), with
@@ -985,7 +985,7 @@ class WorkspaceRadarRefusedError(Exception):
     """A workspace's message stamped with a Radar brand (``radar_brand_key``); the record fails (SQS → DLQ after
     its retries).
 
-    Radar is not keyed by workspace yet (docs/multi-workspace.md, phase 3): storing the review in the
+    a workspace's Radar takes no reviews yet (docs/multi-workspace.md, phase 3): storing the review in the
     deployment's voc-radar would put a workspace's data where every workspace's Radar reads, and storing
     it as the workspace's own feedback would count the brand its scraper or connector tracks as its own. A
     message claimed only by a deployment source profile's ``radar_brand`` is not refused: it is stored as the
@@ -1039,7 +1039,7 @@ def process_radar_record(raw_record: dict, brand_label: str) -> dict:
 def _radar_result(raw_record: dict, scope: WorkspaceScope | None) -> dict | None:
     """The record's Radar outcome when Radar claims it, else None (it goes to voc-feedback).
 
-    Radar is not keyed by workspace (phase 3), so a workspace's record is never claimed by it:
+    a workspace's Radar takes no reviews yet (phase 3), so a workspace's record is never claimed by it:
 
     * one that carries its own stamp (``radar_brand_key``: its scraper, connector or page named a Radar brand)
       raises ``WorkspaceRadarRefusedError`` (counted): never written to the deployment's voc-radar, nor as the
@@ -1051,7 +1051,7 @@ def _radar_result(raw_record: dict, scope: WorkspaceScope | None) -> dict | None
     if scope is not None:
         if raw_record.get('radar_brand_key'):
             count_metric("WorkspaceRadarRefused")
-            raise WorkspaceRadarRefusedError('Radar is not keyed by workspace yet')
+            raise WorkspaceRadarRefusedError("a workspace's Radar takes no reviews yet")
         return None
     radar_brand = radar_brand_for(raw_record)
     if not radar_brand:

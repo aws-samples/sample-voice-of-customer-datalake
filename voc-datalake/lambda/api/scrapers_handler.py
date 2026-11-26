@@ -57,7 +57,7 @@ workspace (409 `PLUGIN_NOT_ENABLED` otherwise, shared/workspace_plugin_settings.
 `WS#{ws}#PLUGIN_CONFIG` / `webscraper` in voc-aggregates (decision 19,
 shared/workspace_plugin_store.py and shared/plugin_configs.py; the same limits as in the
 shared secret), which the webscraper's run in that workspace reads, and
-a scraper naming a Radar brand is refused (400: Radar is not keyed by workspace yet);
+a scraper naming a Radar brand is refused (400: a workspace's Radar takes no reviews yet);
 a run's invoke payload carries the RESOLVED workspace (`workspace_payload`, never a body
 field) and its run rows are `WS#{ws}#SCRAPER_RUN#{id}` (shared/run_rows.py). Without the
 header, exactly as before.
@@ -461,7 +461,7 @@ def save_scraper():
     mode = config_write_guard.write_mode(body)
     base = config_write_guard.base_etag(body)
     scraper = _validated_scraper(body, _request.scope())
-    # In a workspace no Radar brand (Radar is not keyed by workspace: its messages would be refused).
+    # In a workspace no Radar brand (a workspace's Radar takes no reviews yet: its messages would be refused).
     _request.refuse_radar_brand(scraper.get('radar_brand'))
 
     try:

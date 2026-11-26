@@ -9,6 +9,7 @@ from moto import mock_aws
 
 from jobs.radar_scan import extract, handler, scan, windows
 from shared.radar_brands import RadarBrand
+from shared.radar_keys import scan_key
 from shared.radar_releases import ReleaseCandidate, list_releases, source_kind, store_candidate
 from shared.test.radar_fixtures import radar_pk_sk_table
 
@@ -90,13 +91,13 @@ class TestHandler:
 
     def test_a_scheduled_tick_skips_until_the_cadence_is_due(self, world):
         radar, _, search, _ = world
-        radar.put_item(Item={**handler.LAST_SCAN_KEY, 'finished_at': datetime.now(UTC).isoformat()})
+        radar.put_item(Item={**scan_key('LAST'), 'finished_at': datetime.now(UTC).isoformat()})
         assert handler.handle_event({'mode': 'scheduled'}, _context())['reason'] == 'not_due'
         search.assert_not_called()
 
     def test_a_second_scan_while_one_runs_is_refused(self, world):
         radar, _, _, _ = world
-        radar.put_item(Item={**handler.LOCK_KEY, 'expires_at': int(datetime.now(UTC).timestamp()) + 600})
+        radar.put_item(Item={**scan_key('LOCK'), 'expires_at': int(datetime.now(UTC).timestamp()) + 600})
         assert handler.handle_event({'mode': 'manual'}, _context())['reason'] == 'already_running'
 
     def test_without_web_search_the_scan_records_why(self, world):
@@ -104,7 +105,7 @@ class TestHandler:
         with patch.object(handler, 'is_web_search_configured', return_value=False):
             outcome = handler.handle_event({'mode': 'manual'}, _context())
         assert outcome['reason'] == 'web_search_unavailable'
-        assert radar.get_item(Key=handler.LAST_SCAN_KEY)['Item']['status'] == 'skipped'
+        assert radar.get_item(Key=scan_key('LAST'))['Item']['status'] == 'skipped'
 
     def test_a_query_asks_for_90_days_until_it_has_run_then_only_since_its_last_run(self, world):
         ninety_days_ago = (datetime.now(UTC) - timedelta(days=90)).date().isoformat()

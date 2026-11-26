@@ -301,7 +301,7 @@ describe('the voc-workspace-delete job', () => {
       { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys([`WS#${ONE}#*`]) }]);
   });
 
-  it('voc-radar: reads and batch deletes of one workspace\'s partitions only (its Radar settings)', () => {
+  it('voc-radar: reads and batch deletes of one workspace\'s partitions only (its Radar rows)', () => {
     expect(on('Radar')).toStrictEqual([
       { actions: ['dynamodb:BatchWriteItem', 'dynamodb:GetItem', 'dynamodb:Query'], index: null,
         condition: keys([`WS#${ONE}#*`]) },
