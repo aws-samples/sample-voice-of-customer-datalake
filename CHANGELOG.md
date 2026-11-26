@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.72.02] - 2026-11-26
+
+Tests only: the feedback forms' 14 signed-in routes (`lambda/api/feedback_form_handler.py`, through `_request_scope`
+and the same `RequestWorkspace` object) leave the cross-workspace suite's pending list with their two-workspace cases.
+Pending 422 -> 408 (phase 2: 85 -> 71); the four public routes (config, iframe, submit, events) stay pending.
+
+### Changed
+- `feedback_form_handler.py` joins `INSTANCE_RESOLVER_FILES`; a forms world seeds two forms in each workspace (the
+  second made by the import wizard), their `FORM#{id}` lookup rows, and the deployment's forms (copies under A's two
+  ids, two of its own).
+- Check 3 (no header) of a write that refuses a workspace's ids deployment-wide (`_refuse_a_workspaces_id`: the
+  form's update, delete, test link, test-responses delete and import) sends the deployment's own ids
+  (`RouteCase.deployment_ids`) and proves A's ids are refused there exactly as unknown ones, answering nothing of A's.
+  A meta-test takes the refusal out and expects check 3 to fail for each such route, so the proof is not vacuous.
+  The import, the test link and deleting test responses are a deployment admin's without the header (403 otherwise).
+  The import's case is a dry run: its refusals and reads; its writes stay with `test_feedback_form_import.py`.
+
+### Known gap (reported, not fixed here)
+- `DELETE /feedback-forms/<form_id>` without the header answers 404 for a workspace's form id and the deployment's
+  idempotent 200 for an unknown one, so it tells another workspace's ids from unknown ones (nothing read or changed).
+  Its case pins the two answers (`RouteCase.known_gap`, `KnownGap`): any other pair fails check 3, including the day
+  the route answers both alike, when the note is to go.
+
 ## [7.72.01] - 2026-11-26
 
 Tests only: the feedback edits' two routes leave the cross-workspace suite's pending list with their two-workspace

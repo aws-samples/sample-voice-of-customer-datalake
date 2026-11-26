@@ -77,6 +77,7 @@ from cross_workspace_worlds import (
     WS_A,
     WS_B,
     WS_UNKNOWN,
+    KnownGap,
     RouteCase,
     World,
     table_snapshot,
@@ -109,7 +110,7 @@ RESOLVERS: dict[str, str] = {RESOLVER: RESOLVER_MODULE, 'request_workspace': 'sh
 #: routes' cases and takes them off cross_workspace_pending.py (one route family a slice). A file not named here
 #: resolves through its instance unseen and stays pending, as before this list existed; the list only grows, until
 #: every file using the instance is in it and it can go.
-INSTANCE_RESOLVER_FILES = frozenset({'feedback_edit_handler.py'})
+INSTANCE_RESOLVER_FILES = frozenset({'feedback_edit_handler.py', 'feedback_form_handler.py'})
 MISSING_HEADER = 'The X-Workspace-Id header is required'
 #: Calls that write: one of them before the resolution means the route may act before it knows the workspace.
 WRITE_CALLS = frozenset({'put_item', 'update_item', 'delete_item', 'transact_write_items', 'batch_writer',
@@ -655,6 +656,10 @@ def case_problems(route: str, case: RouteCase) -> list[str]:
             problems.append('no_ids on a request that carries ids')
     elif case.ids or not case.no_ids.strip():
         problems.append('a request with no id but the header says why in no_ids, and has no ids')
+    if case.deployment_ids is not None and (set(case.deployment_ids) != named or not case.without_a_workspace):
+        problems.append(f'deployment_ids must name {sorted(named)}, on a route kept without a workspace')
+    if case.known_gap is not None and (case.deployment_ids is None or not case.known_gap.reason.strip()):
+        problems.append('known_gap only on a route with deployment_ids, with its reason')
     return problems
 
 
@@ -679,8 +684,16 @@ _ROLE_IDS = {'A': {'sub': 'a'}, 'B': {'sub': f'{B_MARK}-b'}, UNKNOWN: {'sub': 'u
                body={'role': 'editor'}), 'shared'),
     (RouteCase(no_ids='none', shared={'sub': 'sub-vic'}, body={'role': 'editor'}, literals={'editor': 'a role'}),
      "'sub-vic' is neither"),
+    (RouteCase(ids=_ROLE_IDS, without_a_workspace='as before', deployment_ids={'sub': 'd', 'other': 'e'}),
+     'deployment_ids must name'),
+    (RouteCase(ids=_ROLE_IDS, deployment_ids={'sub': 'd'}), 'deployment_ids must name'),
+    (RouteCase(ids=_ROLE_IDS, without_a_workspace='as before', known_gap=KnownGap('open', (404, {}), (200, {}))),
+     'known_gap only'),
+    (RouteCase(ids=_ROLE_IDS, without_a_workspace='as before', deployment_ids={'sub': 'd'},
+               known_gap=KnownGap(' ', (404, {}), (200, {}))), 'known_gap only'),
 ], ids=['an-id-as-a-literal', 'a-number', 'a-placeholder-not-in-ids', 'ids-and-no-ids', 'path-ids-missing',
-        'a-shared-name-that-is-no-path-parameter', 'a-shared-value-with-no-reason'])
+        'a-shared-name-that-is-no-path-parameter', 'a-shared-value-with-no-reason', 'deployment-ids-naming-more',
+        'deployment-ids-on-a-route-not-kept', 'a-gap-without-deployment-ids', 'a-gap-without-a-reason'])
 def test_a_case_that_does_not_name_its_ids_is_caught(case, problem):
     assert [p for p in case_problems(_ROLE_ROUTE, case) if problem in p] != []
 
@@ -772,19 +785,34 @@ def _workspace_rows() -> dict[str, list[str]]:
 def check_missing_header(world: World, case: RouteCase, route: str, caller: dict = ADA) -> None:
     """Check 3: no header -> the 400 of shared/workspace.py, nothing changed; for a route that keeps the deployment's
     row without a workspace, its normal status (403 for a caller outside the deployment's ``admins`` when the case
-    says the route is theirs without a workspace), no row of A or B changed, nothing of A's or B's answered."""
+    says the route is theirs without a workspace), no row of A or B changed, nothing of A's or B's answered; for one
+    that refuses a workspace's ids there (``deployment_ids``), that request names the deployment's own row, and A's
+    ids are refused exactly as unknown ones, nothing changed."""
     if not case.without_a_workspace:
         answer = _refused(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=caller)
         assert answer == (400, {'success': False, 'error': MISSING_HEADER}), f'{route}: {answer}'
         return
     before = _workspace_rows()
-    status, body = _send(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=caller)
+    ids = case.deployment_ids if case.deployment_ids is not None else case.ids.get('A', {})
+    status, body = _send(world, case, route, ws=None, ids=ids, caller=caller)
     in_admins = 'admins' in get_caller_groups({'requestContext': {'authorizer': {'claims': caller}}})
     expected = 403 if case.deployment_admins_without_a_workspace and not in_admins else case.ok_status
     assert status == expected, f'{route} without a workspace: {status} {body}'
     assert _workspace_rows() == before, f'{route} without a workspace changed a workspace row'
     assert not _holds_b(body), f'{route} answered with B data without a workspace: {body}'
     assert not _holds_a(body), f'{route} answered with A data without a workspace: {body}'
+    if case.deployment_ids is not None:
+        # A route that refuses a workspace's ids deployment-wide: A's are refused there exactly as unknown ones.
+        answer = _refused(world, case, route, ws=None, ids=case.ids['A'], caller=caller)
+        assert not _holds_a(answer[1]), f"{route} answered A's ids with A data without a workspace: {answer}"
+        unknown = _refused(world, case, route, ws=None, ids=case.ids[UNKNOWN], caller=caller)
+        if case.known_gap is not None:
+            gap = case.known_gap
+            assert (answer, unknown) == (gap.a_answer, gap.unknown_answer), (
+                f"{route} without a workspace answers A's ids {answer} and unknown ones {unknown}, not its known gap"
+                + (': it is closed, drop known_gap' if answer == unknown else ''))
+        else:
+            assert answer == unknown, f"{route} without a workspace tells A's ids from unknown ones: {answer}"
 
 
 def check_inside_a(world: World, case: RouteCase, route: str) -> None:
@@ -1003,6 +1031,52 @@ def test_an_answer_that_tells_b_ids_from_unknown_ones_is_caught(lambda_context):
             patch.object(workspaces_handler, 'change_role', tell_apart), \
             pytest.raises(AssertionError, match='tells the ids of B from unknown ones'):
         check_other_workspace_ids(world, CASES[_ROLE], _ROLE[1])
+
+
+_REFUSING = sorted(key for key, case in CASES.items() if case.deployment_ids is not None)
+
+
+def test_every_route_that_refuses_a_workspaces_id_is_a_form_route():
+    """The proof below patches the forms' refusal: a route of another file with ``deployment_ids`` needs its own."""
+    assert _REFUSING
+    assert {file for file, _ in _REFUSING} == {'feedback_form_handler.py'}
+
+
+@pytest.mark.parametrize(('file', 'route'), _REFUSING)
+def test_a_deployment_write_that_takes_a_workspaces_id_is_caught(file, route, lambda_context):
+    """Without ``_refuse_a_workspaces_id`` a deployment-wide write takes A's id (the deployment's copy there): check 3
+    fails, so its proof that A's ids are refused as unknown ones is not vacuous (every case's A ids have a copy)."""
+    import feedback_form_handler
+
+    with WORLDS[file](lambda_context) as world, \
+            patch.object(feedback_form_handler, '_refuse_a_workspaces_id', lambda *_args: None), \
+            pytest.raises(AssertionError, match=r"changed a table|tells A's ids from unknown ones|not its known gap"):
+        check_missing_header(world, CASES[(file, route)], route, ADA)
+
+
+@pytest.mark.parametrize(('refusal', 'found'), [
+    (f'Form of {WS_A}', 'with A data'),
+    ('Gone', 'not its known gap'),
+], ids=['naming-a', 'another-answer'])
+def test_a_known_gap_answering_otherwise_is_caught(refusal, found, lambda_context):
+    """The form's delete without the header: any other refusal of A's id than its known gap's fails check 3 (a
+    pinned pair, not "any two answers that differ"); one that names A fails as A data."""
+    import feedback_form_handler
+    from shared.exceptions import NotFoundError
+
+    route = 'DELETE /feedback-forms/<form_id>'
+    case = CASES[('feedback_form_handler.py', route)]
+    real = feedback_form_handler._refuse_a_workspaces_id
+
+    def answering_otherwise(form_id: str, failure_message: str) -> None:
+        if form_id == case.ids['A']['form_id']:
+            raise NotFoundError(refusal)
+        real(form_id, failure_message)
+
+    with WORLDS['feedback_form_handler.py'](lambda_context) as world, \
+            patch.object(feedback_form_handler, '_refuse_a_workspaces_id', answering_otherwise), \
+            pytest.raises(AssertionError, match=found):
+        check_missing_header(world, case, route, ADA)
 
 
 _IMPORT = 'from shared.workspace import resolve_workspace\n\n\n'
