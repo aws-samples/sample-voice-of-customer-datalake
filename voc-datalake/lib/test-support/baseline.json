@@ -187,7 +187,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "4825c96a42d432990cc7c1ca37f8993dd25016155de12a4c4fd0da1cb0350800",
+      "templateSha256": "79ebabad8dbbe8d51271b3e8e879c6095242a0ef842b46be11168e136a919311",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -356,7 +356,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "d86db2e22f981096c0d0adb825bb92f709a20db90cdde32285eb459d7a5fa0ff",
+      "templateSha256": "cfc68c59a0cb8d283ac9a66eb9decd120e8b8a6e62892601eb51939a32a1100e",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-adoption-rollup-schedule-<AWS::AccountId>-<AWS::Region>",

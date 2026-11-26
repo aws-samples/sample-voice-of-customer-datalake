@@ -235,7 +235,7 @@ def test_the_conversations_entry_reads_keys_alone_and_never_the_deployments_part
 TABLE_GRANTS: Final = {'ssm': 'credentials', 'feedback': 'feedback', 'aggregates': 'aggregates',
                        'watermarks': 'watermarks', 'memory': 'memory', 'bucket': 'objects', 'workspaces': 'controlRows',
                        'radar': 'radar', 'projects': 'projects', 'docshares': 'docshares',
-                       'participants': 'participants', 'conversations': 'conversations'}
+                       'participants': 'participants', 'conversations': 'conversations', 'agents': 'agents'}
 
 
 def _cdk_grants() -> dict[str, list[str]]:

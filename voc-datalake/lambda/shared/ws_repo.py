@@ -82,6 +82,10 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#CONVERSANTS  sk {sub} (who has kept a conversation there, shared/conversations.py)
     voc-memory      pk WS#{ws}#MEM#company  sk MEM#{memory_id}   gsi1pk WS#{ws}#MEMSTATUS#{scope}#{status}
                     pk WS#{ws}#MEMEVT#{memory_id}, WS#{ws}#MEMCURSOR, WS#{ws}#MEMIMPORT (shared/memory_store.py)
+    voc-agents      pk WS#{ws}#AGENT#{agent id}  sk META, RUN#{run id}, LOG#{at}#{n}   gsi1pk WS#{ws}#AGENTS
+                    pk WS#{ws}#WORKFLOW#{workflow id}  sk CURRENT, REV#{nnnnnn}       gsi1pk WS#{ws}#WORKFLOWS
+                    pk WS#{ws}#RUN#{run id}  sk EVT#{seq}   (gsi1pk WS#{ws}#RUNS_ACTIVE on an active run)
+                    pk WS#{ws}#AGENT_REGISTRY  sk AGENT#{id}, WORKFLOW#{id} (7.80.00, ``agent_*_pk``, ``workflow_pk``)
     voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query``; META's status by
                     ``workspace_is_active``; the rows ``WorkspaceControlRows`` deletes (its docstring)
     voc-projects    pk PROJECT_ID#{project id}  sk CLAIM (deployment-wide: ``claim_project_id``, ``project_claim``,
@@ -108,6 +112,7 @@ from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
 from shared import usage_meter
+from shared.agent_ids import AGENT_ID_RE, RUN_ID_RE, WORKFLOW_ID_RE
 from shared.aws import S3_MISSING_KEY_CODES, consistent_item, is_conditional_check_failure
 from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all, unprocessed_backoff
 from shared.dynamo_paging import iter_query
@@ -137,6 +142,10 @@ __all__ = [
     'WorkspaceStatusCheck',
     'WorkspaceTable',
     'WorkspaceTombstones',
+    'agent_pk',
+    'agent_registry_pk',
+    'agent_run_pk',
+    'agents_index_pk',
     'category_pk',
     'channel_pk',
     'claim_project_id',
@@ -186,6 +195,7 @@ __all__ = [
     'user_context_owners_pk',
     'watermark_directory_key',
     'watermark_key',
+    'workflow_pk',
     'ws_table',
 ]
 
@@ -529,6 +539,50 @@ def memory_import_pk(scope: WorkspaceScope) -> str:
 def memory_event_pk(scope: WorkspaceScope, memory_id: str) -> str:
     """One memory's audit events (no content, no subs): ``WS#{ws}#MEMEVT#{memory id}``."""
     return scope.key('MEMEVT', memory_id)
+
+
+def _agent_part(value: object, shape: re.Pattern[str]) -> str:
+    """``value`` when it is an id of ``shape`` (shared/agent_ids.py); ValueError otherwise, before any key is built."""
+    if not isinstance(value, str) or not shape.fullmatch(value):
+        raise ValueError('not an agent, workflow or run id')
+    return value
+
+
+def agent_pk(scope: WorkspaceScope, agent_id: str) -> str:
+    """One agent's partition in voc-agents (7.80.00, shared/agents_store.py ``agent_key``): its ``META``, its runs
+    (``RUN#``) and its pause and resume history (``LOG#``): ``WS#{ws}#AGENT#{agent id}``."""
+    return scope.key('AGENT', _agent_part(agent_id, AGENT_ID_RE))
+
+
+def workflow_pk(scope: WorkspaceScope, workflow_id: str) -> str:
+    """One stored workflow's partition (its ``CURRENT`` row and its ``REV#`` revisions): ``WS#{ws}#WORKFLOW#{id}``.
+    The built-in ``wf_default`` is never stored, so it has none."""
+    return scope.key('WORKFLOW', _agent_part(workflow_id, WORKFLOW_ID_RE))
+
+
+def agent_run_pk(scope: WorkspaceScope, run_id: str) -> str:
+    """One agent run's journal (``EVT#`` rows): ``WS#{ws}#RUN#{run id}``."""
+    return scope.key('RUN', _agent_part(run_id, RUN_ID_RE))
+
+
+#: The listing partitions of voc-agents' ``gsi1-by-agents-listing`` a workspace's rows carry (``agents_index_pk``).
+AGENT_LISTINGS: Final = ('AGENTS', 'WORKFLOWS', 'RUNS_ACTIVE')
+
+
+def agents_index_pk(scope: WorkspaceScope, listing: str) -> str:
+    """One listing partition of voc-agents' ``gsi1-by-agents-listing`` in the workspace: its agents
+    (``WS#{ws}#AGENTS``), its workflows' current rows (``#WORKFLOWS``) or its active runs (``#RUNS_ACTIVE``)."""
+    if listing not in AGENT_LISTINGS:
+        raise ValueError('not a listing of the agents index')
+    return scope.key(listing)
+
+
+def agent_registry_pk(scope: WorkspaceScope) -> str:
+    """The workspace's registry of its agents' partitions in voc-agents (7.80.00): one row per agent
+    (``AGENT#{id}``) or workflow (``WORKFLOW#{id}``), written in the same transaction as its first row, so the export
+    and the hard delete find every partition with strongly consistent Queries, never the eventually consistent
+    listing index: ``WS#{ws}#AGENT_REGISTRY``."""
+    return scope.key('AGENT_REGISTRY')
 
 
 def plugin_config_pk(scope: WorkspaceScope) -> str:

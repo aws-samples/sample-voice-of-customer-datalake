@@ -184,12 +184,22 @@ function queryParameters(query: ApiCall['query']): Record<string, string> | null
  * the caller's own request). No Authorization header (the domain function must not see a token) and no
  * Accept-Encoding (this module decodes plain JSON).
  */
-function proxyHeaders(claims: CallerClaims): Record<string, string> {
-  const workspace = claims['voc:workspace'];
+function proxyHeaders(call: ApiCall, claims: CallerClaims): Record<string, string> {
+  const workspace = deploymentScoped(call) ? undefined : claims['voc:workspace'];
   return {
     'Content-Type': 'application/json',
     ...(typeof workspace === 'string' ? { 'X-Workspace-Id': workspace } : {}),
   };
+}
+
+/**
+ * Whether a call goes without the workspace header (7.80.00, docs/multi-workspace.md 3g3-a): the agents API's calls
+ * but a plan's. Since 7.80.00 its agents and workflows routes act in the workspace a request names, while the web
+ * app and the assistant keep the deployment's agents until a workspace's Agents page ships (3g3-ui-agents); its
+ * engineering routes read no header anyway, and a plan (the approver's own) keeps its workspace.
+ */
+function deploymentScoped(call: ApiCall): boolean {
+  return call.fn === 'agents' && !call.path.startsWith('/agents/plans');
 }
 
 /** The synthetic REST proxy event, exported for the shape tests. */
@@ -203,7 +213,7 @@ export function buildProxyEvent(call: ApiCall, claims: CallerClaims): Record<str
       ? { ...call.pathParameters }
       : null,
     body: call.body === undefined ? null : JSON.stringify(call.body),
-    headers: proxyHeaders(claims),
+    headers: proxyHeaders(call, claims),
     requestContext: {
       authorizer: { claims: forwardedClaims(claims) },
       stage: 'v1',

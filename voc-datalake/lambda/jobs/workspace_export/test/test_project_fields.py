@@ -51,6 +51,8 @@ NOT_PROJECT_ROW_WRITERS: Final = {
                                                'projected; writes only its ADOPTION#ROLLUP items in voc-aggregates'),
     'lambda/jobs/workspace_export/projects.py': 'the export itself: reads only (its cursor keys look like writes)',
     'lambda/shared/assist_jobs.py': 'assist job rows in voc-jobs (left out of project_jobs)',
+    'lambda/api/agents_handler.py': ("the agents API (7.80.00): reads a PRD's project META, projected, to refuse one "
+                                     "that is not the deployment's; writes no project row"),
     'lambda/shared/voice_session_routes.py': "a voice session's transcript job, an assist job row (keys only)",
     'lambda/shared/ws_repo.py': "the workspace layer: a project id's claim and a link's routing row",
     'lambda/jobs/retention/lineage.py': ("an erasure's marks: rewrites a row's id lists and its erased_evidence, both "

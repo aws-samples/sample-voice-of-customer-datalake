@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 import readiness_fakes
-from agents_handler_fixtures import ADMIN, USER
+from agents_handler_fixtures import ADMIN, USER, deployment_projects
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 
@@ -54,6 +54,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, Start]]:
                 'pk': 'CONNECTIONS#default', 'sk': f'CONNECTION#{connection}', 'connection_id': connection,
                 'host': host, 'repository': repository, 'default_branch': 'main', 'credential_set': True,
                 'version': 1, **({'repository_private': True} if private else {})})
+        deployment_projects(agents_env, monkeypatch, 'proj_1')
         yield agents_env, client
 
 
@@ -74,9 +75,11 @@ def test_an_admin_listing_seeds_the_engineering_agents_beside_autonomous_product
     agents = _seeded(lambda_context)
     assert sorted(agents) == ['Autonomous Product', 'Bug fixer', 'Feature builder', 'Issue triage']
     assert (agents['Bug fixer']['enabled'], agents['Bug fixer']['engineering']['feedback_type']) == (False, 'bug')
-    # Inside a workspace the page lists them too: agents are the deployment's until phase 3g3.
-    in_workspace = _seeded(lambda_context, headers={'X-Workspace-Id': 'ws_0123456789abcdef'})
-    assert sorted(in_workspace) == sorted(agents)
+    # Since 7.80.00 (3g3-a) a request naming a workspace lists that workspace's own agents (none is seeded there, and
+    # the engineering agents stay the deployment's until 3g3-c: api/test/test_agents_workspace.py), so a header naming
+    # no workspace gets the one 404, never the deployment's agents.
+    status, refused = _call(lambda_context, 'GET', '/agents', headers={'X-Workspace-Id': 'ws_0123456789abcdef'})
+    assert (status, refused['error']) == (404, 'Workspace not found')
 
 
 def test_the_list_orders_the_seeded_engineering_agents_as_the_loop_runs(lambda_context: Any) -> None:
@@ -205,6 +208,48 @@ def test_a_feature_agent_builds_from_an_issue_or_a_prd(lambda_context: Any, env:
     assert (sent['goal'], sent['prd'], 'issue' in sent) == (
         'Build the feature the PRD prd_1 of project proj_1 describes.', {'project_id': 'proj_1',
                                                                          'document_id': 'prd_1'}, False)
+
+
+WORKSPACE_PROJECT = 'proj_ws'
+
+
+@pytest.mark.parametrize('project_id', ['proj_none', WORKSPACE_PROJECT, 'proj_gone', 'proj_deleting',
+                                        'proj_deleted', 'company_personas'])
+def test_a_prd_is_built_only_from_one_of_the_deployments_projects(lambda_context: Any, env: tuple[Any, Start],
+                                                                  project_id: str) -> None:
+    """7.80.00 (3g3-a): the engineering agents are the deployment's, so the PRD they build is one of the
+    deployment's projects' (its ``PROJECT#{id}`` ``META``, not being deleted). A workspace's project (its own
+    ``WS#{ws}#PROJECT#{id}`` rows and the id's claim), an id with no project, a project being deleted (its deletion
+    mark, or a terminal status: ``deleting``, ``deleted``) and the company persona library's container get the one
+    404, and nothing starts: the answer never tells a workspace's project from no project."""
+    _, client = env
+    projects = agents_handler.get_projects_table()
+    projects.put_item(Item={'pk': f'WS#ws_0123456789abcdef#PROJECT#{WORKSPACE_PROJECT}', 'sk': 'META'})
+    projects.put_item(Item={'pk': f'PROJECT_ID#{WORKSPACE_PROJECT}', 'sk': 'CLAIM',
+                            'workspace_id': 'ws_0123456789abcdef'})
+    projects.put_item(Item={'pk': 'PROJECT#proj_gone', 'sk': 'META', 'deletion_started_at': '2026-11-01T00:00:00Z'})
+    for status in ('deleting', 'deleted'):
+        projects.put_item(Item={'pk': f'PROJECT#proj_{status}', 'sk': 'META', 'status': status})
+    projects.put_item(Item={'pk': 'PROJECT#company_personas', 'sk': 'META', 'status': 'active'})
+    feature = _seeded(lambda_context)['Feature builder']
+    assert _set_up(lambda_context, feature, language='node')[0] == 200
+    status, body = _call(lambda_context, 'POST', f"/agents/{feature['agent_id']}/run",
+                         body={'prd': {'project_id': project_id, 'document_id': 'prd_1'}})
+    assert (status, body['error'], client.requests) == (404, agents_handler.PRD_PROJECT_NOT_FOUND, [])
+
+
+def test_a_prd_is_never_passed_when_the_deployment_names_no_projects_table(
+        lambda_context: Any, env: tuple[Any, Start], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stack that names no projects table (``PROJECTS_TABLE`` unset) cannot check a PRD: Run now answers the
+    configuration error, never a run on an unchecked PRD."""
+    _, client = env
+    feature = _seeded(lambda_context)['Feature builder']
+    assert _set_up(lambda_context, feature, language='node')[0] == 200
+    monkeypatch.setattr(agents_handler, 'get_projects_table', lambda: None)
+    status, body = _call(lambda_context, 'POST', f"/agents/{feature['agent_id']}/run",
+                         body={'prd': {'project_id': 'proj_1', 'document_id': 'prd_1'}})
+    assert (status, client.requests) == (500, [])
+    assert body['error'] != agents_handler.PRD_PROJECT_NOT_FOUND
 
 
 @pytest.mark.parametrize(('model', 'sent'), [('opus', 'opus'), ('global.anthropic.claude-haiku-5-5',

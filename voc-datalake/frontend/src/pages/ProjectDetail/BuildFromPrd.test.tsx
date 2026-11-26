@@ -8,10 +8,12 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
-import { adminFlag, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
+import { adminFlag, fetchApi, resetFetchApi, routeFetchApi, sentFetchApiBody } from '@test/fetchApiRoutes'
 import { featureBuilders } from '../Agents/engineeringAgentRules'
 import { normalizeAgent } from '../../api/agentsApi'
 import type { Agent } from '../../api/agentsApi'
+import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { ACME } from '../../test/workspaceFixtures'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
@@ -62,6 +64,20 @@ describe('BuildFromPrd', () => {
     routeFetchApi({ 'GET /agents': () => ({ items: [agent('ag_a', 'feature_request')] }) })
     renderButton()
     expect(screen.queryByRole('button', { name: 'Build from this PRD' })).not.toBeInTheDocument()
+  })
+
+  it("is not offered inside a workspace: the engineering agents build the deployment's PRDs only (7.80.00)", async () => {
+    routeFetchApi({ 'GET /agents': () => ({ items: [agent('ag_a', 'feature_request')] }) })
+    setCurrentWorkspace(ACME)
+    try {
+      renderButton()
+      // (it never asks for the agents: the button would show once they answered)
+      await new Promise((resolve) => { setTimeout(resolve, 20) })
+      expect(fetchApi).not.toHaveBeenCalled()
+      expect(screen.queryByRole('button', { name: 'Build from this PRD' })).not.toBeInTheDocument()
+    } finally {
+      setCurrentWorkspace(null)
+    }
   })
 
   it('starts the feature agent\'s run with the PRD and links to its run monitor', async () => {

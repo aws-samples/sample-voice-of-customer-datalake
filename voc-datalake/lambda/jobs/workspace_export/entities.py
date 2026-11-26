@@ -22,7 +22,10 @@ workspace layer (shared/ws_repo.py):
   workspace's projects, found through its registry (a deleted project skipped and counted), each project's rows,
   personas, document versions, comment threads, jobs and list links, and the workspace's review links, found through
   its link registry; each entity only the fields or row kinds it lists;
-* from voc-projects (7.62.00, jobs/workspace_export/library.py): the Documents Library's items, ``library``.
+* from voc-projects (7.62.00, jobs/workspace_export/library.py): the Documents Library's items, ``library``;
+* from voc-agents (7.80.00, jobs/workspace_export/agents.py): the workspace's agents, their pause history and its
+  workflows with every saved revision, ``agents_workflows``, found through its registry, each row kind with only the
+  fields it lists.
 
 The members' conversations in voc-conversations are their own: not included; only how many people have any is
 counted (7.24.00, jobs/workspace_export/conversations.py).
@@ -38,6 +41,9 @@ from collections.abc import Mapping
 from datetime import date, timedelta
 from typing import Any, Final
 
+from jobs.workspace_export.agents import ENTITIES as AGENT_ENTITIES
+from jobs.workspace_export.agents import SKIPPED as AGENT_REGISTRY_SKIPPED
+from jobs.workspace_export.agents import AgentsSource
 from jobs.workspace_export.library import ENTITIES as LIBRARY_ENTITIES
 from jobs.workspace_export.library import LibrarySource
 from jobs.workspace_export.memory import ENTITIES as MEMORY_ENTITIES
@@ -70,10 +76,10 @@ __all__ = ['ENTITIES', 'FILE_CAP', 'ExportRefused', 'Source', 'encode_row', 'man
 #: objects, the memory counts, the conversations' count and the completion). A checkpoint names its phase, so an entity added in any position
 #: never shifts a running export onto another: one that was past it across a deploy finishes without it (its count
 #: reads 0), one that was before it writes it. A checkpoint from before phases were named is read by the 4b order.
-#: The project entities (7.39.00) come last, after the memory's.
+#: The project entities (7.39.00) come last, after the memory's; the agents' (7.80.00) after the library's.
 ENTITIES: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
                    'members', 'audit', 'plugin_config_history', *MEMORY_ENTITIES, *PROJECT_ENTITIES,
-                   'feedback_form_tests', *LIBRARY_ENTITIES)
+                   'feedback_form_tests', *LIBRARY_ENTITIES, *AGENT_ENTITIES)
 #: The most one JSONL file holds (before compression): a longer entity continues in its next file.
 FILE_CAP: Final = 256 * 1024 * 1024
 #: The index key of a feedback row: its table key and gsi1's, the cursor that resumes after it.
@@ -85,9 +91,9 @@ _DROPPED: Final = {'erasure_jobs': ('value_hash',), 'audit': ('email_sha256',)}
 PAGE_LIMIT: Final = 500
 
 #: What a later phase keys by workspace (docs/multi-workspace.md, Phases): nothing of it is the workspace's yet.
-#: The projects, documents and personas are exported since 7.39.00 (projects.py); the agents and workflows are slice
-#: 3g3.
-NOT_PER_WORKSPACE: Final = ('agents_workflows', 'settings')
+#: The projects, documents and personas are exported since 7.39.00 (projects.py); the agents and workflows since
+#: 7.80.00 (agents.py, 3g3-a).
+NOT_PER_WORKSPACE: Final = ('settings',)
 #: Rows of the workspace an export leaves out, and why.
 NOT_EXPORTED: Final = {
     # The company memory is exported since 7.22.00 (memory.py); personal memories (since 7.22.00) and the members'
@@ -111,6 +117,10 @@ NOT_EXPORTED: Final = {
                         'panel does not show either); its other jobs are in project_jobs.'),
     'library_bookkeeping': ("Routing: the Documents Library's slug guards and item count (SLUG#, META in LIBRARY); "
                             'the items they name are in library.'),
+    'agent_runs': ("The agents' runs and their journals (an agent's RUN# rows, RUN#<run> partitions): none is written "
+                   'in a workspace by this release, which starts no run there.'),
+    'agent_bookkeeping': ("Routing: the registry of the agents' and workflows' partitions (AGENT_REGISTRY); the "
+                          'agents and workflows it lists are in agents_workflows.'),
     'project_bookkeeping': ("Routing: the project and review link registries (PROJECT_IDS, DOCSHARE_IDS), each "
                             "project's list of its commented series (COMMENT_SERIES#), a series' pointer to its "
                             "current review link (SHARE) and each link's routing row; the projects and links they "
@@ -140,6 +150,10 @@ EXCLUDED: Final = {
     'personal_memory': ("Personal memories and the extraction cursors are their owners' only (docs/memory.md): "
                         'never in the workspace export, only counted (memory.not_exported); personal memories\' '
                         'events are neither exported nor counted.'),
+    'agent_fields': ("agents_workflows exports only the fields each row kind lists: an agent as the agents API shows "
+                     "it (never its index keys, its run lock, its counters, its trigger state or skip reason), its "
+                     "pause history (who, when, what), a workflow's current row and each saved revision as the API "
+                     "shows them (never who saved or archived it by id: saved_by, created_by, archived_by)."),
     'conversations': ("The members' assistant conversations in the workspace are not included, and a member gets no "
                       'copy of their own from this export; only how many people have any is given (conversations).'),
     'project_secrets': ("A review link's id (the secret its URL carries) and its key are left out of review_links, "
@@ -204,6 +218,13 @@ PROJECTS_NOTE: Final = (
     "ids (an author, a link's creator, a job's starter), as the members entity carries the members. Each entity "
     'reads the registry again, so a project deleted while the export ran can be in some entities and not in others. '
     'What every project row leaves out is in excluded.')
+#: What a reader of the agents entity should know (7.80.00).
+AGENTS_NOTE: Final = (
+    "The workspace's agents (each one's settings and its pause and resume history) and its workflows (each one's "
+    'current row and every saved revision), found through its registry of their partitions, in agents_workflows. '
+    "A member's id (an agent's owner, who created, changed or paused it) is exported as the workspace's own "
+    'collaboration data. A registry row of a kind this release does not list is skipped and counted '
+    '(registry_rows_skipped). No agent run is in a workspace yet: what every agents row leaves out is in excluded.')
 #: Where a project's product documents are (their records are in projects_documents).
 PRODUCT_DOCUMENTS_NOTE: Final = (
     "A product document's record (PRODUCT_DOC#) is in projects_documents; its upload and its extracted text are "
@@ -234,7 +255,7 @@ class Source:
 
     def __init__(self, scope: WorkspaceScope, feedback: WorkspaceTable, aggregates: WorkspaceTable,
                  workspaces: Any, memory: WorkspaceTable, projects: ProjectSource,
-                 library: LibrarySource | None = None) -> None:
+                 library: LibrarySource | None = None, agents: AgentsSource | None = None) -> None:
         self.scope = scope
         self._feedback = feedback
         self._aggregates = aggregates
@@ -242,6 +263,7 @@ class Source:
         self.memory = MemorySource(scope, memory)
         self.projects = projects
         self.library = library
+        self.agents = agents
 
     # ── Where each entity starts ────────────────────────────────────────────────────────────────────────────
 
@@ -284,6 +306,9 @@ class Source:
         if entity in LIBRARY_ENTITIES:
             # Already only the fields library.py ``FIELDS`` lists; none without its view (an older caller's).
             return self.library.page(entity, dict(cursor)) if self.library is not None else Page([], None)
+        if entity in AGENT_ENTITIES:
+            # Already only the fields agents.py lists per row kind; none without its view (an older caller's).
+            return self.agents.page(entity, cursor) if self.agents is not None else Page([], None)
         if entity in _AGGREGATE_PARTITIONS:
             partition, condition, values = _AGGREGATE_PARTITIONS[entity](self.scope)
             page = self._aggregates.query('pk', partition, **sort_key(condition, values), **start(cursor.get('start')))
@@ -444,6 +469,7 @@ def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, A
         },
         'conversations': _conversations_section(conversations),
         'projects': _projects_section(counts, exported=projects_exported),
+        'agents': {'note': AGENTS_NOTE, 'registry_rows_skipped': int(counts.get(AGENT_REGISTRY_SKIPPED, 0))},
         'not_per_workspace': {name: {'status': 'not_per_workspace', 'phase': 3, 'count': 0}
                               for name in NOT_PER_WORKSPACE},
         'not_exported': not_exported,

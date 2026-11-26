@@ -15,6 +15,17 @@ Rows (``voc-agents``, ``pk``/``sk`` + ``gsi1`` on ``gsi1pk``/``gsi1sk``):
 - run event  ``RUN#{run_id}`` / ``EVT#{seq:08d}``
 - agent log  ``AGENT#{agent_id}`` / ``LOG#{at}#{n}``: a pause or a resume (7.52.00, ``set_paused``), create-only
 
+In a workspace (7.80.00, docs/multi-workspace.md, the project plan 3g3-a) the same rows are that workspace's own:
+every key above starts ``WS#{ws}#`` (shared/ws_repo.py ``agent_pk``, ``workflow_pk``, ``agent_run_pk``, the listing
+partitions ``agents_index_pk``), and each agent and workflow also has a row in the workspace's registry,
+``WS#{ws}#AGENT_REGISTRY`` / ``AGENT#{id}`` or ``WORKFLOW#{id}`` (``agent_registry_pk``), written in the same
+transaction as its first row: the export and the hard delete walk it. The functions that read or write an agent, its
+history, a workflow or a run's rows take a keyword-only ``workspace`` (None: the deployment's rows, every request the
+one sent before) and send every call in a workspace through the workspace layer (``ws_table``, shared/ingest_tables.py
+``scoped_calls``, shared/scoped_query.py ``query_partition``), which refuses a key outside it before DynamoDB. The
+run writers (``start_run``, ``finish_run``, ``append_event``, the lock and the counters) take none: runs are the
+deployment's runtime's only, and the agents API refuses a run in a workspace before it reaches them.
+
 One active run per agent is enforced by a lock on the agent row
 (``active_run_id``), taken in the SAME transaction that writes the run, and the
 scheduled-runs-per-day cap by a conditional counter on that row — so two
@@ -43,6 +54,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agent_run_decisions, workflow_schema
+from shared.agent_ids import AGENT_ID_RE, RUN_ID_RE, WORKFLOW_ID_RE
 from shared.agent_run_decisions import RUN_NEEDS_HUMAN
 from shared.aws import (
     consistent_item,
@@ -55,13 +67,24 @@ from shared.dynamo_paging import query_all
 from shared.dynamo_values import plain
 from shared.exceptions import ConfigurationError, ConflictError, NotFoundError, ServiceError, ValidationError
 from shared.indexes import AGENTS_LISTING_INDEX
+from shared.ingest_tables import scoped_calls
 from shared.logging import logger
 from shared.model_config import ALLOWED_MODEL_IDS
 from shared.model_profile import payload_fields
 from shared.request_body import validated_text as _text
 from shared.row_ids import validated_row_id
+from shared.scoped_query import SortRange, query_partition
 from shared.source_profiles import SOURCE_ID_RE
 from shared.update_expressions import set_clause
+from shared.ws_repo import (
+    WorkspaceScope,
+    agent_pk,
+    agent_registry_pk,
+    agent_run_pk,
+    agents_index_pk,
+    workflow_pk,
+    ws_table,
+)
 
 AGENTS_TABLE_ENV: Final = 'AGENTS_TABLE'
 STATE_MACHINE_ENV: Final = 'AGENT_RUN_STATE_MACHINE_ARN'
@@ -143,9 +166,9 @@ MAX_MODEL_CALLS_PER_RUN: Final = 500
 DEFAULT_MONTHLY_CALL_CAP: Final = 5000
 MAX_MONTHLY_CALL_CAP: Final = 1_000_000
 
-_AGENT_ID_RE: Final = re.compile(r'ag_[0-9a-f]{12}')
-_WORKFLOW_ID_RE: Final = re.compile(r'wf_[0-9a-f]{12}')
-_RUN_ID_RE: Final = re.compile(r'ar_[0-9a-f]{12,20}')
+_AGENT_ID_RE: Final = AGENT_ID_RE
+_WORKFLOW_ID_RE: Final = WORKFLOW_ID_RE
+_RUN_ID_RE: Final = RUN_ID_RE
 #: A repository connection's id (engineering/connectors/connections.py CONNECTION_ID; a lockstep test holds them equal).
 CONNECTION_ID_RE: Final = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
 #: A toolchain's name as the engineering runtime lists them (engineering/runtime/egress.py REGISTRY_HOSTS); the agents
@@ -204,20 +227,65 @@ def is_run_id(value: object) -> bool:
     return isinstance(value, str) and bool(_RUN_ID_RE.fullmatch(value))
 
 
-def agent_key(agent_id: str) -> dict[str, str]:
-    return {'pk': f'AGENT#{agent_id}', 'sk': META_SK}
+def _agent_partition(agent_id: str, workspace: WorkspaceScope | None) -> str:
+    """The agent's partition: ``AGENT#{id}``, or the workspace's (shared/ws_repo.py ``agent_pk``)."""
+    return f'AGENT#{agent_id}' if workspace is None else agent_pk(workspace, agent_id)
 
 
-def run_key(agent_id: str, run_id: str) -> dict[str, str]:
-    return {'pk': f'AGENT#{agent_id}', 'sk': f'RUN#{run_id}'}
+def _workflow_partition(workflow_id: str, workspace: WorkspaceScope | None) -> str:
+    return f'WORKFLOW#{workflow_id}' if workspace is None else workflow_pk(workspace, workflow_id)
 
 
-def workflow_current_key(workflow_id: str) -> dict[str, str]:
-    return {'pk': f'WORKFLOW#{workflow_id}', 'sk': CURRENT_SK}
+def _events_partition(run_id: str, workspace: WorkspaceScope | None) -> str:
+    return f'RUN#{run_id}' if workspace is None else agent_run_pk(workspace, run_id)
 
 
-def workflow_revision_key(workflow_id: str, revision: int) -> dict[str, str]:
-    return {'pk': f'WORKFLOW#{workflow_id}', 'sk': f'REV#{revision:06d}'}
+def _listing(gsi_pk: str, workspace: WorkspaceScope | None) -> str:
+    """A ``gsi1`` listing partition (``AGENTS``, ``WORKFLOWS``, ``RUNS_ACTIVE``), the workspace's in one."""
+    return gsi_pk if workspace is None else agents_index_pk(workspace, gsi_pk)
+
+
+def agent_key(agent_id: str, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    return {'pk': _agent_partition(agent_id, workspace), 'sk': META_SK}
+
+
+def run_key(agent_id: str, run_id: str, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    return {'pk': _agent_partition(agent_id, workspace), 'sk': f'RUN#{run_id}'}
+
+
+def workflow_current_key(workflow_id: str, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    return {'pk': _workflow_partition(workflow_id, workspace), 'sk': CURRENT_SK}
+
+
+def workflow_revision_key(workflow_id: str, revision: int, *,
+                          workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    return {'pk': _workflow_partition(workflow_id, workspace), 'sk': f'REV#{revision:06d}'}
+
+
+def _registry_entry(sort_key: str, row_id_field: str, row_id: str, stamp: str,
+                    workspace: WorkspaceScope) -> dict[str, Any]:
+    """The registry row of an agent or workflow of ``workspace`` (``WS#{ws}#AGENT_REGISTRY`` / ``AGENT#{id}`` or
+    ``WORKFLOW#{id}``), put create-only in the transaction that writes its first row."""
+    return {'Put': {'Item': {'pk': agent_registry_pk(workspace), 'sk': sort_key, row_id_field: row_id,
+                             'created_at': stamp},
+                    'ConditionExpression': 'attribute_not_exists(pk)'}}
+
+
+def _calls(table: Any, workspace: WorkspaceScope | None) -> Any:
+    """``table``'s single-item calls in ``workspace``: the table itself without one (every request as before), else
+    the workspace's view (shared/ingest_tables.py ``scoped_calls``), which refuses a key outside it."""
+    return scoped_calls(table, workspace)
+
+
+def _transact(table: Any, entries: list[dict[str, Any]], workspace: WorkspaceScope | None) -> None:
+    """One ``TransactWriteItems`` of ``entries`` (each ``{action: body}``, no ``TableName``) on ``table``: through
+    the table's client without a workspace (each entry naming the table, the request sent before), through the
+    workspace's view in one (every key checked, one outside it refusing the whole transaction before it is sent)."""
+    if workspace is not None:
+        ws_table(workspace, table).transact_write_items(entries)
+        return
+    table.meta.client.transact_write_items(TransactItems=[
+        {action: {'TableName': table.name, **body} for action, body in entry.items()} for entry in entries])
 
 
 def _int_attr(item: Mapping[str, Any], name: str) -> int:
@@ -281,10 +349,13 @@ def _is_cancelled_transaction(error: Exception) -> bool:
         'TransactionCanceledException'
 
 
-def _query_index(table: Any, gsi_pk: str, what: str) -> list[dict]:
-    """Every row of one ``gsi1`` partition (agents, workflows, active runs: small by design)."""
-    kwargs: dict[str, Any] = {'IndexName': AGENTS_INDEX, 'KeyConditionExpression': Key('gsi1pk').eq(gsi_pk)}
+def _query_index(table: Any, gsi_pk: str, what: str, workspace: WorkspaceScope | None = None) -> list[dict]:
+    """Every row of one ``gsi1`` partition (agents, workflows, active runs: small by design), the workspace's in one."""
     try:
+        if workspace is not None:
+            return list(ws_table(workspace, table).iter_query('gsi1pk', _listing(gsi_pk, workspace),
+                                                              IndexName=AGENTS_INDEX))
+        kwargs: dict[str, Any] = {'IndexName': AGENTS_INDEX, 'KeyConditionExpression': Key('gsi1pk').eq(gsi_pk)}
         return query_all(table, kwargs)
     except (ClientError, BotoCoreError) as exc:
         raise _service_error(what, exc) from exc
@@ -687,39 +758,46 @@ def item_in_scope(scope: Mapping[str, Any], item: Mapping[str, Any]) -> bool:
 # Agents.
 # --------------------------------------------------------------------------
 
-def get_agent(table: Any, agent_id: str) -> dict | None:
+def get_agent(table: Any, agent_id: str, *, workspace: WorkspaceScope | None = None) -> dict | None:
     try:
-        item = table.get_item(Key=agent_key(agent_id), ConsistentRead=True).get('Item')
+        item = _calls(table, workspace).get_item(Key=agent_key(agent_id, workspace=workspace),
+                                                 ConsistentRead=True).get('Item')
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('read the agent', exc) from exc
     return item if isinstance(item, dict) else None
 
 
-def list_agents(table: Any) -> list[dict]:
-    """Every agent row (≤ a few dozen by design), name order."""
-    return _query_index(table, AGENTS_GSI_PK, 'list agents')
+def list_agents(table: Any, *, workspace: WorkspaceScope | None = None) -> list[dict]:
+    """Every agent row (≤ a few dozen by design), name order: the workspace's own in one."""
+    return _query_index(table, AGENTS_GSI_PK, 'list agents', workspace)
 
 
-def create_agent(table: Any, fields: Mapping[str, Any], *, created_by: str, now: datetime) -> dict:
+def create_agent(table: Any, fields: Mapping[str, Any], *, created_by: str, now: datetime,
+                 workspace: WorkspaceScope | None = None) -> dict:
+    """A new agent; in a workspace, its registry row in the same transaction."""
     agent_id = new_agent_id()
     stamp = iso(now)
     item = {
-        **agent_key(agent_id), 'gsi1pk': AGENTS_GSI_PK, 'gsi1sk': fields['name'],
-        'agent_id': agent_id, **fields, 'owner_sub': fields.get('owner_sub') or created_by,
+        **agent_key(agent_id, workspace=workspace), 'gsi1pk': _listing(AGENTS_GSI_PK, workspace),
+        'gsi1sk': fields['name'], 'agent_id': agent_id, **fields, 'owner_sub': fields.get('owner_sub') or created_by,
         'status': AGENT_STATUS_ACTIVE, 'created_by': created_by, 'created_at': stamp,
         'updated_by': created_by, 'updated_at': stamp,
         # New reviews are counted from creation, never from the start of history.
         'last_run_cursor': stamp, 'runs_total': 0,
     }
     try:
-        table.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
+        if workspace is None:
+            table.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
+        else:
+            _transact(table, [{'Put': {'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}},
+                              _registry_entry(f'AGENT#{agent_id}', 'agent_id', agent_id, stamp, workspace)], workspace)
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('create the agent', exc) from exc
     return item
 
 
 def update_agent(table: Any, agent_id: str, fields: Mapping[str, Any], *, updated_by: str, now: datetime,
-                 allow_archived: bool = False) -> dict:
+                 allow_archived: bool = False, workspace: WorkspaceScope | None = None) -> dict:
     """SET ``fields`` (plus updated_by/at) on an existing agent; 404 when missing/archived."""
     to_set = {**fields, 'updated_by': updated_by, 'updated_at': iso(now)}
     if 'name' in fields:
@@ -731,9 +809,10 @@ def update_agent(table: Any, agent_id: str, fields: Mapping[str, Any], *, update
         names['#status'] = 'status'
         values[':archived'] = AGENT_STATUS_ARCHIVED
     try:
-        return table.update_item(
-            Key=agent_key(agent_id), UpdateExpression=f'SET {clause}', ConditionExpression=condition,
-            ExpressionAttributeNames=names, ExpressionAttributeValues=values, ReturnValues='ALL_NEW',
+        return _calls(table, workspace).update_item(
+            Key=agent_key(agent_id, workspace=workspace), UpdateExpression=f'SET {clause}',
+            ConditionExpression=condition, ExpressionAttributeNames=names, ExpressionAttributeValues=values,
+            ReturnValues='ALL_NEW',
         )['Attributes']
     except ClientError as exc:
         if is_conditional_check_failure(exc):
@@ -822,15 +901,15 @@ NOT_ON: Final = 'only an automation that is on is paused: this one is off'
 PAUSE_MOVED: Final = 'the automation changed since you read it: read it again'
 
 
-def agent_log_key(agent_id: str, at: datetime) -> dict[str, str]:
+def agent_log_key(agent_id: str, at: datetime, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
     """A create-only history row of the agent (``LOG#<at, to the microsecond>#<n>``: in the order they were made, and
-    two changes at one instant never share a key)."""
-    return {'pk': f'AGENT#{agent_id}', 'sk': f'LOG#{at.astimezone(UTC).isoformat(timespec="microseconds")}#'
-                                             f'{secrets.token_hex(4)}'}
+    two changes at one instant never share a key), in the agent's own partition."""
+    return {'pk': _agent_partition(agent_id, workspace),
+            'sk': f'LOG#{at.astimezone(UTC).isoformat(timespec="microseconds")}#{secrets.token_hex(4)}'}
 
 
 def set_paused(table: Any, agent_id: str, paused: bool, *, by: str, username: str, now: datetime,
-               via: str = 'route') -> dict:
+               via: str = 'route', workspace: WorkspaceScope | None = None) -> dict:
     """Pause (``paused``) or resume the agent, with its history row, in one transaction; the agent as saved. A pause
     needs the agent on and not paused, a resume a paused one (409 ``PAUSE_MOVED`` when that changed since it was read;
     404 for an agent gone or archived). ``via``: what asked (the route, or turning the agent off)."""
@@ -850,23 +929,23 @@ def set_paused(table: Any, agent_id: str, paused: bool, *, by: str, username: st
                                  'REMOVE paused_at, paused_by'),
             'ConditionExpression': 'attribute_exists(pk) AND paused = :true',
             'ExpressionAttributeValues': {**values, ':false': False}}
-    log = {**agent_log_key(agent_id, now), 'event': 'paused' if paused else 'resumed', 'by': by,
+    log = {**agent_log_key(agent_id, now, workspace=workspace), 'event': 'paused' if paused else 'resumed', 'by': by,
            'username': username, 'at': stamp, 'via': via}
     try:
-        table.meta.client.transact_write_items(TransactItems=[
-            {'Update': {'TableName': table.name, 'Key': agent_key(agent_id), **change}},
-            {'Put': {'TableName': table.name, 'Item': log, 'ConditionExpression': 'attribute_not_exists(sk)'}},
-        ])
+        _transact(table, [
+            {'Update': {'Key': agent_key(agent_id, workspace=workspace), **change}},
+            {'Put': {'Item': log, 'ConditionExpression': 'attribute_not_exists(sk)'}},
+        ], workspace)
     except ClientError as exc:
         if not _is_cancelled_transaction(exc):
             raise _service_error('pause or resume the agent', exc) from exc
-        found = get_agent(table, agent_id)
+        found = get_agent(table, agent_id, workspace=workspace)
         if found is None or found.get('status') == AGENT_STATUS_ARCHIVED:
             raise NotFoundError('Agent not found') from exc
         raise ConflictError(NOT_ON if paused and found.get('enabled') is not True else PAUSE_MOVED) from exc
     except BotoCoreError as exc:
         raise _service_error('pause or resume the agent', exc) from exc
-    found = get_agent(table, agent_id)
+    found = get_agent(table, agent_id, workspace=workspace)
     if found is None:
         raise NotFoundError('Agent not found')
     return found
@@ -889,31 +968,32 @@ def builtin_workflow() -> dict[str, Any]:
     }
 
 
-def get_workflow(table: Any, workflow_id: str) -> dict | None:
-    """The CURRENT row of ``workflow_id`` (the built-in for ``wf_default``), or None."""
+def get_workflow(table: Any, workflow_id: str, *, workspace: WorkspaceScope | None = None) -> dict | None:
+    """The CURRENT row of ``workflow_id`` (the built-in for ``wf_default``, in every scope), or None."""
     if workflow_id == workflow_schema.DEFAULT_WORKFLOW_ID:
         return builtin_workflow()
     try:
-        item = table.get_item(Key=workflow_current_key(workflow_id), ConsistentRead=True).get('Item')
+        item = _calls(table, workspace).get_item(Key=workflow_current_key(workflow_id, workspace=workspace),
+                                                 ConsistentRead=True).get('Item')
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('read the workflow', exc) from exc
     return item if isinstance(item, dict) else None
 
 
-def list_workflows(table: Any) -> list[dict]:
-    """Every stored workflow's CURRENT row, plus the built-in first."""
-    return [builtin_workflow(), *_query_index(table, WORKFLOWS_GSI_PK, 'list workflows')]
+def list_workflows(table: Any, *, workspace: WorkspaceScope | None = None) -> list[dict]:
+    """Every stored workflow's CURRENT row (the workspace's own in one), plus the built-in first."""
+    return [builtin_workflow(), *_query_index(table, WORKFLOWS_GSI_PK, 'list workflows', workspace)]
 
 
-def list_revisions(table: Any, workflow_id: str, limit: int = 50) -> list[dict]:
+def list_revisions(table: Any, workflow_id: str, limit: int = 50, *,
+                   workspace: WorkspaceScope | None = None) -> list[dict]:
     """Newest-first revision summaries (no definitions)."""
     if workflow_id == workflow_schema.DEFAULT_WORKFLOW_ID:
         return [{'revision': BUILTIN_REVISION, 'saved_at': None, 'saved_by_username': None}]
     try:
-        page = table.query(
-            KeyConditionExpression=Key('pk').eq(f'WORKFLOW#{workflow_id}') & Key('sk').begins_with('REV#'),
-            ScanIndexForward=False, Limit=limit,
-            ProjectionExpression='revision, saved_at, saved_by_username',
+        page = query_partition(
+            workspace, table, 'pk', _workflow_partition(workflow_id, workspace), sort=SortRange('sk', 'begins_with', 'REV#'),
+            ScanIndexForward=False, Limit=limit, ProjectionExpression='revision, saved_at, saved_by_username',
         )
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('list workflow revisions', exc) from exc
@@ -931,7 +1011,8 @@ def _revision_view(workflow_id: str, row: Mapping[str, Any]) -> dict[str, Any]:
             'saved_at': data.get('saved_at'), 'saved_by_username': data.get('saved_by_username')}
 
 
-def get_revision(table: Any, workflow_id: str, revision: int) -> dict[str, Any] | None:
+def get_revision(table: Any, workflow_id: str, revision: int, *,
+                 workspace: WorkspaceScope | None = None) -> dict[str, Any] | None:
     """One revision of ``workflow_id`` as served, or None when it has no such revision.
 
     The built-in ``wf_default`` has exactly one revision: the built-in template.
@@ -939,7 +1020,8 @@ def get_revision(table: Any, workflow_id: str, revision: int) -> dict[str, Any] 
     if workflow_id == workflow_schema.DEFAULT_WORKFLOW_ID:
         return _revision_view(workflow_id, builtin_workflow()) if revision == BUILTIN_REVISION else None
     try:
-        item = table.get_item(Key=workflow_revision_key(workflow_id, revision), ConsistentRead=True).get('Item')
+        item = _calls(table, workspace).get_item(Key=workflow_revision_key(workflow_id, revision, workspace=workspace),
+                                                 ConsistentRead=True).get('Item')
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('read the workflow revision', exc) from exc
     return _revision_view(workflow_id, item) if isinstance(item, dict) else None
@@ -953,31 +1035,35 @@ def _revision_attrs(definition: Mapping[str, Any], revision: int, *, saved_by: s
 
 
 def create_workflow(table: Any, definition: Mapping[str, Any], *, created_by: str, username: str,
-                    now: datetime, derived_from: str | None = None) -> dict:
-    """A new library workflow at revision 1 (CURRENT + REV#000001 in one transaction)."""
+                    now: datetime, derived_from: str | None = None, workspace: WorkspaceScope | None = None) -> dict:
+    """A new library workflow at revision 1 (CURRENT + REV#000001 in one transaction; in a workspace its registry
+    row too)."""
     workflow_id = new_workflow_id()
     stamp = iso(now)
     revision = _revision_attrs(definition, 1, saved_by=created_by, username=username, stamp=stamp)
     current = {
-        **workflow_current_key(workflow_id), 'gsi1pk': WORKFLOWS_GSI_PK,
+        **workflow_current_key(workflow_id, workspace=workspace), 'gsi1pk': _listing(WORKFLOWS_GSI_PK, workspace),
         'gsi1sk': f"{definition['name'].lower()}#{workflow_id}", 'workflow_id': workflow_id,
         'slug': workflow_schema.slugify(definition['name']), 'description': definition.get('description', ''),
         'derived_from': derived_from, 'created_at': stamp, 'created_by': created_by,
         'updated_at': stamp, 'updated_by_username': username, **revision,
     }
-    rev_item = {**workflow_revision_key(workflow_id, 1), 'workflow_id': workflow_id, **revision}
+    rev_item = {**workflow_revision_key(workflow_id, 1, workspace=workspace), 'workflow_id': workflow_id, **revision}
+    entries: list[dict[str, Any]] = [
+        {'Put': {'Item': current, 'ConditionExpression': 'attribute_not_exists(pk)'}},
+        {'Put': {'Item': rev_item, 'ConditionExpression': 'attribute_not_exists(pk)'}},
+    ]
+    if workspace is not None:
+        entries.append(_registry_entry(f'WORKFLOW#{workflow_id}', 'workflow_id', workflow_id, stamp, workspace))
     try:
-        table.meta.client.transact_write_items(TransactItems=[
-            {'Put': {'TableName': table.name, 'Item': current, 'ConditionExpression': 'attribute_not_exists(pk)'}},
-            {'Put': {'TableName': table.name, 'Item': rev_item, 'ConditionExpression': 'attribute_not_exists(pk)'}},
-        ])
+        _transact(table, entries, workspace)
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('create the workflow', exc) from exc
     return current
 
 
 def save_revision(table: Any, workflow_id: str, definition: Mapping[str, Any], *, expected_revision: int,
-                  saved_by: str, username: str, now: datetime) -> dict:
+                  saved_by: str, username: str, now: datetime, workspace: WorkspaceScope | None = None) -> dict:
     """Append revision ``expected_revision + 1`` and move CURRENT to it; 409 when stale."""
     if workflow_id == workflow_schema.DEFAULT_WORKFLOW_ID:
         raise ConflictError('The built-in workflow is read-only; duplicate it to edit')
@@ -993,27 +1079,26 @@ def save_revision(table: Any, workflow_id: str, definition: Mapping[str, Any], *
     values[':expected'] = expected_revision
     values[':archived'] = WORKFLOW_STATUS_ARCHIVED
     try:
-        table.meta.client.transact_write_items(TransactItems=[
+        _transact(table, [
             {'Update': {
-                'TableName': table.name, 'Key': workflow_current_key(workflow_id),
+                'Key': workflow_current_key(workflow_id, workspace=workspace),
                 'UpdateExpression': f'SET {clause}', 'ConditionExpression': ('attribute_exists(pk) AND #rev = :expected '
                                         'AND (attribute_not_exists(#status) OR #status <> :archived)'),
                 'ExpressionAttributeNames': names, 'ExpressionAttributeValues': values,
             }},
-            {'Put': {'TableName': table.name,
-                     'Item': {**workflow_revision_key(workflow_id, new_revision), 'workflow_id': workflow_id,
-                              **revision},
+            {'Put': {'Item': {**workflow_revision_key(workflow_id, new_revision, workspace=workspace),
+                              'workflow_id': workflow_id, **revision},
                      'ConditionExpression': 'attribute_not_exists(pk)'}},
-        ])
+        ], workspace)
     except ClientError as exc:
         if not _is_cancelled_transaction(exc):
             raise _service_error('save the workflow', exc) from exc
-        if get_workflow(table, workflow_id) is None:
+        if get_workflow(table, workflow_id, workspace=workspace) is None:
             raise NotFoundError('Workflow not found') from exc
         raise ConflictError('The workflow was changed by someone else; reload and retry') from exc
     except BotoCoreError as exc:
         raise _service_error('save the workflow', exc) from exc
-    current = get_workflow(table, workflow_id)
+    current = get_workflow(table, workflow_id, workspace=workspace)
     if current is None:
         raise NotFoundError('Workflow not found')
     return current
@@ -1023,7 +1108,8 @@ def is_archived_workflow(item: Mapping[str, Any]) -> bool:
     return item.get('status') == WORKFLOW_STATUS_ARCHIVED
 
 
-def archive_workflow(table: Any, workflow_id: str, *, archived_by: str, username: str, now: datetime) -> dict:
+def archive_workflow(table: Any, workflow_id: str, *, archived_by: str, username: str, now: datetime,
+                     workspace: WorkspaceScope | None = None) -> dict:
     """Mark a stored workflow archived (idempotent); 404 when it does not exist.
 
     ``archived_by`` (the archiver's sub) is an audit trail: stored, never served.
@@ -1032,8 +1118,8 @@ def archive_workflow(table: Any, workflow_id: str, *, archived_by: str, username
         raise ConflictError('The built-in workflow cannot be archived')
     stamp = iso(now)
     try:
-        response = table.update_item(
-            Key=workflow_current_key(workflow_id),
+        response = _calls(table, workspace).update_item(
+            Key=workflow_current_key(workflow_id, workspace=workspace),
             UpdateExpression=('SET #status = :archived, archived_at = if_not_exists(archived_at, :now), '
                               'archived_by = if_not_exists(archived_by, :by), updated_at = :now, '
                               'updated_by_username = :username'),
@@ -1218,16 +1304,14 @@ def start_run(table: Any, agent: Mapping[str, Any], request: RunStart, *, now: d
         **(request.run_fields or {}),
     }
     items: list[dict[str, Any]] = [
-        {'Update': {'TableName': table.name, 'Key': agent_key(agent_id), 'UpdateExpression': update,
-                    'ConditionExpression': condition, 'ExpressionAttributeNames': names,
-                    'ExpressionAttributeValues': values}},
-        {'Put': {'TableName': table.name, 'Item': run, 'ConditionExpression': 'attribute_not_exists(pk)'}},
+        {'Update': {'Key': agent_key(agent_id), 'UpdateExpression': update, 'ConditionExpression': condition,
+                    'ExpressionAttributeNames': names, 'ExpressionAttributeValues': values}},
+        {'Put': {'Item': run, 'ConditionExpression': 'attribute_not_exists(pk)'}},
     ]
     if request.issue_claim is not None:
-        items.append({'Put': {'TableName': table.name, 'Item': dict(request.issue_claim),
-                              'ConditionExpression': 'attribute_not_exists(pk)'}})
+        items.append({'Put': {'Item': dict(request.issue_claim), 'ConditionExpression': 'attribute_not_exists(pk)'}})
     try:
-        table.meta.client.transact_write_items(TransactItems=items)
+        _transact(table, items, None)   # (the deployment's runtime only: no run starts in a workspace yet)
     except ClientError as exc:
         if _is_cancelled_transaction(exc):
             codes = _cancellation_codes(exc)
@@ -1241,24 +1325,23 @@ def start_run(table: Any, agent: Mapping[str, Any], request: RunStart, *, now: d
     return run
 
 
-def get_run(table: Any, agent_id: str, run_id: str) -> dict | None:
+def get_run(table: Any, agent_id: str, run_id: str, *, workspace: WorkspaceScope | None = None) -> dict | None:
     try:
-        return consistent_item(table, run_key(agent_id, run_id))
+        return consistent_item(_calls(table, workspace), run_key(agent_id, run_id, workspace=workspace))
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('read the run', exc) from exc
 
 
-def list_runs(table: Any, agent_id: str, *, limit: int, cursor: object = None) -> tuple[list[dict], str | None]:
-    """Newest-first runs of one agent, paginated."""
-    kwargs: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(f'AGENT#{agent_id}') & Key('sk').begins_with('RUN#'),
-        'ScanIndexForward': False, 'Limit': limit,
-    }
-    start = decode_cursor(cursor, f'AGENT#{agent_id}')
+def list_runs(table: Any, agent_id: str, *, limit: int, cursor: object = None,
+              workspace: WorkspaceScope | None = None) -> tuple[list[dict], str | None]:
+    """Newest-first runs of one agent, paginated (a cursor of another agent or scope is refused, 400)."""
+    partition = _agent_partition(agent_id, workspace)
+    kwargs: dict[str, Any] = {'ScanIndexForward': False, 'Limit': limit}
+    start = decode_cursor(cursor, partition)
     if start:
         kwargs['ExclusiveStartKey'] = start
     try:
-        page = table.query(**kwargs)
+        page = query_partition(workspace, table, 'pk', partition, sort=SortRange('sk', 'begins_with', 'RUN#'), **kwargs)
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('list runs', exc) from exc
     return page.get('Items', []), encode_cursor(page.get('LastEvaluatedKey'))
@@ -1450,14 +1533,12 @@ def append_event(table: Any, agent_id: str, run_id: str, kind: str, summary: str
     return item
 
 
-def list_events(table: Any, run_id: str, *, after: int, limit: int) -> list[dict]:
+def list_events(table: Any, run_id: str, *, after: int, limit: int,
+                workspace: WorkspaceScope | None = None) -> list[dict]:
     """Events with ``seq > after``, oldest first."""
     try:
-        page = table.query(
-            KeyConditionExpression=Key('pk').eq(f'RUN#{run_id}') & Key('sk').between(
-                f'EVT#{after + 1:08d}', 'EVT#99999999'),
-            Limit=limit,
-        )
+        page = query_partition(workspace, table, 'pk', _events_partition(run_id, workspace),
+                               sort=SortRange('sk', 'between', f'EVT#{after + 1:08d}', 'EVT#99999999'), Limit=limit)
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('list run events', exc) from exc
     # ``detail``: a failed step's technical reason (masked, bounded) beside its plain ``summary``.

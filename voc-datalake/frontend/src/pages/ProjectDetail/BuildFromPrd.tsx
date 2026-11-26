@@ -5,7 +5,8 @@
  * document_id}}`; the run's goal names the PRD by its ids) and opens a pull request for review (since 7.50, a draft
  * only when its flow says `pr: draft`; merging stays with a person). This is how the Autonomous Product agent's PRD
  * reaches the builder. Shown only where the engineering module is on, to an
- * administrator, while such an agent is enabled; the run is followed on its run monitor.
+ * administrator, while such an agent is enabled, and never inside a workspace (7.80.00: the agents API builds only the
+ * deployment's own PRDs); the run is followed on its run monitor.
  *
  * @module pages/ProjectDetail/BuildFromPrd
  */
@@ -18,6 +19,7 @@ import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { agentsApi, agentsKeys } from '../../api/agentsApi'
 import { isEngineeringAvailable } from '../../runtimeConfig'
 import { useIsAdmin } from '../../store/authStore'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import { EngineeringStartError } from '../Agents/EngineeringStartError'
 import { featureBuilders } from '../Agents/engineeringAgentRules'
 import { engineeringRunPagePath } from '../Agents/workflowPaths'
@@ -85,6 +87,7 @@ function BuildButton(prd: Readonly<PrdRef>) {
 /** The PRD's "Build from this PRD", or nothing (module doc). */
 export default function BuildFromPrd({ projectId, documentId }: Readonly<PrdRef>) {
   const isAdmin = useIsAdmin()
-  if (!isAdmin || !isEngineeringAvailable()) return null
+  const workspace = useCurrentWorkspace()
+  if (!isAdmin || !isEngineeringAvailable() || workspace !== null) return null
   return <BuildButton projectId={projectId} documentId={documentId} />
 }

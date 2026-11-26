@@ -12,7 +12,8 @@ parsed, and each raw access is counted by its kind:
   ``multipart_uploads``), ``put`` / ``delete`` on an ``….Object(…)`` or ``….Bucket(…)`` made in the same
   expression, or the ingestors' deployment-wide table (``DeploymentTable(…)``, and ``ingest_table(None, …)`` or
   ``table_view(None, …)`` with the literal None, and the project, job and participants accessors
-  (``PROJECT_ACCESSORS``, ``QUALIFIED_ACCESSORS``, ``PARTICIPANT_ACCESSORS``, ``COMMENT_AND_OBJECT_ACCESSORS``) with a
+  (``PROJECT_ACCESSORS``, ``QUALIFIED_ACCESSORS``, ``PARTICIPANT_ACCESSORS``, ``COMMENT_AND_OBJECT_ACCESSORS``,
+  ``AGENT_ACCESSORS``) with a
   literal ``workspace=None`` or, for ``get_scoped_item``, a literal None scope; a call passing a scope variable that may be
   None at run time, or leaving the default, is not counted);
 * a reference to a data-path table getter of shared/tables.py (``get_feedback_table``, ``get_aggregates_table``,
@@ -141,6 +142,13 @@ COMMENT_AND_OBJECT_ACCESSORS: Final = frozenset({
     'prototype_signed_url', 'record_addressed', 'record_threads_addressed', 'series_head_version',
     'require_series_head', 'revise_document', 'series_head', 'drafted_base', 'prototype_draft_s3_key',
     'prototype_draft_signed_url'})
+#: The agents store's keys and calls (since 7.80.00, slice 3g3-a: shared/agents_store.py, shared/agent_seed.py's copy of
+#: the template), counted the same way: each takes a keyword-only ``workspace``, and a caller passes it only inside one.
+AGENT_ACCESSORS: Final = frozenset({
+    'agent_key', 'run_key', 'workflow_current_key', 'workflow_revision_key', 'agent_log_key', 'get_agent',
+    'list_agents', 'create_agent', 'update_agent', 'set_paused', 'get_workflow', 'list_workflows', 'list_revisions',
+    'get_revision', 'create_workflow', 'save_revision', 'archive_workflow', 'get_run', 'list_runs', 'list_events',
+    'default_workflow_copy'})
 #: The accessors whose scope may also be passed by position, and where.
 PROJECT_ACCESSOR_SCOPE_POSITION: Final = {'get_scoped_item': 2, 'scoped_calls': 1, 'scoped_rows': 1,
                                           'rows_by_id_in': 1, 'scoped_object_key': 0}
@@ -169,10 +177,13 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: and objects (since 7.62.00): only shared/library_keys.py spells them. ``VOICE#`` (a voice session's own partition),
 #: ``VOICEUSE#`` (the month's minutes and the live set), ``VOICEDAY#`` and ``VOICERATE#`` (a person's day and minute)
 #: are the voice sessions' (since 7.69.00): only shared/voice_sessions.py spells them, and they move with projects.
+#: ``AGENT_REGISTRY`` is a workspace's registry of its agents' partitions (since 7.80.00): only the layer spells it
+#: (``agent_registry_pk``).
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
                                 'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#',
                                 'STATUS#', 'LIST#', 'PERSON#', 'EMAIL#', 'LISTS', 'PEOPLE', 'DCOMMENTS#', 'DCRATE#',
-                                'DOCSHARE#', 'LIBRARY', 'library/', 'VOICE#', 'VOICEUSE#', 'VOICEDAY#', 'VOICERATE#')
+                                'DOCSHARE#', 'LIBRARY', 'library/', 'VOICE#', 'VOICEUSE#', 'VOICEDAY#', 'VOICERATE#',
+                                'AGENT_REGISTRY')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: The layer's review link route writer (``route_share_id``, since 7.37.00) and the one module that may call it: the
@@ -212,7 +223,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # Its three Table calls since 7.35.00: the engineering views' handles (voc-engineering, the engineering rows of
     # voc-agents), only with -c engineeringAgents=true; see the engineering modules' entries below. Two more since
     # 7.50.00: the readiness checks' voc-engineering and voc-watermarks (the Issues source's watermarks, read only).
-    'lambda/api/agents_handler.py': (3, {'Table': 5, 'get_aggregates_table': 1}),
+    # (get_projects_table, 7.80.00: the table `_require_deployment_prd` hands to shared/project_writes.py
+    # `deployment_project_live`, the one GetItem of the deployment's PROJECT#{id} META a PRD run checks, projected to
+    # whether it is being deleted; deployment-only by design, which is what it checks)
+    'lambda/api/agents_handler.py': (3, {'Table': 5, 'get_aggregates_table': 1, 'get_projects_table': 1}),
     'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1, 'get_projects_table': 2, 'meta.client': 1, 'transact': 1}),
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
     'lambda/api/data_explorer_handler.py': (
@@ -340,8 +354,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # 7.60.00: a fine-grained token connection's save reads the connection's live runs (voc-engineering's run registry, as
     # the connections' own store does in agents_handler.py): the deployment's, like every connection (phase 3).
     'lambda/shared/agents_engineering_token_routes.py': (3, {'Table': 1}),
-    # (7.52.00: an agent's pause or resume with its history row, in one transaction)
-    'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 4, 'transact': 4}),
+    # (7.80.00, 3g3-a: the deployment's four transactions, an agent's pause with its history row among them, go through
+    # one helper, ``_transact``; in a workspace every call goes through the layer)
+    'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 1, 'transact': 1}),
     'lambda/shared/avatar.py': (3, {'put_object': 1}),
     # BatchGetItem's one bounded helper (MCP tokens, projects); the layer's `batch_get_item` is the workspace's.
     'lambda/shared/batch_get.py': (0, {'batch': 1, 'meta.client': 1}),
@@ -600,7 +615,7 @@ def _call_kind(node: ast.Call) -> str | None:
     if (name in ('ingest_table', 'table_view') and node.args and isinstance(node.args[0], ast.Constant)
             and node.args[0].value is None):
         return UNSCOPED_INGEST_TABLE
-    if (name in PROJECT_ACCESSORS | PARTICIPANT_ACCESSORS | COMMENT_AND_OBJECT_ACCESSORS
+    if (name in PROJECT_ACCESSORS | PARTICIPANT_ACCESSORS | COMMENT_AND_OBJECT_ACCESSORS | AGENT_ACCESSORS
             and _spells_no_workspace(node, PROJECT_ACCESSOR_SCOPE_POSITION.get(name))):
         return UNSCOPED_PROJECT_ACCESS
     if _qualified(node) in QUALIFIED_ACCESSORS and _spells_no_workspace(node, None):
@@ -1089,6 +1104,11 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "qj = prototype_s3_key('p', 'd', workspace=None)\n"
         "qk = scoped_object_key(None, 'prototypes/p/')\n"
         "ql = scoped_object_key(scope, 'prototypes/p/')\n"
+        # The agents store (7.80.00): by name, a spelled-out workspace=None counted, a scope passed on not.
+        "qm = store.get_agent(table, 'ag_0123456789ab', workspace=None)\n"
+        "qn = agent_seed.default_workflow_copy(table, 'n', caller, workspace=None)\n"
+        "qo = store.list_agents(table, workspace=scope)\n"
+        "registry = f'AGENT_REGISTRY#{ws}'\n"
         "thread_pk = f'DCOMMENTS#{project_id}#{series_id}'\n"
         "link = f'DOCSHARE#{share_id}'\n"
         # A project id's claim, and a document-version partition, spelled outside the layer and the key builders.
@@ -1120,8 +1140,8 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 2, 'project accessor(workspace=None)': 26, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
-        'PERSON#': 1, 'DCOMMENTS#': 1, 'DOCSHARE#': 1,
+        'ingest_table(None)': 2, 'project accessor(workspace=None)': 28, 'PROJECT_ID#': 1, 'DOCUMENT_VERSIONS#': 1,
+        'PERSON#': 1, 'DCOMMENTS#': 1, 'DOCSHARE#': 1, 'AGENT_REGISTRY': 1,
         'transact': 4, 'batch': 5,
         # The low-level client itself (7.00.00's rule), beside the multi-item calls made on it.
         'meta.client': 3})

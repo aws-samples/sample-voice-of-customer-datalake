@@ -40,6 +40,7 @@ from shared import engineering_templates, workflow_schema
 from shared.aws import is_conditional_check_failure
 from shared.logging import logger
 from shared.project_access import Caller
+from shared.ws_repo import WorkspaceScope
 
 STATE_SEEDING: Final = 'seeding'
 STATE_SKIPPED: Final = 'skipped'
@@ -70,13 +71,18 @@ def automation(automation_id: str) -> Mapping[str, Any]:
     raise LookupError(f'no automation {automation_id} in the orchestration bundle')
 
 
-def default_workflow_copy(table: Any, name: str, caller: Caller) -> str:
-    """A fresh, editable copy of the built-in template for a new agent; its workflow id."""
+def default_workflow_copy(table: Any, name: str, caller: Caller, *, workspace: WorkspaceScope | None = None) -> str:
+    """A fresh, editable copy of the built-in template for a new agent (in ``workspace``'s library, the
+    deployment's without one); its workflow id. Nothing is seeded in a workspace: this is ``POST /agents``' copy. It
+    never copies an engineering flow (``voc-workflow/2``) into a workspace (ValueError, nothing written): those are the
+    deployment's (3g3-c), and the template is an agents workflow."""
     definition = workflow_schema.default_template()
+    if workspace is not None and definition.get('schema') == workflow_schema.SCHEMA_V2:
+        raise ValueError("an engineering flow is the deployment's: it is never copied into a workspace")
     definition['name'] = f'{name} workflow'[:workflow_schema.MAX_NAME_CHARS]
     created = store.create_workflow(
         table, definition, created_by=caller.subject, username=caller.username,
-        now=store.utc_now(), derived_from=workflow_schema.DEFAULT_WORKFLOW_ID,
+        now=store.utc_now(), derived_from=workflow_schema.DEFAULT_WORKFLOW_ID, workspace=workspace,
     )
     return created['workflow_id']
 

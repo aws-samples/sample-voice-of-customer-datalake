@@ -130,9 +130,9 @@ def test_a_one_invocation_export_holds_every_entity_and_its_manifest(world):
         0, 0, [])
     assert 'older versions' in manifest['objects']['versions']
     assert 'credentials' in manifest['excluded']
-    # The projects are exported since 7.39.00 (none here); the agents and workflows wait for slice 3g3.
-    assert manifest['not_per_workspace'] == {name: {'status': 'not_per_workspace', 'phase': 3, 'count': 0}
-                                             for name in ('agents_workflows', 'settings')}
+    # The projects are exported since 7.39.00 and the agents and workflows since 7.80.00 (none here).
+    assert manifest['not_per_workspace'] == {'settings': {'status': 'not_per_workspace', 'phase': 3, 'count': 0}}
+    assert manifest['entities']['agents_workflows'] == {'files': [], 'count': 0}
     assert manifest['entities']['projects_documents'] == {'files': [], 'count': 0}
     assert set(manifest['not_exported']) >= {'metrics', 'runs', 'logs', 'watermarks', 'idempotency', 'user_rows'}
     # The members' conversations are theirs: counted, never exported (7.24.00), so excluded by design, never "not per

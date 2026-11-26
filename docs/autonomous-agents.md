@@ -152,10 +152,16 @@ lists or reads one (404).
   agent's run at once (cancelled, its lock released: the agent may run again without waiting for the heartbeat). **Run now** (`POST /agents/{id}/run`, an
   administrator acting for themselves) takes `{issue}` (rerun an issue, the only way to), `{prd: {project_id,
   document_id}}` (a feature agent) or nothing (a bug agent's hunt); a feature agent needs one of the two. Its run's
-  actor is the administrator who pressed it.
-- **Only the deployment's feedback** starts a run (D8): the agents and their runs are the deployment's until agents move
-  per workspace ([3g3](multi-workspace.md#the-project-plan-phase-3)); the page lists them inside a workspace too and
-  says "Runs on the deployment's feedback".
+  actor is the administrator who pressed it. Since 7.80.00 the PRD is one of the deployment's own projects' (its
+  `PROJECT#{id}` `META`, not being deleted): a workspace's project, no project or one being deleted is 404 and nothing
+  starts, for a Run now and a run request alike.
+- **Only the deployment's feedback** starts a run (D8): the engineering agents and their runs are the deployment's
+  until they move per workspace ([3g3-c](multi-workspace.md#the-project-plan-phase-3)); a workspace holds none (since
+  7.80.00 an agent with `engineering` settings is refused there), and the agents routes list them only for a request
+  that names no workspace. The web app's agents calls and the assistant's agents tools name no workspace, inside one
+  too, so the Agents page shows the deployment's agents everywhere (the page for a workspace's own agents is
+  [3g3-ui-agents](multi-workspace.md#the-project-plan-phase-3)), and "Build from this PRD" is not offered inside a
+  workspace. The page says "Runs on the deployment's feedback".
 - The assistant's agent tools have no engineering field, and every agent write is an administrator's acting for
   themselves, so no delegated credential sets or changes one.
 - **Readiness** (7.50.00): before Enable, each check with its fix and doc link; Enable waits while a required one
@@ -911,7 +917,9 @@ An approved AI-assistant plan (`voc-plan/1`, [docs/assistant-plan-mode.md](assis
 `Start` choice to the plan branch; agent runs keep `{agent_id, run_id}` and `Init`. Before `Start`, the `RunScope`
 choice sets `$.run_scope` (`{}` for every run and plan today, whose input names no `workspace_id`), which every Lambda
 payload passes on beside its ids (7.29.00, [docs/multi-workspace.md](multi-workspace.md#the-project-plan-phase-3));
-the agent rows stay the deployment's, so the conductor and the steps refuse a state that names a workspace, but for
+no run starts in a workspace (since 7.80.00 a workspace's agents and workflows are its own, kept and edited there, but
+enable and Run now are refused: [3g3-a](multi-workspace.md#the-project-plan-phase-3)), so the conductor and the steps
+refuse a state that names a workspace, but for
 the two failure states, which still mark the run's or the plan's own row failed when it is of the run's scope. A plan
 approved in a workspace waits on its source and scraper runs in that workspace (its META's `workspace_id`); approving
 it needs membership there, and the approver's membership is re-checked before every step and wait.

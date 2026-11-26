@@ -115,6 +115,9 @@ from shared.ws_repo import (
     WorkspaceScope,
     WorkspaceTable,
     WorkspaceTombstones,
+    agent_pk,
+    agent_registry_pk,
+    agent_run_pk,
     control_query,
     conversants_pk,
     date_pk,
@@ -131,6 +134,7 @@ from shared.ws_repo import (
     scraper_run_pk,
     source_run_pk,
     user_context_owners_pk,
+    workflow_pk,
 )
 
 __all__ = [
@@ -236,6 +240,9 @@ class Context:
     #: voc-conversations: the workspace's list of conversation owners (``WS#{ws}#CONVERSANTS``) and each owner's
     #: ``WS#{ws}#USER#{sub}`` (the ``conversations`` entry), read for their keys alone.
     conversations: WorkspaceTable
+    #: voc-agents (7.80.00): the workspace's registry of its agents' and workflows' partitions
+    #: (``WS#{ws}#AGENT_REGISTRY``) and the partitions it names (the ``agents`` entry), read for their keys alone.
+    agents: WorkspaceTable
     counts: dict[str, int] = field(default_factory=dict)
     pacer: Pacer = field(default_factory=Pacer)
     #: Whether the invocation still has its hand-over reserve (handler.py): checked inside a page's tombstones, so
@@ -732,6 +739,27 @@ def _per_sub(partition_of: Callable[[str, WorkspaceScope], str]) -> Callable[[Wo
     return listed
 
 
+#: The partition each agents registry row names, by its ``sk``'s kind (shared/ws_repo.py's builders, which refuse an id
+#: of the wrong shape).
+_AGENT_REGISTRY_KINDS: Final[Mapping[str, Callable[[WorkspaceScope, str], str]]] = {
+    'AGENT': agent_pk, 'WORKFLOW': workflow_pk, 'RUN': agent_run_pk}
+
+
+def _agent_partitions(scope: WorkspaceScope, row: Mapping[str, Any]) -> list[str]:
+    """The partition an agents registry row names (``AGENT#{id}``, ``WORKFLOW#{id}``, ``RUN#{run}``), inside the
+    workspace; a row of any other shape names nothing (logged by kind, never by value)."""
+    kind, _, row_id = str(row.get('sk') or '').partition('#')
+    build = _AGENT_REGISTRY_KINDS.get(kind)
+    if build is None:
+        logger.warning('agents registry row of an unknown kind left to the registry\'s own delete')
+        return []
+    try:
+        return [build(scope, row_id)]
+    except ValueError:
+        logger.warning('agents registry row naming a malformed id left to the registry\'s own delete')
+        return []
+
+
 #: The owner-list entries, by name (``owner_list_sweep``; the verify pass checks each list is gone).
 OWNER_LISTS: Final = {
     'import_runs': OwnerList('aggregates', lambda ctx: ctx.aggregates, _import_run_list, _import_run_detail),
@@ -756,6 +784,11 @@ OWNER_LISTS: Final = {
     # slug guards and count) LAST. Keys only; its objects are under ws/{ws}/library/, which the objects sweep takes.
     'library': OwnerList('projects', lambda ctx: ctx.projects, lambda scope: library_pk(workspace=scope),
                          listed_chunk_partitions, KEYS_ONLY),
+    # The workspace's agents and workflows in voc-agents (7.80.00, shared/agents_store.py): its registry names each
+    # agent's partition (its META, pause history and runs), each workflow's (its CURRENT row and revisions) and, by a
+    # run's own registry row, that run's journal; each deleted in full (the listing index's rows with them), then the
+    # registry LAST. Keys only.
+    'agents': OwnerList('agents', lambda ctx: ctx.agents, agent_registry_pk, _agent_partitions, KEYS_ONLY),
 }
 
 
@@ -1237,6 +1270,8 @@ SWEEPS: Final = (
     owner_list_sweep('participants', OWNER_LISTS['participants']),
     # The Documents Library (7.62.00): each item's passages, then the library partition LAST (OWNER_LISTS above).
     owner_list_sweep('library', OWNER_LISTS['library']),
+    # The agents and workflows (7.80.00): each partition the registry names, then the registry LAST (OWNER_LISTS above).
+    owner_list_sweep('agents', OWNER_LISTS['agents']),
     # The members' conversations: the owner list in voc-conversations (conversants_pk, one row per sub) names each
     # owner's partition in the workspace, with their conversations and Stop markers. Each listed partition goes in
     # full, then the list LAST, so a stopped sweep resumes from it; every read is of keys alone (KEYS_ONLY, which the

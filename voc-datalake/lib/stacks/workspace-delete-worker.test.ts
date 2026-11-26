@@ -21,7 +21,7 @@ import {
 import { WORKSPACE_HARD_DELETE_CONTEXT, workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
 import { PROCESSOR_DROP_COUNT_ATTRIBUTES } from './processing-roles';
 import {
-  CONTROL_ROW_DELETES, CONVERSATION_PARTITIONS, DELETE_AUDIT_PARTITION, DELETE_JOB_PARTITION, MEMORY_PARTITIONS, PROJECT_CLAIM_PARTITIONS,
+  AGENT_PARTITIONS, CONTROL_ROW_DELETES, CONVERSATION_PARTITIONS, DELETE_AUDIT_PARTITION, DELETE_JOB_PARTITION, MEMORY_PARTITIONS, PROJECT_CLAIM_PARTITIONS,
   PARTICIPANT_PARTITIONS, PROJECTS_TABLE_PARTITIONS, REVIEW_LINK_REGISTRY, REVIEW_LINK_ROUTE_PARTITIONS, REVIEW_LINK_ROWS,
   TOMBSTONE_PARTITIONS,
   WORKSPACE_DELETE_MAX_EVENT_AGE_MINUTES, WORKSPACE_DELETE_RESERVED_CONCURRENCY,
@@ -200,10 +200,20 @@ describe('the voc-workspace-delete job', () => {
       'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
       'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
       'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
-      'participants', 'library', 'conversations', 'control_rows']);
-    expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['aggregates', 'controlRows', 'conversations',
+      'participants', 'library', 'agents', 'conversations', 'control_rows']);
+    expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['agents', 'aggregates', 'controlRows', 'conversations',
       'credentials', 'docshares', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'participants',
       'projects', 'radar', 'tombstones', 'watermarks']);
+  });
+
+  it('voc-agents: BatchWriteItem and a keys-only Query of one workspace\'s registry and the partitions it names', () => {
+    expect(AGENT_PARTITIONS).toStrictEqual([`WS#${ONE}#AGENT_REGISTRY`, `WS#${ONE}#AGENT#*`, `WS#${ONE}#WORKFLOW#*`,
+      `WS#${ONE}#RUN#*`]);
+    expect(on('Agents')).toStrictEqual(sorted([
+      { actions: ['dynamodb:BatchWriteItem'], index: null, condition: keys(AGENT_PARTITIONS) },
+      { actions: ['dynamodb:Query'], index: null, condition: keysOnly(AGENT_PARTITIONS) },
+    ]));
+    expect(worker().Environment.Variables).toHaveProperty('AGENTS_TABLE');
   });
 
   it('refuses to be built while the registry lacks a sweep the docs require (the conversations, say)', () => {

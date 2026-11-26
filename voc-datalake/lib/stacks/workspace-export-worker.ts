@@ -30,6 +30,8 @@
  *     do); nor can IAM pin the sort key or the attributes, or tell a deleted project's partitions from a live one's:
  *     only the code reads the listed row kinds, exports the allowlisted or classified fields and exports none of the
  *     rows of a project its registry marks deleted (lambda/jobs/workspace_export/projects.py, test_projects.py);
+ *   - voc-agents (7.80.00): Query only, of any one workspace id's `AGENT_REGISTRY`, `AGENT#*` and `WORKFLOW#*`
+ *     partitions, on the table; no write, no index, no run's journal (lambda/jobs/workspace_export/agents.py);
  *   - the raw data bucket, under `ws/{one id}/exports/*` only: PutObject, PutObjectTagging, GetObject,
  *     AbortMultipartUpload and ListMultipartUploadParts, and DeleteObject on `…/exports/*\/work/*` only (the work
  *     objects of an export that may not go on);
@@ -128,6 +130,13 @@ export const PROJECT_TABLE_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT_IDS
   `WS#${WORKSPACE_ID_PATTERN}#DOCSHARE#*`, `WS#${WORKSPACE_ID_PATTERN}#LIBRARY`];
 /** A workspace's project partitions in voc-jobs (its jobs) and voc-participants (its links to lists and people). */
 export const PROJECT_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#PROJECT#*`];
+/**
+ * One workspace's partitions in voc-agents the job reads (7.80.00, lambda/jobs/workspace_export/agents.py): its
+ * registry of its agents' and workflows' partitions, each agent's and each workflow's. Never a run's journal
+ * (`#RUN#*`), the deployment's rows (`AGENT#`, `WORKFLOW#`, `PLAN#`, the engineering agents') or the listing index.
+ */
+export const AGENT_TABLE_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}#AGENT_REGISTRY`,
+  `WS#${WORKSPACE_ID_PATTERN}#AGENT#*`, `WS#${WORKSPACE_ID_PATTERN}#WORKFLOW#*`];
 /** A workspace's two control-plane partitions in voc-workspaces (lambda/shared/ws_repo.py `control_query`). */
 export const CONTROL_PARTITIONS = [`WS#${WORKSPACE_ID_PATTERN}`, `AUDIT#WS#${WORKSPACE_ID_PATTERN}`];
 /** What the job does to the objects under a workspace's exports. */
@@ -146,6 +155,8 @@ export interface WorkspaceExportWorkerProps {
   projectsTable: dynamodb.ITable;
   jobsTable: dynamodb.ITable;
   participantsTable: dynamodb.ITable;
+  /** voc-agents (7.80.00): the workspace's agents and workflows. */
+  agentsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
 }
 
@@ -175,7 +186,7 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
   const worker = new Construct(scope, id);
   const {
     uniqueName, kmsKey, feedbackTable, aggregatesTable, workspacesTable, memoryTable, conversationsTable, projectsTable,
-    jobsTable, participantsTable, rawDataBucket,
+    jobsTable, participantsTable, agentsTable, rawDataBucket,
   } = props;
   const functionName = uniqueName(WORKSPACE_EXPORT_FUNCTION_BASE_NAME);
   const role = workerRole(worker, 'ExportRole');
@@ -259,6 +270,16 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
     resources: [jobsTable.tableArn, participantsTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': PROJECT_PARTITIONS } },
   }));
+  // 7.80.00: the workspace's agents and workflows (lambda/jobs/workspace_export/agents.py), Query only, of exactly their
+  // partitions, on the table (no index). IAM cannot pin the sort key or the attributes: the role may read every row of
+  // those partitions (an agent's lock and counters, a workflow's saver, a run row); only the code reads the listed
+  // row kinds and writes the allowlisted fields.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'QueryWorkspaceAgents',
+    actions: ['dynamodb:Query'],
+    resources: [agentsTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': AGENT_TABLE_PARTITIONS } },
+  }));
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'WriteWorkspaceExports',
     actions: EXPORT_OBJECT_ACTIONS,
@@ -313,6 +334,7 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
       PROJECTS_TABLE: projectsTable.tableName,
       JOBS_TABLE: jobsTable.tableName,
       PARTICIPANTS_TABLE: participantsTable.tableName,
+      AGENTS_TABLE: agentsTable.tableName,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       POWERTOOLS_SERVICE_NAME: WORKSPACE_EXPORT_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',

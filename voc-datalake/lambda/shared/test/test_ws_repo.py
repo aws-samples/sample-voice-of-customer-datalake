@@ -18,6 +18,10 @@ from shared.ws_repo import (
     OutOfScopeError,
     UnprocessedKeysError,
     WorkspaceScope,
+    agent_pk,
+    agent_registry_pk,
+    agent_run_pk,
+    agents_index_pk,
     category_pk,
     channel_pk,
     date_pk,
@@ -41,6 +45,7 @@ from shared.ws_repo import (
     source_run_pk,
     urgency_pk,
     watermark_key,
+    workflow_pk,
     ws_table,
 )
 
@@ -156,6 +161,31 @@ class TestKeys:
     def test_an_object_key_cannot_leave_the_workspace(self, parts):
         with pytest.raises(ValueError, match='non-empty segments'):
             s3_key(A, *parts)
+
+
+class TestAgentKeys:
+    """voc-agents' partitions of a workspace (7.80.00, the project plan 3g3-a): an agent's, a workflow's, a run's
+    events, the listing index's and the registry the export and the hard delete walk."""
+
+    def test_each_partition_of_one_workspace(self):
+        assert agent_pk(A, 'ag_0123456789ab') == f'WS#{WS}#AGENT#ag_0123456789ab'
+        assert workflow_pk(A, 'wf_0123456789ab') == f'WS#{WS}#WORKFLOW#wf_0123456789ab'
+        assert agent_run_pk(A, 'ar_019a2b3c4d5e01234567') == f'WS#{WS}#RUN#ar_019a2b3c4d5e01234567'
+        assert agent_registry_pk(A) == f'WS#{WS}#AGENT_REGISTRY'
+        assert [agents_index_pk(A, listing) for listing in ('AGENTS', 'WORKFLOWS', 'RUNS_ACTIVE')] == [
+            f'WS#{WS}#AGENTS', f'WS#{WS}#WORKFLOWS', f'WS#{WS}#RUNS_ACTIVE']
+        assert agent_pk(A, 'ag_0123456789ab') != agent_pk(B, 'ag_0123456789ab')
+
+    @pytest.mark.parametrize(('build', 'value'), [
+        (lambda value: agent_pk(A, value), 'ag_0123'), (lambda value: agent_pk(A, value), 'ag_0123456789ab#x'),
+        (lambda value: agent_pk(A, value), 'wf_0123456789ab'), (lambda value: workflow_pk(A, value), 'wf_default'),
+        (lambda value: workflow_pk(A, value), ''), (lambda value: agent_run_pk(A, value), 'ar_01'),
+        (lambda value: agent_run_pk(A, value), None), (lambda value: agents_index_pk(A, value), 'PLANS#sub'),
+        (lambda value: agents_index_pk(A, value), 'agents'),
+    ], ids=['short', 'a-hash', 'another-kind', 'the-builtin', 'empty', 'short-run', 'none', 'plans', 'lower'])
+    def test_a_malformed_id_builds_no_key(self, build, value):
+        with pytest.raises(ValueError, match=r'not an agent|not a listing'):
+            build(value)
 
 
 def _scan_every_page(repo, **kwargs) -> tuple[list[str], list[dict]]:

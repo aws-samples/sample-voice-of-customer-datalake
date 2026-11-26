@@ -249,7 +249,7 @@ def test_the_deleted_project_is_skipped_never_exported_and_counted(world, monkey
     assert counts == {'projects_documents': 5, 'personas': 2, 'document_versions': 2, 'document_comments': 2,
                       'review_links': 1, 'project_jobs': 1, 'project_lists': 1}
     assert {'projects_documents', 'personas'}.isdisjoint(manifest['not_per_workspace'])
-    assert 'agents_workflows' in manifest['not_per_workspace']
+    assert 'agents_workflows' not in manifest['not_per_workspace']   # (exported since 7.80.00, agents.py)
 
 
 def test_another_workspaces_rows_are_never_read(world, monkeypatch, queried):

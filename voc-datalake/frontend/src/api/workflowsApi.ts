@@ -28,7 +28,7 @@ import {
   WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION, isMonthlyBudgetUsd,
 } from '@stream/assistant/tools/agent-limits'
 import { isRecord } from '../lib/typeGuards'
-import { fetchApi } from './client'
+import { fetchApi as fetchInScope } from './client'
 import { eachOf, lenientList } from './lenientFields'
 import type { QueryClient } from '@tanstack/react-query'
 
@@ -434,6 +434,15 @@ export const workflowsKeys = {
   revision: (id: string, revision: number) => ['workflows', 'detail', id, 'revision', revision] as const,
   /** (7.52.00) The expanded flow of a revision, under the detail key too. */
   expanded: (id: string, revision: number | null) => ['workflows', 'detail', id, 'expanded', revision] as const,
+}
+
+/**
+ * Every workflows call goes in the deployment's scope (no `X-Workspace-Id`), inside a workspace too: since 7.80.00 the
+ * agents API's library is the workspace's a request names (docs/multi-workspace.md 3g3-a), and the web app keeps the
+ * deployment's until a workspace's Agents page ships (3g3-ui-agents).
+ */
+function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  return fetchInScope<T>(endpoint, options, 'deployment')
 }
 
 const path = (id: string, suffix = '') => `/workflows/${encodeURIComponent(id)}${suffix}`

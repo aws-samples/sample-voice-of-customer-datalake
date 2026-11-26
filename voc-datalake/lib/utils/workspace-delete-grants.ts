@@ -47,13 +47,18 @@
  *   - `conversations`: in voc-conversations, Query and BatchWriteItem of the owner list `WS#{id}#CONVERSANTS` and of
  *     each owner's `WS#{id}#USER#*` only, never the deployment's `USER#{sub}`; every Query for the keys alone
  *     (`dynamodb:Attributes` `pk` and `sk`, named, and `dynamodb:Select` `SPECIFIC_ATTRIBUTES`: no message, title or
- *     `first_at` is read; sweeps.py `KEYS_ONLY`).
+ *     `first_at` is read; sweeps.py `KEYS_ONLY`);
+ *   - `agents` (7.80.00): in voc-agents, Query and BatchWriteItem of the workspace's registry `WS#{id}#AGENT_REGISTRY`
+ *     and of the partitions it names, `WS#{id}#AGENT#*`, `WS#{id}#WORKFLOW#*` and `WS#{id}#RUN#*` only, never the
+ *     deployment's `AGENT#`, `WORKFLOW#`, `RUN#`, `PLAN#` or engineering rows; every Query for the keys alone
+ *     (`dynamodb:Attributes` `pk` and `sk`, named, and `dynamodb:Select` `SPECIFIC_ATTRIBUTES`: no instructions, flow
+ *     or history is read; sweeps.py `KEYS_ONLY`).
  * Reserved: MCP tokens, once phase 3 pins one to a workspace (sweeps.py says so).
  */
 export type DeleteGrant =
   | 'aggregates' | 'metricTypeIndex' | 'tombstones' | 'exportJobs' | 'feedback'
   | 'watermarks' | 'memory' | 'objects' | 'credentials' | 'controlRows' | 'radar' | 'projects' | 'docshares'
-  | 'participants' | 'conversations';
+  | 'participants' | 'conversations' | 'agents';
 
 /** Each sweep (SWEEPS' names, in order) and the grants it needs. */
 export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGrant[]>> = {
@@ -82,6 +87,7 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
   projects: ['projects'],
   participants: ['participants'],
   library: ['projects'],
+  agents: ['agents'],
   conversations: ['conversations'],
   control_rows: ['controlRows', 'aggregates'],
 };
@@ -96,7 +102,7 @@ export const REQUIRED_DELETE_SWEEPS: readonly string[] = [
   'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
   'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
   'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
-  'participants', 'library', 'conversations', 'control_rows',
+  'participants', 'library', 'agents', 'conversations', 'control_rows',
 ];
 
 /** Throws, naming them, when `registry` lacks any of `REQUIRED_DELETE_SWEEPS`. */

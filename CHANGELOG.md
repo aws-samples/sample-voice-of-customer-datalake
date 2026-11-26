@@ -41,6 +41,86 @@ usage line, so the platform console's cost per workspace left them out
   rows name `voc-chat-stream`'s models, or run the rollup's query on `voc-chat-stream`'s and `voc-plan-step`'s log
   groups and see their `bedrock_usage` rows. A turn stopped before its last event is not counted.
 
+## [7.80.00] - 2026-11-26
+
+Inside a workspace, the general agents and their workflows are that workspace's own: its agents, their pause and
+resume history, its workflows with every saved revision, the keys its runs will use (none written yet; the agents
+sweep already takes them), the agents and workflows routes, its export and its hard delete (slice 3g3-a of
+docs/multi-workspace.md's project plan). A workspace's agent is kept and edited there through the API but not turned on
+or run yet, and a workspace holds no engineering agent. The web app's Agents page and the assistant keep the
+deployment's agents everywhere until slice 3g3-ui-agents. Outside a workspace nothing changes, but for one thing: with
+the engineering module on, a Run now or a run request naming a workspace's PRD now gets 404 (see the upgrade notes).
+
+### Added
+
+- The agents and workflows routes resolve `X-Workspace-Id` first (`GET`/`POST /agents`, `GET`/`PUT`/`DELETE
+  /agents/<id>`, enable, disable, Run now, pause, resume, the runs' reads, cancel and decision; `GET`/`POST
+  /workflows`, validate, `GET`/`PUT`/`DELETE /workflows/<id>`, export, a revision, duplicate and rename). Inside a
+  workspace any member reads its agents (against the workspace's own categories) and its admins, acting for
+  themselves, write (`lambda/shared/agents_gate.py` `require_agents_admin`; the deployment's `admins` group and a
+  delegated caller grant nothing there). A platform admin enters them only as a member.
+- `lambda/shared/agents_store.py` takes a keyword-only `workspace` on the agents', workflows', history's and runs'
+  reads and writes, every call in a workspace through the workspace layer; new key builders in
+  `lambda/shared/ws_repo.py` (`agent_pk`, `workflow_pk`, `agent_run_pk`, `agents_index_pk`, `agent_registry_pk`),
+  the id shapes in `lambda/shared/agent_ids.py`. Each agent and workflow of a workspace gets a row in its registry,
+  `WS#{ws}#AGENT_REGISTRY`, in the transaction of its first row.
+- The workspace export's `agents_workflows` entity (`lambda/jobs/workspace_export/agents.py`): the registry, then each
+  agent's settings and history and each workflow's current row and revisions, each row kind only the fields it lists.
+  The manifest's `agents` section counts registry rows of a kind it does not list.
+- The hard delete's `agents` sweep: every partition the registry names, keys only, the registry last.
+
+### Changed
+
+- Inside a workspace `GET /agents` lists that workspace's agents only, none seeded there; the deployment's agents
+  (its engineering agents among them) are listed for a request that names no workspace.
+- Inside a workspace an agent is never turned on or run: `enabled: true`, enable, Run now, cancel and decision answer
+  409 `runs_not_in_workspace`, nothing written. An engineering agent (400) and an engineering flow (409) are refused
+  there, and the template copy a new agent gets is never an engineering flow there.
+- Inside a workspace an agent's `owner_sub` (who its runs will act as), when a create or an update names one, is one of
+  that workspace's current members (400 otherwise, nothing written); one not named stays the stored one, or the
+  creator's.
+- The web app's agents and workflows calls (`frontend/src/api/agentsApi.ts`, `workflowsApi.ts`) and the assistant's
+  agents tools (`lambda/stream/src/assistant/tools/internal-api.ts`, but for its plans) name no workspace, inside one
+  too: the Agents page, the run monitor and the assistant read and act on the deployment's agents, as before this release.
+- "Build from this PRD" is not offered inside a workspace.
+- An MCP token minted inside a workspace sends that workspace's `X-Workspace-Id` to the agents API too, as to every
+  other domain: its `agents_list` and `agents_get_run` are that workspace's agents (usually none yet), and it is no
+  longer offered `agents_run` (refused if called: agents there do not run yet; `api/mcp_global_handler.py`
+  `NOT_OFFERED_TO_A_WORKSPACE_TOKEN`, and its token view's `can_run_agents` is false). The engineering tools are
+  unchanged.
+- Inside a workspace a deployment admin who is a member there sees every one of its agents, a viewer too (the
+  workspace's categories do not narrow an admin), as on the workspace's other routes.
+- The export's `not_per_workspace` lists `settings` only.
+
+### Security
+
+- A feature agent's Run now and a run request (the MCP tool `engineering_run_request`, and its confirm) build only a
+  PRD of the deployment's own projects: the agents API reads the project's `PROJECT#{id}` `META`, strongly consistent
+  and projected to whether it is being deleted, and answers one 404 for a workspace's project, no project or a project
+  being deleted, before anything is asked or started. Its role may GetItem voc-projects' `PROJECT#*` only, for those
+  attributes (`lib/stacks/api-engineering-prd-check.ts`, with the engineering module on).
+
+- The export role may Query voc-agents' `WS#{one id}#AGENT_REGISTRY`, `#AGENT#*` and `#WORKFLOW#*` only; the delete
+  role may batch-delete, and read for keys alone, `WS#{one id}#AGENT_REGISTRY`, `#AGENT#*`, `#WORKFLOW#*` and
+  `#RUN#*` only (its keys-only reads placed last, so its managed overflow policy never holds a delete).
+- The raw-access guard: `agents_store.py`'s raw transaction count drops from 4 to 1, a literal `workspace=None` to
+  the agents store is counted, and `AGENT_REGISTRY` is spelled by the layer only. `agents_handler.py` gains one counted
+  `get_projects_table`: the PRD check above, which reads the deployment's project row by design.
+
+### Upgrade notes
+
+- No data moves: no workspace agent existed before this release. The web app and the assistant behave as before: the
+  Agents page, the run monitor and the assistant's agents tools show and act on the deployment's agents, inside a
+  workspace too. A workspace's own agents and workflows are reached through the API with `X-Workspace-Id` only (an
+  integration or a script), kept and edited there but not run. The Agents page for a workspace (its role's rules, the
+  engineering pages on the deployment's scope, a notice that automations can be set up there but not run yet, Turn on
+  and Run now disabled with that reason, Pause and Resume hidden) is slice 3g3-ui-agents.
+- With the engineering module on, a Run now or a run request naming a PRD outside the deployment's own projects is
+  now 404, without a workspace header too; one naming a deployment project runs as before.
+- A workspace-pinned MCP token (minted inside a workspace) that listed or ran the deployment's agents before this
+  release now lists that workspace's agents and is not offered `agents_run`. To list or run the deployment's agents
+  over MCP, mint a token outside any workspace.
+
 ## [7.79.00] - 2026-11-26
 
 Multi-workspace, phase 4: the cost estimate gets real prices. The platform console's cost figures

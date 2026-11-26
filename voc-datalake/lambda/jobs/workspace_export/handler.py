@@ -45,7 +45,7 @@ lock released, the starter notified. One for another generation, or with no read
 
 Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``CONVERSATIONS_TABLE``, ``WORKSPACES_TABLE``,
 ``PROJECTS_TABLE``, ``JOBS_TABLE``, ``PARTICIPANTS_TABLE`` (7.39.00: the project entities, projects.py),
-``RAW_DATA_BUCKET``.
+``AGENTS_TABLE`` (7.80.00: the agents and workflows, agents.py), ``RAW_DATA_BUCKET``.
 """
 from __future__ import annotations
 
@@ -66,6 +66,9 @@ from botocore.exceptions import (
     ResponseStreamingError,
 )
 
+from jobs.workspace_export.agents import ENTITIES as AGENT_ENTITIES
+from jobs.workspace_export.agents import AgentsSource
+from jobs.workspace_export.agents import check_cursor as check_agents_cursor
 from jobs.workspace_export.conversations import ConversationCount, carried_state, fresh_state
 from jobs.workspace_export.entities import ENTITIES, FILE_CAP, ExportRefused, Source, encode_row, manifest
 from jobs.workspace_export.library import LibrarySource
@@ -122,6 +125,8 @@ FEEDBACK_TABLE, AGGREGATES_TABLE, MEMORY_TABLE, CONVERSATIONS_TABLE, RAW_DATA_BU
 #: The project tables (7.39.00), by the names shared/project_keys.py ``project_partitions`` gives their partitions.
 PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE = (
     os.environ.get(name, '') for name in (PROJECTS_TABLE_ENV, JOBS_TABLE_ENV, PARTICIPANTS_TABLE_ENV))
+#: voc-agents (7.80.00, agents.py): the workspace's agents and workflows.
+AGENTS_TABLE: Final = os.environ.get('AGENTS_TABLE', '')
 
 #: Hand over to a fresh invocation when less than this remains (the 15-minute timeout's reserve: a part of up to
 #: 64 MB, the work objects, the progress write and the invoke all fit in it).
@@ -265,6 +270,8 @@ class RunState:
         cursor = carried.get('cursor')
         if phase in PROJECT_ENTITIES and isinstance(cursor, Mapping):
             check_cursor(cursor)  # the ids a project entity's cursor carries (projects.py)
+        if phase in AGENT_ENTITIES and isinstance(cursor, Mapping):
+            check_agents_cursor(cursor)  # the entries the agents' cursor carries (agents.py, 7.80.00)
         return cls(
             memory_exported=exported, conversations_counted=counted, projects_exported=projects,
             conversation_count=carried_state(carried.get('conversation_count'), scope),
@@ -325,7 +332,8 @@ class ExportRun:
                                           for name in (PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE)))
         self.source = Source(scope, ingest_table(scope, resource, FEEDBACK_TABLE), self.jobs, self.workspaces,
                              ingest_table(scope, resource, MEMORY_TABLE), projects,
-                             LibrarySource(scope, ingest_table(scope, resource, PROJECTS_TABLE)))
+                             LibrarySource(scope, ingest_table(scope, resource, PROJECTS_TABLE)),
+                             AgentsSource(scope, ingest_table(scope, resource, AGENTS_TABLE)))
         # voc-conversations through the workspace's view (shared/ingest_tables.py: ``ws_table`` in a workspace).
         self.conversations = ConversationCount(scope, ingest_table(scope, resource, CONVERSATIONS_TABLE))
         s3 = get_s3_client()

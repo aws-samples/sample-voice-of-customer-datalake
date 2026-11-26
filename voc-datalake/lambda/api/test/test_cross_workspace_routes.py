@@ -753,6 +753,8 @@ def case_problems(route: str, case: RouteCase) -> list[str]:
                  if len(key[0]) < 4 or (not key[1] and key[0].endswith('#')) or 'WS#' in key[0] or not why.strip()]
     if (case.ok_status >= 400) != bool(case.refusal) or (case.refusal and '.' not in case.refusal):
         problems.append('a refusing case (ok_status 400 or more) names its refusal (module.NAME), and only it')
+    if case.refusal_code and not case.refusal:
+        problems.append('refusal_code only beside the refusal it is the code of')
     return problems
 
 
@@ -792,12 +794,13 @@ _ROLE_IDS = {'A': {'sub': 'a'}, 'B': {'sub': f'{B_MARK}-b'}, UNKNOWN: {'sub': 'u
     (RouteCase(ids=_ROLE_IDS, ok_status=409), 'names its refusal'),
     (RouteCase(ids=_ROLE_IDS, refusal='shared.radar_exa_routes.NO_WORKSPACE_KEY'), 'names its refusal'),
     (RouteCase(ids=_ROLE_IDS, ok_status=400, refusal='NO_WORKSPACE_KEY'), 'names its refusal'),
+    (RouteCase(ids=_ROLE_IDS, refusal_code='runs_not_in_workspace'), 'refusal_code only'),
 ], ids=['an-id-as-a-literal', 'a-number', 'a-placeholder-not-in-ids', 'ids-and-no-ids', 'path-ids-missing',
         'a-shared-name-that-is-no-path-parameter', 'a-shared-value-with-no-reason', 'deployment-ids-naming-more',
         'deployment-ids-on-a-route-not-kept', 'a-gap-without-deployment-ids', 'a-gap-without-a-reason',
         'an-echo-without-a-reason', 'outside-a-everything', 'outside-a-every-sort-key',
         'outside-a-every-workspace', 'outside-a-without-a-reason', 'a-refusal-unnamed', 'a-refusal-on-a-success',
-        'a-refusal-with-no-module'])
+        'a-refusal-with-no-module', 'a-code-with-no-refusal'])
 def test_a_case_that_does_not_name_its_ids_is_caught(case, problem):
     assert [p for p in case_problems(_ROLE_ROUTE, case) if problem in p] != []
 
@@ -964,8 +967,9 @@ def check_inside_a(world: World, case: RouteCase, route: str) -> None:
     (``ok_status`` 400 or more) must also refuse it as a refusal does: nothing changed, no external write."""
     if case.ok_status >= 400:
         status, body = _refused(world, case, route, ws=WS_A, ids=case.ids.get('A', {}), caller=ADA)
-        assert (status, body) == (case.ok_status, {'success': False, 'error': _refusal_text(case.refusal)}), (
-            f'{route} inside A is not its refusal: {status} {body}')
+        refusal = {'success': False, 'error': _refusal_text(case.refusal),
+                   **({'code': case.refusal_code} if case.refusal_code else {})}
+        assert (status, body) == (case.ok_status, refusal), f'{route} inside A is not its refusal: {status} {body}'
         return
     since = {name: len(double.mock_calls) for name, double in world.doubles.items()}
     status, body = _lands_in_a(world, case, route, ids=case.ids.get('A', {}))
