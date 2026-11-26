@@ -72,17 +72,22 @@ def _read_module(file: Path, package: str) -> _Module:
 #: first (test_cross_workspace_routes.py proves it): followed in the files the caller names (``instance_files``).
 INSTANCE_RESOLVER: FunctionKey = ('shared.workspace_request', 'RequestWorkspace')
 INSTANCE_RESOLVER_METHODS = frozenset({'context', 'scope'})
+#: The two-path operator modules' resolver object (shared/workspace_request.py ``ResolvedRoutes``): its
+#: ``middleware``, installed first (``app.use(middlewares=[_request.middleware])``), resolves before every route of
+#: the module (test_cross_workspace_routes.py proves it); followed in the same files.
+ROUTES_RESOLVER: FunctionKey = ('shared.workspace_request', 'ResolvedRoutes')
+ROUTES_RESOLVER_MIDDLEWARE = 'middleware'
 
 
-def _resolver_instances(module: _Module) -> set[str]:
-    """Every module-level ``name = RequestWorkspace(...)`` of ``module`` (the class imported from
-    shared/workspace_request.py, under any local name). Neither an alias nor whether the name is bound only there is
-    checked here: a wrong instance can only make the scan find MORE routes, which the per-file detector
-    (test_cross_workspace_routes.py ``_instance_resolvers``, which checks both) then fails on, both ways."""
+def _resolver_instances(module: _Module, cls: FunctionKey = INSTANCE_RESOLVER) -> set[str]:
+    """Every module-level ``name = <cls>(...)`` of ``module`` (the class imported from shared/workspace_request.py,
+    under any local name). Neither an alias nor whether the name is bound only there is checked here: a wrong
+    instance can only make the scan find MORE routes, which the per-file detector (test_cross_workspace_routes.py
+    ``_instance_resolvers``, which checks both) then fails on, both ways."""
     return {stmt.targets[0].id for stmt in module.tree.body
             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name)
             and isinstance(stmt.value, ast.Call) and isinstance(stmt.value.func, ast.Name)
-            and module.names.get(stmt.value.func.id) == INSTANCE_RESOLVER}
+            and module.names.get(stmt.value.func.id) == cls}
 
 
 def _callees(module_name: str, module: _Module, fn: _Function, instances: frozenset[str] = frozenset()) -> set[FunctionKey]:
@@ -115,7 +120,7 @@ def _routes(fn: _Function) -> list[str]:
 
 def first_app_middleware(tree: ast.Module) -> str | None:
     """The name of the first middleware of the first module-level ``app.use(middlewares=[...])``: the one that runs
-    first."""
+    first (``name.method`` for a module-level object's method, ``_request.middleware``)."""
     for stmt in tree.body:
         call = stmt.value if isinstance(stmt, ast.Expr) else None
         if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == 'use'
@@ -124,16 +129,24 @@ def first_app_middleware(tree: ast.Module) -> str | None:
         for keyword in call.keywords:
             if keyword.arg == 'middlewares' and isinstance(keyword.value, ast.List | ast.Tuple) and keyword.value.elts:
                 first = keyword.value.elts[0]
+                if isinstance(first, ast.Attribute) and isinstance(first.value, ast.Name):
+                    return f'{first.value.id}.{first.attr}'
                 return first.id if isinstance(first, ast.Name) else None
         return None
     return None
 
 
-def _first_middleware(module_name: str, module: _Module) -> FunctionKey | None:
-    """The function of the module's first middleware (``first_app_middleware``), resolved through its imports."""
+def _first_middleware(module_name: str, module: _Module,
+                      routes_instances: frozenset[str] = frozenset()) -> FunctionKey | None:
+    """The function of the module's first middleware (``first_app_middleware``), resolved through its imports; the
+    resolver itself for the ``middleware`` of one of ``routes_instances`` (its ``ResolvedRoutes``, in a file
+    followed). Another object's method is no function the scan follows."""
     name = first_app_middleware(module.tree)
     if name is None:
         return None
+    if '.' in name:
+        base, attr = name.split('.', 1)
+        return RESOLVER if base in routes_instances and attr == ROUTES_RESOLVER_MIDDLEWARE else None
     return (module_name, name) if name in module.functions else module.names.get(name)
 
 
@@ -141,7 +154,8 @@ def routes_reaching_the_resolver(lambda_dir: Path,
                                  instance_files: frozenset[str] = frozenset()) -> set[tuple[str, str]]:
     """(file name, ``"METHOD /path"``) of every route in ``lambda_dir`` whose function reaches the resolver through
     any module, or that is served under /me/workspaces/current. In a file of ``instance_files`` a module-level
-    ``RequestWorkspace``'s resolving methods count as the resolver (``INSTANCE_RESOLVER``)."""
+    ``RequestWorkspace``'s resolving methods count as the resolver (``INSTANCE_RESOLVER``), and so does a module-level
+    ``ResolvedRoutes``'s ``middleware`` installed first (``ROUTES_RESOLVER``)."""
     modules: dict[str, _Module] = {}
     for file in sorted(lambda_dir.rglob('*.py')):
         if NOT_PRODUCTION.isdisjoint(file.relative_to(lambda_dir).parts[:-1]) and not file.name.startswith('test_'):
@@ -157,7 +171,10 @@ def routes_reaching_the_resolver(lambda_dir: Path,
         resolvers |= more
     # Routes are read from every function at any depth (async ones and methods too); one that is not a module
     # function reaches the resolver when it calls one itself.
-    module_wide = {name for name, module in modules.items() if _first_middleware(name, module) in resolvers}
+    routes_instances = {name: frozenset(_resolver_instances(module, ROUTES_RESOLVER))
+                        if module.file.name in instance_files else frozenset() for name, module in modules.items()}
+    module_wide = {name for name, module in modules.items()
+                   if _first_middleware(name, module, routes_instances[name]) in resolvers}
     return {(module.file.name, route)
             for name, module in modules.items()
             for fn in ast.walk(module.tree) if isinstance(fn, _Function)

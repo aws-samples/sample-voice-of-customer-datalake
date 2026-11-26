@@ -60,6 +60,105 @@ Who may open System is unchanged.
 - Deploy as usual (`npm run deploy:all`). No IAM or stored-data change. Lines written before this release carry no
   tag: in System errors they show their type only.
 
+## [7.75.03] - 2026-11-26
+
+Tests only: the integrations' 13 routes (`lambda/api/integrations_handler.py`) leave the cross-workspace suite's
+pending list with their two-workspace cases; they resolve X-Workspace-Id in the module's `ResolvedRoutes` middleware,
+as the scrapers do. Pending 366 -> 353 (phase 2: 53 -> 40).
+
+### Changed
+- An integrations world: each workspace's `app_reviews_ios` credentials in its own SSM parameter, its app connector,
+  tripped webscraper breaker and learned review site, the webscraper enabled in A and B; the deployment's in the
+  shared secret and its own rows, all marked (`World.deployment_mark`); the ingestor and EventBridge as doubles; the
+  plugin lists CDK sets. `<source>` is a `shared` path value: a plugin of the deployment's catalogue, the same id in
+  every place. Each place holds a key named after its mark, since the credentials status answers key names only. Run
+  now's ingestor payload must carry A on (`payload_names_a`); the schedule routes (enable, disable) are refused in
+  every workspace (400 inside A and B) and the deployment's without the header (`status_without_a_workspace`); the
+  methods' clear acts on any site inside A only (`accepts_any_id`: A's audit row first), and the deployment learned
+  A's site too, so a clear without A's scope shows; the connector delete answers B's id as an unknown one
+  (`refused_status=200`).
+- Check 4 of a route that refuses inside a workspace what it does for the deployment (`ok_status` 400 or more) also
+  needs it to refuse as a refusal does: nothing changed, no external write (the schedule routes; Radar's 409s).
+- Meta-tests: the settings store opened as the deployment's inside A fails check 4 for the credentials' and the
+  connectors' saves and reads and the credentials status; a Run now whose payload names no place, a methods clear
+  without A's scope, and a schedule switched inside A fail check 4.
+
+### Known gap (reported, not fixed here)
+- `DELETE /integrations/<source>/apps/<app_id>` in a place with no connector list writes an empty one; the scrapers'
+  delete writes nothing when there is nothing to remove.
+
+## [7.75.02] - 2026-11-26
+
+Tests only: the scrapers' 10 routes (`lambda/api/scrapers_handler.py`) leave the cross-workspace suite's pending list
+with their two-workspace cases; they resolve X-Workspace-Id in the module's `ResolvedRoutes` middleware, which the
+suite reads since 7.75.01. Pending 376 -> 366 (phase 2: 63 -> 53); written as 7.73.02, renumbered on top of
+7.75.00.
+
+### Changed
+- `table_snapshot` (what a refused request must leave as it was, and what check 4 reads) also holds every moto SSM
+  parameter and Secrets Manager secret, by name and version: a workspace's settings live in its own parameters and
+  rows, the deployment's in the shared secret.
+- A scrapers world: each workspace's scraper, app connector, learned review-site method and run row, and the
+  deployment's in the shared secret and its own rows; the webscraper enabled in A and B; each admin's own URL assist;
+  the webscraper, the assist worker and the URL check as doubles. A meta-test opens the settings store as the
+  deployment's inside A and expects check 4 to fail for a save and a delete.
+- `POST /scrapers/<scraper_id>/run` checks no id (the webscraper looks it up in the run's own place):
+  `RouteCase.accepts_any_id` makes check 2 send B's id and an unknown one inside A and expect each to work there,
+  change only A's rows, call no double naming B and answer nothing of B's. `GET /scrapers/<scraper_id>/status` answers
+  `never_run` naming the id asked about (`echoes_its_ids`: a view of the id, no refusal); the URL assist is its
+  starter's own `ASSIST#{sub}` in every place, by design (`outside_a`).
+- Check 4 also proves the request's place reaches what it starts: no call to a double inside A names B, and a case's
+  `payload_names_a` double (the scraper run's webscraper invoke) carries A on as `workspace_id`. In a world whose
+  deployment rows all hold one word (`World.deployment_mark`: the scrapers' and the manual import's), an answer inside
+  A holds none of it.
+- Check 5, when a refusal answers as a success does (`refused_status == ok_status`), also needs B's ids to be seen to
+  name a row: the request changes something, or answers otherwise than an unknown id.
+- `_names_a` counts an SSM parameter under A's own path (`/…/{A}/…`) as A's, never one under B's.
+- Meta-tests: a read of the deployment's scrapers inside A, and a run whose payload names no place or B, fail check 4;
+  B's ids that name nothing in B fail check 5.
+
+### Follow-up (recorded here and in the session report)
+- Twelve of the fourteen worlds do not yet mark every deployment row with one word, so `World.deployment_mark` is
+  unset there and a read inside A of the deployment's rows is caught only by their own per-handler tests.
+
+## [7.75.01] - 2026-11-26
+
+Tests only: the manual import's 8 routes (`lambda/api/manual_import_handler.py`) leave the cross-workspace suite's
+pending list with their two-workspace cases. They resolve X-Workspace-Id before every route since 7.67.00, in the
+module's `ResolvedRoutes` middleware (`shared/workspace_request.py`), which the suite could not see. Pending 384 -> 376
+(phase 2: 71 -> 63), on top of 7.75.00; written as 7.72.03, then 7.73.01, renumbered as origin moved.
+
+### Changed
+- The cross-workspace suite reads a module-level `ResolvedRoutes`, bound once as `_request = ResolvedRoutes(app)`
+  (its own `RequestWorkspace`; only its `clients` set after) and installed as the module's first middleware: every
+  route of the module resolves first, in the per-file detector and in the cross-module scan, for the files named in
+  `INSTANCE_RESOLVER_FILES`. A proof test pins `ResolvedRoutes.middleware` (it reads the membership through its
+  `RequestWorkspace` before the route runs), with 21 shape tests and a scan test. An object any of whose parts the
+  module changes (an inner attribute, `setattr`, `delattr`, `vars`; for `ResolvedRoutes` anything but its
+  `clients`), or a `ResolvedRoutes` made with anything but `app`, is not read: for both objects.
+- `table_snapshot` (what a refused request must leave as it was) also holds every object of every moto bucket, so a
+  refused request that writes a raw copy fails in every world.
+- Check 4 (inside A) also proves where the request lands: every row or object it adds, changes or removes is A's by
+  its key or its workspace stamp (A's id in its `pk` or `sk`, or as its `workspace_id` or `workspace`; an object
+  under `ws/{A}/`), or is one its case says is no workspace's (`RouteCase.outside_a`, by `pk` and `sk` prefix with
+  why, so the rows beside it still name A). Eight existing cases name theirs: a person's own rows (the `MCPGTOKEN`
+  `CREATOR#` index, `PLANCAP#`, `USERCTX#` `onboarding`), a new plan's `STEP#` and `EVT#` rows, the deployment's
+  `config_version` counter (`METRIC#meta`, bumped by any place's settings change), and a conversation's delete audit
+  in the one `AUDIT#delete` partition (it names A only in its target; reported).
+- Check 2 also sends the deployment's own ids (`deployment_ids`) under A's header and expects the unknown ids' answer:
+  a row of no workspace is never A's to read or confirm.
+- A manual-import world: a parse job and an import run of each workspace and of the deployment (its own run under
+  A's run id), raw copies to a moto bucket, the queue and the parse worker as doubles, the real import-run writer.
+  `_require_job`'s refusal (a job's key is its id alone, so only its `workspace_id` keeps it where it started) joins
+  the meta-test that takes each file's refusal out and expects check 3 to fail; two more meta-tests: a deployment job
+  let through inside A fails check 2, an upload inside A written as the deployment's fails check 4.
+
+### Known gap (reported, not fixed here)
+- `GET /scrapers/manual/parse/<job_id>`'s 404 repeats the id it was sent (`Job <id> not found`; the confirm's is the
+  fixed `Job not found`), which the suite's rule "a refusal does not repeat its ids" refuses. Its case says so
+  (`RouteCase.echoes_its_ids`): checks 2 and 3 compare the answers with the request's own ids masked, and fail,
+  asking for the note to go, the day the 404 stops repeating them (a meta-test proves both checks do).
+
 ## [7.75.00] - 2026-11-26
 
 Multi-workspace, phase 3: the logs per workspace. Inside a workspace, Administration → System → Logs shows that

@@ -35,33 +35,6 @@ PHASE_2: dict[str, frozenset[str]] = {
         'POST /feedback-forms/<form_id>/submit',
         'POST /feedback-forms/<form_id>/events',
     }),
-    # Credentials move to the workspace secret.
-    'integrations_handler.py': frozenset({
-        'DELETE /integrations/<source>/apps/<app_id>',
-        'DELETE /integrations/<source>/methods/<domain>',
-        'GET /integrations/<source>/apps',
-        'GET /integrations/<source>/credentials',
-        'GET /integrations/<source>/methods',
-        'GET /integrations/status',
-        'GET /sources/status',
-        'POST /integrations/<source>/apps',
-        'POST /sources/<source>/reset',
-        'POST /sources/<source>/run',
-        'PUT /integrations/<source>/credentials',
-        'PUT /sources/<source>/disable',
-        'PUT /sources/<source>/enable',
-    }),
-    # Resolves X-Workspace-Id since 7.67.00 (ResolvedRoutes, as the scrapers API): its two-workspace cases are owed.
-    'manual_import_handler.py': frozenset({
-        'POST /scrapers/manual/detect',
-        'GET /scrapers/manual/history',
-        'GET /scrapers/manual/history/<run_id>',
-        'GET /scrapers/manual/parse/<job_id>',
-        'POST /scrapers/manual/confirm',
-        'POST /scrapers/manual/csv-upload',
-        'POST /scrapers/manual/json-upload',
-        'POST /scrapers/manual/parse',
-    }),
     'metrics_handler.py': frozenset({
         'GET /feedback',
         'GET /feedback/<feedback_id>',
@@ -90,18 +63,6 @@ PHASE_2: dict[str, frozenset[str]] = {
         'POST /s3-import/reprocess',
         'POST /s3-import/sources',
         'POST /s3-import/upload-url',
-    }),
-    'scrapers_handler.py': frozenset({
-        'DELETE /scrapers/<scraper_id>',
-        'GET /scrapers',
-        'GET /scrapers/<scraper_id>/status',
-        'GET /scrapers/connectors',
-        'GET /scrapers/jobs/<job_id>',
-        'GET /scrapers/review-methods',
-        'GET /scrapers/templates',
-        'POST /scrapers',
-        'POST /scrapers/<scraper_id>/run',
-        'POST /scrapers/analyze-url',
     }),
 }
 
