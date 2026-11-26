@@ -109,6 +109,20 @@ def boards_world() -> Generator[World, None, None]:
         yield world
 
 
+#: Board copies are opt-in: written only once an admin saves a ``feature_requests`` profile.
+BOARD_RAW_PROFILE: list[dict[str, str]] = [{'id': 'feature_requests', 'label': 'Feedback boards', 'pii': 'allow'}]
+
+
+@contextmanager
+def raw_boards_world() -> Generator[tuple[World, Any], None, None]:
+    """``boards_world`` with board raw copies on (a saved ``feature_requests`` profile, a moto raw bucket): the world
+    and the raw bucket's client."""
+    from shared.test.raw_lake_fixtures import raw_lake_client
+    from shared.test.source_profile_fixtures import seeded_source_profiles
+    with boards_world() as world, seeded_source_profiles(BOARD_RAW_PROFILE), raw_lake_client() as s3:
+        yield world, s3
+
+
 def event(method: str, path: str, *, claims: dict | None = None, body: object = None,
           query: dict | None = None, raw_body: str | None = None) -> dict:
     """A REST proxy event; ``claims=None`` is an unauthenticated (public route) caller."""

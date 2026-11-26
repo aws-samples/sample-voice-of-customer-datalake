@@ -17,6 +17,97 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.72.03] - 2026-11-26
+
+The follow-ups 7.72.00's review left open, all in the erasure by email: a job that skipped a malformed row in
+voc-participants no longer says it erased everyone; the boards' customer-contact pass judges a +1 as it is when read
+again, not as the scan saw it; and a +1's re-key no longer overwrites an edit that lands between its read and its
+write; and a board row's raw folder is swept again after its change, whether the change held or not, so an edit archived meanwhile goes too. The
+order of a contact-only row's erasure (its raw copies, then its contact) was checked and stays, its trade-off now
+written down.
+
+### Fixed
+
+- **`participants_complete` counts a skipped malformed row** (`lambda/jobs/retention/runs.py` `participant_fields`):
+  a guard, a people-index row or a workspace's saved row naming no person is counted
+  (`participant_guards_malformed`) and skipped, and a skipped saved row may still name a person whose tail stays; the
+  job said `participants_complete: true` all the same. That count now leaves `participants_complete: false`, beside
+  `participants_not_erased` and `participant_index_rows_kept`.
+- **A +1's contact is judged on the +1 as read again** (`lambda/jobs/retention/boards.py` `_erase_row`): a +1 whose
+  own address and contact both matched at the scan had its `contact_email` dropped because the scan's row held the
+  address there; it is now dropped only while the re-read row still holds a spelling of the address, and a +1 re-keyed
+  for its own address whose re-read contact is the address loses that too.
+- **A +1's re-key no longer loses an edit made after its read** (`lambda/jobs/retention/boards_rekey.py` `rekey`):
+  the transaction put the +1 as read under its new id and deleted the old row on its existence alone, so an edit
+  landing between the read and the write (a new contact, a changed field) was overwritten. The Delete now holds only
+  while the row is as read (`updated_at = :seen`, or `attribute_not_exists(updated_at)` for a row that had none) and
+  asks for the old row on a failed condition (`ReturnValuesOnConditionCheckFailure` `ALL_OLD`, within the GetItem the
+  worker already holds); the cancellation's reasons tell a gone row (skipped, as before) from a changed one, which is
+  read again and tried again, at most 3 times (`boards.MAX_TRIES`), then the job fails (`SupportKeptChanging`, its
+  message naming the request, never the +1's id or the address) and an admin runs it again.
+- **A board row's raw folder is swept again after its change, whatever the change did** (`boards.py` `erase`): the
+  boards' edit routes write, then archive (`put_support_route`: `put_support` then `archive_support`; `put_request`:
+  `update_request` then `archive_request`), so an edit landing between the erasure's folder delete and its change
+  (the very edits the re-key's retry reads again) archived a version naming the address into the old folder, and
+  nothing swept it; so did one followed by a second edit or a delete that made the change not hold. Every matched
+  row's folder is now swept once more after its change (a re-key, a contact's REMOVE, a request's de-identify), held
+  or not: one more ListObjectVersions page per matched row; a row whose change did not hold is still not counted.
+  Checked, no change needed: a later edit of a re-keyed +1's old id is refused (`put_support(replacing=True)` is
+  conditional on the row existing: 404, nothing archived), and a request's edit (`update_request`, conditional the
+  same way) after its de-identify archives the row as it now is, without the reporter. What remains
+  (docs/multi-workspace.md 3g2-raw), and only this: (a) an edit whose write lands before the erasure's change (or its
+  attempt) and whose archive lands after the second sweep, i.e. the erasure's read, write and sweep all between the
+  route's write and its one S3 put; (b) a version archived before a job that crashed between its change and its
+  second sweep. Either copy names the address, and no rerun finds it once the row no longer matches. Not reached
+  either, and older than this release (3g2-orphan): the raw copies of a request or a +1 deleted before the erasure,
+  whose folder is found only through a row that no longer exists.
+
+### Not changed (a follow-up declined)
+
+- **A contact-only row's raw copies still go before its contact's REMOVE** (`boards.py` `erase`): a board row's raw
+  copies hold every field of the row (`shared/feature_requests_raw.py`), so the version the scan matched names the
+  address even when the contact changed since, and a crash between the sweep and the REMOVE leaves a row a rerun
+  still matches. The trade-off, for a +1 and a contact-only request alike: the folder is deleted whole, every
+  version, the versions an edit wrote after the contact changed included, which no longer name the address, so the
+  supporter's or reporter's own submission is gone from the archive while the row keeps it (and the row is not
+  counted in `board_items_deidentified`). The contact-only record (`{request id}#contact#{token}`) stands for the
+  attempt and covers those copies.
+
+### Tests
+
+- `lambda/jobs/retention/test/test_participant_erasure.py`: a malformed workspace saved row leaves the job and audit
+  rows not complete; `participant_fields` for each of the three counters; a +1 whose contact changed between the scan
+  and the re-key keeps its new contact; one whose contact became the address on the re-read row loses it with the
+  re-key; an edit between the re-read and the transaction is read again (its new contact kept, or the address
+  erased); a +1 that keeps changing fails the job, naming no address; a contact-only +1's raw copies deleted before
+  its contact's REMOVE and again after it; a contact-only +1 whose contact changed loses both its raw versions (the
+  edit's too), keeps its new contact and is not counted.
+- `lambda/api/test/test_board_erasure_route_race.py` (the boards' real routes, raw copies on): a +1 edited through
+  `put_support_route` between the folder delete and its re-key, a contact-only +1 edited between the folder delete and
+  its REMOVE, and a request edited through `put_request` between the folder delete and its de-identify each leave no
+  copy naming the address; so do an edit keeping the contact followed by one changing it, and an edit followed by the
+  +1's delete (the REMOVE does not hold either time); a re-keyed +1's old id refuses a later edit (404) and archives
+  nothing; a change that does not hold is still swept twice and not counted.
+- `lambda/jobs/retention/test/test_board_rekey.py`: an edit between the read and the write cancels the move and
+  stands; the cancellation reasons (gone, changed, a conflict, a taken id, none) and any other reason raising.
+- Role names in the erasure tests (`test_every_copy.py`, `test_board_rekey.py`, `test_settings_classification.py`):
+  the fixtures' first names and addresses are replaced with role names.
+- The synth baseline regenerated: two template hashes (VocApiStack, VocProcessingStack), from the version bump; no
+  name changed.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:all`). VocProcessingStack gets the retention worker's code; VocApiStack a
+  version-only update (its code changes by a comment in `settings_handler.py` alone). No data migration, no grant
+  change, no resource renamed.
+- Every job row with `participants_complete: true` and `participant_guards_malformed` above 0 (written by 7.72.00) did
+  not erase everyone. Malformed, an operator first: inspect the guard, index or saved row the count names in
+  voc-participants and mend it, or erase by id the person it names, then run the erasure again; the job reads complete
+  only once no malformed row remains. Refused or kept (`participants_not_erased`, `participant_index_rows_kept`): run
+  the erasure again. Either way a workspace's own erasure is run again by that workspace's admin, the deployment's
+  only where the deployment has its own request for the address (the job keeps only the address's hash: submit it
+  again with its address and legal basis).
+
 ## [7.72.02] - 2026-11-26
 
 Tests only: the feedback forms' 14 signed-in routes (`lambda/api/feedback_form_handler.py`, through `_request_scope`

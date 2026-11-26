@@ -24,7 +24,13 @@ from shared.aws import is_conditional_check_failure
 from shared.erasure_jobs import job_key
 from shared.ingest_tables import table_view
 from shared.logging import logger
-from shared.retention import ERASURE_JOB_COUNTERS, ERASURE_OPTIONAL_COUNTERS, INDEX_KEPT_COUNTER, NOT_ERASED_COUNTER
+from shared.retention import (
+    ERASURE_JOB_COUNTERS,
+    ERASURE_OPTIONAL_COUNTERS,
+    GUARD_MALFORMED_COUNTER,
+    INDEX_KEPT_COUNTER,
+    NOT_ERASED_COUNTER,
+)
 from shared.timestamps import now_iso
 from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
 
@@ -72,9 +78,10 @@ DEPLOYMENT_WALKED: Final = 'deployment_projects_walked'
 #: (7.72.00, projects 3g2; participants.py): on the job and audit rows of every such job, the deployment's and a
 #: workspace's own (``participant_fields``), so an admin can tell which jobs to submit again.
 PARTICIPANTS_WALKED: Final = 'participants_walked'
-#: ``PARTICIPANTS_WALKED``, no participant refused (``participants_not_erased`` 0) and no guard's index row left
-#: holding the address (``participant_index_rows_kept`` 0): the job erased every person the address named in
-#: voc-participants (that store only). The rerun rule reads it: every such erasure whose row does not say
+#: ``PARTICIPANTS_WALKED``, no participant refused (``participants_not_erased`` 0), no guard's index row left
+#: holding the address (``participant_index_rows_kept`` 0) and no malformed guard, index or saved row skipped
+#: (``participant_guards_malformed`` 0, 7.72.03: a skipped saved row may still name a person whose tail stays): the job
+#: erased every person the address named in voc-participants (that store only). The rerun rule reads it: every such erasure whose row does not say
 #: ``participants_complete: true``.
 PARTICIPANTS_COMPLETE: Final = 'participants_complete'
 _CARRIED_FLAGS: Final = (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED, PARTICIPANTS_WALKED)
@@ -147,13 +154,14 @@ def participant_fields(run: Mapping[str, Any]) -> dict[str, Any]:
     """What an erasure by email without a source, the deployment's or a workspace's own, says of voc-participants on
     its job and audit rows (7.72.00): ``PARTICIPANTS_WALKED``, true once its ``participants`` phase ended (false for a
     job handed over past that phase across the upgrade, a run where voc-participants is not configured, or the
-    deployment's run without voc-workspaces), and ``PARTICIPANTS_COMPLETE``, walked, nobody refused and no guard's
-    index row left holding the address (kept after every try conflicted, no guard back: the next erasure unlists it).
-    Nothing for any other run."""
+    deployment's run without voc-workspaces), and ``PARTICIPANTS_COMPLETE``, walked, nobody refused, no guard's
+    index row left holding the address (kept after every try conflicted, no guard back: the next erasure unlists it)
+    and no malformed row skipped (``participant_guards_malformed``, 7.72.03). Nothing for any other run."""
     if not email_without_source(run):
         return {}
     walked = run.get(PARTICIPANTS_WALKED) is True
-    left = int(run.get(NOT_ERASED_COUNTER) or 0) + int(run.get(INDEX_KEPT_COUNTER) or 0)
+    left = sum(int(run.get(counter) or 0) for counter in (NOT_ERASED_COUNTER, INDEX_KEPT_COUNTER,
+                                                         GUARD_MALFORMED_COUNTER))
     return {PARTICIPANTS_WALKED: walked, PARTICIPANTS_COMPLETE: walked and not left}
 
 

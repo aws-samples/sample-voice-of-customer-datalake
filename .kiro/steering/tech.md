@@ -252,7 +252,8 @@ workspace's, a workspace's own job its own; a workspace's exports closed first; 
 job's partition, `PARTICIPANTS#{guard hash}` (its `ttl` 30 days after its last save; removed by the table's TTL,
 usually within a few days after its `ttl`), then erased by `shared/participants_erasure.py` `erase_person` (a person
 found gone has a cut erasure's tail finished, `finish_erasure`), a refusal that does not clear within the run or a
-guard's index row kept with no guard back left saved and counted (`participants_complete` false), any other error
+guard's index row kept with no guard back left saved and counted (`participants_complete` false; since 7.72.03 a
+malformed guard, index or saved row skipped and counted, `participant_guards_malformed`, too), any other error
 failing the job; without voc-workspaces the deployment's job reads its own scope only and says
 `participants_walked: false`; load: three reads per listed workspace (the guard's GetItem, one people-index Query, at
 most 10 pages, the GetItem of its saved row), two for the deployment, the listing walked again (one Query per 100

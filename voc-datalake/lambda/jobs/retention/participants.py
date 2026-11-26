@@ -64,7 +64,9 @@ Counted: ``participants_erased`` (each person this job's call erased; a person a
 mostly erased is counted by the job that finishes it, and one whose erasure finished just before a crash is counted
 by neither: a lower bound across retries), ``participant_guards_malformed`` (a guard or index row naming no person
 id, a string one, and a workspace's saved row of the wrong shape, which is skipped: another scope's bad row never
-fails the deployment's erasure; the job's own row of the wrong shape fails it), ``participant_index_rows_kept`` (a
+fails the deployment's erasure; the job's own row of the wrong shape fails it. Since 7.72.03 any of them leaves the
+job's row saying ``participants_complete: false``: a skipped row may still name a person whose tail stays),
+``participant_index_rows_kept`` (a
 workspace guard's index row left holding the address: every try to unlist it conflicted and no guard of the address is
 back; the entry stays saved, like a refusal, and the next erasure unlists it. A row kept because a guard is back lists
 that newer person and is not counted).
@@ -304,7 +306,8 @@ class ParticipantEraser:
 
     def _workspace_saved(self, scope: WorkspaceScope) -> list[str]:
         """Whom a workspace's own saved row names; a row of the wrong shape is counted
-        (``participant_guards_malformed``) and skipped: another scope's bad row never fails the deployment's erasure."""
+        (``participant_guards_malformed``, so the job does not read complete) and skipped: another scope's bad row never
+        fails the deployment's erasure."""
         try:
             return self._saved(scope, scope.ws, set())[0]
         except ValueError:

@@ -54,23 +54,23 @@ def _keys(aws) -> set[str]:
 
 class TestTombstones:
     def test_every_deleted_item_leaves_a_contentless_tombstone_with_its_legal_basis(self, aws, worker_context):
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        put_feedback(aws, 'f1', author='Jane', text='I hate it')
-        put_feedback(aws, 'f2', author='John')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        put_feedback(aws, 'f1', author='Account manager', text='I hate it')
+        put_feedback(aws, 'f2', author='Support engineer')
         handler.handle_event(event, worker_context)
         [tombstone] = _tombstones(aws, 'web')
         assert {key: value for key, value in tombstone.items() if key != 'deleted_at'} == {
             'pk': 'AUDIT#tombstone#web', 'sk': 'f1', 'feedback_id': 'f1', 'source': 'web', 'store': 'feedback',
             'mode': 'erase', 'run_id': tombstone['run_id'], 'job_id': JOB_ID, 'legal_basis': BASIS}
         assert 'ttl' not in tombstone
-        assert 'Jane' not in str(tombstone)
+        assert 'Account manager' not in str(tombstone)
         assert 'hate' not in str(tombstone)
         assert (_job_row(aws)['legal_basis'], _audit(aws)['legal_basis']) == (BASIS, BASIS)
 
     def test_the_tombstones_are_written_before_any_item_is_deleted(self, aws, worker_context):
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        put_feedback(aws, 'f1', author='Jane')
-        put_feedback(aws, 'f2', author='Jane')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        put_feedback(aws, 'f1', author='Account manager')
+        put_feedback(aws, 'f2', author='Account manager')
         order: list[str] = []
         real_write, real_delete = copies.write_tombstones, copies.retention.delete_item
 
@@ -87,8 +87,8 @@ class TestTombstones:
         assert order[:3] == ['tombstones', 'delete', 'delete']
 
     def test_a_failed_delete_leaves_the_tombstone_and_a_retry_rewrites_the_same_key(self, aws, worker_context):
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        put_feedback(aws, 'f1', author='Jane')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        put_feedback(aws, 'f1', author='Account manager')
         with patch.object(copies.retention, 'delete_item', side_effect=RuntimeError('boom')):
             assert handler.handle_event(event, worker_context)['status'] == 'failed'
         assert [row['sk'] for row in _tombstones(aws, 'web')] == ['f1']
@@ -98,8 +98,8 @@ class TestTombstones:
         assert [row['sk'] for row in _tombstones(aws, 'web')] == ['f1']
 
     def test_a_job_from_before_6_00_reads_not_recorded(self, aws, worker_context):
-        event = _job(aws, 'author', 'Jane')
-        put_feedback(aws, 'f1', author='Jane')
+        event = _job(aws, 'author', 'Account manager')
+        put_feedback(aws, 'f1', author='Account manager')
         handler.handle_event(event, worker_context)
         assert _tombstones(aws, 'web')[0]['legal_basis'] == LEGACY_LEGAL_BASIS
 
@@ -120,9 +120,9 @@ class TestTombstones:
 class TestRadar:
     def test_an_erasure_by_author_deletes_the_radar_review_its_marker_and_raw_but_not_its_counters(
             self, aws, worker_context):
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        key = _radar(aws, 'r1', author='Jane')
-        _radar(aws, 'r2', author='John')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        key = _radar(aws, 'r1', author='Account manager')
+        _radar(aws, 'r2', author='Support engineer')
         aws['radar'].put_item(Item={'pk': 'RADAR#rival#daily_total', 'sk': '2026-01-01', 'count': 2})
         result = handler.handle_event(event, worker_context)
         assert (result['deleted_items'], result['deleted_radar_items'], result['deleted_objects']) == (0, 1, 1)
@@ -152,14 +152,14 @@ class TestRadar:
         assert aws['radar'].scan()['Count'] == 1
 
     def test_without_a_radar_table_the_phase_is_skipped(self, aws, worker_context):
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        _radar(aws, 'r1', author='Jane')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        _radar(aws, 'r1', author='Account manager')
         with patch.object(handler, 'RADAR_TABLE', ''):
             assert handler.handle_event(event, worker_context)['deleted_radar_items'] == 0
 
     def test_a_radar_delete_bumps_the_radar_version(self, aws, worker_context):
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        _radar(aws, 'r1', author='Jane')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        _radar(aws, 'r1', author='Account manager')
         handler.handle_event(event, worker_context)
         assert aws['radar'].get_item(Key={'pk': 'SETTINGS#radar', 'sk': 'version'}).get('Item')
 
@@ -184,10 +184,10 @@ class TestWholeFileUploads:
 
     def test_any_other_erasure_keeps_the_file_and_lists_it_for_review(self, aws, worker_context):
         aws['s3'].put_object(Bucket=BUCKET, Key=UPLOAD, Body=b'a')
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        self._from_upload(aws, 'c1', 'tickets', author='Jane')
-        self._from_upload(aws, 'c2', 'tickets', author='Jane')
-        self._from_upload(aws, 'c3', 'tickets', author='John')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        self._from_upload(aws, 'c1', 'tickets', author='Account manager')
+        self._from_upload(aws, 'c2', 'tickets', author='Account manager')
+        self._from_upload(aws, 'c3', 'tickets', author='Support engineer')
         result = handler.handle_event(event, worker_context)
         assert (result['deleted_items'], result['deleted_objects']) == (2, 0)
         assert UPLOAD in _keys(aws)
@@ -195,9 +195,9 @@ class TestWholeFileUploads:
         assert _audit(aws)['files_needing_review']['keys'] == [UPLOAD]
 
     def test_the_review_list_survives_a_hand_over(self, aws, worker_context, invoke_mock):
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        self._from_upload(aws, 'c1', 'tickets', author='Jane')
-        self._from_upload(aws, 'c2', 'tickets', author='Jane')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        self._from_upload(aws, 'c1', 'tickets', author='Account manager')
+        self._from_upload(aws, 'c2', 'tickets', author='Account manager')
         # Time for one item: the hand-over comes mid-page, after the first row of the upload.
         budget = iter([900_000, 0])
         worker_context.get_remaining_time_in_millis.side_effect = lambda: next(budget, 0)
@@ -223,9 +223,9 @@ def _row(aws, sk: str) -> dict:
 
 class TestLineage:
     def test_artifacts_that_cited_an_erased_item_lose_the_id_and_say_so(self, aws, worker_context):
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        put_feedback(aws, 'f1', author='Jane')
-        put_feedback(aws, 'f2', author='John')
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
+        put_feedback(aws, 'f1', author='Account manager')
+        put_feedback(aws, 'f2', author='Support engineer')
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1', 'f2'], evidence_feedback_ids=['f1'])
         _artifact(aws, 'PRD#b', input_feedback_ids=['f2'])
         _artifact(aws, 'META')
@@ -241,8 +241,8 @@ class TestLineage:
 
     def test_the_count_adds_up_over_runs(self, aws, worker_context):
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'], erased_evidence={'count': 3, 'job_id': 'er_old'})
-        put_feedback(aws, 'f1', author='Jane')
-        handler.handle_event(_job(aws, 'author', 'Jane', legal_basis=BASIS), worker_context)
+        put_feedback(aws, 'f1', author='Account manager')
+        handler.handle_event(_job(aws, 'author', 'Account manager', legal_basis=BASIS), worker_context)
         assert _row(aws, 'PERSONA#a')['erased_evidence']['count'] == 4
 
     def test_a_run_that_deleted_nothing_never_reads_the_projects(self, aws, worker_context):
@@ -259,10 +259,10 @@ class TestLineage:
         assert _row(aws, 'PERSONA#a')['input_feedback_ids'] == ['f1', 'f2']
 
     def test_the_lineage_pass_hands_over_with_its_cursor(self, aws, worker_context, invoke_mock):
-        put_feedback(aws, 'f1', author='Jane')
+        put_feedback(aws, 'f1', author='Account manager')
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'])
         _artifact(aws, 'PERSONA#b', input_feedback_ids=['f1'])
-        event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
+        event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
         # Budget for the one item and the pass's first two steps (how its projects are found: no backfill marker, so
         # by the projects' Scan; then the page of its projects): it hands over carrying the project still to read.
         budget = iter([900_000, 900_000])
@@ -283,16 +283,17 @@ class TestLineage:
 
 
 def _board_rows(aws) -> dict[str, str]:
-    """A request by Jane with her own +1 and John's, each with a raw copy; the raw keys by row."""
+    """A request by the account manager with their own +1 and the support engineer's, each with a raw copy; the raw
+    keys by row."""
     rows = {
         'fr_000000000001': {'pk': 'FR#fr_000000000001', 'sk': 'META', 'request_id': 'fr_000000000001',
-                            'title': 'Split invoices', 'reporter_email': 'jane@example.com', 'reporter_name': 'Jane',
+                            'title': 'Split invoices', 'reporter_email': 'account.manager@example.com', 'reporter_name': 'Account manager',
                             'created_at': '2026-03-04T10:00:00+00:00', 'totals': {'supporters': 2}, 'version': 0},
         'sup_0000000000aa': {'pk': 'FR#fr_000000000001', 'sk': 'SUP#sup_0000000000aa', 'support_id': 'sup_0000000000aa',
-                     'request_id': 'fr_000000000001', 'email': 'jane@example.com', 'name': 'Jane',
+                     'request_id': 'fr_000000000001', 'email': 'account.manager@example.com', 'name': 'Account manager',
                      'is_reporter': True, 'created_at': '2026-03-04T10:00:00+00:00'},
         'sup_0000000000bb': {'pk': 'FR#fr_000000000001', 'sk': 'SUP#sup_0000000000bb', 'support_id': 'sup_0000000000bb',
-                     'request_id': 'fr_000000000001', 'email': 'john@example.com', 'name': 'John',
+                     'request_id': 'fr_000000000001', 'email': 'support.engineer@example.com', 'name': 'Support engineer',
                      'created_at': '2026-03-05T10:00:00+00:00'},
     }
     keys = {}
@@ -309,7 +310,7 @@ def _board_row(aws, sk: str) -> dict:
 
 
 def _rekeyed_support(aws) -> dict:
-    """Jane's +1 after the erasure: the one support whose id is not one of the fixture's."""
+    """The account manager's +1 after the erasure: the one support whose id is not one of the fixture's."""
     rows = [row for row in aws['feature_requests'].scan()['Items']
             if str(row['sk']).startswith('SUP#') and row['sk'] not in ('SUP#sup_0000000000aa', 'SUP#sup_0000000000bb')]
     assert len(rows) == 1
@@ -319,7 +320,7 @@ def _rekeyed_support(aws) -> dict:
 class TestBoards:
     def test_an_erasure_by_email_deidentifies_the_board_rows_and_deletes_their_raw_copies(self, aws, worker_context):
         keys = _board_rows(aws)
-        result = handler.handle_event(_job(aws, 'email', 'Jane@Example.com', legal_basis=BASIS), worker_context)
+        result = handler.handle_event(_job(aws, 'email', 'Account.Manager@Example.com', legal_basis=BASIS), worker_context)
         assert result['board_items_deidentified'] == 2
         meta, other = _board_row(aws, 'META'), _board_row(aws, 'SUP#sup_0000000000bb')
         assert 'reporter_email' not in meta
@@ -329,7 +330,7 @@ class TestBoards:
         assert 'email' not in own
         assert 'name' not in own
         assert own['is_reporter'] is True
-        assert (other['email'], other['name']) == ('john@example.com', 'John')
+        assert (other['email'], other['name']) == ('support.engineer@example.com', 'Support engineer')
         assert _keys(aws) == {keys['sup_0000000000bb']}
         assert result['deleted_objects'] == 2
         assert (_job_row(aws)['board_items_deidentified'], _audit(aws)['board_items_deidentified']) == (2, 2)
@@ -343,7 +344,7 @@ class TestBoards:
                 patch.object(boards, 'deidentify', lambda table, row: (order.append('row'), real_deidentify(table, row))[1]), \
                 patch.object(boards_rekey, 'rekey', lambda table, key, new_id: (
                     order.append(f'rekey:{len(_tombstones(aws, "feature_requests"))}'), real_rekey(table, key, new_id))[1]):
-            handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
+            handler.handle_event(_job(aws, 'email', 'account.manager@example.com', legal_basis=BASIS), worker_context)
         # The request's tombstone and (7.72.00) this job's own record of the reporter's removal before the page
         # changes; the +1's (the 3rd) before its re-key.
         assert order == ['tombstones', 'row', 'rekey:3']
@@ -356,7 +357,7 @@ class TestBoards:
         assert stones[new_id]['feature_request_id'] == 'fr_000000000001'
         assert (stones[new_id]['legal_basis'], stones[new_id]['action']) == (BASIS, 'deidentified')
         assert 'sup_0000000000aa' not in str(stones)
-        assert 'jane' not in str(stones).lower()
+        assert 'account.manager' not in str(stones).lower()
         assert 'Split' not in str(stones)
         assert all('ttl' not in row for row in stones.values())
 
@@ -364,9 +365,9 @@ class TestBoards:
         """ENRICH# rows share a request's partition; the boards phase reads only META and SUP# rows."""
         _board_rows(aws)
         version = {'pk': 'FR#fr_000000000001', 'sk': 'ENRICH#2026-11-01T00:00:00Z#abc',
-                   'request_id': 'fr_000000000001', 'reporter_email': 'jane@example.com', 'email': 'jane@example.com'}
+                   'request_id': 'fr_000000000001', 'reporter_email': 'account.manager@example.com', 'email': 'account.manager@example.com'}
         aws['feature_requests'].put_item(Item=version)
-        handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
+        handler.handle_event(_job(aws, 'email', 'account.manager@example.com', legal_basis=BASIS), worker_context)
         kept = aws['feature_requests'].get_item(Key={'pk': version['pk'], 'sk': version['sk']})['Item']
         assert kept == version
         assert version['sk'] not in {row['sk'] for row in _tombstones(aws, 'feature_requests')}
@@ -382,7 +383,7 @@ class TestBoards:
             return real_current(tbl, request_id, support_id)
 
         with patch.object(boards_rekey, 'current_support', removed_meanwhile):
-            handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
+            handler.handle_event(_job(aws, 'email', 'account.manager@example.com', legal_basis=BASIS), worker_context)
         # The request's tombstone and (7.72.00) this job's own record of the reporter's removal, never the +1's.
         stones = {row['sk'] for row in _tombstones(aws, 'feature_requests')}
         assert {sk.split('#reporter#')[0] for sk in stones} == {'fr_000000000001'}
@@ -390,17 +391,17 @@ class TestBoards:
         assert _job_row(aws)['board_items_deidentified'] == 1
 
     @pytest.mark.parametrize(('field', 'value', 'source'), [
-        ('author', 'Jane', None), ('email', 'jane@example.com', 'web')])
+        ('author', 'Account manager', None), ('email', 'account.manager@example.com', 'web')])
     def test_other_erasures_leave_the_boards_alone(self, aws, worker_context, field, value, source):
         keys = _board_rows(aws)
         handler.handle_event(_job(aws, field, value, source, legal_basis=BASIS), worker_context)
-        assert _board_row(aws, 'META')['reporter_email'] == 'jane@example.com'
+        assert _board_row(aws, 'META')['reporter_email'] == 'account.manager@example.com'
         assert _keys(aws) == set(keys.values())
 
     def test_a_document_that_read_the_request_is_marked(self, aws, worker_context):
         _board_rows(aws)
         _artifact(aws, 'PRD#b', input_feature_request_ids=['fr_000000000001', 'fr_000000000009'])
-        result = handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
+        result = handler.handle_event(_job(aws, 'email', 'account.manager@example.com', legal_basis=BASIS), worker_context)
         assert result['artifacts_marked'] == 1
         prd = _row(aws, 'PRD#b')
         assert prd['input_feature_request_ids'] == ['fr_000000000009']
@@ -408,7 +409,7 @@ class TestBoards:
 
     def test_the_board_pass_hands_over_with_its_cursor(self, aws, worker_context, invoke_mock):
         _board_rows(aws)
-        event = _job(aws, 'email', 'jane@example.com', legal_basis=BASIS)
+        event = _job(aws, 'email', 'account.manager@example.com', legal_basis=BASIS)
         budget = iter([900_000, 900_000, 900_000])
         worker_context.get_remaining_time_in_millis.side_effect = lambda: next(budget, 0)
         with patch.object(boards, 'PAGE_SIZE', 1):
@@ -421,7 +422,7 @@ class TestBoards:
     def test_the_worker_deletes_only_the_old_key_of_a_rekeyed_support(self, aws, worker_context):
         _board_rows(aws)
         with patch.object(aws['feature_requests'].meta.client, 'delete_item') as delete:
-            handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
+            handler.handle_event(_job(aws, 'email', 'account.manager@example.com', legal_basis=BASIS), worker_context)
         delete.assert_not_called()
         sks = {row['sk'] for row in aws['feature_requests'].scan()['Items']}
         assert 'SUP#sup_0000000000aa' not in sks

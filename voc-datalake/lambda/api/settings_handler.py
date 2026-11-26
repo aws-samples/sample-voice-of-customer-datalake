@@ -2089,8 +2089,9 @@ ERASURE_VIEW_FIELDS = (
     # 7.72.00 (3g2): whether an erasure by email without a source (the deployment's or a workspace's own) looked the
     # address up in voc-participants and erased whom it found (jobs/retention/runs.py `participant_fields`); the people
     # it erased are the optional counter `participants_erased`; `participants_complete`: walked, nobody refused
-    # (`participants_not_erased` 0) and no guard's index row left holding the address (`participant_index_rows_kept`
-    # 0), the field the rerun rule reads.
+    # (`participants_not_erased` 0), no guard's index row left holding the address (`participant_index_rows_kept` 0)
+    # and, since 7.72.03, no malformed guard, index or saved row skipped (`participant_guards_malformed` 0), the field
+    # the rerun rule reads.
     'participants_walked', 'participants_complete',
 )
 # The erasure routes' workspace (shared/erasure_scope.py): read afresh per request, members only (no platform-admin

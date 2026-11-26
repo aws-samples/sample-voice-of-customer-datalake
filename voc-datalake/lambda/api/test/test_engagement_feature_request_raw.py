@@ -10,22 +10,18 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from engagement_fixtures import ADMIN, BOARD, BOARD_2, engagement_world, ok
+from engagement_fixtures import ADMIN, BOARD, BOARD_2, ok, raw_boards_world
 
-from shared.participants_settings import SETTINGS_KEY
-from shared.test.raw_lake_fixtures import RAW_BUCKET, raw_keys, raw_lake_client
+from shared.test.raw_lake_fixtures import RAW_BUCKET, raw_keys
 from shared.test.source_profile_fixtures import seeded_source_profiles
 
 BUCKET = RAW_BUCKET
-#: Board copies are opt-in: written only once an admin saves a ``feature_requests`` profile.
-_BOARD_PROFILE = [{'id': 'feature_requests', 'label': 'Feedback boards', 'pii': 'allow'}]
 
 
 @pytest.fixture
 def world() -> Iterator[tuple[Any, Any]]:
-    with engagement_world() as w, seeded_source_profiles(_BOARD_PROFILE), raw_lake_client() as s3:
-        w.participants.put_item(Item={**SETTINGS_KEY, 'company_domains': ['acme.example']})
-        yield w, s3
+    with raw_boards_world() as pair:
+        yield pair
 
 
 def test_no_board_copy_is_written_until_a_feature_requests_profile_is_saved(world, lambda_context):
