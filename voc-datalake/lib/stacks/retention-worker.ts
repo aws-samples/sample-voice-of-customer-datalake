@@ -16,7 +16,10 @@
  * responses (kept with the form in voc-aggregates); artifacts in voc-projects that
  * cited a deleted item are marked. Least privilege, pinned exactly by
  * processing-stack-retention.test.ts:
- *   - feedback: GetItem / Query / Scan / DeleteItem — no Put, no Update;
+ *   - feedback: GetItem / Query / Scan / DeleteItem — no Put, no Update; on the table only, no index (7.72.00);
+ *   - (7.72.00) the erasure walks' grants below (voc-projects, the product documents' reads, the participants' reads),
+ *     none a delete or a put, are in a customer-managed policy of their own, `RetentionWalksPolicy`: the role's inline
+ *     policy keeps every delete and every audit put, and would otherwise pass its size quota;
  *   - raw bucket: DeleteObject + DeleteObjectVersion on `raw/*`, `silver/*` and each workspace's
  *     `ws/{ws}/raw/*` and `ws/{ws}/silver/*` (an erasure by email or a retention window reaches a workspace's copies; the workspace
  *     segment is one id, `WORKSPACE_ID_PATTERN`), and ListBucketVersions restricted to those prefixes — no read there
@@ -70,6 +73,20 @@
  *     attribute; the audit-row guard denies it any write of an `AUDIT#` row there; GetItem of a `META`'s status
  *     only (`grantWorkspaceStatusRead`: an erasure creates no export lock for a workspace that is not active); and
  *     (7.43.00) Query of the `WORKSPACES` listing partition only (an erasure by email walks every listed workspace);
+ *   - participants (7.72.00, projects 3g2): an erasure by email without a source looks the address up in the
+ *     deployment's and each listed workspace's address guard and people index, and erases each person found
+ *     (lambda/jobs/retention/participants.py, which runs lambda/shared/participants_erasure.py `erase_person`), so
+ *     exactly that erasure's calls, each pinned by `dynamodb:LeadingKeys` to the deployment's and one workspace id's
+ *     partitions of its rows (`PARTICIPANT_ACCESS`): the guard's and the person's reads, the person's partition by
+ *     Query, a put of the participant's tombstone and delete record only, the membership and ask-recipient updates of
+ *     their own attributes only, the deletes of the guard, the person, its memberships and (in a workspace) the
+ *     guard's index row, the batch deletes of its tokens, project links and own rows (BatchWriteItem also allows
+ *     puts in those partitions: IAM cannot tell a batch's deletes from its puts; the code sends deletes only), and (in
+ *     a workspace) the guard's condition check that unlists it; and the people index's Query of the `PEOPLE`
+ *     partitions only, for the key alone. No Scan, no other partition or index. What IAM cannot pin: a DeleteItem on
+ *     `WS#{one id}#PARTICIPANTS` reaches every row of that workspace's index, one on `LIST#*` a list's `META` as well
+ *     as its members, and the PutItem on the two `AUDIT#` partitions could overwrite a row there: each is held to the
+ *     erasure's own rows only by the code's keys and conditions (TENETS.md tenet 6's gaps);
  *   - lambda:InvokeFunction on its own unqualified name (time-budget hand-over).
  */
 import * as cdk from 'aws-cdk-lib';
@@ -91,7 +108,7 @@ import {
 import { RETENTION_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
-import { grantKeyScopedWrites } from '../utils/table-write-grants';
+import { grantKeyScopedWrites, keyScopedWriteStatement, type TableWrite } from '../utils/table-write-grants';
 import { grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
 import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
 
@@ -188,6 +205,44 @@ export const WORKSPACE_PRODUCT_DOC_READS = [`ws/${WORKSPACE_ID_PATTERN}/projects
 /** The platform's listing of every workspace in voc-workspaces (lambda/shared/platform_workspaces.py `LISTING_PK`). */
 const WORKSPACE_LISTING_PARTITION = 'WORKSPACES';
 
+/** One statement of the participant erasure on voc-participants: its actions, and the partitions they may name: the
+ * deployment's, and the same parts inside one workspace id (`WS#{one id}#…`). */
+interface ParticipantAccess {
+  readonly actions: readonly ('GetItem' | 'Query' | 'ConditionCheckItem' | TableWrite)[];
+  readonly deployment: readonly string[];
+  readonly workspace: readonly string[];
+}
+/**
+ * Every call an erasure by email makes on voc-participants (7.72.00, projects 3g2: lambda/jobs/retention/participants.py
+ * and lambda/shared/participants_erasure.py `erase_person`, with the stores it calls): the address guard's read
+ * (`EMAIL#`), the person's (`PERSON#` / `META`) and its partition's Query; the participant's tombstone and delete
+ * record (`AUDIT#tombstone#participant`, `AUDIT#delete`, a workspace's tombstone in the same partition under its own
+ * sort key), put only if new; a person's `list_ids`, a list's `member_count` and (the deployment's) an ask
+ * recipient's token hash and error; the deletes of the guard, the person's rows and its memberships (`LIST#` /
+ * `MEMBER#`), and in a workspace the guard's row in its index (`PARTICIPANTS`), after a condition check of the guard;
+ * and the batch deletes of its tokens (`TOKEN#`, the deployment's only: a workspace person has none), its project links
+ * (`PROJECT#` / `PERSON#`) and its own rows. The reads share one statement (a Query of a guard's partition, or a
+ * condition check of a person's, reaches only what the GetItem already reads), so the role's inline policy stays under
+ * its size quota. lambda/jobs/retention/test/test_participant_erasure.py records every call the job sends against this
+ * list.
+ */
+const PARTICIPANT_ACCESS: readonly ParticipantAccess[] = [
+  { actions: ['GetItem', 'Query', 'ConditionCheckItem'], deployment: ['EMAIL#*', 'PERSON#*'], workspace: ['EMAIL#*', 'PERSON#*'] },
+  { actions: ['PutItem'], deployment: ['AUDIT#tombstone#participant', 'AUDIT#delete'], workspace: [] },
+  { actions: ['UpdateItem'], deployment: ['PERSON#*', 'LIST#*', 'ASK#*'], workspace: ['PERSON#*', 'LIST#*'] },
+  { actions: ['DeleteItem'], deployment: ['EMAIL#*', 'PERSON#*', 'LIST#*'], workspace: ['EMAIL#*', 'PERSON#*', 'LIST#*', 'PARTICIPANTS'] },
+  { actions: ['BatchWriteItem'], deployment: ['TOKEN#*', 'PROJECT#*', 'PERSON#*'], workspace: ['PROJECT#*', 'PERSON#*'] },
+];
+/** What the participant erasure's UpdateItems name (`dynamodb:Attributes`, the key included): a person's lists, a
+ * list's count, an ask recipient's token hash and error code. */
+const PARTICIPANT_UPDATE_ATTRIBUTES = ['pk', 'sk', 'list_ids', 'member_count', 'response_token_hash', 'error'];
+/** The participants' people index (core-stack.ts `gsi1`, lambda/shared/indexes.py `PARTICIPANTS_LISTING_INDEX`) and its
+ * partitions the erasure reads in each scope (`PEOPLE`, `WS#{one id}#PEOPLE`, the lower-cased address the sort key): a
+ * person whose erasure was cut after its guard went is still found. */
+const PARTICIPANT_PEOPLE_INDEX = 'gsi1';
+const PARTICIPANT_PEOPLE_INDEX_PARTITIONS = ['PEOPLE', `WS#${WORKSPACE_ID_PATTERN}#PEOPLE`];
+const PARTICIPANT_PEOPLE_INDEX_ATTRIBUTES = ['pk', 'gsi1pk', 'gsi1sk'];
+
 /** Path-style handler: the bundle keeps `jobs/retention/` with `shared/` beside `jobs/`. */
 const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
 
@@ -214,6 +269,8 @@ export interface RetentionWorkerProps {
   featureRequestsTable: dynamodb.ITable;
   /** voc-workspaces: an erasure by email removes the email and name from the person's membership rows. */
   workspacesTable: dynamodb.ITable;
+  /** voc-participants: an erasure by email erases the participants its address names (7.72.00). */
+  participantsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
 }
 
@@ -239,14 +296,16 @@ function retentionCode(): lambda.Code {
 
 /**
  * voc-projects for the worker: the backfill fallback's Scan, the two UpdateItem statements and the Queries of a
- * workspace's and the deployment's project partitions (each pinned by processing-stack-retention.test.ts).
+ * workspace's and the deployment's project partitions (each pinned by processing-stack-retention.test.ts), in the
+ * erasure walks' own customer-managed policy (`walk`, 7.72.00): none of them deletes anything, and the role's inline
+ * policy, which keeps every delete and every audit put, would otherwise pass its size quota.
  */
-function grantProjectsAccess(role: iam.Role, projectsTable: dynamodb.ITable): void {
+function grantProjectsAccess(walk: iam.ManagedPolicy, projectsTable: dynamodb.ITable): void {
   // Scan (7.48.00): only the deployment's walks' way of finding its review links, comment partitions and projects
   // until the backfill's marker is there (lambda/shared/review_registries.py; voc-datalake/scripts/projects/
   // backfill_review_registries.py). A later release (3g-d2) drops it once every deployment ran the backfill. On the table only (no index), and only for SCAN_ATTRIBUTES (dynamodb:Select and
   // dynamodb:Attributes): a Scan that reads any other attribute, or the whole item, is refused.
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
+  walk.addStatements(new iam.PolicyStatement({
     sid: 'ScanDeploymentReviewRows',
     actions: ['dynamodb:Scan'],
     resources: [projectsTable.tableArn],
@@ -259,14 +318,15 @@ function grantProjectsAccess(role: iam.Role, projectsTable: dynamodb.ITable): vo
   // lineage marks and the de-identification, each on the deployment's and one workspace id's partitions of its rows
   // only (7.48.00); no other attribute of a project row can be rewritten.
   // Neither asks for returned values (`dynamodb:ReturnValues` `NONE`), so neither reads a row back beyond its attributes.
-  grantKeyScopedWrites(projectsTable, role, ['UpdateItem'], LINEAGE_UPDATE_PARTITIONS, LINEAGE_UPDATE_ATTRIBUTES,
-    { noReturnValues: true });
-  grantKeyScopedWrites(projectsTable, role, ['UpdateItem'], PEOPLE_UPDATE_PARTITIONS, PEOPLE_UPDATE_ATTRIBUTES,
-    { noReturnValues: true });
+  // The table key's actions are the role's own (kmsKey.grantEncryptDecrypt).
+  walk.addStatements(keyScopedWriteStatement(projectsTable, ['UpdateItem'], LINEAGE_UPDATE_PARTITIONS,
+    LINEAGE_UPDATE_ATTRIBUTES, { noReturnValues: true }));
+  walk.addStatements(keyScopedWriteStatement(projectsTable, ['UpdateItem'], PEOPLE_UPDATE_PARTITIONS,
+    PEOPLE_UPDATE_ATTRIBUTES, { noReturnValues: true }));
   // 7.43.00 (projects 3g-b): a workspace's projects are read by Query only, of that workspace's partitions on the
   // table (no index, no Scan): the lineage marks of its erased items and an erasure by email's addresses; the code
   // writes a workspace's rows through the workspace layer only.
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
+  walk.addStatements(new iam.PolicyStatement({
     sid: 'QueryWorkspaceProjects',
     actions: ['dynamodb:Query'],
     resources: [projectsTable.tableArn],
@@ -275,7 +335,7 @@ function grantProjectsAccess(role: iam.Role, projectsTable: dynamodb.ITable): vo
   // 7.48.00 (projects 3g-d): the deployment's own projects by Query too, on the table only (no index: a deleted
   // project's META is off gsi1-by-type, so its registry, PROJECT_IDS, lists the projects), each project's, series' and
   // link's own partition and the deployment's project, link and series registries, of DEPLOYMENT_QUERY_ATTRIBUTES only.
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
+  walk.addStatements(new iam.PolicyStatement({
     sid: 'QueryDeploymentProjects',
     actions: ['dynamodb:Query'],
     resources: [projectsTable.tableArn],
@@ -288,18 +348,71 @@ function grantProjectsAccess(role: iam.Role, projectsTable: dynamodb.ITable): vo
   }));
 }
 
+/**
+ * voc-participants for the worker (7.72.00): one statement per entry of `PARTICIPANT_ACCESS`, each on the table only
+ * and pinned to its partitions; the UpdateItem also to `PARTICIPANT_UPDATE_ATTRIBUTES`, asking for no returned values;
+ * the reads in the walks' policy, every write in the role's own; and the people index's Query, of the deployment's
+ * and one workspace id's `PEOPLE` partitions only (`PARTICIPANT_PEOPLE_INDEX_PARTITIONS`), in the walks' policy (each
+ * pinned by processing-stack-retention.test.ts and lib/customer-data-deletes.test.ts).
+ */
+function grantParticipantsAccess(role: iam.Role, walks: iam.ManagedPolicy, participantsTable: dynamodb.ITable): void {
+  const writes = new Set<string>(['PutItem', 'UpdateItem', 'DeleteItem', 'BatchWriteItem']);
+  walks.addStatements(new iam.PolicyStatement({
+    sid: 'QueryParticipantPeopleIndex',
+    actions: ['dynamodb:Query'],
+    resources: [`${participantsTable.tableArn}/index/${PARTICIPANT_PEOPLE_INDEX}`],
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': PARTICIPANT_PEOPLE_INDEX_PARTITIONS },
+      // The key it reads and the index's keys it queries by, nothing else of a person (participants.py `_indexed`
+      // names them, Select included): a Query naming no attribute would otherwise read whole rows.
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': PARTICIPANT_PEOPLE_INDEX_ATTRIBUTES },
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    },
+  }));
+  // A workspace person's tombstone is put by the workspace layer (shared/ws_repo.py `put_new_tombstone`), which asks
+  // for the row already there when the key is taken (`ReturnValuesOnConditionCheckFailure` `ALL_OLD`): that read of
+  // the participant's own tombstone is granted, GetItem of `AUDIT#tombstone#participant` only.
+  walks.addStatements(new iam.PolicyStatement({
+    sid: 'GetParticipantTombstones',
+    actions: ['dynamodb:GetItem'],
+    resources: [participantsTable.tableArn],
+    conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#participant'] } },
+  }));
+  for (const { actions, deployment, workspace } of PARTICIPANT_ACCESS) {
+    const partitions = [...deployment, ...workspace.map((part) => `WS#${WORKSPACE_ID_PATTERN}#${part}`)];
+    const written = actions.filter((action): action is TableWrite => writes.has(action));
+    if (written.length === 0) {
+      walks.addStatements(new iam.PolicyStatement({
+        actions: actions.map((action) => `dynamodb:${action}`),
+        resources: [participantsTable.tableArn],
+        conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } },
+      }));
+    } else if (written.includes('UpdateItem')) {
+      grantKeyScopedWrites(participantsTable, role, written, partitions, PARTICIPANT_UPDATE_ATTRIBUTES,
+        { noReturnValues: true });
+    } else {
+      grantKeyScopedWrites(participantsTable, role, written, partitions);
+    }
+  }
+}
+
 /** The worker; the caller wires its erasure-end notices (lib/utils/realtime.ts). */
 export function createRetentionWorker(scope: Construct, id: string, props: RetentionWorkerProps): lambda.Function {
   // A plain construct with the same id keeps every logical id the class form had.
   const worker = new Construct(scope, id);
   const {
     uniqueName, kmsKey, feedbackTable, aggregatesTable, radarTable, projectsTable, featureRequestsTable, workspacesTable,
-    rawDataBucket,
+    participantsTable, rawDataBucket,
   } = props;
   const functionName = uniqueName(RETENTION_FUNCTION_BASE_NAME);
 
   const role = workerRole(worker, 'RetentionRole');
-  feedbackTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:DeleteItem');
+  // The table itself, never its indexes (7.72.00: the worker scans and reads items by key, and reads no index; the
+  // index ARNs the grant named also weighed on the role's inline policy quota).
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:DeleteItem'],
+    resources: [feedbackTable.tableArn],
+  }));
   aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query',
     'dynamodb:BatchGetItem');
   // The forms' test responses are not feedback items (voc-aggregates, FEEDBACK_FORM_TEST / WS#{ws}#FEEDBACK_FORM_TEST,
@@ -309,7 +422,15 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   grantKeyScopedWrites(aggregatesTable, role, ['DeleteItem'], FORM_TEST_RESPONSES_PARTITIONS);
   radarTable.grant(role, 'dynamodb:Scan', 'dynamodb:DeleteItem');
   grantCacheVersionBump(radarTable, role, RADAR_VERSION_PARTITION);
-  grantProjectsAccess(role, projectsTable);
+  // The erasure walks' reads and updates (voc-projects, the product documents, the participants' reads), none a delete
+  // or a put, in a policy of their own (7.72.00): with the participants' grants the role's inline policy, which keeps
+  // every delete and audit put, would pass its size quota (CDK would then move its last statements, the raw bucket's
+  // deletes among them, to an overflow policy of its own choosing).
+  const walks = new iam.ManagedPolicy(worker, 'RetentionWalksPolicy', {
+    description: 'The retention worker\'s erasure walks: reads, and updates that delete nothing',
+    roles: [role],
+  });
+  grantProjectsAccess(walks, projectsTable);
   // Boards: read + de-identify a request; RE-KEY an erased +1 (one transaction: Put the de-identified row under a new
   // random id, Delete the email-derived one), so Put/Delete are pinned to the request partitions (FR#*), never boards.
   featureRequestsTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem');
@@ -331,6 +452,8 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   // A workspace's META status before its export lock is taken (lambda/jobs/retention/exports.py: no lock row is
   // created for a workspace that is deleting or deleted).
   grantWorkspaceStatusRead(role, workspacesTable);
+  // 7.72.00 (projects 3g2): an erasure by email erases the participants its address names (participants.py).
+  grantParticipantsAccess(role, walks, participantsTable);
   kmsKey.grantEncryptDecrypt(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',
@@ -340,7 +463,8 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   // 7.43.00: an erasure by email reads a workspace's product documents (a text upload, its extracted text) to list
   // for review those that hold the address (lambda/jobs/retention/project_people.py); read only, nothing written.
   // 7.48.00: and the deployment's product documents' extracted text (every kind has one there), never an upload.
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
+  // In the erasure walks' policy (7.72.00).
+  walks.addStatements(new iam.PolicyStatement({
     sid: 'ReadWorkspaceProductDocuments',
     actions: ['s3:GetObject'],
     resources: [...WORKSPACE_PRODUCT_DOC_READS, ...DEPLOYMENT_PRODUCT_DOC_READS, ...LIBRARY_TEXT_READS]
@@ -401,6 +525,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
       PROJECTS_TABLE: projectsTable.tableName,
       FEATURE_REQUESTS_TABLE: featureRequestsTable.tableName,
       WORKSPACES_TABLE: workspacesTable.tableName,
+      PARTICIPANTS_TABLE: participantsTable.tableName,
       // No RETENTION_FUNCTION: the worker re-invokes itself via context.function_name.
       POWERTOOLS_SERVICE_NAME: RETENTION_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',
@@ -412,6 +537,9 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });
+  // The function waits for the walks' policy as it waits for the role's own (an invocation before it is attached
+  // would fail its first Query).
+  fn.node.addDependency(walks);
 
   scheduleWorker(worker, 'RetentionSchedule', fn, uniqueName('voc-retention-schedule'),
     // 04:15 UTC — after the memory retention run (03:15), off the quarter-hour ticks.

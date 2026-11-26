@@ -44,11 +44,13 @@ def new_support_id() -> str:
     return new_id(SUPPORT_PREFIX)
 
 
-def deidentified_support(row: Mapping[str, Any], support_id: str) -> dict[str, Any]:
-    """The +1 under ``support_id``: every value but the person's, the old key and the old id."""
+def deidentified_support(row: Mapping[str, Any], support_id: str,
+                         also: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """The +1 under ``support_id``: every value but the person's (and ``also``: its ``contact_email`` when the erased
+    address is that too, 7.72.00), the old key and the old id."""
     request_id = str(row.get('request_id') or str(row['pk']).removeprefix('FR#'))
     now = now_iso()
-    kept = {key: value for key, value in row.items() if key not in _DROPPED}
+    kept = {key: value for key, value in row.items() if key not in _DROPPED | also}
     return {**kept, **support_key(request_id, support_id), 'support_id': support_id, 'request_id': request_id,
             DEIDENTIFIED_FIELD: now, 'updated_at': now}
 
@@ -61,15 +63,15 @@ def current_support(table: Any, request_id: str, support_id: str) -> dict[str, A
         return None
 
 
-def rekey(table: Any, row: Mapping[str, Any], support_id: str) -> bool:
-    """Move the +1 ``row`` (read by ``current_support``) to ``support_id`` without its email and name.
+def rekey(table: Any, row: Mapping[str, Any], support_id: str, also: frozenset[str] = frozenset()) -> bool:
+    """Move the +1 ``row`` (read by ``current_support``) to ``support_id`` without its email and name (and ``also``).
 
     False when it was removed or re-keyed between the read and the write (the transaction's conditions).
     """
     old_key = {'pk': row['pk'], 'sk': row['sk']}
     try:
         table.meta.client.transact_write_items(TransactItems=[
-            {'Put': {'TableName': table.name, 'Item': deidentified_support(row, support_id),
+            {'Put': {'TableName': table.name, 'Item': deidentified_support(row, support_id, also),
                      'ConditionExpression': 'attribute_not_exists(pk)'}},
             {'Delete': {'TableName': table.name, 'Key': old_key, 'ConditionExpression': 'attribute_exists(pk)'}},
         ])

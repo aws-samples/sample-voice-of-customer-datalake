@@ -165,8 +165,8 @@ def upsert_person(table: Any, settings: Mapping[str, Any], raw: Mapping[str, Any
 
     ``settings`` decide who may be added, and they are the deployment's (shared/participants_settings.py): a NEW
     person in a workspace is refused (``NotPerWorkspaceError``, ``PARTICIPANT_SETTINGS_STORE``) until the settings move
-    into their workspace, and not before an erasure by email reaches a workspace's people (the project plan's 3g2);
-    an existing person of the workspace is still returned.
+    into their workspace (an erasure by email reaches a workspace's people since 7.72.00, the project plan's 3g2, so
+    only that move is left); an existing person of the workspace is still returned.
     """
     email, email_lc = normalize_email(raw.get('email'))
     existing = find_person_id(table, email_lc, workspace=workspace)

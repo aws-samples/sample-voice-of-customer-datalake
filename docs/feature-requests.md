@@ -229,7 +229,8 @@ seeded again: deleting the last board leaves zero boards, the list is `[]`, the 
 seeded board answer 404, and the sign-up row admits nobody until an admin creates a board.
 
 **Promote** creates (once) the list `Requests: {title}` (kind `requesters`), adds a person for every distinct
-supporter and contact email (origin `feature_request`; known addresses are reused), links the list to the
+supporter's and +1's contact email (a +1's `contact_email`; a request's own contact is not promoted; origin
+`feature_request`; known addresses are reused), links the list to the
 project, records `project_id` / `list_id` on the request and, on a board with a `planned` status, moves it there
 when it was in the board's first status or `under_review`. Contacts outside the company domains are skipped
 (reason `external_not_allowed`) when external people are turned off. Promoting again reuses the list.
@@ -367,4 +368,22 @@ erased person's request (`input_feature_request_ids`) lose that id and are marke
 erased review. On the table the worker holds `Scan`, `GetItem`, `Query` and `UpdateItem`, and `PutItem` /
 `DeleteItem` only on the request partitions (`FR#*`, by `dynamodb:LeadingKeys`), for the re-key. An `AUDIT#delete`
 row of a +1 removed before the erasure still names that +1's old id (audit rows are never changed). Text a person
-typed into a description or a field (a contact email, a name) is not searched: edit or delete such a request by hand.
+typed into a description or a free-text field (a name, a note) is not searched: edit or delete such a request by
+hand; a contact address is matched (below).
+
+Since 7.72.00 the erasure by email also matches a customer contact's address: a +1's `contact_email` and a request's
+`fields.contact_email`. A row that names the address only as its contact gets this job's record, keyed by its request
+and a random token (never a +1's own id, which derives from its supporter's address), and a request also its
+request-id tombstone (put only if new: a later erasure never overwrites the first's; each erasure that changes a
+request also leaves its own record of each field it removes, `{request id}#reporter#{token}` or
+`{request id}#contact#{token}`), so the artifacts that cite it are marked as for any erased request. A contact-only
+match deletes the row's raw copies (every version), the other person's submission among them (a raw object is
+write-once and cannot lose one field), and removes that one field, only while it still holds the address; the row's
+id and everything else stay. A +1 whose own address and contact are both the erased one is re-keyed without either.
+
+A promote makes each supporter and each +1's contact a participant (above; a request's own contact is never
+promoted). Since 7.72.00 the same erasure by email, after the boards, also erases the participant the address names,
+in the deployment and in every workspace ([source-policies.md](source-policies.md#retention-and-erasure)); its +1s
+de-identified first, a later promote of the request finds no address to make a participant of again. A promote
+already running while the erasure runs may still add the person back (it read the +1s first): run the erasure again
+once it has finished.

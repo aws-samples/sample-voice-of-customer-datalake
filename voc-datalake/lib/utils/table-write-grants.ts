@@ -74,14 +74,38 @@ export function grantKeyScopedWrites(
   attributes?: readonly string[],
   options: { noReturnValues?: boolean } = {},
 ): void {
+  addWriteStatement(table, grantee, writes, keyScopedConditions(writes, partitions, attributes, options));
+}
+
+/**
+ * The same Allow as {@link grantKeyScopedWrites}, as a statement for a customer-managed policy (the caller's role
+ * holds the table key's actions itself): a role whose inline policy would pass its size quota keeps some of its
+ * grants in a policy of their own.
+ */
+export function keyScopedWriteStatement(
+  table: dynamodb.ITable, writes: readonly TableWrite[], partitions: readonly string[],
+  attributes?: readonly string[],
+  options: { noReturnValues?: boolean } = {},
+): iam.PolicyStatement {
+  return new iam.PolicyStatement({
+    actions: writes.map((write) => `dynamodb:${write}`),
+    resources: [table.tableArn],
+    conditions: keyScopedConditions(writes, partitions, attributes, options),
+  });
+}
+
+function keyScopedConditions(
+  writes: readonly TableWrite[], partitions: readonly string[], attributes: readonly string[] | undefined,
+  options: { noReturnValues?: boolean },
+): Record<string, Record<string, string[]>> {
   if (writes.length === 0 || partitions.length === 0) throw new Error('grantKeyScopedWrites: name writes and partitions');
   // `attributes`: the only attribute names the request may touch (`dynamodb:Attributes`, the key's included), so an
   // update limited to one field cannot rewrite any other. `noReturnValues`: the request may ask for no returned values
   // (`dynamodb:ReturnValues` `NONE` when it names any), so a write limited to some attributes cannot read the whole row
   // back (`ALL_OLD`, `ALL_NEW`).
-  addWriteStatement(table, grantee, writes, {
+  return {
     'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [...partitions] },
     ...(attributes ? { 'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...attributes] } } : {}),
     ...(options.noReturnValues ? { StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] } } : {}),
-  });
+  };
 }

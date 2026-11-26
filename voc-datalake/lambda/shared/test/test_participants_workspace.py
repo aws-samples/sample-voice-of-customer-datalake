@@ -192,7 +192,9 @@ def test_an_erasure_takes_the_scopes_person_only(seeded, scope):
     link(seeded, PROJECT, 'PERSON', PERSON_ID, 'sub-ada', workspace=scope)
     others = {other: _rows_of(seeded, other) for other in SCOPES if other != scope}
     removed = erase_person(seeded, PERSON_ID, legal_basis='erasure_request', actor=ACTOR, workspace=scope)
-    assert removed == {'lists': 1, 'asks': 0, 'tokens': 0, 'projects': 1}
+    # In a workspace (7.72.00) also whether the guard's index row was kept (here unlisted: 0).
+    assert removed == {'lists': 1, 'asks': 0, 'tokens': 0, 'projects': 1,
+                       **({} if scope is None else {'index_rows_kept': 0})}
     assert (get_person(seeded, PERSON_ID, workspace=scope), find_person_id(seeded, EMAIL, workspace=scope),
             member_ids(seeded, LIST_ID, workspace=scope)) == (None, None, [])
     assert {other: _rows_of(seeded, other) for other in others} == others

@@ -107,17 +107,16 @@ describe('exact grants over the app', () => {
     expect(s3.map(actionsOf)).toStrictEqual([['s3:GetObject', 's3:ListBucket']]);
   });
 
-  it('the retention Lambda: explicit version deletes and listing, a read of workspace product documents, and a Deny on workspace import originals', () => {
+  it('the retention Lambda: explicit version deletes and listing and a Deny on workspace import originals, in its own policy', () => {
     const s3 = roleStatements('VocProcessingStack', 'RetentionWorkerRetentionRole')
       .filter((statement) => actionsOf(statement).some((action) => action.startsWith('s3:')))
       .map((statement) => [statement.Effect, [...actionsOf(statement)].sort(byCodeUnit)]);
     // (in any order: CDK packs a role's statements into its policy and an overflow policy by size)
     const byStatement = (a: unknown, b: unknown) => byCodeUnit(JSON.stringify(a), JSON.stringify(b));
+    // Its read of the product documents (7.43.00, 7.48.00, 7.62.00) is in the erasure walks' own managed policy since
+    // 7.72.00 (processing-stack-retention.test.ts); every delete stays in the role's own policy.
     expect([...s3].sort(byStatement)).toStrictEqual([
       ['Allow', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
-      // 7.43.00: a workspace's text product documents, read for an erased address (never written); since 7.48.00 the
-      // deployment's extracted text too, in the same statement.
-      ['Allow', ['s3:GetObject']],
       ['Deny', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
       ['Allow', ['s3:ListBucketVersions']],
       // A workspace's open export upload, which an erasure that reaches the workspace aborts (a derived copy, D5).

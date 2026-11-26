@@ -81,7 +81,7 @@ export interface VocProcessingStackProps extends VocStackProps {
   workspacesTable: dynamodb.Table;
   /** voc-watermarks: a workspace's hard delete removes its ingestion watermarks (listed in voc-aggregates). */
   watermarksTable: dynamodb.Table;
-  /** voc-participants: a workspace's hard delete removes its projects' list links (only with the flag). */
+  /** voc-participants: a workspace's hard delete's list links (with the flag); an erasure by email's people (7.72.00). */
   participantsTable: dynamodb.Table;
   /** The agent conductor re-checks a plan's approver in Cognito (docs/assistant-plan-mode.md). */
   userPool: cognito.IUserPool;
@@ -329,7 +329,7 @@ export class VocProcessingStack extends VocStack {
       radarTable: props.radarTable,
       projectsTable,
       featureRequestsTable: props.featureRequestsTable,
-      workspacesTable: props.workspacesTable,
+      workspacesTable: props.workspacesTable, participantsTable: props.participantsTable,
       rawDataBucket,
     });
     // An erasure job's end reaches the admin who started it (jobs/retention/runs.py, docs/realtime.md): a publish

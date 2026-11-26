@@ -344,11 +344,14 @@ class TestBoards:
                 patch.object(boards_rekey, 'rekey', lambda table, key, new_id: (
                     order.append(f'rekey:{len(_tombstones(aws, "feature_requests"))}'), real_rekey(table, key, new_id))[1]):
             handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
-        # The request's tombstone before the page changes; the +1's (the 2nd) before its re-key.
-        assert order == ['tombstones', 'row', 'rekey:2']
+        # The request's tombstone and (7.72.00) this job's own record of the reporter's removal before the page
+        # changes; the +1's (the 3rd) before its re-key.
+        assert order == ['tombstones', 'row', 'rekey:3']
         stones = {row['sk']: row for row in _tombstones(aws, 'feature_requests')}
         new_id = _rekeyed_support(aws)['support_id']
-        assert set(stones) == {'fr_000000000001', new_id}
+        [reporter] = [sk for sk in stones if sk.startswith('fr_000000000001#reporter#')]
+        assert (stones[reporter]['field'], stones[reporter]['legal_basis']) == ('reporter_email', BASIS)
+        assert set(stones) == {'fr_000000000001', reporter, new_id}
         assert stones[new_id]['support_id'] == new_id
         assert stones[new_id]['feature_request_id'] == 'fr_000000000001'
         assert (stones[new_id]['legal_basis'], stones[new_id]['action']) == (BASIS, 'deidentified')
@@ -380,7 +383,10 @@ class TestBoards:
 
         with patch.object(boards_rekey, 'current_support', removed_meanwhile):
             handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
-        assert {row['sk'] for row in _tombstones(aws, 'feature_requests')} == {'fr_000000000001'}
+        # The request's tombstone and (7.72.00) this job's own record of the reporter's removal, never the +1's.
+        stones = {row['sk'] for row in _tombstones(aws, 'feature_requests')}
+        assert {sk.split('#reporter#')[0] for sk in stones} == {'fr_000000000001'}
+        assert len(stones) == 2
         assert _job_row(aws)['board_items_deidentified'] == 1
 
     @pytest.mark.parametrize(('field', 'value', 'source'), [

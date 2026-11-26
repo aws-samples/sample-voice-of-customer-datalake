@@ -33,9 +33,9 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from jobs.retention import exports
-from jobs.retention.boards import ERASE_FIELD, remove_fields
+from jobs.retention.boards import remove_fields
 from jobs.retention.copies import tombstone_record
-from jobs.retention.runs import MODE_ERASE
+from jobs.retention.runs import email_without_source
 from shared.retention import MEMBER_COUNTER
 from shared.timestamps import now_iso
 from shared.workspace_ids import is_workspace_id
@@ -53,7 +53,7 @@ _PROJECTION: Final = ('pk', 'sk', 'email')
 
 def applies(run: Mapping[str, Any]) -> bool:
     """An erasure by email that is not limited to a source."""
-    return run.get('mode') == MODE_ERASE and run.get('field') == ERASE_FIELD and not run.get('source')
+    return email_without_source(run)
 
 
 def _matches(row: Mapping[str, Any], wanted: str) -> bool:

@@ -20,7 +20,8 @@ anything is deleted (TENETS.md D4, D5), in voc-participants, with no email and n
 
 Both are put only if absent, on every attempt, and both come before any delete (a workspace path reads the person's
 rows first, to refuse asks or tokens before anything is written); the guard is deleted first and the
-person's ``META`` last, so an erasure stopped anywhere is simply run again and ends with one tombstone and one record.
+person's ``META`` last, so an erasure stopped anywhere is simply run again and ends with one tombstone and one record;
+one stopped after ``META`` went (it then answers "not found") has its tail finished by ``finish_erasure``.
 
 In a workspace (plumbing since 7.31.00, docs/multi-workspace.md, the project plan, 3d; no route passes one yet) the
 person's rows are the workspace's (shared/participants_keys.py), deleted through the workspace layer; its guard's row
@@ -117,22 +118,25 @@ def _delete_rows(table: Any, person: Mapping[str, Any], rows_read: list[dict[str
 
 
 def _delete_workspace_rows(table: Any, person: Mapping[str, Any], rows_read: list[dict[str, Any]],
-                           workspace: WorkspaceScope) -> int:
+                           workspace: WorkspaceScope) -> tuple[int, int]:
     """Through the layer, in ``_delete_rows``' order: the guard and its row in the workspace's index (it holds the
     address's hash; unlisted only while no guard is back), then the project links and the person's own partition
     (list mirrors and ``META`` excepted), then ``META`` last. The person's own index row (an opaque id) stays: a late
-    write into the partition (a concurrent membership's mirror) is still found by the hard delete."""
+    write into the partition (a concurrent membership's mirror) is still found by the hard delete. Answers the project
+    links and whether the guard's index row was kept (1: a guard was back, or every try conflicted), else 0."""
     person_id = str(person['person_id'])
     projects = [str(p) for p in person.get('project_ids') or ()]
     view = scoped_calls(table, workspace)
+    kept = 0
     if (guard := _guard(person, workspace)) is not None:
         _delete_guard(view, guard, person_id)
-        unlist_if_empty(table, workspace, participants_index_key(guard['pk'], workspace=workspace), guard)
+        kept = 0 if unlist_if_empty(table, workspace, participants_index_key(guard['pk'], workspace=workspace),
+                                    guard) else 1
     delete_many(table, workspace, [
         *(project_link_key(project_id, 'PERSON', person_id, workspace=workspace) for project_id in projects),
         *_rest(rows_read)])
     view.delete_item(Key=person_key(person_id, workspace=workspace))
-    return len(projects)
+    return len(projects), kept
 
 
 def _record(table: Any, person_id: str, legal_basis: str, actor: Mapping[str, str],
@@ -199,9 +203,23 @@ def _erase_workspace(table: Any, person_id: str, legal_basis: str, actor: Mappin
     _record(table, person_id, legal_basis, actor, workspace)
     for list_id in lists:
         remove_member(table, list_id, person_id, workspace=workspace)
-    projects = _delete_workspace_rows(table, person, rows_read, workspace)
+    projects, kept = _delete_workspace_rows(table, person, rows_read, workspace)
     late = _late_memberships(table, person_id, workspace)
-    return {'lists': len(lists) + late, 'asks': 0, 'tokens': 0, 'projects': projects}
+    return {'lists': len(lists) + late, 'asks': 0, 'tokens': 0, 'projects': projects, 'index_rows_kept': kept}
+
+
+def finish_erasure(table: Any, person_id: str, email_lc: str, *,
+                   workspace: WorkspaceScope | None = None) -> dict[str, int]:
+    """The tail of an erasure cut after the person's ``META`` went (``erase_person`` then answers "not found"): the
+    late memberships (``_late_memberships``), and in a workspace the address's guard row in its index, unlisted only
+    while no guard of the address is back (``unlist_if_empty``). Run again it does nothing more. Answers the
+    memberships removed and, in a workspace, whether the index row was kept (1) or not (0)."""
+    late = _late_memberships(table, person_id, workspace)
+    if workspace is None:
+        return {'lists': late}
+    guard = email_guard_key(email_lc, workspace=workspace)
+    unlisted = unlist_if_empty(table, workspace, participants_index_key(guard['pk'], workspace=workspace), guard)
+    return {'lists': late, 'index_rows_kept': 0 if unlisted else 1}
 
 
 def erase_person(table: Any, person_id: str, *, legal_basis: str, actor: Mapping[str, str],
