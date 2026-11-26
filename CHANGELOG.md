@@ -35,6 +35,61 @@ Validation failures → Clear, outside any workspace) is now recorded, as a work
   nor write any other audit partition). Its reads on voc-aggregates drop CDK's stream reads (GetRecords and
   GetShardIterator granted nothing on the table's ARNs), which keeps its inline policy under 70% of the quota.
 
+## [7.76.02] - 2026-11-26
+
+Tests only: the raw-access guard's allow list (`lambda/shared/test/test_ws_raw_access.py` `ALLOWED`) moves three
+modules from phase 2 to phase 0, the handle plumbing: phase 2 holds 31 modules and 96 accesses (34 and 100 before).
+Each module's every route is proved on both paths by the cross-workspace suite, and each of its remaining raw
+accesses is a handle whose every use passes the request's scope on: `feedback_edit_handler.py` (its two getters, into
+`query_partition`, `table_view`, `ScopedUpdates`, the scoped config readers, `bump_data_version` and
+`scope_for_caller`; the caller's category-access row stays the deployment's, control plane), `integrations_handler.py`
+and `scrapers_handler.py`
+(`_aggregates()`, into `table_view`, `run_status` and `normalise_label_fields` with the scope). Counts unchanged.
+
+### Not moved, and why
+- `feedback_form_handler.py`: on the deployment path five calls take its raw table straight from `_forms_table()` (a
+  new form's put, the two delete audits, an import's run record, the prototype pin, which its docstring calls phase 3),
+  not through `_forms(None)`; it moves once those go through the view.
+- `manual_import_handler.py`: its parse job's row is written straight through the module's `aggregates_table` on
+  both paths (the job's key is the same in every place; only its `workspace_id` scopes it).
+- `metrics_handler.py`: a page's full items are read with a raw `batch_get_item` (its keys checked in a workspace;
+  `WorkspaceTable.batch_get_item` can take it over).
+
+## [7.76.01] - 2026-11-26
+
+Tests only: the metrics API's 18 routes (`lambda/api/metrics_handler.py`) leave the cross-workspace suite's pending
+list with their two-workspace cases. They resolve X-Workspace-Id in the module's first middleware, `_workspace_first`,
+which keeps `_request_scope()` on the request's context: a shape the detector does not read (written as 7.75.04,
+renumbered on top of 7.76.00). Pending 353 -> 335
+(phase 2: 40 -> 22: what is left is voc-mp-b's ballots, Data Explorer and S3 import, and the forms' 4 public routes).
+
+### Changed
+- `PINNED_MIDDLEWARES` (`test_cross_workspace_routes.py`): a module's first middleware the detector trusts because a
+  proof test pins every line of it and of its helpers (`_workspace_first`, `_request_scope`, the fail-closed
+  `_ws_scope`), its `_workspace` as a `RequestWorkspace` bound once, each name those lines read bound once, and no
+  other store of the context's key; any change to them fails that test. The scan follows it through the module's
+  `RequestWorkspace` once the file is in `INSTANCE_RESOLVER_FILES` (by reach: the pin carries "first").
+- A metrics world: one review id in all three places (its own partitions and text), more of A's, one only B holds, a
+  second delivery review of A's and of the deployment's (each place's similar list its own), GitHub issues in every
+  place; the deployment and B each in a category of their own, the deployment with more reviews than A; the counters
+  written by the real aggregator in each place; the deployment's rows marked.
+- `RouteCase.differs_from_the_deployment`: a route whose answer is counts only (a summary) has check 4 also ask the
+  deployment the same, without the header, and expect it answered (its normal status) and A's answer to differ.
+- `RouteCase.refusal`: a refusing case (`ok_status` 400 or more) names its refusal's message (`module.NAME`), and
+  check 4 expects exactly it (the schedule routes, Radar's Exa key): no other 4xx of the code passes for it.
+- Meta-tests: the metrics middleware keeping no scope inside A fails check 4 for each route it can show it on.
+
+### Known gaps (reported, not fixed here)
+- `GET /feedback/<feedback_id>` and `/similar`: the 404 repeats the id it was sent (`Feedback <id> not found`), as
+  the manual import's parse status did (`echoes_its_ids`).
+
+### Follow-up
+- `/feedback/access` (the caller's category scope) answers the same in every place of this world (no per-place
+  access rule seeded), so check 4 cannot tell a deployment-wide answer there; test_metrics_workspace_reads.py pins it
+  meanwhile. (`/feedback/catalogue` is static by design: the same answer for everyone.)
+- metrics_handler.py `_request_scope` answers None (deployment-wide) when there is no event, where `_ws_scope` fails
+  closed: safe because every request carries one; for its owner, raising there instead would make it fail closed too.
+
 ## [7.76.00] - 2026-11-26
 
 Multi-workspace, a trust fix (TENETS.md D8): Administration → System → Logs holds a workspace's content back from

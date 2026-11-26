@@ -70,6 +70,7 @@ from cross_workspace_closure import (
 )
 from cross_workspace_pending import PHASE_2, PHASE_3
 from cross_workspace_worlds import (
+    _METRICS_ALIKE_EVERYWHERE,
     A_MARK,
     ADA,
     ADA_MEMBER_ONLY,
@@ -119,7 +120,7 @@ RESOLVERS: dict[str, str] = {RESOLVER: RESOLVER_MODULE, 'request_workspace': 'sh
 #: every file using the instance is in it and it can go.
 INSTANCE_RESOLVER_FILES = frozenset({'feedback_edit_handler.py', 'feedback_form_handler.py',
                                      'manual_import_handler.py', 'scrapers_handler.py',
-                                     'integrations_handler.py'})
+                                     'integrations_handler.py', 'metrics_handler.py'})
 MISSING_HEADER = 'The X-Workspace-Id header is required'
 #: Calls that write: one of them before the resolution means the route may act before it knows the workspace.
 WRITE_CALLS = frozenset({'put_item', 'update_item', 'delete_item', 'transact_write_items', 'batch_writer',
@@ -422,14 +423,22 @@ def resolving_functions(tree: ast.Module, none_for_platform_admins: frozenset[st
 
 
 def routes_resolving_the_workspace(source: str, none_for_platform_admins: frozenset[str] = frozenset(),
-                                   instance_resolvers: bool = False) -> dict[str, bool]:
+                                   instance_resolvers: bool = False, pinned_middleware: str = '') -> dict[str, bool]:
     """Every route of ``source`` -> whether it resolves the workspace first: in its body, or in the module's first
-    ``app.use`` middleware."""
+    ``app.use`` middleware (a function that resolves first, or the ``pinned_middleware`` a proof test pins whole:
+    ``PINNED_MIDDLEWARES``)."""
     tree = ast.parse(source)
     resolving, writing = resolving_functions(tree, none_for_platform_admins, instance_resolvers)
-    module_wide = first_app_middleware(tree) in resolving
+    first = first_app_middleware(tree)
+    module_wide = first in resolving or (bool(pinned_middleware) and first == pinned_middleware)
     return {key: module_wide or _resolves_in(fn.body, resolving, writing)
             for fn in _module_functions(tree).values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
+
+
+#: A module whose first middleware resolves the workspace in a shape the detector cannot read (it stores the
+#: resolution on the request's context): the middleware's name, and its every line and its helper's pinned by
+#: test_the_pinned_middlewares_resolve_first, which fails on any change to them, so the detector may trust it.
+PINNED_MIDDLEWARES: dict[str, str] = {'metrics_handler.py': '_workspace_first'}
 
 
 @cache
@@ -439,7 +448,7 @@ def inventory() -> dict[tuple[str, str], bool]:
             for path in [*_handler_files(), *_router_files()]
             for key, resolves in routes_resolving_the_workspace(
                 path.read_text(encoding='utf-8'), NONE_FOR_PLATFORM_ADMINS.get(path.name, frozenset()),
-                path.name in INSTANCE_RESOLVER_FILES).items()}
+                path.name in INSTANCE_RESOLVER_FILES, PINNED_MIDDLEWARES.get(path.name, '')).items()}
 
 
 def classification() -> dict[tuple[str, str], list[str]]:
@@ -742,6 +751,8 @@ def case_problems(route: str, case: RouteCase) -> list[str]:
         problems.append('echoes_its_ids only on a request that carries ids, with its reason')
     problems += [f'outside_a {key!r} names no prefix or has no reason' for key, why in case.outside_a.items()
                  if len(key[0]) < 4 or (not key[1] and key[0].endswith('#')) or 'WS#' in key[0] or not why.strip()]
+    if (case.ok_status >= 400) != bool(case.refusal) or (case.refusal and '.' not in case.refusal):
+        problems.append('a refusing case (ok_status 400 or more) names its refusal (module.NAME), and only it')
     return problems
 
 
@@ -778,11 +789,15 @@ _ROLE_IDS = {'A': {'sub': 'a'}, 'B': {'sub': f'{B_MARK}-b'}, UNKNOWN: {'sub': 'u
     (RouteCase(ids=_ROLE_IDS, outside_a={('PLAN#', ''): 'every row of a plan'}), 'outside_a'),
     (RouteCase(ids=_ROLE_IDS, outside_a={('WS#', 'META'): 'every workspace'}), 'outside_a'),
     (RouteCase(ids=_ROLE_IDS, outside_a={('USERCTX#', 'onboarding'): ' '}), 'outside_a'),
+    (RouteCase(ids=_ROLE_IDS, ok_status=409), 'names its refusal'),
+    (RouteCase(ids=_ROLE_IDS, refusal='shared.radar_exa_routes.NO_WORKSPACE_KEY'), 'names its refusal'),
+    (RouteCase(ids=_ROLE_IDS, ok_status=400, refusal='NO_WORKSPACE_KEY'), 'names its refusal'),
 ], ids=['an-id-as-a-literal', 'a-number', 'a-placeholder-not-in-ids', 'ids-and-no-ids', 'path-ids-missing',
         'a-shared-name-that-is-no-path-parameter', 'a-shared-value-with-no-reason', 'deployment-ids-naming-more',
         'deployment-ids-on-a-route-not-kept', 'a-gap-without-deployment-ids', 'a-gap-without-a-reason',
         'an-echo-without-a-reason', 'outside-a-everything', 'outside-a-every-sort-key',
-        'outside-a-every-workspace', 'outside-a-without-a-reason'])
+        'outside-a-every-workspace', 'outside-a-without-a-reason', 'a-refusal-unnamed', 'a-refusal-on-a-success',
+        'a-refusal-with-no-module'])
 def test_a_case_that_does_not_name_its_ids_is_caught(case, problem):
     assert [p for p in case_problems(_ROLE_ROUTE, case) if problem in p] != []
 
@@ -949,18 +964,30 @@ def check_inside_a(world: World, case: RouteCase, route: str) -> None:
     (``ok_status`` 400 or more) must also refuse it as a refusal does: nothing changed, no external write."""
     if case.ok_status >= 400:
         status, body = _refused(world, case, route, ws=WS_A, ids=case.ids.get('A', {}), caller=ADA)
-        assert status == case.ok_status, f'{route} inside A: {status} {body}'
+        assert (status, body) == (case.ok_status, {'success': False, 'error': _refusal_text(case.refusal)}), (
+            f'{route} inside A is not its refusal: {status} {body}')
         return
     since = {name: len(double.mock_calls) for name, double in world.doubles.items()}
     status, body = _lands_in_a(world, case, route, ids=case.ids.get('A', {}))
     assert status == case.ok_status, f'{route} inside A: {status} {body}'
     if world.deployment_mark:
         assert world.deployment_mark not in json.dumps(body), f"{route} answered A with the deployment's data: {body}"
+    if case.differs_from_the_deployment:
+        deployment_status, deployment = _send(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=ADA)
+        expected = case.ok_status if case.status_without_a_workspace is None else case.status_without_a_workspace
+        assert deployment_status == expected, f'{route} without a workspace: {deployment_status} {deployment}'
+        assert body != deployment, f"{route} answered A with the deployment's data (its answer without the header)"
     if case.payload_names_a:
         double = world.doubles[case.payload_names_a]
         assert len(double.mock_calls) > since[case.payload_names_a], f'{route} inside A never called it'
         assert _payload(double.mock_calls[-1]).get('workspace_id') == WS_A, (
             f'{route} inside A carried another place on: {double.mock_calls[-1]}')
+
+
+def _refusal_text(refusal: str) -> str:
+    """The message a case's ``refusal`` names (``module.NAME``)."""
+    module, _, name = refusal.rpartition('.')
+    return getattr(importlib.import_module(module), name)
 
 
 def _lands_in_a(world: World, case: RouteCase, route: str, *, ids: dict[str, str],
@@ -1391,6 +1418,24 @@ def test_a_settings_store_opened_deployment_wide_inside_a_is_caught(file, route,
         check_inside_a(world, CASES[(file, route)], route)
 
 
+#: The metrics routes check 4 cannot tell from the deployment's in this world (cross_workspace_worlds.py
+#: ``_METRICS_ALIKE_EVERYWHERE``): the static catalogue, and the caller's category scope (a recorded follow-up).
+_METRICS_UNSEEN = {f'GET {path}' for path in _METRICS_ALIKE_EVERYWHERE}
+
+
+@pytest.mark.parametrize('route', sorted(route for file, route in CASES
+                                         if file == 'metrics_handler.py' and route not in _METRICS_UNSEEN))
+def test_a_metrics_read_inside_a_without_its_scope_is_caught(route, lambda_context):
+    """The metrics middleware keeping no scope (deployment-wide) inside A answers the deployment's reviews and
+    counters, nothing of B's: check 4 fails, on the world's deployment mark or on the deployment's own answer."""
+    import metrics_handler
+
+    with WORLDS['metrics_handler.py'](lambda_context) as world, \
+            patch.object(metrics_handler, '_request_scope', lambda: None), \
+            pytest.raises(AssertionError, match="the deployment's data"):
+        check_inside_a(world, CASES[('metrics_handler.py', route)], route)
+
+
 def test_a_methods_clear_inside_a_without_its_scope_is_caught(lambda_context):
     """The learned methods' clear inside A acting deployment-wide removes the deployment's record of A's site (and
     writes no audit of A's): check 4 fails."""
@@ -1704,6 +1749,91 @@ def test_the_routes_resolver_resolves_first():
             and any(isinstance(t, ast.Attribute) and t.attr == 'workspace'
                     for t in (node.targets if isinstance(node, ast.Assign) else [node.target]))]
     assert sets == [('__init__', 'self.workspace = workspace if workspace is not None else RequestWorkspace()')]
+
+
+#: Every line (after its docstring) of each function a ``PINNED_MIDDLEWARES`` entry stands on, by file and function.
+_PINNED_BODIES: dict[str, dict[str, list[str]]] = {
+    'metrics_handler.py': {
+        # The middleware: the request's scope, resolved afresh, kept for this request only.
+        '_workspace_first': ['resolver.append_context(**{WORKSPACE_CONTEXT_KEY: _request_scope()})',
+                             'return next_middleware(resolver)'],
+        # The resolution: the module's RequestWorkspace (``scope`` resolves first: test above) on the current
+        # event; outside a request (no event) None, which a request never is.
+        '_request_scope': ["event = getattr(app, 'current_event', None)",
+                           "raw = getattr(event, 'raw_event', None) if event is not None else None",
+                           'return _workspace.scope(raw) if isinstance(raw, dict) else None'],
+        # What every route reads: the value the middleware kept, or a 500, never a fresh or a deployment-wide one.
+        '_ws_scope': ['if WORKSPACE_CONTEXT_KEY not in app.context:\n    raise WorkspaceNotResolved(WORKSPACE_NOT_RESOLVED)',
+                      'return app.context[WORKSPACE_CONTEXT_KEY]'],
+    },
+}
+
+
+#: The module-level names a pinned middleware's lines read, beside its functions: each must be bound once.
+_PINNED_NAMES = ('app', '_workspace', 'WORKSPACE_CONTEXT_KEY', 'WORKSPACE_NOT_RESOLVED', 'WorkspaceNotResolved')
+#: Names the pinned lines read that the module must never bind at all (builtins: a module-level one would shadow it).
+_PINNED_BUILTINS = ('getattr', 'isinstance')
+#: Each pinned function's parameters, as written.
+_PINNED_PARAMETERS: dict[str, dict[str, str]] = {
+    'metrics_handler.py': {'_workspace_first': 'resolver: Any, next_middleware: Any', '_request_scope': '',
+                           '_ws_scope': ''},
+}
+
+
+@pytest.mark.parametrize('file', sorted(PINNED_MIDDLEWARES))
+def test_the_pinned_middlewares_resolve_first(file):
+    """A ``PINNED_MIDDLEWARES`` module: its first middleware is the one named, its functions read exactly as pinned
+    (any change fails here, to be read again before the pin is), and its ``_workspace`` is a ``RequestWorkspace``
+    bound once, never changed (``_instances``)."""
+    tree = ast.parse((API_DIR / file).read_text(encoding='utf-8'))
+    assert first_app_middleware(tree) == PINNED_MIDDLEWARES[file]
+    functions = _module_functions(tree)
+    for name, lines in _PINNED_BODIES[file].items():
+        fn = functions[name]
+        docstring, *rest = fn.body
+        assert isinstance(docstring, ast.Expr)
+        assert isinstance(docstring.value, ast.Constant)
+        assert [ast.unparse(stmt) for stmt in rest] == lines, name
+        # The whole function, not its body alone: no decorator (an `@cache` would keep the first request's scope for
+        # every later one) and the parameters as pinned.
+        assert (fn.decorator_list, ast.unparse(fn.args)) == ([], _PINNED_PARAMETERS[file][name]), name
+    assert _instances(tree, INSTANCE_RESOLVER) == {'_workspace'}
+    assert set(_PINNED_BODIES) == set(PINNED_MIDDLEWARES)
+    # Each name the pinned lines stand on is bound once, so no later binding replaces it at run time.
+    names = [*_PINNED_BODIES[file], *_PINNED_NAMES]
+    bindings = _bindings(tree)
+    assert {name: bindings.get(name) for name in names} == dict.fromkeys(names, 1)
+    assert [name for name in _PINNED_BUILTINS if name in bindings] == []
+    # No write into a context by a method or an operator either (``app.context.update(…)``, ``|=``).
+    assert not [ast.unparse(node) for node in ast.walk(tree)
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and ast.unparse(node.func.value).endswith('.context')
+                    and node.func.attr in {'update', 'setdefault', '__setitem__', 'pop', 'clear'})
+                or (isinstance(node, ast.AugAssign) and ast.unparse(node.target).endswith('context'))]
+    # Only the middleware keeps the request's scope on the context: no other append_context names its key (by the
+    # constant or the key's text), no item is stored into a context, and the key's text is written once, where it is
+    # named.
+    key = next(node.value.value for node in tree.body if isinstance(node, ast.Assign)
+               and isinstance(node.value, ast.Constant) and [ast.unparse(t) for t in node.targets] == [
+                   'WORKSPACE_CONTEXT_KEY'])
+    stores = [ast.unparse(node) for node in ast.walk(tree) if isinstance(node, ast.Call)
+              and isinstance(node.func, ast.Attribute) and node.func.attr == 'append_context'
+              and ('WORKSPACE_CONTEXT_KEY' in ast.unparse(node) or any(kw.arg == key for kw in node.keywords)
+                   or any(kw.arg is None for kw in node.keywords))]
+    assert stores == ['resolver.append_context(**{WORKSPACE_CONTEXT_KEY: _request_scope()})']
+    assert not [node for node in ast.walk(tree) if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store)
+                and ast.unparse(node.value).endswith('context')]
+    assert len([node for node in ast.walk(tree) if isinstance(node, ast.Constant) and node.value == key]) == 1
+
+
+def test_a_pinned_middleware_counts_only_where_named_and_installed_first():
+    source = ('def _first(resolver, nxt):\n    """."""\n    return nxt(resolver)\n\n\n'
+              'app.use(middlewares=[_first])\n\n\n@app.get("/x")\ndef r():\n    return {}\n')
+    assert routes_resolving_the_workspace(source, pinned_middleware='_first') == {'GET /x': True}
+    assert routes_resolving_the_workspace(source) == {'GET /x': False}
+    assert routes_resolving_the_workspace(source, pinned_middleware='_other') == {'GET /x': False}
+    later = source.replace('middlewares=[_first]', 'middlewares=[log, _first]')
+    assert routes_resolving_the_workspace(later, pinned_middleware='_first') == {'GET /x': False}
 
 
 _ROUTES = 'from shared.workspace_request import ResolvedRoutes\n\n_request = ResolvedRoutes(app)\n'

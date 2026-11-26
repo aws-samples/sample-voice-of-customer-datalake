@@ -131,6 +131,13 @@ class RouteCase:
     #: The double (by its ``World.doubles`` name) whose call carries the request's place on to another process (an
     #: invoke payload): check 4 expects its last call to name A as ``workspace_id``.
     payload_names_a: str = ''
+    #: A route whose answer holds no text a mark could show in (counts, a summary): check 4 also asks the deployment
+    #: the same, without the header, and expects A's answer to differ (its world gives each place different counts).
+    differs_from_the_deployment: bool = False
+    #: For a route that refuses inside a workspace what it does for the deployment (``ok_status`` 400 or more): the
+    #: refusal's own message, as ``module.NAME`` of its constant; check 4 expects exactly it, so no other 4xx of the
+    #: same code (a validation, a missing schedule) passes for the refusal.
+    refusal: str = ''
 
 
 @dataclass(frozen=True)
@@ -1238,12 +1245,110 @@ def integrations_world(lambda_context: Any) -> Generator[World]:
                     deployment_mark=_DEPLOYMENT_MARK)
 
 
+# ── voc-metrics-api (lambda/api/metrics_handler.py): the feedback reads and the dashboards' metrics ──
+
+#: One review id in all three places (each its own partitions and text), one more of A's and one only B holds; the
+#: counters written by the real aggregator in each place (test_metrics_workspace_reads.py's world, marked).
+_FEEDBACK_ITEM_IDS = {'A': {'feedback_id': 'f1'}, 'B': {'feedback_id': 'only-b'}, UNKNOWN: {'feedback_id': 'nowhere'}}
+_DEPLOYMENT_METRICS = "the deployment as before: its own reviews and counters, no workspace's (metrics_handler.py)"
+#: The metrics routes whose answer is the same in every place of this world, so check 4 cannot tell a
+#: deployment-wide answer from A's: the catalogue (static by design: what each stored field means, the same for
+#: everyone) and the caller's category scope (no per-place access rule seeded yet: follow-up; pinned meanwhile by
+#: test_metrics_workspace_reads.py).
+_METRICS_ALIKE_EVERYWHERE = frozenset({'/feedback/access', '/feedback/catalogue'})
+_DAYS = {'days': '7'}
+_DAYS_LITERAL = {'7': 'a window in days, the same everywhere'}
+
+
+def _metrics_review(ws: str | None, fid: str, text: str, *, urgency: str = 'low', category: str = 'delivery',
+                    minute: int = 0, source: str = 'web') -> dict[str, Any]:
+    """A review as the processor stores it, deployment-wide (``ws`` None) or in a workspace (every partition)."""
+    from decimal import Decimal
+
+    from shared.test.clock import today_utc
+
+    prefix = f'WS#{ws}#' if ws else ''
+    day = today_utc()
+    at = f'{day}T10:{minute:02d}:00Z'
+    return {'pk': f'{prefix}SOURCE#{source}', 'sk': f'FEEDBACK#{fid}', 'feedback_id': fid, 'date': day,
+            'source_platform': source, 'category': category, 'sentiment_label': 'positive',
+            'sentiment_score': Decimal('0.5'), 'urgency': urgency, 'source_channel': 'app', 'original_text': text,
+            'persona_type': 'advocate', 'processed_at': at, 'gsi1pk': f'{prefix}DATE#{day}', 'gsi1sk': f'{at}#{fid}',
+            'gsi2pk': f'{prefix}CATEGORY#{category}', 'gsi2sk': f'0.5#{at}', 'gsi3pk': f'{prefix}URGENCY#{urgency}',
+            'gsi3sk': f'{at}#{fid}', 'gsi4pk': f'{prefix}FEEDBACK#{fid}', 'gsi5pk': f'{prefix}CHANNEL#app'}
+
+
+def _metrics_reviews() -> list[dict[str, Any]]:
+    return [_metrics_review(None, 'f1', f'{_DEPLOYMENT_MARK} one', urgency='high'),
+            _metrics_review(WS_A, 'f1', f'{A_MARK} one', urgency='high'),
+            _metrics_review(WS_B, 'f1', f'{B_MARK} one', urgency='high'),
+            # (in a category of its own: the counters' answers name their categories, so the mark shows there too)
+            _metrics_review(None, 'f2', f'{_DEPLOYMENT_MARK} two', urgency='high', category=_DEPLOYMENT_MARK, minute=1),
+            # (three of the deployment's to A's two: its counters differ from A's)
+            _metrics_review(None, 'f3', f'{_DEPLOYMENT_MARK} three', category='billing', minute=2),
+            _metrics_review(WS_A, 'f4', f'{A_MARK} four', category='billing', minute=3),
+            # (B's in a category of its own too: B's counts leaking into an answer show as its mark)
+            _metrics_review(WS_B, 'only-b', f'{B_MARK} only one', category=B_MARK, minute=4),
+            # A second delivery review of A's and of the deployment's, so each place's similar list is its own.
+            _metrics_review(WS_A, 'f5', f'{A_MARK} five', minute=5),
+            _metrics_review(None, 'f6', f'{_DEPLOYMENT_MARK} six', minute=6),
+            # GitHub issues: two of the deployment's (one in its own category), one of A's, one of B's.
+            *(_metrics_review(ws, fid, text, category=category, minute=minute, source='github_issues')
+              for ws, fid, text, category, minute in (
+                  (None, 'g1', f'{_DEPLOYMENT_MARK} issue', _DEPLOYMENT_MARK, 7),
+                  (None, 'g2', f'{_DEPLOYMENT_MARK} issue two', 'billing', 8),
+                  (WS_A, 'g3', f'{A_MARK} issue', 'billing', 9), (WS_B, 'g4', f'{B_MARK} issue', B_MARK, 10)))]
+
+
+@contextmanager
+def metrics_reads_world(lambda_context: Any) -> Generator[World]:
+    """The metrics Lambda over two seeded workspaces (any member reads): each place's reviews and their counters,
+    the deployment's marked; its response cache and categories cache cleared around the world."""
+    from moto_helpers import indexed_table
+
+    import metrics_handler as h
+    from aggregator import handler as aggregator
+    from aggregator.test.aggregator_fixtures import stream_record
+    from shared.api import clear_categories_cache
+    from shared.data_version import BatchBump
+    from shared.response_cache import DEFAULT_CACHE
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        clear_categories_cache()
+        DEFAULT_CACHE.clear()
+        stack.callback(DEFAULT_CACHE.clear)
+        stack.callback(clear_categories_cache)
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        workspaces = dynamodb.Table('workspaces')
+        feedback = indexed_table(dynamodb, 'feedback', {
+            'gsi1-by-date': ('gsi1pk', 'gsi1sk'), 'gsi2-by-category': ('gsi2pk', 'gsi2sk'),
+            'gsi3-by-urgency': ('gsi3pk', 'gsi3sk'), 'gsi4-by-feedback-id': ('gsi4pk', None),
+            'gsi5-by-channel': ('gsi5pk', 'gsi1sk')})
+        aggregates = indexed_table(dynamodb, 'aggregates', {'gsi1-by-metric-type': ('metric_type', 'pk')})
+        with ExitStack() as counting:
+            for target, value in (('aggregates_table', aggregates), ('IDEMPOTENCY_TABLE', ''),
+                                  ('_known_earliest_date', None), ('_known_workspace_earliest', {}),
+                                  ('workspace_active', lambda _scope: True),
+                                  ('data_changed', BatchBump(aggregator.bump_data_version))):
+                counting.enter_context(patch.object(aggregator, target, value))
+            for item in _metrics_reviews():
+                feedback.put_item(Item=item)
+                aggregator.record_handler(stream_record('INSERT', new=item))
+        resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: False)
+        for target, value in (('feedback_table', feedback), ('aggregates_table', aggregates), ('_workspace', resolver)):
+            stack.enter_context(patch.object(h, target, value))
+        yield World(call=_caller(h, lambda_context), doubles={'cognito': cognito}, deployment_mark=_DEPLOYMENT_MARK)
+
+
 WORLDS: dict[str, Callable[[Any], Any]] = {
     'feedback_edit_handler.py': feedback_edit_world,
     'feedback_form_handler.py': feedback_forms_world,
     'manual_import_handler.py': manual_import_world,
     'scrapers_handler.py': scrapers_world,
     'integrations_handler.py': integrations_world,
+    'metrics_handler.py': metrics_reads_world,
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
@@ -1307,10 +1412,11 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the key is text the admin pasted, the workspace is the header: check 1 (refused inside one)',
         body={'api_key': _EXA_KEY}, literals={_EXA_KEY: 'an API key the admin pasted, not a row of a workspace'},
         ok_status=409, status_without_a_workspace=200, without_a_workspace=_AS_BEFORE,
-        deployment_admins_without_a_workspace=True),
+        deployment_admins_without_a_workspace=True, refusal='shared.radar_exa_routes.NO_WORKSPACE_KEY'),
     ('radar_exa_routes.py', 'DELETE /radar/settings/exa-key'): RouteCase(
         no_ids='the header is its only id: check 1 (refused inside a workspace)', ok_status=409,
-        status_without_a_workspace=200, without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+        status_without_a_workspace=200, without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True,
+        refusal='shared.radar_exa_routes.NO_WORKSPACE_KEY'),
     **dict.fromkeys(
         [('logs_handler.py', route) for route in ('GET /logs/validation', 'GET /logs/processing', 'GET /logs/summary')],
         RouteCase(no_ids="the header is its only id: check 1 (each workspace has its own trail)",
@@ -1770,6 +1876,32 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids="the plugin is the catalogue's, the header the only id: check 1 (refused in every workspace)",
         shared={'source': _RUN_PLUGIN}, literals={_RUN_PLUGIN: _PLUGIN_OF_THE_CATALOGUE}, ok_status=400,
         status_without_a_workspace=200, without_a_workspace=_DEPLOYMENT_INTEGRATIONS,
-        deployment_admins_without_a_workspace=True)
+        deployment_admins_without_a_workspace=True, refusal='integrations_handler.SCHEDULE_IS_THE_DEPLOYMENTS')
        for verb in ('enable', 'disable')},
+    # The metrics and feedback reads (``_workspace_first`` before every route, pinned: test_cross_workspace_routes.py
+    # PINNED_MIDDLEWARES): any member reads A's reviews and counters only; without the header the deployment's.
+    **{('metrics_handler.py', f'GET {path}'): RouteCase(
+        no_ids=f"the header is its only id: check 1 ({what})", query={**_DAYS, **query},
+        literals={**_DAYS_LITERAL, **literals}, without_a_workspace=_DEPLOYMENT_METRICS,
+        differs_from_the_deployment=path not in _METRICS_ALIKE_EVERYWHERE)
+       for path, query, literals, what in (
+           ('/feedback', {}, {}, "B's reviews"), ('/feedback/urgent', {}, {}, "B's urgent reviews"),
+           ('/feedback/entities', {}, {}, "B's entities"),
+           ('/feedback/search', {'q': 'one'}, {'one': 'a word the person searched for'}, "B's matches"),
+           ('/feedback/problems', {}, {}, "B's problems"), ('/feedback/access', {}, {}, "B's categories"),
+           ('/feedback/catalogue', {}, {}, "B's catalogue"), ('/metrics/summary', {}, {}, "B's counters"),
+           ('/metrics/sentiment', {}, {}, "B's sentiment"), ('/metrics/categories', {}, {}, "B's categories"),
+           ('/metrics/sources', {}, {}, "B's sources"), ('/metrics/personas', {}, {}, "B's personas"),
+           ('/metrics/dimensions', {'key': 'feedback_type'}, {'feedback_type': 'a dimension of the app'},
+            "B's dimension counts"),
+           ('/metrics/data-quality', {}, {}, "B's data quality"), ('/metrics/github', {}, {}, "B's GitHub reviews"),
+           ('/metrics/release-watch', {'launched_at': '2026-11-20'}, {'2026-11-20': 'the launch day the person chose'},
+            "B's reviews after a launch"))},
+    # One review by its id: B's review is not found in A, as an unknown id; without the header the deployment's
+    # review under A's id (the same source item in every place).
+    **{('metrics_handler.py', f'GET /feedback/<feedback_id>{tail}'): RouteCase(
+        ids=_FEEDBACK_ITEM_IDS, query=_DAYS, literals=_DAYS_LITERAL, without_a_workspace=_DEPLOYMENT_METRICS,
+        echoes_its_ids="reported to voc-lead 2026-11-26 (~/reports/mut-voc-mp2.md): the 404 is "
+                       "'Feedback <id> not found', the id it was sent")
+       for tail in ('', '/similar')},
 }
