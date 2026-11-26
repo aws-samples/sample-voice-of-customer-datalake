@@ -11,6 +11,11 @@ import LogsSection from './LogsSection'
 
 const auth = vi.hoisted(() => ({ isAdmin: true }))
 vi.mock('../../store/authStore', () => ({ useIsAdmin: () => auth.isAdmin }))
+/** Inside a workspace, its admin role decides (the server's `require_settings_admin`); outside one, `admins`. */
+const workspace = vi.hoisted((): { adminThere: boolean | null } => ({ adminThere: null }))
+vi.mock('./useBrandEditRight', () => ({
+  useBrandEditRight: (isDeploymentAdmin: boolean) => workspace.adminThere ?? isDeploymentAdmin,
+}))
 // The Alerts card has its own suite (AlertsCard.test.tsx) and its own API module.
 vi.mock('./AlertsCard', () => ({ default: () => null }))
 // The System errors tab has its own suite (SystemLogsPanel.test.tsx).
@@ -72,6 +77,7 @@ describe('LogsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     auth.isAdmin = true
+    workspace.adminThere = null
     mockGetLogsSummary.mockResolvedValue({
       summary: {
         validation_failures: {},
@@ -307,8 +313,16 @@ describe('LogsSection', () => {
         .toStrictEqual([null, null])
     })
 
-    it('lets an admin clear a source', async () => {
+    // `adminThere`: inside a workspace (true or false, its admin role), outside one (null). Inside a workspace the
+    // section sits in Administration, which only the deployment's admins open today, so a workspace's admin outside
+    // that group reaches it only once the Logs view moves (the route already answers them).
+    it.each([
+      { who: 'an admin', deploymentAdmin: true, adminThere: null },
+      { who: "a workspace's admin, though not in the deployment's admins", deploymentAdmin: false, adminThere: true },
+    ])('lets $who clear a source', async ({ deploymentAdmin, adminThere }) => {
       const user = userEvent.setup()
+      auth.isAdmin = deploymentAdmin
+      workspace.adminThere = adminThere
       mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
       mockClearValidationLogs.mockResolvedValue({ success: true, deleted: 1 })
 
@@ -321,9 +335,14 @@ describe('LogsSection', () => {
       await waitFor(() => expect(mockClearValidationLogs).toHaveBeenCalledWith('webscraper'))
     })
 
-    it('turns Clear off for a non-admin, focusable and saying why: DELETE /logs/* is admin-only', async () => {
+    it.each([
+      { who: 'a non-admin (DELETE /logs/* is admin-only)', deploymentAdmin: false, adminThere: null },
+      { who: "one of the deployment's admins inside a workspace they are not admin of", deploymentAdmin: true,
+        adminThere: false },
+    ])('turns Clear off for $who, focusable and saying why', async ({ deploymentAdmin, adminThere }) => {
       const user = userEvent.setup()
-      auth.isAdmin = false
+      auth.isAdmin = deploymentAdmin
+      workspace.adminThere = adminThere
       mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
 
       await renderOnTab(user, /validation failures/i)

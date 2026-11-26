@@ -17,11 +17,12 @@ the platform package version.
 
 ## [Unreleased]
 
-## [7.73.02] - 2026-11-26
+## [7.75.02] - 2026-11-26
 
 Tests only: the scrapers' 10 routes (`lambda/api/scrapers_handler.py`) leave the cross-workspace suite's pending list
 with their two-workspace cases; they resolve X-Workspace-Id in the module's `ResolvedRoutes` middleware, which the
-suite reads since 7.73.01. Pending 385 -> 375 (phase 2: 63 -> 53).
+suite reads since 7.75.01. Pending 376 -> 366 (phase 2: 63 -> 53); written as 7.73.02, renumbered on top of
+7.75.00.
 
 ### Changed
 - `table_snapshot` (what a refused request must leave as it was, and what check 4 reads) also holds every moto SSM
@@ -50,12 +51,12 @@ suite reads since 7.73.01. Pending 385 -> 375 (phase 2: 63 -> 53).
 - Twelve of the fourteen worlds do not yet mark every deployment row with one word, so `World.deployment_mark` is
   unset there and a read inside A of the deployment's rows is caught only by their own per-handler tests.
 
-## [7.73.01] - 2026-11-26
+## [7.75.01] - 2026-11-26
 
 Tests only: the manual import's 8 routes (`lambda/api/manual_import_handler.py`) leave the cross-workspace suite's
 pending list with their two-workspace cases. They resolve X-Workspace-Id before every route since 7.67.00, in the
-module's `ResolvedRoutes` middleware (`shared/workspace_request.py`), which the suite could not see. Pending 393 -> 385
-(phase 2: 71 -> 63), on top of 7.73.00; written as 7.72.03 before 7.73.00 landed, renumbered here.
+module's `ResolvedRoutes` middleware (`shared/workspace_request.py`), which the suite could not see. Pending 384 -> 376
+(phase 2: 71 -> 63), on top of 7.75.00; written as 7.72.03, then 7.73.01, renumbered as origin moved.
 
 ### Changed
 - The cross-workspace suite reads a module-level `ResolvedRoutes`, bound once as `_request = ResolvedRoutes(app)`
@@ -87,6 +88,44 @@ module's `ResolvedRoutes` middleware (`shared/workspace_request.py`), which the 
   fixed `Job not found`), which the suite's rule "a refusal does not repeat its ids" refuses. Its case says so
   (`RouteCase.echoes_its_ids`): checks 2 and 3 compare the answers with the request's own ids masked, and fail,
   asking for the note to go, the day the 404 stops repeating them (a meta-test proves both checks do).
+
+## [7.75.00] - 2026-11-26
+
+Multi-workspace, phase 3: the logs per workspace. Inside a workspace, Administration → System → Logs shows that
+workspace's own validation failures, processing errors and scraper runs, the ones its ingestion wrote, and nothing of
+another workspace's or the deployment's trail ([docs/multi-workspace.md](docs/multi-workspace.md)). Outside a
+workspace nothing changes. The alerts and the system diagnostics stay the deployment's: they watch its own Lambdas.
+
+### Added
+
+- `GET /logs/validation`, `/logs/processing`, `/logs/summary` and `/logs/scraper/{id}` act in the workspace a request
+  names (`X-Workspace-Id`, resolved first; the one 404 for a workspace the caller is not in) and read its own rows.
+- `DELETE /logs/validation/{source}` inside a workspace clears that workspace's trail of the source, for its admins
+  only (the deployment's `admins` group grants nothing there; a delegated caller is refused; a platform admin enters
+  as an admin, live-checked and audited), each clear recorded first in the workspace's audit trail
+  (`validation_logs_cleared`: who, whether as a platform admin, which source, how many rows); a record that cannot be
+  written clears nothing. In the web app, Clear follows the workspace's admin role there.
+
+### Changed
+
+- `GET /logs/scraper/{id}` no longer repeats the scraper's id in its answer (`logs` and `count` only), so another
+  workspace's scraper id answers exactly as an unknown one. The web app never read it.
+
+### Not yet in a workspace
+
+- The Logs view is in Administration, which only the deployment's administrators open: a workspace's admins who are
+  not among them do not reach it yet (the routes already answer them).
+- The system diagnostics (System errors, failure queues, environment) stay the deployment's administrators', as before
+  workspaces: they span every workspace, and a failure queue's peeked messages may be a workspace's.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). IAM: the logs API's role gets the stack's workspace-resolution policy (its
+  `AUDIT#WS#*` put takes a clear's audit row) with `WORKSPACES_TABLE`, and its batch delete on voc-aggregates may also
+  reach one workspace id's `WS#{ws}#LOGS#validation#*` rows beside `LOGS#validation#*`. Its Cognito reads are
+  unchanged.
+- Nothing is migrated: a workspace's trail is what its own ingestion wrote; the deployment's is still shown outside
+  any workspace.
 
 ## [7.73.00] - 2026-11-26
 

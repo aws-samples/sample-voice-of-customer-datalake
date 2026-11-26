@@ -30,6 +30,7 @@ import ScraperLogsPanel from './ScraperRunsPanel'
 import SystemLogsPanel from './SystemLogsPanel'
 import type { LogEntryView } from './SourceLogList'
 import { SECTION_TITLE } from './sectionTitle'
+import { useBrandEditRight } from './useBrandEditRight'
 
 type LogTab = 'system' | 'validation' | 'processing' | 'scrapers'
 
@@ -244,9 +245,11 @@ function ValidationLogDetail({ log }: { readonly log: ValidationLogView }) {
 function ValidationLogsPanel({ days }: { readonly days: number }) {
   const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
-  // `DELETE /logs/validation/{source}` is admin-only server-side (logs_handler.py);
-  // the control, focusable with aria-disabled, only explains the 403 it would get.
-  const isAdmin = useIsAdmin()
+  // `DELETE /logs/validation/{source}` is admin-only server-side (logs_handler.py `require_settings_admin`): inside
+  // a workspace its admins clear its trail, outside one the deployment's `admins` (`useBrandEditRight` is that rule,
+  // whatever the setting: the brand's, app feedback's). The control, focusable with aria-disabled, only explains
+  // the 403 it would get.
+  const isAdmin = useBrandEditRight(useIsAdmin())
   const adminOnly = useAdminOnlyReason(isAdmin)
 
   const { data, isLoading, refetch } = useQuery({

@@ -721,7 +721,7 @@ the app pool). Assistant tools on `/participants` (pack `participants`, card-onl
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/logs/validation` | Validation failures |
-| DELETE | `/logs/validation/{source}` | Clear one source's validation failures (admin) |
+| DELETE | `/logs/validation/{source}` | Clear one source's validation failures (inside a workspace its admins', audited; outside one the deployment's `admins`') |
 | GET | `/logs/processing` | Processing errors |
 | GET | `/logs/scraper/{scraper_id}` | One scraper's run log |
 | GET | `/logs/summary` | Counts per source and log type |

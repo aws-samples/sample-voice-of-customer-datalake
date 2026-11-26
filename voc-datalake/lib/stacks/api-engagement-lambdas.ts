@@ -110,9 +110,14 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   // recipients, so it gets the alert targets by name and exact-resource grants.
   const logsRole = ctx.role('LogsLambdaRole');
   // Alert settings (UpdateItem, shared/ops_alerts_service.py); DELETE /logs/validation/{source} clears that
-  // source's LOGS#validation#<source> rows with one batch (BatchWriteItem), nothing else.
+  // source's LOGS#validation#<source> rows, or one workspace's WS#{ws}#LOGS#validation#<source> for its admins,
+  // with batches of deletes (BatchWriteItem), nothing else.
   grantReadAndWrites(aggregatesTable, logsRole, ['UpdateItem']);
-  grantKeyScopedWrites(aggregatesTable, logsRole, ['BatchWriteItem'], ['LOGS#validation#*']);
+  grantKeyScopedWrites(aggregatesTable, logsRole, ['BatchWriteItem'],
+    ['LOGS#validation#*', `WS#${WORKSPACE_ID_PATTERN}#LOGS#validation#*`]);
+  // The logs routes resolve X-Workspace-Id (the stack's one resolution policy: its AUDIT#WS#* put also takes the
+  // audit row of a workspace's clear, written before it); the live platform-admin check's Cognito reads below.
+  const logsWorkspaceEnv = grantRequestWorkspace(ctx.props.workspacesTable, logsRole, userPool);
   kmsKey.grantDecrypt(logsRole);
   const opsAlerts = opsAlertsWiring({
     stack,
@@ -128,8 +133,8 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   }]);
 
   // The alert writes are a platform admin's (alarms on the deployment's own Lambdas, docs/multi-workspace.md): the
-  // live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py).
-  userPool.grant(logsRole, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
+  // live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py), with the Cognito reads
+  // grantRequestWorkspace gave the role above.
 
   // Administration → Logs diagnostics: log search, failure-queue peek (api-logs-diagnostics.ts).
   const diagnosticsEnv = grantLogsDiagnostics(ctx, logsRole, {
@@ -147,7 +152,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     role: logsRole,
     timeout: cdk.Duration.seconds(30),
     memorySize: 1769, // one vCPU 2026-10-23: single-threaded Python gains nothing above it (lib/sizing/policy.ts)
-    environment: { AGGREGATES_TABLE: aggregatesTable.tableName, USER_POOL_ID: userPool.userPoolId, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO', ENABLED_SOURCES: inputs.enabledSourcesEnv, ...diagnosticsEnv, WEB_SEARCH_ENABLED: ctx.props.webSearchGatewayUrl !== undefined ? 'true' : 'false', ...opsAlerts.environment },
+    environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ...logsWorkspaceEnv, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO', ENABLED_SOURCES: inputs.enabledSourcesEnv, ...diagnosticsEnv, WEB_SEARCH_ENABLED: ctx.props.webSearchGatewayUrl !== undefined ? 'true' : 'false', ...opsAlerts.environment },
     layers: [apiLayer],
     logGroup: ctx.logGroup('LogsApiLogs', ctx.uniqueName('voc-logs-api')),
   });
