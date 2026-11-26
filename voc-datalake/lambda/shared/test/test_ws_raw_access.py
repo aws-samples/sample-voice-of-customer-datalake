@@ -217,7 +217,12 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
     'lambda/api/data_explorer_handler.py': (
         2, {'SOURCE#': 1, 'Table': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
-    'lambda/api/feedback_edit_handler.py': (2, {'get_aggregates_table': 1, 'get_feedback_table': 1}),
+    # Phase 0 since 7.76.02 (handle plumbing): every route is proved on both paths by the cross-workspace suite
+    # (lambda/api/test/cross_workspace_worlds.py CASES), and every use of its two handles passes the request's
+    # scope on (query_partition, table_view, ScopedUpdates, the scoped config readers, bump_data_version and
+    # scope_for_caller); no raw call on it. scope_for_caller reads the caller's category-access row, which stays the
+    # deployment's on both paths: an access-control row (control plane), moved with the users API in phase 3.
+    'lambda/api/feedback_edit_handler.py': (0, {'get_aggregates_table': 1, 'get_feedback_table': 1}),
     # Both paths since the public routes' slice: a workspace's forms through `ws_table`, its stats' partition from
     # shared/feedback_partitions.py `source_partition` (its two SOURCE# literals moved there). Table: the
     # module-level voc-aggregates and voc-feedback the views are taken of.
@@ -226,7 +231,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # the breaker through shared/plugin_circuit.py. Left: the voc-aggregates handle (`_aggregates`, 7.44.00: one
     # getter for Run now's row, the run status and the web_reviews learned methods, each seen through the request's
     # scope by `table_view`).
-    'lambda/api/integrations_handler.py': (2, {'get_aggregates_table': 1}),
+    # Phase 0 since 7.76.02 (handle plumbing): every route is proved on both paths by the cross-workspace suite
+    # (lambda/api/test/cross_workspace_worlds.py CASES), and every use of `_aggregates()` passes the request's
+    # scope on (table_view, run_status with the scope); no raw call on it.
+    'lambda/api/integrations_handler.py': (0, {'get_aggregates_table': 1}),
     'lambda/api/logs_handler.py': (3, {'batch': 1, 'get_aggregates_table': 1}),
     # Its three raw/ keys moved to shared/raw_versions.py `raw_root` in 7.67.00 (the workspace's ws/{ws}/raw/ too).
     'lambda/api/manual_import_handler.py': (2, {'Table': 2}),
@@ -249,7 +257,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
         2, {'delete_object': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
     # One voc-aggregates handle (`_aggregates`, 7.44.00): a scraper's labels, its run rows and the web_reviews learned
     # methods, each seen through the request's scope by `table_view` (the labels through shared/producer_labels.py).
-    'lambda/api/scrapers_handler.py': (2, {'get_aggregates_table': 1}),
+    # Phase 0 since 7.76.02 (handle plumbing): every route is proved on both paths by the cross-workspace suite
+    # (lambda/api/test/cross_workspace_worlds.py CASES), and every use of `_aggregates()` passes the request's
+    # scope on (table_view, run_status and normalise_label_fields with the scope); no raw call on it.
+    'lambda/api/scrapers_handler.py': (0, {'get_aggregates_table': 1}),
     'lambda/api/settings_handler.py': (3, {'Table': 1, 'generate_presigned_url': 3, 'put_object': 1}),
     'lambda/api/users_handler.py': (3, {'Table': 2}),
     'lambda/api/verification_fixture_provider.py': (3, {'get_aggregates_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'transact': 1}),

@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.76.02] - 2026-11-26
+
+Tests only: the raw-access guard's allow list (`lambda/shared/test/test_ws_raw_access.py` `ALLOWED`) moves three
+modules from phase 2 to phase 0, the handle plumbing: phase 2 holds 31 modules and 96 accesses (34 and 100 before).
+Each module's every route is proved on both paths by the cross-workspace suite, and each of its remaining raw
+accesses is a handle whose every use passes the request's scope on: `feedback_edit_handler.py` (its two getters, into
+`query_partition`, `table_view`, `ScopedUpdates`, the scoped config readers, `bump_data_version` and
+`scope_for_caller`; the caller's category-access row stays the deployment's, control plane), `integrations_handler.py`
+and `scrapers_handler.py`
+(`_aggregates()`, into `table_view`, `run_status` and `normalise_label_fields` with the scope). Counts unchanged.
+
+### Not moved, and why
+- `feedback_form_handler.py`: on the deployment path five calls take its raw table straight from `_forms_table()` (a
+  new form's put, the two delete audits, an import's run record, the prototype pin, which its docstring calls phase 3),
+  not through `_forms(None)`; it moves once those go through the view.
+- `manual_import_handler.py`: its parse job's row is written straight through the module's `aggregates_table` on
+  both paths (the job's key is the same in every place; only its `workspace_id` scopes it).
+- `metrics_handler.py`: a page's full items are read with a raw `batch_get_item` (its keys checked in a workspace;
+  `WorkspaceTable.batch_get_item` can take it over).
+
 ## [7.76.01] - 2026-11-26
 
 Tests only: the metrics API's 18 routes (`lambda/api/metrics_handler.py`) leave the cross-workspace suite's pending
