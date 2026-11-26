@@ -19,7 +19,7 @@ There are three layers:
 | Row | Covers | Bumped by (once per batch or request, never per record) |
 |---|---|---|
 | `voc-aggregates` `METRIC#meta / data_version` | feedback data | the aggregator, once per DynamoDB Streams batch that carried a feedback write; the category-reprocess worker at each page checkpoint and when an invocation ends (completion, hand-over, cancel, failure); `voc-retention` after a run that deleted something; `PUT /feedback/{id}/category`, `PUT /feedback/{id}/dimensions` and `PUT /data-explorer/feedback`, so a person sees their own correction straight away instead of after the stream catches up |
-| `voc-aggregates` `METRIC#meta / config_version` | settings that change what reads return | `PUT /settings/categories`, `/settings/brand`, `/settings/sources`, `/settings/dimensions` (also the inbox's "add feedback type" dimension), `/settings/model`, `PUT /users/{u}/category-access` |
+| `voc-aggregates` `METRIC#meta / config_version` (a workspace's own: `WS#{ws}#METRIC#meta / config_version`, since 7.78.00) | settings that change what reads return | `PUT /settings/categories`, `/settings/brand`, `/settings/sources`, `/settings/dimensions` (also the inbox's "add feedback type" dimension; inside a workspace, the workspace's row only), `/settings/model`, `PUT /users/{u}/category-access`, `PUT /projects/prioritization/config` (deployment-wide settings: the deployment's row) |
 | `voc-radar` `SETTINGS#radar / version` (a workspace's own: `WS#{ws}#SETTINGS#radar / version`) | Radar data | the processor, once per SQS batch that stored a Radar review; the Radar scan when it records its outcome (after it has filed the releases); `PUT /radar/brands`, `PUT /radar/settings`; inside a workspace, the workspace's row (its scan, its routes) |
 
 Each row holds `v` (incremented with `ADD`) and `updated_at`. A bump never fails the
@@ -46,7 +46,9 @@ The cache key is the route, the workspace the request acts in (`X-Workspace-Id`,
 deployment-wide; [Multi-workspace](multi-workspace.md)), the path, the normalized query string, today's UTC date,
 the caller's scope fingerprint and the versions (with the watermark). In a workspace the versions read takes the
 workspace's own `WS#{ws}#METRIC#meta / data_version` and watermark (the aggregator and the feedback edits bump it for
-that workspace's writes only) beside the deployment's `config_version` (settings stay the deployment's), so an answer
+that workspace's writes only) and its own `config_version` (its settings saves bump it, since 7.78.00: a save in one
+workspace refreshes only that workspace's cached reads; nothing the deployment saves changes a workspace's answer,
+its settings being its own or the defaults and a caller's category access in the scope fingerprint), so an answer
 never crosses from the deployment to a workspace or between workspaces. The resolved
 `days` window follows from the query, the watermark and the date. The scope
 fingerprint is a SHA-256 of the full category and source rule plus the admin and
@@ -190,6 +192,7 @@ curl -s -D - -o /dev/null -H "Authorization: Bearer $TOKEN" "${API%/}/chat/conve
   | grep -i cache-control                              # private, no-store
 
 # 4. The counters (read-only; the table name is the AggregatesTableName output of VocCoreStack)
+# (a workspace's own: "WS#<ws>#METRIC#meta" in place of "METRIC#meta")
 aws dynamodb batch-get-item --request-items '{"voc-aggregates-<account>-<region>":{"Keys":[
   {"pk":{"S":"METRIC#meta"},"sk":{"S":"data_version"}},
   {"pk":{"S":"METRIC#meta"},"sk":{"S":"config_version"}}]}}'

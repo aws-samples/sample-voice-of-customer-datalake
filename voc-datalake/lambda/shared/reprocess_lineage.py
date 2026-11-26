@@ -25,9 +25,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.categorization import ENRICHMENT_SURFACE, PROMPT_VERSION
 from shared.converse import converse_detailed
-from shared.data_version import CONFIG_VERSION_KEY, VERSION_ATTRIBUTE
+from shared.data_version import VERSION_ATTRIBUTE, config_version_key
+from shared.ingest_tables import table_view
 from shared.model_config import get_active_model_id
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 REPROCESS_REASON: Final = 'reprocess'
 ACTOR_KIND_ADMIN: Final = 'admin'
@@ -68,10 +70,11 @@ def categories_digest(categories_config: object) -> str:
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:DIGEST_CHARS]
 
 
-def _config_version(aggregates_table: Any) -> int | None:
-    """``METRIC#meta / config_version`` ``v`` (0 = never bumped); None when unreadable."""
+def _config_version(aggregates_table: Any, scope: WorkspaceScope | None) -> int | None:
+    """The scope's ``config_version`` ``v`` (the deployment's ``METRIC#meta``, a workspace's own; 0 = never bumped);
+    None when unreadable."""
     try:
-        item = aggregates_table.get_item(Key=dict(CONFIG_VERSION_KEY)).get('Item')
+        item = table_view(scope, aggregates_table).get_item(config_version_key(scope)).get('Item')
     except (ClientError, BotoCoreError):
         # A lineage read never fails the job; None records "unknown".
         return None
@@ -86,10 +89,11 @@ def _config_version(aggregates_table: Any) -> int | None:
         return None
 
 
-def job_config(aggregates_table: Any, categories_config: object) -> dict[str, Any]:
-    """The configuration this invocation derives with, as recorded on the job row."""
+def job_config(aggregates_table: Any, categories_config: object, scope: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The configuration this invocation derives with, as recorded on the job row (a workspace's job: its own
+    config counter, so another workspace's save never reads as this job's configuration changing)."""
     return {
-        'config_version': _config_version(aggregates_table),
+        'config_version': _config_version(aggregates_table, scope),
         'categories_sha16': categories_digest(categories_config),
         'model_id': get_active_model_id(ENRICHMENT_SURFACE),
         'prompt_version': PROMPT_VERSION,

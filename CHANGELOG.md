@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.78.00] - 2026-11-26
+
+Multi-workspace, phase 3: the read caching's settings counter per workspace. A settings save inside a workspace
+(its categories, dimensions, source profiles or brand) now refreshes only that workspace's cached reads, not every
+workspace's ([docs/caching.md](docs/caching.md)). Outside a workspace nothing changes.
+
+### Changed
+
+- A workspace's settings saves bump its own `config_version` (`WS#{ws}#METRIC#meta` / `config_version` in
+  voc-aggregates), and a cached read inside a workspace keys on that counter (`lambda/shared/data_version.py`
+  `config_version_key`). The deployment's counter counts the deployment's saves, as before.
+- A workspace's category reprocess records its own workspace's counter, so a save in another workspace no longer
+  reads as its configuration changing (`lambda/shared/reprocess_lineage.py`).
+- The workspace hard delete removes the new row with the workspace's other counters (its `METRIC#meta` partition).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). No IAM change: the settings role's existing UpdateItem on voc-aggregates
+  covers the row. Nothing is migrated: a workspace's counter starts at 0, so its first cached reads after the
+  deploy are computed afresh, and a workspace's reprocess job that hands over across the deploy is marked once as
+  having changed configuration (it recorded the deployment's counter, then reads its workspace's).
+
 ## [7.77.00] - 2026-11-26
 
 A trust fix (TENETS.md D4): clearing the deployment's validation failures (Administration → System → Logs →

@@ -13,7 +13,14 @@ import pytest
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared.data_version import BatchBump, bump_data_version, data_version_key, read_versions
+from shared.data_version import (
+    BatchBump,
+    bump_config_version,
+    bump_data_version,
+    config_version_key,
+    data_version_key,
+    read_versions,
+)
 from shared.earliest_date import earliest_date_key, lower_watermark_request
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
 from shared.metric_keys import DAILY_TOTAL_PK, metric_partition, metric_type_partition
@@ -101,24 +108,36 @@ class TestVersions:
         assert [call.args for call in bump.call_args_list] == [('table',), ('table', SCOPE)]
         assert batch.flush('table') is False  # nothing marked since
 
-    def test_the_read_takes_the_workspaces_data_version_and_watermark_and_the_deployments_config(self):
+    def test_the_read_takes_the_workspaces_own_counters_and_watermark(self):
         table = MagicMock()
         table.name = 'aggregates'
         meta = f'WS#{WS}#METRIC#meta'
         table.meta.client.batch_get_item.return_value = {'Responses': {'aggregates': [
             {'pk': 'METRIC#meta', 'sk': 'data_version', 'v': 9},  # the deployment's: not this read's
             {'pk': meta, 'sk': 'data_version', 'v': 3},
-            {'pk': 'METRIC#meta', 'sk': 'config_version', 'v': 5},
+            {'pk': 'METRIC#meta', 'sk': 'config_version', 'v': 5},  # the deployment's: not this read's
+            {'pk': meta, 'sk': 'config_version', 'v': 2},
             {'pk': meta, 'sk': 'earliest_date', 'date': '2026-02-01'},
         ]}}
 
         read = read_versions(table, scope=SCOPE)
 
         assert read.versions is not None
-        assert (read.versions.data, read.versions.config, read.earliest_date) == (3, 5, '2026-02-01')
+        assert (read.versions.data, read.versions.config, read.earliest_date) == (3, 2, '2026-02-01')
         keys = table.meta.client.batch_get_item.call_args.kwargs['RequestItems']['aggregates']['Keys']
-        assert keys == [data_version_key(SCOPE), {'pk': 'METRIC#meta', 'sk': 'config_version'},
-                        earliest_date_key(SCOPE)]
+        assert keys == [data_version_key(SCOPE), config_version_key(SCOPE), earliest_date_key(SCOPE)]
+
+    def test_the_config_counter_is_the_deployments_or_the_workspaces(self):
+        assert config_version_key() == {'pk': 'METRIC#meta', 'sk': 'config_version'}
+        assert config_version_key(SCOPE) == {'pk': f'WS#{WS}#METRIC#meta', 'sk': 'config_version'}
+
+    def test_a_workspaces_config_bump_is_its_own_row_through_its_view(self):
+        table = MagicMock()
+        assert bump_config_version(table, SCOPE) is True
+        [call] = table.update_item.call_args_list
+        assert call.kwargs['Key'] == {'pk': f'WS#{WS}#METRIC#meta', 'sk': 'config_version'}
+        assert bump_config_version(table) is True
+        assert table.update_item.call_args.kwargs['Key'] == {'pk': 'METRIC#meta', 'sk': 'config_version'}
 
 
 def _event(headers: dict) -> dict:

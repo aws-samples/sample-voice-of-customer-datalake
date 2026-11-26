@@ -204,7 +204,7 @@ such as every source or persona counter. Common key families include:
 | Key pattern | Purpose |
 |-------------|---------|
 | `METRIC#*` | Pre-computed daily counters and averages |
-| `METRIC#meta` / `earliest_date`, `data_version`, `config_version` | Earliest-data watermark used by all-time (`days=0`) windows, and the cache version counters ([caching.md](caching.md)) |
+| `METRIC#meta` / `earliest_date`, `data_version`, `config_version` | Earliest-data watermark used by all-time (`days=0`) windows, and the cache version counters ([caching.md](caching.md)); a workspace's own under `WS#{ws}#METRIC#meta` |
 | `SETTINGS#*` | Brand, categories (with product and owners), dimensions, source profiles and model configuration |
 | `CATEGORY_ACCESS` / `USER#<sub>` | Which categories and sources a user may see (no row = all) |
 | `JOB#category_reprocess` / `rp_<hex>` | Category reprocess jobs |

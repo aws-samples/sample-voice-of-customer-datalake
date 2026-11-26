@@ -797,7 +797,7 @@ def save_brand_settings():
     try:
         _update_brand_row(aggregates_table, context, {**sets, 'updated_at': now_iso()}, body, theme)
         if not theme_only:
-            bump_config_version(aggregates_table)
+            bump_config_version(aggregates_table, optional_scope(context))
     except Exception as e:
         logger.exception(f"Failed to save brand settings: {e}")
         raise ServiceError(FAILED_BRAND_SAVE) from e
@@ -1910,12 +1910,12 @@ def _settings_row(key: dict) -> dict:
 def _put_config_row(kind: str, deployment_key: dict, scope: WorkspaceScope | None, field: str, value: list,
                     event: dict) -> None:
     """Save a dimensions / source-profiles row (``scope``'s workspace's, the deployment's without one), then bump
-    config_version (cached reads depend on both; the one counter, so a workspace's save refreshes every cached
-    read, which over-invalidates and never serves a stale one)."""
+    that scope's own config_version (cached reads depend on both; a workspace's save refreshes only its own cached
+    reads, shared/data_version.py ``config_version_key``)."""
     table = _configured_table()
     put_config_item(table, kind, deployment_key, scope,
                     {field: value, 'updated_at': now_iso(), 'updated_by': _caller_label(event)})
-    bump_config_version(table)
+    bump_config_version(table, scope)
 
 
 def _validated_list(body_field: str, validate) -> list:

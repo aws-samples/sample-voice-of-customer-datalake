@@ -596,8 +596,9 @@ scope (the caches keep one entry per workspace).
   `workspace_profiles_problem`): `voc-retention` applies the deployment's windows to every item, a workspace's
   included (7.03.00), so a workspace's own window would delete nothing, and a workspace's Radar takes no reviews yet (so a
   workspace's profile also sends no `retention_legal_basis` and no `radar_domains`, checked on the list as sent). A
-  delegated caller (an MCP token, an agent, a plan step) never saves a workspace's settings. A save bumps the one
-  `config_version`, which the response cache checks, so no cached answer outlives it; the Lambdas' per-container
+  delegated caller (an MCP token, an agent, a plan step) never saves a workspace's settings. A save bumps the
+  workspace's own `config_version` (`WS#{ws}#METRIC#meta`, since 7.78.00; before, the deployment's one counter, which
+  refreshed every workspace's cached reads), which the response cache checks, so no cached answer outlives it; the Lambdas' per-container
   caches of the three (the processor's, the categories' and the profiles') catch up within their 5-minute TTL.
 - **The readers.** The processor (`lambda/processor/handler.py`) reads, for a message that names a workspace, that
   workspace's categories (the model's instruction), dimensions, and source profile (its PII policy when the message
@@ -1879,8 +1880,7 @@ audit writer names it in the guard.
    profiles may not name a Radar brand yet, and the processor refuses a workspace message that carries one; its routes
    and scans are per workspace since 7.73.00), projects and their
    Step Functions, the assistant and its stream Lambda, memory, agents, workflows and plans, the briefing, the Data
-   Explorer, participants' asks, and the read caching's `config_version` (one counter every
-   scope's settings save bumps). Browser-saved state still not keyed by workspace (the three persisted stores are since 6.15.00),
+   Explorer and participants' asks (the read caching's `config_version` is per workspace since 7.78.00). Browser-saved state still not keyed by workspace (the three persisted stores are since 6.15.00),
    each with its reason: the Memory page's list of the imports this browser started (`voc-memory-imports`), which follows the
    memory API when phase 3 keys it; the onboarding cache (`voc-onboarding:{sub}`), a cache of a per-person
    setting the server holds; and, deployment-wide by design, the session (`voc-auth`), the language and theme

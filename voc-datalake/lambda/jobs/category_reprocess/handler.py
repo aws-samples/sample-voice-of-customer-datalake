@@ -736,7 +736,7 @@ def _reprocess_pages(
     categories_config = load_categories_config(aggregates_table, **jobs.scope_option(scope))
     dimensions_config = (load_dimensions_config(aggregates_table, **jobs.scope_option(scope))
                          if job.get('mode') == jobs.MODE_DIMENSIONS else [])
-    if jobs.record_config(aggregates_table, job, job_config(aggregates_table, categories_config), token,
+    if jobs.record_config(aggregates_table, job, job_config(aggregates_table, categories_config, scope), token,
                           **jobs.scope_option(scope)) is None:
         logger.info("Reprocess job cancelled or claimed by another delivery", extra={'job_id': job_id})
         return {'status': jobs.STATUS_CANCELLED}

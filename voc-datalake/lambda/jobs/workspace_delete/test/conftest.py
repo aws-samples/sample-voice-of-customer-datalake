@@ -288,6 +288,8 @@ def seed_workspace(world: World, ws: str, *, status: str) -> None:
         *_seed_feedback(world, ws),
         {'pk': f'{p}METRIC#meta', 'sk': 'earliest_date', 'date': day(DAYS - 1)},
         {'pk': f'{p}METRIC#meta', 'sk': 'data_version', 'v': 3},
+        # Its settings' cache counter (since 7.78.00, shared/data_version.py config_version_key).
+        {'pk': f'{p}METRIC#meta', 'sk': 'config_version', 'v': 2},
         # A source counter no stored item names any more: found through the metric-type index.
         {'pk': f'{p}METRIC#daily_source#retired_source', 'sk': day(9), 'count': 2, 'metric_type': f'{p}source'},
         {'pk': f'{p}SOURCE_RUN#webscraper', 'sk': '2026-11-01T00:00:00', 'status': 'completed'},

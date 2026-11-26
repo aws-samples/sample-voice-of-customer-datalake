@@ -176,7 +176,7 @@ def scope_fingerprint(scope: CategoryScope, event: Mapping[str, Any]) -> str:
 def request_versions(app: Any, aggregates_table: Any, radar_table: Any = None,
                      scope: WorkspaceScope | None = None) -> VersionRead:
     """This request's versions read, made at most once per request (the resolver's context); the workspace's own
-    data_version and watermark with ``scope`` (one request acts in one scope)."""
+    data_version, config_version and watermark with ``scope`` (one request acts in one scope)."""
     cached = app.context.get(VERSIONS_CONTEXT_KEY)
     if isinstance(cached, VersionRead):
         return cached

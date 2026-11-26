@@ -29,8 +29,13 @@ must not cache that request) and falls back to the plain watermark read.
 A workspace (docs/multi-workspace.md) has its own ``data_version`` and watermark under
 ``WS#{ws}#METRIC#meta`` (``scope``): a workspace's feedback write bumps only its own, and a
 read in the workspace keys its cache on its own. Radar's counter is each workspace's too
-(``WS#{ws}#SETTINGS#radar`` / ``version``, ``radar_version_key``, since 7.73.00); ``config_version`` stays the
-deployment's, like the settings it counts.
+(``WS#{ws}#SETTINGS#radar`` / ``version``, ``radar_version_key``, since 7.73.00), and so is ``config_version``
+since 7.78.00 (``WS#{ws}#METRIC#meta`` / ``config_version``, ``config_version_key``): a workspace's settings save
+bumps only its own, so it refreshes only its own cached reads. The deployment's counter counts the deployment's
+saves (its categories, dimensions, sources and brand, and the deployment-wide model, category access and
+prioritization settings); a read in a workspace keys on the workspace's only, since nothing the deployment saves
+changes what a workspace's cached read returns (its settings are its own or the defaults, and a caller's category
+access is in the cache key, shared/response_cache.py).
 
 Data-layer only (no API-resolver imports), so the aggregator and the job workers
 can use it.
@@ -59,7 +64,8 @@ from shared.ws_repo import WorkspaceScope, ws_table
 
 DATA_VERSION_SK: Final = 'data_version'
 DATA_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': DATA_VERSION_SK}
-CONFIG_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': 'config_version'}
+CONFIG_VERSION_SK: Final = 'config_version'
+CONFIG_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': CONFIG_VERSION_SK}
 RADAR_VERSION_KEY: Final = radar_settings_key('version')
 VERSION_ATTRIBUTE: Final = 'v'
 
@@ -71,6 +77,14 @@ def data_version_key(scope: WorkspaceScope | None = None) -> dict[str, str]:
     if scope is None:
         return dict(DATA_VERSION_KEY)
     return {'pk': meta_partition(scope), 'sk': DATA_VERSION_SK}
+
+
+def config_version_key(scope: WorkspaceScope | None = None) -> dict[str, str]:
+    """The ``config_version`` row: the deployment's (``CONFIG_VERSION_KEY``), or the workspace's
+    (``WS#{ws}#METRIC#meta``)."""
+    if scope is None:
+        return dict(CONFIG_VERSION_KEY)
+    return {'pk': meta_partition(scope), 'sk': CONFIG_VERSION_SK}
 
 
 def _bump(table: Any, key: Mapping[str, str], name: str, scope: WorkspaceScope | None = None) -> bool:
@@ -98,9 +112,10 @@ def bump_data_version(aggregates_table: Any, scope: WorkspaceScope | None = None
     return _bump(aggregates_table, data_version_key(scope), 'data', scope)
 
 
-def bump_config_version(aggregates_table: Any) -> bool:
-    """A setting that changes what reads return was saved."""
-    return _bump(aggregates_table, CONFIG_VERSION_KEY, 'config')
+def bump_config_version(aggregates_table: Any, scope: WorkspaceScope | None = None) -> bool:
+    """A setting that changes what reads return was saved: the deployment's, or with ``scope`` the workspace's own
+    counter."""
+    return _bump(aggregates_table, config_version_key(scope), 'config', scope)
 
 
 def radar_version_key(scope: WorkspaceScope | None = None) -> dict[str, str]:
@@ -205,11 +220,10 @@ def _item_of(response: object) -> object:
 
 
 def _batch_request(aggregates_table: Any, radar_table: Any, scope: WorkspaceScope | None) -> dict[str, Any]:
-    keys = [data_version_key(scope), dict(CONFIG_VERSION_KEY), earliest_date_key(scope)]
+    keys = [data_version_key(scope), config_version_key(scope), earliest_date_key(scope)]
     if scope is not None:
-        # The workspace's own rows (its data_version and watermark), checked as any key of the workspace is; the
-        # config counter is the deployment's (its settings are).
-        ws_table(scope, aggregates_table).check_keys(keys[0::2])
+        # The workspace's own rows (its counters and watermark), checked as any key of the workspace is.
+        ws_table(scope, aggregates_table).check_keys(keys)
     request: dict[str, Any] = {aggregates_table.name: {'Keys': keys, 'ConsistentRead': True}}
     if radar_table is not None:
         radar_key = radar_version_key(scope)
@@ -239,7 +253,7 @@ def _parse(response: object, aggregates_table: Any, radar_table: Any,
         return None
     rows = _rows_by_key(responses.get(aggregates_table.name))
     data = _counter(_row(rows, data_version_key(scope)))
-    config = _counter(_row(rows, CONFIG_VERSION_KEY))
+    config = _counter(_row(rows, config_version_key(scope)))
     radar: int | None = None
     if radar_table is not None:
         radar_key = radar_version_key(scope)
@@ -256,8 +270,8 @@ def _parse(response: object, aggregates_table: Any, radar_table: Any,
 def read_versions(aggregates_table: Any, radar_table: Any = None, scope: WorkspaceScope | None = None) -> VersionRead:
     """data_version + config_version + the earliest-date watermark (+ the Radar counter) in one call.
 
-    With ``scope`` the data_version and the watermark are the workspace's own (the config counter stays the
-    deployment's), so a cached answer of the deployment or of another workspace is never keyed alike by chance
+    With ``scope`` the counters and the watermark are the workspace's own, so a cached answer of the deployment or
+    of another workspace is never keyed alike by chance
     of equal counters (shared/response_cache.py also keys on the workspace).
 
     Strongly consistent, so a write's bump is visible to the very next read (a person

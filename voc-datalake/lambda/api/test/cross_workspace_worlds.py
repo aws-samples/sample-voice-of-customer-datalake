@@ -299,9 +299,6 @@ def _export_world(stack: ExitStack, workspaces_handler: Any) -> MagicMock:
 #: Why the resolved-problems routes answer without a workspace: the web app with no workspace and a deployment from
 #: before workspaces send no header (6.12.00 on the multi-workspace branch; decision 12), and get the deployment's row, as before.
 _AS_BEFORE = 'the deployment as before: its own row, no workspace\'s (shared/request_workspace.py)'
-#: A settings change in any place bumps the deployment's one configuration counter (a number the caches key on, no
-#: content of A's).
-_CONFIG_VERSION = {('METRIC#meta', 'config_version'): "the deployment's configuration counter (config_version), bumped by any place"}
 #: A resolved problem's key: a category, subcategory and problem text the user wrote, not a row of a workspace.
 PROBLEM_KEY = 'technical_support:response_time:slow replies'
 
@@ -1564,7 +1561,7 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('settings_handler.py', 'PUT /settings/brand'): RouteCase(
         no_ids='the brand is text the admin wrote, the workspace is the header: check 1',
         body={'brand_name': 'Trailhead'}, literals={'Trailhead': 'a brand name the admin typed, not a row of a workspace'},
-        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True, outside_a=_CONFIG_VERSION),
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     # The categories, dimensions and source profiles (7.08.00): each workspace's own rows, the deployment's without
     # the header; any member reads, the workspace's admins write.
     ('settings_handler.py', 'GET /settings/categories'): RouteCase(
@@ -1574,7 +1571,7 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the categories are names the admin typed, the workspace is the header: check 1',
         body={'categories': [{'name': 'trail_gear'}]},
         literals={'trail_gear': 'a category name the admin typed, not a row of a workspace'},
-        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True, outside_a=_CONFIG_VERSION),
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     ('settings_handler.py', 'GET /settings/dimensions'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own dimensions)',
         without_a_workspace=_AS_BEFORE),
@@ -1583,7 +1580,7 @@ CASES: dict[tuple[str, str], RouteCase] = {
         body={'dimensions': [{'key': 'terrain', 'values': [{'name': 'gravel'}]}]},
         literals={'terrain': 'a dimension key the admin typed, not a row of a workspace',
                   'gravel': 'a dimension value the admin typed, not a row of a workspace'},
-        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True, outside_a=_CONFIG_VERSION),
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     # The category reprocess (7.13.00): each workspace's own job, its admins start, read and cancel it; without the
     # header the deployment's job, for the deployment's admins, as before.
     ('settings_handler.py', 'POST /settings/categories/reprocess'): RouteCase(
@@ -1659,7 +1656,7 @@ CASES: dict[tuple[str, str], RouteCase] = {
         body={'sources': [{'id': PLUGIN, 'pii': 'redact'}]},
         literals={PLUGIN: 'a plugin of the deployment, the same source id in every workspace',
                   'redact': 'a PII policy, the same words in every workspace'},
-        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True, outside_a=_CONFIG_VERSION),
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     # 7.29.00: the approval resolves the workspace the plan will run in; a member approves there, nobody else.
     **{('library_routes.py', route): RouteCase(
         no_ids="the header is its only id: check 1 (each workspace's library is its own)", query=query,

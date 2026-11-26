@@ -305,7 +305,8 @@ slice, and a **Resume** button on a partial job.
   capacity fallback it differs from `requested_model`) and the prompt version, plus
   `updated_by {sub, kind: 'admin'}`, `updated_at` and `change_reason: 'reprocess'`. A
   band-only update (the usefulness backfill) carries the change stamps but no new provenance.
-- **The configuration it derived with.** The job row's `config` holds `config_version`,
+- **The configuration it derived with.** The job row's `config` holds `config_version` (a workspace's job: its
+  own workspace's counter, since 7.78.00),
   `categories_sha16` (the first 16 hex of the categories config's sha256), the enrichment
   model id and the prompt version. A hand-over that derives with another configuration keeps
   the first and sets `config_changed` with `last_config`.
