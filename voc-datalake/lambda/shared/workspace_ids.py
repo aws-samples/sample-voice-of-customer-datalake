@@ -39,7 +39,11 @@ __all__ = [
 #: ``workspace_is_active``).
 ACTIVE: Final = 'active'
 #: ``ws_`` + a ULID: 26 Crockford base32 characters (no I, L, O, U), the first one 0-7 (128 bits).
-_WORKSPACE_ID: Final = re.compile(r'ws_[0-7][0-9A-HJKMNP-TV-Z]{25}')
+WORKSPACE_ID_TEXT: Final = r'ws_[0-7][0-9A-HJKMNP-TV-Z]{25}'
+#: The field an asynchronous message (SQS body, Lambda async payload) names its workspace in; every log line's tag too
+#: (shared/system_log_scope.py). Re-exported by shared/ws_repo.py, where most modules import it from.
+WORKSPACE_FIELD: Final = 'workspace_id'
+_WORKSPACE_ID: Final = re.compile(WORKSPACE_ID_TEXT)
 #: A parameter prefix: ``/`` then path segments of letters, digits, ``-`` and ``_`` (``/voc/ws``, ``/stg-voc/ws``).
 _PREFIX: Final = re.compile(r'(?:/[A-Za-z0-9_-]+)+')
 #: A workspace's slug: 3 to 40 of a-z, 0-9 and '-', neither first nor last a '-'.

@@ -68,7 +68,10 @@ function RequestResult({ group }: { readonly group: SystemLogGroup }) {
       </div>
     )
   }
-  if (data.lines.length === 0) return <p className="text-xs text-muted">{t('logs.system.request.empty')}</p>
+  if (data.lines.length === 0) {
+    const key = data.withheld_workspace_lines > 0 ? 'logs.system.request.withheld' : 'logs.system.request.empty'
+    return <p className="text-xs text-muted">{t(key)}</p>
+  }
 
   return (
     <div className="space-y-1">
@@ -95,7 +98,9 @@ function RequestLineList({ lines }: { readonly lines: readonly SystemRequestLine
         <li key={key} className="grid grid-cols-[auto_auto_1fr] gap-x-2 px-2 py-1 font-mono text-xs">
           <span className="text-muted whitespace-nowrap">{formatDateTime(line.timestamp, i18n.language, line.timestamp)}</span>
           <span className={clsx('font-medium', LEVEL_TEXT[line.level] ?? 'text-muted')}>{line.level}</span>
-          <pre className="whitespace-pre-wrap break-words text-text">{line.message}</pre>
+          {line.withheld
+            ? <p className="text-muted italic">{t('logs.system.detailsWithheld')}</p>
+            : <pre className="whitespace-pre-wrap break-words text-text">{line.message}</pre>}
         </li>
       ))}
     </ol>

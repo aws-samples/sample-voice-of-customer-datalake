@@ -9,7 +9,10 @@ name. The API access log has no such lines (its request id is the gateway's), so
 a function here.
 
 Same `running` / `query_id` contract as `GET /logs/system`. Lines are redacted and cut; none
-is ever logged.
+is ever logged. No workspace's content is shown (shared/system_log_scope.py, TENETS.md D8): when any line of the
+request names a workspace, the request is a workspace's and none of its lines is returned (counted in
+`withheld_workspace_lines`; `truncated` stays false); otherwise a line tagged as the deployment's and Lambda's own
+fixed lines read as before, and any other shows its time and level only (`withheld`, an empty message).
 """
 from __future__ import annotations
 
@@ -25,9 +28,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared.exceptions import NotFoundError, ValidationError
 from shared.logging import logger
 from shared.pii_redaction import redact_text
-from shared.system_log_groups import iso_timestamp, line_level, truncate
+from shared.system_log_groups import iso_timestamp, json_object, line_level, truncate
+from shared.system_log_scope import WORKSPACE_TAG, line_tag, names_a_workspace, runtime_line
 from shared.system_log_sources import SOURCE_API, SOURCE_WORKFLOW, LogSources, LogTarget, discover, log_group_name
 from shared.system_logs import FAILED_MESSAGE, POLL_BUDGET_SECONDS, QUERY_ID, aws_error_code, poll, result_row
+from shared.usage_meter import DEPLOYMENT
 
 WINDOW_SECONDS: Final = 20 * 60
 MAX_LINES: Final = 500
@@ -36,7 +41,7 @@ _FUNCTION = re.compile(r'[a-z0-9_-]{1,64}')
 # A Lambda / API Gateway request id is a uuid; an execution name is `[A-Za-z0-9_-]`. Both are
 # interpolated into the Insights query, so nothing else (no quote, slash or space) gets through.
 _REQUEST_ID = re.compile(r'[0-9A-Za-z_-]{8,80}')
-_FIELDS: Final = 'fields @timestamp, @log, level, @message'
+_FIELDS: Final = f'fields @timestamp, @log, level, {WORKSPACE_TAG}, @message'
 
 
 @dataclass(frozen=True)
@@ -85,19 +90,27 @@ def _target(client: Any, function: str) -> LogTarget:
     raise NotFoundError('No log group of that function on this deployment')
 
 
-def _line(row: dict[str, str]) -> dict[str, str]:
+def _line(row: dict[str, str]) -> dict[str, Any]:
+    """One line as the deployment's admins may read it: the deployment's (tagged) or one of Lambda's own fixed lines
+    as it is, any other its time and level only."""
+    raw = row.get('@message', '')
+    shown = runtime_line(raw) or line_tag(row, json_object(raw)) == DEPLOYMENT
     return {
         'timestamp': iso_timestamp(row.get('@timestamp', '')),
         'level': line_level(row),
-        'message': truncate(redact_text(row.get('@message', '')).text, MAX_LINE_CHARS),
+        'message': truncate(redact_text(raw).text, MAX_LINE_CHARS) if shown else '',
+        'withheld': not shown,
     }
 
 
-def _lines(answers: list[dict], target: LogTarget) -> tuple[list[dict[str, str]], bool]:
+def _lines(answers: list[dict], target: LogTarget) -> tuple[list[dict[str, Any]], bool, int]:
+    """(the lines, whether past the cap, how many were withheld because the request is a workspace's)."""
     rows = [result_row(fields) for answer in answers for fields in answer.get('results') or []]
     # GetQueryResults is granted on `*`: keep only rows of the group this lookup resolved.
     mine = [row for row in rows if log_group_name(row.get('@log', '')) == target.name]
-    return [_line(row) for row in mine[:MAX_LINES]], len(mine) > MAX_LINES
+    if any(names_a_workspace(' '.join(row.values())) for row in mine):
+        return [], False, len(mine)
+    return [_line(row) for row in mine[:MAX_LINES]], len(mine) > MAX_LINES, 0
 
 
 def _window(at: float, now: float) -> tuple[int, int]:
@@ -107,7 +120,7 @@ def _window(at: float, now: float) -> tuple[int, int]:
 
 
 def _no_lines(base: dict[str, Any], status: str, **extra: str) -> dict[str, Any]:
-    body = {**base, 'status': status, **extra, 'lines': [], 'truncated': False}
+    body = {**base, 'status': status, **extra, 'lines': [], 'truncated': False, 'withheld_workspace_lines': 0}
     return {**body, 'message': FAILED_MESSAGE} if status == 'failed' else body
 
 
@@ -133,5 +146,5 @@ def lookup(client: Any, request: RequestLookup, *, now: float | None = None,
         return _no_lines(base, 'running', query_id=query_id)
     if status == 'failed':
         return _no_lines(base, 'failed')
-    lines, truncated = _lines(answers, target)
-    return {**base, 'status': 'complete', 'lines': lines, 'truncated': truncated}
+    lines, truncated, withheld = _lines(answers, target)
+    return {**base, 'status': 'complete', 'lines': lines, 'truncated': truncated, 'withheld_workspace_lines': withheld}

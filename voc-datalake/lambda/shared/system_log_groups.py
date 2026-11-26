@@ -64,6 +64,8 @@ class LogLine:
     timestamp: str
     request_id: str | None
     source: str = 'lambda'
+    #: Its text and sample withheld (shared/system_log_scope.py): only its time, function, level and error type show.
+    withheld: bool = False
 
 
 @dataclass
@@ -227,4 +229,5 @@ def group_lines(lines: list[LogLine]) -> list[dict[str, object]]:
         'first_seen': group.first_seen,
         'last_seen': group.newest.timestamp,
         'request_id': group.newest.request_id,
+        'withheld': group.newest.withheld,
     } for group in ordered]

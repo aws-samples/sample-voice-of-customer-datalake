@@ -17,11 +17,12 @@ the platform package version.
 
 ## [Unreleased]
 
-## [7.75.04] - 2026-11-26
+## [7.76.01] - 2026-11-26
 
 Tests only: the metrics API's 18 routes (`lambda/api/metrics_handler.py`) leave the cross-workspace suite's pending
 list with their two-workspace cases. They resolve X-Workspace-Id in the module's first middleware, `_workspace_first`,
-which keeps `_request_scope()` on the request's context: a shape the detector does not read. Pending 353 -> 335
+which keeps `_request_scope()` on the request's context: a shape the detector does not read (written as 7.75.04,
+renumbered on top of 7.76.00). Pending 353 -> 335
 (phase 2: 40 -> 22: what is left is voc-mp-b's ballots, Data Explorer and S3 import, and the forms' 4 public routes).
 
 ### Changed
@@ -50,6 +51,49 @@ which keeps `_request_scope()` on the request's context: a shape the detector do
   meanwhile. (`/feedback/catalogue` is static by design: the same answer for everyone.)
 - metrics_handler.py `_request_scope` answers None (deployment-wide) when there is no event, where `_ws_scope` fails
   closed: safe because every request carries one; for its owner, raising there instead would make it fail closed too.
+
+## [7.76.00] - 2026-11-26
+
+Multi-workspace, a trust fix (TENETS.md D8): Administration → System → Logs holds a workspace's content back from
+the deployment's administrators (the one gap is below). Its System errors, a request's lines and the failure queues span every workspace,
+and the deployment's `admins` group grants nothing inside one, so they now show the deployment's own lines only and
+say how many they left out ([docs/deployment.md](docs/deployment.md#system-errors-administration--system--logs--system-errors)).
+Who may open System is unchanged.
+
+### Fixed
+
+- A failure queue shows a message's body only when it parses and names no workspace; the others are counted
+  ("N messages that may name a workspace are not shown").
+- System errors: a line that names a workspace (a workspace id or key) is left out and counted; a line not
+  attributed to the deployment (a job or public route that resolved no workspace, a text or crash line, one from
+  before this release) shows its time, function, level and error type only, with a note saying why; a workflow
+  failure shows its type and error, not its cause. Lambda's own fixed lines (START, END, REPORT, a timeout) and the
+  API access log read as before.
+- A request's lines: a request that ran in a workspace is not shown ("This request ran in a workspace"); in the
+  deployment's, a line not attributed to it shows its time and level only.
+- The JSON download carries the same counts and says how to read them.
+
+### Added
+
+- Every log line of the shared logger carries `workspace_id`: the workspace its code resolved, as the Bedrock usage
+  meter counts it (`DEPLOYMENT`, the workspace's id, or `UNATTRIBUTED` before either), reset at the start of each API
+  and worker invocation (`lambda/shared/usage_meter.py`). The System errors search reads it.
+
+### Not yet
+
+- A deployment-wide job that walks every workspace's items (the erasure by email, the retention window, a scheduled
+  fan-out) runs as the
+  deployment: a line it writes while handling a workspace's item still reads as the deployment's unless it names the
+  workspace's id (TENETS.md D8's gap), until those walks attribute each workspace they enter.
+- A job or public route that resolves no workspace through the shared resolvers (a form submit, a webhook delivery,
+  a Step Functions step) and the global MCP handler show their errors' type only, never their text, until they
+  attribute what they run in. The assistant's
+  TypeScript stream Lambda writes no tag: its lines show their type only.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). No IAM or stored-data change. Lines written before this release carry no
+  tag: in System errors they show their type only.
 
 ## [7.75.03] - 2026-11-26
 

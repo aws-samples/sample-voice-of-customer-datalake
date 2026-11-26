@@ -116,7 +116,7 @@ describe('SystemLogsPanel', () => {
 
   it('downloads groups, opened request lines, queues, environment and source logs with a how-to-read note', async () => {
     const user = userEvent.setup()
-    mockGetSystemLogs.mockResolvedValue(complete([AVATAR_GROUP, TIMEOUT_GROUP]))
+    mockGetSystemLogs.mockResolvedValue(complete([AVATAR_GROUP, TIMEOUT_GROUP], { withheld_workspace_lines: 4 }))
     mockGetSystemRequest.mockResolvedValue({ status: 'complete', lines: REQUEST_LINES, truncated: false })
     renderPanel(7)
 
@@ -136,10 +136,13 @@ describe('SystemLogsPanel', () => {
     ]).toStrictEqual([true, 'application/json', 1, true])
     expect(body).toMatchObject({
       site: window.location.origin, days: 7, level: 'error', log_groups: 54, truncated: false,
+      // What was not shown, counted as on the page (lambda/shared/system_log_scope.py).
+      withheld_workspace_lines: 4,
       environment: ENVIRONMENT,
       queues: QUEUES.queues,
       groups: [
-        { function: 'projects-assist', count: 3, request_lines: REQUEST_LINES, request_lines_truncated: false },
+        { function: 'projects-assist', count: 3, request_lines: REQUEST_LINES, request_lines_truncated: false,
+          request_lines_withheld: 0 },
         { function: 'chat-stream', level: 'PLATFORM' },
       ],
       validation_failures: [VALIDATION_LOG],
@@ -193,6 +196,40 @@ describe('SystemLogsPanel', () => {
 
     expect(await screen.findByText('No errors in this period')).toBeInTheDocument()
     expect(screen.getByText('Showing the newest 10,000 log lines')).toBeInTheDocument()
+  })
+
+  it("says how many lines that name a workspace are not shown (a workspace's details stay in it)", async () => {
+    mockGetSystemLogs.mockResolvedValue(complete([TIMEOUT_GROUP], { withheld_workspace_lines: 4 }))
+    renderPanel()
+
+    expect(await screen.findByText('4 lines that name a workspace are not shown.')).toBeInTheDocument()
+  })
+
+  it("shows a withheld line's error type with a note, in the reader's language, never a text it was not sent", async () => {
+    const user = userEvent.setup()
+    mockGetSystemLogs.mockResolvedValue(complete([
+      { ...AVATAR_GROUP, message: 'ValidationException', sample: '', withheld: true },
+      { ...TIMEOUT_GROUP, function: 'processor', level: 'ERROR', message: '', sample: '', withheld: true },
+    ]))
+    renderPanel()
+
+    const note = 'Details withheld: this line may name a workspace.'
+    expect(await screen.findByText(`ValidationException — ${note}`)).toBeInTheDocument()
+    expect(screen.getByText(note)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /projects-assist/ }))
+    expect(screen.getAllByText(`ValidationException — ${note}`)).toHaveLength(2)
+  })
+
+  it('counts the failure queue messages it does not show', async () => {
+    const user = userEvent.setup()
+    mockGetQueues.mockResolvedValue({ queues: [{ name: 'voc-processing-dlq', messages: 3, sample: ['{"id":"rev_1"}'],
+      withheld: 2 }] })
+    mockGetSystemLogs.mockResolvedValue(complete([]))
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: /voc-processing-dlq/ }))
+    expect(screen.getByText('2 messages that may name a workspace are not shown.')).toBeInTheDocument()
+    expect(screen.getByText('{"id":"rev_1"}')).toBeInTheDocument()
   })
 
   it('shows a notice when the search failed, never the route text', async () => {

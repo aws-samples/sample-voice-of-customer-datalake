@@ -14,8 +14,8 @@ describe('normalizeSystemRequest', () => {
       status: 'complete', truncated: false,
       lines: [{ timestamp: 't1', message: 'START' }, 'garbage', { timestamp: 't2', level: 'ERROR', message: 'boom' }],
     }).lines).toStrictEqual([
-      { timestamp: 't1', level: 'INFO', message: 'START' },
-      { timestamp: 't2', level: 'ERROR', message: 'boom' },
+      { timestamp: 't1', level: 'INFO', message: 'START', withheld: false },
+      { timestamp: 't2', level: 'ERROR', message: 'boom', withheld: false },
     ])
   })
 
@@ -31,7 +31,7 @@ describe('normalizeSystemRequest', () => {
 describe('normalizeSystemFailureQueues', () => {
   it('drops a nameless queue and reads an unreadable count as null, never as 0', () => {
     expect(normalizeSystemFailureQueues({ queues: [{ messages: 3 }, { name: 'voc-dlq', messages: 'x', sample: ['a'] }] }))
-      .toStrictEqual({ queues: [{ name: 'voc-dlq', messages: null, sample: ['a'] }] })
+      .toStrictEqual({ queues: [{ name: 'voc-dlq', messages: null, sample: ['a'], withheld: 0 }] })
   })
 
   it.each([['no list', {}], ['a non-object', null], ['a non-array list', { queues: 'none' }]])('throws for %s', (_name, raw) => {

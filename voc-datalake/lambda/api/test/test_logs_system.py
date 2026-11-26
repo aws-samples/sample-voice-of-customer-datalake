@@ -24,8 +24,10 @@ QUERY_ID = '0b6a3f9e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'
 def logs(monkeypatch):
     monkeypatch.setenv('SYSTEM_LOG_GROUP_PATTERN', PATTERN)
     fake = FakeLogs([group('projects-assist')], rows=[
+        # The deployment's line (its request's tag, shared/system_log_scope.py).
         row('projects-assist', '2026-10-27 09:01:02.456', level='ERROR', function_request_id='req-1',
-            message='[PERSONA_AVATAR] FAILED - Avatar generation error: AccessDeniedException for ops@example.com'),
+            message='[PERSONA_AVATAR] FAILED - Avatar generation error: AccessDeniedException for ops@example.com',
+            workspace_id='DEPLOYMENT'),
     ])
     # A zero poll budget: a `running` query answers at once instead of sleeping for real.
     with patch.object(logs_handler, '_logs_client', lambda: fake), \

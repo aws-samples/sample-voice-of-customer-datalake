@@ -79,7 +79,9 @@ def measure_invocation_cost[R](func: Callable[[Any, Any], R]) -> Callable[[Any, 
     """
     @functools.wraps(func)
     def wrapper(event: Any, context: Any) -> R:
-        # A warm container never counts this invocation's Bedrock calls to the last one's workspace.
+        # A warm container never counts this invocation's Bedrock calls, nor tags its log lines, with the last one's
+        # workspace (shared/system_log_scope.py): the handler's first line is UNATTRIBUTED until it resolves one, and the
+        # last (the cost line) keeps the invocation's own tag.
         usage_meter.reset()
         cpu_start = time.process_time()
         wall_start = time.perf_counter()
@@ -87,6 +89,8 @@ def measure_invocation_cost[R](func: Callable[[Any, Any], R]) -> Callable[[Any, 
             return func(event, context)
         finally:
             log_invocation_cost(context, cpu_start, wall_start)
+            # Nor does a line written between invocations carry this one's workspace.
+            usage_meter.reset()
 
     setattr(wrapper, MEASURED_ATTR, True)
     return wrapper

@@ -106,7 +106,7 @@ def classify_api(row: dict[str, str], wanted: tuple[str, ...]) -> LogLine | None
                    source=SOURCE_API)
 
 
-def _workflow_details(row: dict[str, str]) -> tuple[str, str, str, str]:
+def workflow_details(row: dict[str, str]) -> tuple[str, str, str, str]:
     """(type, error, cause, execution arn), from the query's fields or else the raw JSON line."""
     event_type, error = row.get('type') or '', row.get('details.error') or ''
     cause, arn = row.get('details.cause') or '', row.get('execution_arn') or ''
@@ -133,7 +133,7 @@ def classify_workflow(row: dict[str, str], function: str, wanted: tuple[str, ...
     An aborted execution is a person's or the runtime's own cancellation ("Cancelled by an
     admin", a superseded run), not a failure: it reads as a WARNING, listed in warning mode only.
     """
-    event_type, error, cause, arn = _workflow_details(row)
+    event_type, error, cause, arn = workflow_details(row)
     if event_type not in WORKFLOW_FAILURES:
         return None
     level = WARNING_LEVEL if event_type == 'ExecutionAborted' else ERROR_LEVEL

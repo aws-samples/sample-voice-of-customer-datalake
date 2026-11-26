@@ -133,12 +133,8 @@
       "reason": "each feature's own model-surface choice (all four the utility surface today: the feedback form's AI draft since 7.55.00, a form report's AI summary since 7.63.00); one may move without the others"
     },
     {
-      "key": "ROUTE_WORKSPACE_FIELD|WORKSPACE_FIELD::lambda/shared/review_share_audience.py,lambda/shared/ws_repo.py",
-      "reason": "the board pool's trigger bundle (lib/stacks/core-board-auth.ts BOARD_TRIGGER_FILES) ships review_share_audience.py without ws_repo.py, so the stdlib module spells the routing row's field itself; ws_repo.py keeps the one home every other module imports, and lambda/shared/test/test_document_share_workspace.py pins the routing rows the layer writes to what review_share_audience.py reads"
-    },
-    {
-      "key": "WORKSPACE_ID_RE|_WORKSPACE_ID::lambda/shared/review_share_audience.py,lambda/shared/workspace_ids.py",
-      "reason": "the board pool's trigger bundle ships review_share_audience.py without workspace_ids.py, so it spells the workspace id rule itself; lambda/shared/test/test_review_share_routing.py holds the two rules equal, value by value"
+      "key": "ROUTE_WORKSPACE_FIELD|WORKSPACE_FIELD::lambda/shared/review_share_audience.py,lambda/shared/workspace_ids.py",
+      "reason": "the board pool's trigger bundle (lib/stacks/core-board-auth.ts BOARD_TRIGGER_FILES) ships review_share_audience.py without workspace_ids.py, so the stdlib module spells the routing row's field itself; workspace_ids.py keeps the one home (ws_repo.py re-exports it, the log tag of shared/system_log_scope.py imports it), and lambda/shared/test/test_document_share_workspace.py pins the routing rows the layer writes to what review_share_audience.py reads"
     },
     {
       "key": "ENDED|TASK_ENDED::lambda/engineering/flow/conductor.py,lambda/engineering/runtime/harness/waiting.py",

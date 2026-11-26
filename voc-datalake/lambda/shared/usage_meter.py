@@ -25,15 +25,22 @@ shared/workspace.py ``resolve_workspace``, shared/ws_repo.py ``message_scope`` a
 workspace into the next one, and shared/concurrency.py runs each task in a copy of its caller's context. A raw thread
 pool's tasks never attribute (pinned by the test above), so their calls stay ``UNATTRIBUTED``, never a wrong
 workspace.
+
+LOG LINES. The same attribution tags every line of the shared logger, ``workspace_id`` (a filter installed here:
+shared/system_log_scope.py ``tag_record``), so Administration → System → Logs can tell the deployment's lines from a
+workspace's (TENETS.md D8). The ``reset`` at each invocation's start comes before the handler's first line, and
+another after its last (shared/invocation_cost.py).
 """
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import Mapping, MutableMapping
 from contextvars import ContextVar
 from typing import Any, Final
 
 from shared.logging import logger
+from shared.system_log_scope import tag_record
 from shared.workspace_ids import is_workspace_id
 
 #: A call made on the deployment's own behalf (a request or message that names no workspace).
@@ -79,6 +86,17 @@ class UnreadableUsage(ValueError):
 def reset() -> None:
     """A new invocation: nothing is attributed yet."""
     _attribution.set(UNATTRIBUTED)
+
+
+class _AttributionTag(logging.Filter):
+    """Tags every record of the shared logger with this context's attribution (shared/system_log_scope.py)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        tag_record(_attribution.get(), record)
+        return True
+
+
+logger.addFilter(_AttributionTag())
 
 
 def attribute(workspace: str | None) -> None:

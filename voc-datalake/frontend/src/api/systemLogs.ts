@@ -6,6 +6,10 @@
  * 5xx (4xx) answers (`source: 'api'`, level `HTTP`) and failed Step Functions
  * executions and tasks (`source: 'workflow'`).
  *
+ * No workspace's content is shown (lambda/shared/system_log_scope.py): a line that names a
+ * workspace is left out and counted (`withheld_workspace_lines`), and a line that is not the
+ * deployment's for sure shows its time, function, level and error type only (`withheld`).
+ *
  * The search is asynchronous: an answer with `status: 'running'` carries a
  * `query_id` to poll with. Every answer is normalized through a lenient Zod
  * schema; a drifted or missing field never reads as "no errors" — an unreadable
@@ -39,6 +43,7 @@ const SystemLogGroupSchema = z.object({
   first_seen: lenientText,
   last_seen: lenientText,
   request_id: z.string().min(1).nullable().catch(null),
+  withheld: z.boolean().catch(false),
 })
 export type SystemLogGroup = z.output<typeof SystemLogGroupSchema>
 
@@ -58,6 +63,7 @@ const SystemLogsSchema = z.object({
   truncated: z.boolean().catch(false),
   count,
   groups: parsedList(SystemLogGroupSchema),
+  withheld_workspace_lines: count,
 })
 export type SystemLogs = z.output<typeof SystemLogsSchema>
 

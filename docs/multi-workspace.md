@@ -271,9 +271,17 @@ cannot be written clears nothing); the logs role's batch delete is held to `LOGS
 `WS#{one workspace id}#LOGS#validation#*` (lib/stacks/api-engagement-lambdas.ts). A request that names no workspace
 reads and clears the deployment's trail, as before. The alerts and the system diagnostics (`/logs/alerts*`,
 `/logs/system*`) stay the deployment's: they watch and read its own Lambdas, queues and environment, and resolve no
-workspace (the alerts' writes a platform admin's, below). Open (TENETS.md D8's gap): the system diagnostics stay
-the deployment's `admins`' as before workspaces, though their redacted lines and a failure queue's peeked bodies may
-hold a workspace's message; and the Logs view is in Administration, which only the deployment's `admins` open.
+workspace (the alerts' writes a platform admin's, below). Since 7.76.00 the system diagnostics show no
+workspace's content ([deployment.md](deployment.md#system-errors-administration--system--logs--system-errors),
+`lambda/shared/system_log_scope.py`): every log line carries the workspace its code resolved (the Bedrock meter's
+attribution, `lambda/shared/usage_meter.py`); a line or a failure queue message that names a workspace is left out
+and counted, and a line not attributed to the deployment shows its time, function, level and error type only.
+Open (TENETS.md D8's gap): the Logs view is in Administration, which only the deployment's `admins` open; the
+deployment-wide jobs that walk every workspace (the erasure by email, the retention window, the scheduled fan-outs)
+are still to attribute each workspace they enter (until then a line they write about a workspace's item reads as
+the deployment's unless it names the workspace's id); and the jobs, public routes, the global MCP handler and the
+stream Lambda that attribute nothing yet are still to attribute what they run in, so that their errors show their
+text again (until then, their type only).
 In the web app the trail is the open workspace's
 (Administration → System → Logs sends its `X-Workspace-Id`), and Clear follows the workspace's admin role there
 (`useBrandEditRight`). Memory's store

@@ -714,6 +714,25 @@ Bedrock model-agreement Lambda is in `VocCoreStack` and is covered, under the fu
 name `image-model-access` (its construct id; it also handles the Claude agreements): a refused
 or failed agreement shows there as a warning.
 
+- **No workspace's content** (since 7.76.00, TENETS.md D8; `lambda/shared/system_log_scope.py`): these routes span
+  every workspace and are read by the deployment's `admins`, whose group grants nothing inside a workspace, so they
+  show the deployment's own lines only. Every line of the shared logger carries `workspace_id`
+  (`lambda/shared/usage_meter.py`): the workspace the code resolved, as the Bedrock meter counts it (`DEPLOYMENT`
+  once a request or message resolved none through `request_workspace` or `message_scope`, the workspace's id once
+  one of them or `resolve_workspace` resolved one, `UNATTRIBUTED` before either; reset at each invocation's start), never a
+  header's word. A line that names a workspace (a workspace id or a `WS#` key) is left out and counted
+  (`withheld_workspace_lines`); a Lambda line tagged `DEPLOYMENT`, an access-log row and Lambda's own fixed lines
+  (START, END, REPORT, `Task timed out after …`, matched by their whole shape) read as before; every other line (a
+  job or a public route that resolved nothing, a text line, a crash line, one written before 7.76.00) shows its
+  time, function, level and error type only (`withheld`: its message the exception's name or '', its sample empty;
+  the page adds a note in the reader's language), and a state machine's failure its type and error, never its
+  cause. A request's lines are withheld whole when any names a workspace. A failure queue shows a body only when it
+  parses as JSON, names no workspace and holds no long encoded run; the others are counted in `withheld`. The page,
+  and the JSON download, say how many were not shown. Known gap (TENETS.md D8): a deployment-wide job that walks
+  every workspace's items (the erasure by email, the retention window, a scheduled fan-out) runs as the deployment, so a line it writes
+  while handling a workspace's item reads as the deployment's unless it names the workspace's id. Anyone with CloudWatch access in the account still reads
+  every line there: this holds the app's view, not the account's. A platform admin who needs a workspace's details
+  enters that workspace (decision 2, live-checked and audited); these routes are no way round that.
 - **Routes** (all admin-only, 403 otherwise, `Cache-Control: no-store`, every returned
   text through the regex PII redaction, results never logged):
   - `GET /logs/system?days=1|7|30&level=error|warning[&query_id=…]` — the groups
@@ -726,18 +745,19 @@ or failed agreement shows there as a warning.
     Lambda (`DISCOVERY_TTL_SECONDS`), so a poll does not list them again. Each group: `source`, `function`, `level`,
     `message` (≤ 300, ids / times / numbers / quoted values replaced), `sample` (the newest
     full line with its stack trace, ≤ 6,000), `count`, `first_seen`, `last_seen`,
-    `request_id`. At most 200 groups; `truncated` = a query hit Insights' 10,000-row cap;
-    `log_groups_by_source` counts what was searched.
+    `request_id`, `withheld`. At most 200 groups; `truncated` = a query hit Insights' 10,000-row cap;
+    `log_groups_by_source` counts what was searched; `withheld_workspace_lines` the lines left out.
   - `GET /logs/system/request?function=<short>&request_id=<id>&at=<iso>[&query_id=…]` —
     every line of that one invocation, any level (INFO included), oldest first, ≤ 500
-    (`truncated` beyond), each `{timestamp, level, message ≤ 4,000}`
-    (`system_request_log.py`). The function's ONE log group, `at` ± 20 minutes, matched on
+    (`truncated` beyond), each `{timestamp, level, message ≤ 4,000, withheld}`
+    (`system_request_log.py`; a withheld line's message is empty); `withheld_workspace_lines` counts a request's lines
+    when they are withheld whole (it names a workspace). The function's ONE log group, `at` ± 20 minutes, matched on
     `@requestId`, Powertools `function_request_id` or the id in a Node line; a state
     machine on its execution name. 404 for an unknown function and for `api` (an access
     log line has no invocation lines). Same `running` / `query_id` contract.
   - `GET /logs/system/queues` — every dead-letter / failure queue alerting watches
     (`OPS_ALERTS_QUEUES`, the table below): `{name, messages, oldest_age_seconds?,
-    sample: [≤ 3 bodies, ≤ 2,000 each], sample_sent_at}` (`system_queues.py`). A queue
+    sample: [≤ 3 bodies, ≤ 2,000 each], sample_sent_at, withheld}` (`system_queues.py`). A queue
     that cannot be read answers `messages: null` with `error`. The peek is
     `ReceiveMessage` with `VisibilityTimeout=0`: nothing is deleted and the messages stay
     visible, but each look raises their receive count by one (these queues have no

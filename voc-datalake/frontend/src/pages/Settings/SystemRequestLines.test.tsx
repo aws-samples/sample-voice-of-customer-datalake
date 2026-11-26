@@ -19,7 +19,7 @@ vi.mock('../../api/client', () => ({
 const GROUP: SystemLogGroup = {
   function: 'projects-assist', source: 'lambda', level: 'ERROR', message: 'Avatar failed', sample: 'Avatar failed',
   count: 1, first_seen: '2026-10-27T08:40:00.000Z', last_seen: '2026-10-27T08:44:43.123Z',
-  request_id: '7f3c2a10-4b8e-4d1a-9c55-0e2b6d9a1f37',
+  request_id: '7f3c2a10-4b8e-4d1a-9c55-0e2b6d9a1f37', withheld: false,
 }
 const LINES = [
   { timestamp: '2026-10-27T08:44:40Z', level: 'INFO', message: 'START RequestId: 7f3c' },
@@ -83,6 +83,30 @@ describe('SystemRequestLines', () => {
     await user.click(screen.getByRole('button', { name: 'Show the whole request' }))
 
     expect(await screen.findByText(/No lines found for this request/)).toBeInTheDocument()
+  })
+
+  it("shows a withheld line's time and level with a note in place of its text", async () => {
+    const user = userEvent.setup()
+    mockGetSystemRequest.mockResolvedValueOnce({ status: 'complete', truncated: false, lines: [
+      ...LINES, { timestamp: '2026-10-27T08:44:42Z', level: 'WARNING', message: '', withheld: true }] })
+    renderWithQueryClient(<SystemRequestLines group={GROUP} />)
+
+    await user.click(screen.getByRole('button', { name: 'Show the whole request' }))
+
+    expect(await screen.findByText('Details withheld: this line may name a workspace.')).toBeInTheDocument()
+    expect(screen.getByText('WARNING')).toBeInTheDocument()
+  })
+
+  it("says a workspace's request is not shown, never that its logs expired", async () => {
+    const user = userEvent.setup()
+    mockGetSystemRequest.mockResolvedValueOnce({ status: 'complete', lines: [], truncated: false,
+      withheld_workspace_lines: 7 })
+    renderWithQueryClient(<SystemRequestLines group={GROUP} />)
+
+    await user.click(screen.getByRole('button', { name: 'Show the whole request' }))
+
+    expect(await screen.findByText('This request ran in a workspace: its lines are not shown here.')).toBeInTheDocument()
+    expect(screen.queryByText(/No lines found for this request/)).toBeNull()
   })
 
   it('shows a load error when the route itself fails (unknown function: 404)', async () => {
