@@ -1099,6 +1099,16 @@ def _seed_scrapers(aggregates: Any, workspaces: Any, jobs: Any) -> dict[str, str
                                                      'app_name': f'{_DEPLOYMENT_MARK} app'}])}
 
 
+def _wire_operator_tables(stack: ExitStack, aggregates: Any, workspaces: Any) -> None:
+    """The tables the two operator APIs' shared modules open (the run and circuit rows, the audit, the settings
+    store), for the life of ``stack``."""
+    for target in ('shared.tables.get_aggregates_table', 'shared.plugin_circuit.get_aggregates_table'):
+        stack.enter_context(patch(target, return_value=aggregates))
+    stack.enter_context(patch('shared.tables.get_workspaces_table', return_value=workspaces))
+    stack.enter_context(patch('shared.workspace_plugin_store.get_dynamodb_resource',
+                              return_value=boto3.resource('dynamodb', region_name='us-east-1')))
+
+
 @contextmanager
 def scrapers_world(lambda_context: Any) -> Generator[World]:
     """The scrapers Lambda over two seeded workspaces (their admins write, any member reads): their scraper configs
@@ -1127,15 +1137,100 @@ def scrapers_world(lambda_context: Any) -> Generator[World]:
         stack.enter_context(patch.object(h._request, 'workspace', resolver))
         stack.enter_context(patch.object(h, 'validate_url', return_value=(True, '')))
         stack.enter_context(patch.object(h, 'get_aggregates_table', return_value=aggregates))
-        for target in ('shared.tables.get_aggregates_table', 'shared.plugin_circuit.get_aggregates_table'):
-            stack.enter_context(patch(target, return_value=aggregates))
-        stack.enter_context(patch('shared.tables.get_workspaces_table', return_value=workspaces))
-        stack.enter_context(patch('shared.workspace_plugin_store.get_dynamodb_resource',
-                                  return_value=boto3.resource('dynamodb', region_name='us-east-1')))
+        _wire_operator_tables(stack, aggregates, workspaces)
         stack.enter_context(patch('shared.assist_jobs.get_jobs_table', return_value=jobs))
         stack.enter_context(patch('shared.assist_jobs.invoke_lambda_async', assist))
         yield World(call=_caller(h, lambda_context),
                     doubles={'cognito': cognito, 'webscraper': webscraper, 'assist': assist},
+                    deployment_mark=_DEPLOYMENT_MARK)
+
+
+# ── voc-integrations-api (lambda/api/integrations_handler.py): a workspace's plugin credentials, app connectors,
+#    runs, breakers and learned methods ──
+
+#: The plugins the cases name (``<source>``: the deployment's catalogue, the same id in every place).
+_CREDENTIALS_PLUGIN, _RUN_PLUGIN, _METHODS_PLUGIN = 'app_reviews_ios', 'webscraper', 'web_reviews'
+#: An app connector of each workspace (its config row of ``app_reviews_ios``) and the deployment's under A's id.
+APP_A, APP_B = 'acme-app', f'{B_MARK}-app'
+_APP_IDS = {'A': {'app_id': APP_A}, 'B': {'app_id': APP_B}, UNKNOWN: {'app_id': 'nowhere-app'}}
+#: A review site each workspace's runs learned how to read (``WS#{ws}#WEB_REVIEWS#METHODS``); the deployment learned
+#: A's site too (a clear without A's scope would reach that copy), so A's site names no mark of A's.
+SITE_A, SITE_B = 'acme.example.com', f'{B_MARK}.example.com'
+_SITE_IDS = {'A': {'domain': SITE_A}, 'B': {'domain': SITE_B}, UNKNOWN: {'domain': 'nowhere.example.com'}}
+_PLUGIN_OF_THE_CATALOGUE = 'a plugin of the deployment, the same source id in every place'
+_DEPLOYMENT_INTEGRATIONS = ("the deployment as before: its shared secret's credentials and connectors, its own runs, "
+                            'breakers and learned methods (ResolvedRoutes)')
+
+
+def _seed_integrations(aggregates: Any, workspaces: Any, ssm: Any) -> dict[str, str]:
+    """Every place's credentials of ``app_reviews_ios`` (a workspace's in its own parameter; each place also holds a
+    key named after its mark, which is what the status route answers: key names, no values), app connectors, tripped
+    breaker of the webscraper and learned review site; the webscraper enabled in A and B. Returns the deployment's
+    shared secret."""
+    for ws, app_id, site, mark in ((WS_A, APP_A, SITE_A, A_MARK), (WS_B, APP_B, SITE_B, B_MARK)):
+        ssm.put_parameter(Name=f'{_PARAMETER_PREFIX}/{ws}/credentials/{_CREDENTIALS_PLUGIN}',
+                          Value=json.dumps({'app_name': f'{mark} App', f'{mark}_note': 'kept'}),
+                          Type='SecureString', KeyId='k')
+        aggregates.put_item(Item={'pk': f'WS#{ws}#PLUGIN_CONFIG', 'sk': _CREDENTIALS_PLUGIN, 'configs': json.dumps(
+            [{'id': app_id, 'app_name': f'{mark} app', 'app_id': '123456789'}])})
+        aggregates.put_item(Item={'pk': f'WS#{ws}#CIRCUIT#{_RUN_PLUGIN}', 'sk': 'TRIPPED', 'failure_count': 5,
+                                  'tripped_at': '2026-11-01T00:00:00+00:00', 'last_error': f'{mark} error'})
+        aggregates.put_item(Item={'pk': f'WS#{ws}#WEB_REVIEWS#METHODS', 'sk': site,
+                                  'best_method': 'browser', 'learned_at': '2026-11-15T10:00:00+00:00', 'methods': {}})
+        workspaces.put_item(Item={'pk': f'PLUGIN#{_RUN_PLUGIN}', 'sk': f'WS#{ws}', 'enabled_by': 'sub-ada',
+                                  'enabled_at': '2026-11-13T00:00:00+00:00'})
+    aggregates.put_item(Item={'pk': f'CIRCUIT#{_RUN_PLUGIN}', 'sk': 'TRIPPED', 'failure_count': 5,
+                              'tripped_at': '2026-11-01T00:00:00+00:00', 'last_error': f'{_DEPLOYMENT_MARK} error'})
+    for site in (f'{_DEPLOYMENT_MARK}.example.com', SITE_A):
+        aggregates.put_item(Item={'pk': 'WEB_REVIEWS#METHODS', 'sk': site, 'best_method': 'browser',
+                                  'learned_at': '2026-11-15T10:00:00+00:00', 'methods': {}})
+    return {f'{_CREDENTIALS_PLUGIN}_app_name': f'{_DEPLOYMENT_MARK} App',
+            f'{_CREDENTIALS_PLUGIN}_{_DEPLOYMENT_MARK}_note': 'kept',
+            f'{_CREDENTIALS_PLUGIN}_configs': json.dumps(
+                [{'id': APP_A, 'app_name': f'{_DEPLOYMENT_MARK} app', 'app_id': '123456789'}])}
+
+
+@contextmanager
+def integrations_world(lambda_context: Any) -> Generator[World]:
+    """The integrations Lambda over two seeded workspaces (their admins manage, any member reads the connectors, runs
+    and methods): their credentials in their own parameters (moto's SSM, in ``table_snapshot``), their connectors,
+    breakers and methods in their own rows, the deployment's in the shared secret and its own rows (all marked);
+    the ingestor and EventBridge as doubles; the plugin lists CDK sets."""
+    from integrations_fixtures import stub_rule_lookup
+    from plugin_manifests import PLUGIN_SECRET_DEFAULTS, PLUGIN_SECRET_KEYS
+
+    import integrations_handler as h
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        aggregates = pk_sk_table('aggregates')
+        ssm = boto3.client('ssm', region_name='us-east-1')
+        secrets = boto3.client('secretsmanager', region_name='us-east-1')
+        secrets.create_secret(Name=_DEPLOYMENT_STORE, SecretString=json.dumps(
+            _seed_integrations(aggregates, workspaces, ssm)))
+        ingestor, events = MagicMock(name='ingestor'), MagicMock(name='events')
+        ingestor.exceptions.ResourceNotFoundException = type('ResourceNotFoundException', (Exception,), {})
+        ingestor.invoke.return_value = {'StatusCode': 202}
+        stub_rule_lookup(events)
+        real_client = boto3.client
+        stack.enter_context(patch.dict('os.environ', {
+            'WORKSPACE_PARAMETER_PREFIX': _PARAMETER_PREFIX, 'WORKSPACE_PARAMETER_KEY_ARN': 'k',
+            'AGGREGATES_TABLE': 'aggregates', h.PLUGIN_DEFAULTS_ENV_VAR: json.dumps(PLUGIN_SECRET_DEFAULTS),
+            'PLUGIN_SECRET_KEYS': json.dumps(PLUGIN_SECRET_KEYS)}))
+        h._plugin_secret_defaults.cache_clear()
+        stack.callback(h._plugin_secret_defaults.cache_clear)
+        resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: False)
+        stack.enter_context(patch.object(h._request, 'workspace', resolver))
+        for target, value in (('secretsmanager', secrets), ('ssm', ssm), ('SECRETS_ARN', _DEPLOYMENT_STORE),
+                              ('events_client', events)):
+            stack.enter_context(patch.object(h, target, value))
+        stack.enter_context(patch.object(h.boto3, 'client', side_effect=lambda name, *a, **k: (
+            ingestor if name == 'lambda' else real_client(name, *a, **k))))
+        _wire_operator_tables(stack, aggregates, workspaces)
+        yield World(call=_caller(h, lambda_context),
+                    doubles={'cognito': cognito, 'ingestor': ingestor, 'events': events},
                     deployment_mark=_DEPLOYMENT_MARK)
 
 
@@ -1144,6 +1239,7 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'feedback_form_handler.py': feedback_forms_world,
     'manual_import_handler.py': manual_import_world,
     'scrapers_handler.py': scrapers_world,
+    'integrations_handler.py': integrations_world,
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
@@ -1607,4 +1703,69 @@ CASES: dict[tuple[str, str], RouteCase] = {
     # The caller's own assist: B's admin's is not A's admin's to read, in A as nowhere (the unknown job's 404).
     ('scrapers_handler.py', 'GET /scrapers/jobs/<job_id>'): RouteCase(
         ids=_ASSIST_IDS, without_a_workspace=_OWN_ASSIST),
+    # The integrations (``ResolvedRoutes.middleware`` before every route): A's admins manage A's credentials,
+    # connectors, runs and breakers; any member reads A's connectors, runs and methods; without the header the
+    # deployment's, its admins'. ``<source>`` names a plugin of the deployment's catalogue, the same in every place.
+    ('integrations_handler.py', 'GET /integrations/status'): RouteCase(
+        no_ids="the header is its only id: check 1 (which of B's plugins hold credentials)",
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS, deployment_admins_without_a_workspace=True),
+    ('integrations_handler.py', 'GET /integrations/<source>/credentials'): RouteCase(
+        no_ids="the plugin is the catalogue's, the header the only id: check 1 (B's saved values)",
+        shared={'source': _CREDENTIALS_PLUGIN}, query={'keys': 'app_name'},
+        literals={_CREDENTIALS_PLUGIN: _PLUGIN_OF_THE_CATALOGUE, 'app_name': 'a field of that plugin, the same everywhere'},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS, deployment_admins_without_a_workspace=True),
+    ('integrations_handler.py', 'PUT /integrations/<source>/credentials'): RouteCase(
+        no_ids="the plugin is the catalogue's, the header the only id: check 1 (A's own parameter)",
+        shared={'source': _CREDENTIALS_PLUGIN}, body={'app_name': 'Trail App'},
+        literals={_CREDENTIALS_PLUGIN: _PLUGIN_OF_THE_CATALOGUE, 'Trail App': 'the value the admin typed'},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS, deployment_admins_without_a_workspace=True),
+    ('integrations_handler.py', 'GET /integrations/<source>/apps'): RouteCase(
+        no_ids="the plugin is the catalogue's, the header the only id: check 1 (B's app connectors)",
+        shared={'source': _CREDENTIALS_PLUGIN}, literals={_CREDENTIALS_PLUGIN: _PLUGIN_OF_THE_CATALOGUE},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS),
+    ('integrations_handler.py', 'POST /integrations/<source>/apps'): RouteCase(
+        no_ids="the connector is new in A's own list, the header the only id: check 1",
+        shared={'source': _CREDENTIALS_PLUGIN},
+        body={'app': {'id': 'trail-app', 'app_name': 'Trail app', 'app_id': '987654321'}},
+        literals={_CREDENTIALS_PLUGIN: _PLUGIN_OF_THE_CATALOGUE,
+                  'trail-app': "an id the admin chose, unique only within A's own list",
+                  'Trail app': 'the name the admin typed', '987654321': "the app store's own id of the app"},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS, deployment_admins_without_a_workspace=True),
+    # An id A's list does not hold deletes nothing and answers success, B's as an unknown one (the list's text is
+    # unchanged, so nothing is written; a place with no list at all gets an empty one: reported, see CHANGELOG).
+    ('integrations_handler.py', 'DELETE /integrations/<source>/apps/<app_id>'): RouteCase(
+        ids=_APP_IDS, shared={'source': _CREDENTIALS_PLUGIN}, literals={_CREDENTIALS_PLUGIN: _PLUGIN_OF_THE_CATALOGUE},
+        refused_status=200, without_a_workspace=_DEPLOYMENT_INTEGRATIONS, deployment_admins_without_a_workspace=True),
+    ('integrations_handler.py', 'POST /sources/<source>/run'): RouteCase(
+        no_ids="the plugin is the catalogue's, the header the only id: check 1 (the run is A's)",
+        shared={'source': _RUN_PLUGIN}, literals={_RUN_PLUGIN: _PLUGIN_OF_THE_CATALOGUE},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS, deployment_admins_without_a_workspace=True,
+        payload_names_a='ingestor'),
+    ('integrations_handler.py', 'GET /sources/status'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's breakers; the schedule is the deployment's one rule)",
+        query={'sources': _RUN_PLUGIN}, literals={_RUN_PLUGIN: _PLUGIN_OF_THE_CATALOGUE},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS),
+    ('integrations_handler.py', 'GET /integrations/<source>/methods'): RouteCase(
+        no_ids="the plugin is the catalogue's, the header the only id: check 1 (the sites B's runs learned)",
+        shared={'source': _METHODS_PLUGIN}, literals={_METHODS_PLUGIN: _PLUGIN_OF_THE_CATALOGUE},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS),
+    # In A the clear is audited first (AUDIT#WS#{A}), whether or not A learned that site: an id A does not hold is a
+    # clear in A of nothing, never B's record.
+    ('integrations_handler.py', 'DELETE /integrations/<source>/methods/<domain>'): RouteCase(
+        ids=_SITE_IDS, shared={'source': _METHODS_PLUGIN}, literals={_METHODS_PLUGIN: _PLUGIN_OF_THE_CATALOGUE},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS, deployment_admins_without_a_workspace=True,
+        accepts_any_id="the clear of any site acts in A only: A's audit row first, then A's record if there is one"),
+    # The breaker of the run plugin: A's admins clear A's TRIPPED row only.
+    ('integrations_handler.py', 'POST /sources/<source>/reset'): RouteCase(
+        no_ids="the plugin is the catalogue's, the header the only id: check 1 (A's own breaker)",
+        shared={'source': _RUN_PLUGIN}, literals={_RUN_PLUGIN: _PLUGIN_OF_THE_CATALOGUE},
+        without_a_workspace=_DEPLOYMENT_INTEGRATIONS, deployment_admins_without_a_workspace=True),
+    # The schedule is the plugin's one rule for every place: refused in any workspace (400), the deployment's to turn
+    # on or off without the header, as before.
+    **{('integrations_handler.py', f'PUT /sources/<source>/{verb}'): RouteCase(
+        no_ids="the plugin is the catalogue's, the header the only id: check 1 (refused in every workspace)",
+        shared={'source': _RUN_PLUGIN}, literals={_RUN_PLUGIN: _PLUGIN_OF_THE_CATALOGUE}, ok_status=400,
+        status_without_a_workspace=200, without_a_workspace=_DEPLOYMENT_INTEGRATIONS,
+        deployment_admins_without_a_workspace=True)
+       for verb in ('enable', 'disable')},
 }

@@ -118,7 +118,8 @@ RESOLVERS: dict[str, str] = {RESOLVER: RESOLVER_MODULE, 'request_workspace': 'sh
 #: resolves through its instance unseen and stays pending, as before this list existed; the list only grows, until
 #: every file using the instance is in it and it can go.
 INSTANCE_RESOLVER_FILES = frozenset({'feedback_edit_handler.py', 'feedback_form_handler.py',
-                                     'manual_import_handler.py', 'scrapers_handler.py'})
+                                     'manual_import_handler.py', 'scrapers_handler.py',
+                                     'integrations_handler.py'})
 MISSING_HEADER = 'The X-Workspace-Id header is required'
 #: Calls that write: one of them before the resolution means the route may act before it knows the workspace.
 WRITE_CALLS = frozenset({'put_item', 'update_item', 'delete_item', 'transact_write_items', 'batch_writer',
@@ -944,7 +945,12 @@ def check_inside_a(world: World, case: RouteCase, route: str) -> None:
     """Check 4: the same request inside A works, holds nothing of B's (nor of the deployment's, in a world that marks
     its rows: ``World.deployment_mark``), every row or object it adds, changes or removes is A's (``_names_a``) or
     one the case says is no workspace's (``outside_a``), no call to a double names B, and a payload the case names
-    (``payload_names_a``) carries A on."""
+    (``payload_names_a``) carries A on. A route that refuses inside a workspace what it does for the deployment
+    (``ok_status`` 400 or more) must also refuse it as a refusal does: nothing changed, no external write."""
+    if case.ok_status >= 400:
+        status, body = _refused(world, case, route, ws=WS_A, ids=case.ids.get('A', {}), caller=ADA)
+        assert status == case.ok_status, f'{route} inside A: {status} {body}'
+        return
     since = {name: len(double.mock_calls) for name, double in world.doubles.items()}
     status, body = _lands_in_a(world, case, route, ids=case.ids.get('A', {}))
     assert status == case.ok_status, f'{route} inside A: {status} {body}'
@@ -1357,15 +1363,21 @@ def test_an_import_inside_a_that_lands_in_the_deployment_is_caught(route, lambda
         check_inside_a(world, CASES[('manual_import_handler.py', route)], route)
 
 
-@pytest.mark.parametrize(('route', 'found'), [
-    ('POST /scrapers', "changed rows that are not A's"),
-    ('DELETE /scrapers/<scraper_id>', "changed rows that are not A's"),
-    ('GET /scrapers', "the deployment's data"),
-], ids=['a-save', 'a-delete', 'a-read'])
-def test_a_scrapers_store_opened_deployment_wide_inside_a_is_caught(route, found, lambda_context):
-    """The request's settings store opened as the deployment's inside A (the shared secret, not A's rows): a save
-    lands outside A, a delete of A's id removes the deployment's copy under it, and the list answers the deployment's
-    scrapers (nothing of B's, but the world's deployment mark): check 4 fails for each."""
+@pytest.mark.parametrize(('file', 'route', 'found'), [
+    ('scrapers_handler.py', 'POST /scrapers', "changed rows that are not A's"),
+    ('scrapers_handler.py', 'DELETE /scrapers/<scraper_id>', "changed rows that are not A's"),
+    ('scrapers_handler.py', 'GET /scrapers', "the deployment's data"),
+    ('integrations_handler.py', 'PUT /integrations/<source>/credentials', "changed rows that are not A's"),
+    ('integrations_handler.py', 'GET /integrations/<source>/credentials', "the deployment's data"),
+    ('integrations_handler.py', 'POST /integrations/<source>/apps', "changed rows that are not A's"),
+    ('integrations_handler.py', 'GET /integrations/<source>/apps', "the deployment's data"),
+    ('integrations_handler.py', 'GET /integrations/status', "the deployment's data"),
+], ids=['a-scraper-save', 'a-scraper-delete', 'a-scraper-read', 'a-credentials-save', 'a-credentials-read',
+        'a-connector-save', 'a-connector-read', 'the-credentials-status'])
+def test_a_settings_store_opened_deployment_wide_inside_a_is_caught(file, route, found, lambda_context):
+    """The request's settings store opened as the deployment's inside A (the shared secret, not A's parameters and
+    rows): a save lands outside A, a delete of A's id removes the deployment's copy under it, and a read answers the
+    deployment's settings (nothing of B's, but the world's deployment mark): check 4 fails for each."""
     from shared import workspace_request
 
     real = workspace_request.credentials_store
@@ -1373,10 +1385,47 @@ def test_a_scrapers_store_opened_deployment_wide_inside_a_is_caught(route, found
     def deployment_wide(_context: Any, clients: Any, plugins: Any = (), *, actor: Any) -> Any:
         return real(None, clients, plugins, actor=actor)
 
-    with WORLDS['scrapers_handler.py'](lambda_context) as world, \
+    with WORLDS[file](lambda_context) as world, \
             patch.object(workspace_request, 'credentials_store', deployment_wide), \
             pytest.raises(AssertionError, match=found):
-        check_inside_a(world, CASES[('scrapers_handler.py', route)], route)
+        check_inside_a(world, CASES[(file, route)], route)
+
+
+def test_a_methods_clear_inside_a_without_its_scope_is_caught(lambda_context):
+    """The learned methods' clear inside A acting deployment-wide removes the deployment's record of A's site (and
+    writes no audit of A's): check 4 fails."""
+    import integrations_handler
+
+    route = 'DELETE /integrations/<source>/methods/<domain>'
+    with WORLDS['integrations_handler.py'](lambda_context) as world, \
+            patch.object(integrations_handler._request, 'scope', lambda: None), \
+            pytest.raises(AssertionError, match="changed rows that are not A's"):
+        check_inside_a(world, CASES[('integrations_handler.py', route)], route)
+
+
+@pytest.mark.parametrize('verb', ['enable', 'disable'])
+def test_a_schedule_switched_inside_a_is_caught(verb, lambda_context):
+    """The schedule routes without their refusal in a workspace switch the one rule (and enable clears A's
+    breaker): check 4 fails, as for a refusal that changed something or made a write."""
+    import integrations_handler
+
+    route = f'PUT /sources/<source>/{verb}'
+    with WORLDS['integrations_handler.py'](lambda_context) as world, \
+            patch.object(integrations_handler, 'refuse_in_workspace', lambda: None), \
+            pytest.raises(AssertionError, match=r'changed a table|made a write|inside A: 200'):
+        check_inside_a(world, CASES[('integrations_handler.py', route)], route)
+
+
+def test_a_source_run_inside_a_whose_payload_names_no_place_is_caught(lambda_context):
+    """Run now inside A whose ingestor payload carries no place on (the run would be the deployment's): check 4 fails;
+    the run row is still A's, so only the payload shows it."""
+    import integrations_handler
+
+    route = 'POST /sources/<source>/run'
+    with WORLDS['integrations_handler.py'](lambda_context) as world, \
+            patch.object(integrations_handler, 'workspace_payload', lambda payload, _context: payload), \
+            pytest.raises(AssertionError, match='carried another place on'):
+        check_inside_a(world, CASES[('integrations_handler.py', route)], route)
 
 
 def test_a_status_read_inside_a_of_the_deployments_run_is_caught(lambda_context):

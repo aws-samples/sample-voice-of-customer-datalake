@@ -35,22 +35,6 @@ PHASE_2: dict[str, frozenset[str]] = {
         'POST /feedback-forms/<form_id>/submit',
         'POST /feedback-forms/<form_id>/events',
     }),
-    # Credentials move to the workspace secret.
-    'integrations_handler.py': frozenset({
-        'DELETE /integrations/<source>/apps/<app_id>',
-        'DELETE /integrations/<source>/methods/<domain>',
-        'GET /integrations/<source>/apps',
-        'GET /integrations/<source>/credentials',
-        'GET /integrations/<source>/methods',
-        'GET /integrations/status',
-        'GET /sources/status',
-        'POST /integrations/<source>/apps',
-        'POST /sources/<source>/reset',
-        'POST /sources/<source>/run',
-        'PUT /integrations/<source>/credentials',
-        'PUT /sources/<source>/disable',
-        'PUT /sources/<source>/enable',
-    }),
     'metrics_handler.py': frozenset({
         'GET /feedback',
         'GET /feedback/<feedback_id>',

@@ -17,6 +17,33 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.75.03] - 2026-11-26
+
+Tests only: the integrations' 13 routes (`lambda/api/integrations_handler.py`) leave the cross-workspace suite's
+pending list with their two-workspace cases; they resolve X-Workspace-Id in the module's `ResolvedRoutes` middleware,
+as the scrapers do. Pending 366 -> 353 (phase 2: 53 -> 40).
+
+### Changed
+- An integrations world: each workspace's `app_reviews_ios` credentials in its own SSM parameter, its app connector,
+  tripped webscraper breaker and learned review site, the webscraper enabled in A and B; the deployment's in the
+  shared secret and its own rows, all marked (`World.deployment_mark`); the ingestor and EventBridge as doubles; the
+  plugin lists CDK sets. `<source>` is a `shared` path value: a plugin of the deployment's catalogue, the same id in
+  every place. Each place holds a key named after its mark, since the credentials status answers key names only. Run
+  now's ingestor payload must carry A on (`payload_names_a`); the schedule routes (enable, disable) are refused in
+  every workspace (400 inside A and B) and the deployment's without the header (`status_without_a_workspace`); the
+  methods' clear acts on any site inside A only (`accepts_any_id`: A's audit row first), and the deployment learned
+  A's site too, so a clear without A's scope shows; the connector delete answers B's id as an unknown one
+  (`refused_status=200`).
+- Check 4 of a route that refuses inside a workspace what it does for the deployment (`ok_status` 400 or more) also
+  needs it to refuse as a refusal does: nothing changed, no external write (the schedule routes; Radar's 409s).
+- Meta-tests: the settings store opened as the deployment's inside A fails check 4 for the credentials' and the
+  connectors' saves and reads and the credentials status; a Run now whose payload names no place, a methods clear
+  without A's scope, and a schedule switched inside A fail check 4.
+
+### Known gap (reported, not fixed here)
+- `DELETE /integrations/<source>/apps/<app_id>` in a place with no connector list writes an empty one; the scrapers'
+  delete writes nothing when there is nothing to remove.
+
 ## [7.75.02] - 2026-11-26
 
 Tests only: the scrapers' 10 routes (`lambda/api/scrapers_handler.py`) leave the cross-workspace suite's pending list
