@@ -40,7 +40,7 @@ const SECTION_TERMS: Readonly<Record<AdminSectionId, string>> = {
   radar: 'search.terms.radar', categories: 'search.terms.categories', dimensions: 'search.terms.dimensions',
   policies: 'search.terms.policies', users: 'search.terms.users', boards: 'search.terms.boards',
   settings: 'search.terms.workspace', members: 'search.terms.members', all: 'search.terms.allWorkspaces',
-  'deployment-brand': 'search.terms.deploymentBrand', logs: 'search.terms.logs', version: 'search.terms.version',
+  costs: 'search.terms.costs', 'deployment-brand': 'search.terms.deploymentBrand', logs: 'search.terms.logs', version: 'search.terms.version',
 }
 
 const CARD_TERMS: Readonly<Record<AdminCardId, string>> = {

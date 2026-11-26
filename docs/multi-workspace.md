@@ -1426,6 +1426,19 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
   92-day range lets the console sum days); a dollar figure is a decimal string, `null` while a part with calls is
   unpriced and nothing priced, `"0.000000"` for a complete day or total with no calls. Each read
   logs `platform_costs_read` with the caller's sub and the range (no AUDIT row: it changes nothing).
+- **The console's page (since 7.83.00).** The platform console shows it: Administration → Workspaces → Costs
+  (`/admin/workspaces/costs`, platform admins only, like All workspaces; `frontend/src/pages/Settings/PlatformCostsSection.tsx`,
+  read by `frontend/src/api/platformCostsApi.ts`). It says first that it is an estimate from list prices, not a bill,
+  with the day the price list was read and a link to it. A period of UTC days (the last 30 days by default, this month,
+  last month or the last 90 days; never over the route's 92) and one table: the calls outside any workspace (the
+  deployment's own, the workspaces no longer active, the calls not attributed; the first page's), then each workspace
+  by name, 20 at a time (Show more workspaces). Each row has its calls, input and output tokens and estimated cost:
+  "Incomplete" when part of it is not priced, with the models named; "Unpriced" when nothing of it is, never $0. When
+  the period spans months, each row's months are summed in the browser from its `days`, the way the server sums a
+  range (to the millionth; unknown while no day with calls is priced; incomplete once one day is); the inactive
+  workspaces' row has no days, so only its total. A workspace row the page cannot read is left out and counted on the
+  page; an answer it cannot read at all, or a first page without its deployment rows, is a load error with Try again,
+  never an empty page; a 403 says platform admins only. The dev mock serves the route (`frontend/mock-costs.js`).
 - **The hard delete** sweeps a workspace's `WS#{ws}#COST` rows with its settings (they are its data).
 - Also counted: reviews ingested, scraper and browser sessions, Comprehend and Translate characters. (A workspace's
   credentials parameters cost nothing a month: decision 19.)

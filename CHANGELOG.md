@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.83.00] - 2026-11-26
+
+Multi-workspace, phase 4: the platform console shows the cost per workspace. `GET /platform/costs` (7.30.00) had no
+page; platform admins now read it under Administration → Workspaces → Costs, an estimate from list prices, never a
+bill ([docs/multi-workspace.md](docs/multi-workspace.md), "Cost per workspace").
+
+### Added
+
+- Administration → Workspaces → Costs (`/admin/workspaces/costs`, platform admins only): the estimate said as such,
+  with the day the price list was read and a link to it; a period (the last 30 days by default, this month, last
+  month or the last 90 days, in UTC days); each workspace's calls, input and output tokens and estimated cost, 20 at a
+  time with Show more; the deployment's own calls, the workspaces no longer active and the calls not attributed to a
+  workspace. A total with an unpriced part is marked Incomplete with the models named; one with nothing priced reads
+  Unpriced, never $0. A period that spans more than one calendar month shows each row's months, summed from its days.
+- A failed or unreadable answer is a load error with Try again, never an empty page; a row that cannot be read is left
+  out and counted; a 403 says platform admins only. Every string in the nine languages.
+- The dev mock serves `GET /platform/costs` (`frontend/mock-costs.js`, with made-up figures).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). Frontend only: no IAM, API or stored-data change. The page reads the rows
+  the daily cost rollup already writes; a deployment whose rollup has not run yet shows its workspaces with no calls.
+
 ## [7.82.00] - 2026-11-26
 
 Multi-workspace, phase 4: the assistant's model calls are counted in the cost estimate. The streaming assistant,

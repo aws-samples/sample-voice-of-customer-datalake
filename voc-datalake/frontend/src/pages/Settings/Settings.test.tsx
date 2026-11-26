@@ -59,6 +59,7 @@ vi.mock('./AiModelSection', () => ({ default: () => <p data-testid="ai-model-sec
 vi.mock('./VersionSection', () => ({ default: () => <p data-testid="version-section">Version</p> }))
 vi.mock('./boards/BoardsSection', () => ({ default: () => <p data-testid="boards-section">Boards</p> }))
 vi.mock('./PlatformWorkspacesSection', () => ({ default: () => <p data-testid="platform-workspaces">Workspaces</p> }))
+vi.mock('./PlatformCostsSection', () => ({ default: () => <p data-testid="platform-costs">Costs</p> }))
 vi.mock('./DeploymentBrandCard', () => ({ default: () => <p data-testid="deployment-brand">Deployment brand</p> }))
 vi.mock('./EngineeringAgentsTab', () => ({ default: () => <p data-testid="engineering-agents">Engineering agents</p> }))
 vi.mock('../WorkspaceSettings/WorkspaceSettings', () => ({ WorkspaceSettingsCards: () => <p data-testid="workspace-settings">This workspace</p> }))
@@ -268,7 +269,7 @@ describe('who sees what', () => {
     mount('/admin/workspaces/settings')
     expect(tabNames()).toStrictEqual(['General', 'Sources', 'Taxonomy', 'Privacy & access', 'AI models', 'Workspaces', 'Engineering agents', 'System'])
     expect(within(screen.getByRole('tablist', { name: 'Workspaces' })).getAllByRole('tab').map((tab) => tab.textContent))
-      .toStrictEqual(['This workspace', 'Members', 'All workspaces', 'Deployment brand'])
+      .toStrictEqual(['This workspace', 'Members', 'All workspaces', 'Costs', 'Deployment brand'])
     expect(screen.getByTestId('workspace-settings')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Workspaces → This workspace' })).toHaveAttribute('href', '/admin/workspaces/settings')
   })
@@ -276,6 +277,7 @@ describe('who sees what', () => {
   it.each([
     ['/admin/workspaces/members', 'workspace-members'],
     ['/admin/workspaces/all', 'platform-workspaces'],
+    ['/admin/workspaces/costs', 'platform-costs'],
     ['/admin/workspaces/deployment-brand', 'deployment-brand'],
     ['/admin/agents', 'engineering-agents'],
   ])('%s shows its section to them', (path, testId) => {

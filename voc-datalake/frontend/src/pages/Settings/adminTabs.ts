@@ -10,8 +10,8 @@
  *   section (`/admin/general#theme`, `/admin/access/policies#erasure`): the page scrolls to it and focuses it.
  *
  * Visibility ({@link AdminViewer}): an admin-only section is hidden from everyone else, and a tab whose sections are
- * all hidden is hidden too. Workspaces' This workspace and Members are shown inside a workspace, its All workspaces
- * and Deployment brand to platform admins; Engineering agents while the Agents page and the engineering module are
+ * all hidden is hidden too. Workspaces' This workspace and Members are shown inside a workspace, its All workspaces,
+ * Costs (7.83.00) and Deployment brand to platform admins; Engineering agents while the Agents page and the engineering module are
  * on. Anyone's link to a hidden or unknown place falls back to the tab's first section, or to General.
  *
  * @module pages/Settings/adminTabs
@@ -25,7 +25,7 @@ const ADMIN_SECTION_IDS = [
   'plugins', 'integrations', 'inbox', 'radar',
   'categories', 'dimensions',
   'policies', 'users', 'boards',
-  'settings', 'members', 'all', 'deployment-brand',
+  'settings', 'members', 'all', 'costs', 'deployment-brand',
   'logs', 'version',
 ] as const
 export type AdminSectionId = typeof ADMIN_SECTION_IDS[number]
@@ -76,7 +76,8 @@ const TABS: readonly TabDef[] = [
   switched('taxonomy', [section('categories'), section('dimensions', 'admins')]),
   switched('access', [section('policies', 'admins', ['erasure']), section('users', 'admins'), section('boards', 'admins', ['domains', 'participants'])]),
   onePage('ai', 'open'),
-  switched('workspaces', [section('settings', 'workspace'), section('members', 'workspace'), section('all', 'platform'), section('deployment-brand', 'platform')]),
+  switched('workspaces', [section('settings', 'workspace'), section('members', 'workspace'), section('all', 'platform'), section('costs', 'platform'),
+    section('deployment-brand', 'platform')]),
   onePage('agents', 'agents', ['hard-cap', 'models', 'connections']),
   switched('system', [section('logs'), section('version', 'admins')]),
 ]
