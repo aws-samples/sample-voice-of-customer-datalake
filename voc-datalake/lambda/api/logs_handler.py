@@ -36,6 +36,7 @@ from shared.api import (
 )
 from shared.audit_rows import put_new_audit_row
 from shared.concurrency import ordered_map
+from shared.delete_audit import actor_from_event, record_delete_first
 from shared.dynamo_paging import iter_query
 from shared.enabled_sources import default_source_ids
 from shared.exceptions import ConfigurationError, ServiceError
@@ -89,6 +90,8 @@ LOG_READ_WORKERS = 2
 FAILED_WORKSPACE = 'Failed to open the logs'
 #: The audit row of a workspace's cleared validation trail (``AUDIT#WS#{ws}``): who, which source, how many rows.
 VALIDATION_LOGS_CLEARED = 'validation_logs_cleared'
+#: The ``AUDIT#delete`` kind of the deployment's cleared validation trail (voc-aggregates, shared/delete_audit.py).
+VALIDATION_LOGS_DELETE_KIND = 'validation_logs'
 
 
 def _partition_page(workspace: WorkspaceScope | None, pk: str, *, since: str | None = None,
@@ -308,8 +311,12 @@ def clear_validation_logs(source: str):
     but a DELETE erases the shared operational trail for everyone, so it is
     admin-only: the deployment's `admins` for the deployment's trail, a workspace's
     own admins for its trail (never a delegated caller; the deployment's group
-    grants nothing there), audited in `AUDIT#WS#{ws}` before anything is deleted
-    (a row that cannot be written clears nothing). This is the only DELETE route
+    grants nothing there). Every clear is recorded before anything is deleted (a
+    record that cannot be written clears nothing; TENETS.md D4): a workspace's in
+    `AUDIT#WS#{ws}`, the deployment's in voc-aggregates' `AUDIT#delete`
+    (shared/delete_audit.py: who, the source, how many rows about to go; a clear
+    that stops part way, a timeout, leaves the rest to a repeat, its own record).
+    This is the only DELETE route
     this handler serves (the API Gateway `/logs/{proxy+}` forwards any method, so
     a new one must gate itself too).
     """
@@ -321,11 +328,13 @@ def clear_validation_logs(source: str):
     try:
         if context is not None:
             return {'success': True, 'deleted': _clear_workspace_validation(context, source)}
-        deleted = 0
+        keys = [{'pk': item['pk'], 'sk': item['sk']} for item in _validation_log_keys(source)]
+        record_delete_first(aggregates_table, kind=VALIDATION_LOGS_DELETE_KIND, target={'source': source},
+                            actor=actor_from_event(app.current_event.raw_event), count=len(keys))
         with aggregates_table.batch_writer() as batch:
-            for item in _validation_log_keys(source):
-                batch.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
-                deleted += 1
+            for key in keys:
+                batch.delete_item(Key=key)
+        deleted = len(keys)
     except ConfigurationError:
         raise
     except Exception as e:

@@ -5,7 +5,8 @@
  * Audit, tombstone and delete-record rows live under partition keys that start with `AUDIT#`, in the tables that
  * hold them ({@link AuditRowTables}): voc-aggregates (`AUDIT#retention`, `AUDIT#tombstone#<source>`, written by
  * voc-retention; `AUDIT#delete` for a design reference's copies, written by the settings API, and for a deployment
- * feedback form, written by the feedback forms API (7.55.00); `AUDIT#platform-admins`,
+ * feedback form, written by the feedback forms API (7.55.00), and for the deployment's cleared validation trail,
+ * written by the logs API (7.77.00); `AUDIT#platform-admins`,
  * a grant or revoke of the platform-admins group, written by the users API) and voc-projects /
  * voc-participants / voc-feature-requests / voc-conversations (`AUDIT#delete`, written by the API that deletes the
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row) and voc-workspaces (`AUDIT#WS#<ws>`, a platform
@@ -22,8 +23,8 @@
  *     row is ever changed or removed, a batch delete included; every writer puts its rows one PutItem at a time);
  *   - every other table it writes: ONE Deny of those actions plus PutItem (it cannot forge, overwrite, change or
  *     remove one). Each table's ARN appears in one of the two statements only, to keep the policies small;
- *   - a writer limited to one audit partition (the settings API's `AUDIT#delete` and the users API's
- *     `AUDIT#platform-admins` in voc-aggregates; the users API's `AUDIT#WS#*` in voc-workspaces, a pattern): Deny
+ *   - a writer limited to one audit partition (the settings, feedback forms and logs APIs' `AUDIT#delete` and the
+ *     users API's `AUDIT#platform-admins` in voc-aggregates; the users API's `AUDIT#WS#*` in voc-workspaces): Deny
  *     PutItem and BatchWriteItem on every OTHER audit partition (it cannot forge a retention row or a tombstone).
  *
  * The audit writers are NAMED ({@link AUDIT_WRITERS}: the role that runs the code writing that table's audit rows),
@@ -97,6 +98,9 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // The feedback forms (7.55.00): a deployment form's delete (AUDIT#delete, lambda/api/feedback_form_handler.py through
   // shared/delete_audit.py record_delete_once; a workspace form's goes to voc-workspaces, below).
   { table: 'aggregatesTable', rolePathSuffix: '/FeedbackFormLambdaRole', partitionKey: 'AUDIT#delete' },
+  // The logs API (7.77.00): the deployment's cleared validation trail (AUDIT#delete, lambda/api/logs_handler.py through
+  // shared/delete_audit.py record_delete_first; a workspace's clear goes to voc-workspaces' AUDIT#WS#).
+  { table: 'aggregatesTable', rolePathSuffix: '/LogsLambdaRole', partitionKey: 'AUDIT#delete' },
   { table: 'aggregatesTable', rolePathSuffix: '/UsersLambdaRole', partitionKey: 'AUDIT#platform-admins' },
   // Project, persona, document, revision, product doc and comment deletes (the projects API and its assist twin);
   // a replace regeneration's removed personas (the persona generator).

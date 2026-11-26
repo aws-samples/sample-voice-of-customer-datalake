@@ -10,7 +10,7 @@ import { appVersion } from '../utils/connector-version';
 import { PROJECTS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
-import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
+import { TABLE_READS, grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { embeddingModelArn } from '../utils/model-allowlist';
 import { grantWorkspaceObjects } from '../utils/workspace-object-deletes';
 import { grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
@@ -29,9 +29,7 @@ export interface ProjectsLambda {
   projectTablesEnvironment: Record<string, string>;
 }
 
-/** CDK's `grantReadData` actions but its stream reads, and its `grantWriteData` writes (lib/utils/table-write-grants.ts). */
-const TABLE_READS = ['dynamodb:BatchGetItem', 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:Scan',
-  'dynamodb:ConditionCheckItem', 'dynamodb:DescribeTable'] as const;
+/** CDK's `grantWriteData` writes (its reads but the stream's: lib/utils/table-write-grants.ts TABLE_READS). */
 const TABLE_WRITES = ['dynamodb:BatchWriteItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'] as const;
 
 export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {

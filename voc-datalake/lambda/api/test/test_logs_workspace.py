@@ -180,6 +180,20 @@ def test_without_a_workspace_the_deployments_admins_clear_the_deployments_trail(
     assert _trail('validation', None) == []
     assert _trail('validation', WS_A) == [f'msg-{A_MARK}']
     assert _rows('workspaces', f'AUDIT#WS#{WS_A}') == []
+    # The deployment's clear is recorded too (TENETS.md D4), in the table that held the rows (shared/delete_audit.py).
+    [audit] = _rows('aggregates', 'AUDIT#delete')
+    assert {key: audit[key] for key in ('kind', 'target', 'count')} == {
+        'kind': 'validation_logs', 'target': {'source': LOG_SOURCE}, 'count': 1}
+    assert audit['actor']['sub'] == 'sub-ada'
+
+
+def test_a_deployment_clear_whose_record_cannot_be_written_clears_nothing(world):
+    refused = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'no'}}, 'PutItem')
+    with patch.object(logs_handler, 'record_delete_first', side_effect=refused):
+        status, body = world.call('DELETE', CLEAR, ws=None, caller=ADA)
+
+    assert (status, body) == (500, {'success': False, 'error': 'Failed to clear logs'})
+    assert _trail('validation', None) == [f'msg-{DEPLOYMENT}']
 
 
 @pytest.mark.parametrize(('caller', 'role', 'delegated'), [(VIC, 'viewer', False), (VIC, 'editor', False),

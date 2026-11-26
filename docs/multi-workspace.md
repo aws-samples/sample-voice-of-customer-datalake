@@ -269,7 +269,11 @@ admin enters as an admin, decision 2, live-checked and audited), each clear audi
 `validation_logs_cleared`: the actor's sub, whether as a platform admin, the source and how many rows; a row that
 cannot be written clears nothing); the logs role's batch delete is held to `LOGS#validation#*` and
 `WS#{one workspace id}#LOGS#validation#*` (lib/stacks/api-engagement-lambdas.ts). A request that names no workspace
-reads and clears the deployment's trail, as before. The alerts and the system diagnostics (`/logs/alerts*`,
+reads and clears the deployment's trail, as before; since 7.77.00 that clear is recorded first too, in voc-aggregates'
+`AUDIT#delete` (kind `validation_logs`: the actor, the source and how many rows; `lambda/shared/delete_audit.py`
+`record_delete_first`, the logs role that partition's one audit writer there). A workspace's clear is kind
+`validation_logs_cleared` in `AUDIT#WS#{ws}`: each table's own audit convention, so a search of the audit trail
+looks for both kinds. The alerts and the system diagnostics (`/logs/alerts*`,
 `/logs/system*`) stay the deployment's: they watch and read its own Lambdas, queues and environment, and resolve no
 workspace (the alerts' writes a platform admin's, below). Since 7.76.00 the system diagnostics show no
 workspace's content ([deployment.md](deployment.md#system-errors-administration--system--logs--system-errors),

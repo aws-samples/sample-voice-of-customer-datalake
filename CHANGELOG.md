@@ -17,6 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.77.00] - 2026-11-26
+
+A trust fix (TENETS.md D4): clearing the deployment's validation failures (Administration → System → Logs →
+Validation failures → Clear, outside any workspace) is now recorded, as a workspace's clear has been since 7.75.00.
+
+### Fixed
+
+- `DELETE /logs/validation/{source}` without a workspace writes an `AUDIT#delete` row in voc-aggregates (kind
+  `validation_logs`: who cleared, the source and how many rows) before it deletes anything; a record that cannot be
+  written clears nothing (`lambda/api/logs_handler.py`, `lambda/shared/delete_audit.py` `record_delete_first`).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). IAM: the logs API's role may put on voc-aggregates' `AUDIT#delete`
+  partition only, and the audit-row guard names it that partition's writer (it cannot change or remove an audit row,
+  nor write any other audit partition). Its reads on voc-aggregates drop CDK's stream reads (GetRecords and
+  GetShardIterator granted nothing on the table's ARNs), which keeps its inline policy under 70% of the quota.
+
 ## [7.76.00] - 2026-11-26
 
 Multi-workspace, a trust fix (TENETS.md D8): Administration → System → Logs holds a workspace's content back from

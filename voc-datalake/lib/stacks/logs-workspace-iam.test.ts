@@ -30,9 +30,19 @@ describe('the logs API in a workspace', () => {
       .toStrictEqual([[['dynamodb:BatchWriteItem'], ['LOGS#validation#*', `WS#${ONE_WORKSPACE}#LOGS#validation#*`]]]);
   });
 
-  it('puts nothing of its own: the audit row of a clear is the resolution policy\'s AUDIT#WS#* put', () => {
-    // The stack's one resolution policy (lib/utils/workspace-resolution-grants.ts, its own tests) holds that put.
-    expect(statements().filter((s) => s.actions.includes('dynamodb:PutItem'))).toStrictEqual([]);
+  it("puts only the deployment clear's AUDIT#delete row in voc-aggregates (a workspace clear's is the resolution "
+    + "policy's AUDIT#WS#* put)", () => {
+    // The stack's one resolution policy (lib/utils/workspace-resolution-grants.ts, its own tests) holds the other put.
+    const puts = statements().filter((s) => s.actions.includes('dynamodb:PutItem'));
+    expect(puts.map((s) => [s.actions, s.resource.includes('Aggregates'), leadingKeys(s.condition)]))
+      .toStrictEqual([[['dynamodb:PutItem'], true, ['AUDIT#delete']]]);
+  });
+
+  it("is the AUDIT#delete writer of voc-aggregates for that partition only (lib/utils/audit-row-guard.ts)", () => {
+    // The guard's Denies (policyStatementsOf leaves them out): a writer held to its one audit partition.
+    const policy = Object.entries(apiTemplate().findResources('AWS::IAM::Policy'))
+      .find(([id]) => id.includes('LogsLambdaRole'));
+    expect(JSON.stringify(policy)).toContain('DenyAuditRowWritesOutsideOwnPartition');
   });
 
   it("resolves the request's workspace and live-checks a platform admin's entry", () => {

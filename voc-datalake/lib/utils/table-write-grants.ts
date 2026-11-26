@@ -32,6 +32,12 @@ const KEY_WRITE_ACTIONS = ['kms:Encrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey
  */
 export const KEY_ACTIONS_FOR_WRITE_ONLY_GRANT = [...KEY_WRITE_ACTIONS, 'kms:Decrypt'] as const;
 
+/** CDK's `grantReadData` actions but its stream reads: GetRecords and GetShardIterator act on a stream's ARN only, so
+ *  on a table's and its indexes' they grant nothing and only cost the role's inline quota (api-stack-mcp.test.ts).
+ *  `table.grant(role, ...TABLE_READS)` brings no key actions: the caller grants the table key's itself. */
+export const TABLE_READS = ['dynamodb:BatchGetItem', 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:Scan',
+  'dynamodb:ConditionCheckItem', 'dynamodb:DescribeTable'] as const;
+
 /** One Allow of `writes` on the table itself (never its indexes: a write names the table), plus the key actions. */
 function addWriteStatement(
   table: dynamodb.ITable, grantee: iam.IGrantable, writes: readonly TableWrite[],

@@ -14,7 +14,7 @@ import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction
 import { FEEDBACK_FORM_API_FUNCTION_BASE_NAME, USERS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { appVersion } from '../utils/connector-version';
-import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
+import { TABLE_READS, grantKeyScopedWrites, grantReadAndWrites, grantWrites } from '../utils/table-write-grants';
 import { grantRequestWorkspace, grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 import type { ApiStackContext } from './api-context';
@@ -111,10 +111,16 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   const logsRole = ctx.role('LogsLambdaRole');
   // Alert settings (UpdateItem, shared/ops_alerts_service.py); DELETE /logs/validation/{source} clears that
   // source's LOGS#validation#<source> rows, or one workspace's WS#{ws}#LOGS#validation#<source> for its admins,
-  // with batches of deletes (BatchWriteItem), nothing else.
-  grantReadAndWrites(aggregatesTable, logsRole, ['UpdateItem']);
+  // with batches of deletes (BatchWriteItem), after its record (the PutItem below).
+  // The reads without CDK's stream reads (lib/utils/table-write-grants.ts TABLE_READS: room in the role's inline quota
+  // for the clear's audit grant and its guard), then the alerts row's UpdateItem with the key's write actions.
+  aggregatesTable.grant(logsRole, ...TABLE_READS);
+  grantWrites(aggregatesTable, logsRole, ['UpdateItem']);
   grantKeyScopedWrites(aggregatesTable, logsRole, ['BatchWriteItem'],
     ['LOGS#validation#*', `WS#${WORKSPACE_ID_PATTERN}#LOGS#validation#*`]);
+  // The deployment's clear is recorded first: its AUDIT#delete row (lambda/shared/delete_audit.py), a new row each time;
+  // the role is that partition's audit writer only (lib/utils/audit-row-guard.ts).
+  grantKeyScopedWrites(aggregatesTable, logsRole, ['PutItem'], ['AUDIT#delete']);
   // The logs routes resolve X-Workspace-Id (the stack's one resolution policy: its AUDIT#WS#* put also takes the
   // audit row of a workspace's clear, written before it); the live platform-admin check's Cognito reads below.
   const logsWorkspaceEnv = grantRequestWorkspace(ctx.props.workspacesTable, logsRole, userPool);

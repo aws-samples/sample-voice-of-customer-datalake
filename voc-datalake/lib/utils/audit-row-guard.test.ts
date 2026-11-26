@@ -23,8 +23,9 @@ const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['
 /** Table → the roles that may PUT an audit row there (the audit writers; the settings API only `AUDIT#delete`, the
  *  users API only `AUDIT#platform-admins`). */
 const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
-  AggregatesTable: ['VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole',
-    'VocProcessingStack/RetentionWorkerRetentionRole',
+  // The logs API since 7.77.00: the deployment's cleared validation trail (AUDIT#delete only).
+  AggregatesTable: ['VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/LogsLambdaRole', 'VocApiStack/SettingsLambdaRole',
+    'VocApiStack/UsersLambdaRole', 'VocProcessingStack/RetentionWorkerRetentionRole',
     // A workspace's hard delete: its tombstones (AUDIT#tombstone#* only, the one-partition Deny below).
     'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole'],
   ProjectsTable: ['VocApiStack/PersonaGeneratorRole', 'VocApiStack/ProjectsLambdaRole'],
@@ -126,10 +127,10 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings, users and feedback-form APIs, the workspace-resolution policy, voc-retention, the trial expiry and the workspace delete carry a one-partition deny', () => {
+  it('only the settings, users, logs and feedback-form APIs, the workspace-resolution policy, voc-retention, the trial expiry and the workspace delete carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
     expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual(['VocApiStack/FeedbackFormLambdaRole',
-      'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
+      'VocApiStack/LogsLambdaRole', 'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
       'VocProcessingStack/RetentionWorkerRetentionRole', 'VocProcessingStack/TrialExpiryRole',
       'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
   });
@@ -138,6 +139,13 @@ describe('audit rows (AUDIT#*) across every stack', () => {
     expect(partitionLimits('VocProcessingStack/RetentionWorkerRetentionRole')).toStrictEqual([
       { tables: ['ParticipantsTable'], condition: { ...AUDIT_CONDITION,
         'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#participant', 'AUDIT#delete'] } } },
+    ]);
+  });
+
+  it('the logs API puts only a deployment clear\'s AUDIT#delete in voc-aggregates (7.77.00)', () => {
+    expect(partitionLimits('VocApiStack/LogsLambdaRole')).toStrictEqual([
+      { tables: ['AggregatesTable'], condition: { ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#delete'] } } },
     ]);
   });
 
