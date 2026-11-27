@@ -396,6 +396,26 @@ describe('validate.sh pool (VOC_VALIDATE_JOBS: every step its own job)', () => {
     assert.deepEqual([pinned.VALIDATE_PINNED, pinned.VALIDATE_PYTEST_WORKERS], ['1', '2']);
   });
 
+  it('pins a --failed run too (before any option is read), and its steps run on node 0 alone', { skip: !taskset && 'no taskset here' }, () => {
+    // The last run: pytest failed. --failed re-runs it, re-exec'd under taskset first.
+    const last = join(logRoot, 'failed-root');
+    mkdirSync(join(last, 'run1'), { recursive: true });
+    writeFileSync(join(last, 'run1', 'timings.tsv'), 'FAIL\t3\tpy\tpytest\nok\t1\tpy\truff\n');
+    const affinity = join(logRoot, `affinity-${runs + 1}.txt`);
+    // The step's own shell, and a grandchild of it (a sub-script), report the CPUs they may use.
+    const cmd = '[ "$VALIDATE_STEP" != pytest ] || { env > "$OUT"; bash -c "grep Cpus_allowed_list /proc/self/status" > "$AFF"; }';
+    for (const args of [['--failed'], ['--only', 'python-tests']]) {
+      const out = join(logRoot, `env-failed-${runs + 1}.txt`);
+      const { status, lines } = dryRun(args, '', { VALIDATE_DRY_RUN_CMD: cmd, OUT: out, AFF: affinity, VALIDATE_LOG_ROOT: last,
+        VALIDATE_NUMA_ROOT: numaRoot(2), ...unpinned });
+      assert.equal(status, 0, lines.join('\n'));
+      assert.match(readFileSync(out, 'utf8'), /^VALIDATE_PINNED=1$/m, args.join(' '));
+      if (existsSync('/proc/self/status')) {
+        assert.equal(readFileSync(affinity, 'utf8').trim().split(/\s+/)[1], firstCpu(), args.join(' '));
+      }
+    }
+  });
+
   it('stays as it is on one node, on CI, or when already pinned', () => {
     assert.equal(stepEnv({ VALIDATE_NUMA_ROOT: numaRoot(1), ...unpinned }).VALIDATE_PINNED ?? '', '');
     assert.equal(stepEnv({ VALIDATE_NUMA_ROOT: numaRoot(2), ...unpinned, GITHUB_ACTIONS: 'true' }).VALIDATE_PINNED ?? '', '');

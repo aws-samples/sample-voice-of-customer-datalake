@@ -29,7 +29,7 @@
 # Env: VALIDATE_PYTEST_WORKERS (pytest-xdist workers; default: CPUs - 4, at least 2, at most 32),
 #      VALIDATE_ESLINT_CONCURRENCY (eslint's worker threads; default half the CPUs, 1-8), VALIDATE_CPUS (the CPU count; default
 #      `nproc`, the CPUs this run may use: taskset's affinity counts, `getconf` would count every core),
-#      VALIDATE_LOG_DIR (default $VALIDATE_LOG_ROOT/<timestamp>), PYTHON_BIN,
+#      VALIDATE_LOG_DIR (default $VALIDATE_LOG_ROOT/<timestamp>), PYTHON_BIN (default: voc-datalake/.venv, else the main checkout's, else python3),
 #      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs, at most 16),
 #      AI_REVIEW=auto|kiro|claude|off (the AI reviews; scripts/ai-review/review.mjs),
 #      VALIDATE_LOG_ROOT (where runs are logged and --failed looks for the newest one; default .cache/validate/logs).
@@ -44,6 +44,7 @@
 #      On a machine with more than one NUMA node (/sys/devices/system/node/node1), a run not already pinned re-runs
 #        itself under `taskset -c <node 0's cpulist>`, so it shares node 0's CPUs and leaves the other nodes' to other work
 #        (VALIDATE_PINNED=1 marks it; skipped in CI, or without taskset). A laptop and CI have one node: no change.
+#        A command run by hand takes the same pin and caps: `bash scripts/pinned.sh <command…>` (scripts/lib/pin.sh).
 #      VOC_VALIDATE_RAM=<dir>|off: the rebuildable caches (.cache/{codeql,coverage,audit,validate/tsc}) and every
 #        step's TMPDIR in RAM, the old paths kept as links (scripts/validate-ram.sh). Default with the pool:
 #        /dev/shm/voc-validate-<uid> when /dev/shm exists, else off; used only when it is this user's own (mode
@@ -54,19 +55,14 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT="$PWD"
-# On a machine of several NUMA nodes, run on node 0 alone (see the header): not when already pinned (a caller's taskset
-# leaves fewer CPUs than the machine has, or this is the re-run), in CI, or without taskset; and only when taskset
-# accepts node 0's CPUs here (a cpuset that excludes them leaves the run as it is). nproc without OMP_* (GNU nproc
-# reads them; --all does not). VALIDATE_NPROC_ALL stands in for `nproc --all` (the tests).
-NUMA_ROOT="${VALIDATE_NUMA_ROOT:-/sys/devices/system/node}"
-if [[ -z "${VALIDATE_PINNED:-}" && -z "${GITHUB_ACTIONS:-}" && -d "$NUMA_ROOT/node1" && -s "$NUMA_ROOT/node0/cpulist" ]] \
-   && command -v taskset >/dev/null 2>&1 && command -v nproc >/dev/null 2>&1 \
-   && [[ "$(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc)" -eq "${VALIDATE_NPROC_ALL:-$(nproc --all)}" ]]; then
-  NODE0_CPUS="$(tr -d '[:space:]' < "$NUMA_ROOT/node0/cpulist")"
-  if [[ -n "$NODE0_CPUS" ]] && taskset -c "$NODE0_CPUS" true >/dev/null 2>&1; then
-    export VALIDATE_PINNED=1
-    exec taskset -c "$NODE0_CPUS" "$BASH" "$ROOT/scripts/validate.sh" "$@"
-  fi
+# On a machine of several NUMA nodes, run on node 0 alone (see the header), before any option is read, so every run
+# (--only, --failed, --lane) is pinned and every step inherits it. When and when not: scripts/lib/pin.sh, which
+# scripts/pinned.sh (a hand-run command, pinned the same way) shares.
+# shellcheck source=lib/pin.sh
+. "$ROOT/scripts/lib/pin.sh"
+if NODE0_CPUS="$(pin_node0_cpus)"; then
+  export VALIDATE_PINNED=1
+  exec taskset -c "$NODE0_CPUS" "$BASH" "$ROOT/scripts/validate.sh" "$@"
 fi
 CDK="$ROOT/voc-datalake"
 FRONTEND="$CDK/frontend"
@@ -76,9 +72,8 @@ KNIP_PROD="$ROOT/scripts/knip-production.mjs"
 # worktrees through a symlink, and a shared .tsbuildinfo could make one worktree's check trust another's.
 TSC_CACHE="$ROOT/.cache/validate/tsc"
 
-if [[ -z "${PYTHON_BIN:-}" ]]; then
-  if [[ -x "$CDK/.venv/bin/python" ]]; then PYTHON_BIN="$CDK/.venv/bin/python"; else PYTHON_BIN="$(command -v python3)"; fi
-fi
+# The tree's voc-datalake/.venv, else the main checkout's (a worktree without one), else python3 (scripts/lib/pin.sh).
+if [[ -z "${PYTHON_BIN:-}" ]]; then PYTHON_BIN="$(pin_python_bin "$ROOT" validate)"; fi
 PATH="$(dirname "$PYTHON_BIN"):$PATH"   # ruff, vulture, pytest from the same environment
 # The CPUs this run may use: nproc honours taskset's affinity (getconf counts every core of the machine).
 CPUS="${VALIDATE_CPUS:-$(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc 2>/dev/null \
@@ -116,7 +111,7 @@ while [[ $# -gt 0 ]]; do
     --pytest-first) PYTEST_FIRST=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --failed) FAILED_ONLY=1 ;;
-    -h|--help) sed -n '2,47p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,52p' "$0"; exit 0 ;;
     *) printf 'validate: unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
   esac
   shift
@@ -202,7 +197,7 @@ def tsc  tenets                             "tenets: AI review"                 
 def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
 def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/dependency-overrides.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: git hook tests"               'cd "$ROOT" && node --test scripts/git-hooks/*.test.mjs'
-def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs scripts/validate-ram.test.mjs scripts/codeql.test.mjs'
+def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs scripts/validate-ram.test.mjs scripts/codeql.test.mjs scripts/pinned.test.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
 # output and dependencies allowlisted by path; .gitleaksignore for reviewed fingerprints).
 def lint repo                               "gitleaks: working tree"             'cd "$ROOT" && bash scripts/gitleaks-tree.sh'

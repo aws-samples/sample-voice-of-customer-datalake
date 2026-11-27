@@ -25,10 +25,14 @@ npm run test:coverage            # With coverage report
 
 # Lambda Tests (Python)
 cd voc-datalake
-python -m pytest lambda/         # Run all Lambda tests
-python -m pytest lambda/api/test/ -v  # API handler tests with verbose output
-python -m pytest --cov=lambda    # With coverage report
+bash ../scripts/pinned.sh python -m pytest lambda/         # Run all Lambda tests
+bash ../scripts/pinned.sh python -m pytest lambda/api/test/ -v  # API handler tests with verbose output
+bash ../scripts/pinned.sh python -m pytest --cov=lambda    # With coverage report
 ```
+
+On a shared big machine every pytest, vitest or eslint run by hand goes through `bash scripts/pinned.sh` (by its path
+from the folder the command runs in, e.g. `bash ../../scripts/pinned.sh npm test` in `voc-datalake/frontend`): it pins
+the run to NUMA node 0 and caps its workers (CONTRIBUTING.md, "On a big machine").
 
 ### Test File Locations
 

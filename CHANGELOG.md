@@ -17,6 +17,39 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.90.01] - 2026-11-27
+
+Tooling only: a test or lint run by hand keeps to its share of a big shared machine, as `scripts/validate.sh` does
+since 7.82.01, and a git worktree without its own virtualenv uses the main checkout's
+([CONTRIBUTING.md](CONTRIBUTING.md), "On a big machine").
+
+### Added
+
+- `bash scripts/pinned.sh <command…>` runs one command as the gate runs its steps: on a machine of more than one NUMA
+  node, not already pinned, not in CI and with a `taskset` that accepts node 0's CPUs, under `taskset -c <node 0's
+  cpulist>`; with `PYTEST_XDIST_AUTO_NUM_WORKERS=32`, `VALIDATE_ESLINT_CONCURRENCY=8` and `CODEQL_THREADS=16` (a
+  caller's own lower value, a whole number from 1 to the cap, is kept; a higher one is replaced and named on stderr);
+  a pytest command's worker count above 32 (pytest told by the command as given, so `PYTHON_BIN=…/pypy3` with
+  `python -m pytest -n 96` is capped too) and an eslint command's `--concurrency` above 8 (or `auto`) lowered, each
+  change named on stderr. A bare `python`, `python3` or `pytest` uses the chosen interpreter (a bare `PYTHON_BIN` is
+  looked up on `PATH`); only an interpreter at an absolute path inside a `.venv/bin` puts its folder first on `PATH`
+  (never `.` or `/usr/bin`).
+- The pin's conditions live in one place, `scripts/lib/pin.sh`, which `validate.sh` and `pinned.sh` both read.
+- A test proves that `--failed` and `--only` runs are pinned too (the re-exec runs before the options are read) and
+  that a step's children inherit node 0's CPUs.
+
+### Changed
+
+- `validate.sh` and `pinned.sh` look for the Python interpreter in the tree's `voc-datalake/.venv`, then the main
+  checkout's (a git worktree without one), then `python3`; before, a worktree without a venv fell back to the system
+  Python and every Python step failed. The main checkout is looked for only when the tree is its own git top level,
+  so a tree inside another repository never takes that repository's venv.
+
+### Upgrade notes
+
+- Nothing to deploy: scripts, tests and docs (CONTRIBUTING, the mutation brief, the testing steering) only. On a shared machine, run every test or lint by hand
+  through `bash scripts/pinned.sh`.
+
 ## [7.90.00] - 2026-11-27
 
 Multi-workspace: the Data Explorer works per workspace, and the deployment's no longer reaches a workspace's

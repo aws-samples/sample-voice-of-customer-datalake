@@ -108,9 +108,11 @@ ruff check <your module and test files>                       # every rule is en
 npx --prefix .. pyright --pythonpath .venv/bin/python <your module and test files>   # zero errors
 python scripts/check_tests_assert.py <your test files>
 bash scripts/lint-python.sh --dead-code --dead-code-tests     # vulture, both passes, must print nothing new
-python -m pytest -q -o addopts= <your test files>
+bash ../scripts/pinned.sh python -m pytest -q -o addopts= <your test files>
 (cd .. && npx jscpd voc-datalake/lambda voc-datalake/plugins)          # duplication gate, threshold 0: "Found 0 clones."
 ```
+Every pytest, vitest or eslint run by hand goes through `bash scripts/pinned.sh` from the folder it runs in
+(CONTRIBUTING.md, "On a big machine"): it pins the run to NUMA node 0 and caps its workers.
 jscpd: a clone between your new suite and an existing test file means the arrange block belongs in a
 `*_fixtures.py` module next to the tests (project convention, e.g. `lambda/api/test/agents_handler_fixtures.py`,
 `lambda/shared/test/instrumentation_fixtures.py` for the tracer-wrapper pin, `lambda/agents/test/document_node_fixtures.py`);
@@ -220,17 +222,18 @@ a test only when it pins nothing (above) or is a weaker duplicate of one that st
 count of every file it touches stays at 0.
 
 ## Gates (from the package dir) — targeted, never the full validate
+eslint and vitest go through `scripts/pinned.sh` (CONTRIBUTING.md, "On a big machine"), by its path from the package dir:
 ```
 # frontend (voc-datalake/frontend)
 npx tsc -b --noEmit --force && npx tsc -p tsconfig.test.json --noEmit
-npx eslint --max-warnings 0 <your files and specs>
-npx vitest run <your specs>
+bash ../../scripts/pinned.sh npx eslint --max-warnings 0 <your files and specs>
+bash ../../scripts/pinned.sh npx vitest run <your specs>
 npx knip --no-progress && npx knip --no-progress --config ../../scripts/knip-production.mjs --production --strict
 # stream (voc-datalake/lambda/stream)
-npx tsc --noEmit && npx eslint --max-warnings 0 <files> && npx vitest run <specs>
+npx tsc --noEmit && bash ../../../scripts/pinned.sh npx eslint --max-warnings 0 <files> && bash ../../../scripts/pinned.sh npx vitest run <specs>
 npx knip --no-progress && npx knip --no-progress --config ../../../scripts/knip-production.mjs --production --strict
 # cdk (voc-datalake)
-npx tsc -p tsconfig.json --noEmit && npx eslint --max-warnings 0 <files> && npx vitest run <specs>
+npx tsc -p tsconfig.json --noEmit && bash ../scripts/pinned.sh npx eslint --max-warnings 0 <files> && bash ../scripts/pinned.sh npx vitest run <specs>
 npx knip --no-progress && npx knip --no-progress --config ../scripts/knip-production.mjs --production --strict
 # repo root
 npx jscpd --fail-on-empty --reporters console --silent      # threshold 0: no output = no clones

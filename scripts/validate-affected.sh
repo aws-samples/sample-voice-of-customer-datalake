@@ -98,7 +98,7 @@ while IFS= read -r path; do
   case "$path" in
     .github/PULL_REQUEST_TEMPLATE.md|.github/dependabot.yml|.github/dependency-review-config.yml|.github/dependency-audit-ignore.json|.github/ISSUE_TEMPLATE/*)
       add "repo" "$path (GitHub config read by its own workflow, not by a gate step)" ;;
-    scripts/validate.sh|scripts/validate-affected.sh|scripts/gitleaks-tree.sh|.gitleaks.toml|.gitleaksignore|.jscpd.json|.github/*|package.json|package-lock.json|eslint-rules/*|.python-version|scripts/knip-production.mjs)
+    scripts/validate.sh|scripts/lib/pin.sh|scripts/validate-affected.sh|scripts/gitleaks-tree.sh|.gitleaks.toml|.gitleaksignore|.jscpd.json|.github/*|package.json|package-lock.json|eslint-rules/*|.python-version|scripts/knip-production.mjs)
       add "$ALL" "$path configures the gate itself" ;;
     scripts/coverage/*)
       add "python-tests,frontend-tests,stream-tests,repo" "$path (the per-file coverage gate runs inside each suite's step)" ;;

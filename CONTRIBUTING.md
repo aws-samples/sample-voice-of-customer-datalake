@@ -200,14 +200,15 @@ behind its newest release, so the work starts from current versions.
 - **Topic branches: the affected gates only.** `bash scripts/validate-affected.sh [<base>]`
   (base defaults to `origin/main`) maps the changed paths (committed, uncommitted and untracked) to the steps that
   matter for them, and `--explain` prints that mapping without running anything. While iterating, run the single
-  tool you need (`ruff check <files>`, `pytest <test files>`, `npx vitest run <spec>`).
+  tool you need (`ruff check <files>`, `pytest <test files>`, `npx vitest run <spec>`); on a shared big machine every
+  pytest, vitest or eslint run by hand goes through `bash scripts/pinned.sh` (see "On a big machine" below).
 - **The release branch: the full `scripts/validate.sh`, once, just before it is pushed for its pull request**
   (after any topic branches are merged into it). It is the backstop for anything the affected mapping misses, so
   it is never skipped; CI runs it again on the pull request.
 
 ### How validate.sh runs
 The steps run in six parallel lanes: `py` (ruff, vulture, pyright, pytest with pytest-xdist), `tsc` (type checks,
-knip, small node checks, most code-audit detectors), `lint` (ESLint on worker threads, `--concurrency auto`, jscpd, gitleaks, `ts_reachability`), `test` (vite build, the synth-based audit detectors, then the CDK
+knip, small node checks, most code-audit detectors), `lint` (ESLint on worker threads, `--concurrency $VALIDATE_ESLINT_CONCURRENCY`: half the CPUs, at most 8, jscpd, gitleaks, `ts_reachability`), `test` (vite build, the synth-based audit detectors, then the CDK
 and stream vitest suites), `web` (the frontend vitest suite), `sec` (CodeQL). CI runs each lane except `sec` as its own job on its own
 runner (`--lane <name>`; the repository's CodeQL code scanning stands in for `sec`), and a final `scripts/validate.sh` job is green only when every lane is. The first failing step stops the other lanes and its log tail is printed; every run ends with a table
 of each step's status and duration, and every step's full log is in `.cache/validate/logs/<run>/`. Options:
@@ -242,10 +243,31 @@ threads (`VALIDATE_ESLINT_CONCURRENCY`, not `--concurrency auto`, which took hal
 workers, and jscpd runs on one. On a machine of more than one NUMA node (`/sys/devices/system/node/node1` exists) a run not already pinned re-runs
 itself under `taskset -c <node 0's cpulist>` (`VALIDATE_PINNED=1` marks the re-run; a caller's own `taskset` that
 leaves fewer CPUs than the machine has counts as pinned), so the gate shares node 0's CPUs and leaves the other nodes'
-to the machine's other work (its memory is not bound to node 0); CI (`GITHUB_ACTIONS`) and a machine without `taskset` never re-run. A command run by hand on such
-a machine takes the same care: `taskset -c 0-95 <command>`, pytest with `-n 32` or less, eslint with
-`--concurrency 8`. A laptop and CI (one node, fewer than 32 CPUs) keep their worker counts but for small differences
+to the machine's other work (its memory is not bound to node 0); CI (`GITHUB_ACTIONS`) and a machine without `taskset` never re-run. A laptop and CI (one node, fewer than 32 CPUs) keep their worker counts but for small differences
 (eslint on a small package, the stream suite's vitest), with the same results.
+
+Every test or lint run by hand on such a machine goes through `bash scripts/pinned.sh <command…>`, run from the folder
+the command itself runs in (a restricted shell that refuses a `taskset` or `VAR=value` prefix on a command line
+accepts this). It pins the command to node 0 exactly when `validate.sh` would pin itself (the rule lives in one place,
+`scripts/lib/pin.sh`, which both source), exports `PYTEST_XDIST_AUTO_NUM_WORKERS=32` (`-n auto` means 32),
+`VALIDATE_ESLINT_CONCURRENCY=8` and `CODEQL_THREADS=16` (a caller's own whole number from 1 to the cap is kept),
+lowers a pytest `-n`/`--numprocesses` above 32 to 32 and an eslint `--concurrency` above 8 (or `auto`) to 8, saying so
+on stderr, and passes the exit code through:
+
+```bash
+(cd voc-datalake && bash ../scripts/pinned.sh pytest -q lambda/api/test/test_example.py)      # one pytest file (pytest.ini's paths)
+(cd voc-datalake/frontend && bash ../../scripts/pinned.sh npx vitest run src/example.test.ts)  # one vitest file
+(cd voc-datalake && bash ../scripts/pinned.sh npx eslint lib/example.ts --concurrency 8)        # eslint
+```
+
+Run one Python suite at a time on the machine, across every session and worktree: a second full pytest run beside the
+first only doubles the contention. A bare `python`, `python3` or `pytest` (run as `<python> -m pytest`) takes the
+interpreter `validate.sh` takes when `PYTHON_BIN` is unset, in this order: the tree's own `voc-datalake/.venv`; else,
+in a git worktree that has none, the main checkout's `voc-datalake/.venv` (found through `git rev-parse
+--git-common-dir`, only when the tree is its own git top level); else `python3` on `PATH`; stderr names it when it is
+not the tree's own. `pinned.sh` puts the interpreter's folder first on `PATH` (the venv's ruff, vulture, pyright) only
+when it is an absolute path inside a `.venv/bin`. So a worktree needs no
+venv of its own, and `validate.sh`'s Python steps no longer fall back to the system Python there.
 
 pytest runs in several processes in any order, so a test must not depend on another test having run or on a
 fixed path; tests that must share one process are marked `@pytest.mark.xdist_group('<name>')`. Parametrize ids
