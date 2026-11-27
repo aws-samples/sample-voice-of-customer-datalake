@@ -254,8 +254,15 @@ def workspaces_world(lambda_context: Any) -> Generator[World]:
         stack.enter_context(patch.object(workspaces_handler, 'get_cognito_idp_client', return_value=cognito))
         stack.enter_context(patch.object(platform_admin_gate, 'get_cognito_idp_client', return_value=cognito))
         # The deployment's plugins (cdk.context.json): the ceiling a workspace picks from.
+        # Outbound email on (`-c emailFrom`): an add of an existing account notifies it (shared/member_notice.py), so
+        # the SES double is one more write a refused request must not make.
         stack.enter_context(patch.dict('os.environ', {'ENABLED_SOURCES': f'["{PLUGIN}"]',
-                                                      'USER_POOL_ID': 'us-east-1_pool'}))
+                                                      'USER_POOL_ID': 'us-east-1_pool',
+                                                      'EMAIL_FROM': 'noreply@voc.example.com',
+                                                      'FRONTEND_URL': 'https://voc.example.com'}))
+        ses = MagicMock()
+        ses.send_email.return_value = {'MessageId': 'm-1'}
+        stack.enter_context(patch('shared.outbound_mail.get_sesv2_client', return_value=ses))
         table = pk_sk_table('workspaces')
         _seed_workspace(table, WS_A, 'Acme Outfitters', 'acme',
                         {'sub-ada': 'admin', 'sub-edi': 'editor', 'sub-vic': 'viewer'})
@@ -269,7 +276,7 @@ def workspaces_world(lambda_context: Any) -> Generator[World]:
         export_invoke = _export_world(stack, workspaces_handler)
 
         yield World(call=_caller(workspaces_handler, lambda_context, workspaces=table),
-                    doubles={'cognito': cognito, 'export_invoke': export_invoke})
+                    doubles={'cognito': cognito, 'export_invoke': export_invoke, 'ses': ses})
 
 
 def _export_world(stack: ExitStack, workspaces_handler: Any) -> MagicMock:

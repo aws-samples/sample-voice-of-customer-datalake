@@ -87,6 +87,20 @@ describe('Members for a workspace admin', () => {
     expect(added).toHaveBeenCalledWith({ email: 'eve@example.com', role: 'editor' })
   })
 
+  it('says the existing account was emailed when the server sent the notice', async () => {
+    renderPage(ACME, { [`POST ${MEMBERS}`]: () => ({ member: { ...VIC, sub: 'sub-eve', email: 'eve@example.com', role: 'viewer', account: 'existing', notified: true } }) })
+    await userEvent.type(await screen.findByLabelText('Email'), 'eve@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Add member' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('eve@example.com is now a member (Viewer). We emailed them a link to the workspace.')
+  })
+
+  it('still asks the admin to tell them when the notice was not sent', async () => {
+    renderPage(ACME, { [`POST ${MEMBERS}`]: () => ({ member: { ...VIC, sub: 'sub-eve', email: 'eve@example.com', role: 'viewer', account: 'existing', notified: false } }) })
+    await userEvent.type(await screen.findByLabelText('Email'), 'eve@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Add member' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('eve@example.com is now a member (Viewer). No email was sent: let them know.')
+  })
+
   it('checks the address before sending it', async () => {
     renderPage(ACME)
     await userEvent.type(await screen.findByLabelText('Email'), 'not-an-address')

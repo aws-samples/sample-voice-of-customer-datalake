@@ -1,4 +1,5 @@
-"""The participant ask email, sent with Amazon SES v2 (``SendEmail``, Simple content).
+"""The participant ask email, sent with Amazon SES v2 (``SendEmail``, Simple content) through the deployment's one
+outbound mail path (shared/outbound_mail.py; the unsubscribe headers are this mailer's own).
 
 One email per recipient. From ``"{sender_name}" <EMAIL_FROM>``, Reply-To the asker's
 verified email. A text and an HTML body: every user-written value is HTML-escaped,
@@ -16,28 +17,15 @@ from __future__ import annotations
 
 import html
 from dataclasses import dataclass
-from email.utils import formataddr
-from typing import Any, Final
+from typing import Final
 
-import boto3
+from shared import outbound_mail
+from shared.outbound_mail import ACCENT, BORDER, MUTED, TEXT
 
-EMAIL_CHARSET: Final = 'UTF-8'
+# The one SES v2 client and send (shared/outbound_mail.py); named here too, so the engagement API warms it at init and
+# its tests replace it here.
+get_sesv2_client = outbound_mail.get_sesv2_client
 BUTTON_LABEL: Final = 'Share your feedback'
-# Kiro Light palette (docs/kiro-design-system.md), the feedback widget's KIRO defaults
-# (static/feedback-widget.js): white on the accent is 4.64:1 (WCAG AA).
-ACCENT: Final = '#8e48ff'
-TEXT: Final = '#19161d'
-MUTED: Final = '#5e5966'
-BORDER: Final = '#e4e4e7'
-_client: Any = None
-
-
-def get_sesv2_client() -> Any:
-    """The cached SES v2 client (built at init by the engagement handler's warm-up)."""
-    global _client
-    if _client is None:
-        _client = boto3.client('sesv2')
-    return _client
 
 
 @dataclass(frozen=True)
@@ -82,30 +70,15 @@ def html_body(email: AskEmail) -> str:
     )
 
 
-def _content(data: str) -> dict[str, str]:
-    return {'Data': data, 'Charset': EMAIL_CHARSET}
-
-
-def send_request(email: AskEmail, from_address: str) -> dict[str, Any]:
-    """The SendEmail request for ``email`` (pure, so the shape is unit-tested)."""
-    request: dict[str, Any] = {
-        'FromEmailAddress': formataddr((email.sender_name, from_address)),
-        'Destination': {'ToAddresses': [email.to]},
-        'Content': {'Simple': {
-            'Subject': _content(email.subject),
-            'Body': {'Text': _content(text_body(email)), 'Html': _content(html_body(email))},
-            'Headers': [
-                {'Name': 'List-Unsubscribe', 'Value': f'<{email.unsubscribe_post}>'},
-                {'Name': 'List-Unsubscribe-Post', 'Value': 'List-Unsubscribe=One-Click'},
-            ],
-        }},
-    }
-    if email.reply_to:
-        request['ReplyToAddresses'] = [email.reply_to]
-    return request
+def simple_email(email: AskEmail) -> outbound_mail.SimpleEmail:
+    """``email`` rendered for the shared send, with its RFC 8058 one-click unsubscribe headers (this mailer's own)."""
+    return outbound_mail.SimpleEmail(
+        to=email.to, subject=email.subject, text=text_body(email), html=html_body(email),
+        sender_name=email.sender_name, reply_to=email.reply_to,
+        headers=(('List-Unsubscribe', f'<{email.unsubscribe_post}>'),
+                 ('List-Unsubscribe-Post', 'List-Unsubscribe=One-Click')))
 
 
 def send(email: AskEmail, from_address: str) -> str:
     """Send ``email``; the SES message id. Raises the client's error (the caller records a code)."""
-    response = get_sesv2_client().send_email(**send_request(email, from_address))
-    return str(response.get('MessageId', ''))
+    return outbound_mail.send(simple_email(email), from_address, client=get_sesv2_client())

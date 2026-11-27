@@ -187,7 +187,8 @@ test.describe('workspace administration', () => {
       await page.getByLabel('Email').fill('editor@example.com')
       await page.getByLabel('Role', { exact: true }).selectOption('editor')
       await page.getByRole('button', { name: 'Add member' }).click()
-      await expect(page.getByRole('status')).toContainText('editor@example.com is now a member (Editor). No email was sent')
+      // The mock answers `notified: true` on this person's first add to acme, as a deployment with -c emailFrom does.
+      await expect(page.getByRole('status')).toContainText('editor@example.com is now a member (Editor). We emailed them a link to the workspace.')
       await page.getByRole('combobox', { name: 'Role of Eddie Editor' }).selectOption('viewer')
       await expect(page.getByRole('status')).toContainText("Eddie Editor's role is now Viewer.")
       await page.getByRole('combobox', { name: 'Role of Ada Admin' }).selectOption('viewer')

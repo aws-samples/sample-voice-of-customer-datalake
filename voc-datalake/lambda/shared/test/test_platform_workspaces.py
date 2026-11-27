@@ -145,9 +145,9 @@ def test_no_row_the_create_writes_carries_a_ttl(table):
 
 
 # voc-workspaces holds primary data (members, audit) beside invites, and its TTL attribute is `ttl`: only an
-# `INVITE#` row may carry one (docs/multi-workspace.md, Open tenet questions). No writer of the table built so far
-# writes invites (adding a member is immediate, shared/workspace_members.py), so none of their modules may name the
-# attribute at all.
+# `INVITE#` row may carry one, and the one exception, the member notice's `NOTICE#{sub}` guard (below; 7.92.00, for
+# the owner to agree: docs/multi-workspace.md, Tenet questions, settled). No writer here writes invites (adding a
+# member is immediate, shared/workspace_members.py), so none of these modules may name the attribute at all.
 VOC_WORKSPACES_WRITERS = ('shared/workspace.py', 'shared/platform_workspaces.py', 'shared/workspace_members.py',
                           'api/workspaces_handler.py')
 
@@ -156,7 +156,47 @@ VOC_WORKSPACES_WRITERS = ('shared/workspace.py', 'shared/platform_workspaces.py'
 def test_only_invite_rows_may_carry_a_ttl_and_no_writer_writes_one(module):
     tree = ast.parse((LAMBDA_DIR / module).read_text(encoding='utf-8'))
     named = [node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and node.value == 'ttl']
-    assert named == [], f'{module} names the TTL attribute; only an INVITE# row may carry it'
+    assert named == [], (f'{module} names the TTL attribute; only an INVITE# row may carry it, and a NOTICE# row '
+                         'from shared/member_notice.py')
+
+
+# The one exception (docs/multi-workspace.md, Control plane): the member notice's daily guard, `WS#{ws}` /
+# `NOTICE#{sub}`, a row that holds no address or name and must expire. Its module is the one other writer that names
+# the attribute, and every row it writes is a NOTICE# row.
+TTL_WRITERS = {'shared/member_notice.py': 'NOTICE#'}
+
+
+def _names_ttl(module: str) -> bool:
+    tree = ast.parse((LAMBDA_DIR / module).read_text(encoding='utf-8'))
+    return any(isinstance(node, ast.Constant) and node.value == 'ttl' for node in ast.walk(tree))
+
+
+def test_the_notice_guard_is_the_one_writer_that_names_the_ttl():
+    writers = (*VOC_WORKSPACES_WRITERS, *TTL_WRITERS)
+    assert [module for module in writers if _names_ttl(module)] == list(TTL_WRITERS)
+    # It is not one of the members' or creation's modules: those stay without the attribute (above).
+    assert not set(TTL_WRITERS) & set(VOC_WORKSPACES_WRITERS)
+
+
+def test_the_notice_guard_writes_ttl_only_on_its_notice_rows():
+    from unittest.mock import MagicMock
+
+    from shared.member_notice import notify_added_member
+    from shared.workspace import WorkspaceContext
+    from shared.workspace_members import Account
+
+    table, ses = MagicMock(), MagicMock()
+    context = WorkspaceContext(ws='ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', role='admin', name='Acme', slug='acme',
+                               platform_admin=False)
+    with patch('shared.outbound_mail.get_sesv2_client', return_value=ses):
+        assert notify_added_member(table, context, Account('sub-nia', 'nia@example.com', '', False), 'viewer',
+                                   env={'EMAIL_FROM': 'n@voc.example.com', 'FRONTEND_URL': 'https://voc.example.com'})
+    [put] = table.put_item.call_args_list
+    item = put.kwargs['Item']
+    assert (item['pk'], item['sk']) == (f'WS#{context.ws}', 'NOTICE#sub-nia')
+    assert item['sk'].startswith(TTL_WRITERS['shared/member_notice.py'])
+    assert set(item) == {'pk', 'sk', 'ttl', 'sent_at'}
+    assert [name for name, *_ in table.method_calls] == ['put_item']  # no other write
 
 
 def test_a_slug_that_is_taken_is_a_409_and_writes_nothing(table):

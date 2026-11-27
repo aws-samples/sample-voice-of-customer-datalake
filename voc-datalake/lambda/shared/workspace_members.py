@@ -16,9 +16,10 @@ Rules:
   only a caller in the deployment's ``admins`` group may create one (403 for any other workspace admin): until the
   data path is keyed by workspace (phase 2) every account reads the whole deployment, and creating accounts stays
   with the people the users API already lets do it.
-  No ``INVITE#`` row is written: the membership is immediate either way, so there is nothing to accept. An existing
-  account gets no notification email: the deployment has no mail path for account notices (the participant mailer
-  is for participant asks, opt-in), so the add is logged instead.
+  No ``INVITE#`` row is written: the membership is immediate either way, so there is nothing to accept. With
+  ``-c emailFrom`` an existing account is then told by email, best effort and at most once a day per workspace
+  (shared/member_notice.py, which the route calls after this module's write; the answer's ``notified``); a new one
+  gets Cognito's invitation only.
 * Every add, role change and removal first writes an audit row ``AUDIT#WS#{ws}`` / ``{iso}#{random}`` (kind, actor,
   target, role before and after) with a conditional put (shared/audit_rows.py), so the row records the attempt: a
   row that cannot be written refuses the change, and a change that then fails leaves the row. Asking for the role a
@@ -41,11 +42,12 @@ The rows (``voc-workspaces``):
                                      playbook (7.71.00, optional): the role playbook the admin who added them
                                      suggested (shared/playbooks.py ROLES), offered first on their Home
     USER#{sub}    / WS#{ws}          name, slug, role
+    WS#{ws}       / NOTICE#{sub}     sent_at, ttl: the notice's daily guard (shared/member_notice.py)
     AUDIT#WS#{ws} / {iso}#{random}   kind, actor, target, role_before, role_after, at, platform_admin (+ account;
                                      a user's delete: via, left_without_admin)
 
-No row here carries ``ttl`` (only ``INVITE#`` rows may; lib/customer-data-deletes.test.ts and
-shared/test/test_platform_workspaces.py pin it). Emails and subs identify people: neither is ever logged.
+No row here carries ``ttl`` (only ``INVITE#`` rows and the notice's guard row ``NOTICE#{sub}``, written by
+shared/member_notice.py, may; shared/test/test_platform_workspaces.py pins it). Emails and subs identify people: neither is ever logged.
 """
 from __future__ import annotations
 
@@ -423,8 +425,8 @@ def add_member(table: Any, context: WorkspaceContext, account: Account, role: st
         logger.info('Workspace member added with a new account (Cognito emailed the temporary password)',
                     extra={'workspace_id': ws})
     else:
-        # No mail path for account notices exists yet (the module docstring): the add is logged, not emailed.
-        logger.info('Workspace member added; no notification email is sent', extra={'workspace_id': ws})
+        # The notice, if any, is the route's next step (shared/member_notice.py), after this write.
+        logger.info('Workspace member added with an existing account', extra={'workspace_id': ws})
     return {'sub': account.sub, **member}
 
 

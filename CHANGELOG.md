@@ -17,6 +17,41 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.92.00] - 2026-11-27
+
+Multi-workspace: an account added to a workspace is told so. A workspace admin's add of an existing account sent
+nothing (the members page said "No email was sent: let them know"); with the deployment's outbound email on
+(`-c emailFrom`), it now gets one notice naming the workspace, the role and the link to open it
+([docs/multi-workspace.md](docs/multi-workspace.md), "Invites").
+
+### Added
+
+- `POST /me/workspaces/current/members` for an existing account sends one plain notice, after the membership is
+  written: `VoC Analytics - You were added to "<workspace>"`, the workspace's name in quotes, the role and the
+  workspace's link (the email's one address: a name that reads as a link or an address is shown as the workspace's
+  slug; its HTML part `lang="en"`), to the address the account holds (never one
+  the request sends); no inviter, no other member, nothing secret. Its 201 answer says whether it went (`notified`,
+  in every add's answer: always false for a created account), and the members page says so ("We emailed them a link to the workspace", nine
+  languages); without `-c emailFrom` nothing is sent and the page still says to let them know.
+- At most one notice per account and workspace in 24 hours: a role change never sends, and a removal and re-add
+  within the day sends nothing more (a short-lived `WS#{ws}` / `NOTICE#{sub}` row in voc-workspaces, with `ttl`,
+  removed with the workspace's control rows by the hard delete; the one row of the table besides `INVITE#` that
+  carries `ttl`, an exception to the owner's ttl rule that awaits the owner's agreement). The send is best effort: a
+  failure never fails the add. Each outcome is logged with the workspace id and the outcome or error code only (no
+  address, no sub, no hash of it) and counted (`WorkspaceMemberNotices` by `Outcome`).
+- A new account still gets the sign-in invitation only, as before (`notified: false`).
+
+### Changed
+
+- The SES v2 send is one module (`lambda/shared/outbound_mail.py`) for the participant asks and the member notice;
+  the participant mailer keeps its own unsubscribe headers.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). With `-c emailFrom` set, the workspaces API role gets `ses:SendEmail` for
+  that address only (the participants role's statement) and the `EMAIL_FROM` and `FRONTEND_URL` variables; without
+  it, nothing changes. In the SES sandbox the notice reaches only verified addresses ([docs/deployment.md](docs/deployment.md)).
+
 ## [7.90.01] - 2026-11-27
 
 Tooling only: a test or lint run by hand keeps to its share of a big shared machine, as `scripts/validate.sh` does

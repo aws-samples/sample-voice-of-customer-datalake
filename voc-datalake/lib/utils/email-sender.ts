@@ -6,11 +6,15 @@
  * - VocCoreStack creates the feature-request board's own Cognito user pool, which sends its
  *   sign-in codes through SES from this address (Cognito's email OTP needs SES);
  * - VocApiStack lets `voc-engagement-api` send participant email (`ses:SendEmail` from exactly
- *   this address) and tells the SPA email is on (`features.email` in config.json).
+ *   this address) and tells the SPA email is on (`features.email` in config.json);
+ * - VocApiStack lets `voc-workspaces-api` send the notice an existing account gets when a workspace
+ *   admin adds it to a workspace (the same grant, lambda/shared/member_notice.py).
  *
  * The operator verifies the SES identity of the address's domain (and leaves the SES sandbox)
  * before deploying; nothing here creates or verifies an SES identity.
  */
+import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import type { Node } from 'constructs';
 import { HOSTNAME_RE } from './inbound-email';
 
@@ -56,4 +60,22 @@ export function parseEmailSender(raw: unknown): EmailSender | undefined {
 /** The `emailFrom` flag of this app, or undefined when outbound email is off. */
 export function emailSenderOf(node: Node): EmailSender | undefined {
   return parseEmailSender(node.tryGetContext(EMAIL_FROM_CONTEXT_KEY));
+}
+
+/**
+ * `ses:SendEmail` from exactly the configured address, the one grant of every role that sends
+ * (the engagement API's participant asks, the workspaces API's member notices). SES authorizes
+ * against the identity it sends with: the domain identity the operator verifies, or the address
+ * identity when that one is verified as well (SES prefers the more specific), so both ARNs are
+ * named. `ses:FromAddress` pins the From whichever identity applies.
+ */
+export function sesSendStatement(stack: cdk.Stack, sender: EmailSender): iam.PolicyStatement {
+  const identityArn = (identity: string) => stack.formatArn({
+    service: 'ses', resource: 'identity', resourceName: identity, arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+  });
+  return new iam.PolicyStatement({
+    actions: ['ses:SendEmail'],
+    resources: [identityArn(sender.domain), identityArn(sender.address)],
+    conditions: { StringEquals: { 'ses:FromAddress': sender.address } },
+  });
 }

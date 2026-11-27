@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import participant_mailer, participants_settings
+from shared import outbound_mail, participant_mailer, participants_settings
 from shared.engagement_common import is_id, new_id, new_token, normalize_email
 from shared.participants_send import error_code
 
@@ -21,6 +22,19 @@ def _email(**overrides):
     return participant_mailer.AskEmail(**{**values, **overrides})
 
 
+def _send_request(email, from_address):
+    """The SendEmail request ``participant_mailer.send`` makes (the shared path, shared/outbound_mail.py)."""
+    return outbound_mail.send_request(participant_mailer.simple_email(email), from_address)
+
+
+def test_send_hands_the_shared_path_that_very_request():
+    ses = MagicMock()
+    ses.send_email.return_value = {'MessageId': 'm-1'}
+    with patch('shared.participant_mailer.get_sesv2_client', return_value=ses):
+        assert participant_mailer.send(_email(), 'noreply@voc.example.com') == 'm-1'
+    ses.send_email.assert_called_once_with(**_send_request(_email(), 'noreply@voc.example.com'))
+
+
 def test_the_installed_sesv2_model_accepts_custom_headers_in_simple_content():
     simple = boto3.client('sesv2', region_name='us-east-1').meta.service_model.operation_model('SendEmail') \
         .input_shape.members['Content'].members['Simple']
@@ -28,7 +42,7 @@ def test_the_installed_sesv2_model_accepts_custom_headers_in_simple_content():
 
 
 def test_the_send_request_shape():
-    request = participant_mailer.send_request(_email(), 'noreply@voc.example.com')
+    request = _send_request(_email(), 'noreply@voc.example.com')
     assert request['FromEmailAddress'] == 'Example Air <noreply@voc.example.com>'
     assert request['ReplyToAddresses'] == ['ada@example.com']
     simple = request['Content']['Simple']
@@ -37,11 +51,11 @@ def test_the_send_request_shape():
         {'Name': 'List-Unsubscribe', 'Value': '<https://api.example/v1/unsubscribe?t=U>'},
         {'Name': 'List-Unsubscribe-Post', 'Value': 'List-Unsubscribe=One-Click'},
     ]
-    assert 'ReplyToAddresses' not in participant_mailer.send_request(_email(reply_to=''), 'n@voc.example.com')
+    assert 'ReplyToAddresses' not in _send_request(_email(reply_to=''), 'n@voc.example.com')
 
 
 def test_a_sender_name_with_special_characters_is_quoted():
-    request = participant_mailer.send_request(_email(sender_name='Acme, Inc.'), 'n@voc.example.com')
+    request = _send_request(_email(sender_name='Acme, Inc.'), 'n@voc.example.com')
     assert request['FromEmailAddress'] == '"Acme, Inc." <n@voc.example.com>'
 
 

@@ -5,7 +5,9 @@
 //   PUT  /me/workspaces/current                  {name} → the same answer, renamed (the workspace's admins; the slug
 //        stays): 400 for a name of 0 or over 80 characters once trimmed, or with a control character (workspace_rename.py)
 //   GET  /me/workspaces/current/members          → {members: [{sub, role, email, name, invited_by, joined_at}], next_cursor}
-//   POST /me/workspaces/current/members          {email, role, playbook?} → 201 {member: {…, account: 'existing'|'created'}}
+//   POST /me/workspaces/current/members          {email, role, playbook?} → 201 {member: {…, account: 'existing'|'created',
+//        notified (an existing account: true the first time in a workspace, as with -c emailFrom; false again;
+//        a created account: always false)}}
 //   PUT  /me/workspaces/current/members/{sub}    {role} → {member: {sub, role}}
 //   DELETE /me/workspaces/current/members/{sub}  → {removed: sub} (the caller's own sub: leave)
 //   GET  /platform/workspaces                    → {workspaces: [{id, name, slug, status, created_at, trial}], next_cursor}
@@ -178,7 +180,12 @@ function addMember(workspace, body, send, shared) {
   const member = { sub: account.sub, role: body.role, email: account.email, name: account.name, invited_by: shared.mockCaller.sub,
     joined_at: new Date().toISOString(), ...(playbook === null ? {} : { playbook }) };
   workspace.members.push(member);
-  return send(201, { member: { ...member, account: account.account } });
+  if (account.account === 'created') return send(201, { member: { ...member, account: 'created', notified: false } });
+  // The notice (lambda/shared/member_notice.py), as a deployment with -c emailFrom answers it (the mock mails nothing): sent
+  // the first time, not again for the same person in this workspace (the server's one notice a day).
+  const notified = !(workspace.notified ?? []).includes(account.sub);
+  workspace.notified = [...(workspace.notified ?? []), account.sub];
+  return send(201, { member: { ...member, account: 'existing', notified } });
 }
 
 /** 409 when `sub` is the workspace's only admin (a demotion or a removal of them). */

@@ -654,12 +654,21 @@ the emailed code proves the person owns the inbox. See [document-review.md](docu
 With the flag, `config.json` carries `features.email: true`, written by the CDK deploy and, from the
 `EmailAvailable` (VocApiStack) output, by `npm run deploy:frontend` too.
 
-`-c emailFrom=noreply@voc.example.com` (or `"emailFrom"` in `cdk.context.json`) turns on both
+`-c emailFrom=noreply@voc.example.com` (or `"emailFrom"` in `cdk.context.json`) turns on three
 email features:
 
 - **Asks:** `voc-engagement-api` may `ses:SendEmail` only with that From address
   (`ses:FromAddress` condition) on the SES identity of its domain (or of the address itself).
   Each ask carries `List-Unsubscribe` / one-click headers.
+- **Workspace member notices:** when a workspace admin adds an email that already has an account
+  to a workspace, `voc-workspaces-api` emails that account once, in plain English, from
+  "VoC Analytics" at the same address: the workspace's name, the role, and the link to
+  `https://<frontend>/workspace/<slug>/`. It gets the same `ses:SendEmail` grant (same
+  `ses:FromAddress` condition) and the `EMAIL_FROM` and `FRONTEND_URL` variables; without the flag
+  it has neither and sends nothing. At most one notice per workspace and account per 24 hours; the
+  send is best effort (a failure never undoes the add, the members page says whether it went). A
+  new email still gets only Cognito's own invitation. See
+  [multi-workspace.md](multi-workspace.md#invites).
 - **The board's own sign-in** (`/board`, for people without an app account): the board pool sends
   its codes through SES and signs returning people in with an emailed one-time code and a link
   (`EMAIL_OTP`, no password to remember, no account recovery). The pool and its authorizer exist
@@ -675,7 +684,7 @@ The address is validated at synth (a plain `local@domain`, no display name). Bef
 1. **Verify the SES domain identity** of the address (`voc.example.com` above) in the
    deployment's region, with its DKIM records published. CDK neither creates nor verifies it.
 2. **Leave the SES sandbox** (request production access). In the sandbox SES delivers only to
-   verified recipients, so neither participants nor board users would get mail.
+   verified recipients, so neither participants, board users nor added workspace members would get mail.
 3. Check the account's SES sending quota against your **daily send cap** (Participants →
    Settings, default 500 per day).
 

@@ -57,7 +57,10 @@ without the header, the one 404 for a non-member; a platform admin enters as adm
     GET /me/workspaces/current/members          {members: [{sub, role, email, name, invited_by, joined_at}],
                                                 next_cursor}: any member; ?limit= (1-100, default 25), ?cursor=
     POST /me/workspaces/current/members         {email, role, playbook?} -> 201 {member: {sub, role, email, name,
-                                                invited_by, joined_at, playbook?, account: 'existing'|'created'}}
+                                                invited_by, joined_at, playbook?, account: 'existing'|'created',
+                                                notified (whether our notice email went, shared/member_notice.py:
+                                                an existing account's, best effort, after the add, never failing it;
+                                                always false for a created account, which gets Cognito's invitation)}}
                                                 (`playbook`: a role playbook to suggest, 7.71.00): workspace admins only
                                                 (403 for an editor or a viewer; 403 for an email with no account
                                                 unless the caller is in `admins`). 409 for a member already there,
@@ -158,6 +161,7 @@ from shared.export_jobs import (
 from shared.import_runs import parse_limit
 from shared.ingest_tables import ingest_table
 from shared.logging import logger
+from shared.member_notice import notify_added_member
 from shared.platform_admin import require_platform_admin
 from shared.platform_admin_gate import confirm_live_platform_admin, require_live_platform_admin
 from shared.platform_costs import cost_page, parse_cost_limit, parse_range
@@ -365,7 +369,12 @@ def add_workspace_member():  # a Response: the resolver validates a return annot
         logger.exception('Error adding a workspace member')
         raise ServiceError(FAILED_ADD_MEMBER) from exc
     memberships.invalidate(context.ws, account.sub)
-    body = {'member': {**member, 'account': 'created' if account.created else 'existing'}}
+    if account.created:  # Cognito's invitation (AdminCreateUser) emailed it: no notice of ours
+        body = {'member': {**member, 'account': 'created', 'notified': False}}
+    else:
+        # Best effort, after the membership is written: never raises, never changes the add.
+        notified = notify_added_member(table, context, account, new.role)
+        body = {'member': {**member, 'account': 'existing', 'notified': notified}}
     return Response(status_code=201, content_type=content_types.APPLICATION_JSON, body=json.dumps(body))
 
 

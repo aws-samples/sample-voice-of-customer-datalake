@@ -411,7 +411,9 @@ export class VocCoreStack extends VocStack {
     //   USER#{sub} / WS#{ws}                         "my workspaces", same transaction
     //   SLUG#{slug} / META                           slug -> workspace, conditional put
     //   AUDIT#WS#{ws} / {iso}#{random}               audit, under the audit-row guard (lib/utils/audit-row-guard.ts)
-    // TTL is meant for invites only, pinned by the phase that writes invites. Read by the workspaces API
+    //   WS#{ws} / NOTICE#{sub}                       the member notice's 24 h guard (lambda/shared/member_notice.py)
+    // TTL is meant for invites and, the one exception (7.92.00; for the owner to agree), the notice guard, which
+    // holds only sent_at and ttl (lambda/shared/test/test_platform_workspaces.py pins both). Read by the workspaces API
     // (VocApiStack, lib/stacks/api-workspaces-lambda.ts).
     this.workspacesTable = this.createEncryptedTable('WorkspacesTable', 'voc-workspaces', {
       timeToLiveAttribute: 'ttl',

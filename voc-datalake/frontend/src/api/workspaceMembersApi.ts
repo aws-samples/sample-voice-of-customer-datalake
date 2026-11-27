@@ -27,9 +27,14 @@ const MemberSchema = z.object({
 })
 export type WorkspaceMember = z.infer<typeof MemberSchema>
 
-/** `account` of an add: the email had an account already, or the add created one (temporary password emailed). */
+/**
+ * `account` of an add: the email had an account already, or the add created one (temporary password emailed).
+ * `notified`: an existing account was told by email (lambda/shared/member_notice.py: with `-c emailFrom`, at most once
+ * a day per workspace); false when it was not, for a created account (Cognito's invitation, not ours), or when the
+ * server does not say.
+ */
 const AddedSchema = z.object({
-  member: MemberSchema.extend({ account: z.enum(['existing', 'created']) }),
+  member: MemberSchema.extend({ account: z.enum(['existing', 'created']), notified: z.boolean().catch(false) }),
 })
 export type AddedMember = z.infer<typeof AddedSchema>['member']
 

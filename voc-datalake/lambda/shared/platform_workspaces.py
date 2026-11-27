@@ -20,7 +20,9 @@ A trial (7.71.00, ``trial`` in the body: shared/trials.py, docs/multi-workspace.
 (actor, at, days, expires_at, the pack asked for). The expiry's hourly tick (voc-trial-expiry) reads the listing
 row's copy to find the trials that are due.
 
-No row carries ``ttl``: only ``INVITE#`` rows expire (lib/customer-data-deletes.test.ts pins it).
+No row written here carries ``ttl`` (lib/customer-data-deletes.test.ts pins it): only ``INVITE#`` rows expire, and the
+one exception, the member notice's 24 h guard ``WS#{ws}`` / ``NOTICE#{sub}`` (shared/member_notice.py; 7.92.00, for
+the owner to agree), which holds only ``sent_at`` and ``ttl`` (shared/test/test_platform_workspaces.py pins it).
 
 The listing partition ``WORKSPACES`` is sorted by the name (case-folded) and then the id, so the list is one paged
 Query, never a Scan. It is a single partition read only by platform admins and written once per created

@@ -194,6 +194,7 @@
       "add": "添加成员",
       "emailInvalid": "请输入有效的电子邮件地址，例如 name@example.com。",
       "addedExisting": "{{email}} 现已成为成员（{{role}}）。未发送任何电子邮件：请告知对方。",
+      "addedNotified": "{{email}} 现已成为成员（{{role}}）。我们已通过电子邮件向对方发送了工作区链接。",
       "addedCreated": "已为 {{email}} 创建账户并添加（{{role}}）。对方会收到一封包含临时密码的电子邮件。",
       "listTitle": "此工作区中的人员",
       "loading": "正在加载成员…",

@@ -194,6 +194,7 @@
       "add": "Add member",
       "emailInvalid": "Enter a valid email address, like name@example.com.",
       "addedExisting": "{{email}} is now a member ({{role}}). No email was sent: let them know.",
+      "addedNotified": "{{email}} is now a member ({{role}}). We emailed them a link to the workspace.",
       "addedCreated": "Created an account for {{email}} and added it ({{role}}). They get an email with a temporary password.",
       "listTitle": "People in this workspace",
       "loading": "Loading the members…",

@@ -317,8 +317,7 @@ def test_the_audit_row_is_written_before_the_transaction(table):
 def test_a_new_account_is_recorded_as_created_and_an_existing_one_is_logged_without_an_email(table):
     with patch('shared.workspace_members.logger') as log:
         add_member(table, CONTEXT, NEW, 'viewer', ADA)
-    log.info.assert_called_once_with('Workspace member added; no notification email is sent',
-                                     extra={'workspace_id': WS})
+    log.info.assert_called_once_with('Workspace member added with an existing account', extra={'workspace_id': WS})
     created = Account(sub='sub-new', email='new@example.com', name='', created=True)
     add_member(table, CONTEXT, created, 'viewer', ADA)
     assert sorted(row['account'] for row in _audits(table)) == ['created', 'existing']
@@ -503,3 +502,241 @@ def test_a_transaction_fault_propagates(table):
         remove_member(table, CONTEXT, 'sub-vic', ADA)
     # The audit row stays: it recorded the attempt.
     assert [row['kind'] for row in _audits(table)] == [MEMBER_REMOVED]
+
+
+# ── The notice to an existing account (shared/member_notice.py) ─────────────
+
+NOTICE_ENV = {'EMAIL_FROM': 'noreply@voc.example.com', 'FRONTEND_URL': 'https://voc.example.com'}
+NOTICE_NOW = 1_800_000_000.0
+NOTICE_KEY = {'pk': f'WS#{WS}', 'sk': 'NOTICE#sub-nia'}
+SEND_FAULT = ClientError({'Error': {'Code': 'MessageRejected', 'Message': 'nia@example.com not verified'}},
+                         'SendEmail')
+
+
+@pytest.fixture
+def ses() -> Iterator[MagicMock]:
+    client = MagicMock()
+    client.send_email.return_value = {'MessageId': 'm-1'}
+    with patch('shared.outbound_mail.get_sesv2_client', return_value=client):
+        yield client
+
+
+def _notify(table, *, env=NOTICE_ENV, account=NEW, role='editor', context=CONTEXT, now=NOTICE_NOW):
+    from shared.member_notice import notify_added_member
+    return notify_added_member(table, context, account, role, env=env, clock=lambda: now)
+
+
+def _sent(ses):
+    return [call.kwargs for call in ses.send_email.call_args_list]
+
+
+def test_without_email_from_no_notice_is_sent_and_no_row_is_written(table, ses):
+    assert _notify(table, env={'FRONTEND_URL': 'https://voc.example.com'}) is False
+    assert _notify(table, env={'EMAIL_FROM': '', 'FRONTEND_URL': 'https://voc.example.com'}) is False
+    ses.send_email.assert_not_called()
+    assert table.get_item(Key=NOTICE_KEY).get('Item') is None
+
+
+def test_without_the_frontend_address_no_notice_is_sent(table, ses):
+    # A link is the notice's point: none without the deployment's address.
+    assert _notify(table, env={'EMAIL_FROM': 'noreply@voc.example.com'}) is False
+    ses.send_email.assert_not_called()
+
+
+def test_an_existing_account_gets_one_notice_naming_the_workspace_its_role_and_link(table, ses):
+    assert _notify(table) is True
+    [request] = _sent(ses)
+    assert request['FromEmailAddress'] == 'VoC Analytics <noreply@voc.example.com>'
+    assert request['Destination'] == {'ToAddresses': ['nia@example.com']}
+    assert 'ReplyToAddresses' not in request
+    simple = request['Content']['Simple']
+    assert simple['Subject'] == {'Data': 'VoC Analytics - You were added to "Acme Outfitters"', 'Charset': 'UTF-8'}
+    assert 'Headers' not in simple
+    text = simple['Body']['Text']['Data']
+    assert 'You were added to the workspace "Acme Outfitters" in VoC Analytics as an editor.' in text
+    assert 'Open it: https://voc.example.com/workspace/acme/' in text
+    html_body = simple['Body']['Html']['Data']
+    assert 'href="https://voc.example.com/workspace/acme/"' in html_body
+    assert 'the workspace "<strong>Acme Outfitters</strong>" in VoC Analytics as an editor.' in html_body
+    assert html_body.startswith('<!DOCTYPE html><html lang="en">')
+    # The workspace's link is the one address in either body.
+    assert (text.count('://'), html_body.count('://'), html_body.count('href=')) == (1, 1, 1)
+
+
+@pytest.mark.parametrize(('role', 'words'), [('admin', 'as an admin.'), ('viewer', 'as a viewer.')])
+def test_the_notice_names_each_role(table, ses, role, words):
+    assert _notify(table, role=role) is True
+    assert words in _sent(ses)[0]['Content']['Simple']['Body']['Text']['Data']
+
+
+def test_the_notice_says_nothing_of_the_inviter_or_other_members(table, ses):
+    _seed(table, 'sub-vic', 'viewer', email='vic@example.com', name='Vic Lane')
+    _notify(table)
+    sent = repr(_sent(ses)[0])
+    for other in ('ada', 'sub-ada', 'vic@example.com', 'Vic Lane', 'sub-nia', WS):
+        assert other not in sent
+
+
+def test_the_guard_row_is_written_before_the_send_and_expires_after_a_day(table, ses):
+    order = MagicMock()
+    with patch.object(table, 'put_item', wraps=table.put_item) as put:
+        order.attach_mock(put, 'claim')
+        order.attach_mock(ses.send_email, 'send')
+        _notify(table)
+    assert [name for name, *_ in order.mock_calls] == ['claim', 'send']
+    row = table.get_item(Key=NOTICE_KEY)['Item']
+    assert int(row['ttl']) == int(NOTICE_NOW) + 24 * 3600
+    # No address, no name: the sub (in the key) and when.
+    assert set(row) == {'pk', 'sk', 'ttl', 'sent_at'}
+
+
+def test_a_second_add_within_a_day_sends_nothing(table, ses):
+    assert _notify(table) is True
+    # Removed and added again an hour later, with another role.
+    assert _notify(table, role='admin', now=NOTICE_NOW + 3600) is False
+    assert len(_sent(ses)) == 1
+
+
+def test_a_guard_row_past_its_ttl_does_not_hold_a_later_notice(table, ses):
+    # DynamoDB deletes an expired row within days, not at once: the condition reads the ttl itself.
+    assert _notify(table) is True
+    assert _notify(table, now=NOTICE_NOW + 24 * 3600 + 1) is True
+    assert len(_sent(ses)) == 2
+
+
+def test_the_guard_is_per_workspace_and_account(table, ses):
+    other_ws = WorkspaceContext(ws='ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9', role='admin', name='Bay Bikes', slug='bay',
+                                platform_admin=False)
+    vic = Account(sub='sub-vic', email='vic@example.com', name='', created=False)
+    assert (_notify(table), _notify(table, context=other_ws), _notify(table, account=vic)) == (True, True, True)
+    assert [r['Destination']['ToAddresses'] for r in _sent(ses)] == [
+        ['nia@example.com'], ['nia@example.com'], ['vic@example.com']]
+
+
+def test_a_send_failure_is_logged_without_the_address_and_answers_false(table, ses):
+    ses.send_email.side_effect = SEND_FAULT
+    with patch('shared.member_notice.logger') as log:
+        assert _notify(table) is False
+    [warning] = log.warning.call_args_list
+    # The workspace and the error's code only: no address, no sub, no hash of the sub.
+    assert warning.kwargs['extra'] == {'workspace_id': WS, 'code': 'MessageRejected'}
+    assert 'nia@example.com' not in repr(log.mock_calls)
+    assert 'sub-nia' not in repr(log.mock_calls)
+    # The claim stays: at most one attempt a day, so a failing send cannot be looped into a flood either.
+    assert _notify(table, now=NOTICE_NOW + 60) is False
+    assert ses.send_email.call_count == 1
+
+
+@pytest.mark.usefixtures('ses')
+@pytest.mark.parametrize(('env', 'outcome'), [(None, 'sent'), ({}, 'email_off')], ids=['sent', 'off'])
+def test_the_outcome_line_holds_the_workspace_and_the_outcome_only(table, env, outcome):
+    with patch('shared.member_notice.logger') as log:
+        _notify(table, **({} if env is None else {'env': env}))
+    [line] = log.info.call_args_list
+    assert line.kwargs['extra'] == {'workspace_id': WS, 'outcome': outcome}
+
+
+def test_a_guard_row_that_cannot_be_written_sends_nothing(table, ses):
+    with patch.object(table, 'put_item', side_effect=DENIED), patch('shared.member_notice.logger') as log:
+        assert _notify(table) is False
+    ses.send_email.assert_not_called()
+    assert log.warning.call_args.kwargs['extra']['code'] == 'AccessDeniedException'
+
+
+def test_every_outcome_is_metered(table, ses):
+    with patch('shared.member_notice.single_metric') as metric:
+        _notify(table, env={})
+        _notify(table)
+        _notify(table, now=NOTICE_NOW + 1)
+        ses.send_email.side_effect = SEND_FAULT
+        _notify(table, account=Account(sub='sub-vic', email='vic@example.com', name='', created=False))
+    dimensions = metric.return_value.__enter__.return_value.add_dimension.call_args_list
+    assert [call.kwargs['value'] for call in dimensions] == ['email_off', 'sent', 'repeat', 'send_failed']
+    assert {call.kwargs['name'] for call in metric.call_args_list} == {'WorkspaceMemberNotices'}
+
+
+def test_a_new_account_gets_no_notice_cognito_already_emailed_it(table, ses):
+    created = Account(sub='sub-new', email='new@example.com', name='', created=True)
+    assert _notify(table, account=created) is False
+    ses.send_email.assert_not_called()
+    assert table.get_item(Key={'pk': f'WS#{WS}', 'sk': 'NOTICE#sub-new'}).get('Item') is None
+
+
+@pytest.mark.parametrize('email', ['', 'not an address', 'nia@example.com\r\nBcc: x@example.com'])
+def test_an_account_without_a_usable_address_gets_no_notice(table, ses, email):
+    assert _notify(table, account=Account(sub='sub-nia', email=email, name='', created=False)) is False
+    ses.send_email.assert_not_called()
+
+
+@pytest.mark.parametrize('name', ['Acme\r\nBcc: x', 'Acme Bcc\u0000', '\tAcme\u200e  Bcc \x85',
+                                  'Acme\u2028Bcc'])
+def test_control_characters_in_the_name_never_reach_the_subject_or_body(table, ses, name):
+    context = WorkspaceContext(ws=WS, role='admin', name=name, slug='acme', platform_admin=False)
+    assert _notify(table, context=context) is True
+    simple = _sent(ses)[0]['Content']['Simple']
+    subject = simple['Subject']['Data']
+    assert subject.startswith('VoC Analytics - You were added to "Acme')
+    assert subject.endswith('"')
+    assert subject.isprintable()
+    assert 'Acme Bcc' in subject
+    text = simple['Body']['Text']['Data']
+    assert all(ch.isprintable() or ch == '\n' for ch in text)
+
+
+@pytest.mark.parametrize('name', [
+    'Sign in again at https://evil.example/login', 'Visit www.evil.example', 'Reset at evil.example today',
+    'Write to help@evil.example', 'Acme\r\nBcc: x@example.com', 'acme.co', 'HTTPS://EVIL.EXAMPLE',
+])
+def test_a_name_that_reads_as_a_link_or_address_is_shown_as_the_slug(table, ses, name):
+    """A workspace admin chooses the name and the deployment signs the email: a name a mail client would turn into a
+    link or an address is never shown; the notice names the workspace by its slug, so its link is the one address."""
+    context = WorkspaceContext(ws=WS, role='admin', name=name, slug='acme', platform_admin=False)
+    assert _notify(table, context=context) is True
+    simple = _sent(ses)[0]['Content']['Simple']
+    subject = simple['Subject']['Data']
+    assert subject == 'VoC Analytics - You were added to "acme"'
+    for body in (simple['Body']['Text']['Data'], simple['Body']['Html']['Data']):
+        assert 'evil' not in body.lower()
+        assert body.count('://') == 1  # the workspace's link alone
+        assert '"acme"' in body or '"<strong>acme</strong>"' in body
+
+
+@pytest.mark.parametrize('name', ['Acme Outfitters', 'Bay Bikes & Co', 'Juniper Trail Co.', 'Q3 2.0 launch',
+                                  'R&D', 'North-East team'])
+def test_an_ordinary_name_is_shown_as_it_is(name):
+    from shared.member_notice import shown_name
+    assert shown_name(name, 'acme') == name
+
+
+def test_an_empty_name_is_shown_as_the_slug():
+    from shared.member_notice import shown_name
+    assert shown_name(' \u200e\t', 'acme') == 'acme'
+
+
+def test_the_html_body_escapes_the_workspace_name(table, ses):
+    context = WorkspaceContext(ws=WS, role='admin', name='<b>Acme</b> & Co', slug='acme', platform_admin=False)
+    _notify(table, context=context)
+    html_body = _sent(ses)[0]['Content']['Simple']['Body']['Html']['Data']
+    assert '&lt;b&gt;Acme&lt;/b&gt; &amp; Co' in html_body
+    assert '<b>Acme' not in html_body
+
+
+def test_a_long_name_is_cut_in_the_subject_only():
+    from shared.member_notice import MAX_SUBJECT_NAME, subject_line
+    assert subject_line('A' * 300) == f'VoC Analytics - You were added to "{"A" * (MAX_SUBJECT_NAME - 1)}…"'
+
+
+@pytest.mark.parametrize(('frontend', 'slug', 'link'), [
+    ('https://voc.example.com', 'acme', 'https://voc.example.com/workspace/acme/'),
+    ('https://voc.example.com/', 'bay-bikes', 'https://voc.example.com/workspace/bay-bikes/'),
+])
+def test_the_link_is_the_apps_workspace_address(frontend, slug, link):
+    from shared.member_notice import workspace_link
+    assert workspace_link(frontend, slug) == link
+
+
+@pytest.mark.parametrize('slug', ['', 'admin', 'Acme', 'a/../b', 'ac me'])
+def test_no_link_for_a_slug_the_platform_cannot_make(slug):
+    from shared.member_notice import workspace_link
+    with pytest.raises(ValueError, match='slug'):
+        workspace_link('https://voc.example.com', slug)

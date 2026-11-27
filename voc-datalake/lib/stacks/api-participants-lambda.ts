@@ -17,7 +17,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { grantClaudeModels } from '../utils/claude-model-grant';
-import { emailSenderOf, type EmailSender } from '../utils/email-sender';
+import { emailSenderOf, sesSendStatement } from '../utils/email-sender';
 import { appVersion } from '../utils/connector-version';
 import type { ApiStackContext } from './api-context';
 import { functionArnByName } from './api-assist-workers';
@@ -33,23 +33,6 @@ const ENGAGEMENT_MEMORY_MB = 1024;
 
 /** A queued send continuation older than this is dropped to the failure destination. */
 const ENGAGEMENT_MAX_EVENT_AGE = cdk.Duration.hours(1);
-
-/**
- * `ses:SendEmail` from exactly the configured address. SES authorizes against the identity it
- * sends with: the domain identity the operator verifies, or the address identity when that one is
- * verified as well (SES prefers the more specific), so both ARNs are named. `ses:FromAddress`
- * pins the From whichever identity applies.
- */
-function sesSendStatement(stack: cdk.Stack, sender: EmailSender): iam.PolicyStatement {
-  const identityArn = (identity: string) => stack.formatArn({
-    service: 'ses', resource: 'identity', resourceName: identity, arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-  });
-  return new iam.PolicyStatement({
-    actions: ['ses:SendEmail'],
-    resources: [identityArn(sender.domain), identityArn(sender.address)],
-    conditions: { StringEquals: { 'ses:FromAddress': sender.address } },
-  });
-}
 
 export function createParticipantsLambda(ctx: ApiStackContext): lambda.Function {
   const { stack, allowedOrigin, apiLayer, apiCode } = ctx;

@@ -197,6 +197,7 @@
       "add": "Ajouter le membre",
       "emailInvalid": "Saisissez une adresse e-mail valide, par exemple nom@example.com.",
       "addedExisting": "{{email}} est maintenant membre ({{role}}). Aucun e-mail n’a été envoyé : prévenez la personne.",
+      "addedNotified": "{{email}} est maintenant membre ({{role}}). Nous lui avons envoyé par e-mail un lien vers l’espace de travail.",
       "addedCreated": "Un compte a été créé pour {{email}} et ajouté ({{role}}). La personne reçoit un e-mail avec un mot de passe temporaire.",
       "listTitle": "Personnes de cet espace de travail",
       "loading": "Chargement des membres…",

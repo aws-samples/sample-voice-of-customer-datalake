@@ -96,6 +96,18 @@ describe('mock workspaces', () => {
       assert.deepEqual([created[0], created[1].member.account], [201, 'created'])
     })
 
+    it('says an existing account was notified the first time only; a new account gets no notice of ours', async () => {
+      const { acme } = await mine()
+      const add = (email) => inWorkspace(acme.id, 'POST', '/me/workspaces/current/members', { email, role: 'editor' })
+      const [, first] = await add('editor@example.com')
+      assert.equal(first.member.notified, true)
+      await inWorkspace(acme.id, 'DELETE', '/me/workspaces/current/members/sub-editor-demo')
+      const [status, again] = await add('editor@example.com')
+      assert.deepEqual([status, again.member.account, again.member.notified], [201, 'existing', false])
+      const [, created] = await add('another.person@example.com')
+      assert.deepEqual([created.member.account, created.member.notified], ['created', false])
+    })
+
     it('changes a role, and refuses demoting or removing the last admin (409)', async () => {
       const { acme } = await mine()
       assert.deepEqual(await inWorkspace(acme.id, 'PUT', member('sub-viewer-demo'), { role: 'editor' }), [200, { member: { sub: 'sub-viewer-demo', role: 'editor' } }])

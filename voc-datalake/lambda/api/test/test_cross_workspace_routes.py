@@ -1217,8 +1217,26 @@ def test_the_add_case_reaches_the_cognito_write(lambda_context):
     catch (if the seeding gave the email an account, check 1's guard would watch a path that never writes)."""
     with WORLDS[_ADD[0]](lambda_context) as world:
         status, body = _send(world, CASES[_ADD], _ADD[1], ws=WS_A, ids={}, caller=ADA)
-        assert (status, body['member']['account']) == (201, 'created')
+        assert (status, body['member']['account'], body['member']['notified']) == (201, 'created', False)
         assert world.doubles['cognito'].admin_create_user.called
+
+
+def test_an_add_of_an_existing_account_notifies_in_a_only_and_naming_b_sends_nothing(lambda_context):
+    """With outbound email on, the add of an existing account sends its notice (shared/member_notice.py): in A once,
+    naming A; the same request naming B is the one 404 and sends nothing (check 1's write check sees `ses` too)."""
+    existing = {'email': 'kai@example.com', 'role': 'viewer'}
+    with WORLDS[_ADD[0]](lambda_context) as world:
+        ses = world.doubles['ses']
+        assert world.call('POST', _ADD[1].split(maxsplit=1)[1], ws=WS_B, body=existing) == (
+            404, {'success': False, 'error': NOT_FOUND})
+        ses.send_email.assert_not_called()
+        status, body = world.call('POST', _ADD[1].split(maxsplit=1)[1], ws=WS_A, body=existing)
+        assert (status, body['member']['account'], body['member']['notified']) == (201, 'existing', True)
+        [notice] = ses.send_email.call_args_list
+        text = json.dumps(notice.kwargs)
+        assert 'Acme Outfitters' in text
+        assert '/workspace/acme/' in text
+        assert B_MARK not in text.casefold()
 
 
 def test_b_ids_that_name_nothing_are_caught(lambda_context):

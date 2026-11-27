@@ -23,6 +23,9 @@
  *   - Cognito AdminListGroupsForUser + AdminGetUser on the user pool: the live platform-admin check
  *     (lambda/shared/platform_admin.py); ListUsers (an email's account, a member's email by sub) and AdminCreateUser
  *     (a new member's account, the temporary password emailed): adding a member (lambda/shared/workspace_members.py);
+ *   - with `-c emailFrom` only (lib/utils/email-sender.ts): `ses:SendEmail` from exactly that address, the
+ *     participants role's grant, for the notice an existing account gets when it is added to a workspace
+ *     (lambda/shared/member_notice.py), and EMAIL_FROM and FRONTEND_URL (the link's origin); without it neither;
  *   - no Secrets Manager and no SSM: since decision 19 a workspace's credentials are SSM parameters its first save
  *     makes (lib/utils/workspace-secrets.ts), so creating a workspace makes nothing but its rows, and costs nothing a
  *     month;
@@ -37,6 +40,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 
+import { emailSenderOf, sesSendStatement } from '../utils/email-sender';
 import { grantKeyScopedWrites } from '../utils/table-write-grants';
 import type { ApiStackContext } from './api-context';
 import { COST_PARTITIONS } from './cost-rollup-worker';
@@ -112,6 +116,11 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
   userPool.grant(role, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser', 'cognito-idp:ListUsers',
     'cognito-idp:AdminCreateUser');
   grantTrialWrites(ctx, role);
+  // With -c emailFrom: the notice an existing account gets when it is added to a workspace
+  // (lambda/shared/member_notice.py), from exactly that address. Its daily guard row, `WS#{ws}` / `NOTICE#{sub}`, is a
+  // conditional put in `WS#*`, already in WORKSPACE_WRITE_PARTITIONS (IAM pins the partition, not the sort key).
+  const sender = emailSenderOf(ctx.stack.node);
+  if (sender !== undefined) role.addToPolicy(sesSendStatement(ctx.stack, sender));
 
   const environment: Record<string, string> = {
     WORKSPACES_TABLE: workspacesTable.tableName,
@@ -123,6 +132,11 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
     ALLOWED_ORIGIN: ctx.allowedOrigin,
     POWERTOOLS_SERVICE_NAME: WORKSPACES_API_FUNCTION_BASE_NAME,
     LOG_LEVEL: 'INFO',
+    // The notice's sender and its link's origin (`{FRONTEND_URL}/workspace/{slug}/`): only with -c emailFrom.
+    ...(sender === undefined ? {} : {
+      EMAIL_FROM: sender.address,
+      FRONTEND_URL: `https://${ctx.props.frontendDomainName}`,
+    }),
   };
   return new lambda.Function(ctx.stack, 'WorkspacesApi', {
     functionName,

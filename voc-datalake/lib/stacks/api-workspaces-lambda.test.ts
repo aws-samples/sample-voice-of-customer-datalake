@@ -5,14 +5,17 @@
  * partitions a create, an add, an audit and a plugin's enable write, UpdateItem on `WS#*` and `USER#*` (attribute
  * `role` only), DeleteItem on `WS#*` and `USER#*` (a member's removal) and `PLUGIN#*` (a plugin disabled),
  * ConditionCheckItem on `WS#*`; the live platform-admin
- * check's two Cognito reads plus ListUsers and AdminCreateUser (adding a member). No Secrets Manager and no SSM grant
+ * check's two Cognito reads plus ListUsers and AdminCreateUser (adding a member); with `-c emailFrom` only,
+ * `ses:SendEmail` from that address (the member notice) and EMAIL_FROM / FRONTEND_URL. No Secrets Manager and no SSM grant
  * (decision 19: a workspace's credentials parameters are made by their first save, not by its creation).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { Template } from 'aws-cdk-lib/assertions';
+import { z } from 'zod';
 
 import {
-  actionsWithPrefix, apiMethods, apiTemplate, apiTemplateAllPlugins, apiTemplateHardDelete, functionIdForHandler,
-  nonOptions, policyStatementsOf, resolveMethod,
+  actionsWithPrefix, apiMethods, apiTemplate, apiTemplateAllPlugins, apiTemplateHardDelete, buildApiStack,
+  functionIdForHandler, nonOptions, policyStatementsOf, resolveMethod,
   serviceEnvironment,
 } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
@@ -158,6 +161,58 @@ describe('the voc-workspaces-api Lambda', () => {
     expect(forms.every((s) => /ExportsOutputFnGetAttAggregates/.test(s.resource))).toBe(true);
   });
 
+});
+
+// The notice an existing account gets when it is added to a workspace (lambda/shared/member_notice.py): with
+// -c emailFrom only, the participants role's grant (lib/utils/email-sender.ts sesSendStatement) and its sender.
+describe('the voc-workspaces-api member notice and -c emailFrom', () => {
+  const EMAIL_FROM = 'noreply@voc.example.com';
+  let cachedEmail: Template | undefined;
+  const withEmail = () => (cachedEmail ??= Template.fromStack(buildApiStack({ emailFrom: EMAIL_FROM })));
+  beforeAll(() => {
+    withEmail();
+  }, SYNTH_TIMEOUT_MS);
+  const ses = (template: Template) => policyStatementsOf(template, 'WorkspacesLambdaRole')
+    .filter((s) => s.actions.some((action) => action.startsWith('ses:')));
+  const env = (template: Template) => serviceEnvironment(template, 'voc-workspaces-api');
+
+  it('cannot send email and is told no sender or link origin without -c emailFrom', () => {
+    expect(ses(apiTemplate())).toStrictEqual([]);
+    expect(ses(apiTemplateHardDelete())).toStrictEqual([]);
+    expect(env(apiTemplate())).not.toHaveProperty('EMAIL_FROM');
+    expect(env(apiTemplate())).not.toHaveProperty('FRONTEND_URL');
+  });
+
+  it('sends only from the configured address, on its SES identities, with -c emailFrom', () => {
+    const [statement, ...others] = ses(withEmail());
+    expect([others, statement?.actions]).toStrictEqual([[], ['ses:SendEmail']]);
+    const identities = z.array(z.unknown()).parse(JSON.parse(statement?.resource ?? '[]')).map((arn) => JSON.stringify(arn));
+    expect(identities.map((arn) => /:ses:us-east-1:111111111111:identity\/([^"]+)"/.exec(arn)?.[1]))
+      .toStrictEqual(['voc.example.com', EMAIL_FROM]);
+    expect(statement?.condition).toStrictEqual({ StringEquals: { 'ses:FromAddress': EMAIL_FROM } });
+    // The very statement the engagement API's role gets (one helper).
+    const engagement = policyStatementsOf(withEmail(), 'EngagementLambdaRole')
+      .filter((s) => s.actions.some((action) => action.startsWith('ses:')));
+    expect(engagement).toStrictEqual([statement]);
+  });
+
+  it('is told the sender and the frontend origin of the link with -c emailFrom', () => {
+    expect(env(withEmail()).EMAIL_FROM).toBe(EMAIL_FROM);
+    // The engagement API's FRONTEND_URL (the unsubscribe page): the same origin.
+    expect(env(withEmail()).FRONTEND_URL).toStrictEqual(serviceEnvironment(withEmail(), 'voc-engagement-api').FRONTEND_URL);
+    expect(JSON.stringify(env(withEmail()).FRONTEND_URL)).toMatch(/^"https:\/\//);
+  });
+
+  it('writes the notice guard row (`WS#{ws}` / `NOTICE#{sub}`) through the PutItem it already has, nothing new', () => {
+    const shape = (template: Template) => policyStatementsOf(template, 'WorkspacesLambdaRole')
+      .filter((s) => s.actions.some((action) => action.startsWith('dynamodb:')))
+      .map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition, resource: s.resource }));
+    expect(shape(withEmail())).toStrictEqual(shape(apiTemplate()));
+    const puts = shape(withEmail()).filter((s) => s.actions.includes('dynamodb:PutItem')
+      && /ExportsOutputFnGetAttWorkspaces/.test(s.resource));
+    expect(puts.map((s) => s.condition)).toContainEqual(
+      { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'] } });
+  });
 });
 
 // DELETE /users/{username} removes the user's memberships first (lambda/shared/workspace_members.py

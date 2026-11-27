@@ -165,7 +165,7 @@ def test_an_add_is_one_transaction_and_its_failure_says_which(ws, role, platform
     if expected is None:
         assert answer == {'sub': 'nia', **member}
         message = ('Workspace member added with a new account (Cognito emailed the temporary password)' if created
-                   else 'Workspace member added; no notification email is sent')
+                   else 'Workspace member added with an existing account')
         logger.info.assert_called_once_with(message, extra={'workspace_id': ws})
     else:
         assert not logger.info.called

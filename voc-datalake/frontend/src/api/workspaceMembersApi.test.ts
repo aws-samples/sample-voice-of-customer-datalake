@@ -49,9 +49,20 @@ describe('workspaceMembersApi', () => {
   })
 
   it('adds by email and role, and reads whether the account was created', async () => {
-    routeFetchApi({ 'POST /me/workspaces/current/members': () => ({ member: { ...ADA, role: 'viewer', account: 'created' } }) })
-    await expect(workspaceMembersApi.add('admin@example.com', 'viewer')).resolves.toMatchObject({ role: 'viewer', account: 'created' })
+    routeFetchApi({ 'POST /me/workspaces/current/members': () => ({ member: { ...ADA, role: 'viewer', account: 'created', notified: false } }) })
+    await expect(workspaceMembersApi.add('admin@example.com', 'viewer')).resolves.toMatchObject({ role: 'viewer', account: 'created', notified: false })
     expect(fetchApi).toHaveBeenCalledWith('/me/workspaces/current/members', { method: 'POST', body: '{"email":"admin@example.com","role":"viewer"}' })
+  })
+
+  it.each([
+    [true, true],
+    [false, false],
+    // A server from before the notice, or one that answers something else: not notified.
+    [undefined, false],
+    ['yes', false],
+  ])('reads whether an existing account was told by email (notified %s → %s)', async (notified, read) => {
+    routeFetchApi({ 'POST /me/workspaces/current/members': () => ({ member: { ...ADA, account: 'existing', notified } }) })
+    await expect(workspaceMembersApi.add('admin@example.com', 'admin')).resolves.toMatchObject({ account: 'existing', notified: read })
   })
 
   it('changes a role and removes a member by their sub', async () => {

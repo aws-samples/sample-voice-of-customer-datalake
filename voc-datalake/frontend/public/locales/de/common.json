@@ -194,6 +194,7 @@
       "add": "Mitglied hinzufügen",
       "emailInvalid": "Geben Sie eine gültige E-Mail-Adresse ein, zum Beispiel name@example.com.",
       "addedExisting": "{{email}} ist jetzt Mitglied ({{role}}). Es wurde keine E-Mail gesendet: Informieren Sie die Person selbst.",
+      "addedNotified": "{{email}} ist jetzt Mitglied ({{role}}). Wir haben der Person einen Link zum Arbeitsbereich per E-Mail gesendet.",
       "addedCreated": "Für {{email}} wurde ein Konto angelegt und hinzugefügt ({{role}}). Die Person erhält eine E-Mail mit einem temporären Passwort.",
       "listTitle": "Personen in diesem Arbeitsbereich",
       "loading": "Mitglieder werden geladen…",

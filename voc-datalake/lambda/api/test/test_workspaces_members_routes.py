@@ -50,6 +50,8 @@ def _list_users(**params):
 class World:
     table: Any
     cognito: MagicMock
+    #: SES v2 (shared/outbound_mail.py): every notice an add sends.
+    ses: MagicMock
 
 
 @pytest.fixture
@@ -57,7 +59,10 @@ def world() -> Iterator[World]:
     cognito = live_cognito()
     cognito.list_users.side_effect = _list_users
     cognito.admin_create_user.return_value = {'User': _user('sub-new', 'new@example.com')}
+    ses = MagicMock()
+    ses.send_email.return_value = {'MessageId': 'm-1'}
     with mock_aws(), patch.object(workspaces_handler, 'memberships', MembershipCache()), \
+            patch('shared.outbound_mail.get_sesv2_client', return_value=ses), \
             patch.object(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool'), \
             patch.object(workspaces_handler, 'get_cognito_idp_client', return_value=cognito), \
             patch.dict('os.environ', {'USER_POOL_ID': 'us-east-1_pool'}), \
@@ -67,7 +72,17 @@ def world() -> Iterator[World]:
                              'status': 'active'})
         for claims, role in ((ADA, 'admin'), (EDI, 'editor'), (VIC, 'viewer')):
             _seed(table, claims['sub'], role)
-        yield World(table, cognito)
+        yield World(table, cognito, ses)
+
+
+#: `-c emailFrom=…` on (lib/stacks/api-workspaces-lambda.ts sets both).
+MAIL_ON = {'EMAIL_FROM': 'noreply@voc.example.com', 'FRONTEND_URL': 'https://voc.example.com'}
+
+
+@pytest.fixture
+def mail_on() -> Iterator[None]:
+    with patch.dict('os.environ', MAIL_ON):
+        yield
 
 
 def _seed(table, sub, role):
@@ -215,7 +230,8 @@ def test_an_email_with_an_account_is_a_member_at_once(world, lambda_context):
 def test_a_new_email_gets_an_account_then_the_membership_from_a_deployment_admin(world, lambda_context):
     status, body = _call(world, lambda_context, 'POST', MEMBERS, claims=ADA_DEPLOYMENT_ADMIN,
                          body={'email': 'new@example.com', 'role': 'viewer'})
-    assert (status, body['member']['sub'], body['member']['account']) == (201, 'sub-new', 'created')
+    assert (status, body['member']['sub'], body['member']['account'], body['member']['notified']) == (
+        201, 'sub-new', 'created', False)
     assert world.cognito.admin_create_user.call_args.kwargs['DesiredDeliveryMediums'] == ['EMAIL']
     assert _role(world, 'sub-new') == 'viewer'
     # The account's creation is recorded first (before AdminCreateUser), then the membership.
@@ -278,6 +294,151 @@ def test_an_add_whose_audit_row_cannot_be_written_is_a_fixed_500_and_adds_nothin
         assert _call(world, lambda_context, 'POST', MEMBERS, body={'email': 'nia@example.com', 'role': 'viewer'}) == (
             500, {'success': False, 'error': 'Failed to add the member'})
     assert _role(world, 'sub-nia') is None
+
+
+# ── POST: the notice to an existing account (shared/member_notice.py) ───────
+
+NIA = {'email': 'nia@example.com', 'role': 'editor'}
+
+
+def _notices(world):
+    return [call.kwargs for call in world.ses.send_email.call_args_list]
+
+
+def test_without_email_from_an_existing_account_is_added_and_not_notified(world, lambda_context):
+    status, body = _call(world, lambda_context, 'POST', MEMBERS, body=NIA)
+    assert (status, body['member']['account'], body['member']['notified']) == (201, 'existing', False)
+    world.ses.send_email.assert_not_called()
+
+
+@pytest.mark.usefixtures('mail_on')
+def test_with_email_from_an_existing_account_gets_one_notice(world, lambda_context):
+    status, body = _call(world, lambda_context, 'POST', MEMBERS, body=NIA)
+    assert status == 201
+    member = body['member']
+    # Every field of before, and `notified`.
+    assert {k: member[k] for k in ('sub', 'role', 'email', 'name', 'invited_by', 'account', 'notified')} == {
+        'sub': 'sub-nia', 'role': 'editor', 'email': 'nia@example.com', 'name': 'Nia Park', 'invited_by': 'sub-ada',
+        'account': 'existing', 'notified': True}
+    [notice] = _notices(world)
+    assert notice['Destination'] == {'ToAddresses': ['nia@example.com']}
+    simple = notice['Content']['Simple']
+    assert simple['Subject']['Data'] == 'VoC Analytics - You were added to "Acme Outfitters"'
+    text = simple['Body']['Text']['Data']
+    assert 'as an editor' in text
+    assert 'https://voc.example.com/workspace/acme/' in text
+    assert _role(world, 'sub-nia') == 'editor'
+
+
+@pytest.mark.usefixtures('mail_on')
+def test_the_notice_goes_to_the_address_cognito_holds_never_the_bodys(world, lambda_context):
+    # Cognito's filter matched, but the account's own attribute is what the notice uses.
+    world.cognito.list_users.side_effect = lambda **params: {
+        'Users': [_user('sub-nia', 'nia.park@example.com', 'Nia Park')] if 'email' in params['Filter'] else []}
+    assert _call(world, lambda_context, 'POST', MEMBERS, body=NIA)[1]['member']['notified'] is True
+    assert _notices(world)[0]['Destination'] == {'ToAddresses': ['nia.park@example.com']}
+    # No body field names a recipient: an extra one is refused before anything happens.
+    assert _call(world, lambda_context, 'POST', MEMBERS,
+                 body={**NIA, 'email': 'vic@example.com', 'to': 'x@example.com'})[0] == 400
+    assert len(_notices(world)) == 1
+
+
+@pytest.mark.usefixtures('mail_on')
+def test_a_remove_and_add_again_within_a_day_sends_no_second_notice(world, lambda_context):
+    assert _call(world, lambda_context, 'POST', MEMBERS, body=NIA)[1]['member']['notified'] is True
+    assert _call(world, lambda_context, 'DELETE', f'{MEMBERS}/sub-nia')[0] == 200
+    status, body = _call(world, lambda_context, 'POST', MEMBERS, body={**NIA, 'role': 'admin'})
+    assert (status, body['member']['role'], body['member']['notified']) == (201, 'admin', False)
+    assert len(_notices(world)) == 1
+
+
+@pytest.mark.usefixtures('mail_on')
+def test_a_send_failure_still_adds_the_member_and_answers_not_notified(world, lambda_context):
+    world.ses.send_email.side_effect = ClientError(
+        {'Error': {'Code': 'MessageRejected', 'Message': 'Email address is not verified'}}, 'SendEmail')
+    with patch('shared.member_notice.logger') as log:
+        status, body = _call(world, lambda_context, 'POST', MEMBERS, body=NIA)
+    assert (status, body['member']['account'], body['member']['notified']) == (201, 'existing', False)
+    assert _role(world, 'sub-nia') == 'editor'
+    assert log.warning.call_args.kwargs['extra']['code'] == 'MessageRejected'
+    assert 'nia@example.com' not in repr(log.mock_calls)
+
+
+@pytest.mark.usefixtures('mail_on')
+def test_an_unexpected_notice_fault_never_fails_the_add(world, lambda_context):
+    with patch('shared.member_notice.notice_request', side_effect=RuntimeError('boom')):
+        status, body = _call(world, lambda_context, 'POST', MEMBERS, body=NIA)
+    assert (status, body['member']['notified']) == (201, False)
+    assert _role(world, 'sub-nia') == 'editor'
+
+
+@pytest.mark.usefixtures('mail_on')
+def test_a_new_account_gets_cognitos_invitation_only(world, lambda_context):
+    status, body = _call(world, lambda_context, 'POST', MEMBERS, claims=ADA_DEPLOYMENT_ADMIN,
+                         body={'email': 'new@example.com', 'role': 'viewer'})
+    # One contract: `notified` is always in an add's answer, false for a created account.
+    assert (status, body['member']['account'], body['member']['notified']) == (201, 'created', False)
+    world.cognito.admin_create_user.assert_called_once()
+    world.ses.send_email.assert_not_called()
+
+
+@pytest.mark.usefixtures('mail_on')
+@pytest.mark.parametrize('claims', [EDI, VIC], ids=['editor', 'viewer'])
+def test_an_editor_or_viewers_add_is_a_403_and_sends_nothing(world, lambda_context, claims):
+    assert _call(world, lambda_context, 'POST', MEMBERS, claims=claims, body=NIA)[0] == 403
+    world.ses.send_email.assert_not_called()
+
+
+@pytest.mark.usefixtures('mail_on')
+def test_a_role_change_sends_nothing_and_a_re_add_with_another_role_within_a_day_neither(world, lambda_context):
+    # A role change is never a notice: not of a member added by the routes, nor of a seeded one.
+    assert _call(world, lambda_context, 'PUT', f'{MEMBERS}/sub-vic', body={'role': 'editor'})[0] == 200
+    world.ses.send_email.assert_not_called()
+    assert _call(world, lambda_context, 'POST', MEMBERS, body=NIA)[1]['member']['notified'] is True
+    assert _call(world, lambda_context, 'PUT', f'{MEMBERS}/sub-nia', body={'role': 'admin'})[0] == 200
+    assert _call(world, lambda_context, 'PUT', f'{MEMBERS}/sub-nia', body={'role': 'viewer'})[0] == 200
+    # Removed, then added back with yet another role, within the day: still the one notice.
+    assert _call(world, lambda_context, 'DELETE', f'{MEMBERS}/sub-nia')[0] == 200
+    assert _call(world, lambda_context, 'POST', MEMBERS, body={**NIA, 'role': 'admin'})[1]['member']['notified'] is False
+    assert len(_notices(world)) == 1
+
+
+def _send_fails(world):
+    world.ses.send_email.side_effect = ClientError(
+        {'Error': {'Code': 'MessageRejected', 'Message': 'nia@example.com is not verified'}}, 'SendEmail')
+
+
+@pytest.mark.parametrize(('env', 'fails', 'notified'), [
+    ({}, False, False),
+    (MAIL_ON, False, True),
+    (MAIL_ON, True, False),
+], ids=['flag-off', 'flag-on', 'send-failure'])
+def test_no_log_line_holds_the_address(world, lambda_context, capsys, caplog, env, fails, notified):
+    if fails:
+        _send_fails(world)
+    # The Lambda's level (LOG_LEVEL INFO, lib/stacks/api-workspaces-lambda.ts). At DEBUG, botocore's own wire log
+    # (off in Lambda) quotes every request, the membership's transaction included.
+    caplog.set_level('INFO')
+    with patch.dict('os.environ', env):
+        status, body = _call(world, lambda_context, 'POST', MEMBERS, body=NIA)
+    assert (status, body['member']['notified']) == (201, notified)
+    captured = capsys.readouterr()
+    logs = captured.out + captured.err + caplog.text
+    # The capture sees the route's logs (the notice's own line names its outcome), and none holds the address.
+    assert 'Workspace member notice' in logs
+    assert 'nia@example.com' not in logs
+    assert 'sub-nia' not in logs
+    # Nor a hash of the sub (an unsalted one is undone by a list of subs).
+    assert hashlib.sha256(b'sub-nia').hexdigest()[:16] not in logs
+    assert 'sha256' not in logs
+
+
+@pytest.mark.usefixtures('mail_on')
+def test_a_refused_add_sends_nothing(world, lambda_context):
+    # Already a member (409), and a non-member's add (the workspace 404).
+    assert _call(world, lambda_context, 'POST', MEMBERS, body={'email': 'ada@example.com', 'role': 'viewer'})[0] == 409
+    assert _call(world, lambda_context, 'POST', MEMBERS, claims=NOR, body=NIA)[0] == 404
+    world.ses.send_email.assert_not_called()
 
 
 # ── PUT: change a role ───────────────────────────────────────────────────────

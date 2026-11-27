@@ -66,7 +66,10 @@ export function useMemberActions(selfSub: string | undefined) {
     try {
       const member = await writes.add.mutateAsync({ email, role })
       const values = { email: member.email, role: roleName(member.role) }
-      showDone(member.account === 'created' ? t('workspaces.members.addedCreated', values) : t('workspaces.members.addedExisting', values))
+      // A new account got Cognito's invitation; an existing one our notice, or nothing (the admin tells them).
+      if (member.account === 'created') showDone(t('workspaces.members.addedCreated', values))
+      else if (member.notified) showDone(t('workspaces.members.addedNotified', values))
+      else showDone(t('workspaces.members.addedExisting', values))
       return member
     } catch (cause: unknown) {
       setError(cause)

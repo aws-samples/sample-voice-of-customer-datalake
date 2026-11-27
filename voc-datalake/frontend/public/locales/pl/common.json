@@ -187,6 +187,7 @@
       "add": "Dodaj członka",
       "emailInvalid": "Wpisz poprawny adres e-mail, na przykład imie@example.com.",
       "addedExisting": "{{email}} jest teraz członkiem ({{role}}). Nie wysłano żadnego e-maila: daj tej osobie znać.",
+      "addedNotified": "{{email}} jest teraz członkiem ({{role}}). Wysłaliśmy tej osobie e-mail z linkiem do obszaru roboczego.",
       "addedCreated": "Utworzono konto dla {{email}} i dodano je ({{role}}). Ta osoba dostanie e-mail z tymczasowym hasłem.",
       "listTitle": "Osoby w tym obszarze roboczym",
       "loading": "Wczytywanie członków…",

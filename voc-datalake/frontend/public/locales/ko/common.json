@@ -194,6 +194,7 @@
       "add": "구성원 추가",
       "emailInvalid": "name@example.com 같은 올바른 이메일 주소를 입력하세요.",
       "addedExisting": "{{email}}이(가) 구성원이 되었습니다({{role}}). 이메일은 전송되지 않았으니 직접 알려 주세요.",
+      "addedNotified": "{{email}}이(가) 구성원이 되었습니다({{role}}). 워크스페이스 링크를 이메일로 보냈습니다.",
       "addedCreated": "{{email}} 계정을 만들고 추가했습니다({{role}}). 임시 비밀번호가 담긴 이메일이 전송됩니다.",
       "listTitle": "이 워크스페이스의 사람들",
       "loading": "구성원을 불러오는 중…",
