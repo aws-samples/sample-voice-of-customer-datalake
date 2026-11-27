@@ -27,6 +27,11 @@ Python dependency updates from Dependabot (#571, #565, #564), landed together wi
 - `pydantic` 2.14.2 → 2.14.3 (the ingestion-deps and processing-deps layers).
 - `ruff` 0.17.3 → 0.17.5, and the `boto3` / `boto3-stubs` floors 1.43.124 → 1.43.126 (`requirements-dev.txt`).
 
+### Upgrade notes
+
+- The two layers' new pins are built by the next `cdk deploy` (layers are bundled at synth); a local venv takes them
+  with `pip install -r voc-datalake/requirements-dev.txt`. Nothing else to do.
+
 ## [7.05.00] - 2026-11-25
 
 **The Documents Library**: upload a market report, interview transcripts or a deck once, tag it, and mention it in
