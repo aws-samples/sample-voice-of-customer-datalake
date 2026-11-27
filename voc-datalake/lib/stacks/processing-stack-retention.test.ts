@@ -5,9 +5,12 @@
  * a delete on aggregates outside the test responses' own partitions) fails here.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { IgnoreStrategy } from 'aws-cdk-lib';
 import type { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
+import { RETENTION_ENGINEERING_FILES, RETENTION_OWN_EXCLUDES } from './retention-worker';
+import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { itemAt } from '../test-support/guards';
 import {
@@ -31,6 +34,22 @@ const ManagedPolicySchema = z.object({
 
 let template: Template;
 beforeAll(() => { template = synthProcessingTemplate({ withIndexes: true }); });
+
+/** The retention worker's customer-managed policies, by logical id. */
+const retentionManaged = (synthesized: Template) => Object.entries(synthesized.findResources('AWS::IAM::ManagedPolicy'))
+  .filter(([id]) => id.startsWith('RetentionWorker'));
+/** The actions a managed policy allows. */
+const allowedIn = (resource: unknown) => ManagedPolicySchema.parse(resource).Properties.PolicyDocument.Statement
+  .filter((statement) => statement.Effect === 'Allow').flatMap((statement) => [statement.Action].flat());
+/** A policy document's size as IAM counts it (no whitespace), each ARN token as a resolved ARN of 90 characters (a
+ *  table's is about 70, a user pool's about 80). */
+const resolvedSize = (document: unknown): number => JSON.stringify(document, (_key, value: unknown) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).some((key) => key.startsWith('Fn::') || key === 'Ref') ? 'a'.repeat(90) : value)
+  .replace(/\s/g, '').length;
+/** Any overflow policy CDK split off the role's own (none may exist: it would move statements of its choosing). */
+const overflowPolicies = (synthesized: Template) => Object.keys(synthesized.findResources('AWS::IAM::ManagedPolicy'))
+  .filter((id) => id.startsWith('RetentionWorkerRetentionRoleOverflow'));
 
 const worker = () => findWorkerFunction(template, 'voc-retention-');
 
@@ -201,17 +220,36 @@ describe('voc-retention worker', () => {
       'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#participant'] } }));
   });
 
-  it('keeps every delete and put in its own inline policy; the walks\' managed policy reads and updates only (7.72.00)', () => {
-    const managed = Object.entries(template.findResources('AWS::IAM::ManagedPolicy'))
-      .filter(([id]) => id.startsWith('RetentionWorker'));
-    // One policy of its own, never a CDK overflow (which would move the role's last statements, deletes included).
-    expect(managed.map(([id]) => id.replace(/[0-9A-F]{8}$/, ''))).toStrictEqual(['RetentionWorkerRetentionWalksPolicy']);
-    const allowed = managed.flatMap(([, resource]) => ManagedPolicySchema.parse(resource).Properties.PolicyDocument.Statement)
-      .filter((statement) => statement.Effect === 'Allow').flatMap((statement) => [statement.Action].flat());
+  it('keeps every delete and put in its own inline policy; the walks\' managed policy reads and updates only (7.72.00; the engineering build: its own engineering test below)', () => {
+    const managed = retentionManaged(template);
+    // Policies of its own (7.84.00: the reads policy too), never a CDK overflow (which would move the role's last
+    // statements, deletes included).
+    expect(managed.map(([id]) => id.replace(/[0-9A-F]{8}$/, '')).sort(byCodeUnit)).toStrictEqual([
+      'RetentionWorkerRetentionReadsPolicy', 'RetentionWorkerRetentionWalksPolicy']);
+    const allowed = managed.flatMap(([, resource]) => allowedIn(resource));
     expect([...new Set(allowed)].sort(byCodeUnit)).toStrictEqual(['dynamodb:ConditionCheckItem', 'dynamodb:GetItem',
       'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem', 's3:GetObject']);
-    expect(Object.keys(template.findResources('AWS::IAM::ManagedPolicy'))
-      .filter((id) => id.startsWith('RetentionWorkerRetentionRoleOverflow'))).toStrictEqual([]);
+    expect(overflowPolicies(template)).toStrictEqual([]);
+  });
+
+  it('holds the boards\' and memberships\' reads and updates in a reads policy of its own, attached to the role alone (7.84.00)', () => {
+    const [, reads] = retentionManaged(template).find(([id]) => id.startsWith('RetentionWorkerRetentionReadsPolicy')) ?? [];
+    // Reads and the de-identifying updates only (the audit-row guard's own Deny aside).
+    expect([...new Set(allowedIn(reads))].sort(byCodeUnit)).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query',
+      'dynamodb:Scan', 'dynamodb:UpdateItem']);
+    expect(JSON.stringify(reads)).toContain(`"Roles":[{"Ref":"${worker().Role['Fn::GetAtt'][0]}"}]`);
+    const denies = IamPolicySchema.parse(reads).Properties.PolicyDocument.Statement
+      .filter((statement) => statement.Effect === 'Deny');
+    const tablesOf = (sid: string) => denies.filter((statement) => (statement.Sid ?? '').startsWith(sid))
+      .map((statement) => JSON.stringify(statement.Resource));
+    // The audit-row guard: the boards and the memberships it updates get the full Deny (no audit row is the worker's
+    // there); in voc-participants it is named a writer of the role's two partitions (lib/utils/audit-row-guard.ts), so
+    // its Denies there are the change Deny and the other-partition one, never a Deny of the role's own puts
+    // (retention-policy-evaluation.test.ts evaluates them together).
+    expect(tablesOf('DenyAuditRowWritesByNonWriters').join()).not.toContain('Participants');
+    expect(tablesOf('DenyAuditRowWritesByNonWriters').join()).toContain('FeatureRequests');
+    expect(tablesOf('DenyAuditRowChanges').join()).toContain('Participants');
+    expect(tablesOf('DenyAuditRowWritesOutsideOwnPartition').join()).toContain('Participants');
   });
 
   it('scans projects on the table only, for the attributes the backfill\'s Scan projects (7.48.00)', () => {
@@ -341,6 +379,25 @@ describe('voc-retention worker', () => {
     expect(offenders).toStrictEqual([]);
   });
 
+  it('is handed no engineering table or user pool, and holds no grant there, without the engineering agents', () => {
+    const variables = worker().Environment.Variables;
+    for (const name of ['ENGINEERING_TABLE', 'AGENTS_TABLE', 'USER_POOL_ID']) expect(variables).not.toHaveProperty(name);
+    expect(statements().filter((s) => s.resource.includes('Engineering') || s.actions.some((a) => a.startsWith('cognito-idp:'))))
+      .toStrictEqual([]);
+  });
+
+  it('bundles the engineering memory\'s erasure and nothing else of the engineering tree (7.84.00)', () => {
+    const excludes = [...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, ...RETENTION_OWN_EXCLUDES];
+    const ignored = (path: string) => IgnoreStrategy.git('/root', excludes).ignores(`/root/${path}`);
+    for (const file of RETENTION_ENGINEERING_FILES) expect(ignored(file)).toBe(false);
+    for (const kept of ['jobs/retention/handler.py', 'jobs/__init__.py', 'shared/aws.py']) expect(ignored(kept)).toBe(false);
+    for (const out of ['engineering/agent_memory/store.py', 'engineering/agent_memory/model.py',
+      'engineering/runtime/runs.py', 'engineering/connectors/identity.py', 'jobs/workspace_delete/handler.py',
+      'api/settings_handler.py', 'agents/heartbeat/issues.py', 'engineering/agent_memory/test/test_store.py']) {
+      expect(ignored(out)).toBe(true);
+    }
+  });
+
   it('runs daily in retention mode', () => {
     const rules = Object.entries(template.findResources('AWS::Events::Rule'))
       .filter(([id]) => id.startsWith('RetentionWorkerRetentionSchedule'))
@@ -348,5 +405,118 @@ describe('voc-retention worker', () => {
     expect(rules).toHaveLength(1);
     expect(itemAt(rules, 0).ScheduleExpression).toBe('cron(15 4 * * ? *)');
     expect(JSON.parse(itemAt(itemAt(rules, 0).Targets, 0).Input ?? '{}')).toStrictEqual({ mode: 'retention' });
+  });
+});
+
+describe('voc-retention with -c engineeringAgents=true (7.84.00, projects 3g3-b)', () => {
+  let engineering: Template;
+  beforeAll(() => {
+    engineering = synthProcessingTemplate({ withIndexes: true, context: { engineeringAgents: true } });
+  });
+  const engineeringWorker = () => findWorkerFunction(engineering, 'voc-retention-');
+  const engineeringStatements = () => roleStatements(engineering, engineeringWorker().Role['Fn::GetAtt'][0]);
+  const on = (table: string) => engineeringStatements().filter((s) => s.effect === 'Allow' && s.resource.includes(table)
+    && s.actions.some((a) => a.startsWith('dynamodb:')));
+  const keys = (partitions: string[]) => ({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } });
+  const noReturn = { StringEqualsIfExists: { 'dynamodb:ReturnValues': ['NONE'] } };
+  const specific = { StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' } };
+
+  it('is handed voc-engineering, voc-agents and the user pool', () => {
+    expect(Object.keys(engineeringWorker().Environment.Variables)).toStrictEqual(expect.arrayContaining([
+      'ENGINEERING_TABLE', 'AGENTS_TABLE', 'USER_POOL_ID']));
+  });
+
+  it('reaches voc-agents\' issue claims only: their Query and an update of feedback_id and the mark', () => {
+    expect(on('Agents').map((s) => [...s.actions].sort(byCodeUnit))).toStrictEqual([['dynamodb:Query'],
+      ['dynamodb:UpdateItem']]);
+    const json = JSON.stringify(engineering.toJSON());
+    const attributes = { 'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'feedback_id',
+      'engineering_run_id', 'erased_evidence'] } };
+    expect(json).toContain(JSON.stringify({ ...keys(['ISSUE_RUN#default']), ...attributes, ...specific }));
+    expect(json).toContain(JSON.stringify({ ...keys(['ISSUE_RUN#default']), ...attributes, ...noReturn }));
+  });
+
+  it('reads the engineering runs by their list and their META\'s feedback, and updates only that and the mark', () => {
+    const json = JSON.stringify(engineering.toJSON());
+    const attributes = { 'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'feedback', 'erased_evidence'] } };
+    expect(json).toContain(JSON.stringify({ ...keys(['WS#default#RUNLIST#*', 'WS#default#RUN#*']), ...attributes, ...specific }));
+    expect(json).toContain(JSON.stringify({ ...keys(['WS#default#RUN#*']), ...attributes, ...noReturn }));
+  });
+
+  it('erases the agents\' memory in its own partitions only: Query, the person\'s attributes, puts and deletes', () => {
+    const byStatement = (a: unknown, b: unknown) => byCodeUnit(JSON.stringify(a), JSON.stringify(b));
+    expect(on('Engineering').filter((s) => !s.resource.includes('Agents')).map((s) => [...s.actions].sort(byCodeUnit))
+      .sort(byStatement)).toStrictEqual([['dynamodb:Query'], ['dynamodb:Query'], ['dynamodb:UpdateItem'],
+      ['dynamodb:UpdateItem'], ['dynamodb:PutItem'], ['dynamodb:PutItem'], ['dynamodb:DeleteItem']].sort(byStatement));
+  });
+
+  it('pins the memory erasure\'s statements to its partitions and attributes', () => {
+    const json = JSON.stringify(engineering.toJSON());
+    expect(json).toContain(JSON.stringify(keys(['WS#default#AMEM#*'])));
+    expect(json).toContain(JSON.stringify({ ...keys(['WS#default#AMEM#*']), 'ForAllValues:StringEquals': {
+      'dynamodb:Attributes': ['pk', 'sk', 'author', 'prov_person', 'approved_by', 'by'] }, ...noReturn }));
+    expect(json).toContain(JSON.stringify(keys(['AUDIT#tombstone#agent_memory_person', 'AUDIT#delete'])));
+    // A re-keyed confirmation row is the memory partitions' only put: held to its attributes (7.84.00, S6).
+    expect(json).toContain(JSON.stringify({ ...keys(['WS#default#AMEM#*']), 'ForAllValues:StringEquals': {
+      'dynamodb:Attributes': ['pk', 'sk', 'source', 'comment_url', 'at'] } }));
+  });
+
+  it('looks the erased address up in the user pool with one AdminGetUser, never a listing', () => {
+    const cognito = engineeringStatements().filter((s) => s.actions.some((a) => a.startsWith('cognito-idp:')));
+    expect(cognito.map((s) => s.actions)).toStrictEqual([['cognito-idp:AdminGetUser']]);
+    expect(cognito.every((s) => s.resource.includes('UserPool'))).toBe(true);
+  });
+
+  it('keeps every delete and put in the role\'s own inline policy, the managed ones reading and updating only', () => {
+    const managed = retentionManaged(engineering);
+    // What the role's own policy would hold, the part CDK split off included (none may be: 10,240 characters).
+    const inline = [...Object.entries(engineering.findResources('AWS::IAM::Policy')),
+      ...Object.entries(engineering.findResources('AWS::IAM::ManagedPolicy'))]
+      .filter(([id]) => /^RetentionWorkerRetentionRole(DefaultPolicy|OverflowPolicy)/.test(id))
+      .reduce((total, [, resource]) => total + resolvedSize(resource.Properties.PolicyDocument), 0);
+    expect(managed.map(([id]) => id.replace(/[0-9A-F]{8}$/, '')).sort(byCodeUnit),
+      `the role's own policy needs ${inline} of 10240 characters`).toStrictEqual([
+      'RetentionWorkerRetentionEngineeringPolicy', 'RetentionWorkerRetentionReadsPolicy',
+      'RetentionWorkerRetentionWalksPolicy']);
+    expect(managed.flatMap(([, resource]) => allowedIn(resource)).filter((a) => /Delete|Put|BatchWrite/.test(a)))
+      .toStrictEqual([]);
+    const policy = (name: string) => allowedIn(managed.find(([id]) => id.startsWith(name))?.[1]);
+    expect([...new Set(policy('RetentionWorkerRetentionEngineeringPolicy'))].sort(byCodeUnit)).toStrictEqual([
+      'cognito-idp:AdminGetUser', 'dynamodb:Query', 'dynamodb:UpdateItem']);
+    const [, engineeringPolicy] = managed.find(([id]) => id.startsWith('RetentionWorkerRetentionEngineeringPolicy')) ?? [];
+    expect(JSON.stringify(engineeringPolicy)).toContain(`"Roles":[{"Ref":"${engineeringWorker().Role['Fn::GetAtt'][0]}"}]`);
+    expect(overflowPolicies(engineering)).toStrictEqual([]);
+  });
+
+  it('reports the role\'s inline policy\'s size with the engineering agents, a margin under CDK\'s split', () => {
+    const [, inline] = Object.entries(engineering.findResources('AWS::IAM::Policy'))
+      .find(([id]) => id.startsWith('RetentionWorkerRetentionRoleDefaultPolicy')) ?? [];
+    const size = resolvedSize(inline?.Properties.PolicyDocument);
+    // The size as IAM counts it, ARN tokens at 90 characters: 7,958 since the reads policy (7.84.00). At 9,776 (the
+    // slice's first layout) CDK split it, so the policy keeps at least 1,500 characters below that.
+    expect(size, `the role's inline policy with the engineering agents: ${size} of 10240 characters`)
+      .toBeLessThan(9776 - 1500);
+    expect(overflowPolicies(engineering)).toStrictEqual([]);
+  });
+
+  it('keeps the role\'s inline policy under its size quota (10,240 characters once its ARNs resolve)', () => {
+    for (const [build, synthesized] of [['default', template], ['engineering', engineering]] as const) {
+      // The role's own policy and any part CDK split off it: what IAM would count as its inline policy.
+      const size = [...Object.entries(synthesized.findResources('AWS::IAM::Policy')),
+        ...Object.entries(synthesized.findResources('AWS::IAM::ManagedPolicy'))]
+        .filter(([id]) => /^RetentionWorkerRetentionRole(DefaultPolicy|OverflowPolicy)/.test(id))
+        .reduce((total, [, resource]) => total + resolvedSize(resource.Properties.PolicyDocument), 0);
+      expect(size, `${build}: ${size} of 10240`).toBeLessThan(10240);
+    }
+  });
+
+  it('keeps each managed policy under its size quota (6,144 characters once its ARNs resolve)', () => {
+    for (const synthesized of [template, engineering]) {
+      for (const [id, resource] of retentionManaged(synthesized)) {
+        const size = resolvedSize(resource.Properties.PolicyDocument);
+        console.info(`${id}: ${size} of 6144`);
+        expect(size, id).toBeLessThan(6144);
+      }
+    }
   });
 });

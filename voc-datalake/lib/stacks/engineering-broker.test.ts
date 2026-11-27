@@ -14,6 +14,7 @@ import {
   processingSynths,
 } from '../test-support/engineering-template';
 import { byCodeUnit } from '../utils/compare';
+import { isAuditRowGuardStatement } from '../test-support/iam-statements';
 
 const template = processingSynths({ off: {}, on: { engineeringAgents: true }, onString: { engineeringAgents: 'true' } });
 
@@ -303,6 +304,9 @@ function brokerRoleId(synthesized: Template): string {
 }
 
 /** Every statement of the policies attached to the broker's role. */
+/** The broker's statements but the audit-row guard's Denies (7.84.00: voc-engineering is guarded, so every writer of it
+ *  carries one; lib/utils/audit-row-guard.test.ts pins them). */
 function brokerStatements(synthesized: Template): ReturnType<typeof functionStatements> {
-  return functionStatements(synthesized, brokerId(synthesized));
+  return functionStatements(synthesized, brokerId(synthesized))
+    .filter((statement) => !isAuditRowGuardStatement({ Sid: typeof statement.Sid === 'string' ? statement.Sid : undefined }));
 }

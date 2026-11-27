@@ -1256,9 +1256,10 @@ def _value(typed: Mapping[str, Any]) -> str:
 
 
 @contextmanager
-def recorded_calls(aws) -> Generator[list[tuple[str, str, list[str]]]]:
+def recorded_calls(aws, *clients: Any) -> Generator[list[tuple[str, str, list[str]]]]:
     """Every call the job sends, as ``(IAM action, table, partition keys)``, from the wire request (the handler's
-    resource shares this client): a transaction's and a batch's entries each as their own action."""
+    resource shares this client; ``clients``: any other the job sends through, 7.84.00's low-level one): a
+    transaction's and a batch's entries each as their own action."""
     seen: list[tuple[str, str, list[str]]] = []
 
     def record(model: Any, params: dict[str, Any], **_kwargs: Any) -> None:
@@ -1291,12 +1292,14 @@ def recorded_calls(aws) -> Generator[list[tuple[str, str, list[str]]]]:
         else:
             seen.append((operation, str(body.get('TableName')), []))
 
-    events = aws['aggregates'].meta.client.meta.events
-    events.register('before-call.dynamodb', record)
+    all_events = [client.meta.events for client in (aws['aggregates'].meta.client, *clients)]
+    for events in all_events:
+        events.register('before-call.dynamodb', record)
     try:
         yield seen
     finally:
-        events.unregister('before-call.dynamodb', record)
+        for events in all_events:
+            events.unregister('before-call.dynamodb', record)
 
 
 def _query_partition(body: Mapping[str, Any]) -> str:

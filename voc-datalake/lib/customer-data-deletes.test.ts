@@ -16,10 +16,14 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { IamAnyPolicySchema, TemplateResourcesSchema } from './test-support/iam-statements';
+import { synthProcessingTemplate } from './test-support/processing-stack-fixture';
 import { cleanupAssemblyDirs, HARD_DELETE_BUILD, synthApp } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
 
 const RETENTION_ROLE = 'VocProcessingStack/RetentionWorkerRetentionRole';
+/** voc-retention's reads policy (7.84.00): the boards' and memberships' reads and de-identifying updates, attached to
+ *  its role alone; never a delete or a put. */
+const RETENTION_READS = 'VocProcessingStack/RetentionWorkerRetentionReadsPolicy';
 /** A workspace's hard delete (decision 17, docs/multi-workspace.md "Export and delete"; lib/stacks/workspace-delete-worker.ts):
  * the data controller's own request, with its stated basis, the slug typed as approval, audited, one tombstone per item
  * and memory first. Every key one workspace id's (`ws_` and 26 `?`), BatchWriteItem only on its own partitions. */
@@ -228,7 +232,8 @@ const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   // to each domain API's role that resolves (lib/utils/workspace-resolution-grants.ts): the settings API, and since
   // 7.04.00 the metrics API, the feedback edits and the integrations and scrapers APIs.
   'VocApiStack/WorkspaceResolutionPolicy': ['AUDIT#WS#*'],
-  [RETENTION_ROLE]: ['WS#*'],
+  // voc-retention's de-identification of a membership row (email and name only), in its reads policy since 7.84.00.
+  [RETENTION_READS]: ['WS#*'],
   // The feedback forms (7.06.00): a workspace form's lookup row (put on create, deleted with the form); its entry and
   // form_deleted audit rows go through the workspace-resolution policy above.
   'VocApiStack/FeedbackFormLambdaRole': ['FORM#*'],
@@ -331,24 +336,27 @@ function roleOf(stack: string, policyId: string): string {
 const synthed = synthApp({}, undefined, HARD_DELETE_BUILD);
 afterAll(cleanupAssemblyDirs);
 
-function allowGrants(): Grant[] {
-  return synthed.stackNames.flatMap((stack) => {
-    const { Resources } = TemplateResourcesSchema.parse(synthed.template(stack));
-    return Object.entries(Resources).flatMap(([id, resource]) => {
-      const policy = IamAnyPolicySchema.safeParse(resource);
-      if (!policy.success) return [];
-      // A managed policy is judged under its own id: no table or bucket delete may live in one.
-      return policy.data.Properties.PolicyDocument.Statement
-        .filter((statement) => (statement.Effect ?? 'Allow') === 'Allow')
-        .map((statement) => ({
-          role: roleOf(stack, id),
-          managed: policy.data.Type === 'AWS::IAM::ManagedPolicy',
-          actions: [statement.Action].flat(),
-          resource: JSON.stringify(statement.Resource),
-          condition: statement.Condition,
-        }));
-    });
+/** Every Allow statement of one stack's template, by the role (or managed policy) that holds it. */
+function templateGrants(stack: string, template: unknown): Grant[] {
+  const { Resources } = TemplateResourcesSchema.parse(template);
+  return Object.entries(Resources).flatMap(([id, resource]) => {
+    const policy = IamAnyPolicySchema.safeParse(resource);
+    if (!policy.success) return [];
+    // A managed policy is judged under its own id: no table or bucket delete may live in one.
+    return policy.data.Properties.PolicyDocument.Statement
+      .filter((statement) => (statement.Effect ?? 'Allow') === 'Allow')
+      .map((statement) => ({
+        role: roleOf(stack, id),
+        managed: policy.data.Type === 'AWS::IAM::ManagedPolicy',
+        actions: [statement.Action].flat(),
+        resource: JSON.stringify(statement.Resource),
+        condition: statement.Condition,
+      }));
   });
+}
+
+function allowGrants(): Grant[] {
+  return synthed.stackNames.flatMap((stack) => templateGrants(stack, synthed.template(stack)));
 }
 
 // Parsed once: every case filters the same statements.
@@ -445,7 +453,8 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   });
 
   it('voc-retention reaches the feedback boards to de-identify and re-key (reads, UpdateItem, Put/Delete under FR#*)', () => {
-    const onBoards = grants.filter((g) => g.role === RETENTION_ROLE).filter(onTable('FeatureRequestsTable'));
+    const onBoards = grants.filter((g) => g.role === RETENTION_ROLE || g.role === RETENTION_READS)
+      .filter(onTable('FeatureRequestsTable'));
     expect([...new Set(onBoards.flatMap((g) => g.actions))].sort(byCodeUnit)).toStrictEqual([
       'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:Scan',
       'dynamodb:UpdateItem',
@@ -453,7 +462,8 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   });
 
   it('voc-retention reaches voc-workspaces to de-identify only (Scan, UpdateItem of email and name under WS#*)', () => {
-    const onWorkspaces = grants.filter((g) => g.role === RETENTION_ROLE).filter(onTable('WorkspacesTable'));
+    const onWorkspaces = grants.filter((g) => g.role === RETENTION_ROLE || g.role === RETENTION_READS)
+      .filter(onTable('WorkspacesTable'));
     // GetItem: a META's status only (grantWorkspaceStatusRead), before an erasure takes a workspace's export lock.
     // Query: the WORKSPACES listing only (7.43.00: an erasure by email walks every listed workspace's projects).
     expect([...new Set(onWorkspaces.flatMap((g) => g.actions))].sort(byCodeUnit))
@@ -469,7 +479,7 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
 
   it('voc-retention reaches voc-participants only through the participant erasure\'s calls, each on its partitions', () => {
     const walks = 'VocProcessingStack/RetentionWorkerRetentionWalksPolicy';
-    const onParticipants = grants.filter((g) => g.role === RETENTION_ROLE || g.role === walks)
+    const onParticipants = grants.filter((g) => g.role === RETENTION_ROLE || g.role === walks || g.role === RETENTION_READS)
       .filter(onTable('ParticipantsTable'));
     // 7.72.00 (projects 3g2): no Scan, every statement pinned by LeadingKeys (lib/stacks/retention-worker.ts); the one
     // index read is the people index's Query, in the walks' policy, which holds no write.
@@ -500,6 +510,37 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     const inManaged = grants.filter((g) => g.managed)
       .filter((g) => g.actions.some((a) => DYNAMO_DELETE.test(a) || S3_DELETE.test(a)))
       .filter((g) => g.resource.includes('Table') || g.resource.includes('RawDataBucket'));
+    expect(inManaged.map((g) => g.role)).toStrictEqual([]);
+  });
+});
+
+// With -c engineeringAgents=true (7.84.00, projects 3g3-b): an erasure by email erases a person from the engineering
+// agents' memory (lambda/engineering/agent_memory/erasure.py), a legal obligation (D5). The default synth above builds
+// no engineering table, so this case synthesizes the processing stack with the flag on and pins voc-retention's
+// deletes there: DeleteItem in the memory's partitions only (`WS#default#AMEM#*`: the person's own rows and a
+// confirmation row re-keyed elsewhere), in its own engineering policy attached to the retention role alone; none in
+// voc-agents (the issue claims are updated, never deleted) and none on an audit row.
+describe('voc-retention\'s deletes with the engineering agents (7.84.00)', () => {
+  const template = synthProcessingTemplate({ withIndexes: true, context: { engineeringAgents: true } }).toJSON();
+  const retentionGrants = templateGrants('TestProcessing', template)
+    .filter((grant) => grant.role.startsWith('TestProcessing/RetentionWorker'));
+  const deletesOn = (table: string) => retentionGrants.filter(onTable(table))
+    .filter((grant) => grant.actions.some((action) => DYNAMO_DELETE.test(action)));
+
+  it('deletes in voc-engineering only the agents\' memory rows, in the role\'s own inline policy', () => {
+    expect(deletesOn('Engineering').map((grant) => [grant.role, grant.managed, grant.actions, scopeOf(grant)]))
+      .toStrictEqual([['TestProcessing/RetentionWorkerRetentionRole', false, ['dynamodb:DeleteItem'],
+        ['WS#default#AMEM#*']]]);
+  });
+
+  it('deletes nothing in voc-agents', () => {
+    expect(deletesOn('Agents')).toStrictEqual([]);
+  });
+
+  it('no managed policy of voc-retention carries a table or raw-bucket delete with the engineering agents either', () => {
+    const inManaged = retentionGrants.filter((g) => g.managed)
+      .filter((g) => g.actions.some((a) => DYNAMO_DELETE.test(a) || S3_DELETE.test(a)))
+      .filter((g) => g.resource.includes('Table') || g.resource.includes('RawData'));
     expect(inManaged.map((g) => g.role)).toStrictEqual([]);
   });
 });

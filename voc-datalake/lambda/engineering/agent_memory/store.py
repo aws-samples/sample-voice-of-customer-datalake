@@ -42,9 +42,11 @@ An agent is always a ``RunContext``: its connection, run, role and the people on
   proposed for the knowledge pack (``PackProposal``, returned, never written).
 - **Recall** (``recall_for_task``): the run's connection's repository memories, its role's lessons there and the
   memories of the people on its task that apply to that connection; approved, live, bounded and fenced.
-- **Erase a person** (an administrator, for a legal obligation: ``erase_person_memories``): the tombstone and the
-  delete record first, then every row naming them in other scopes de-identified (one random ``erased-…`` id for
-  the whole erasure), then every row of their partition deleted. Nothing else is ever deleted.
+- **Erase a person** (an administrator, for a legal obligation: ``erase_person_memories``; since 7.84.00 also the
+  platform's erasure by email, voc-retention's ``agent_memory`` phase; both through erasure.py): the tombstone first;
+  then, only when any row of theirs is found, the delete record, every row naming them in other scopes de-identified
+  (one random ``erased-…`` id for the whole erasure) and every row of their partition deleted. Nothing else is ever
+  deleted.
 
 Every read is bounded: a scope holds at most ``MAX_PER_SCOPE`` live and ``MAX_STORED_PER_SCOPE`` memories in all
 per connection (a person's: per person and connection), and a memory at most ``MAX_CONFIRMATIONS`` + 1
@@ -61,6 +63,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from engineering.agent_memory.erasure import TOMBSTONE_PK, Erasure, erase_person_rows
 from engineering.agent_memory.model import (
     LEARNED_CONFIDENCE_MIN,
     PACK_CONFIRMATIONS,
@@ -86,10 +89,9 @@ from engineering.bus.schema import WS
 from engineering.knowledge.notes import CitationRules
 from engineering.knowledge.store import Actor
 from engineering.rows import create_only as _put
-from engineering.rows import get_row, partition_rows, transact_or_refuse, whole_partition
+from engineering.rows import get_row, partition_rows, transact_or_refuse
 from engineering.rows import number_value as _number
 from engineering.rows import text_value as _text
-from shared.delete_audit import AUDIT_PK
 from shared.digests import sha256_hex
 from shared.ids import is_key_collision
 from shared.legal_basis import required_legal_basis
@@ -104,10 +106,6 @@ MAX_PER_SCOPE: Final = 200
 MAX_STORED_PER_SCOPE: Final = 500
 #: Distinct sources a memory counts, beyond the one it was learned from; past it, it is confirmed enough.
 MAX_CONFIRMATIONS: Final = 20
-TOMBSTONE_PK: Final = 'AUDIT#tombstone#agent_memory_person'
-ERASED_KIND: Final = 'agent_memory_person'
-#: The attributes of a version, log or memory row that name a person.
-_PERSON_ATTRS: Final = ('author', 'prov_person', 'approved_by', 'by')
 
 
 class AgentMemoryNotFound(AgentMemoryError):
@@ -211,16 +209,6 @@ class Confirmation:
     #: False when this source had confirmed the memory already, or the memory counts no more sources.
     counted: bool
     proposal: PackProposal | None = None
-
-
-@dataclass(frozen=True)
-class Erasure:
-    """What an erasure did: the person's rows deleted, the rows elsewhere de-identified, and in how many
-    partitions."""
-
-    deleted: int
-    deidentified: int
-    partitions: int
 
 
 def _check_ws(ws: str) -> None:
@@ -639,59 +627,17 @@ class AgentMemoryStore:
 
     # ── erasure (D5) ─────────────────────────────────────────────────────────
     def erase_person_memories(self, ws: str, person: str, *, by: Actor, legal_basis: str) -> Erasure:
-        """Erase a person, for a legal obligation (an erasure request): the tombstone and the delete record are
-        written first (who, what, when, the legal basis; the person only as a hash), then every row naming them in
+        """Erase a person, for a legal obligation (an erasure request): the tombstone first, and the delete record
+        when any row of theirs is found (who, what, when, the legal basis; the person only as a hash), then every row naming them in
         another scope is de-identified (one random ``erased-…`` id for this erasure), then every row of their own
         partition is deleted. Re-running it after a failure finishes it."""
         if not (by.kind == 'person' and by.admin):
             raise AgentMemoryForbidden("only an administrator erases a person's memories")
         try:
-            basis = required_legal_basis(legal_basis)
+            required_legal_basis(legal_basis)
         except ValueError as exc:
             raise AgentMemoryError(str(exc)) from exc
-        own = Scope('person', person=person)
         _check_ws(ws)
-        rows = whole_partition(self.client, self.table, own.partition(ws))
-        partitions = sorted({_text(row.get('partition')) for row in rows if _text(row.get('sk')).startswith('REF#')})
-        at, hashed = self.now().isoformat(), sha256_hex(person)
-        actor = {'M': {'sub': {'S': by.id}, 'kind': {'S': 'admin'}}}
-        try:
-            self.client.put_item(TableName=self.table, ConditionExpression='attribute_not_exists(pk)', Item={
-                'pk': {'S': TOMBSTONE_PK}, 'sk': {'S': hashed}, 'legal_basis': {'S': basis}, 'actor': actor,
-                'deleted_at': {'S': at}})
-        except ClientError as exc:
-            if not is_key_collision(exc):
-                raise   # an erasure re-run keeps the first tombstone
-        self.client.put_item(TableName=self.table, ConditionExpression='attribute_not_exists(pk)', Item={
-            'pk': {'S': AUDIT_PK}, 'sk': {'S': f'{at}#{secrets.token_hex(16)}'}, 'kind': {'S': ERASED_KIND},
-            'target': {'M': {'ws': {'S': ws}, 'person_hash': {'S': hashed}, 'rows': {'S': str(len(rows))},
-                             'partitions': {'S': str(len(partitions))}}},
-            'actor': actor, 'reason': {'S': basis}, 'deleted_at': {'S': at}})
-        alias = f'erased-{secrets.token_hex(8)}'
-        deidentified = sum(self._deidentify(partition, person, alias) for partition in partitions)
-        for row in rows:
-            self.client.delete_item(TableName=self.table, Key={'pk': row['pk'], 'sk': row['sk']})
-        return Erasure(len(rows), deidentified, len(partitions))
-
-    def _deidentify(self, partition: str, person: str, alias: str) -> int:
-        """Every row of ``partition`` naming ``person`` names ``alias`` instead; their confirmation rows are
-        re-keyed (the key is a hash of the source). Returns how many rows changed."""
-        changed = 0
-        for item in whole_partition(self.client, self.table, partition):
-            if _text(item.get('source')) == f'person:{person}':
-                source = f'person:{alias}'
-                memory_id = _text(item.get('sk')).split('#')[1]
-                self.client.put_item(TableName=self.table, Item={
-                    **item, 'sk': {'S': f'CONF#{memory_id}#{sha256_hex(source)[:24]}'}, 'source': {'S': source}})
-                self.client.delete_item(TableName=self.table, Key={'pk': item['pk'], 'sk': item['sk']})
-                changed += 1
-                continue
-            named = [attr for attr in _PERSON_ATTRS if _text(item.get(attr)) == person]
-            if named:
-                self.client.update_item(
-                    TableName=self.table, Key={'pk': item['pk'], 'sk': item['sk']},
-                    UpdateExpression='SET ' + ', '.join(f'#a{i} = :alias' for i in range(len(named))),
-                    ExpressionAttributeNames={f'#a{i}': attr for i, attr in enumerate(named)},
-                    ExpressionAttributeValues={':alias': {'S': alias}})
-                changed += 1
-        return changed
+        # The erasure itself is erasure.py's (7.84.00), which voc-retention's erasure by email runs too.
+        return erase_person_rows(self.client, self.table, ws, person, actor={'sub': by.id, 'kind': 'admin'},
+                                 legal_basis=legal_basis, now=self.now())

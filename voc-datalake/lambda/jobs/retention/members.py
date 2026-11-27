@@ -32,7 +32,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-from jobs.retention import exports
+from jobs.retention import exports, workspaces
 from jobs.retention.boards import remove_fields
 from jobs.retention.copies import tombstone_record
 from jobs.retention.runs import email_without_source
@@ -40,7 +40,7 @@ from shared.retention import MEMBER_COUNTER
 from shared.timestamps import now_iso
 from shared.workspace_ids import is_workspace_id
 from shared.workspace_members import MEMBER_PREFIX as _MEMBER_SK_PREFIX
-from shared.ws_repo import WORKSPACE_FIELD, scope_from_message
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
 
 #: The tables key of voc-workspaces in ``Walk.tables``, and the tombstones' source.
 STORE_MEMBERS: Final = 'workspace_members'
@@ -102,6 +102,12 @@ def deidentify(table: Any, row: Mapping[str, Any]) -> bool:
     return remove_fields(table, row, MEMBER_PERSON_FIELDS)
 
 
+def _scope_of(row: Mapping[str, Any]) -> WorkspaceScope | None:
+    """The workspace a membership row is in (its ``WS#{ws}`` partition), None for a row that names no workspace id."""
+    ws = str(row['pk']).removeprefix(_WORKSPACE_PK_PREFIX)
+    return scope_from_message({WORKSPACE_FIELD: ws}) if is_workspace_id(ws) else None
+
+
 class MemberEraser:
     """De-identifies the matched membership rows of one page, counting into ``run``."""
 
@@ -114,13 +120,17 @@ class MemberEraser:
         """One tombstone per matched row, one PutItem each, before any row changes (copies.write_tombstones' rule)."""
         now = now_iso()
         for row in rows:
-            self._aggregates.put_item(Item=tombstone(self._run, row, now))
+            item = tombstone(self._run, row, now)
+            with workspaces.inside(_scope_of(row)):
+                self._aggregates.put_item(Item=item)
 
     def erase(self, row: Mapping[str, Any]) -> None:
         # The workspace's exports hold the member's email in members/: closed before the row changes, cleared by
         # the `exports` phase.
-        ws = str(row['pk']).removeprefix(_WORKSPACE_PK_PREFIX)
-        if is_workspace_id(ws):
-            exports.note_workspace(self._run, scope_from_message({WORKSPACE_FIELD: ws}), self._aggregates)
-        if deidentify(self._table, row):
-            self._run[MEMBER_COUNTER] = int(self._run.get(MEMBER_COUNTER) or 0) + 1
+        scope = _scope_of(row)
+        # Inside the membership's workspace (7.84.00): a line about its row is that workspace's.
+        with workspaces.inside(scope):
+            if scope is not None:
+                exports.note_workspace(self._run, scope, self._aggregates)
+            if deidentify(self._table, row):
+                self._run[MEMBER_COUNTER] = int(self._run.get(MEMBER_COUNTER) or 0) + 1

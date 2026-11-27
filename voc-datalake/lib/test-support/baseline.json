@@ -356,7 +356,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "75dea6a6890086b8b7a6867d915aeef6ade9f3895ef23bc1ba31a283d42a14d8",
+      "templateSha256": "d7b69b658f3b61638b8a5e7ad7757c15378a17b4099e102ce0d2016ba8e76d1f",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-adoption-rollup-schedule-<AWS::AccountId>-<AWS::Region>",

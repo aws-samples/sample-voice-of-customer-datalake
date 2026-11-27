@@ -163,6 +163,55 @@ def applies(run: Mapping[str, Any], tables: Mapping[str, Any]) -> bool:
     return email_without_source(run) and STORE_PARTICIPANTS in tables
 
 
+def erasure_actor(run: Mapping[str, Any]) -> dict[str, str]:
+    """Who erases: the admin who started the job (their sub), as the erasure job (``kind``, ``job_id``); the
+    participants' and (7.84.00) the agents' memory's tombstones name it."""
+    return {'sub': str(run.get('started_by_sub') or 'system'), 'kind': ACTOR_KIND,
+            'job_id': str(run.get('job_id') or run['run_id'])}
+
+
+def ttl_ahead(clock: Callable[[], datetime], ahead: timedelta) -> int:
+    """A saved row's ``ttl``: ``ahead`` of the walk's clock, in epoch seconds."""
+    return int((clock() + ahead).timestamp())
+
+
+# ── A saved row (the participants' here, and since 7.84.00 the agents' memory's, agent_memory.py) ──────────────────
+
+def add_saved(view: Any, key: Mapping[str, str], entries: Sequence[str], ttl: int) -> None:
+    """``entries`` added to the saved row's string set (``ADD``: two jobs of one address never drop each other's), its
+    ``ttl`` set."""
+    view.update_item(dict(key), UpdateExpression='ADD #people :people SET #at = :now, #ttl = :ttl',
+                     ExpressionAttributeNames={'#people': SAVED_PEOPLE, '#at': 'updated_at', '#ttl': 'ttl'},
+                     ExpressionAttributeValues={':people': set(entries), ':now': now_iso(), ':ttl': ttl})
+
+
+def take_off_saved(view: Any, key: Mapping[str, str], entry: str) -> bool:
+    """``entry`` taken off the saved row's set; False when the row is gone (the condition fails, nothing is
+    created)."""
+    try:
+        view.update_item(dict(key), UpdateExpression='DELETE #people :people',
+                         ConditionExpression='attribute_exists(pk)', ExpressionAttributeNames={'#people': SAVED_PEOPLE},
+                         ExpressionAttributeValues={':people': {entry}})
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            raise
+        return False
+    return True
+
+
+def expire_saved(view: Any, key: Mapping[str, str], ttl: int) -> None:
+    """An emptied saved row's ``ttl`` brought to ``ttl``; a row that names someone again keeps its own, a row that is
+    gone stays gone."""
+    try:
+        view.update_item(dict(key), UpdateExpression='SET #ttl = :ttl',
+                         ConditionExpression='attribute_exists(pk) AND attribute_not_exists(#people)',
+                         ExpressionAttributeNames={'#ttl': 'ttl', '#people': SAVED_PEOPLE},
+                         ExpressionAttributeValues={':ttl': ttl})
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            raise
+
+
 def guard_address(value: object) -> str | None:
     """The address as the guard holds it (``normalize_email``'s lower-cased form), or None when that rule refuses it
     (no participant can hold such an address)."""
@@ -292,9 +341,10 @@ class ParticipantEraser:
         found: list[str] = []
         carried: list[str] = []
         for scope in scopes:
-            found.extend(saved_entry(scope, person_id) for person_id in self._people(scope))
-            if scope is not None and workspaces.named(self._run) is None:
-                carried.extend(self._workspace_saved(scope))
+            with workspaces.inside(scope):  # (7.84.00: its lines are that workspace's)
+                found.extend(saved_entry(scope, person_id) for person_id in self._people(scope))
+                if scope is not None and workspaces.named(self._run) is None:
+                    carried.extend(self._workspace_saved(scope))
         resolved = sorted({*found, *carried})
         # Every one of them on the job's own row (a workspace's row's too: the end of the walk reads the job's row
         # only, so what the cap leaves out is still erased), each workspace's exports closed first.
@@ -346,8 +396,14 @@ class ParticipantEraser:
         """Erase one saved person in its scope (a workspace's exports closed first), then take it off the saved rows;
         False when it is refused, or when its guard's index row is left holding the address: it is saved again on the
         job's own row (its ``ttl`` pushed ``SAVED_FOR`` past this run) and counted. A person found gone has its tail
-        finished first (``finish_erasure``). Any other API error fails the job (``ParticipantNotErased``)."""
+        finished first (``finish_erasure``). Any other API error fails the job (``ParticipantNotErased``). Inside the
+        person's workspace (7.84.00: its lines are that workspace's)."""
         scope, person_id = parsed_entry(entry, only)
+        with workspaces.inside(scope):
+            return self._erase_in(scope, person_id, entry)
+
+    def _erase_in(self, scope: WorkspaceScope | None, person_id: str, entry: str) -> bool:
+        """``_erase`` of one parsed entry."""
         if scope is not None:
             exports.note_workspace(self._run, scope, self._aggregates)
         try:
@@ -399,9 +455,7 @@ class ParticipantEraser:
         return item is not None
 
     def _actor(self) -> dict[str, str]:
-        """Who erases: the admin who started the job (their sub), as the erasure job (``kind``, ``job_id``)."""
-        return {'sub': str(self._run.get('started_by_sub') or 'system'), 'kind': ACTOR_KIND,
-                'job_id': str(self._run.get('job_id') or self._run['run_id'])}
+        return erasure_actor(self._run)
 
     # ── The saved rows ────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -413,14 +467,11 @@ class ParticipantEraser:
         return {'pk': job_partition(scope), 'sk': f'{SAVED_PREFIX}{sha256_hex(str(self._address))}'}
 
     def _ttl(self, ahead: timedelta) -> int:
-        return int((self._clock() + ahead).timestamp())
+        return ttl_ahead(self._clock, ahead)
 
     def _save(self, scope: WorkspaceScope | None, entries: list[str]) -> None:
         """Add ``entries`` to ``scope``'s saved set, its ``ttl`` ``SAVED_FOR`` ahead."""
-        self._view(scope).update_item(
-            self._key(scope), UpdateExpression='ADD #people :people SET #at = :now, #ttl = :ttl',
-            ExpressionAttributeNames={'#people': SAVED_PEOPLE, '#at': 'updated_at', '#ttl': 'ttl'},
-            ExpressionAttributeValues={':people': set(entries), ':now': now_iso(), ':ttl': self._ttl(SAVED_FOR)})
+        add_saved(self._view(scope), self._key(scope), entries, self._ttl(SAVED_FOR))
 
     def _forget(self, entry: str) -> None:
         """Take ``entry`` off the job's saved row and, for a workspace's person, off that workspace's (a row that is
@@ -430,14 +481,7 @@ class ParticipantEraser:
         scopes = [job] if ws is None or (job is not None and job.ws == ws) else [
             job, scope_from_message({WORKSPACE_FIELD: ws})]
         for scope in scopes:
-            try:
-                self._view(scope).update_item(self._key(scope), UpdateExpression='DELETE #people :people',
-                                              ConditionExpression='attribute_exists(pk)',
-                                              ExpressionAttributeNames={'#people': SAVED_PEOPLE},
-                                              ExpressionAttributeValues={':people': {entry}})
-            except ClientError as error:
-                if not is_conditional_check_failure(error):
-                    raise
+            if not take_off_saved(self._view(scope), self._key(scope), entry):
                 continue
             if scope is not job:
                 # Another scope's row this run emptied (a workspace's): its ttl brought forward too.
@@ -462,12 +506,4 @@ class ParticipantEraser:
     def _expire(self, scope: WorkspaceScope | None) -> None:
         """``scope``'s emptied saved row gets its ``ttl`` ``EMPTIED_FOR`` ahead (removed by the table's TTL, usually
         within a few days after its ``ttl``); a row that names someone again meanwhile keeps the ``ttl`` its save set."""
-        try:
-            self._view(scope).update_item(
-                self._key(scope), UpdateExpression='SET #ttl = :ttl',
-                ConditionExpression='attribute_exists(pk) AND attribute_not_exists(#people)',
-                ExpressionAttributeNames={'#ttl': 'ttl', '#people': SAVED_PEOPLE},
-                ExpressionAttributeValues={':ttl': self._ttl(EMPTIED_FOR)})
-        except ClientError as error:
-            if not is_conditional_check_failure(error):
-                raise
+        expire_saved(self._view(scope), self._key(scope), self._ttl(EMPTIED_FOR))

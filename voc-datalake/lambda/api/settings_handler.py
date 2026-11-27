@@ -2093,6 +2093,10 @@ ERASURE_VIEW_FIELDS = (
     # and, since 7.72.03, no malformed guard, index or saved row skipped (`participant_guards_malformed` 0), the field
     # the rerun rule reads.
     'participants_walked', 'participants_complete',
+    # 7.84.00 (3g3-b, with -c engineeringAgents=true): whether the deployment's erasure by email without a source walked
+    # the engineering agents' memory (jobs/retention/runs.py `agent_memory_fields`) and left no account holding the
+    # address unverified (`agent_memory_accounts_not_erased` 0): `agent_memory_complete`, the field its rerun rule reads.
+    'agent_memory_walked', 'agent_memory_complete',
 )
 # The erasure routes' workspace (shared/erasure_scope.py): read afresh per request, members only (no platform-admin
 # entry, so nothing is written to voc-workspaces).

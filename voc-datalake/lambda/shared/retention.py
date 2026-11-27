@@ -163,11 +163,22 @@ PARTICIPANT_COUNTER: Final = 'participants_erased'
 NOT_ERASED_COUNTER: Final = 'participants_not_erased'
 GUARD_MALFORMED_COUNTER: Final = 'participant_guards_malformed'
 INDEX_KEPT_COUNTER: Final = 'participant_index_rows_kept'
+# With -c engineeringAgents=true (7.84.00, projects 3g3-b): the engineering runs' META rows and the issues' run claims
+# whose erased review ids a run removed (jobs/retention/engineering_lineage.py); the people an erasure by email erased
+# from the agents' memory (rows of theirs deleted), those it only refused (a tombstone, the memory holding none of
+# their rows), and the accounts holding the address it did not take for that person (an unverified address:
+# jobs/retention/agent_memory.py).
+ENGINEERING_MARK_COUNTER: Final = 'engineering_rows_marked'
+AGENT_MEMORY_COUNTER: Final = 'agent_memory_people_erased'
+AGENT_MEMORY_REFUSED_COUNTER: Final = 'agent_memory_people_refused'
+AGENT_MEMORY_NOT_ERASED_COUNTER: Final = 'agent_memory_accounts_not_erased'
 # The counters on the job and audit rows only once above 0 (a run that touched none reads as before).
 ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER,
                                     EXPORT_OBJECT_COUNTER, PROJECT_COUNTER, MALFORMED_ID_COUNTER,
                                     DOCS_NOT_CHECKED_COUNTER, FORM_TEST_COUNTER, PARTICIPANT_COUNTER,
-                                    NOT_ERASED_COUNTER, GUARD_MALFORMED_COUNTER, INDEX_KEPT_COUNTER)
+                                    NOT_ERASED_COUNTER, GUARD_MALFORMED_COUNTER, INDEX_KEPT_COUNTER,
+                                    ENGINEERING_MARK_COUNTER, AGENT_MEMORY_COUNTER, AGENT_MEMORY_REFUSED_COUNTER,
+                                    AGENT_MEMORY_NOT_ERASED_COUNTER)
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'

@@ -19,7 +19,10 @@
  *   - feedback: GetItem / Query / Scan / DeleteItem — no Put, no Update; on the table only, no index (7.72.00);
  *   - (7.72.00) the erasure walks' grants below (voc-projects, the product documents' reads, the participants' reads),
  *     none a delete or a put, are in a customer-managed policy of their own, `RetentionWalksPolicy`: the role's inline
- *     policy keeps every delete and every audit put, and would otherwise pass its size quota;
+ *     policy keeps every delete and every audit put, and would otherwise pass its size quota; (7.84.00) the boards' and
+ *     memberships' reads and updates and the participants' update, none a delete or a put, are in a second one,
+ *     `RetentionReadsPolicy` (the walks' is near its own quota), so the inline policy stays whole with the engineering
+ *     agents' puts and delete too;
  *   - raw bucket: DeleteObject + DeleteObjectVersion on `raw/*`, `silver/*` and each workspace's
  *     `ws/{ws}/raw/*` and `ws/{ws}/silver/*` (an erasure by email or a retention window reaches a workspace's copies; the workspace
  *     segment is one id, `WORKSPACE_ID_PATTERN`), and ListBucketVersions restricted to those prefixes — no read there
@@ -87,9 +90,13 @@
  *     `WS#{one id}#PARTICIPANTS` reaches every row of that workspace's index, one on `LIST#*` a list's `META` as well
  *     as its members, and the PutItem on the two `AUDIT#` partitions could overwrite a row there: each is held to the
  *     erasure's own rows only by the code's keys and conditions (TENETS.md tenet 6's gaps);
+ *   - (7.84.00, projects 3g3-b) with -c engineeringAgents=true only: the engineering runs' and issue claims' review ids
+ *     and the agents' memory, in a customer-managed policy of their own, `RetentionEngineeringPolicy` (each grant at
+ *     `grantEngineeringAccess` below); without the flag no engineering table, user pool or grant is handed over;
  *   - lambda:InvokeFunction on its own unqualified name (time-budget hand-over).
  */
 import * as cdk from 'aws-cdk-lib';
+import type * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -101,6 +108,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
 import { grantCacheVersionBump, RADAR_VERSION_PARTITION } from '../utils/cache-version-grants';
+import { hardCapDenyStatement, issueTriageDenyStatement } from './engineering-runtime-grants';
 import {
   RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_EXPORTS_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX,
   WORKSPACE_SILVER_HISTORY_PREFIX,
@@ -243,6 +251,50 @@ const PARTICIPANT_PEOPLE_INDEX = 'gsi1';
 const PARTICIPANT_PEOPLE_INDEX_PARTITIONS = ['PEOPLE', `WS#${WORKSPACE_ID_PATTERN}#PEOPLE`];
 const PARTICIPANT_PEOPLE_INDEX_ATTRIBUTES = ['pk', 'gsi1pk', 'gsi1sk'];
 
+/**
+ * With -c engineeringAgents=true (7.84.00, projects 3g3-b): the engineering rows an erasure reaches, each key and
+ * attribute list held to lambda/jobs/retention/engineering_lineage.py and agent_memory.py (and the engineering
+ * stores' own keys) by lambda/jobs/retention/test/test_engineering_erasure.py, which also records every call the job
+ * sends against them. The engineering agents' fixed scope is `default` (lambda/engineering/connectors/identity.py
+ * `WORKSPACE`), never a workspace of the multi-workspace design.
+ *
+ * - voc-agents: the issues' run claims' one partition, Query of the key, `feedback_id`, the claim's engineering run and
+ *   the mark, and UpdateItem of those only (an erased review's id REMOVEd, `erased_evidence` set); never an agent, a run
+ *   or a workflow row.
+ * - voc-engineering, the lineage: Query of the runs list's month partitions and of each run's partition (its `META`
+ *   only, by the key condition; IAM holds the Query to these attributes, so the run's board and conversation rows
+ *   answer nothing else), and UpdateItem of a run's `feedback` and the mark only. IAM cannot pin the sort key: that
+ *   update reaches any row of a run's partition, for those two attributes; the code updates `META` only.
+ * - voc-engineering, the agents' memory (an erasure by email, lambda/engineering/agent_memory/erasure.py): Query of the
+ *   memory partitions (the person's own, and each partition their `REF#` rows name, read whole to find the rows that
+ *   name them), PutItem of the erasure's tombstone and delete record and of a re-keyed confirmation row (its attributes
+ *   only), UpdateItem of the attributes that name a person, and DeleteItem in the memory partitions only (the person's
+ *   rows, and a confirmation row re-keyed elsewhere); the delete is pinned by lib/customer-data-deletes.test.ts. IAM
+ *   cannot pin the sort key: the put and the delete reach any memory row; the code holds them to the person's rows.
+ *   voc-engineering is under the audit-row guard (lib/utils/audit-row-guard.ts): voc-retention puts only those two
+ *   audit partitions, and no role changes or removes an `AUDIT#` row there.
+ * - the user pool: AdminGetUser, one account by the erased address (the pool's email alias), never a listing.
+ */
+const ISSUE_CLAIM_PARTITIONS = ['ISSUE_RUN#default'];
+const ISSUE_CLAIM_ATTRIBUTES = ['pk', 'sk', 'feedback_id', 'engineering_run_id', 'erased_evidence'];
+const ENGINEERING_RUN_READS = ['WS#default#RUNLIST#*', 'WS#default#RUN#*'];
+const ENGINEERING_RUN_UPDATES = ['WS#default#RUN#*'];
+const ENGINEERING_RUN_ATTRIBUTES = ['pk', 'sk', 'feedback', 'erased_evidence'];
+const AGENT_MEMORY_PARTITIONS = ['WS#default#AMEM#*'];
+const AGENT_MEMORY_AUDIT_PARTITIONS = ['AUDIT#tombstone#agent_memory_person', 'AUDIT#delete'];
+const AGENT_MEMORY_UPDATE_ATTRIBUTES = ['pk', 'sk', 'author', 'prov_person', 'approved_by', 'by'];
+/** A re-keyed confirmation row (erasure.py `CONFIRMATION_ATTRIBUTES`): the only item the memory partitions' put
+ *  writes. IAM cannot pin the sort key: that put, and the delete there, reach any memory row of any memory partition;
+ *  the code holds them to the erased person's own rows and the confirmation rows it re-keys (TENETS.md tenet 6). */
+const AGENT_MEMORY_CONFIRMATION_ATTRIBUTES = ['pk', 'sk', 'source', 'comment_url', 'at'];
+/**
+ * The engineering tree's files the bundle carries (7.84.00): the memory's erasure and what it imports, nothing else
+ * of it (its runtime, connectors and stores stay out: lambda/jobs/retention/test/test_engineering_erasure.py imports
+ * the handler from exactly this bundle).
+ */
+export const RETENTION_ENGINEERING_FILES = ['engineering/__init__.py', 'engineering/rows.py',
+  'engineering/agent_memory/__init__.py', 'engineering/agent_memory/erasure.py'];
+
 /** Path-style handler: the bundle keeps `jobs/retention/` with `shared/` beside `jobs/`. */
 const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
 
@@ -272,26 +324,99 @@ export interface RetentionWorkerProps {
   /** voc-participants: an erasure by email erases the participants its address names (7.72.00). */
   participantsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
+  /** With -c engineeringAgents=true only (7.84.00): the engineering tables and the user pool an erasure reaches. */
+  engineering?: RetentionEngineering;
+}
+
+/** What an erasure reaches of the engineering agents (projects 3g3-b): their runs' and claims' review ids, and the
+ *  agents' memory of the erased address's person (resolved in the user pool). */
+interface RetentionEngineering {
+  engineeringTable: dynamodb.ITable;
+  agentsTable: dynamodb.ITable;
+  userPool: cognito.IUserPool;
 }
 
 /**
- * Staged from `lambda/`, pruned to `jobs/retention`, `jobs/__init__.py` and
- * `shared/`, so no other job, API handler or worker tree moves this hash.
+ * The bundle's own excludes, after the shared ones: `jobs/retention`, `jobs/__init__.py`, `shared/` and, of the
+ * engineering tree the worker trees' list leaves out, only `RETENTION_ENGINEERING_FILES` (7.84.00: its folder taken
+ * back in, then everything in it but those), so no other job, API handler or worker tree moves this hash.
  */
+export const RETENTION_OWN_EXCLUDES = [
+  '/aggregator/', '/api/', '/processor/', '/research/',
+  '/jobs/*', '!/jobs/__init__.py', '!/jobs/retention/',
+  '!/engineering/', '/engineering/*', '!/engineering/__init__.py', '!/engineering/rows.py',
+  '!/engineering/agent_memory/', '/engineering/agent_memory/*', '!/engineering/agent_memory/__init__.py',
+  '!/engineering/agent_memory/erasure.py',
+];
+
+/** Staged from `lambda/`, pruned by the shared excludes and `RETENTION_OWN_EXCLUDES`. */
 function retentionCode(): lambda.Code {
   return pythonLambdaAsset('lambda', {
-    exclude: [
-      ...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES,
-      '/aggregator/', '/api/', '/processor/', '/research/',
-      '/jobs/*', '!/jobs/__init__.py', '!/jobs/retention/',
-    ],
+    exclude: [...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, ...RETENTION_OWN_EXCLUDES],
     copy: [
-      'mkdir -p /asset-output/jobs',
+      'mkdir -p /asset-output/jobs /asset-output/engineering/agent_memory',
       'cp /asset-input/jobs/__init__.py /asset-output/jobs/',
       'cp -r /asset-input/jobs/retention /asset-output/jobs/',
       'cp -r /asset-input/shared /asset-output/',
+      ...RETENTION_ENGINEERING_FILES.map((file) => `cp /asset-input/${file} /asset-output/${file}`),
     ],
   });
+}
+
+/**
+ * The engineering rows' grants (7.84.00; the constants above), built only with the engineering agents: the reads, the
+ * attribute-held updates and the directory's read in a customer-managed policy of their own,
+ * `RetentionEngineeringPolicy`, attached to this role alone (the walks' policy is close to its size quota); every put
+ * and the delete in the role's own inline policy, as every other delete and audit put of the worker.
+ */
+function grantEngineeringAccess(worker: Construct, role: iam.Role, engineering: RetentionEngineering): iam.ManagedPolicy {
+  const { engineeringTable, agentsTable, userPool } = engineering;
+  const walks = new iam.ManagedPolicy(worker, 'RetentionEngineeringPolicy', {
+    description: 'The retention worker\'s erasure of the engineering agents\' review ids and memory',
+    roles: [role],
+  });
+  const attributeQuery = (sid: string, table: dynamodb.ITable, partitions: string[], attributes: string[]) =>
+    new iam.PolicyStatement({
+      sid,
+      actions: ['dynamodb:Query'],
+      resources: [table.tableArn],
+      conditions: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': attributes },
+        StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      },
+    });
+  walks.addStatements(attributeQuery('QueryIssueRunClaims', agentsTable, ISSUE_CLAIM_PARTITIONS,
+    ISSUE_CLAIM_ATTRIBUTES));
+  walks.addStatements(keyScopedWriteStatement(agentsTable, ['UpdateItem'], ISSUE_CLAIM_PARTITIONS,
+    ISSUE_CLAIM_ATTRIBUTES, { noReturnValues: true }));
+  walks.addStatements(attributeQuery('QueryEngineeringRuns', engineeringTable, ENGINEERING_RUN_READS,
+    ENGINEERING_RUN_ATTRIBUTES));
+  walks.addStatements(keyScopedWriteStatement(engineeringTable, ['UpdateItem'], ENGINEERING_RUN_UPDATES,
+    ENGINEERING_RUN_ATTRIBUTES, { noReturnValues: true }));
+  walks.addStatements(new iam.PolicyStatement({
+    sid: 'QueryAgentMemory',
+    actions: ['dynamodb:Query'],
+    resources: [engineeringTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': AGENT_MEMORY_PARTITIONS } },
+  }));
+  walks.addStatements(keyScopedWriteStatement(engineeringTable, ['UpdateItem'], AGENT_MEMORY_PARTITIONS,
+    AGENT_MEMORY_UPDATE_ATTRIBUTES, { noReturnValues: true }));
+  // One account, by the erased address as its username (the pool resolves an email alias there): never a listing.
+  walks.addStatements(new iam.PolicyStatement({
+    sid: 'GetUserForErasure',
+    actions: ['cognito-idp:AdminGetUser'],
+    resources: [userPool.userPoolArn],
+  }));
+  // The role's own policy: the erasure's tombstone and delete record, a re-keyed confirmation row (its attributes
+  // only) and the person's rows' deletes.
+  grantKeyScopedWrites(engineeringTable, role, ['PutItem'], AGENT_MEMORY_AUDIT_PARTITIONS);
+  grantKeyScopedWrites(engineeringTable, role, ['PutItem'], AGENT_MEMORY_PARTITIONS, AGENT_MEMORY_CONFIRMATION_ATTRIBUTES);
+  grantKeyScopedWrites(engineeringTable, role, ['DeleteItem'], AGENT_MEMORY_PARTITIONS);
+  // As every other writer of voc-agents: no write of the hard cap's, the connections' or an issue's trusted triage
+  // rows (their writers are the Agents API and the engineering runtime).
+  walks.addStatements(hardCapDenyStatement(agentsTable), issueTriageDenyStatement(agentsTable));
+  return walks;
 }
 
 /**
@@ -355,7 +480,8 @@ function grantProjectsAccess(walk: iam.ManagedPolicy, projectsTable: dynamodb.IT
  * and one workspace id's `PEOPLE` partitions only (`PARTICIPANT_PEOPLE_INDEX_PARTITIONS`), in the walks' policy (each
  * pinned by processing-stack-retention.test.ts and lib/customer-data-deletes.test.ts).
  */
-function grantParticipantsAccess(role: iam.Role, walks: iam.ManagedPolicy, participantsTable: dynamodb.ITable): void {
+function grantParticipantsAccess(role: iam.Role, walks: iam.ManagedPolicy, reads: iam.ManagedPolicy,
+  participantsTable: dynamodb.ITable): void {
   const writes = new Set<string>(['PutItem', 'UpdateItem', 'DeleteItem', 'BatchWriteItem']);
   walks.addStatements(new iam.PolicyStatement({
     sid: 'QueryParticipantPeopleIndex',
@@ -388,8 +514,9 @@ function grantParticipantsAccess(role: iam.Role, walks: iam.ManagedPolicy, parti
         conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } },
       }));
     } else if (written.includes('UpdateItem')) {
-      grantKeyScopedWrites(participantsTable, role, written, partitions, PARTICIPANT_UPDATE_ATTRIBUTES,
-        { noReturnValues: true });
+      // An update that deletes and puts nothing: in the reads policy (7.84.00), the role's own policy keeping its size.
+      reads.addStatements(keyScopedWriteStatement(participantsTable, written, partitions, PARTICIPANT_UPDATE_ATTRIBUTES,
+        { noReturnValues: true }));
     } else {
       grantKeyScopedWrites(participantsTable, role, written, partitions);
     }
@@ -433,17 +560,32 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   grantProjectsAccess(walks, projectsTable);
   // Boards: read + de-identify a request; RE-KEY an erased +1 (one transaction: Put the de-identified row under a new
   // random id, Delete the email-derived one), so Put/Delete are pinned to the request partitions (FR#*), never boards.
-  featureRequestsTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem');
+  // 7.84.00: the boards' and the memberships' reads and updates, none a delete or a put, in a customer-managed policy
+  // of their own, `RetentionReadsPolicy`, built in every build and attached to this role alone: the role's inline
+  // policy keeps every delete and audit put, and with the engineering agents' puts and delete it would otherwise pass
+  // the size at which CDK splits it (the walks' policy is near its own quota).
+  const reads = new iam.ManagedPolicy(worker, 'RetentionReadsPolicy', {
+    description: 'The retention worker\'s board and membership reads and de-identifying updates: no delete, no put',
+    roles: [role],
+  });
+  reads.addStatements(new iam.PolicyStatement({
+    sid: 'ReadAndDeidentifyBoards',
+    actions: ['dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem'],
+    // (the table only: the erasure reads no index of it, boards.py and boards_rekey.py)
+    resources: [featureRequestsTable.tableArn],
+  }));
   grantKeyScopedWrites(featureRequestsTable, role, ['PutItem', 'DeleteItem'], [FEATURE_REQUEST_PARTITIONS]);
   // Workspace memberships (lambda/jobs/retention/members.py): find the rows that hold the erased email (Scan: no
   // email index), then REMOVE email and name, on `WS#*` and those two attributes only, asking for no returned values.
-  workspacesTable.grant(role, 'dynamodb:Scan');
-  grantKeyScopedWrites(workspacesTable, role, ['UpdateItem'], [WORKSPACE_PARTITIONS], MEMBER_PERSON_ATTRIBUTES,
-    { noReturnValues: true });
+  reads.addStatements(new iam.PolicyStatement({
+    sid: 'ScanWorkspaceMemberships', actions: ['dynamodb:Scan'], resources: [workspacesTable.tableArn],
+  }));
+  reads.addStatements(keyScopedWriteStatement(workspacesTable, ['UpdateItem'], [WORKSPACE_PARTITIONS],
+    MEMBER_PERSON_ATTRIBUTES, { noReturnValues: true }));
   // 7.43.00: an erasure by email walks every listed workspace's projects, read from the platform's listing (one paged
   // Query of `WORKSPACES`, and at its end a filtered one of the rows renamed or created meanwhile: the same partition,
   // no attribute condition, so no other grant; lambda/jobs/retention/workspaces.py).
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
+  reads.addStatements(new iam.PolicyStatement({
     sid: 'QueryWorkspaceListing',
     actions: ['dynamodb:Query'],
     resources: [workspacesTable.tableArn],
@@ -453,7 +595,10 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   // created for a workspace that is deleting or deleted).
   grantWorkspaceStatusRead(role, workspacesTable);
   // 7.72.00 (projects 3g2): an erasure by email erases the participants its address names (participants.py).
-  grantParticipantsAccess(role, walks, participantsTable);
+  grantParticipantsAccess(role, walks, reads, participantsTable);
+  // 7.84.00 (projects 3g3-b), with -c engineeringAgents=true only: the engineering runs' and claims' review ids and the
+  // agents' memory (grantEngineeringAccess).
+  const engineeringPolicy = props.engineering ? grantEngineeringAccess(worker, role, props.engineering) : undefined;
   kmsKey.grantEncryptDecrypt(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',
@@ -526,6 +671,11 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
       FEATURE_REQUESTS_TABLE: featureRequestsTable.tableName,
       WORKSPACES_TABLE: workspacesTable.tableName,
       PARTICIPANTS_TABLE: participantsTable.tableName,
+      ...(props.engineering ? {
+        ENGINEERING_TABLE: props.engineering.engineeringTable.tableName,
+        AGENTS_TABLE: props.engineering.agentsTable.tableName,
+        USER_POOL_ID: props.engineering.userPool.userPoolId,
+      } : {}),
       // No RETENTION_FUNCTION: the worker re-invokes itself via context.function_name.
       POWERTOOLS_SERVICE_NAME: RETENTION_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',
@@ -539,7 +689,8 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   });
   // The function waits for the walks' policy as it waits for the role's own (an invocation before it is attached
   // would fail its first Query).
-  fn.node.addDependency(walks);
+  fn.node.addDependency(walks, reads);
+  if (engineeringPolicy) fn.node.addDependency(engineeringPolicy);
 
   scheduleWorker(worker, 'RetentionSchedule', fn, uniqueName('voc-retention-schedule'),
     // 04:15 UTC — after the memory retention run (03:15), off the quarter-hour ticks.

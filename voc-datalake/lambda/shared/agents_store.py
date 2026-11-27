@@ -1213,7 +1213,9 @@ def issue_claim_key(repository: str, number: int, stage: str = ISSUE_STAGE_ACT) 
 def issue_claim_item(repository: str, number: int, *, agent_id: str, run_id: str, engineering_run_id: str,
                      feedback_id: str, now: datetime, stage: str = ISSUE_STAGE_ACT) -> dict[str, Any]:
     """The claim a run of issue ``number`` of ``repository`` writes with its run, for its ``stage``: which agent, run
-    and engineering run took it, from which feedback item, when. Create-only, never updated or deleted."""
+    and engineering run took it, from which feedback item, when. Create-only and never deleted; since 7.84.00 the one
+    update is an erasure's (voc-retention, jobs/retention/engineering_lineage.py): an erased review's ``feedback_id``
+    REMOVEd and ``erased_evidence`` set, the claim itself kept."""
     return {**issue_claim_key(repository, number, stage), 'repository': repository, 'number': number,
             'agent_id': agent_id, 'agent_run_id': run_id, 'engineering_run_id': engineering_run_id,
             'feedback_id': feedback_id, 'claimed_at': iso(now), 'stage': stage}

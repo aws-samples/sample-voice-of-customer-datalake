@@ -45,6 +45,9 @@ ATTRIBUTING_FUNCTIONS = {
     ('shared/workspace.py', 'resolve_workspace'),
     ('shared/ws_repo.py', 'message_scope'),
     ('shared/request_workspace.py', 'request_workspace'),
+    # 7.84.00: a deployment-wide erasure's or retention window's step inside one workspace, for that step only
+    # (``attributed``, which resets to what it was).
+    ('jobs/retention/workspaces.py', 'inside'),
 }
 
 
@@ -291,6 +294,35 @@ def test_none_is_the_deployment_and_a_value_that_is_not_a_workspace_id_is_unattr
         assert current_attribution() == UNATTRIBUTED
 
 
+def _fail(message: str) -> None:
+    """A block's failure (a call, so the line after the block reads as reachable)."""
+    raise RuntimeError(message)
+
+
+def test_attributed_holds_only_inside_its_block_and_restores_what_was_before():
+    attribute(None)
+    with usage_meter.attributed(WS):
+        assert current_attribution() == WS
+        with usage_meter.attributed(OTHER_WS):
+            assert current_attribution() == OTHER_WS
+        assert current_attribution() == WS
+    assert current_attribution() == DEPLOYMENT
+    with pytest.raises(RuntimeError, match='the block failed'), usage_meter.attributed(WS):
+        _fail('the block failed')
+    assert current_attribution() == DEPLOYMENT
+    for value in ('ws_lowercase', 'DEPLOYMENT', ''):
+        with usage_meter.attributed(value):
+            assert current_attribution() == UNATTRIBUTED
+    assert current_attribution() == DEPLOYMENT
+
+
+def test_a_call_inside_an_attributed_block_is_counted_to_it(log):
+    attribute(None)
+    with usage_meter.attributed(WS):
+        _converse_call()
+    assert _line(log)['workspace_id'] == WS
+
+
 def test_a_message_s_workspace_and_a_deployment_wide_message():
     message_scope({'workspace_id': WS})
     assert current_attribution() == WS
@@ -384,7 +416,7 @@ class _AttributeCalls(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         func = node.func
-        if (isinstance(func, ast.Attribute) and func.attr == 'attribute'
+        if (isinstance(func, ast.Attribute) and func.attr in ('attribute', 'attributed')
                 and isinstance(func.value, ast.Name) and func.value.id == 'usage_meter'):
             self.sites.add(self.stack[-1] if self.stack else '<module>')
         self.generic_visit(node)
