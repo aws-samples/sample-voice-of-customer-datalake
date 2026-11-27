@@ -77,7 +77,7 @@ class TestTheFamiliarLayout:
 
 
 class TestTheDetailedLayout:
-    def test_it_is_7_55s_file_with_a_matrix_as_row_column_pairs(self):
+    def test_it_is_the_old_file_with_a_matrix_as_row_column_pairs(self):
         table = list(csv.reader(io.StringIO(fcsv.detailed_csv(DEFINITION, [ANSWERED]))))
         assert table[1][:6] == ['created_at', 'response_id', 'is_test', 'revision', 'language', 'ending_id']
         assert table[1][8] == 'q_phases'

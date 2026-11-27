@@ -80,7 +80,7 @@ class TestThePublishGuard:
         assert (status, answer['code'], answer['where'], answer['id']) == (400, 'recall_not_before',
                                                                            'questions[0].headline.pl', 'q_rate')
 
-    def test_a_form_saved_before_7_61_keeps_serving_but_is_not_published_again_until_fixed(self, world,
+    def test_a_form_saved_before_7_06_keeps_serving_but_is_not_published_again_until_fixed(self, world,
                                                                                          lambda_context):
         fid = _create(lambda_context, LIVE)['form_id']
         legacy = {**LIVE['questions'][1], 'headline': {'pl': 'Jak było, {{customer}}?'}}
@@ -166,7 +166,7 @@ class TestTheCsv:
                          'Jak oceniasz [app_version]? - Wstęp', 'Jak oceniasz [app_version]? - Laboratorium'],
                         ['f1', '2026-11-20T09:30:00Z', 'pl', 'pilot', "'=1+1", '', 'Dobrze', '']]
 
-    def test_ids_adds_the_row_of_ids_and_detailed_keeps_7_55s_file(self, lambda_context, answered):
+    def test_ids_adds_the_row_of_ids_and_detailed_keeps_the_old_file(self, lambda_context, answered):
         rows = list(csv.reader(io.StringIO(_csv(lambda_context, answered, ids='true')[1]['body'][1:])))
         assert rows[1][-2:] == ['q_phases.intro', 'q_phases.lab']
         _status, detailed = _csv(lambda_context, answered, layout='detailed')
