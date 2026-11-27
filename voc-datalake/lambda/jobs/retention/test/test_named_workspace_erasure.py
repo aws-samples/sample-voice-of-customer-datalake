@@ -32,6 +32,7 @@ from jobs.retention.test.test_workspace_erasure import (
 from shared import retention
 from shared.digests import sha256_hex
 from shared.erasure_jobs import acquire_workspace_lock
+from shared.feedback_keys import feedback_item_id
 from shared.ws_repo import WorkspaceScope
 
 JANE = 'Jane Doe'
@@ -87,6 +88,12 @@ class TestAnErasureInOneWorkspace:
     @pytest.mark.parametrize(('field', 'value', 'extra'), ID_AND_AUTHOR_ERASURES)
     def test_it_deletes_that_workspaces_match_and_its_copies_only(self, aws, worker_context, field, value, extra):
         _same_review_in_three_scopes(aws, **extra)
+        # Each workspace copy's id key as the processor writes it (feedback_partitions.py), which an erasure by source
+        # id reads (7.96.00, item_walk.py); the others are found by the Scan (no META here, so no day walk).
+        for ws in (WS, WS_TWO):
+            aws['feedback'].update_item(
+                Key={'pk': f'WS#{ws}#SOURCE#tickets', 'sk': 'FEEDBACK#12345'}, UpdateExpression='SET gsi4pk = :id',
+                ExpressionAttributeValues={':id': f'WS#{ws}#FEEDBACK#{feedback_item_id("tickets", "12345")}'})
         other = _versions(aws, f'ws/{WS_TWO}/')
 
         result = handler.handle_event(_job(aws, field, value, source='tickets'), worker_context)

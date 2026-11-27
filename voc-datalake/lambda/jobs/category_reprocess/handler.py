@@ -81,7 +81,7 @@ Invariants:
 import functools
 import json
 import os
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Any
 
 import boto3
@@ -125,6 +125,7 @@ from shared.raw_versions import raw_root
 from shared.reprocess_lineage import AnswerRecorder, change_stamps, job_actor, job_config
 from shared.reprocess_slices import (
     ReprocessSlice,
+    first_walk_day,
     is_walk_cursor,
     position_after,
     read_day_page,
@@ -219,8 +220,7 @@ def first_possible_day(scope: WorkspaceScope) -> date | None:
     """The first day partition a workspace's walk reads: the UTC day before its ``META`` ``created_at`` (one day of
     margin for the clocks of the API that created it and of the processor), or None when the row names no readable
     creation time (the job then Scans, as before). A failed read raises (the job fails and can be started again)."""
-    created = parse_iso(workspace_created_at(get_workspaces_table(), scope))
-    return None if created is None else created.astimezone(UTC).date() - timedelta(days=1)
+    return first_walk_day(workspace_created_at(get_workspaces_table(), scope))
 
 
 def scan_page(

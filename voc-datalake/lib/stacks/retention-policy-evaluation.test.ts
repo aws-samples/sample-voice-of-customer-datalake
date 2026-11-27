@@ -206,6 +206,23 @@ const EVERY_BUILD: readonly Request[] = [
     key: 'TYPE#PROJECT', attributes: ['pk', 'sk'], context: SPECIFIC },
   { what: 'a page\'s registry rows (a batch)', action: 'dynamodb:BatchGetItem', table: 'Projects', key: 'PROJECT_IDS',
     attributes: ['pk', 'sk'] },
+  // 7.96.00: a workspace's erasure finds its items by index, keys only (lambda/jobs/retention/item_walk.py), reads
+  // each hit again from the table (the inline GetItem) and its workspace's META's created_at (where the walk starts).
+  { what: 'a workspace day\'s keys', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: `WS#${WS}#DATE#2026-11-27`, attributes: ['pk', 'sk', 'gsi1pk', 'gsi1sk'], context: SPECIFIC },
+  { what: 'a workspace id\'s keys', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi4-by-feedback-id',
+    key: `WS#${WS}#FEEDBACK#0123456789abcdef0123456789abcdef`, attributes: ['pk', 'sk', 'gsi4pk'], context: SPECIFIC },
+  // Filtered on the index by the erasure's own filter (its names may count in dynamodb:Attributes), keys returned.
+  ...['author', 'csv_row_id', 'metadata'].map((field): Request => ({
+    what: `a workspace day's keys filtered by ${field}`, action: 'dynamodb:Query', table: 'Feedback',
+    index: 'gsi1-by-date', key: `WS#${WS}#DATE#2026-11-27`,
+    attributes: ['pk', 'sk', 'gsi1pk', 'gsi1sk', field, 'source_platform'], context: SPECIFIC })),
+  { what: 'a workspace id\'s keys filtered by its source id and source', action: 'dynamodb:Query', table: 'Feedback',
+    index: 'gsi4-by-feedback-id', key: `WS#${WS}#FEEDBACK#0123456789abcdef0123456789abcdef`,
+    attributes: ['pk', 'sk', 'gsi4pk', 'source_id', 'source_platform'], context: SPECIFIC },
+  { what: 'a hit read again from the table', action: 'dynamodb:GetItem', table: 'Feedback', key: `WS#${WS}#SOURCE#web` },
+  { what: 'a workspace\'s created_at', action: 'dynamodb:GetItem', table: 'Workspaces', key: `WS#${WS}`,
+    attributes: ['pk', 'sk', 'created_at'], context: SPECIFIC },
   // Raw objects, each with both delete actions.
   ...['raw/web/2026/01/01/f1/0123456789abcdef.json', 'silver/web/f1/20260101T000000000000Z-0a.json',
     `ws/${WS}/raw/web/2026/01/01/f1/0a.json`, `ws/${WS}/silver/web/f1/20260101T000000000000Z-0a.json`,
@@ -263,6 +280,63 @@ const PROJECTS_REFUSED: readonly Request[] = [
     attributes: [], context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
 ];
 
+/** What the worker may not read of voc-feedback's indexes or a workspace's META on any build (7.96.00): a workspace's
+ *  day and id partitions only, for their keys only, `SPECIFIC_ATTRIBUTES` required; never the deployment's
+ *  partitions, another index, an attribute beyond the keys or whole rows. */
+const FEEDBACK_INDEXES_REFUSED: readonly Request[] = [
+  { what: 'the deployment\'s day', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: 'DATE#2026-11-27', attributes: ['pk', 'sk', 'gsi1pk', 'gsi1sk'], context: SPECIFIC },
+  { what: 'the deployment\'s id', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi4-by-feedback-id',
+    key: 'FEEDBACK#0123456789abcdef0123456789abcdef', attributes: ['pk', 'sk', 'gsi4pk'], context: SPECIFIC },
+  { what: 'a workspace\'s category index', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi2-by-category',
+    key: `WS#${WS}#CATEGORY#billing`, attributes: ['pk', 'sk', 'gsi2pk', 'gsi2sk'], context: SPECIFIC },
+  { what: 'a workspace\'s channel index', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi5-by-channel',
+    key: `WS#${WS}#CHANNEL#reviews`, attributes: ['pk', 'sk', 'gsi5pk', 'gsi1sk'], context: SPECIFIC },
+  { what: 'a day\'s review texts', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: `WS#${WS}#DATE#2026-11-27`, attributes: ['pk', 'sk', 'gsi1pk', 'gsi1sk', 'original_text'], context: SPECIFIC },
+  { what: 'an id\'s review texts beside its filter', action: 'dynamodb:Query', table: 'Feedback',
+    index: 'gsi4-by-feedback-id', key: `WS#${WS}#FEEDBACK#0123456789abcdef0123456789abcdef`,
+    attributes: ['pk', 'sk', 'gsi4pk', 'source_id', 'source_platform', 'original_text'], context: SPECIFIC },
+  { what: 'a filtered day\'s whole rows', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: `WS#${WS}#DATE#2026-11-27`, attributes: ['pk', 'sk', 'gsi1pk', 'gsi1sk', 'author', 'source_platform'],
+    context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+  { what: 'the deployment\'s day, filtered', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: 'DATE#2026-11-27', attributes: ['pk', 'sk', 'gsi1pk', 'gsi1sk', 'author'], context: SPECIFIC },
+  { what: 'a workspace\'s category index, filtered', action: 'dynamodb:Query', table: 'Feedback',
+    index: 'gsi2-by-category', key: `WS#${WS}#CATEGORY#billing`, attributes: ['pk', 'sk', 'gsi2pk', 'gsi2sk', 'author'],
+    context: SPECIFIC },
+  { what: 'a day\'s whole rows', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: `WS#${WS}#DATE#2026-11-27`, attributes: [], context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+  { what: 'a day\'s keys without a projection', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: `WS#${WS}#DATE#2026-11-27`, attributes: ['pk', 'sk', 'gsi1pk', 'gsi1sk'],
+    context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+  { what: 'an id\'s whole rows', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi4-by-feedback-id',
+    key: `WS#${WS}#FEEDBACK#0123456789abcdef0123456789abcdef`, attributes: [],
+    context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+  // A whole-item projection by the index's own word (both indexes project ALL), filtered or not.
+  { what: 'a day\'s projected rows', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: `WS#${WS}#DATE#2026-11-27`, attributes: [], context: { 'dynamodb:Select': 'ALL_PROJECTED_ATTRIBUTES' } },
+  { what: 'a filtered day\'s projected rows', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi1-by-date',
+    key: `WS#${WS}#DATE#2026-11-27`, attributes: ['pk', 'sk', 'gsi1pk', 'gsi1sk', 'author', 'source_platform'],
+    context: { 'dynamodb:Select': 'ALL_PROJECTED_ATTRIBUTES' } },
+  { what: 'an id\'s projected rows', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi4-by-feedback-id',
+    key: `WS#${WS}#FEEDBACK#0123456789abcdef0123456789abcdef`, attributes: [],
+    context: { 'dynamodb:Select': 'ALL_PROJECTED_ATTRIBUTES' } },
+  { what: 'a filtered id\'s projected rows', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi4-by-feedback-id',
+    key: `WS#${WS}#FEEDBACK#0123456789abcdef0123456789abcdef`,
+    attributes: ['pk', 'sk', 'gsi4pk', 'source_id', 'source_platform'],
+    context: { 'dynamodb:Select': 'ALL_PROJECTED_ATTRIBUTES' } },
+  { what: 'an id\'s day keys', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi4-by-feedback-id',
+    key: `WS#${WS}#FEEDBACK#0123456789abcdef0123456789abcdef`, attributes: ['pk', 'sk', 'gsi4pk', 'gsi1pk'],
+    context: SPECIFIC },
+  { what: 'a day partition on the id index', action: 'dynamodb:Query', table: 'Feedback', index: 'gsi4-by-feedback-id',
+    key: `WS#${WS}#DATE#2026-11-27`, attributes: ['pk', 'sk', 'gsi4pk'], context: SPECIFIC },
+  { what: 'a workspace\'s name', action: 'dynamodb:GetItem', table: 'Workspaces', key: `WS#${WS}`,
+    attributes: ['pk', 'sk', 'name'], context: SPECIFIC },
+  { what: 'a workspace\'s whole META', action: 'dynamodb:GetItem', table: 'Workspaces', key: `WS#${WS}`,
+    attributes: [], context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+];
+
 /** The guarded tables voc-retention writes audit rows in on each build, and those where it is held to its own audit
  *  partitions (voc-aggregates: any `AUDIT#*` row is its own to put, retention rows and tombstones; never to change). */
 const CHANGES = ['dynamodb:DeleteItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem'];
@@ -281,7 +355,7 @@ describe.each([
     expect(answer.allowedBy).toBeGreaterThan(0);
   });
 
-  it.each(PROJECTS_REFUSED.map((request) => [request.what, request]))('refuses %s', (_what, request) => {
+  it.each([...PROJECTS_REFUSED, ...FEEDBACK_INDEXES_REFUSED].map((request) => [request.what, request]))('refuses %s', (_what, request) => {
     expect(allowed(evaluate(statements, request))).toBe(false);
   });
 

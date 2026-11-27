@@ -9,7 +9,13 @@ finds every review only while two facts hold:
     "voc-feedback: only the processor puts an item";
 (b) nothing rewrites ``gsi1pk`` / ``gsi1sk`` (or ``date``) of a review afterwards.
 
-So this scans every production module of lambda/ and plugins/ (never a test) for a write of ``gsi1pk`` or ``gsi1sk``:
+A workspace's erasure by source id (7.96.00, lambda/jobs/retention/item_walk.py) reads gsi4-by-feedback-id instead, so
+the same two facts are held for ``gsi4pk``: the processor's first put alone writes it (through
+``FEEDBACK_ID_INDEX_PARTITION``, shared/feedback_partitions.py, scanned as the string is: ``ALIASES``) and nothing
+rewrites it; lambda/processor/test/test_workspace_index_keys.py is the positive half (every review is stamped).
+
+So this scans every production module of lambda/ and plugins/ (never a test) for a write of ``gsi1pk``, ``gsi1sk`` or
+``gsi4pk``:
 a dict key (an item, an attribute map), a subscript store or delete, a keyword argument, a name added to a list by
 a mutator, a string naming them outside a key condition, a filter, a projection or a condition (an UpdateExpression's
 ``SET`` / ``REMOVE`` or a fragment of one), and an ``ExpressionAttributeNames`` value beside an ``UpdateExpression``.
@@ -42,11 +48,15 @@ import pytest
 
 REPO: Final = Path(__file__).resolve().parents[3]
 SCANNED: Final = ('lambda', 'plugins')
-INDEX_NAMES: Final = frozenset({'gsi1pk', 'gsi1sk'})
-TOKEN: Final = re.compile(r'\bgsi1(?:pk|sk)\b')
-#: A module that names voc-feedback or the keys of its day partitions reaches it.
+INDEX_NAMES: Final = frozenset({'gsi1pk', 'gsi1sk', 'gsi4pk'})
+TOKEN: Final = re.compile(r'\bgsi(?:1(?:pk|sk)|4pk)\b')
+#: Names that stand for ``gsi4pk`` (shared/feedback_partitions.py): the processor writes the id key through it, so a
+#: use of the name is scanned as the string is.
+ALIASES: Final = {'FEEDBACK_ID_INDEX_PARTITION': 'gsi4pk'}
+#: A module that names voc-feedback or the keys of its day or id partitions reaches it.
 REACHES_FEEDBACK: Final = re.compile(
-    r'feedback_table|FEEDBACK_TABLE|FEEDBACK_BY_DATE_INDEX|FEEDBACK_SK_PREFIX|date_partition|date_pk|DATE#')
+    r'feedback_table|FEEDBACK_TABLE|FEEDBACK_BY_DATE_INDEX|FEEDBACK_BY_ID_INDEX|FEEDBACK_ID_INDEX_PARTITION'
+    r'|feedback_id_partition|FEEDBACK_SK_PREFIX|date_partition|date_pk|DATE#')
 #: Keyword arguments (or request-dict keys) whose text only reads: a string under them never writes.
 READ_KWARGS: Final = frozenset({'KeyConditionExpression', 'FilterExpression', 'ProjectionExpression',
                                 'ConditionExpression', 'ExclusiveStartKey', 'IndexName', 'sort_condition'})
@@ -93,8 +103,12 @@ FEEDBACK_MODULE_ENTRIES: Final = {
     ('lambda/api/projects.py', '<module>'): 'voc-projects (fields a duplicated document does not carry)',
     ('lambda/jobs/workspace_export/entities.py', '<module>'): 'EXCLUDED: the index keys the export says it leaves out '
                                                               '(read)',
-    ('lambda/shared/indexes.py', '<module>'): 'FEEDBACK_BY_DATE_POSITION: a review\'s key and gsi1 position, the '
-                                              'reprocess walk\'s and the export\'s cursor (read)',
+    ('lambda/shared/feedback_catalogue_fields.py', '<module>'): 'the data catalogue\'s text on feedback_id, naming '
+                                                                'gsi4pk (read)',
+    ('lambda/shared/feedback_partitions.py', '<module>'): 'FEEDBACK_ID_INDEX_PARTITION: gsi4\'s partition attribute '
+                                                          'name, scanned where it is used (ALIASES; read)',
+    ('lambda/shared/indexes.py', '<module>'): 'FEEDBACK_BY_DATE_POSITION / FEEDBACK_BY_ID_POSITION: a review\'s key '
+                                              'and gsi1 / gsi4 position, the walks\' and the export\'s cursors (read)',
     ('lambda/shared/ws_repo.py', '<module>'): 'PARTITION_ATTRIBUTES: the workspace layer\'s partition check (read)',
 }
 
@@ -112,6 +126,11 @@ class Write:
 
     def __str__(self) -> str:
         return f'{self.path}:{self.line} ({self.scope}): {self.what}'
+
+
+def _field(name: str) -> str:
+    """The index a key name belongs to: ``gsi1`` (the day walk) or ``gsi4`` (the by-id read)."""
+    return name[:4]
 
 
 def _call_name(call: ast.Call) -> str:
@@ -155,8 +174,8 @@ class _Scanner:
                     return holder
         return None
 
-    def _is_read(self, node: ast.Constant) -> bool:
-        bare = node.value in INDEX_NAMES
+    def _is_read(self, node: ast.Constant | ast.Name) -> bool:
+        bare = isinstance(node, ast.Name) or node.value in INDEX_NAMES
         child: ast.AST = node
         for holder in self._ancestors(node):
             names_of = self._names_entry(child, holder)
@@ -188,12 +207,16 @@ class _Scanner:
     def writes(self) -> Iterator[Write]:
         for node in ast.walk(self.tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if TOKEN.search(node.value) and not self._is_docstring(node) and not self._is_read(node):
-                    yield Write(self.path, self._scope(node), node.lineno, repr(node.value[:80]))
+                token = TOKEN.search(node.value)
+                if token and not self._is_docstring(node) and not self._is_read(node):
+                    yield Write(self.path, self._scope(node), node.lineno, repr(node.value[:80]), _field(token[0]))
                 elif node.value == 'date' and self._date_update(node):
                     yield Write(self.path, self._scope(node), node.lineno, "'date' named in an UpdateExpression", 'date')
+            elif isinstance(node, ast.Name) and node.id in ALIASES and isinstance(node.ctx, ast.Load):
+                if not self._is_read(node):
+                    yield Write(self.path, self._scope(node), node.lineno, node.id, _field(ALIASES[node.id]))
             elif isinstance(node, ast.keyword) and node.arg in INDEX_NAMES:
-                yield Write(self.path, self._scope(node), node.value.lineno, f'{node.arg}= keyword')
+                yield Write(self.path, self._scope(node), node.value.lineno, f'{node.arg}= keyword', _field(node.arg))
 
     def _date_update(self, node: ast.Constant) -> bool:
         holder = self.parent.get(node)
@@ -223,7 +246,7 @@ def _all_writes() -> dict[str, tuple[bool, list[Write]]]:
     found: dict[str, tuple[bool, list[Write]]] = {}
     for path in _production_modules():
         source = path.read_text(encoding='utf-8')
-        if not TOKEN.search(source) and "'date'" not in source:
+        if not TOKEN.search(source) and "'date'" not in source and not any(name in source for name in ALIASES):
             continue
         rel = path.relative_to(REPO).as_posix()
         writes = day_index_writes(rel, source)
@@ -254,14 +277,17 @@ class TestNothingRewritesAReviewsDay:
         # Vacuity: the processor's own stamp is found, so the scan reaches the code it guards.
         assert REPO.joinpath(FEEDBACK_DAY_STAMP[0]).is_file()
         stamp = [w for w in WRITES[FEEDBACK_DAY_STAMP[0]][1] if w.scope == FEEDBACK_DAY_STAMP[1]]
-        assert {w.what for w in stamp} == {"'gsi1pk'", "'gsi1sk'"}
+        # The day keys by name, the id key through its constant (shared/feedback_partitions.py).
+        assert {(w.field, w.what) for w in stamp} == {
+            ('gsi1', "'gsi1pk'"), ('gsi1', "'gsi1sk'"), ('gsi4', 'FEEDBACK_ID_INDEX_PARTITION')}
 
     def test_every_write_of_the_day_keys_is_the_processors_first_put_or_another_tables(self):
         unexplained = [str(w) for path, (reaches, writes) in WRITES.items()
                        for w in _unexplained(path, reaches, writes)]
         assert unexplained == [], (
-            WALK + 'a new write of gsi1pk / gsi1sk (or an update of date) can move a review out of it. Keep the day '
-            'the processing day and never rewrite it (then list the write here with its table), or make the walk '
+            WALK + 'a new write of gsi1pk / gsi1sk (or an update of date) can move a review out of it, and one of '
+            'gsi4pk out of the by-id read (jobs/retention/item_walk.py). Keep the day the processing day and the id '
+            'key the processor\'s, never rewrite them (then list the write here with its table), or make the walk '
             'Scan:\n' + '\n'.join(unexplained))
 
     def test_a_module_that_reaches_feedback_is_listed_by_function_not_whole(self):
@@ -304,6 +330,12 @@ class TestTheScanSeesEachForm:
         "def f(removes):\n    removes.append('gsi1pk')\n",
         "def f():\n    return dict(gsi1pk='x')\n",
         "def f(t):\n    t.update_item(Key={}, UpdateExpression='SET #d = :d', ExpressionAttributeNames={'#d': 'date'})\n",
+        "def f(t):\n    t.update_item(Key={}, UpdateExpression='SET gsi4pk = :i')\n",
+        "def f(item):\n    item['gsi4pk'] = 'FEEDBACK#x'\n",
+        "def f():\n    return {'pk': 'p', FEEDBACK_ID_INDEX_PARTITION: 'FEEDBACK#x'}\n",
+        "def f(item):\n    item[FEEDBACK_ID_INDEX_PARTITION] = 'FEEDBACK#x'\n",
+        "def f(t):\n    t.update_item(UpdateExpression='SET #i = :i', ExpressionAttributeNames={'#i': FEEDBACK_ID_INDEX_PARTITION})\n",
+        "def f():\n    return dict(gsi4pk='x')\n",
     ])
     def test_a_write_is_found(self, source):
         assert day_index_writes('planted.py', source) != []
@@ -315,6 +347,10 @@ class TestTheScanSeesEachForm:
         "def f(s, t):\n    return query_partition(s, t, 'gsi1pk', 'x', attribute='gsi1sk')\n",
         "def f(t):\n    return t.query(ExclusiveStartKey={'gsi1pk': 'a', 'gsi1sk': 'b'})\n",
         "def f(t):\n    return t.query(ExpressionAttributeNames={'#d': 'date'}, FilterExpression='#d >= :d')\n",
+        "def f(s, t):\n    return query_partition(s, t, FEEDBACK_ID_INDEX_PARTITION, 'WS#x#FEEDBACK#y')\n",
+        "def f(t):\n    return t.query(KeyConditionExpression=Key(FEEDBACK_ID_INDEX_PARTITION).eq('x'))\n",
+        "def f(t):\n    return t.query(KeyConditionExpression='#i = :i', ExpressionAttributeNames={'#i': FEEDBACK_ID_INDEX_PARTITION})\n",
+        "def f(row):\n    return row[FEEDBACK_ID_INDEX_PARTITION], row.get('gsi4pk')\n",
     ])
     def test_a_read_is_not(self, source):
         assert day_index_writes('planted.py', source) == []
@@ -329,6 +365,13 @@ class TestTheScanSeesEachForm:
         source = "def regroup(t):\n    t.update_item(UpdateExpression='SET gsi1pk = :d')\n"
         writes = day_index_writes('lambda/api/projects.py', source)
         assert [w.scope for w in _unexplained('lambda/api/projects.py', True, writes)] == ['regroup']
+
+    def test_an_id_key_write_in_another_function_of_the_processor_is_unexplained(self):
+        source = ("def build_feedback_item():\n    return {FEEDBACK_ID_INDEX_PARTITION: 'a'}\n"
+                  "def _rekey(t):\n    t.update_item(UpdateExpression='SET gsi4pk = :n')\n")
+        writes = day_index_writes(FEEDBACK_DAY_STAMP[0], source)
+        assert {w.field for w in writes} == {'gsi4'}
+        assert [w.scope for w in _unexplained(FEEDBACK_DAY_STAMP[0], True, writes)] == ['_rekey']
 
     def test_a_new_module_is_unexplained(self):
         source = "def f(item):\n    item['gsi1pk'] = 'DATE#2026-11-10'\n"

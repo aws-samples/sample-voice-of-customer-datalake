@@ -16,7 +16,11 @@
  * responses (kept with the form in voc-aggregates); artifacts in voc-projects that
  * cited a deleted item are marked. Least privilege, pinned exactly by
  * processing-stack-retention.test.ts:
- *   - feedback: GetItem / Query / Scan / DeleteItem — no Put, no Update; on the table only, no index (7.72.00);
+ *   - feedback: GetItem / Query / Scan / DeleteItem — no Put, no Update; on the table only in the role's own policy
+ *     (7.72.00); since 7.96.00 a Query of gsi1-by-date's and gsi4-by-feedback-id's `WS#{one id}#DATE#*` and
+ *     `WS#{one id}#FEEDBACK#*` partitions, returning their keys only (filtered by the erasure's own filter, whose
+ *     attributes are allowed too), in `RetentionReadsPolicy` (a workspace's erasure finds its items there, each hit
+ *     decided on the row a strongly consistent read of the table returns), with a `META`'s `created_at`;
  *   - (7.72.00) the erasure walks' grants below (voc-projects, the product documents' reads, the participants' reads),
  *     none a delete or a put, are in a customer-managed policy of their own, `RetentionWalksPolicy`: the role's inline
  *     policy keeps every delete and every audit put, and would otherwise pass its size quota; (7.84.00) the boards' and
@@ -120,7 +124,9 @@ import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/l
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { grantKeyScopedWrites, keyScopedWriteStatement, type TableWrite } from '../utils/table-write-grants';
 import { grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
-import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
+import {
+  grantWorkspaceStatusRead, WORKSPACE_CREATED_AT_ATTRIBUTES, workspaceAttributeReadStatement,
+} from '../utils/workspace-resolution-grants';
 
 /** The request partitions of voc-feature-requests (`FR#{id}`: META + its +1s), the only rows the worker re-keys. */
 const FEATURE_REQUEST_PARTITIONS = 'FR#*';
@@ -196,6 +202,27 @@ export function projectIndexKeysQuery(projectsTable: dynamodb.ITable, sid: strin
     },
   });
 }
+/**
+ * A workspace's erasure reads voc-feedback's indexes for keys alone (7.96.00; lambda/jobs/retention/item_walk.py,
+ * whose index names and projections a test holds to these): gsi1-by-date's day partitions (`WS#{one id}#DATE#{day}`,
+ * an erasure by author, CSV row or email) and gsi4-by-feedback-id's id partitions (`WS#{one id}#FEEDBACK#{id}`, an
+ * erasure by source id), each returning the table's and its own index's keys only, filtered by the erasure's own
+ * filter (its attributes allowed too), `dynamodb:Select` `SPECIFIC_ATTRIBUTES` required (both indexes project every
+ * attribute, core-stack.ts, so a Query naming none would read whole rows). Every hit is read again from the table,
+ * strongly consistent, by the inline GetItem, and decided on that row. Never the deployment's partitions or another
+ * index.
+ */
+export const FEEDBACK_DAY_INDEX = 'gsi1-by-date';
+export const FEEDBACK_ID_INDEX = 'gsi4-by-feedback-id';
+export const FEEDBACK_DAY_INDEX_KEYS = ['pk', 'sk', 'gsi1pk', 'gsi1sk'];
+export const FEEDBACK_ID_INDEX_KEYS = ['pk', 'sk', 'gsi4pk'];
+/**
+ * The top-level attributes the Queries' filter names besides `pk` and `sk` (the erasure's own Scan filter,
+ * lambda/shared/retention.py `erase_filter` in a workspace, every field; a Python test holds them equal): allowed in
+ * `dynamodb:Attributes` beside the keys, since that key may count a filter's names and the Query must never be refused
+ * for them. Nothing is returned but the keys: `SPECIFIC_ATTRIBUTES` stays required, `ALL_ATTRIBUTES` refused.
+ */
+export const FEEDBACK_ERASE_FILTER_ATTRIBUTES = ['author', 'csv_row_id', 'metadata', 'source_id', 'source_platform'];
 const PROJECT_REGISTRY_PARTITIONS = ['PROJECT_IDS'];
 const PROJECT_REGISTRY_KEYS = ['pk', 'sk'];
 /**
@@ -511,6 +538,28 @@ function grantProjectsAccess(walk: iam.ManagedPolicy, projectsTable: dynamodb.IT
 }
 
 /**
+ * A workspace's erasure finds its items by index, no Scan except its two fallbacks (7.96.00): the two filtered
+ * keys-only Queries above (each its index, one workspace id's partitions of it, its keys and the filter's attributes,
+ * a projection required) and the workspace `META`'s
+ * `created_at`, where its day walk starts (the category reprocess's read, lib/utils/workspace-resolution-grants.ts
+ * `WORKSPACE_CREATED_AT_ATTRIBUTES`), in the reads policy: none deletes or puts, the role's inline policy (every delete
+ * and audit put) grows by none of them, and the walks' policy has no room left for them (5,503 of its 6,144).
+ */
+function grantFeedbackIndexReads(reads: iam.ManagedPolicy, feedbackTable: dynamodb.ITable,
+  workspacesTable: dynamodb.ITable): void {
+  for (const [sid, index, partition, keys] of [['QueryWorkspaceFeedbackDays', FEEDBACK_DAY_INDEX, 'DATE',
+    FEEDBACK_DAY_INDEX_KEYS], ['QueryWorkspaceFeedbackIds', FEEDBACK_ID_INDEX, 'FEEDBACK', FEEDBACK_ID_INDEX_KEYS]] as const) {
+    reads.addStatements(new iam.PolicyStatement({
+      sid, actions: ['dynamodb:Query'], resources: [`${feedbackTable.tableArn}/index/${index}`], conditions: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`WS#${WORKSPACE_ID_PATTERN}#${partition}#*`] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...keys, ...FEEDBACK_ERASE_FILTER_ATTRIBUTES] },
+        StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      } }));
+  }
+  reads.addStatements(workspaceAttributeReadStatement(workspacesTable, WORKSPACE_CREATED_AT_ATTRIBUTES));
+}
+
+/**
  * voc-participants for the worker (7.72.00): one statement per entry of `PARTICIPANT_ACCESS`, each on the table only
  * and pinned to its partitions; the UpdateItem also to `PARTICIPANT_UPDATE_ATTRIBUTES`, asking for no returned values;
  * the reads in the walks' policy, every write in the role's own; and the people index's Query, of the deployment's
@@ -571,8 +620,11 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   const functionName = uniqueName(RETENTION_FUNCTION_BASE_NAME);
 
   const role = workerRole(worker, 'RetentionRole');
-  // The table itself, never its indexes (7.72.00: the worker scans and reads items by key, and reads no index; the
-  // index ARNs the grant named also weighed on the role's inline policy quota).
+  // The table itself, never its indexes, in the role's own policy (7.72.00, for two reasons: least privilege, no index
+  // read, and the inline quota, which the index ARNs the grant named weighed on). Since 7.96.00 a workspace's erasure
+  // reads two of the indexes, from the reads policy only (grantFeedbackIndexReads): a workspace's partitions, filtered,
+  // keys only, every hit read again from the table by the GetItem here and decided on that row (least privilege),
+  // and nothing added here (the quota).
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:DeleteItem'],
     resources: [feedbackTable.tableArn],
@@ -600,11 +652,14 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   // 7.84.00: the boards' and the memberships' reads and updates, none a delete or a put, in a customer-managed policy
   // of their own, `RetentionReadsPolicy`, built in every build and attached to this role alone: the role's inline
   // policy keeps every delete and audit put, and with the engineering agents' puts and delete it would otherwise pass
-  // the size at which CDK splits it (the walks' policy is near its own quota).
+  // the size at which CDK splits it (the walks' policy is near its own quota). 7.96.00: and a workspace erasure's
+  // keys-only reads of voc-feedback's day and id indexes and of a workspace's created_at (grantFeedbackIndexReads).
   const reads = new iam.ManagedPolicy(worker, 'RetentionReadsPolicy', {
-    description: 'The retention worker\'s board and membership reads and de-identifying updates: no delete, no put',
+    description: 'The retention worker\'s board and membership reads and de-identifying updates, and a workspace '
+      + 'erasure\'s keys-only feedback index reads: no delete, no put',
     roles: [role],
   });
+  grantFeedbackIndexReads(reads, feedbackTable, workspacesTable);
   reads.addStatements(new iam.PolicyStatement({
     sid: 'ReadAndDeidentifyBoards',
     actions: ['dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem'],

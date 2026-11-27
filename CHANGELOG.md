@@ -17,6 +17,72 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.96.00] - 2026-11-27
+
+Multi-workspace, scale and erasure: a workspace's erasure no longer scans the whole feedback table. Its items phase
+read every workspace's and the deployment's reviews to find one workspace's; it now reads only that workspace's own
+index partitions, filtered there by the erasure's own filter, keys only, and re-reads every hit from the table
+before it erases anything
+([docs/source-policies.md](docs/source-policies.md), "Workspace items"; [docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Changed
+
+- An erasure that names a workspace (`lambda/jobs/retention/`, the `items` phase): by `source_id` (with its source),
+  one Query of `gsi4-by-feedback-id` at the review's id; by `author`, `csv_row_id` or email, the day walk 7.94.00
+  built for the reprocess, one Query of `gsi1-by-date` per day from the day before the workspace was created to
+  today. Every Query filters on the index with the Scan's own filter (`shared/retention.py` `erase_filter` in the
+  workspace; both indexes project every attribute) and returns the keys only; each hit is read again from the table
+  with a strongly consistent GetItem and matched again (`erase_matches`, the same rule as the filter), and only a row
+  that still matches is tombstoned and deleted, as before; a row the filter rules out is never read again. Its
+  checkpoint is the Query's position (with the day, for the day walk). A workspace job's `scanned` count is
+  its index hits.
+- Cost: a Query is billed on the full size of the index items it reads, filtered or not (both indexes project every
+  attribute), so keys only saves the bytes returned, not read units: the walk reads every review of the workspace
+  once from the index (eventually consistent) and only the hits again from the table (strongly consistent), against a
+  Scan of every workspace's and the deployment's reviews.
+- Load, rough, for a workspace of 1,000,000 reviews. Assumed: ~1 KB items; the job's 100-item Query pages (`Limit`
+  counts items read, before the filter); eventually consistent index reads at 0.5 RCU per 4 KB read; a strongly
+  consistent GetItem at 1 RCU per item up to 4 KB, ~5 ms each. An erasure by author, CSV row or email reads all 1M
+  from the index: 10,000 pages of ~100 KB, ~12.5 RCU each, ~125,000 RCU, billed on the full items because the
+  filter runs after the read; plus one consistent GetItem per hit, a handful (a few RCU, milliseconds), and one
+  Query per day the workspace has existed (~365 a year, 0.5 RCU at least each, even empty). The former Scan read the
+  deployment's every row, every workspace's and the deployment's (~125,000 RCU per million rows of the table at the
+  same size), whatever this workspace's size. By source id: one Query of one id partition (usually one item,
+  0.5 RCU) and its hits' GetItems. Against a keys-only walk without the filter (one GetItem per review: ~1,000,000
+  RCU and ~83 min of GetItems), the filter saves GetItems and time, not index read units: the index is read whole
+  either way.
+- No Scan except two fallbacks: a job handed over with a Scan position before this release, and a workspace whose
+  `META` has no `created_at` (or whose voc-workspaces is not configured, its own warning), finish with the Scan (the
+  latter logged and counted, `workspace_item_scans`). The deployment's erasures, an
+  email erasure that reaches every workspace and the retention window scan as before.
+- Consistency: the Scan and the walk both read eventually consistent pages; the walk adds the index's replication
+  lag; each hit is decided on the row as a strongly consistent read returns it. The delete itself is unconditioned,
+  as before: a row changed between that read and its delete is still deleted, as with the Scan. A review written or
+  indexed after the walk passed its day, or (by source id) written just before the Query but not yet in gsi4, or one
+  whose matched attribute changed into the erased value within the index's replication lag (the index's filter still
+  sees the old value, so it is never read again), is left for the next erasure (TENETS.md D5, with a review that has no `gsi1pk` or no `gsi4pk`).
+- `lambda/shared/test/test_feedback_day_index_writers.py` holds `gsi4pk` as it holds the day keys: only the
+  processor's first put writes it (also through `FEEDBACK_ID_INDEX_PARTITION`), nothing rewrites it.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). IAM: the retention role's customer-managed `RetentionReadsPolicy` gets
+  Query on voc-feedback's `gsi1-by-date` (`WS#<one id>#DATE#*`) and `gsi4-by-feedback-id` (`WS#<one id>#FEEDBACK#*`),
+  each held to the keys it returns and its filter's attributes (`author`, `csv_row_id`, `metadata`, `source_id`,
+  `source_platform`; `Select` `SPECIFIC_ATTRIBUTES` required, `ALL_ATTRIBUTES` and `ALL_PROJECTED_ATTRIBUTES`
+  refused), and a workspace's `META`
+  read held to `pk`, `sk` and `created_at`; nothing is added to the inline policy, where every delete and audit put
+  stays. 7.72.00 kept the role's feedback grant to the table, "the worker scans and reads items by key, and reads no
+  index; the index ARNs the grant named also weighed on the role's inline policy quota": the index reads return keys
+  only and every hit is re-read from the table, and they sit in a managed policy. Policy sizes (whitespace removed):
+  inline 6,612 (engineering build 7,958) of 10,240, unchanged; `RetentionReadsPolicy` 2,739 → 4,129 of 6,144;
+  `RetentionWalksPolicy` 5,503 and `RetentionEngineeringPolicy` 3,976, unchanged.
+- Why the filter's attributes are in the index grants: IAM's `dynamodb:Attributes` may count the names a
+  `FilterExpression` uses, so they are allowed, so the filtered Query is never refused. They add no reach: the
+  role's inline `GetItem` already reads whole rows from the table. `Select` `SPECIFIC_ATTRIBUTES` stays required and
+  the code's projection is the keys only (`test_the_index_reads_keys_only_and_filters_on_the_erasure` pins it; the
+  policy evaluation test refuses a whole-item or extra-attribute read).
+
 ## [7.94.00] - 2026-11-27
 
 Multi-workspace, scale: a workspace's category reprocess reads only its own reviews. It paged the whole feedback

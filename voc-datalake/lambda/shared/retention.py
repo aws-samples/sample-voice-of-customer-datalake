@@ -102,6 +102,7 @@ __all__ = [
     'delete_raw_prefix_page',
     'delete_whole_upload',
     'erase_filter',
+    'erase_matches',
     'holds_files',
     'import_originals_prefix',
     'item_feedback_id',
@@ -172,13 +173,16 @@ ENGINEERING_MARK_COUNTER: Final = 'engineering_rows_marked'
 AGENT_MEMORY_COUNTER: Final = 'agent_memory_people_erased'
 AGENT_MEMORY_REFUSED_COUNTER: Final = 'agent_memory_people_refused'
 AGENT_MEMORY_NOT_ERASED_COUNTER: Final = 'agent_memory_accounts_not_erased'
+# (7.96.00) A workspace's erasure that fell back to a Scan of voc-feedback because its workspace's META names no
+# created_at, so its day walk has no first day (jobs/retention/item_walk.py): 1 on such a job's rows.
+WORKSPACE_SCAN_COUNTER: Final = 'workspace_item_scans'
 # The counters on the job and audit rows only once above 0 (a run that touched none reads as before).
 ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER,
                                     EXPORT_OBJECT_COUNTER, PROJECT_COUNTER, MALFORMED_ID_COUNTER,
                                     DOCS_NOT_CHECKED_COUNTER, FORM_TEST_COUNTER, PARTICIPANT_COUNTER,
                                     NOT_ERASED_COUNTER, GUARD_MALFORMED_COUNTER, INDEX_KEPT_COUNTER,
                                     ENGINEERING_MARK_COUNTER, AGENT_MEMORY_COUNTER, AGENT_MEMORY_REFUSED_COUNTER,
-                                    AGENT_MEMORY_NOT_ERASED_COUNTER)
+                                    AGENT_MEMORY_NOT_ERASED_COUNTER, WORKSPACE_SCAN_COUNTER)
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'
@@ -301,6 +305,46 @@ def erase_filter(field: str, value: str, source: str | None, store: str = STORE_
              else _workspace_items(scope, field, store))
     condition = items & match
     return condition & Attr('source_platform').eq(source) if source and field != SOURCE_FIELD else condition
+
+
+def erase_matches(item: Mapping[str, Any], field: str, value: str, source: str | None,
+                  scope: WorkspaceScope | None = None) -> bool:
+    """Whether one stored voc-feedback row matches ``erase_filter(field, value, source, STORE_FEEDBACK, scope)``: the
+    same rule, evaluated in Python as DynamoDB evaluates the filter (an attribute matches only as a string; a nested
+    email only inside a ``metadata`` map; ``begins_with`` only on a string key). A workspace's erasure reads its
+    candidates from an index and acts only on a row this accepts once read again from the table
+    (jobs/retention/item_walk.py); lambda/shared/test/test_erase_matches.py holds it equal to the Scan's filter on
+    moto. ValueError where ``erase_filter`` raises one."""
+    if field not in ERASE_FIELDS:
+        raise ValueError(f'Unknown erasure field "{field}"')
+    if scope is not None and field not in WORKSPACE_ERASE_FIELDS:
+        raise ValueError(f'An erasure in a workspace cannot erase by "{field}"')
+    if not _starts(item.get('sk'), FEEDBACK_SK_PREFIX):
+        return False
+    pk = item.get('pk')
+    if scope is not None:
+        if not _starts(pk, scope.prefix):
+            return False
+    elif not reaches_workspaces(field) and _starts(pk, WORKSPACE_KEY_PREFIX):
+        return False
+    if field == 'email':
+        spellings = {value.strip().lower(), value}
+        metadata = item.get('metadata')
+        names = [path.split('.', 1)[1] for path in _EMAIL_PATHS]
+        found = isinstance(metadata, Mapping) and any(_string_in(metadata.get(name), spellings) for name in names)
+    else:
+        found = _string_in(item.get('source_platform' if field == SOURCE_FIELD else field), {value})
+    if not found:
+        return False
+    return _string_in(item.get('source_platform'), {source}) if source and field != SOURCE_FIELD else True
+
+
+def _starts(value: object, prefix: str) -> bool:
+    return isinstance(value, str) and value.startswith(prefix)
+
+
+def _string_in(value: object, allowed: set[str]) -> bool:
+    return isinstance(value, str) and value in allowed
 
 
 @dataclass(frozen=True)

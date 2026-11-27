@@ -34,12 +34,16 @@ How a page is read (``read_page``, ``read_day_page``):
   production write of ``gsi1pk`` / ``gsi1sk``, or update naming ``date``, but the processor's conditional first put)
   and lib/customer-data-deletes.test.ts "voc-feedback: only the processor puts an item" (no other role may put one). A workspace's job still Scans (through the workspace layer, ``WorkspaceTable.scan``) when its cursor is a
   Scan's (``is_walk_cursor`` false: checkpointed before the walk) or its workspace names no creation time.
+
+The walk is shared (7.96.00): ``first_walk_day``, ``day_span``, ``query_day_page`` and ``position_after`` also serve a
+workspace's erasure (jobs/retention/item_walk.py), which filters each day with its erasure's own filter, reads the
+hits' keys alone and decides each on the table's own row.
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import Attr, ConditionBase
@@ -49,7 +53,7 @@ from shared.feedback import DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, basis_date
 from shared.indexes import FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_DATE_POSITION
 from shared.retention import FEEDBACK_SK_PREFIX
 from shared.scoped_query import query_partition
-from shared.timestamps import ISO_DAY_RE
+from shared.timestamps import ISO_DAY_RE, parse_iso
 from shared.ws_repo import WORKSPACE_KEY_PREFIX, WorkspaceScope, date_pk, is_workspace_key, ws_table
 
 DATE_BASIS_PROCESSED: Final = 'processed'
@@ -281,12 +285,26 @@ def is_walk_cursor(cursor: Mapping[str, Any] | None) -> bool:
     return not cursor or WALK_DAY in cursor
 
 
+def first_walk_day(created_at: object) -> date | None:
+    """The first day partition a workspace's walk reads, from its ``META``'s ``created_at``
+    (shared/ws_repo.py ``workspace_created_at``): the UTC day before it (one day of margin for the clocks of the API
+    that created the workspace and of the processor), or None when it is not a readable ISO time (the walk cannot
+    start: the job Scans instead). The category reprocess's and a workspace's erasure's (jobs/retention/item_walk.py)."""
+    created = parse_iso(created_at)
+    return None if created is None else created.astimezone(UTC).date() - timedelta(days=1)
+
+
+def day_span(first_possible: date, today: date) -> tuple[str, str]:
+    """The first and last day partition of a whole walk: ``first_possible`` to ``today``, inclusive."""
+    return first_possible.isoformat(), today.isoformat()
+
+
 def walk_days(job_slice: ReprocessSlice, window: tuple[str | None, str | None], first_possible: date,
               today: date) -> tuple[str, str]:
     """The first and last day partition a workspace's walk reads: ``first_possible`` to ``today``, inclusive, narrowed
     to a processed-date window (a review-date window does not choose the days: a review's processing day is not its
     own date). The first may come after the last: nothing to read."""
-    first, last = first_possible.isoformat(), today.isoformat()
+    first, last = day_span(first_possible, today)
     if job_slice.date_basis == DATE_BASIS_PROCESSED:
         since, until = window
         first = max(first, since) if since else first
@@ -317,12 +335,22 @@ def read_day_page(
     unless the walk is done, the next page's cursor as ``LastEvaluatedKey``: the same day from the Query's last key,
     else the next day while it is not past the last of ``days``. A cursor whose day is past the last reads nothing; one
     whose day is not a real ``YYYY-MM-DD`` date raises ValueError (``walk_day``): the job fails, never skips days."""
+    return query_day_page(table, cursor, page_size, scope, days,
+                          FilterExpression=read_filter(job_slice, window, scope))
+
+
+def query_day_page(
+    table: Any, cursor: Mapping[str, Any] | None, page_size: int, scope: WorkspaceScope, days: tuple[str, str],
+    **options: Any,
+) -> dict:
+    """``read_day_page``'s walk with the rest of the Query in ``options`` (a filter, and a keys-only projection: a
+    workspace's erasure filters with its own filter, reads the hits' keys alone and decides on the table's row,
+    jobs/retention/item_walk.py). The same pages and cursors."""
     day = walk_day(cursor[WALK_DAY]) if cursor else days[0]
     following_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
     if day > days[1]:
         return {'Items': [], PAGE_DAY: day}
-    kwargs: dict[str, Any] = {'IndexName': FEEDBACK_BY_DATE_INDEX, 'Limit': page_size,
-                              'FilterExpression': read_filter(job_slice, window, scope)}
+    kwargs: dict[str, Any] = {'IndexName': FEEDBACK_BY_DATE_INDEX, 'Limit': page_size, **options}
     start = cursor.get(WALK_START) if cursor else None
     if start:
         kwargs['ExclusiveStartKey'] = dict(start)

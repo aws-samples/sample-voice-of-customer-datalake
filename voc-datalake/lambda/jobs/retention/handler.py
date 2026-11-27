@@ -27,7 +27,13 @@ A run walks its PHASES in order, each paged and time-budgeted:
    well); an erasure by author (a display name), source id or CSV row (ids unique only within one account or
    upload) and a whole-source erasure leave them (``shared/retention.reaches_workspaces``); a job that names a
    workspace reaches that workspace's items only, and walks no other phase but its projects and its participants (by
-   email), its exports and its projects' lineage marks;
+   email), its exports and its projects' lineage marks. Since 7.96.00 such a job reads no Scan except in two
+   fallbacks: its items are found on the workspace's own index partitions, filtered there by the Scan's own filter,
+   keys only, each hit read again from the table (strongly consistent) and erased only if that row still matches
+   (``item_walk.py``: by source id one Query of gsi4-by-feedback-id, else the gsi1-by-date day walk from the
+   workspace's creation); it Scans only when handed over with a Scan cursor or when its workspace names no creation
+   time (counted, ``workspace_item_scans``). Its ``scanned`` count is then the index hits (the rows the index's filter
+   matched), not rows of the table. Every other run Scans as before;
    then ``form_tests`` — a feedback form's test responses (voc-aggregates, their own test partitions: the deployment's
    ``FEEDBACK_FORM_TEST`` and, as for items, the workspaces' ``WS#{ws}#FEEDBACK_FORM_TEST``), when the run reaches the
    ``feedback_form`` source: its retention window, an erasure by email or name, or its whole-source erasure
@@ -110,6 +116,7 @@ from jobs.retention import (
     engineering_lineage,
     exports,
     form_tests,
+    item_walk,
     lineage,
     members,
     participants,
@@ -467,9 +474,17 @@ def _page_cap(walk: Walk, phase: str, cursor: dict | None) -> dict:
     return _hand_over(walk, phase, cursor)
 
 
+def _table_position(_page: dict, item: dict) -> dict:
+    """A Scan's cursor right after ``item``: its table key."""
+    return {'pk': item['pk'], 'sk': item['sk']}
+
+
 def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | None], dict],
-                 tombstones: Callable[[list[dict]], None], erase: Callable[[dict], None]) -> dict | None:
-    """Per page: every match's tombstone first, then each match erased, until the time runs low."""
+                 tombstones: Callable[[list[dict]], None], erase: Callable[[dict], None],
+                 position: Callable[[dict, dict], dict] = _table_position) -> dict | None:
+    """Per page: every match's tombstone first, then each match erased, until the time runs low. ``position(page,
+    item)``: the cursor right after an erased item (a Scan's table key; a workspace job's index walk names its own,
+    item_walk.py)."""
 
     def handle(page: dict, start: dict | None) -> _Resume | None:
         walk.run['scanned'] += int(page.get('ScannedCount', 0))
@@ -481,7 +496,7 @@ def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[di
                 # After the last erased item (this page's start when none was).
                 return _Resume(done)
             erase(item)
-            done = {'pk': item['pk'], 'sk': item['sk']}
+            done = position(page, item)
         return None
 
     return _walk(walk, phase, cursor, scan, handle)
@@ -532,6 +547,24 @@ def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
     deleter = ItemDeleter(run, walk.s3, RAW_DATA_BUCKET, walk.tables)
     retention_run = run['mode'] == MODE_RETENTION
     named = run.get('workspace_id')
+    def tombstones(items: list[dict]) -> None:
+        write_tombstones(walk.aggregates, run, items, store)
+
+    def erase(item: dict) -> None:
+        # Inside the item's workspace (a deployment-wide run's workspace item): its lines are that workspace's.
+        with workspaces.inside(None if store == STORE_RADAR else retention.item_scope(item)):
+            deleter.delete(item, store)
+
+    # 7.96.00: a job that names a workspace reads that workspace's index partitions, filtered there, keys only, each
+    # hit re-read (item_walk.py); it Scans only when handed over with a Scan cursor or its workspace names no creation time.
+    indexed = _workspace_index_walk(walk, cursor) if named and store == STORE_FEEDBACK else None
+    if indexed is not None:
+        def walk_page(at: dict | None) -> dict:
+            page = indexed.page(at)
+            _only_in_workspace(str(named), page)
+            return page
+
+        return _erase_pages(walk, phase, cursor, walk_page, tombstones, erase, indexed.position)
 
     def scan(at: dict | None) -> dict:
         page = _scan_page(table, condition, at)
@@ -539,13 +572,17 @@ def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
             _only_in_workspace(str(named), page)
         return _without_unscoped_rows(run, page) if retention_run else page
 
-    def erase(item: dict) -> None:
-        # Inside the item's workspace (a deployment-wide run's workspace item): its lines are that workspace's.
-        with workspaces.inside(None if store == STORE_RADAR else retention.item_scope(item)):
-            deleter.delete(item, store)
+    return _erase_pages(walk, phase, cursor, scan, tombstones, erase)
 
-    return _erase_pages(walk, phase, cursor, scan,
-                        lambda items: write_tombstones(walk.aggregates, run, items, store), erase)
+
+def _workspace_index_walk(walk: Walk, cursor: dict | None) -> item_walk.IndexWalk | None:
+    """A workspace job's index read of its items from ``cursor`` (item_walk.py ``index_walk``), or None to Scan."""
+    scope = job_scope(walk.run)
+    if scope is None:
+        raise RuntimeError('a job that names a workspace has no workspace scope')
+    return item_walk.index_walk(walk.run, str(walk.event.get('value') or ''), walk.tables[STORE_FEEDBACK],
+                                walk.tables.get(members.STORE_MEMBERS), scope, cursor,
+                                walk.clock().astimezone(UTC).date(), PAGE_SIZE)
 
 
 def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:

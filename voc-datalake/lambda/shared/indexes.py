@@ -21,6 +21,9 @@ FEEDBACK_BY_CATEGORY_INDEX = 'gsi2-by-category'
 FEEDBACK_BY_URGENCY_INDEX = 'gsi3-by-urgency'
 # gsi4pk (FEEDBACK#{id}, or WS#{ws}#FEEDBACK#{id} in a workspace)
 FEEDBACK_BY_ID_INDEX = 'gsi4-by-feedback-id'
+# A review's position in gsi4-by-feedback-id (no sort key): the table's key and the index's (a workspace erasure's
+# keys-only read by source id, jobs/retention/item_walk.py).
+FEEDBACK_BY_ID_POSITION = ('pk', 'sk', 'gsi4pk')
 # gsi5pk (CHANNEL#{channel}, or WS#{ws}#CHANNEL#{channel}) + gsi1sk, slim projection (shared/channel_index.py)
 FEEDBACK_BY_CHANNEL_INDEX = 'gsi5-by-channel'
 

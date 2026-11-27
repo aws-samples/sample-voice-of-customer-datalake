@@ -14,6 +14,7 @@ from shared.digests import sha256_hex
 from shared.retention import ERASURE_JOB_PK
 from shared.test.moto_s3 import create_versioned_bucket
 from shared.test.moto_tables import (
+    create_feedback_table_by_date_and_id,
     create_pk_sk_table,
     create_projects_table_with_type_index,
     mark_review_registries_backfilled,
@@ -59,7 +60,9 @@ def aws():
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
         s3 = create_versioned_bucket(BUCKET)
-        feedback = create_pk_sk_table(handler.FEEDBACK_TABLE, resource)
+        # With gsi1-by-date and gsi4-by-feedback-id, as core-stack.ts: a workspace's erasure finds its items by them
+        # (7.96.00, item_walk.py); a row without their keys is on neither, as in DynamoDB.
+        feedback = create_feedback_table_by_date_and_id(handler.FEEDBACK_TABLE, resource)
         aggregates = create_pk_sk_table(handler.AGGREGATES_TABLE, resource)
         radar = create_pk_sk_table(RADAR_TABLE, resource)
         # With gsi1-by-type, as core-stack.ts (the stores write it; the deployment's walks read PROJECT_IDS, 7.48.00).

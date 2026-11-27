@@ -1513,17 +1513,44 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
 - Also counted: reviews ingested, scraper and browser sessions, Comprehend and Translate characters. (A workspace's
   credentials parameters cost nothing a month: decision 19.)
 - Scale today (this repo keeps no separate load model, so the notes live here): a workspace's erasure (7.09.00)
-  Scans the whole voc-feedback table, so N workspaces' live erasures are N whole-table Scans, whatever each
-  workspace's size; one live job per workspace bounds it. The fix is to read only the workspace's own index
-  partitions (a Query of its `WS#{ws}#DATE#…` gsi1 days, or a per-workspace index). A workspace's category reprocess
-  does that now: it Queries `gsi1-by-date` one day partition `WS#{ws}#DATE#{day}` at a time (pages of 25, oldest
+  Scanned the whole voc-feedback table, so N workspaces' live erasures were N whole-table Scans, whatever each
+  workspace's size. Since 7.96.00 it reads only its own index partitions (`lambda/jobs/retention/item_walk.py`;
+  docs/source-policies.md, "Workspace items"): by source id one Query of `gsi4-by-feedback-id`'s
+  `WS#{ws}#FEEDBACK#{id}`; by author, CSV row or email the reprocess's day walk below, one Query of
+  `WS#{ws}#DATE#{day}` a day from the day before its `created_at` to today. Each Query filters on the index with the
+  Scan's own filter (`shared/retention.py` `erase_filter` in the workspace; both indexes project every attribute) and
+  returns the keys only; each hit is read again from the table with one strongly consistent GetItem and decided on
+  the row as that read returns it: erased only if that row still matches (`erase_matches`); a row the filter rules
+  out is never read again. The delete itself is unconditioned, as before (a row changed between that read and its
+  delete is still deleted, as with the Scan). Its cost is its own workspace's: a Query is billed on the full size of
+  the index items it reads, filtered or not, so keys only saves the bytes returned, not read units; the walk reads
+  every review of the workspace once from the index (eventually consistent; one Query a day it has existed) and only
+  the hits again from the table (strongly consistent); by source id one Query of the review's id partition and a
+  GetItem per hit, whatever the table's size; one live job per workspace still bounds it. Roughly, for 1,000,000
+  reviews of ~1 KB (0.5 RCU per 4 KB of eventually consistent index reads, 1 RCU and ~5 ms per consistent GetItem):
+  an erasure by author, CSV row or email reads ~125,000 RCU from the index (10,000 pages of 100) plus a GetItem per
+  hit, a handful; the former Scan read the same ~125,000 RCU per million rows of the whole table; without the filter
+  each review would cost a GetItem too (~1,000,000 RCU, ~83 min), so the filter saves GetItems and time, not index
+  read units (CHANGELOG 7.96.00). Its role may Query those
+  two indexes only on one workspace id's `#DATE#*` and `#FEEDBACK#*` partitions, for their keys and the filter's
+  attributes, `SPECIFIC_ATTRIBUTES` required (`RetentionReadsPolicy`, nothing added to its inline policy), and read
+  a `META`'s `created_at`. Consistency: the Scan read eventually consistent pages too (no `ConsistentRead`); the walk
+  adds the index's replication lag, and each hit is decided on the row a strongly consistent read returns; a review
+  written or indexed after the walk passed its day, or (by source id) written just before the Query but not yet in
+  gsi4, or one whose matched attribute changed into the erased value within the index's lag (the index's filter
+  still sees the old value), is the next erasure's, and a review with no `gsi1pk` or `gsi4pk` (none is written so) is on no partition the
+  walk reads. No Scan except two fallbacks: a job handed over with a Scan cursor before 7.96.00 and a workspace whose
+  `META` names no `created_at` or whose voc-workspaces is not configured (counted, `workspace_item_scans`). The
+  deployment's erasures, the erasure by email that
+  reaches every workspace included, Scan as before. A workspace's category reprocess
+  does the same: it Queries `gsi1-by-date` one day partition `WS#{ws}#DATE#{day}` at a time (pages of 25, oldest
   first, the slice's source and category filters on each Query), from the UTC day before its `META`'s `created_at`
   (a day's margin for the clocks; the processor files a review under the day it processed it, never the review's
   own date, and writes only into an active workspace, so nothing of a workspace is filed earlier) to today, clipped
   to a processed-date window (`lambda/shared/reprocess_slices.py` `walk_days`, each day read by `read_day_page`); a
   review-date window reads every day and each review read is filtered by its own date (`reprocess_slices.py` `admits`,
   which `lambda/jobs/category_reprocess/handler.py` applies). It reads, and is billed for, its own reviews plus one Query and one checkpoint per day it walks
-  (a workspace a year old: about 365 small Queries), whatever the table's size; its role may Query only that index,
+  (a workspace a year old: about 365 Queries), whatever the table's size; its role may Query only that index,
   where the partition is one workspace's day (`WS#{one id}#DATE#*`), and read a `META`'s `created_at` (held to it).
   Two cases still Scan the table through the workspace layer: a job checkpointed with a Scan cursor before this
   change (it finishes as it started) and a workspace whose `META` names no `created_at`. The deployment's own

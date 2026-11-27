@@ -139,7 +139,15 @@ export const PLUGIN_ROW_PARTITIONS = ['PLUGIN#*'] as const;
 export function grantWorkspaceAttributeRead(
   role: iam.IRole, workspacesTable: dynamodb.ITable, attributes: readonly string[], partitions: readonly string[] = ['WS#*'],
 ): void {
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
+  role.addToPrincipalPolicy(workspaceAttributeReadStatement(workspacesTable, attributes, partitions));
+}
+
+/** {@link grantWorkspaceAttributeRead}'s statement, for a customer-managed policy to hold instead of a role's own one
+ *  (the retention worker's `created_at` read, 7.96.00: lib/stacks/retention-worker.ts `grantFeedbackIndexReads`). */
+export function workspaceAttributeReadStatement(
+  workspacesTable: dynamodb.ITable, attributes: readonly string[], partitions: readonly string[] = ['WS#*'],
+): iam.PolicyStatement {
+  return new iam.PolicyStatement({
     actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
     conditions: {
       ...leadingKeys([...partitions]),
@@ -149,7 +157,7 @@ export function grantWorkspaceAttributeRead(
       // through with the whole row: it is refused (every caller sends a projection).
       Null: { 'dynamodb:Attributes': 'false' },
     },
-  }));
+  });
 }
 
 /**

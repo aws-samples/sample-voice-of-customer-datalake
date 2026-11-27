@@ -169,6 +169,41 @@ describe('voc-retention worker', () => {
     }));
   });
 
+  it('reads voc-feedback\'s day and id indexes for a workspace\'s keys only, in the reads policy (7.96.00)', () => {
+    const ws = `WS#ws_${'?'.repeat(26)}`;
+    const [, reads] = retentionManaged(template).find(([id]) => id.startsWith('RetentionWorkerRetentionReadsPolicy')) ?? [];
+    const indexQueries = IamPolicySchema.parse(reads).Properties.PolicyDocument.Statement
+      .filter((statement) => JSON.stringify(statement.Resource).includes('Feedback'));
+    // Two Queries, each on its own index, a workspace's partitions only, its keys and its filter's attributes only
+    // (the erasure's own filter), a projection required.
+    const filter = ['author', 'csv_row_id', 'metadata', 'source_id', 'source_platform'];
+    expect(indexQueries.map((statement) => [statement.Sid, statement.Action,
+      /\/index\/[a-z0-9-]+/.exec(JSON.stringify(statement.Resource))?.[0], statement.Condition])).toStrictEqual([
+      ['QueryWorkspaceFeedbackDays', 'dynamodb:Query', '/index/gsi1-by-date', {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`${ws}#DATE#*`] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'gsi1pk', 'gsi1sk', ...filter] },
+        StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' } }],
+      ['QueryWorkspaceFeedbackIds', 'dynamodb:Query', '/index/gsi4-by-feedback-id', {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`${ws}#FEEDBACK#*`] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'gsi4pk', ...filter] },
+        StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' } }],
+    ]);
+    // The META's created_at (where the day walk starts), held to it and the keys, a projection required.
+    expect(JSON.stringify(reads)).toContain(JSON.stringify({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'created_at'] },
+      StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      Null: { 'dynamodb:Attributes': 'false' },
+    }));
+    // Nothing on voc-feedback's indexes in the role's own policy or the walks' (the inline quota; 7.72.00's rule).
+    const elsewhere = [...Object.entries(template.findResources('AWS::IAM::Policy')), ...retentionManaged(template)]
+      .filter(([id]) => /^RetentionWorkerRetention(RoleDefaultPolicy|WalksPolicy)/.test(id))
+      .flatMap(([, resource]) => IamPolicySchema.parse(resource).Properties.PolicyDocument.Statement)
+      .filter((statement) => JSON.stringify(statement.Resource).includes('Feedback'));
+    expect(elsewhere.map((statement) => JSON.stringify(statement.Resource))
+      .filter((resource) => resource.includes('/index/'))).toStrictEqual([]);
+  });
+
   it('queries exactly these project partitions: one workspace id\'s and the deployment\'s, its registries included', () => {
     const ws = `WS#ws_${'?'.repeat(26)}`;
     const json = JSON.stringify(template.toJSON());
