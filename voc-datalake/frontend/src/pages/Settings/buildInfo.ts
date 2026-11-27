@@ -32,7 +32,8 @@ export const BUILD_INFO: BuildInfo = {
   builtAt: import.meta.env.BUILD_TIME,
 }
 
-/** `3.12.0` → `3.12.00`: the CHANGELOG's two-digit minor and patch. Anything else is returned as is. */
+/** `3.12.0` → `3.12.00`, `7.100.0` → `7.100.00`: the CHANGELOG's minor and patch of at least two digits. Anything
+ * else is returned as is. */
 export function paddedVersion(version: string): string {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)
   if (match === null) return version

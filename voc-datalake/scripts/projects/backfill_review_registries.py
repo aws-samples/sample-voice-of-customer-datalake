@@ -77,6 +77,7 @@ from shared.project_keys import (
     COMMENT_PARTITION_PREFIX,
     DEPLOYMENT_LINK_REGISTRY_PK,
     PROJECT_PREFIX,
+    REVIEW_REGISTRIES_MARKER_KEY,
     REVIEW_REGISTRIES_MARKER_SK,
     comment_partition_ids,
     deployment_link_registry_key,
@@ -85,6 +86,7 @@ from shared.project_keys import (
     project_id_of,
     series_registry_ids,
 )
+from shared.project_scope import SWITCH_KEY
 from shared.project_walk import ID_PAGE, is_project_id, is_series_ref
 from shared.review_registries import FIRST_RELEASE, marker_complete, release_of
 from shared.review_share_audience import ROUTE_WORKSPACE_FIELD, SHARE_PK_PREFIX, SHARE_SK, is_share_id
@@ -106,7 +108,7 @@ DRAIN_MARGIN = timedelta(minutes=5)
 #: The functions that write links, threads or projects (lib/stacks/api-projects-lambda.ts: the projects API and its
 #: assist twin; a CDK test holds the functions bundling those writers to exactly these): exactly one of each.
 WRITER_NAMES = ('voc-projects-api', 'voc-projects-assist')
-MARKER_KEY = {'pk': DEPLOYMENT_LINK_REGISTRY_PK, 'sk': REVIEW_REGISTRIES_MARKER_SK}
+MARKER_KEY = REVIEW_REGISTRIES_MARKER_KEY
 PROGRESS_KEY = {'pk': DEPLOYMENT_LINK_REGISTRY_PK, 'sk': f'{REVIEW_REGISTRIES_MARKER_SK}#progress'}
 #: What the progress row keeps of the walk (the rest of the row is ``applied`` and ``updated_at``).
 STATE_FIELDS = ('run_id', 'pass', 'start', 'after', *(f'{kind}_found' for kind in PASSES), 'started_at')
@@ -260,6 +262,12 @@ def _drain(writers: list[dict[str, Any]]) -> timedelta | None:
     if not all(isinstance(each, int) and not isinstance(each, bool) and each > 0 for each in timeouts):
         return None
     return timedelta(seconds=max(int(each) for each in timeouts if isinstance(each, int))) + DRAIN_MARGIN
+
+
+def oldest_release(writers: list[dict[str, Any]]) -> str:
+    """The lowest release the writers run (``7.48.0``; one that names none counts as ``FIRST_RELEASE``): the marker's,
+    and since 7.100.00 the switch row's (scripts/projects/switch_projects.py)."""
+    return '.'.join(str(part) for part in min(release_of(each.get('version')) or FIRST_RELEASE for each in writers))
 
 
 def writers_ready(writers: list[dict[str, Any]], began: datetime) -> str | None:
@@ -439,8 +447,7 @@ def _mark(table: Any, state: dict[str, Any], report: Report, at: str, deployed: 
                 raise SystemExit(_TAKEN_OVER) from error
             raise
         return
-    release = '.'.join(str(part) for part in min(release_of(each.get('version')) or FIRST_RELEASE
-                                                 for each in writers))
+    release = oldest_release(writers)
     marker = {**MARKER_KEY, 'completed_at': at, **{f'{kind}_found': state[f'{kind}_found'] for kind in PASSES},
               'release': release}
     try:
@@ -543,11 +550,24 @@ def main(argv: list[str] | None = None) -> int:
     if options.unmark:
         unmark(projects)
         print('the marker and any progress are deleted: erasures by email fail by name until --apply writes it again')
+        if note := switch_note(projects):
+            print(note)
         return 0
     report = run(projects, apply=options.apply, resume=options.resume, max_pages=options.max_pages,
                  deployed=lambda: link_writers(cloudformation, aws.client('lambda'), options.api_stack))
     print(summary(report, options.apply))
+    if report.marked and (note := switch_note(projects)):
+        print(note)
     return 0
+
+
+def switch_note(table: Any) -> str | None:
+    """When a switch row exists (7.100.00, 3h-S0), that the projects stay switched off until the switch's check runs
+    again: the row names the marker it was checked against, which an unmark or a new marker replaces."""
+    if 'Item' not in table.get_item(Key=dict(SWITCH_KEY), ConsistentRead=True, ProjectionExpression='pk'):
+        return None
+    return ('a switch row exists: the projects stay switched off until scripts/projects/switch_projects.py --apply '
+            'runs again against the new marker')
 
 
 if __name__ == '__main__':

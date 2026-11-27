@@ -80,6 +80,25 @@ test('only the newest heading is exempt from the comparison, not every heading w
   assert.equal(releaseOrderProblems(changelog).length, 1)
 })
 
+test('a three-digit minor is a release: 7.100.00 is newer than 7.99.00 and matches the SemVer 7.100.0', () => {
+  const changelog = '## [Unreleased]\n\n## [7.100.00] - 2026-11-27\n\n## [7.99.00] - 2026-11-27\n'
+  assert.deepEqual(newestRelease(changelog), [7, 100, 0])
+  assert.deepEqual(versionProblems(changelog, [pkg('7.100.0')]), [])
+  assert.equal(versionProblems(changelog, [pkg('7.99.0')]).length, 1)
+  assert.deepEqual(releaseOrderProblems(changelog), [])
+  // And numbered below an existing 7.100.00, 7.99.01 is refused (the comparison is numeric).
+  assert.equal(releaseOrderProblems('## [Unreleased]\n\n## [7.99.01] - 2026-11-28\n\n## [7.100.00] - 2026-11-27\n')
+    .length, 1)
+})
+
+test('a two-digit release still reads and prints as before (2.09.00 is 2.9.0)', () => {
+  assert.deepEqual(newestRelease(CHANGELOG), [2, 9, 0])
+  assert.deepEqual(versionProblems(CHANGELOG, [pkg('2.8.0')]), [
+    'package.json is 2.8.0, but CHANGELOG.md\'s newest release is 2.09.00 (expected "2.9.0")',
+  ])
+  assert.match(versionProblems('## [Unreleased]\n\n## [7.100.00] - 2026-11-27\n', [pkg('7.99.0')])[0], /7\.100\.00/)
+})
+
 test("the repository's own CHANGELOG.md is in order", () => {
   const changelog = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
   assert.deepEqual(releaseOrderProblems(changelog), [])

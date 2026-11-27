@@ -119,8 +119,8 @@ const ADMIN_SURFACES: readonly AdminSurface[] = [
   { location: 'system/version', tab: 'System', section: 'Version', heading: 'Version' },
 ]
 
-/** A padded platform version (`5.34.00`, buildInfo.ts `paddedVersion`). */
-const PLATFORM_VERSION = /^\d+\.\d{2}\.\d{2}$/
+/** A padded platform version (`5.34.00`, `7.100.00`; buildInfo.ts `paddedVersion`). */
+const PLATFORM_VERSION = /^\d+\.\d{2,}\.\d{2,}$/
 
 /** Tailwind's `md`: from here up the tabs are a tablist; below it a select (Settings.tsx). */
 const MD_WIDTH = 768

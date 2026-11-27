@@ -42,6 +42,7 @@ describe('resolveChangelogLink', () => {
 describe('build stamps', () => {
   it('pads minor and patch to two digits and leaves non-SemVer as is', () => {
     expect([paddedVersion('3.12.0'), paddedVersion('10.1.12'), paddedVersion('unknown')]).toStrictEqual(['3.12.00', '10.01.12', 'unknown'])
+    expect(paddedVersion('7.100.0')).toBe('7.100.00')
   })
 
   it('formats the build time in UTC and passes an unparseable stamp through', () => {

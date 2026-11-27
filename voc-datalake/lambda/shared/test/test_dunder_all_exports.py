@@ -59,12 +59,19 @@ ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {
     # (scripts/projects/backfill_review_registries.py, its Scan of the series).
     'lambda/shared/project_keys': frozenset({'COMMENT_PARTITION_PREFIX', 'NotPerWorkspaceError', 'ProjectPartition',
                                              'comment_partition_ids', 'project_partitions'}),
+    # The switch row and its one reader (7.100.00, 3h-S0, docs/multi-workspace.md, the project plan's 3h): the row's
+    # names are the operator's scripts' (scripts/projects/switch_projects.py, backfill_review_registries.py, outside
+    # the scanned folders); projects_switched landed before the switch's later slices, which read it before a project
+    # works in a workspace and remove it here.
+    'lambda/shared/project_scope': frozenset({'MARKER_AT', 'SWITCH_KEY', 'projects_switched', 'switch_row',
+                                              'switch_row_complete', 'switch_row_current'}),
     # Phase 3's registry of a workspace's project ids (7.26.00, docs/multi-workspace.md, the project plan 3a), landed
     # before its readers, the workspace export, delete and erasure (3g), which remove it here.
     'lambda/shared/project_tables': frozenset({'iter_registered_project_ids'}),
     # The release rule the backfill's marker is read by (7.48.00, 3g-d): the operator's backfill
     # (scripts/projects/backfill_review_registries.py, outside the scanned folders) judges its writers by the same one.
-    'lambda/shared/review_registries': frozenset({'FIRST_RELEASE', 'release_of'}),
+    # (release_of: since 7.100.00 the switch check's and its row's reader too.)
+    'lambda/shared/review_registries': frozenset({'FIRST_RELEASE'}),
 }
 
 

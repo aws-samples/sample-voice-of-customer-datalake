@@ -75,7 +75,8 @@ each commit lands on `main` as it is and `main` keeps a linear history: bring a 
 Every pull request that lands on `main` bumps the version once and records its changes in
 [CHANGELOG.md](CHANGELOG.md), usually in its last commit: **major** for a redesign or a breaking API/stack/data
 change, **minor** for new or changed behaviour, **patch** for fixes, tests, docs and tooling. Several changes in
-one pull request take one bump, the highest kind among them. The changelog writes releases as `2.09.00` with
+one pull request take one bump, the highest kind among them. The changelog writes releases as `2.09.00` (minor
+and patch of at least two digits: `7.100.00` follows `7.99.00`) with
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) groups (Added, Changed, Deprecated, Removed, Fixed,
 Security, Upgrade notes); the three `package.json` files (root, `voc-datalake/`, `voc-datalake/frontend/`) carry
 the same number in strict SemVer (`2.9.0`, via `npm version 2.9.0 --no-git-tag-version` in each directory).

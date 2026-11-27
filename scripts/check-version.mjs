@@ -3,8 +3,8 @@
  * The newest release in CHANGELOG.md must be the version every platform package.json carries,
  * and must be numbered above every other release section in the file.
  *
- * CHANGELOG.md writes releases as `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD` with two-digit minor and
- * patch parts (`2.09.00`); npm needs strict SemVer, so package.json carries `2.9.0`. This compares
+ * CHANGELOG.md writes releases as `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD` with minor and patch
+ * parts of at least two digits (`2.09.00`, `7.100.00`); npm needs strict SemVer, so package.json carries `2.9.0`. This compares
  * them numerically, and also checks the release heading is well formed and dated, so a change that
  * lands without bumping both (or bumps only one) fails `scripts/validate.sh`.
  */
@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PACKAGES = ['package.json', 'voc-datalake/package.json', 'voc-datalake/frontend/package.json']
-const RELEASE = /^## \[(\d+)\.(\d{2})\.(\d{2})\] - (\d{4}-\d{2}-\d{2})$/m
+// At least two digits in the minor and patch parts: 2.09.00, and 7.100.00 after 7.99.00.
+const RELEASE = /^## \[(\d+)\.(\d{2,})\.(\d{2,})\] - (\d{4}-\d{2}-\d{2})$/m
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/
 
 /** `[major, minor, patch]` of the newest release heading (the first one after `[Unreleased]`). */

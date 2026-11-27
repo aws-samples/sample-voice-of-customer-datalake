@@ -38,8 +38,8 @@ Several changes merged together take ONE bump: the highest kind among them.
 ## Apply it (all the bump edits together, in one commit)
 
 1. **`CHANGELOG.md`**: add a release section directly under `## [Unreleased]` (leave that heading empty):
-   `## [2.10.00] - YYYY-MM-DD` — two-digit minor and patch, today's date (`date +%F`). Under it a one-line
-   summary, then the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) groups that apply, in this
+   `## [2.10.00] - YYYY-MM-DD` — minor and patch of at least two digits (`7.100.00` follows `7.99.00`),
+   today's date (`date +%F`). Under it a one-line summary, then the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) groups that apply, in this
    order: `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`, `### Security`,
    `### Upgrade notes`. One bullet per user-visible change: what changed and where (route, page, stack,
    setting), written for the person deploying or using the platform, linking the doc in `docs/` when there

@@ -24,6 +24,7 @@ import pytest
 from boto3.dynamodb.conditions import Key
 from moto import mock_aws
 
+from shared import project_scope
 from shared.project_keys import REVIEW_REGISTRIES_MARKER_SK
 from shared.test.moto_tables import create_projects_table_with_type_index
 from shared.test.repo_paths import load_module_from_path, repo_root
@@ -66,7 +67,8 @@ def _deployed(version: str = '7.48.0', minutes: int = 30) -> Any:
 
 def _run(backfill, table, **options: Any) -> Any:
     options.setdefault('deployed', _deployed())
-    return backfill.run(table, now=lambda: NOW, clock=lambda: CLOCK, **options)
+    options.setdefault('now', lambda: NOW)
+    return backfill.run(table, clock=lambda: CLOCK, **options)
 
 
 def _seed(table) -> None:
@@ -330,6 +332,31 @@ def test_unmark_deletes_the_marker_and_any_progress(backfill, table):
     written = _written(table)
     assert (written['marker'], written['progress']) == (None, None)
     assert sorted(written['links']) == sorted([LIVE, REVOKED])
+
+
+def test_unmark_after_the_switch_switches_the_projects_off(backfill, table):
+    """7.100.00 (3h-S0): the switch reads the marker too (shared/project_scope.py), so an unmark turns it off and
+    leaves the switch row as it was."""
+    _run(backfill, table, apply=True)
+    row = project_scope.switch_row(NOW, '7.99.0', 0, 1, NOW, 'arn:aws:iam::111122223333:role/Operator')
+    table.put_item(Item=dict(row))
+    assert project_scope.projects_switched(table) is True
+    backfill.unmark(table)
+    assert project_scope.projects_switched(table) is False
+    assert table.get_item(Key=dict(project_scope.SWITCH_KEY))['Item'] == row
+    # A new --apply writes a new marker, which the row does not name: the projects stay off, and the run says so.
+    _run(backfill, table, apply=True, now=lambda: '2026-11-17T12:00:00+00:00')
+    assert project_scope.projects_switched(table) is False
+    assert 'switch_projects.py' in (backfill.switch_note(table) or '')
+
+
+def test_switch_note_is_silent_without_a_switch_row(backfill, table):
+    assert backfill.switch_note(table) is None
+
+
+def test_the_oldest_release_is_the_lowest_writer_version(backfill):
+    writers = [{'version': '7.100.0'}, {'version': '7.99.3'}, {'version': '7.99.12'}]
+    assert backfill.oldest_release(writers) == '7.99.3'
 
 
 def test_the_writers_are_read_from_the_stack_and_their_configuration(backfill):

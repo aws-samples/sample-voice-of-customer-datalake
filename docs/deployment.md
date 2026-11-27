@@ -508,13 +508,79 @@ cannot see an unlisted review link, an unlisted comment series or an unlisted de
 so the rules below still hold. The marker is read again at each invocation's start, so an `--unmark` during a run is
 seen.
 
+**The switch's upgrade check (since 7.100.00).** Before the deployment's projects may work in a workspace (the
+switch, docs/multi-workspace.md's project plan, 3h; not built yet), its operator runs this check with their own
+credentials, as they run the backfill. It reads the backfill's marker, the switch row, the API stack's writers of
+links, threads and projects (as the backfill reads them), then walks every live project on `gsi1-by-type` and looks
+each up in `PROJECT_IDS`, to the end (at most 100,000 steps of 100 projects), then reads the writers again. A dry run
+by default; `--apply` writes the switch row (voc-projects `PROJECTS_SWITCH` / `MIGRATION#projects-switch`) when the
+check passes, conditioned on the marker being the one it read. The row records when, the oldest writer's release, the
+projects looked up and the steps, the marker it was checked against (`marker_at`), the check's version (`check`) and
+who applied it (`applied_by`: for an assumed role its account and role, the session name and any role path dropped,
+since a session name may be a person's address; for a federated user its account only, the caller-chosen name
+dropped; for an IAM user its account only, its name dropped: no recorded form keeps a person's name, since no
+erasure reaches the row). A rerun for the same
+marker, dry or applied, answers `already_switched` and changes nothing.
+
+What a passed check proves, at that moment and nothing more:
+
+- the backfill's marker was complete;
+- every live deployment project on `gsi1-by-type` was listed in the project registry; a malformed project id was
+  counted and skipped, and the persona library and the verification fixtures' projects were skipped;
+- every writer in the API stack (the projects API and its assist twin) ran 7.48.0 or later, settled and drained, both
+  before and after the walk.
+
+What it does not cover: a workspace's projects; a writer outside the API stack; a review link or comment series that
+an older writer left unlisted (no index names them: only the backfill's `--unmark` and a new `--apply` cover those);
+a project bundle imported after the check; and anything after the switch, which is never re-checked.
+
+Every refusal writes nothing and says what to do next:
+
+- `not_backfilled`: no complete marker (reported before any other reason). Run the backfill with `--apply`, then
+  the check again.
+- `switch_row_malformed`: a switch row is there but does not say it all. Delete it, then run the check again.
+- `writers_not_ready`: not exactly one projects API and one assist twin, or one runs a release older than 7.48.0, its
+  last update is not `Successful`, it was updated less than its drain ago, or a writer changed during the walk (a
+  deploy). Deploy or wait, then run it again.
+- `incomplete`: a live project is missing from the project registry. Run the backfill's `--unmark`, then its
+  `--apply`, then the check again.
+- `too_many_steps`: more than 10 million live projects; the switch is refused rather than made unchecked.
+- `marker_changed`: the marker changed between the read and the write (a backfill, an `--unmark` or a reset). Run
+  the check again.
+- `switch_row_changed`: the stale row it was replacing was removed meanwhile. Run the check again.
+
+A check that loses a race to another writer reads the row it left: `already_switched` when it is current,
+`switch_row_changed` when there is none, `switch_row_malformed` otherwise.
+
+Exit status: 0 passed (or already switched), 1 refused, 2 any AWS error (a permission, a throttle, an expired
+session), an unreadable registry, a writer configuration it cannot read, or a stack that names no table, printed with
+its code. After an error during the write, run the check again: it answers `already_switched` if the write landed. Your credentials need, on voc-projects, GetItem, Query and BatchGetItem, plus PutItem and
+ConditionCheckItem with `--apply`; `cloudformation:ListStackResources` and `lambda:GetFunctionConfiguration` for the
+writers, `cloudformation:DescribeStacks` when the table is not named, and `sts:GetCallerIdentity`.
+
+```bash
+cd voc-datalake
+.venv/bin/python scripts/projects/switch_projects.py            # dry run: the check, nothing written
+.venv/bin/python scripts/projects/switch_projects.py --apply    # the check, then the switch row
+```
+
+The switch is on only while its row names the backfill's current, complete marker (`marker_at` equal to the
+marker's `completed_at`). So the backfill's `--unmark`, the marker's reset on a full rollback below 7.48.00, a restore
+that brings back no marker or another one, and a re-backfill all switch the projects off, and they stay off until
+this check runs again: a new marker is never the one the row names (a restore to after the switch brings the row and
+its marker back together, and stays switched on). The backfill says so after an `--unmark` or an `--apply` when a
+switch row exists. A rerun then replaces the stale row (its put conditioned on the old row's `marker_at`, so a row
+another check wrote meanwhile stays), and prints the earlier row's `switched_at`, `release` and `applied_by` first:
+the replaced row is not kept (follow-up 3h-S0-history).
+
 **Rolling back one stack below 7.48.00, or importing a bundle from an older checkout (the review registries' marker).**
 A writer older than 7.48.00 keeps none of the registries. Rolling the whole release back (every stack from the older
 checkout) deletes the marker by itself (VocCoreStack's reset), but deploying an older VocApiStack alone does not, nor
 does a project bundle imported from an older checkout (the reset stays in VocCoreStack: VocApiStack is at its
 resource gate, CHANGELOG 7.93.00): before either, run
 `.venv/bin/python scripts/projects/backfill_review_registries.py --unmark` from `voc-datalake/`, so the erasures by
-email fail by name, and the other runs owe, rather than trust the registries; then run the backfill again: after the
+email fail by name, and the other runs owe, rather than trust the registries (since 7.100.00 the `--unmark` also
+switches the projects off, if they had switched); then run the backfill again: after the
 next upgrade, for a rollback; right after the import, for an import (docs/project-export.md). Without it an erasure
 trusts registries that miss what the older writer made meanwhile: an imported project whole, with its links' and
 series' threads (the registries check catches a live project the older writer made, never its review links, its

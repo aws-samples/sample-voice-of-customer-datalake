@@ -12,7 +12,8 @@
  * of its own, caught nowhere here).
  */
 
-const RELEASE_HEADING = /^## \[(\d+\.\d{2}\.\d{2})\]/
+// At least two digits in the minor and patch parts (7.100.00 follows 7.99.00).
+const RELEASE_HEADING = /^## \[(\d+\.\d{2,}\.\d{2,})\]/
 
 /** `Map<version, groups[]>` for every release section, e.g. `'5.48.05' => ['Fixed', 'Upgrade notes']`. */
 export function releaseSections(changelog) {

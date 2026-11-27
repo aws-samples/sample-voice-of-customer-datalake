@@ -299,6 +299,14 @@ const PROJECTS_REFUSED: readonly Request[] = [
     key: 'PROJECT_IDS', attributes: ['pk', 'sk', 'created_at'] },
   { what: 'whole registry rows in a batch', action: 'dynamodb:BatchGetItem', table: 'Projects', key: 'PROJECT_IDS',
     attributes: [], context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+  // 7.100.00 (3h-S0): the switch row (`PROJECTS_SWITCH`) is written only by the operator's check, with the operator's
+  // own credentials (scripts/projects/switch_projects.py), and the backfill marker (`DOCSHARE_IDS`) only by the
+  // backfill: the worker writes neither, whatever attributes the request names.
+  ...['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'].flatMap(
+    (action): Request[] => ['PROJECTS_SWITCH', 'DOCSHARE_IDS'].map((key) => ({
+      what: `${action} of ${key}`, action, table: 'Projects', key,
+      attributes: ['pk', 'sk', 'switched_at', 'release', 'projects_checked', 'steps', 'marker_at', 'check',
+        'applied_by'] }))),
 ];
 
 /** What the worker may not do to the pins on any build (7.98.00, 3g-pin): find them by a Scan, or delete one (an erasure

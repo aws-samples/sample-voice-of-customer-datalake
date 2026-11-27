@@ -32,7 +32,8 @@ export const REQUIRED_SECTIONS = Object.freeze([
 ])
 export const SKIPPED_AUTHORS = Object.freeze(['dependabot[bot]'])
 const MIN_GOAL_WORDS = 4
-const VERSION = /\b\d+\.\d{2}\.\d{2}\b/
+// At least two digits in the minor and patch parts (7.100.00 follows 7.99.00).
+const VERSION = /\b\d+\.\d{2,}\.\d{2,}\b/
 const BUMP = /\b(?:major|minor|patch)\b/i
 const PLACEHOLDER = /^<[^>]*>$|^(?:tbd|todo|n\/a|\.\.\.)$/i
 

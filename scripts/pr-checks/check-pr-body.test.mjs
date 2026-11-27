@@ -93,6 +93,16 @@ test('the release section and the title must name the version the CHANGELOG adds
   assert.ok(titled.errors.some((e) => e.startsWith('Title:')))
 })
 
+test('a three-digit minor is a release: 7.100.00 is added after 7.99.00 and named by the release section', () => {
+  const base = '# Changelog\n\n## [Unreleased]\n\n## [7.99.00] - 2026-11-27\n\n### Changed\n\n- old\n'
+  const head = base.replace('## [Unreleased]\n', '## [Unreleased]\n\n## [7.100.00] - 2026-11-27\n\n### Added\n\n- x\n')
+  assert.deepEqual(addedReleases(base, head), [{ version: '7.100.00', groups: ['Added'] }])
+  assert.ok(compareVersions('7.100.00', '7.99.00') > 0)
+  const result = checkPrBody({ body: body({ release: '7.100.00 (minor)' }), title: '7.100.00: rows survive midnight',
+    draft: false, author: 'someone', changedFiles: CHANGED, headTree: TREE, baseChangelog: base, headChangelog: head })
+  assert.deepEqual(result.errors, [])
+})
+
 test('a fix PR (### Fixed in the added release) needs a Proof line and a sibling sweep', () => {
   const result = run({}, ['Fixed'])
   assert.equal(result.isFix, true)

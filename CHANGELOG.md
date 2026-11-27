@@ -3,9 +3,9 @@
 All notable changes to the Voice of Customer (VoC) Data Lake are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-**Versioning.** Releases are numbered `MAJOR.MINOR.PATCH` and written here with two-digit minor and
-patch parts (`2.09.00`). `package.json` (repo root, `voc-datalake/`, `voc-datalake/frontend/`) carries
-the same number in strict SemVer (`2.9.0`), because npm rejects leading zeros; `scripts/check-version.mjs`
+**Versioning.** Releases are numbered `MAJOR.MINOR.PATCH` and written here with minor and patch
+parts of at least two digits (`2.09.00`; `7.100.00` follows `7.99.00`). `package.json` (repo root,
+`voc-datalake/`, `voc-datalake/frontend/`) carries the same number in strict SemVer (`2.9.0`), because npm rejects leading zeros; `scripts/check-version.mjs`
 (a `validate.sh` step) fails when the two disagree. A **major** bump marks a redesign or a breaking
 change to an API, a stack or stored data; a **minor** bump adds or changes behaviour; a **patch** is a
 fix, a test, a doc or tooling only. Every change that lands bumps the version and adds its entry here
@@ -16,6 +16,69 @@ The frontend build identifier is the short git commit SHA injected at build time
 the platform package version.
 
 ## [Unreleased]
+
+## [7.100.00] - 2026-11-27
+
+The switch's upgrade check (slice 3h-S0 of docs/multi-workspace.md's project plan, part of "3h, the switch"; TENETS.md
+D5 and D8). Before the switch lets the deployment's projects work in a workspace, its operator checks that the review
+registries can be trusted, and records it in a switch row. The switch is on only while that row names the backfill's
+current, complete marker, so an `--unmark`, a reset or a re-backfill turns it off until the check runs again. The
+switch itself, and the readers that let a project work in a workspace, come in later slices.
+
+### Added
+
+- `voc-datalake/scripts/projects/switch_projects.py`: the switch's upgrade check, run with the operator's own
+  credentials from the retention worker's gap step (`jobs/retention/registries.py`) and the backfill's judgement of
+  the writers. It requires a complete marker (reported first), the writers on 7.48.0 or later before and after the
+  walk, and every live project listed; each refusal is named and writes nothing (docs/deployment.md lists them). A dry
+  run unless `--apply`, which writes the switch row, voc-projects `PROJECTS_SWITCH` / `MIGRATION#projects-switch`,
+  conditioned on the marker as read. Exit status: 0 passed or already switched, 1 refused, 2 any AWS error.
+- `lambda/shared/project_scope.py` `projects_switched(table)`: True only while the switch row is complete and names
+  the backfill's complete marker (`marker_at`); any doubt is False. Nothing calls it yet.
+- The backfill (`backfill_review_registries.py`) says, after an `--apply` or `--unmark`, when a switch row exists that
+  the projects stay off until the check runs again; `oldest_release` is shared by both scripts.
+
+### Changed
+
+- The retention worker is unchanged: no new mode, grant or environment variable; its IAM and policy sizes are those
+  of 7.99.00. `REVIEW_REGISTRIES_MARKER_KEY` (shared/project_keys.py) is the marker's key, one copy.
+- The release number's minor and patch take at least two digits (7.100.00 is the first three-digit minor):
+  `scripts/check-version.mjs` (the release heading), `scripts/pr-checks/changelog.mjs` (the release sections a PR
+  adds), `scripts/pr-checks/check-pr-body.mjs` (the version a PR description names) and the frontend's e2e pattern
+  for the Settings version (`frontend/e2e/tests/surfaces.spec.ts`) read `7.100.00` as newer than `7.99.00`; `2.09.00`
+  reads as before. CONTRIBUTING.md, `.kiro/steering/changelog.md` and this file's versioning note say so.
+
+### Tests
+
+- `lambda/shared/test/test_switch_projects_script.py` (new, moto): every refusal, the marker's first; a writer change
+  during the walk; a marker change before the write; a stale row replaced and a lost race judged; `applied_by` for a
+  role and a user; each AWS error exits 2 by name with its real step count; reruns change nothing.
+- `lambda/shared/test/test_project_scope.py` (new): only a complete row naming the current complete marker is
+  switched; a stale, malformed or older-version row, a missing marker or a failed read is not.
+- `test_backfill_review_registries_script.py`: an unmark, then a new marker, keeps the projects off and says so.
+- `lib/stacks/retention-policy-evaluation.test.ts`: the worker may not put, update or delete the switch row or the
+  marker.
+- `scripts/check-version.test.mjs`, `scripts/pr-checks/check-pr-body.test.mjs` and the frontend's `changelog.test.ts`:
+  7.100.00 is newer than 7.99.00, matches the SemVer 7.100.0 and is the release a PR adds; 2.09.00 reads as before.
+
+### Docs
+
+- docs/multi-workspace.md: the 7.100.00 status row; 3h's upgrade check marked done; the open decision on an unmark
+  after the switch settled by design; follow-up 3h-S0-history (keep a replaced switch row: today the check only
+  prints the earlier row's record before replacing it). docs/deployment.md: how an operator runs the check, what a passed check proves,
+  every refusal, and that an `--unmark` before a one-stack rollback also switches the projects off.
+
+### Upgrade notes
+
+- Nothing changes until the deployment's operator runs the check; no data moves and nothing reads the row yet. From
+  `voc-datalake/`: `.venv/bin/python scripts/projects/switch_projects.py` (a dry run: it says whether the check
+  passes, and what to do if not); when it passes, `--apply` writes the switch row. The credentials need, on
+  voc-projects, GetItem, Query and BatchGetItem, plus PutItem and ConditionCheckItem with `--apply`;
+  `cloudformation:ListStackResources` and `lambda:GetFunctionConfiguration` (as the backfill),
+  `cloudformation:DescribeStacks` when the table is not named, and `sts:GetCallerIdentity`. The row records who
+  applied it (`applied_by`): a role as its account and role, a user or a federated user as its account only (no
+  recorded form keeps a session name or a user's name).
+- After a new backfill (an `--unmark`, then `--apply`), run the check again: until then the projects are switched off.
 
 ## [7.99.00] - 2026-11-27
 

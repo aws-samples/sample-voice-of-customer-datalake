@@ -52,7 +52,7 @@ __all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_PARTITION_PREFIX', 
            'PRODUCT_CONTEXT_SK',
            'PRODUCT_DOC_SK_PREFIX', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
            'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'PROTOTYPE_BUILDER_STORE', 'PROTOTYPE_SK_PREFIX', 'REVIEWER_ROUTES_STORE',
-           'REVIEW_REGISTRIES_MARKER_SK', 'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError',
+           'REVIEW_REGISTRIES_MARKER_KEY', 'REVIEW_REGISTRIES_MARKER_SK', 'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError',
            'ProjectPartition', 'comment_partition_ids', 'comment_series_item', 'comments_pk',
            'deployment_link_registry_key', 'deployment_project_item', 'deployment_series_item',
            'document_keys', 'document_listing', 'document_revision_key',
@@ -97,6 +97,8 @@ _REVIEW_LINK_REGISTRY: Final = 'DOCSHARE_IDS'
 DEPLOYMENT_LINK_REGISTRY_PK: Final = _REVIEW_LINK_REGISTRY
 DEPLOYMENT_SERIES_REGISTRY_PK: Final = 'COMMENT_SERIES_IDS'
 REVIEW_REGISTRIES_MARKER_SK: Final = 'MIGRATION#review-registries'
+#: The marker's key, the one copy (the backfill and the switch's reader, shared/project_scope.py, both name it).
+REVIEW_REGISTRIES_MARKER_KEY: Final = {'pk': DEPLOYMENT_LINK_REGISTRY_PK, 'sk': REVIEW_REGISTRIES_MARKER_SK}
 #: ``REVIEWER_ROUTES_STORE`` (imported above): a review link kept in a workspace, refused by its reviewer routes and its
 #: sign-up trigger alike until the switch (3h); defined in the stdlib module the trigger bundle ships, re-exported here
 #: beside the other stores that refuse a workspace.
