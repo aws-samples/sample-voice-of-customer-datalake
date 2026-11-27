@@ -14,6 +14,7 @@
  *
  * @module components/SourcesManager/useErasureJobs
  */
+import { useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { invalidateFeedbackData } from '../../api/invalidateFeedbackData'
@@ -22,6 +23,8 @@ import type { ErasureJob, ErasureList } from '../../api/sourceProfilesApi'
 import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 import type { RequestScope } from '../../api/baseUrl'
 import { scopedKey } from '../../workspace/configScope'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { jobInScope } from './erasureOutcome'
 
 const POLL_INTERVAL_MS = 2_000
 /** The notice's `job_type` for an erasure job (lambda/jobs/retention/runs.py ERASURE_JOB_TYPE). */
@@ -50,12 +53,17 @@ function useErasureList<T>(select: (list: ErasureList) => T, scope: RequestScope
   })
 }
 
-const selectJobs = (list: ErasureList): ErasureJob[] => list.jobs
 const selectSources = (list: ErasureList): string[] => list.sources
 
 /** The jobs of the current workspace (`'workspace'`, the default: the person erasure panel) or the deployment's
- *  (`'deployment'`: the whole-source panel, whose erasures are the deployment's only). */
+ *  (`'deployment'`: the whole-source panel, whose erasures are the deployment's only). The server lists only that
+ *  scope's (lambda/shared/erasure_scope.py); the list holds to it too (`jobInScope`, 7.97.00), so a job of another
+ *  scope never shows, its follow-ups included. */
 export function useErasureJobs(scope: RequestScope = 'workspace') {
+  const current = useCurrentWorkspace()
+  const workspaceId = scope === 'deployment' ? null : current?.id ?? null
+  const selectJobs = useCallback((list: ErasureList): ErasureJob[] =>
+    list.jobs.filter((job) => jobInScope(job, workspaceId)), [workspaceId])
   return useErasureList(selectJobs, scope)
 }
 

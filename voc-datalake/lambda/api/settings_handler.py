@@ -45,6 +45,7 @@ from shared import (
     forms_v2_report_ai,
     image_model_quota,
     image_model_status,
+    lineage_owed,
     model_agreements,
     model_capacity,
     onboarding,
@@ -2101,10 +2102,37 @@ ERASURE_VIEW_FIELDS = (
     # owed its deployment lineage marks (with why, and what happens next) or replayed what an earlier run owed
     # (jobs/retention/registries.py `fields`).
     'review_registries', 'lineage_owed', 'incomplete_reason', 'lineage_owed_replayed',
+    # 7.97.00 (3g-ui): why, as a code the web app translates, and the run's mode (shared/lineage_owed.py; a row
+    # written before 7.97.00 gets its code from `_owed_code`).
+    'lineage_owed_reason', 'lineage_owed_mode',
 )
 # The erasure routes' workspace (shared/erasure_scope.py): read afresh per request, members only (no platform-admin
 # entry, so nothing is written to voc-workspaces).
 _erasure_workspace = RequestWorkspace(confirm_platform_admin=no_platform_admin_entry)
+
+
+def _count(value: Any) -> int:
+    """A counter of a job row as the view shows it: a whole number 0 or more, anything else 0 (a row in another shape
+    never fails the list). A bool is no count, though Python makes it an int."""
+    if isinstance(value, bool):
+        return 0
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(number, 0)
+
+
+def _owed_code(item: Mapping[str, Any]) -> str | None:
+    """An owing row's code: the one it holds when it is known, else (a row written by 7.93.00 or 7.94.00) derived from
+    its words and its registries check as the worker derives it, so an owe that could not be recorded reads
+    ``owe_failed``; None for a row that owes nothing."""
+    if item.get('lineage_owed') is not True:
+        return None
+    held = item.get(lineage_owed.OWED_REASON)
+    if held in lineage_owed.OWED_CODES:
+        return str(held)
+    return lineage_owed.owed_code(item.get('incomplete_reason'), item.get('review_registries'))
 
 
 SOURCE_SCOPED_ERASURE_FIELDS: Final = frozenset({'source_id', 'csv_row_id'})
@@ -2180,19 +2208,28 @@ def erasure_job_view(item: dict) -> dict:
     """The API's erasure ``Job`` (no keys; the erased value is never stored, only its hash)."""
     view = {field: item.get(field) for field in ERASURE_VIEW_FIELDS if item.get(field) is not None}
     for counter in ERASURE_JOB_COUNTERS:
-        view[counter] = int(item.get(counter) or 0)
+        view[counter] = _count(item.get(counter))
     # An erasure by email's de-identified board rows and workspace membership rows, and how many of the deleted items
     # were a workspace's (shared/retention.py): on the job row only once above 0, so shown only then.
     for counter in ERASURE_OPTIONAL_COUNTERS:
-        if item.get(counter):
-            view[counter] = int(item[counter])
-    review = item.get('files_needing_review')
-    if isinstance(review, dict):
-        # Whole-file uploads that hold erased rows AND others (keys only, never content).
-        view['files_needing_review'] = {
-            'count': int(review.get('count') or 0),
-            'keys': [str(key) for key in review.get('keys') or []],
-        }
+        if counted := _count(item.get(counter)):
+            view[counter] = counted
+    # The keys the job kept for review (whole-file uploads that hold erased rows AND others, an import's originals
+    # folders, the product documents that hold the address) and, since 7.97.00 (3g-ui), those it could not judge:
+    # keys only, never content, each list with its `more` (the job keeps at most 200 keys a list, no count past them).
+    for name in ('files_needing_review', 'files_not_checked'):
+        listed = item.get(name)
+        if isinstance(listed, dict):
+            keys = listed.get('keys')
+            view[name] = {
+                'count': _count(listed.get('count')),
+                # A list of strings only, as the web app reads it (a key in another shape is dropped, never split).
+                'keys': [key for key in keys if isinstance(key, str)] if isinstance(keys, list) else [],
+                'more': listed.get('more') is True,
+            }
+    code = _owed_code(item)
+    if code is not None:
+        view[lineage_owed.OWED_REASON] = code
     return view
 
 

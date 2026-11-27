@@ -738,10 +738,76 @@
       "queued": "排队中",
       "running": "运行中",
       "completed": "已完成",
-      "failed": "失败"
+      "failed": "失败",
+      "rerun": "已完成：需重新运行",
+      "lineageOwed": "已完成：沿袭标记待处理",
+      "operator": "已完成：需要运维人员",
+      "verifiedAddress": "已完成：在“用户”中检查账户",
+      "filesToReview": "已完成：有待检查的文件"
     },
     "confirmTitle": "要删除此人的反馈吗?",
-    "confirmMessage": "{{field}} 与该值匹配的所有评价({{source}})及其原始存档将被永久删除。"
+    "confirmMessage": "{{field}} 与该值匹配的所有评价({{source}})及其原始存档将被永久删除。",
+    "followUp": {
+      "title": "此次删除需要后续处理",
+      "participants": "并非所有包含此地址的参与者记录都已删除。{{rerun}}如果重新运行后仍然保留，请联系部署的运维人员。",
+      "deploymentProjects": "未在部署自身的项目中搜索此地址。{{rerun}}",
+      "agentMemory": "工程智能体的记忆中此地址未被完全删除。{{rerun}}",
+      "rerunWorkspace": "请在此工作区中使用此人的地址和法律依据再次提交此次删除（作业只保留地址的哈希值）。",
+      "lineageOwed": "引用已删除评论的用户画像和文档尚未标记（沿袭标记待处理）。接下来会发生什么以及如何处理：{{reason}}",
+      "lineageOwedNoReason": "请让部署的运维人员查看此作业的审计行。",
+      "rerun": "请使用此人的地址和法律依据再次提交此次删除（作业只保留地址的哈希值）。",
+      "rerunOwnRequest": "如果此部署本身有针对此地址的删除请求，请使用此人的地址和法律依据再次提交此次删除（作业只保留地址的哈希值）；否则，由收到请求的工作区从那里提交。",
+      "filesToReview": "部分文件无法自动删除：请手动检查下方列表。",
+      "lineageOwedCoded": "引用已删除评论的用户画像和文档尚未标记（沿袭标记待处理）。{{reason}}{{next}}",
+      "owedReasons": {
+        "not_backfilled": "评审登记表尚未回填：请让部署的运维人员运行 scripts/projects/backfill_review_registries.py --apply。",
+        "incomplete": "项目登记表缺少一个活跃项目：请让部署的运维人员运行 scripts/projects/backfill_review_registries.py --unmark，然后运行 --apply。",
+        "failed_before_marks": "此次运行在沿袭标记之前失败。",
+        "owe_failed": "待处理的标记无法记录，因此之后的运行不会自动完成它们：此次运行删除数据的来源在其审计行中。请让部署的运维人员查看进程日志以找出原因。"
+      },
+      "owedNext": {
+        "erase": "之后，部署的下一次删除或下一个每日保留窗口会自动完成它们。保留窗口的运行不会在此列出，因此在之后的删除显示标记已完成之前，此行会一直保留。"
+      },
+      "malformedRows_one": "跳过了 {{count, number}} 个格式错误的参与者行。请让部署的运维人员修复每一行，或按 ID 删除该行指向的人员，然后再次提交此次删除：仅重新运行无法修复。",
+      "malformedRows_other": "跳过了 {{count, number}} 个格式错误的参与者行。请让部署的运维人员修复每一行，或按 ID 删除该行指向的人员，然后再次提交此次删除：仅重新运行无法修复。",
+      "malformedProjectIds_one": "跳过了 {{count, number}} 个格式错误的项目 ID（格式不正确的登记表、链接或系列 ID）。请让部署的运维人员检查。",
+      "malformedProjectIds_other": "跳过了 {{count, number}} 个格式错误的项目 ID（格式不正确的登记表、链接或系列 ID）。请让部署的运维人员检查。",
+      "agentMemoryAccounts_one": "有 {{count, number}} 个账户以未验证状态持有此地址，因此其智能体记忆未被删除。请在“用户”中确认该账户属于此人并验证其邮箱；如果不属于此人，请更改或移除账户上的地址；然后使用相同的地址和法律依据再次提交此次删除。",
+      "agentMemoryAccounts_other": "有 {{count, number}} 个账户以未验证状态持有此地址，因此其智能体记忆未被删除。请在“用户”中确认每个账户属于此人并验证其邮箱；如果不属于此人，请更改或移除账户上的地址；然后使用相同的地址和法律依据再次提交此次删除。",
+      "indexRowsKept_one": "仍有 {{count, number}} 个索引行包含该地址。",
+      "indexRowsKept_other": "仍有 {{count, number}} 个索引行包含该地址。",
+      "indexRowsKeptAgain_one": "同一删除重新运行后仍保留了 {{count, number}} 个包含该地址的索引行：请让部署的运维人员检查。",
+      "indexRowsKeptAgain_other": "同一删除重新运行后仍保留了 {{count, number}} 个包含该地址的索引行：请让部署的运维人员检查。",
+      "participantsKept": "并非所有包含此地址的参与者记录都已删除。{{kept}}{{rerun}}如果重新运行后仍然保留，请联系部署的运维人员。"
+    },
+    "registries": {
+      "not_backfilled": "评审登记表：尚未回填",
+      "incomplete": "评审登记表：项目登记表缺少一个活跃项目"
+    },
+    "lineageReplayed": "此次运行还完成了之前一次运行欠下的沿袭标记。",
+    "reviewDocuments": "包含该地址的文档（产品文档、资料库条目）：{{files, number}}。请检查：",
+    "counters": {
+      "participantsErased": "已删除的参与者：{{n, number}}",
+      "participantsNotErased": "未删除的参与者：{{n, number}}",
+      "exportObjects": "已删除的导出对象：{{n, number}}",
+      "projectRows": "已去标识化的项目行：{{n, number}}",
+      "formTestResponses": "已删除的表单测试回复：{{n, number}}",
+      "agentMemoryErased": "已从智能体记忆中删除的人员：{{n, number}}",
+      "agentMemoryRefused": "智能体记忆今后不再保留的人员：{{n, number}}",
+      "engineeringRows": "已更新的工程运行行：{{n, number}}",
+      "unscopedRows": "因未指明工作区而跳过的行：{{n, number}}"
+    },
+    "notCheckedListed": "已列出 {{listed, number}} / {{total, number}}：作业只保留前面的部分。请手动检查其余文件。",
+    "lineageMadeLater": "之后的一次运行完成了此次运行欠下的沿袭标记。",
+    "rerunDoneLater": "之后对同一地址的删除完成了此次删除需要重新提交的步骤。",
+    "agentMemoryReach": "邮箱已更改，或邮箱未验证且不是其用户名的工程智能体账户无法通过此地址找到：请在“用户”中确认该账户属于此人并验证其邮箱；如果不属于此人，请更改或移除账户上的地址；然后使用相同的地址和法律依据再次提交此次删除。",
+    "reviewMore_one": "只列出了前 {{count, number}} 个待检查项：作业中还有更多。请手动检查其余项。",
+    "reviewMore_other": "只列出了前 {{count, number}} 个待检查项：作业中还有更多。请手动检查其余项。",
+    "notChecked_one": "有 {{count, number}} 个文档无法检查是否包含该地址（图片、不读取的类型或尚未提取的文本）。请手动检查：",
+    "notChecked_other": "有 {{count, number}} 个文档无法检查是否包含该地址（图片、不读取的类型或尚未提取的文本）。请手动检查：",
+    "notCheckedMore_one": "只列出了前 {{count, number}} 个未检查的文档：作业中还有更多。请手动检查其余文档。",
+    "notCheckedMore_other": "只列出了前 {{count, number}} 个未检查的文档：作业中还有更多。请手动检查其余文档。",
+    "lineageMadeLaterFailed": "之后的一次运行完成了此次运行欠下的沿袭标记；删除本身仍然失败：请查看其错误。"
   },
   "legalBasis": {
     "label": "法律依据",
@@ -769,7 +835,8 @@
       "members": "正在从工作区成员资格中删除电子邮件和姓名。目前已去标识化：{{rows, number}}。",
       "raw": "正在删除原始文件。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "lineage": "正在标记引用过已删除评论的角色和文档。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
-      "done": "已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。"
+      "done": "已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
+      "other": "正在运行其余的删除步骤。已删除的评论：{{items, number}}。已删除的原始文件：{{objects, number}}。"
     }
   },
   "dimensionsEdit": {

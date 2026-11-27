@@ -738,10 +738,76 @@
       "queued": "In der Warteschlange",
       "running": "Läuft",
       "completed": "Abgeschlossen",
-      "failed": "Fehlgeschlagen"
+      "failed": "Fehlgeschlagen",
+      "rerun": "Abgeschlossen: erneut ausführen",
+      "lineageOwed": "Abgeschlossen: Herkunft ausstehend",
+      "operator": "Abgeschlossen: Betrieb nötig",
+      "verifiedAddress": "Abgeschlossen: Konto in Benutzer prüfen",
+      "filesToReview": "Abgeschlossen: Dateien zu prüfen"
     },
     "confirmTitle": "Feedback dieser Person löschen?",
-    "confirmMessage": "Jede Bewertung, deren {{field}} dem Wert entspricht ({{source}}), und ihr Rohdaten-Archiv werden dauerhaft gelöscht."
+    "confirmMessage": "Jede Bewertung, deren {{field}} dem Wert entspricht ({{source}}), und ihr Rohdaten-Archiv werden dauerhaft gelöscht.",
+    "followUp": {
+      "title": "Diese Löschung braucht eine Nacharbeit",
+      "participants": "Nicht alle Teilnehmerdatensätze mit dieser Adresse wurden gelöscht. {{rerun}} Bleibt er nach einem erneuten Lauf wieder bestehen, wende dich an den Betrieb der Bereitstellung.",
+      "deploymentProjects": "Die eigenen Projekte der Bereitstellung wurden nicht nach dieser Adresse durchsucht. {{rerun}}",
+      "agentMemory": "Das Gedächtnis der Engineering-Agenten wurde für diese Adresse nicht vollständig gelöscht. {{rerun}}",
+      "rerunWorkspace": "Reiche diese Löschung in diesem Arbeitsbereich erneut mit der Adresse und der Rechtsgrundlage der Person ein (der Auftrag speichert nur einen Hash der Adresse).",
+      "lineageOwed": "Die Personas und Dokumente, die die gelöschten Bewertungen zitieren, sind noch nicht markiert (Herkunft ausstehend). Was als Nächstes passiert und was zu tun ist: {{reason}}",
+      "lineageOwedNoReason": "bitte den Betrieb der Bereitstellung, die Auditzeile dieses Auftrags zu lesen.",
+      "rerun": "Reiche diese Löschung erneut mit der Adresse und der Rechtsgrundlage der Person ein (der Auftrag speichert nur einen Hash der Adresse).",
+      "rerunOwnRequest": "Hat diese Bereitstellung eine eigene Löschanfrage für diese Adresse, reiche diese Löschung erneut mit der Adresse und der Rechtsgrundlage der Person ein (der Auftrag speichert nur einen Hash der Adresse); sonst reicht der Arbeitsbereich, der die Anfrage erhalten hat, sie dort ein.",
+      "filesToReview": "Einige Dateien konnten nicht automatisch gelöscht werden: prüfe die Listen unten von Hand.",
+      "lineageOwedCoded": "Die Personas und Dokumente, die die gelöschten Bewertungen zitieren, sind noch nicht markiert (Herkunft ausstehend). {{reason}} {{next}}",
+      "owedReasons": {
+        "not_backfilled": "Die Review-Register sind nicht nachgefüllt: bitte den Betrieb der Bereitstellung, scripts/projects/backfill_review_registries.py --apply auszuführen.",
+        "incomplete": "Im Projektregister fehlt ein aktives Projekt: bitte den Betrieb der Bereitstellung, scripts/projects/backfill_review_registries.py --unmark und dann --apply auszuführen.",
+        "failed_before_marks": "Dieser Lauf ist vor seinen Herkunftsmarkierungen fehlgeschlagen.",
+        "owe_failed": "Die ausstehenden Markierungen konnten nicht erfasst werden, daher setzt sie kein späterer Lauf von selbst: die Quellen, aus denen dieser Lauf gelöscht hat, stehen in seiner Auditzeile. Bitte den Betrieb der Bereitstellung, die Protokolle des Prozesses nach der Ursache zu lesen."
+      },
+      "owedNext": {
+        "erase": "Danach setzt sie die nächste Löschung der Bereitstellung oder das nächste tägliche Aufbewahrungsfenster von selbst. Der Lauf eines Aufbewahrungsfensters wird hier nicht aufgeführt, daher bleibt diese Zeile, bis eine spätere Löschung die gesetzten Markierungen zeigt."
+      },
+      "malformedRows_one": "Eine fehlerhafte Teilnehmerzeile wurde übersprungen. Bitte den Betrieb der Bereitstellung, jede Zeile zu reparieren oder die genannte Person per ID zu löschen, und reiche diese Löschung dann erneut ein: ein erneuter Lauf allein repariert sie nicht.",
+      "malformedRows_other": "{{count, number}} fehlerhafte Teilnehmerzeilen wurden übersprungen. Bitte den Betrieb der Bereitstellung, jede Zeile zu reparieren oder die genannte Person per ID zu löschen, und reiche diese Löschung dann erneut ein: ein erneuter Lauf allein repariert sie nicht.",
+      "malformedProjectIds_one": "Eine fehlerhafte Projekt-ID wurde übersprungen (eine Register-, Link- oder Serien-ID ohne die erwartete Form). Bitte den Betrieb der Bereitstellung, sie zu prüfen.",
+      "malformedProjectIds_other": "{{count, number}} fehlerhafte Projekt-IDs wurden übersprungen (Register-, Link- oder Serien-IDs ohne die erwartete Form). Bitte den Betrieb der Bereitstellung, sie zu prüfen.",
+      "agentMemoryAccounts_one": "Ein Konto hält diese Adresse unbestätigt, daher wurde sein Gedächtnis der Agenten nicht gelöscht. Bestätige unter Benutzer, dass das Konto der Person gehört, und bestätige seine E-Mail, oder ändere bzw. entferne die Adresse am Konto, wenn es nicht ihres ist; reiche diese Löschung dann erneut mit derselben Adresse und Rechtsgrundlage ein.",
+      "agentMemoryAccounts_other": "{{count, number}} Konten halten diese Adresse unbestätigt, daher wurde ihr Gedächtnis der Agenten nicht gelöscht. Bestätige unter Benutzer, dass jedes Konto der Person gehört, und bestätige seine E-Mail, oder ändere bzw. entferne die Adresse am Konto, wenn es nicht ihres ist; reiche diese Löschung dann erneut mit derselben Adresse und Rechtsgrundlage ein.",
+      "indexRowsKept_one": "Eine Indexzeile enthält die Adresse noch.",
+      "indexRowsKept_other": "{{count, number}} Indexzeilen enthalten die Adresse noch.",
+      "indexRowsKeptAgain_one": "Eine Indexzeile enthält die Adresse noch, nachdem ein erneuter Lauf derselben Löschung sie wieder behalten hat: bitte den Betrieb der Bereitstellung, sie zu prüfen.",
+      "indexRowsKeptAgain_other": "{{count, number}} Indexzeilen enthalten die Adresse noch, nachdem ein erneuter Lauf derselben Löschung sie wieder behalten hat: bitte den Betrieb der Bereitstellung, sie zu prüfen.",
+      "participantsKept": "Nicht alle Teilnehmerdatensätze mit dieser Adresse wurden gelöscht. {{kept}} {{rerun}} Bleibt er nach einem erneuten Lauf wieder bestehen, wende dich an den Betrieb der Bereitstellung."
+    },
+    "registries": {
+      "not_backfilled": "Review-Register: noch nicht nachgefüllt",
+      "incomplete": "Review-Register: ein aktives Projekt fehlt im Projektregister"
+    },
+    "lineageReplayed": "Dieser Lauf hat auch die Herkunftsmarkierungen gesetzt, die ein früherer Lauf schuldete.",
+    "reviewDocuments": "Dokumente, die die Adresse enthalten (Produktdokumente, Bibliothekseinträge): {{files, number}}. Prüfe sie:",
+    "counters": {
+      "participantsErased": "Gelöschte Teilnehmer: {{n, number}}",
+      "participantsNotErased": "Nicht gelöschte Teilnehmer: {{n, number}}",
+      "exportObjects": "Gelöschte Exportobjekte: {{n, number}}",
+      "projectRows": "De-identifizierte Projektzeilen: {{n, number}}",
+      "formTestResponses": "Gelöschte Testantworten von Formularen: {{n, number}}",
+      "agentMemoryErased": "Aus dem Gedächtnis der Agenten gelöschte Personen: {{n, number}}",
+      "agentMemoryRefused": "Personen, die das Gedächtnis der Agenten nicht mehr speichert: {{n, number}}",
+      "engineeringRows": "Aktualisierte Zeilen von Engineering-Läufen: {{n, number}}",
+      "unscopedRows": "Übersprungene Zeilen ohne Arbeitsbereich: {{n, number}}"
+    },
+    "notCheckedListed": "{{listed, number}} von {{total, number}} aufgeführt: der Auftrag behält nur die ersten. Prüfe den Rest von Hand.",
+    "lineageMadeLater": "Ein späterer Lauf hat die Herkunftsmarkierungen gesetzt, die dieser Lauf schuldete.",
+    "rerunDoneLater": "Eine spätere Löschung derselben Adresse hat die Schritte abgeschlossen, für die diese erneut eingereicht werden musste.",
+    "agentMemoryReach": "Ein Konto der Engineering-Agenten, dessen E-Mail sich geändert hat oder dessen E-Mail unbestätigt und nicht sein Benutzername ist, wird über die Adresse nicht erreicht: bestätige unter Benutzer, dass das Konto der Person gehört, und bestätige seine E-Mail, oder ändere bzw. entferne die Adresse am Konto, wenn es nicht ihres ist; reiche diese Löschung dann erneut mit derselben Adresse und Rechtsgrundlage ein.",
+    "reviewMore_one": "Nur der erste zu prüfende Eintrag ist aufgeführt: der Auftrag enthält mehr. Prüfe den Rest von Hand.",
+    "reviewMore_other": "Nur die ersten {{count, number}} zu prüfenden Einträge sind aufgeführt: der Auftrag enthält mehr. Prüfe den Rest von Hand.",
+    "notChecked_one": "Ein Dokument konnte nicht auf die Adresse geprüft werden (ein Bild, ein nicht gelesener Typ oder noch nicht extrahierter Text). Prüfe es von Hand:",
+    "notChecked_other": "{{count, number}} Dokumente konnten nicht auf die Adresse geprüft werden (ein Bild, ein nicht gelesener Typ oder noch nicht extrahierter Text). Prüfe sie von Hand:",
+    "notCheckedMore_one": "Nur das erste nicht geprüfte Dokument ist aufgeführt: der Auftrag enthält mehr. Prüfe den Rest von Hand.",
+    "notCheckedMore_other": "Nur die ersten {{count, number}} nicht geprüften Dokumente sind aufgeführt: der Auftrag enthält mehr. Prüfe den Rest von Hand.",
+    "lineageMadeLaterFailed": "Ein späterer Lauf hat die Herkunftsmarkierungen gesetzt, die dieser Lauf schuldete; die Löschung selbst ist trotzdem fehlgeschlagen: siehe ihren Fehler."
   },
   "legalBasis": {
     "label": "Rechtsgrundlage",
@@ -769,7 +835,8 @@
       "members": "E-Mail und Name werden aus Workspace-Mitgliedschaften entfernt. Bisher anonymisiert: {{rows, number}}.",
       "raw": "Rohdateien werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
       "lineage": "Personas und Dokumente, die gelöschte Bewertungen zitiert haben, werden markiert. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
-      "done": "Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}."
+      "done": "Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
+      "other": "Die übrigen Löschschritte laufen. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}."
     }
   },
   "dimensionsEdit": {

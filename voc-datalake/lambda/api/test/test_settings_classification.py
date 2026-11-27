@@ -9,7 +9,7 @@ from moto import mock_aws
 
 import settings_handler
 from settings_handler import lambda_handler
-from shared import source_erasure
+from shared import lineage_owed, source_erasure
 from shared.feedback_types import feedback_type_dimension
 from shared.source_erasure import STALE_AFTER, source_lock_key
 from shared.test.moto_tables import create_aggregates_table_with_metric_index
@@ -170,8 +170,64 @@ class TestErasure:
             'job_id': 'er_000000000001', 'status': 'completed', 'deleted_radar_items': 2, 'artifacts_marked': 3,
             'files_needing_review': {'count': 1, 'keys': ['raw/csv_upload/2026/01/01/j.csv']}})
         assert (view['deleted_items'], view['deleted_radar_items'], view['artifacts_marked']) == (0, 2, 3)
-        assert view['files_needing_review'] == {'count': 1, 'keys': ['raw/csv_upload/2026/01/01/j.csv']}
+        assert view['files_needing_review'] == {'count': 1, 'keys': ['raw/csv_upload/2026/01/01/j.csv'], 'more': False}
         assert 'files_needing_review' not in settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
+
+    def test_the_job_view_carries_both_review_lists_with_their_more_flag(self):
+        """7.97.00 (3g-ui): the job row's `more` (the 200 keys kept are not all) and its `files_not_checked`, the product
+        documents the erasure could not judge, reach the panel; a list the row does not hold is left out."""
+        docs = ['ws/ws_1/projects/p_1/product_docs/a.md']
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'status': 'completed',
+            'files_needing_review': {'count': 200, 'keys': ['raw/csv_upload/2026/01/01/j.csv'], 'more': True},
+            'files_not_checked': {'count': 1, 'keys': [*docs, 7], 'more': False}})
+        assert view['files_needing_review'] == {'count': 200, 'keys': ['raw/csv_upload/2026/01/01/j.csv'], 'more': True}
+        assert view['files_not_checked'] == {'count': 1, 'keys': docs, 'more': False}
+        bare = settings_handler.erasure_job_view({'job_id': 'er_000000000002', 'files_not_checked': 'not a list'})
+        assert 'files_not_checked' not in bare
+        assert 'files_needing_review' not in bare
+
+    def test_the_job_view_says_whether_lineage_is_owed_and_why(self):
+        """7.93.00 (3g-d2): the registries check, an owed lineage pass with its reason, and a replay."""
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'review_registries': 'not_backfilled', 'lineage_owed': True,
+            'incomplete_reason': 'owed', 'lineage_owed_replayed': True,
+            'lineage_owed_reason': 'not_backfilled', 'lineage_owed_mode': 'erase'})
+        assert (view['review_registries'], view['lineage_owed'], view['incomplete_reason'],
+                view['lineage_owed_replayed']) == ('not_backfilled', True, 'owed', True)
+        # 7.97.00 (3g-ui, q-6): the reason's code and the run's mode, which the panel translates.
+        assert (view['lineage_owed_reason'], view['lineage_owed_mode']) == ('not_backfilled', 'erase')
+
+    @pytest.mark.parametrize(('row', 'code'), [
+        ({'incomplete_reason': lineage_owed.OWE_FAILED_REASON, 'review_registries': 'complete'}, 'owe_failed'),
+        ({'incomplete_reason': 'owed', 'review_registries': 'incomplete'}, 'incomplete'),
+        ({'incomplete_reason': 'owed', 'review_registries': 'not_backfilled'}, 'not_backfilled'),
+        ({'incomplete_reason': 'owed', 'review_registries': 'complete'}, 'failed_before_marks'),
+        ({'incomplete_reason': 'owed'}, 'not_backfilled'),
+    ])
+    def test_an_older_owing_row_gets_its_code_from_its_words_and_registries(self, row, code):
+        """7.97.00 (3g-ui round 3, s2-1): a 7.93/7.94 row owes with no code; the view derives it as the worker would,
+        so an owe that could not be recorded never reads as a code a later run could resolve."""
+        view = settings_handler.erasure_job_view({'job_id': 'er_000000000001', 'lineage_owed': True, **row})
+        assert view['lineage_owed_reason'] == code
+        assert 'lineage_owed_reason' not in settings_handler.erasure_job_view({'job_id': 'er_000000000002', **row})
+
+    def test_a_code_the_view_does_not_know_is_derived_again(self):
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'lineage_owed': True, 'lineage_owed_reason': 'later',
+            'incomplete_reason': lineage_owed.OWE_FAILED_REASON})
+        assert view['lineage_owed_reason'] == 'owe_failed'
+
+    def test_the_job_view_reads_a_malformed_count_as_0_and_never_fails(self):
+        """7.97.00 (q-11): a counter or a list's count the row holds in another shape reads 0, the list kept."""
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'deleted_items': 'many', 'participants_erased': -2, 'deleted_objects': float('inf'),
+            'deleted_radar_items': True, 'participants_not_erased': True,
+            'files_not_checked': {'count': 'lots', 'keys': ['a'], 'more': 'yes'}})
+        assert (view['deleted_items'], view['deleted_objects'], view.get('participants_erased')) == (0, 0, None)
+        # A flag stored where a counter belongs is no count (bool is an int in Python).
+        assert (view['deleted_radar_items'], view.get('participants_not_erased')) == (0, None)
+        assert view['files_not_checked'] == {'count': 0, 'keys': ['a'], 'more': False}
 
     def test_the_job_view_carries_the_deidentified_rows_once_there_are_some(self):
         view = settings_handler.erasure_job_view({
@@ -188,7 +244,7 @@ class TestErasure:
         assert 'deleted_workspace_items' not in settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
 
     def test_the_job_view_says_whether_the_deployments_projects_were_walked(self):
-        """7.48.00 (3g-d): an admin finds the jobs to submit again from the job's API view (the panel is 3g-ui's)."""
+        """7.48.00 (3g-d): an admin finds the jobs to submit again from the job's API view (and, since 7.97.00, the panel)."""
         view = settings_handler.erasure_job_view({
             'job_id': 'er_000000000001', 'deployment_projects_walked': False, 'deployment_rows_found': 'scan'})
         assert (view['deployment_projects_walked'], view['deployment_rows_found']) == (False, 'scan')

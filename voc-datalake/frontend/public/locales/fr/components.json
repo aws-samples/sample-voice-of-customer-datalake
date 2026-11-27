@@ -761,10 +761,84 @@
       "queued": "En file d'attente",
       "running": "En cours",
       "completed": "Terminé",
-      "failed": "Échec"
+      "failed": "Échec",
+      "rerun": "Terminée : à relancer",
+      "lineageOwed": "Terminée : lignage en attente",
+      "operator": "Terminée : requiert l'opérateur",
+      "verifiedAddress": "Terminée : vérifier le compte dans Utilisateurs",
+      "filesToReview": "Terminée : fichiers à examiner"
     },
     "confirmTitle": "Effacer les avis de cette personne ?",
-    "confirmMessage": "Chaque avis dont le champ {{field}} correspond à la valeur ({{source}}) ainsi que son archive brute seront supprimés définitivement."
+    "confirmMessage": "Chaque avis dont le champ {{field}} correspond à la valeur ({{source}}) ainsi que son archive brute seront supprimés définitivement.",
+    "followUp": {
+      "title": "Cet effacement demande un suivi",
+      "participants": "Les fiches de participants qui contiennent cette adresse n'ont pas toutes été effacées. {{rerun}} Si une nouvelle exécution la garde encore, demandez à l'opérateur du déploiement.",
+      "deploymentProjects": "Cette adresse n'a pas été recherchée dans les projets propres au déploiement. {{rerun}}",
+      "agentMemory": "La mémoire des agents d'ingénierie n'a pas été entièrement effacée pour cette adresse. {{rerun}}",
+      "rerunWorkspace": "Soumettez de nouveau cet effacement depuis cet espace de travail avec l'adresse et la base légale de la personne (la tâche ne garde qu'un hachage de l'adresse).",
+      "lineageOwed": "Les personas et les documents qui citent les avis effacés ne sont pas encore marqués (lignage en attente). Ce qui se passe ensuite et que faire : {{reason}}",
+      "lineageOwedNoReason": "demandez à l'opérateur du déploiement de lire la ligne d'audit de cette tâche.",
+      "rerun": "Soumettez de nouveau cet effacement avec l'adresse et la base légale de la personne (la tâche ne garde qu'un hachage de l'adresse).",
+      "rerunOwnRequest": "Si ce déploiement a sa propre demande d'effacement pour cette adresse, soumettez de nouveau cet effacement avec l'adresse et la base légale de la personne (la tâche ne garde qu'un hachage de l'adresse) ; sinon, l'espace de travail qui a reçu la demande la soumet depuis celui-ci.",
+      "filesToReview": "Certains fichiers n'ont pas pu être effacés automatiquement : examinez à la main les listes ci-dessous.",
+      "lineageOwedCoded": "Les personas et les documents qui citent les avis effacés ne sont pas encore marqués (lignage en attente). {{reason}} {{next}}",
+      "owedReasons": {
+        "not_backfilled": "Les registres de revue ne sont pas remplis : demandez à l'opérateur du déploiement de lancer scripts/projects/backfill_review_registries.py --apply.",
+        "incomplete": "Un projet actif manque au registre des projets : demandez à l'opérateur du déploiement de lancer scripts/projects/backfill_review_registries.py --unmark, puis --apply.",
+        "failed_before_marks": "Cette exécution a échoué avant ses marques de lignage.",
+        "owe_failed": "Les marques dues n'ont pas pu être enregistrées, donc aucune exécution ultérieure ne les pose d'elle-même : les sources effacées par cette exécution sont sur sa ligne d'audit. Demandez à l'opérateur du déploiement de lire les journaux du processus pour en trouver la cause."
+      },
+      "owedNext": {
+        "erase": "Ensuite, le prochain effacement du déploiement, ou la prochaine fenêtre de rétention quotidienne, les pose d'elle-même. L'exécution d'une fenêtre de rétention n'est pas listée ici : cette ligne reste jusqu'à ce qu'un effacement ultérieur montre les marques posées."
+      },
+      "malformedRows_one": "{{count, number}} ligne de participant mal formée a été ignorée. Demandez à l'opérateur du déploiement de réparer chaque ligne, ou d'effacer par id la personne qu'elle nomme, puis soumettez de nouveau cet effacement : le relancer seul ne la répare pas.",
+      "malformedRows_many": "{{count, number}} lignes de participants mal formées ont été ignorées. Demandez à l'opérateur du déploiement de réparer chaque ligne, ou d'effacer par id la personne qu'elle nomme, puis soumettez de nouveau cet effacement : le relancer seul ne la répare pas.",
+      "malformedRows_other": "{{count, number}} lignes de participants mal formées ont été ignorées. Demandez à l'opérateur du déploiement de réparer chaque ligne, ou d'effacer par id la personne qu'elle nomme, puis soumettez de nouveau cet effacement : le relancer seul ne la répare pas.",
+      "malformedProjectIds_one": "{{count, number}} identifiant de projet mal formé a été ignoré (un id de registre, de lien ou de série qui n'en a pas la forme). Demandez à l'opérateur du déploiement de l'examiner.",
+      "malformedProjectIds_many": "{{count, number}} identifiants de projet mal formés ont été ignorés (des id de registre, de lien ou de série qui n'en ont pas la forme). Demandez à l'opérateur du déploiement de les examiner.",
+      "malformedProjectIds_other": "{{count, number}} identifiants de projet mal formés ont été ignorés (des id de registre, de lien ou de série qui n'en ont pas la forme). Demandez à l'opérateur du déploiement de les examiner.",
+      "agentMemoryAccounts_one": "{{count, number}} compte a cette adresse non vérifiée, donc sa mémoire des agents n'a pas été effacée. Dans Utilisateurs, confirmez que le compte est celui de la personne et vérifiez son e-mail ou, s'il n'est pas le sien, modifiez ou retirez l'adresse du compte ; puis soumettez de nouveau cet effacement avec la même adresse et la même base légale.",
+      "agentMemoryAccounts_many": "{{count, number}} comptes ont cette adresse non vérifiée, donc leur mémoire des agents n'a pas été effacée. Dans Utilisateurs, confirmez que chaque compte est celui de la personne et vérifiez son e-mail ou, s'il n'est pas le sien, modifiez ou retirez l'adresse du compte ; puis soumettez de nouveau cet effacement avec la même adresse et la même base légale.",
+      "agentMemoryAccounts_other": "{{count, number}} comptes ont cette adresse non vérifiée, donc leur mémoire des agents n'a pas été effacée. Dans Utilisateurs, confirmez que chaque compte est celui de la personne et vérifiez son e-mail ou, s'il n'est pas le sien, modifiez ou retirez l'adresse du compte ; puis soumettez de nouveau cet effacement avec la même adresse et la même base légale.",
+      "indexRowsKept_one": "{{count, number}} ligne d'index contient encore l'adresse.",
+      "indexRowsKept_many": "{{count, number}} lignes d'index contiennent encore l'adresse.",
+      "indexRowsKept_other": "{{count, number}} lignes d'index contiennent encore l'adresse.",
+      "indexRowsKeptAgain_one": "{{count, number}} ligne d'index contient encore l'adresse après qu'une nouvelle exécution du même effacement l'a gardée : demandez à l'opérateur du déploiement de l'examiner.",
+      "indexRowsKeptAgain_many": "{{count, number}} lignes d'index contiennent encore l'adresse après qu'une nouvelle exécution du même effacement les a gardées : demandez à l'opérateur du déploiement de les examiner.",
+      "indexRowsKeptAgain_other": "{{count, number}} lignes d'index contiennent encore l'adresse après qu'une nouvelle exécution du même effacement les a gardées : demandez à l'opérateur du déploiement de les examiner.",
+      "participantsKept": "Les fiches de participants qui contiennent cette adresse n'ont pas toutes été effacées. {{kept}} {{rerun}} Si une nouvelle exécution la garde encore, demandez à l'opérateur du déploiement."
+    },
+    "registries": {
+      "not_backfilled": "Registres de revue : pas encore remplis",
+      "incomplete": "Registres de revue : un projet actif manque au registre des projets"
+    },
+    "lineageReplayed": "Cette exécution a aussi posé les marques de lignage qu'une exécution précédente devait.",
+    "reviewDocuments": "Documents qui contiennent l'adresse (documents produit, éléments de la bibliothèque) : {{files, number}}. Examinez-les :",
+    "counters": {
+      "participantsErased": "Participants effacés : {{n, number}}",
+      "participantsNotErased": "Participants non effacés : {{n, number}}",
+      "exportObjects": "Objets d'export supprimés : {{n, number}}",
+      "projectRows": "Lignes de projets désidentifiées : {{n, number}}",
+      "formTestResponses": "Réponses de test de formulaires supprimées : {{n, number}}",
+      "agentMemoryErased": "Personnes effacées de la mémoire des agents : {{n, number}}",
+      "agentMemoryRefused": "Personnes que la mémoire des agents ne gardera plus : {{n, number}}",
+      "engineeringRows": "Lignes d'exécutions d'ingénierie mises à jour : {{n, number}}",
+      "unscopedRows": "Lignes ignorées qui ne nomment aucun espace de travail : {{n, number}}"
+    },
+    "notCheckedListed": "{{listed, number}} sur {{total, number}} listés : la tâche ne garde que les premiers. Vérifiez le reste à la main.",
+    "lineageMadeLater": "Une exécution ultérieure a posé les marques de lignage que celle-ci devait.",
+    "rerunDoneLater": "Un effacement ultérieur de la même adresse a terminé les étapes pour lesquelles celui-ci devait être soumis de nouveau.",
+    "agentMemoryReach": "Un compte des agents d'ingénierie dont l'e-mail a changé, ou dont l'e-mail n'est pas vérifié et n'est pas son nom d'utilisateur, n'est pas atteint par l'adresse : dans Utilisateurs, confirmez que le compte est celui de la personne et vérifiez son e-mail ou, s'il n'est pas le sien, modifiez ou retirez l'adresse du compte ; puis soumettez de nouveau cet effacement avec la même adresse et la même base légale.",
+    "reviewMore_one": "Seul le premier élément à examiner est listé : la tâche en a d'autres. Vérifiez le reste à la main.",
+    "reviewMore_many": "Seuls les {{count, number}} premiers éléments à examiner sont listés : la tâche en a d'autres. Vérifiez le reste à la main.",
+    "reviewMore_other": "Seuls les {{count, number}} premiers éléments à examiner sont listés : la tâche en a d'autres. Vérifiez le reste à la main.",
+    "notChecked_one": "L'adresse n'a pas pu être recherchée dans {{count, number}} document (une image, un type non lu ou un texte pas encore extrait). Vérifiez-le à la main :",
+    "notChecked_many": "L'adresse n'a pas pu être recherchée dans {{count, number}} documents (une image, un type non lu ou un texte pas encore extrait). Vérifiez-les à la main :",
+    "notChecked_other": "L'adresse n'a pas pu être recherchée dans {{count, number}} documents (une image, un type non lu ou un texte pas encore extrait). Vérifiez-les à la main :",
+    "notCheckedMore_one": "Seul le premier document non vérifié est listé : la tâche en a d'autres. Vérifiez le reste à la main.",
+    "notCheckedMore_many": "Seuls les {{count, number}} premiers documents non vérifiés sont listés : la tâche en a d'autres. Vérifiez le reste à la main.",
+    "notCheckedMore_other": "Seuls les {{count, number}} premiers documents non vérifiés sont listés : la tâche en a d'autres. Vérifiez le reste à la main.",
+    "lineageMadeLaterFailed": "Une exécution ultérieure a posé les marques de lignage que celle-ci devait ; l'effacement lui-même a échoué : voyez son erreur."
   },
   "legalBasis": {
     "label": "Base légale",
@@ -792,7 +866,8 @@
       "members": "Suppression de l’e-mail et du nom des adhésions aux espaces de travail. Anonymisées jusqu’ici : {{rows, number}}.",
       "raw": "Suppression des fichiers bruts. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "lineage": "Marquage des personas et des documents qui citaient des avis supprimés. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
-      "done": "Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}."
+      "done": "Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
+      "other": "Exécution des autres étapes de l'effacement. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}."
     }
   },
   "dimensionsEdit": {

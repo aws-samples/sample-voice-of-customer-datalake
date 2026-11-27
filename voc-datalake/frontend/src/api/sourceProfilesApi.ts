@@ -104,19 +104,54 @@ const SOURCE_ERASURE_FIELD = 'source'
 const JOB_FIELDS = [...ERASURE_FIELDS, SOURCE_ERASURE_FIELD] as const
 export type ErasureJobField = typeof JOB_FIELDS[number]
 /** The worker's phases in order (lambda/jobs/retention/handler.py). */
-const ERASURE_PHASES = ['items', 'radar', 'boards', 'members', 'raw', 'lineage'] as const
+const ERASURE_PHASES = [
+  'registries', 'items', 'form_tests', 'exports', 'radar', 'boards', 'members', 'raw', 'lineage', 'workspace_projects',
+  'workspace_lineage', 'participants', 'agent_memory', 'engineering_lineage',
+] as const
 
 const ERASURE_STATUSES = ['queued', 'running', 'completed', 'failed'] as const
-export type ErasureStatus = typeof ERASURE_STATUSES[number]
 
 const count = z.number().int().nonnegative().catch(0)
 const optionalText = z.string().min(1).optional().catch(undefined)
 
-/** Whole-file uploads that hold erased rows and others, kept and listed for review (keys only). */
-const FilesNeedingReviewSchema = z.object({
+const optionalFlag = z.boolean().optional().catch(undefined)
+
+/** A list of keys a job kept (keys only, never content): at most the first 200, `more` when the job holds others
+ *  (it keeps no count past them). `files_needing_review`: whole-file uploads that hold erased rows and others, S3
+ *  import originals folders (a key ending in `/`), product documents and library items that hold the address;
+ *  `files_not_checked` (since 7.97.00): the documents an erasure by email could not judge. */
+const KeptKeysSchema = z.object({
   count,
   keys: z.array(z.unknown()).catch([]).transform((keys) => keys.filter((key): key is string => typeof key === 'string')),
+  more: z.boolean().catch(false),
 }).optional().catch(undefined)
+
+/** The review registries check of a run (7.93.00, lambda/jobs/retention/registries.py `RESULTS`). */
+const REVIEW_REGISTRIES = ['complete', 'not_backfilled', 'incomplete'] as const
+/** Why a run owes its lineage marks (7.97.00, lambda/jobs/retention/registries.py `owed_code`). */
+const LINEAGE_OWED_REASONS = ['not_backfilled', 'incomplete', 'failed_before_marks', 'owe_failed'] as const
+
+/** The counters on a job row only once above 0 (lambda/shared/retention.py `ERASURE_OPTIONAL_COUNTERS`), each absent
+ *  reading as 0, beside those the job schema names on its own: boards, members, workspace items, and the two the
+ *  panel reads as follow-ups rather than counts (`participant_guards_malformed`, the operator's before any rerun;
+ *  `participant_index_rows_kept`, which needs only the rerun). */
+const OutcomeCountersSchema = z.object({
+  participants_erased: count,
+  participants_not_erased: count,
+  deleted_export_objects: count,
+  project_rows_deidentified: count,
+  form_test_responses_deleted: count,
+  product_docs_not_checked: count,
+  agent_memory_people_erased: count,
+  agent_memory_people_refused: count,
+  agent_memory_accounts_not_erased: count,
+  engineering_rows_marked: count,
+  project_ids_malformed: count,
+  unscoped_rows_skipped: count,
+})
+/** Those counters, in the order the panel lists them. */
+export const ERASURE_OUTCOME_COUNTERS = OutcomeCountersSchema.keyof().options
+export type ErasureOutcomeCounter = typeof ERASURE_OUTCOME_COUNTERS[number]
 
 const ErasureJobSchema = z.object({
   job_id: z.string().min(1),
@@ -142,13 +177,37 @@ const ErasureJobSchema = z.object({
   deleted_workspace_items: count,
   /** The workspace an erasure in one workspace ran in (its job row, since 7.09.00); absent on the deployment's. */
   workspace_id: optionalText,
-  files_needing_review: FilesNeedingReviewSchema,
+  files_needing_review: KeptKeysSchema,
+  files_not_checked: KeptKeysSchema,
+  /** An erasure by email without a source, the deployment's (7.48.00): whether it walked the deployment's projects. */
+  deployment_projects_walked: optionalFlag,
+  /** An erasure by email without a source (7.72.00): whether it looked in voc-participants, and erased everyone there
+   *  (nobody refused, no index row kept, no malformed row skipped). */
+  participants_walked: optionalFlag,
+  participants_complete: optionalFlag,
+  participant_guards_malformed: count,
+  participant_index_rows_kept: count,
+  /** With the engineering agents (7.84.00): whether the run walked their memory and left no account unverified. */
+  agent_memory_walked: optionalFlag,
+  agent_memory_complete: optionalFlag,
+  /** 7.93.00: the run's review registries check, whether it owes its lineage marks (with why and what happens next,
+   *  the server's text) and whether it replayed what an earlier run owed. */
+  review_registries: z.enum(REVIEW_REGISTRIES).optional().catch(undefined),
+  lineage_owed: optionalFlag,
+  incomplete_reason: optionalText,
+  lineage_owed_replayed: optionalFlag,
+  /** 7.97.00: why the marks are owed as a code the panel translates (registries.py `owed_code`), and the run's
+   *  mode (which later run makes them); absent on an older row, which keeps `incomplete_reason`'s words. */
+  lineage_owed_reason: z.enum(LINEAGE_OWED_REASONS).optional().catch(undefined),
+  lineage_owed_mode: z.enum(['retention', 'erase']).optional().catch(undefined),
+  ...OutcomeCountersSchema.shape,
   started_by: z.string().catch(''),
   created_at: z.string().catch(''),
   finished_at: optionalText,
   error: optionalText,
-  /** Reviews, Radar reviews, (by email) board requests and workspace memberships, (whole source) the raw folder, then
-   * the marking of artifacts. */
+  /** The worker's phase (lambda/jobs/retention/handler.py `_phases`): the registries check, reviews, a form's test
+   * responses, exports, Radar reviews, (by email) board requests, memberships, projects, participants and the agents'
+   * memory, (whole source) the raw folder, then the lineage marks. */
   phase: z.enum(ERASURE_PHASES).optional().catch(undefined),
 })
 

@@ -738,10 +738,76 @@
       "queued": "Queued",
       "running": "Running",
       "completed": "Completed",
-      "failed": "Failed"
+      "failed": "Failed",
+      "rerun": "Completed: run again",
+      "lineageOwed": "Completed: lineage owed",
+      "operator": "Completed: needs the operator",
+      "verifiedAddress": "Completed: check the account in Users",
+      "filesToReview": "Completed: files to review"
     },
     "confirmTitle": "Erase this person's feedback?",
-    "confirmMessage": "Every review whose {{field}} matches the value ({{source}}) and its raw archive will be deleted permanently."
+    "confirmMessage": "Every review whose {{field}} matches the value ({{source}}) and its raw archive will be deleted permanently.",
+    "followUp": {
+      "title": "This erasure needs a follow-up",
+      "participants": "Not every participant record that holds this address was erased. {{rerun}} If a rerun keeps a record again, ask the deployment's operator.",
+      "deploymentProjects": "The deployment's own projects were not searched for this address. {{rerun}}",
+      "agentMemory": "The engineering agents' memory was not fully erased for this address. {{rerun}}",
+      "rerunWorkspace": "Submit this erasure again from this workspace with the person's address and legal basis (the job keeps only a hash of the address).",
+      "lineageOwed": "The personas and documents that cite the erased reviews are not marked yet (lineage owed). What happens next and what to do: {{reason}}",
+      "lineageOwedNoReason": "ask the deployment's operator to read this job's audit row.",
+      "rerun": "Submit this erasure again with the person's address and legal basis (the job keeps only a hash of the address).",
+      "rerunOwnRequest": "If this deployment has its own erasure request for this address, submit this erasure again with the person's address and legal basis (the job keeps only a hash of the address); otherwise the workspace that received the request submits it from there.",
+      "filesToReview": "Some files could not be erased automatically: review the lists below by hand.",
+      "lineageOwedCoded": "The personas and documents that cite the erased reviews are not marked yet (lineage owed). {{reason}} {{next}}",
+      "owedReasons": {
+        "not_backfilled": "The review registries are not backfilled: ask the deployment's operator to run scripts/projects/backfill_review_registries.py --apply.",
+        "incomplete": "A live project is missing from the project registry: ask the deployment's operator to run scripts/projects/backfill_review_registries.py --unmark, then --apply.",
+        "failed_before_marks": "This run failed before its lineage marks.",
+        "owe_failed": "The owed marks could not be recorded, so no later run makes them on its own: the sources this run erased from are on its audit row. Ask the deployment's operator to read the worker's logs for the cause."
+      },
+      "owedNext": {
+        "erase": "Then the next erasure of the deployment, or the next daily retention window, makes them on its own. A retention window's run is not listed here, so this line stays until a later erasure of the deployment shows the marks made."
+      },
+      "malformedRows_one": "1 malformed participant row was skipped. Ask the deployment's operator to mend each row, or to erase by id the person it names, then submit this erasure again: a rerun alone does not mend it.",
+      "malformedRows_other": "{{count, number}} malformed participant rows were skipped. Ask the deployment's operator to mend each row, or to erase by id the person it names, then submit this erasure again: a rerun alone does not mend it.",
+      "malformedProjectIds_one": "1 malformed project id was skipped (a registry, link or series id not shaped like one). Ask the deployment's operator to look at it.",
+      "malformedProjectIds_other": "{{count, number}} malformed project ids were skipped (registry, link or series ids not shaped like one). Ask the deployment's operator to look at them.",
+      "agentMemoryAccounts_one": "1 account holds this address unverified, so its agents' memory was not erased. In Users, confirm the account is the person's and verify its email, or, if it is not theirs, change or remove the address on it; then submit this erasure again with the same address and legal basis.",
+      "agentMemoryAccounts_other": "{{count, number}} accounts hold this address unverified, so their agents' memory was not erased. In Users, confirm each account is the person's and verify its email, or, if it is not theirs, change or remove the address on it; then submit this erasure again with the same address and legal basis.",
+      "indexRowsKept_one": "1 index row still holds the address.",
+      "indexRowsKept_other": "{{count, number}} index rows still hold the address.",
+      "indexRowsKeptAgain_one": "1 index row still holds the address after a rerun of the same erasure kept it again: ask the deployment's operator to look at it.",
+      "indexRowsKeptAgain_other": "{{count, number}} index rows still hold the address after a rerun of the same erasure kept them again: ask the deployment's operator to look at them.",
+      "participantsKept": "Not every participant record that holds this address was erased. {{kept}} {{rerun}} If a rerun keeps a record again, ask the deployment's operator."
+    },
+    "registries": {
+      "not_backfilled": "Review registries: not backfilled yet",
+      "incomplete": "Review registries: a live project is missing from the project registry"
+    },
+    "lineageReplayed": "This run also made the lineage marks an earlier run owed.",
+    "reviewDocuments": "Documents that hold the address (product documents, library items): {{files, number}}. Review them:",
+    "counters": {
+      "participantsErased": "Participants erased: {{n, number}}",
+      "participantsNotErased": "Participants not erased: {{n, number}}",
+      "exportObjects": "Export objects deleted: {{n, number}}",
+      "projectRows": "Project rows de-identified: {{n, number}}",
+      "formTestResponses": "Form test responses deleted: {{n, number}}",
+      "agentMemoryErased": "People erased from the agents' memory: {{n, number}}",
+      "agentMemoryRefused": "People the agents' memory will no longer keep: {{n, number}}",
+      "engineeringRows": "Engineering run rows updated: {{n, number}}",
+      "unscopedRows": "Rows skipped that name no workspace: {{n, number}}"
+    },
+    "notCheckedListed": "{{listed, number}} of {{total, number}} listed: the job keeps only the first ones. Check the rest by hand.",
+    "lineageMadeLater": "A later run made the lineage marks this run owed.",
+    "rerunDoneLater": "A later erasure of the same address finished the steps this one had to be submitted again for.",
+    "agentMemoryReach": "An engineering agents' account whose email has changed, or whose email is unverified and is not its username, is not reached by the address: in Users, confirm the account is the person's and verify its email, or, if it is not theirs, change or remove the address on it; then submit this erasure again with the same address and legal basis.",
+    "reviewMore_one": "Only the first item to review is listed: the job holds more. Check the rest by hand.",
+    "reviewMore_other": "Only the first {{count, number}} items to review are listed: the job holds more. Check the rest by hand.",
+    "notChecked_one": "1 document could not be checked for the address (an image, a kind that is not read, or text not extracted yet). Check it by hand:",
+    "notChecked_other": "{{count, number}} documents could not be checked for the address (an image, a kind that is not read, or text not extracted yet). Check them by hand:",
+    "notCheckedMore_one": "Only the first document not checked is listed: the job holds more. Check the rest by hand.",
+    "notCheckedMore_other": "Only the first {{count, number}} documents not checked are listed: the job holds more. Check the rest by hand.",
+    "lineageMadeLaterFailed": "A later run made the lineage marks this run owed; the erasure itself still failed: see its error."
   },
   "legalBasis": {
     "label": "Legal basis",
@@ -769,7 +835,8 @@
       "members": "Removing the email and name from workspace memberships. De-identified so far: {{rows, number}}.",
       "raw": "Deleting raw files. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "lineage": "Marking personas and documents that cited deleted reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
-      "done": "Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}."
+      "done": "Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
+      "other": "Running the other erasure steps. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}."
     }
   },
   "dimensionsEdit": {

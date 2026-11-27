@@ -761,10 +761,84 @@
       "queued": "En cola",
       "running": "En curso",
       "completed": "Completado",
-      "failed": "Error"
+      "failed": "Error",
+      "rerun": "Completada: ejecútala de nuevo",
+      "lineageOwed": "Completada: linaje pendiente",
+      "operator": "Completada: requiere al operador",
+      "verifiedAddress": "Completada: revisa la cuenta en Usuarios",
+      "filesToReview": "Completada: archivos por revisar"
     },
     "confirmTitle": "¿Borrar las opiniones de esta persona?",
-    "confirmMessage": "Se eliminarán de forma permanente todas las opiniones cuyo campo {{field}} coincida con el valor ({{source}}) y su archivo sin procesar."
+    "confirmMessage": "Se eliminarán de forma permanente todas las opiniones cuyo campo {{field}} coincida con el valor ({{source}}) y su archivo sin procesar.",
+    "followUp": {
+      "title": "Esta eliminación necesita un seguimiento",
+      "participants": "No se eliminaron todos los registros de participantes que contienen esta dirección. {{rerun}} Si una nueva ejecución lo vuelve a dejar, pide ayuda al operador del despliegue.",
+      "deploymentProjects": "No se buscó esta dirección en los proyectos propios del despliegue. {{rerun}}",
+      "agentMemory": "La memoria de los agentes de ingeniería no se eliminó por completo para esta dirección. {{rerun}}",
+      "rerunWorkspace": "Envía esta eliminación de nuevo desde este espacio de trabajo con la dirección y la base legal de la persona (el trabajo solo guarda un hash de la dirección).",
+      "lineageOwed": "Las personas y los documentos que citan las reseñas eliminadas aún no están marcados (linaje pendiente). Qué ocurre ahora y qué hacer: {{reason}}",
+      "lineageOwedNoReason": "pide al operador del despliegue que lea la fila de auditoría de este trabajo.",
+      "rerun": "Envía esta eliminación de nuevo con la dirección y la base legal de la persona (el trabajo solo guarda un hash de la dirección).",
+      "rerunOwnRequest": "Si este despliegue tiene su propia solicitud de eliminación para esta dirección, envía esta eliminación de nuevo con la dirección y la base legal de la persona (el trabajo solo guarda un hash de la dirección); si no, el espacio de trabajo que recibió la solicitud la envía desde allí.",
+      "filesToReview": "Algunos archivos no se pudieron eliminar automáticamente: revisa a mano las listas de abajo.",
+      "lineageOwedCoded": "Las personas y los documentos que citan las reseñas eliminadas aún no están marcados (linaje pendiente). {{reason}} {{next}}",
+      "owedReasons": {
+        "not_backfilled": "Los registros de revisión no están completados: pide al operador del despliegue que ejecute scripts/projects/backfill_review_registries.py --apply.",
+        "incomplete": "Falta un proyecto activo en el registro de proyectos: pide al operador del despliegue que ejecute scripts/projects/backfill_review_registries.py --unmark y luego --apply.",
+        "failed_before_marks": "Esta ejecución falló antes de sus marcas de linaje.",
+        "owe_failed": "Las marcas pendientes no se pudieron registrar, así que ninguna ejecución posterior las hará por sí sola: las fuentes de las que eliminó esta ejecución están en su fila de auditoría. Pide al operador del despliegue que lea los registros del proceso para conocer la causa."
+      },
+      "owedNext": {
+        "erase": "Después, la siguiente eliminación del despliegue, o la siguiente ventana diaria de retención, las hará por sí sola. La ejecución de una ventana de retención no aparece aquí, así que esta línea se queda hasta que una eliminación posterior muestre las marcas hechas."
+      },
+      "malformedRows_one": "Se omitió 1 fila de participante mal formada. Pide al operador del despliegue que repare cada fila, o que elimine por id a la persona que indica, y luego envía esta eliminación de nuevo: volver a ejecutarla sin más no la repara.",
+      "malformedRows_many": "Se omitieron {{count, number}} filas de participantes mal formadas. Pide al operador del despliegue que repare cada fila, o que elimine por id a la persona que indica, y luego envía esta eliminación de nuevo: volver a ejecutarla sin más no la repara.",
+      "malformedRows_other": "Se omitieron {{count, number}} filas de participantes mal formadas. Pide al operador del despliegue que repare cada fila, o que elimine por id a la persona que indica, y luego envía esta eliminación de nuevo: volver a ejecutarla sin más no la repara.",
+      "malformedProjectIds_one": "Se omitió 1 identificador de proyecto mal formado (un id de registro, enlace o serie sin la forma esperada). Pide al operador del despliegue que lo revise.",
+      "malformedProjectIds_many": "Se omitieron {{count, number}} identificadores de proyecto mal formados (ids de registro, enlace o serie sin la forma esperada). Pide al operador del despliegue que los revise.",
+      "malformedProjectIds_other": "Se omitieron {{count, number}} identificadores de proyecto mal formados (ids de registro, enlace o serie sin la forma esperada). Pide al operador del despliegue que los revise.",
+      "agentMemoryAccounts_one": "{{count, number}} cuenta tiene esta dirección sin verificar, así que su memoria de los agentes no se eliminó. En Usuarios, confirma que la cuenta es de la persona y verifica su correo o, si no es suya, cambia o quita la dirección de la cuenta; después envía esta eliminación de nuevo con la misma dirección y base legal.",
+      "agentMemoryAccounts_many": "{{count, number}} cuentas tienen esta dirección sin verificar, así que su memoria de los agentes no se eliminó. En Usuarios, confirma que cada cuenta es de la persona y verifica su correo o, si no es suya, cambia o quita la dirección de la cuenta; después envía esta eliminación de nuevo con la misma dirección y base legal.",
+      "agentMemoryAccounts_other": "{{count, number}} cuentas tienen esta dirección sin verificar, así que su memoria de los agentes no se eliminó. En Usuarios, confirma que cada cuenta es de la persona y verifica su correo o, si no es suya, cambia o quita la dirección de la cuenta; después envía esta eliminación de nuevo con la misma dirección y base legal.",
+      "indexRowsKept_one": "{{count, number}} fila de índice aún contiene la dirección.",
+      "indexRowsKept_many": "{{count, number}} filas de índice aún contienen la dirección.",
+      "indexRowsKept_other": "{{count, number}} filas de índice aún contienen la dirección.",
+      "indexRowsKeptAgain_one": "{{count, number}} fila de índice aún contiene la dirección después de que una nueva ejecución de la misma eliminación la volviera a dejar: pide al operador del despliegue que la revise.",
+      "indexRowsKeptAgain_many": "{{count, number}} filas de índice aún contienen la dirección después de que una nueva ejecución de la misma eliminación las volviera a dejar: pide al operador del despliegue que las revise.",
+      "indexRowsKeptAgain_other": "{{count, number}} filas de índice aún contienen la dirección después de que una nueva ejecución de la misma eliminación las volviera a dejar: pide al operador del despliegue que las revise.",
+      "participantsKept": "No se eliminaron todos los registros de participantes que contienen esta dirección. {{kept}} {{rerun}} Si una nueva ejecución lo vuelve a dejar, pide ayuda al operador del despliegue."
+    },
+    "registries": {
+      "not_backfilled": "Registros de revisión: aún no completados",
+      "incomplete": "Registros de revisión: falta un proyecto activo en el registro de proyectos"
+    },
+    "lineageReplayed": "Esta ejecución también hizo las marcas de linaje que una ejecución anterior dejó pendientes.",
+    "reviewDocuments": "Documentos que contienen la dirección (documentos de producto, elementos de la biblioteca): {{files, number}}. Revísalos:",
+    "counters": {
+      "participantsErased": "Participantes eliminados: {{n, number}}",
+      "participantsNotErased": "Participantes no eliminados: {{n, number}}",
+      "exportObjects": "Objetos de exportación eliminados: {{n, number}}",
+      "projectRows": "Filas de proyectos desidentificadas: {{n, number}}",
+      "formTestResponses": "Respuestas de prueba de formularios eliminadas: {{n, number}}",
+      "agentMemoryErased": "Personas eliminadas de la memoria de los agentes: {{n, number}}",
+      "agentMemoryRefused": "Personas que la memoria de los agentes ya no guardará: {{n, number}}",
+      "engineeringRows": "Filas de ejecuciones de ingeniería actualizadas: {{n, number}}",
+      "unscopedRows": "Filas omitidas que no indican un espacio de trabajo: {{n, number}}"
+    },
+    "notCheckedListed": "{{listed, number}} de {{total, number}} en la lista: el trabajo solo guarda los primeros. Revisa el resto a mano.",
+    "lineageMadeLater": "Una ejecución posterior hizo las marcas de linaje que esta dejó pendientes.",
+    "rerunDoneLater": "Una eliminación posterior de la misma dirección terminó los pasos por los que esta había que enviarla de nuevo.",
+    "agentMemoryReach": "Una cuenta de los agentes de ingeniería cuyo correo ha cambiado, o cuyo correo no está verificado y no es su nombre de usuario, no se alcanza por la dirección: en Usuarios, confirma que la cuenta es de la persona y verifica su correo o, si no es suya, cambia o quita la dirección de la cuenta; después envía esta eliminación de nuevo con la misma dirección y base legal.",
+    "reviewMore_one": "Solo se muestra el primer elemento por revisar: el trabajo tiene más. Revisa el resto a mano.",
+    "reviewMore_many": "Solo se muestran los primeros {{count, number}} elementos por revisar: el trabajo tiene más. Revisa el resto a mano.",
+    "reviewMore_other": "Solo se muestran los primeros {{count, number}} elementos por revisar: el trabajo tiene más. Revisa el resto a mano.",
+    "notChecked_one": "No se pudo buscar la dirección en 1 documento (una imagen, un tipo que no se lee o texto aún no extraído). Revísalo a mano:",
+    "notChecked_many": "No se pudo buscar la dirección en {{count, number}} documentos (una imagen, un tipo que no se lee o texto aún no extraído). Revísalos a mano:",
+    "notChecked_other": "No se pudo buscar la dirección en {{count, number}} documentos (una imagen, un tipo que no se lee o texto aún no extraído). Revísalos a mano:",
+    "notCheckedMore_one": "Solo se muestra el primer documento no revisado: el trabajo tiene más. Revisa el resto a mano.",
+    "notCheckedMore_many": "Solo se muestran los primeros {{count, number}} documentos no revisados: el trabajo tiene más. Revisa el resto a mano.",
+    "notCheckedMore_other": "Solo se muestran los primeros {{count, number}} documentos no revisados: el trabajo tiene más. Revisa el resto a mano.",
+    "lineageMadeLaterFailed": "Una ejecución posterior hizo las marcas de linaje que esta dejó pendientes; la eliminación en sí sigue fallida: consulta su error."
   },
   "legalBasis": {
     "label": "Base legal",
@@ -792,7 +866,8 @@
       "members": "Eliminando el correo y el nombre de las membresías de espacios de trabajo. Anonimizadas hasta ahora: {{rows, number}}.",
       "raw": "Eliminando archivos sin procesar. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "lineage": "Marcando las personas y los documentos que citaban opiniones eliminadas. Opiniones eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
-      "done": "Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}."
+      "done": "Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
+      "other": "Ejecutando los demás pasos de la eliminación. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}."
     }
   },
   "dimensionsEdit": {

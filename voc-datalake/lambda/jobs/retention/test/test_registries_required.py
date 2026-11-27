@@ -256,6 +256,7 @@ class TestEveryOtherRunOwesItsLineage:
         assert (audit['review_registries'], audit['lineage_owed']) == ('not_backfilled', True)
         assert 'the next daily retention window makes them on its own' in audit['incomplete_reason']
         assert "ask the deployment's operator" in audit['incomplete_reason']
+        assert (audit['lineage_owed_reason'], audit['lineage_owed_mode']) == ('not_backfilled', 'retention')
         owed = _owed(aws)
         assert (owed['sources'], owed['runs']) == (['web'], [audit['run_id']])
         [line] = _emf(capsys, 'RetentionLineageOwed')
@@ -301,6 +302,7 @@ class TestEveryOtherRunOwesItsLineage:
         [audit] = _audits(aws)
         assert (audit['review_registries'], audit['lineage_owed']) == ('incomplete', True)
         assert '--unmark' in audit['incomplete_reason']
+        assert audit['lineage_owed_reason'] == 'incomplete'
         assert _owed(aws)['sources'] == ['web']
         assert _persona(aws) == ['f1']
 
@@ -315,6 +317,7 @@ class TestEveryOtherRunOwesItsLineage:
         assert (result['status'], job['status'], result['deleted_items']) == ('completed', 'completed', 1)
         assert (job['review_registries'], job['lineage_owed']) == ('not_backfilled', True)
         assert 'the next erasure of the deployment' in job['incomplete_reason']
+        assert (job['lineage_owed_reason'], job['lineage_owed_mode']) == ('not_backfilled', 'erase')
         assert _owed(aws)['runs'] == [JOB_ID]
         mark_review_registries_backfilled(aws['projects'])
         # A later erasure that deletes nothing still replays what is owed.
@@ -531,6 +534,7 @@ class TestEveryFailurePathOwes:
         [audit] = _audits(aws)
         assert (audit['lineage_owed'], audit['review_registries']) == (True, 'complete')
         assert 'failed before its lineage marks' in audit['incomplete_reason']
+        assert audit['lineage_owed_reason'] == 'failed_before_marks'
         assert [line['error_type'] for line in _emf(capsys, registries.FAILED_METRIC)] == ['RuntimeError']
         replay = _window(worker_context)
         assert (replay['status'], replay['artifacts_marked'], _persona(aws)) == ('completed', 1, ['f9'])
@@ -587,6 +591,7 @@ class TestEveryFailurePathOwes:
         [audit] = _audits(aws)
         assert audit['lineage_owed'] is True
         assert 'could not be recorded' in audit['incomplete_reason']
+        assert audit['lineage_owed_reason'] == 'owe_failed'
         assert 'RuntimeError' in audit['error']
         assert _owed(aws).get('sources', []) == []
         lines = capsys.readouterr().out

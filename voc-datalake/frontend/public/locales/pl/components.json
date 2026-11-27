@@ -784,10 +784,92 @@
       "queued": "W kolejce",
       "running": "W toku",
       "completed": "Zakończone",
-      "failed": "Niepowodzenie"
+      "failed": "Niepowodzenie",
+      "rerun": "Zakończone: uruchom ponownie",
+      "lineageOwed": "Zakończone: zaległe pochodzenie",
+      "operator": "Zakończone: potrzebny operator",
+      "verifiedAddress": "Zakończone: sprawdź konto w Użytkownikach",
+      "filesToReview": "Zakończone: pliki do przejrzenia"
     },
     "confirmTitle": "Usunąć opinie tej osoby?",
-    "confirmMessage": "Każda opinia, której pole {{field}} odpowiada wartości ({{source}}), wraz z jej surowym archiwum zostanie trwale usunięta."
+    "confirmMessage": "Każda opinia, której pole {{field}} odpowiada wartości ({{source}}), wraz z jej surowym archiwum zostanie trwale usunięta.",
+    "followUp": {
+      "title": "To usunięcie wymaga dalszych działań",
+      "participants": "Nie wszystkie rekordy uczestników z tym adresem zostały usunięte. {{rerun}} Jeśli ponowne uruchomienie znów go zostawi, zwróć się do operatora wdrożenia.",
+      "deploymentProjects": "Własnych projektów wdrożenia nie przeszukano pod kątem tego adresu. {{rerun}}",
+      "agentMemory": "Pamięć agentów inżynieryjnych nie została w pełni wyczyszczona dla tego adresu. {{rerun}}",
+      "rerunWorkspace": "Prześlij to usunięcie ponownie z tego obszaru roboczego z adresem i podstawą prawną osoby (zadanie przechowuje tylko skrót adresu).",
+      "lineageOwed": "Persony i dokumenty cytujące usunięte opinie nie są jeszcze oznaczone (zaległe pochodzenie). Co dalej i co zrobić: {{reason}}",
+      "lineageOwedNoReason": "poproś operatora wdrożenia o odczytanie wiersza audytu tego zadania.",
+      "rerun": "Prześlij to usunięcie ponownie z adresem i podstawą prawną osoby (zadanie przechowuje tylko skrót adresu).",
+      "rerunOwnRequest": "Jeśli to wdrożenie ma własne żądanie usunięcia dla tego adresu, prześlij to usunięcie ponownie z adresem i podstawą prawną osoby (zadanie przechowuje tylko skrót adresu); w przeciwnym razie obszar roboczy, który otrzymał żądanie, przesyła je stamtąd.",
+      "filesToReview": "Niektórych plików nie dało się usunąć automatycznie: przejrzyj ręcznie poniższe listy.",
+      "lineageOwedCoded": "Persony i dokumenty cytujące usunięte opinie nie są jeszcze oznaczone (zaległe pochodzenie). {{reason}} {{next}}",
+      "owedReasons": {
+        "not_backfilled": "Rejestry przeglądów nie są uzupełnione: poproś operatora wdrożenia o uruchomienie scripts/projects/backfill_review_registries.py --apply.",
+        "incomplete": "W rejestrze projektów brakuje aktywnego projektu: poproś operatora wdrożenia o uruchomienie scripts/projects/backfill_review_registries.py --unmark, a potem --apply.",
+        "failed_before_marks": "To uruchomienie nie powiodło się przed oznaczeniami pochodzenia.",
+        "owe_failed": "Zaległych oznaczeń nie udało się zapisać, więc żadne późniejsze uruchomienie nie wykona ich samo: źródła, z których to uruchomienie usuwało, są w jego wierszu audytu. Poproś operatora wdrożenia o przeczytanie dzienników procesu, aby poznać przyczynę."
+      },
+      "owedNext": {
+        "erase": "Potem następne usunięcie we wdrożeniu lub następne dzienne okno retencji wykona je samo. Uruchomienie okna retencji nie jest tu wymieniane, więc ta linia zostaje, dopóki późniejsze usunięcie nie pokaże wykonanych oznaczeń."
+      },
+      "malformedRows_one": "Pominięto 1 błędny wiersz uczestnika. Poproś operatora wdrożenia o naprawienie każdego wiersza lub usunięcie po id wskazanej osoby, a potem prześlij to usunięcie ponownie: samo ponowne uruchomienie go nie naprawi.",
+      "malformedRows_few": "Pominięto {{count, number}} błędne wiersze uczestników. Poproś operatora wdrożenia o naprawienie każdego wiersza lub usunięcie po id wskazanej osoby, a potem prześlij to usunięcie ponownie: samo ponowne uruchomienie ich nie naprawi.",
+      "malformedRows_many": "Pominięto {{count, number}} błędnych wierszy uczestników. Poproś operatora wdrożenia o naprawienie każdego wiersza lub usunięcie po id wskazanej osoby, a potem prześlij to usunięcie ponownie: samo ponowne uruchomienie ich nie naprawi.",
+      "malformedRows_other": "Pominięto {{count, number}} błędnego wiersza uczestników. Poproś operatora wdrożenia o naprawienie każdego wiersza lub usunięcie po id wskazanej osoby, a potem prześlij to usunięcie ponownie: samo ponowne uruchomienie ich nie naprawi.",
+      "malformedProjectIds_one": "Pominięto 1 błędny identyfikator projektu (identyfikator rejestru, linku lub serii o niewłaściwej postaci). Poproś operatora wdrożenia o sprawdzenie go.",
+      "malformedProjectIds_few": "Pominięto {{count, number}} błędne identyfikatory projektów (identyfikatory rejestru, linku lub serii o niewłaściwej postaci). Poproś operatora wdrożenia o ich sprawdzenie.",
+      "malformedProjectIds_many": "Pominięto {{count, number}} błędnych identyfikatorów projektów (identyfikatory rejestru, linku lub serii o niewłaściwej postaci). Poproś operatora wdrożenia o ich sprawdzenie.",
+      "malformedProjectIds_other": "Pominięto {{count, number}} błędnego identyfikatora projektów (identyfikatory rejestru, linku lub serii o niewłaściwej postaci). Poproś operatora wdrożenia o ich sprawdzenie.",
+      "agentMemoryAccounts_one": "1 konto ma ten adres niezweryfikowany, więc jego pamięć agentów nie została usunięta. W Użytkownikach potwierdź, że konto należy do tej osoby, i zweryfikuj jego e-mail albo, jeśli nie jest jej, zmień lub usuń adres z konta; potem prześlij to usunięcie ponownie z tym samym adresem i podstawą prawną.",
+      "agentMemoryAccounts_few": "{{count, number}} konta mają ten adres niezweryfikowany, więc ich pamięć agentów nie została usunięta. W Użytkownikach potwierdź, że każde konto należy do tej osoby, i zweryfikuj jego e-mail albo, jeśli nie jest jej, zmień lub usuń adres z konta; potem prześlij to usunięcie ponownie z tym samym adresem i podstawą prawną.",
+      "agentMemoryAccounts_many": "{{count, number}} kont ma ten adres niezweryfikowany, więc ich pamięć agentów nie została usunięta. W Użytkownikach potwierdź, że każde konto należy do tej osoby, i zweryfikuj jego e-mail albo, jeśli nie jest jej, zmień lub usuń adres z konta; potem prześlij to usunięcie ponownie z tym samym adresem i podstawą prawną.",
+      "agentMemoryAccounts_other": "{{count, number}} konta ma ten adres niezweryfikowany, więc ich pamięć agentów nie została usunięta. W Użytkownikach potwierdź, że każde konto należy do tej osoby, i zweryfikuj jego e-mail albo, jeśli nie jest jej, zmień lub usuń adres z konta; potem prześlij to usunięcie ponownie z tym samym adresem i podstawą prawną.",
+      "indexRowsKept_one": "1 wiersz indeksu nadal zawiera adres.",
+      "indexRowsKept_few": "{{count, number}} wiersze indeksu nadal zawierają adres.",
+      "indexRowsKept_many": "{{count, number}} wierszy indeksu nadal zawiera adres.",
+      "indexRowsKept_other": "{{count, number}} wiersza indeksu nadal zawiera adres.",
+      "indexRowsKeptAgain_one": "1 wiersz indeksu nadal zawiera adres po tym, jak ponowne uruchomienie tego samego usunięcia znów go zostawiło: poproś operatora wdrożenia o sprawdzenie go.",
+      "indexRowsKeptAgain_few": "{{count, number}} wiersze indeksu nadal zawierają adres po tym, jak ponowne uruchomienie tego samego usunięcia znów je zostawiło: poproś operatora wdrożenia o ich sprawdzenie.",
+      "indexRowsKeptAgain_many": "{{count, number}} wierszy indeksu nadal zawiera adres po tym, jak ponowne uruchomienie tego samego usunięcia znów je zostawiło: poproś operatora wdrożenia o ich sprawdzenie.",
+      "indexRowsKeptAgain_other": "{{count, number}} wiersza indeksu nadal zawiera adres po tym, jak ponowne uruchomienie tego samego usunięcia znów je zostawiło: poproś operatora wdrożenia o ich sprawdzenie.",
+      "participantsKept": "Nie wszystkie rekordy uczestników z tym adresem zostały usunięte. {{kept}} {{rerun}} Jeśli ponowne uruchomienie znów go zostawi, zwróć się do operatora wdrożenia."
+    },
+    "registries": {
+      "not_backfilled": "Rejestry przeglądów: jeszcze nieuzupełnione",
+      "incomplete": "Rejestry przeglądów: w rejestrze projektów brakuje aktywnego projektu"
+    },
+    "lineageReplayed": "To uruchomienie wykonało też oznaczenia pochodzenia zaległe po wcześniejszym uruchomieniu.",
+    "reviewDocuments": "Dokumenty zawierające adres (dokumenty produktu, pozycje biblioteki): {{files, number}}. Przejrzyj je:",
+    "counters": {
+      "participantsErased": "Usunięci uczestnicy: {{n, number}}",
+      "participantsNotErased": "Nieusunięci uczestnicy: {{n, number}}",
+      "exportObjects": "Usunięte obiekty eksportu: {{n, number}}",
+      "projectRows": "Zanonimizowane wiersze projektów: {{n, number}}",
+      "formTestResponses": "Usunięte testowe odpowiedzi formularzy: {{n, number}}",
+      "agentMemoryErased": "Osoby usunięte z pamięci agentów: {{n, number}}",
+      "agentMemoryRefused": "Osoby, których pamięć agentów już nie zachowa: {{n, number}}",
+      "engineeringRows": "Zaktualizowane wiersze uruchomień inżynieryjnych: {{n, number}}",
+      "unscopedRows": "Pominięte wiersze bez obszaru roboczego: {{n, number}}"
+    },
+    "notCheckedListed": "Wymieniono {{listed, number}} z {{total, number}}: zadanie zachowuje tylko pierwsze. Resztę sprawdź ręcznie.",
+    "lineageMadeLater": "Późniejsze uruchomienie wykonało oznaczenia pochodzenia zaległe po tym uruchomieniu.",
+    "rerunDoneLater": "Późniejsze usunięcie tego samego adresu dokończyło kroki, dla których to trzeba było przesłać ponownie.",
+    "agentMemoryReach": "Konto agentów inżynieryjnych, którego e-mail się zmienił albo którego e-mail jest niezweryfikowany i nie jest jego nazwą użytkownika, nie jest osiągane przez adres: w Użytkownikach potwierdź, że konto należy do tej osoby, i zweryfikuj jego e-mail albo, jeśli nie jest jej, zmień lub usuń adres z konta; potem prześlij to usunięcie ponownie z tym samym adresem i podstawą prawną.",
+    "reviewMore_one": "Wymieniono tylko pierwszą pozycję do przejrzenia: zadanie zawiera więcej. Resztę sprawdź ręcznie.",
+    "reviewMore_few": "Wymieniono tylko pierwsze {{count, number}} pozycje do przejrzenia: zadanie zawiera więcej. Resztę sprawdź ręcznie.",
+    "reviewMore_many": "Wymieniono tylko pierwszych {{count, number}} pozycji do przejrzenia: zadanie zawiera więcej. Resztę sprawdź ręcznie.",
+    "reviewMore_other": "Wymieniono tylko pierwsze {{count, number}} pozycji do przejrzenia: zadanie zawiera więcej. Resztę sprawdź ręcznie.",
+    "notChecked_one": "W 1 dokumencie nie dało się sprawdzić adresu (obraz, nieodczytywany typ lub jeszcze niewyodrębniony tekst). Sprawdź go ręcznie:",
+    "notChecked_few": "W {{count, number}} dokumentach nie dało się sprawdzić adresu (obraz, nieodczytywany typ lub jeszcze niewyodrębniony tekst). Sprawdź je ręcznie:",
+    "notChecked_many": "W {{count, number}} dokumentach nie dało się sprawdzić adresu (obraz, nieodczytywany typ lub jeszcze niewyodrębniony tekst). Sprawdź je ręcznie:",
+    "notChecked_other": "W {{count, number}} dokumentu nie dało się sprawdzić adresu (obraz, nieodczytywany typ lub jeszcze niewyodrębniony tekst). Sprawdź je ręcznie:",
+    "notCheckedMore_one": "Wymieniono tylko pierwszy niesprawdzony dokument: zadanie zawiera więcej. Resztę sprawdź ręcznie.",
+    "notCheckedMore_few": "Wymieniono tylko pierwsze {{count, number}} niesprawdzone dokumenty: zadanie zawiera więcej. Resztę sprawdź ręcznie.",
+    "notCheckedMore_many": "Wymieniono tylko pierwszych {{count, number}} niesprawdzonych dokumentów: zadanie zawiera więcej. Resztę sprawdź ręcznie.",
+    "notCheckedMore_other": "Wymieniono tylko pierwsze {{count, number}} niesprawdzonego dokumentu: zadanie zawiera więcej. Resztę sprawdź ręcznie.",
+    "lineageMadeLaterFailed": "Późniejsze uruchomienie wykonało oznaczenia pochodzenia zaległe po tym uruchomieniu; samo usunięcie nadal się nie powiodło: zobacz jego błąd."
   },
   "legalBasis": {
     "label": "Podstawa prawna",
@@ -815,7 +897,8 @@
       "members": "Usuwanie adresu e-mail i imienia z członkostw w obszarach roboczych. Dotąd zanonimizowano: {{rows, number}}.",
       "raw": "Usuwanie surowych plików. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "lineage": "Oznaczanie person i dokumentów, które cytowały usunięte opinie. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
-      "done": "Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}."
+      "done": "Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
+      "other": "Trwają pozostałe kroki usuwania. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}."
     }
   },
   "dimensionsEdit": {

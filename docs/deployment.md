@@ -453,9 +453,19 @@ check that `PROJECT_IDS` lists every live project on `gsi1-by-type`. Without bot
 - either way the run prints the `RetentionRunFailed` or `RetentionLineageOwed` metric, which alerting's
   `retention-runs` alarm watches (Settings, Logs, Alerts).
 
-Administration's erasure panel does not show `lineage_owed` yet (planned: 3g-ui, docs/multi-workspace.md): until it
-does, owed lineage shows only in the `retention-runs` alarm (when alerting is on), the job row (`GET
-/settings/erasure`) and the `AUDIT#retention` rows in voc-aggregates.
+Since 7.97.00 (3g-ui, docs/multi-workspace.md) Administration's erasure panels show owed lineage: while the
+registries are not complete (or the owe could not be recorded) the job's badge reads **Completed: needs the operator**
+(so does every completed job that owes lineage: the worker writes `failed_before_marks` only on a failed run), else
+**Completed: lineage owed** (a failed job keeps **Failed**), and its follow-up list says why, in the admin's
+language, from the rows' `lineage_owed_reason` code (with the operator's command); for a row written before 7.97.00
+the API derives the code from its words and registries check as the worker does, so an owe that could not be recorded
+reads `owe_failed`. A later run that replayed the marks says so, and an older job's owed lineage then reads as made by
+that later run, only when its code is not `owe_failed` and the later run is a completed one of the same scope started
+after it ended. The panel infers this from the newest 20 jobs only; a daily retention window's replay writes no
+erasure job, so the panel cannot see it (a server-side check of the owed row is planned, 3g-ui-api in
+docs/multi-workspace.md). Owed lineage also shows in
+the `retention-runs` alarm (when alerting is on), the job row (`GET /settings/erasure`) and the `AUDIT#retention`
+rows in voc-aggregates.
 
 A workspace's own erasure is not affected. When the marker exists: once an applied backfill wrote it (after every
 writer ran 7.48.0 or later and drained), or, since 7.93.00, once a new deployment's first deploy found no project and

@@ -300,7 +300,7 @@ class TestEachHitIsDecidedOnTheTablesRow:
         assert (_tombstones(aws, 'tickets'), _tombstones(aws, 'web')) == ({}, {})
 
 
-def _hand_over_after_two(aws: Any, worker_context: Any, invoke_mock: Any,
+def _hand_over_after_two(_aws: Any, worker_context: Any, invoke_mock: Any,
                          event: dict) -> tuple[dict, dict, dict, list[Any]]:
     """Run ``event`` until two items are deleted, hand over (the time runs out), and run the hand-over's payload: the
     first answer, the payload, the second answer and every (pk, sk) deleted, in order."""

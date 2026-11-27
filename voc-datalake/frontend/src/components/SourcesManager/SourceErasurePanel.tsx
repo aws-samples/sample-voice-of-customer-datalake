@@ -15,7 +15,7 @@
  *
  * @module components/SourcesManager/SourceErasurePanel
  */
-import { useId, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
@@ -28,22 +28,28 @@ import { sourceLabel } from '../../utils/displayLabels'
 import DeleteSourceDataDialog from './DeleteSourceDataDialog'
 import { ErasureJobDetails, ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
 import { errorReason, useErasableSources, useErasureJobs, useStartErasure } from './useErasureJobs'
+import { jobReport } from './erasureOutcome'
 
-const PROGRESS_KEYS = {
+type Phase = NonNullable<ErasureJob['phase']>
+/** The phases with words of their own. A whole-source job never runs the members phase (only an erasure by email
+ *  without a source does); it keeps its words, so a job row that ever names it still reads right. */
+const PROGRESS_KEYS: Partial<Record<Phase, string>> = {
   items: 'components:sourceErasure.progress.items',
   radar: 'components:sourceErasure.progress.radar',
   boards: 'components:sourceErasure.progress.boards',
-  // A whole-source job never runs the members phase (only an erasure by email without a source does); the key keeps
-  // this map total over the API's phases, so a job row that ever names it still reads right.
   members: 'components:sourceErasure.progress.members',
   raw: 'components:sourceErasure.progress.raw',
   lineage: 'components:sourceErasure.progress.lineage',
-  done: 'components:sourceErasure.progress.done',
-} as const
+}
+/** The worker's other phases (lambda/jobs/retention/handler.py `_phases`: the registries check, a form's test
+ *  responses, the exports, the workspaces' projects and lineage, the participants, the agents' memory and the
+ *  engineering lineage) read as one neutral step, never as "Deleting reviews" (7.97.00). */
+const OTHER_PROGRESS_KEY = 'components:sourceErasure.progress.other'
+const DONE_PROGRESS_KEY = 'components:sourceErasure.progress.done'
 
 function progressKey(job: ErasureJob): string {
-  if (job.status === 'completed' || job.status === 'failed') return PROGRESS_KEYS.done
-  return PROGRESS_KEYS[job.phase ?? 'items']
+  if (job.status === 'completed' || job.status === 'failed') return DONE_PROGRESS_KEY
+  return PROGRESS_KEYS[job.phase ?? 'items'] ?? OTHER_PROGRESS_KEY
 }
 
 /** Whether `GET /sources/status` shows `source`'s own schedule turned on (unknown reads as off). */
@@ -52,19 +58,23 @@ function isScheduleOn(status: SourcesStatus | undefined, source: string): boolea
   return Object.hasOwn(sources, source) && sources[source]?.enabled === true
 }
 
-function JobProgress({ job }: Readonly<{ job: ErasureJob }>) {
+function JobProgress({ job, jobs }: Readonly<{ job: ErasureJob; jobs: readonly ErasureJob[] }>) {
   const { t } = useTranslation()
+  const report = useMemo(() => jobReport(job, jobs), [job, jobs])
   return (
-    <p role="status" aria-live="polite" className="flex flex-wrap items-center gap-2 text-xs text-text">
-      <ErasureStatusBadge status={job.status} />
-      <span className="font-mono text-muted">{job.source}</span>
-      <span>{t(progressKey(job), {
-        items: job.deleted_items, objects: job.deleted_objects,
-        rows: job.phase === 'members' ? job.member_rows_deidentified : job.board_items_deidentified,
-      })}</span>
-      {job.error !== undefined && <span className="text-danger">{job.error}</span>}
-      <ErasureJobDetails job={job} />
-    </p>
+    <div className="flex flex-wrap items-center gap-2 text-xs text-text">
+      {/* Only the progress line is live: the details' review lists (up to 200 keys each) are read on demand. */}
+      <p role="status" aria-live="polite" className="flex flex-wrap items-center gap-2">
+        <ErasureStatusBadge report={report} />
+        <span className="font-mono text-muted">{job.source}</span>
+        <span>{t(progressKey(job), {
+          items: job.deleted_items, objects: job.deleted_objects,
+          rows: job.phase === 'members' ? job.member_rows_deidentified : job.board_items_deidentified,
+        })}</span>
+        {job.error !== undefined && <span className="text-danger">{job.error}</span>}
+      </p>
+      <ErasureJobDetails job={job} report={report} />
+    </div>
   )
 }
 
@@ -105,7 +115,7 @@ export default function SourceErasurePanel({ profiles }: Readonly<{ profiles: re
         </div>
       )}
       {start.isError && <ErasureStartError text={t('startError', { reason: errorReason(start.error) })} />}
-      {started !== undefined && <JobProgress job={started} />}
+      {started !== undefined && <JobProgress job={started} jobs={jobs} />}
       {confirming && (
         <DeleteSourceDataDialog source={source} scheduleOn={scheduleOn} isPending={start.isPending}
           onConfirm={(typed, legalBasis) => start.mutate({ confirm: typed, legalBasis })} onCancel={() => setConfirming(false)} />

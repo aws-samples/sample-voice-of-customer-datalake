@@ -4,7 +4,7 @@
  * given, both are sent (`confirm`, `legal_basis`), and the started job's
  * progress and details are shown from the polled list.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
@@ -20,6 +20,8 @@ vi.mock('../../api/invalidateFeedbackData', () => ({ invalidateFeedbackData: moc
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import SourceErasurePanel from './SourceErasurePanel'
 import { normalizeSourceProfiles } from '../../api/sourceProfilesApi'
+import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { ACME } from '../../test/workspaceFixtures'
 
 const SOURCE = 'web_trustpilot_example_air'
 const BASIS = 'Contract with the review site ended'
@@ -149,6 +151,40 @@ describe('SourceErasurePanel', () => {
       { ...running, phase: 'members', legal_basis: BASIS, board_items_deidentified: 7, member_rows_deidentified: 2 }])
     expect(await within(region).findByText(
       'Removing the email and name from workspace memberships. De-identified so far: 2.')).toBeInTheDocument()
+  })
+
+  it.each(['registries', 'engineering_lineage'])("reads the worker's %s phase in neutral words, never as deleting reviews",
+    async (phase) => {
+      const region = await startDeletion(BASIS, [{ ...running, phase }])
+      expect(await within(region).findByText('Running the other erasure steps. Reviews deleted: 40. Raw files deleted: 12.'))
+        .toBeInTheDocument()
+      expect(within(region).queryByText(/^Deleting reviews/)).not.toBeInTheDocument()
+    })
+
+  it("still shows the deployment's job inside a workspace, and never a workspace's (q-7)", async () => {
+    setCurrentWorkspace(ACME)
+    // The polls (2 s) on a clock of the test's own (q2-6): the next one is advanced to, not waited for.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    onTestFinished(() => {
+      vi.useRealTimers()
+      setCurrentWorkspace(null)
+    })
+    const region = await startDeletion(BASIS, [running])
+    expect(await within(region).findByText('Deleting raw files. Reviews deleted: 40. Raw files deleted: 12.')).toBeInTheDocument()
+    route({ jobs: [{ ...running, workspace_id: ACME.id }] })
+    await vi.advanceTimersByTimeAsync(2_500)
+    await waitFor(() => expect(within(region).queryByText(/^Deleting raw files/)).not.toBeInTheDocument())
+  })
+
+  it('reads a finished deletion that owes its lineage marks to incomplete registries as the operator\'s (3g-ui)', async () => {
+    const reason = "this run's lineage marks are owed; the next daily retention window makes them on its own"
+    const region = await startDeletion(BASIS, [
+      { ...running, status: 'completed', review_registries: 'incomplete', lineage_owed: true, incomplete_reason: reason }])
+    expect(await within(region).findByText('Completed: needs the operator')).toBeInTheDocument()
+    expect(within(region).getByText(/^The personas and documents that cite the erased reviews are not marked yet/))
+      .toHaveTextContent(reason)
+    expect(within(region).getByText('Review registries: a live project is missing from the project registry'))
+      .toBeInTheDocument()
   })
 
   it('shows why the server refused, such as a deletion already running', async () => {

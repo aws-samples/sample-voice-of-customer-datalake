@@ -738,10 +738,76 @@
       "queued": "대기 중",
       "running": "실행 중",
       "completed": "완료",
-      "failed": "실패"
+      "failed": "실패",
+      "rerun": "완료: 다시 실행 필요",
+      "lineageOwed": "완료: 계보 표시 보류",
+      "operator": "완료: 운영자 필요",
+      "verifiedAddress": "완료: 사용자에서 계정 확인",
+      "filesToReview": "완료: 검토할 파일"
     },
     "confirmTitle": "이 사람의 피드백을 삭제할까요?",
-    "confirmMessage": "{{field}}이(가) 값과 일치하는 모든 리뷰({{source}})와 원본 보관 파일이 영구 삭제됩니다."
+    "confirmMessage": "{{field}}이(가) 값과 일치하는 모든 리뷰({{source}})와 원본 보관 파일이 영구 삭제됩니다.",
+    "followUp": {
+      "title": "이 삭제에는 후속 조치가 필요합니다",
+      "participants": "이 주소가 포함된 참여자 기록이 모두 삭제되지는 않았습니다. {{rerun}} 다시 실행해도 또 남으면 배포 운영자에게 문의하세요.",
+      "deploymentProjects": "배포 자체의 프로젝트에서 이 주소를 검색하지 않았습니다. {{rerun}}",
+      "agentMemory": "엔지니어링 에이전트의 메모리에서 이 주소가 완전히 삭제되지 않았습니다. {{rerun}}",
+      "rerunWorkspace": "이 워크스페이스에서 그 사람의 주소와 법적 근거로 이 삭제를 다시 제출하세요(작업은 주소의 해시만 보관합니다).",
+      "lineageOwed": "삭제된 리뷰를 인용하는 페르소나와 문서가 아직 표시되지 않았습니다(계보 표시 보류). 다음에 일어날 일과 할 일: {{reason}}",
+      "lineageOwedNoReason": "배포 운영자에게 이 작업의 감사 행을 확인해 달라고 요청하세요.",
+      "rerun": "그 사람의 주소와 법적 근거로 이 삭제를 다시 제출하세요(작업은 주소의 해시만 보관합니다).",
+      "rerunOwnRequest": "이 배포에 이 주소에 대한 자체 삭제 요청이 있으면, 그 사람의 주소와 법적 근거로 이 삭제를 다시 제출하세요(작업은 주소의 해시만 보관합니다). 그렇지 않으면 요청을 받은 워크스페이스가 그곳에서 제출합니다.",
+      "filesToReview": "일부 파일은 자동으로 삭제할 수 없었습니다. 아래 목록을 직접 검토하세요.",
+      "lineageOwedCoded": "삭제된 리뷰를 인용하는 페르소나와 문서가 아직 표시되지 않았습니다(계보 표시 보류). {{reason}} {{next}}",
+      "owedReasons": {
+        "not_backfilled": "리뷰 레지스트리가 백필되지 않았습니다. 배포 운영자에게 scripts/projects/backfill_review_registries.py --apply 실행을 요청하세요.",
+        "incomplete": "프로젝트 레지스트리에 활성 프로젝트 하나가 없습니다. 배포 운영자에게 scripts/projects/backfill_review_registries.py --unmark 다음 --apply 실행을 요청하세요.",
+        "failed_before_marks": "이 실행은 계보 표시 전에 실패했습니다.",
+        "owe_failed": "보류된 표시를 기록할 수 없어 이후 실행이 스스로 처리하지 않습니다. 이 실행이 삭제한 소스는 감사 행에 있습니다. 배포 운영자에게 프로세스 로그에서 원인을 확인해 달라고 요청하세요."
+      },
+      "owedNext": {
+        "erase": "그다음 배포의 다음 삭제나 다음 일일 보존 기간이 스스로 처리합니다. 보존 기간의 실행은 여기에 표시되지 않으므로, 이후 삭제에서 표시가 처리된 것을 확인할 때까지 이 줄이 남습니다."
+      },
+      "malformedRows_one": "잘못된 참여자 행 {{count, number}}개를 건너뛰었습니다. 배포 운영자에게 각 행을 고치거나 그 행이 가리키는 사람을 ID로 삭제해 달라고 요청한 뒤 이 삭제를 다시 제출하세요. 다시 실행하는 것만으로는 고쳐지지 않습니다.",
+      "malformedRows_other": "잘못된 참여자 행 {{count, number}}개를 건너뛰었습니다. 배포 운영자에게 각 행을 고치거나 그 행이 가리키는 사람을 ID로 삭제해 달라고 요청한 뒤 이 삭제를 다시 제출하세요. 다시 실행하는 것만으로는 고쳐지지 않습니다.",
+      "malformedProjectIds_one": "잘못된 프로젝트 ID {{count, number}}개를 건너뛰었습니다(형식이 맞지 않는 레지스트리, 링크 또는 시리즈 ID). 배포 운영자에게 확인을 요청하세요.",
+      "malformedProjectIds_other": "잘못된 프로젝트 ID {{count, number}}개를 건너뛰었습니다(형식이 맞지 않는 레지스트리, 링크 또는 시리즈 ID). 배포 운영자에게 확인을 요청하세요.",
+      "agentMemoryAccounts_one": "계정 {{count, number}}개가 이 주소를 확인되지 않은 상태로 가지고 있어 에이전트 메모리가 삭제되지 않았습니다. 사용자에서 그 계정이 본인의 것인지 확인하고 이메일을 인증하거나, 본인의 것이 아니면 계정의 주소를 변경하거나 삭제한 뒤, 같은 주소와 법적 근거로 이 삭제를 다시 제출하세요.",
+      "agentMemoryAccounts_other": "계정 {{count, number}}개가 이 주소를 확인되지 않은 상태로 가지고 있어 에이전트 메모리가 삭제되지 않았습니다. 사용자에서 각 계정이 본인의 것인지 확인하고 이메일을 인증하거나, 본인의 것이 아니면 계정의 주소를 변경하거나 삭제한 뒤, 같은 주소와 법적 근거로 이 삭제를 다시 제출하세요.",
+      "indexRowsKept_one": "아직 주소가 남아 있는 인덱스 행: {{count, number}}개.",
+      "indexRowsKept_other": "아직 주소가 남아 있는 인덱스 행: {{count, number}}개.",
+      "indexRowsKeptAgain_one": "같은 삭제를 다시 실행해도 남아 아직 주소가 있는 인덱스 행이 {{count, number}}개입니다. 배포 운영자에게 확인을 요청하세요.",
+      "indexRowsKeptAgain_other": "같은 삭제를 다시 실행해도 남아 아직 주소가 있는 인덱스 행이 {{count, number}}개입니다. 배포 운영자에게 확인을 요청하세요.",
+      "participantsKept": "이 주소가 포함된 참여자 기록이 모두 삭제되지는 않았습니다. {{kept}} {{rerun}} 다시 실행해도 또 남으면 배포 운영자에게 문의하세요."
+    },
+    "registries": {
+      "not_backfilled": "리뷰 레지스트리: 아직 백필되지 않음",
+      "incomplete": "리뷰 레지스트리: 프로젝트 레지스트리에 활성 프로젝트 하나가 없습니다"
+    },
+    "lineageReplayed": "이 실행은 이전 실행이 남긴 계보 표시도 처리했습니다.",
+    "reviewDocuments": "주소가 포함된 문서(제품 문서, 라이브러리 항목): {{files, number}}개. 검토하세요:",
+    "counters": {
+      "participantsErased": "삭제된 참여자: {{n, number}}",
+      "participantsNotErased": "삭제되지 않은 참여자: {{n, number}}",
+      "exportObjects": "삭제된 내보내기 객체: {{n, number}}",
+      "projectRows": "비식별화된 프로젝트 행: {{n, number}}",
+      "formTestResponses": "삭제된 양식 테스트 응답: {{n, number}}",
+      "agentMemoryErased": "에이전트 메모리에서 삭제된 사람: {{n, number}}",
+      "agentMemoryRefused": "에이전트 메모리가 더 이상 보관하지 않을 사람: {{n, number}}",
+      "engineeringRows": "업데이트된 엔지니어링 실행 행: {{n, number}}",
+      "unscopedRows": "워크스페이스가 없어 건너뛴 행: {{n, number}}"
+    },
+    "notCheckedListed": "{{total, number}}개 중 {{listed, number}}개 표시: 작업은 처음 항목만 보관합니다. 나머지는 직접 확인하세요.",
+    "lineageMadeLater": "이후 실행이 이 실행이 보류한 계보 표시를 처리했습니다.",
+    "rerunDoneLater": "같은 주소에 대한 이후 삭제가 이 삭제를 다시 제출해야 했던 단계를 마쳤습니다.",
+    "agentMemoryReach": "이메일이 바뀌었거나, 이메일이 확인되지 않았고 사용자 이름과 다른 엔지니어링 에이전트 계정은 이 주소로 닿지 않습니다. 사용자에서 그 계정이 본인의 것인지 확인하고 이메일을 인증하거나, 본인의 것이 아니면 계정의 주소를 변경하거나 삭제한 뒤, 같은 주소와 법적 근거로 이 삭제를 다시 제출하세요.",
+    "reviewMore_one": "검토할 항목은 처음 {{count, number}}개만 표시됩니다. 작업에 더 있습니다. 나머지는 직접 확인하세요.",
+    "reviewMore_other": "검토할 항목은 처음 {{count, number}}개만 표시됩니다. 작업에 더 있습니다. 나머지는 직접 확인하세요.",
+    "notChecked_one": "문서 {{count, number}}개에서 주소를 확인할 수 없었습니다(이미지, 읽지 않는 형식, 아직 추출되지 않은 텍스트). 직접 확인하세요:",
+    "notChecked_other": "문서 {{count, number}}개에서 주소를 확인할 수 없었습니다(이미지, 읽지 않는 형식, 아직 추출되지 않은 텍스트). 직접 확인하세요:",
+    "notCheckedMore_one": "확인하지 못한 문서는 처음 {{count, number}}개만 표시됩니다. 작업에 더 있습니다. 나머지는 직접 확인하세요.",
+    "notCheckedMore_other": "확인하지 못한 문서는 처음 {{count, number}}개만 표시됩니다. 작업에 더 있습니다. 나머지는 직접 확인하세요.",
+    "lineageMadeLaterFailed": "이후 실행이 이 실행이 보류한 계보 표시를 처리했습니다. 삭제 자체는 여전히 실패 상태이니 오류를 확인하세요."
   },
   "legalBasis": {
     "label": "법적 근거",
@@ -769,7 +835,8 @@
       "members": "워크스페이스 멤버십에서 이메일과 이름을 삭제하는 중입니다. 지금까지 비식별 처리: {{rows, number}}.",
       "raw": "원본 파일을 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "lineage": "삭제된 리뷰를 인용한 페르소나와 문서에 표시하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
-      "done": "삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}."
+      "done": "삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
+      "other": "나머지 삭제 단계를 실행하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}."
     }
   },
   "dimensionsEdit": {

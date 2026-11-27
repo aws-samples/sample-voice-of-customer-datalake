@@ -13,7 +13,7 @@ import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import ErasurePanel from './ErasurePanel'
 import { normalizeSourceProfiles } from '../../api/sourceProfilesApi'
 import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
-import { ACME } from '../../test/workspaceFixtures'
+import { ACME, JUNIPER } from '../../test/workspaceFixtures'
 
 const PROFILES = normalizeSourceProfiles({ sources: [supportProfile] })
 const REACH = /also deletes this person's reviews in every workspace/
@@ -21,7 +21,16 @@ const THIS_WORKSPACE = /deletes this workspace's reviews only/
 const done = {
   job_id: 'er_00000000abcd', status: 'completed', field: 'email', value_hash: 'f'.repeat(64),
   deleted_items: 3, deleted_objects: 5, deleted_workspace_items: 2, started_by: 'admin', created_at: '2026-01-01',
+  finished_at: '2026-01-01T00:10:00Z',
+  deployment_projects_walked: true, participants_walked: true, participants_complete: true,
 }
+/** The deployment's erasure by email that did not walk its own projects (7.48.00's rerun rule). */
+const rerun = { ...done, job_id: 'er_00000000beef', value_hash: 'a'.repeat(64), participants_walked: true,
+  participants_complete: true, deployment_projects_walked: false }
+/** A workspace's own erasure by email whose participants are not complete. */
+const inAcme = { ...done, job_id: 'er_00000000acme', value_hash: 'b'.repeat(64), workspace_id: ACME.id,
+  participants_walked: true, participants_complete: false }
+const inJuniper = { ...inAcme, job_id: 'er_00000000jnpr', value_hash: 'c'.repeat(64), workspace_id: JUNIPER.id }
 
 const panel = () => screen.findByRole('region', { name: "Erase one person's feedback" })
 
@@ -67,10 +76,42 @@ describe('ErasurePanel', () => {
     expect(within(await confirmEmailErasure(user, region)).getByText(REACH)).toBeInTheDocument()
   })
 
+  it("lists the deployment's jobs only, and reads one that must run again as such (3g-ui)", async () => {
+    routeFetchApi({ 'GET /settings/erasure': () => ({ jobs: [rerun, inAcme], sources: [] }) })
+    renderWithQueryClient(<ErasurePanel profiles={PROFILES} />)
+    const region = await panel()
+    await within(region).findByText(rerun.value_hash.slice(0, 12))
+    expect(within(region).getByText('Completed: run again')).toBeInTheDocument()
+    expect(within(region).getByText(/^The deployment's own projects were not searched/))
+      .toHaveTextContent("Submit this erasure again with the person's address and legal basis")
+    expect(within(region).queryByText(inAcme.value_hash.slice(0, 12))).not.toBeInTheDocument()
+  })
+
+  it('reads an older rerun as done once a later erasure of the same address completed (3g-ui)', async () => {
+    const later = { ...rerun, job_id: 'er_00000000cafe', created_at: '2026-02-01', finished_at: '2026-02-01T00:10:00Z',
+      deployment_projects_walked: true }
+    routeFetchApi({ 'GET /settings/erasure': () => ({ jobs: [later, rerun], sources: [] }) })
+    renderWithQueryClient(<ErasurePanel profiles={PROFILES} />)
+    const region = await panel()
+    expect(await within(region).findByText('A later erasure of the same address finished the steps this one had to be submitted again for.')).toBeInTheDocument()
+    expect(within(region).queryByText('Completed: run again')).not.toBeInTheDocument()
+  })
+
   describe('inside a workspace', () => {
     // The request names the workspace there (X-Workspace-Id), and the server erases its reviews only (7.09.00).
     beforeEach(() => setCurrentWorkspace(ACME))
     afterEach(() => setCurrentWorkspace(null))
+
+    it("lists that workspace's jobs only, and says a rerun is the workspace's own (3g-ui)", async () => {
+      routeFetchApi({ 'GET /settings/erasure': () => ({ jobs: [rerun, inAcme, inJuniper], sources: [] }) })
+      renderWithQueryClient(<ErasurePanel profiles={PROFILES} />)
+      const region = await panel()
+      await within(region).findByText(inAcme.value_hash.slice(0, 12))
+      expect(within(region).queryByText(rerun.value_hash.slice(0, 12))).not.toBeInTheDocument()
+      expect(within(region).queryByText(inJuniper.value_hash.slice(0, 12))).not.toBeInTheDocument()
+      expect(within(region).getByText('Completed: run again')).toBeInTheDocument()
+      expect(within(region).getByText(/^Not every participant record/)).toHaveTextContent('Submit this erasure again from this workspace')
+    })
 
     it("says the erasure reaches that workspace's reviews only, by any field, an email included", async () => {
       const { user, region, matchOn } = await renderPanel()

@@ -80,6 +80,32 @@ describe('erasure jobs', () => {
     expect([before?.deleted_workspace_items, odd?.deleted_workspace_items]).toStrictEqual([0, 0])
   })
 
+  it('reads both review lists with their more flag, the outcome flags and owed lineage (3g-ui)', () => {
+    const [full, odd] = normalizeErasureJobs({ jobs: [
+      { ...job, status: 'completed',
+        files_needing_review: { count: 2, keys: ['a.csv', 3], more: true },
+        files_not_checked: { count: 1, keys: ['projects/p/product_docs/i/'] },
+        participants_walked: true, participants_complete: false, participants_erased: 2, participant_guards_malformed: 1,
+        deployment_projects_walked: false, agent_memory_walked: true, agent_memory_complete: true,
+        review_registries: 'not_backfilled', lineage_owed: true, incomplete_reason: 'run the backfill',
+        lineage_owed_replayed: true, lineage_owed_reason: 'not_backfilled', lineage_owed_mode: 'erase' },
+      { ...job, job_id: 'er_2', files_not_checked: 'junk', participants_complete: 'yes', review_registries: 'maybe',
+        lineage_owed: 1, lineage_owed_reason: 'later', lineage_owed_mode: 'other' },
+    ] })
+    expect(full).toMatchObject({
+      files_needing_review: { count: 2, keys: ['a.csv'], more: true },
+      files_not_checked: { count: 1, keys: ['projects/p/product_docs/i/'], more: false },
+      participants_walked: true, participants_complete: false, participants_erased: 2, participant_guards_malformed: 1,
+      deployment_projects_walked: false, agent_memory_walked: true, agent_memory_complete: true,
+      review_registries: 'not_backfilled', lineage_owed: true, incomplete_reason: 'run the backfill',
+      lineage_owed_replayed: true, lineage_owed_reason: 'not_backfilled', lineage_owed_mode: 'erase',
+    })
+    expect([odd?.files_not_checked, odd?.participants_complete, odd?.review_registries, odd?.lineage_owed,
+      odd?.lineage_owed_reason, odd?.lineage_owed_mode]).toStrictEqual([undefined, undefined, undefined, undefined,
+      undefined, undefined])
+    expect(odd?.participants_erased).toBe(0)
+  })
+
   it('keeps only valid source ids in the erasable list', () => {
     expect(normalizeErasableSources({ jobs: [], sources: ['web_x', 'Bad Id', 7, 'manual_import'] }))
       .toStrictEqual(['web_x', 'manual_import'])

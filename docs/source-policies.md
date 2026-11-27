@@ -216,11 +216,18 @@ How it works:
   `deleted_items`, `deleted_objects`, `deleted_radar_items`, `artifacts_marked`, once above 0
   `deleted_workspace_items` (Workspace items, below) and `form_test_responses_deleted` and, when it kept whole-file uploads, an S3
   import's originals folder or (since 7.43.00) a workspace's product documents that hold the address,
-  `files_needing_review: {count, keys}` (a folder's key ends in `/`; Administration lists files and folders apart,
-  under the import files' label, and leaves out the job row's `more`, which says the 200 keys kept are not all:
-  slice 3g-ui). The job and audit rows also keep `files_not_checked: {count, keys, more}`, the product documents an
-  erasure could not judge (Workspace projects, below): on the job row only until 3g-ui, the follow-up that has the
-  erasure API's job view and Administration's erasure panel show it.
+  `files_needing_review: {count, keys, more}` (a folder's key ends in `/`; `more`: the 200 keys kept are not all, and
+  the job keeps no count past them). Since 7.97.00 (slice 3g-ui) the job also shows `files_not_checked: {count, keys,
+  more}`, the product documents an erasure could not judge (Workspace projects, below), and Administration's erasure
+  panels list each kind apart (the uploads kept, the import originals folders, the product documents and library items
+  that hold the address, the documents not checked), say when a list is cut, show every counter the job holds, and
+  read a completed job that needs the operator, must be submitted again, must be erased by an account's verified
+  address, owes its lineage marks or left files to review as such, with the reason and what to do (the rerun rules
+  under Workspace projects and participants, below; docs/multi-workspace.md, 3g-ui). Skipped malformed ids
+  (`project_ids_malformed`) are the operator's, as malformed participant rows are: the panel asks the deployment's
+  operator to look at them. A deployment erasure by email reaches every workspace, so its lists can hold keys under
+  `ws/<ws>/`: those files are that workspace's, for that workspace's admins to review and act on (the deployment's
+  admin passes them on; the panel shows the keys only, never the files).
 - The job row (`pk=JOB#erasure`) stores `value_hash`, the SHA-256 of the value. **The value
   itself is never stored or logged.** Each run also writes an audit row (`pk=AUDIT#retention`, no `ttl`).
 - Whole-file upload archives (`raw/csv_upload/…`, `raw/json_upload/…`): deleted by a whole-source
@@ -652,7 +659,7 @@ workspace artifacts. Copies derived from a review before it was erased stay wher
 | Idempotency rows of the processor | `voc-idempotency` | Keyed by a hash of the message, they may cache the processor's response for up to an hour, then expire through the table's TTL (`expiration`); wait an hour, or delete the row by hand |
 | Whole-file CSV / JSON uploads that also hold rows that were not erased | `raw/csv_upload/…`, `raw/json_upload/…` in the raw bucket | Listed on the job as `files_needing_review` (Administration shows the keys). Remove the person's rows by hand (download, edit, delete every version with an admin role, re-upload if needed), or avoid it by giving the source a retention period or a non-`allow` policy |
 | An S3 import's original file | `raw/s3_import/…`, a workspace's `ws/<ws>/raw/s3_import/…` | No row links an item to its file: the job lists the folder as `files_needing_review` when it deleted an import's item and the folder holds a file. Find the file by its `original-key` S3 metadata, remove the person's rows by hand (every version, admin role) |
-| A project's product documents (uploads and their extracted text) | a workspace's `ws/<ws>/projects/<id>/product_docs/`; the deployment's `projects/<id>/product_docs/` | An erasure by email without a source lists the documents whose filename or text holds the address as `files_needing_review`, and those it cannot judge as `files_not_checked` (since 7.43.00 in each workspace: images, other kinds, unreadable text; since 7.48.00 in the deployment's projects too, judged by their extracted text of any kind, and a document with none not checked; on the job row only until 3g-ui shows it in the job view and the erasure panel). Look through each and delete a document that names the person from its project. A document not checked does not close the workspace's exports: its copy in an export's zip stays until the zip expires (10 days) |
+| A project's product documents (uploads and their extracted text) | a workspace's `ws/<ws>/projects/<id>/product_docs/`; the deployment's `projects/<id>/product_docs/` | An erasure by email without a source lists the documents whose filename or text holds the address as `files_needing_review`, and those it cannot judge as `files_not_checked` (since 7.43.00 in each workspace: images, other kinds, unreadable text; since 7.48.00 in the deployment's projects too, judged by their extracted text of any kind, and a document with none not checked; since 7.97.00 in the job view and Administration's erasure panel too, 3g-ui). Look through each and delete a document that names the person from its project. A document not checked does not close the workspace's exports: its copy in an export's zip stays until the zip expires (10 days) |
 | A reviewer's comments, a review link's audience, a project's owner and member addresses in the deployment's own projects, for an erasure by email that finished before 7.48.00 | `voc-projects` (`DCOMMENTS#…`, `DOCSHARE#…`, a project's `META`) | Reached since 7.48.00 (a workspace's since 7.43.00): run such an erasure again (the job kept only the address's hash) |
 | Archives named before 3.06.00 for ids that were not filename-safe | `raw/<source>/…` | See the archive naming note above |
 | A form response's contact name, for an erasure by name | `metadata.submitter_name` of the `feedback_form` item in `voc-feedback` (a workspace's too) | An `author` erasure matches `author`, and a form's response carries none: its contact name is `metadata.submitter_name`. Erase the person by email (it matches `metadata.submitter_email`), or by the item's `source_id`. The form's test responses, kept apart, are matched by the contact name as well |

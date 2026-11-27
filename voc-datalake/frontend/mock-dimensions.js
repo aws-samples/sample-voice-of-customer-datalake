@@ -7,7 +7,8 @@
 //                                       retention period needs retention_legal_basis on PUT)
 //   GET|POST /settings/erasure          {jobs, sources} / 202 {job}  (only the value's sha256 is kept;
 //                                       field 'source' = a whole source, with `confirm` repeating it;
-//                                       `legal_basis` required, mock-legal-basis.js)
+//                                       `legal_basis` required, mock-legal-basis.js; X-Workspace-Id: that
+//                                       workspace's jobs only, and no whole-source erasure)
 //   GET /metrics/dimensions?key=…       {key, period_days, is_partial, values, unassigned}
 //   PUT /feedback/{id}/dimensions       {success, feedback_id, dimensions, tags}
 //
@@ -82,7 +83,19 @@ const state = {
       radar_brand: 'Acme', radar_domains: ['acme.example'],
     },
   ],
-  erasureJobs: [], // newest first
+  // Newest first. One finished deployment erasure is seeded so the panel's preview shows a job that owes its lineage
+  // marks (the registries not backfilled: the operator's) and kept an upload for review (7.97.00, 3g-ui).
+  erasureJobs: [{
+    job_id: 'er_mockowed0001', status: 'completed', field: 'author', value_hash: 'e'.repeat(64),
+    legal_basis: 'Erasure request (preview)', deleted_items: 2, deleted_objects: 2, deleted_radar_items: 0,
+    artifacts_marked: 0, started_by: 'admin@example.com', created_at: '2026-01-05T09:00:00Z',
+    finished_at: '2026-01-05T09:02:00Z', phase: 'lineage', review_registries: 'not_backfilled', lineage_owed: true,
+    incomplete_reason: "this run's lineage marks are owed, the review registries are not backfilled: ask the "
+      + "deployment's operator to run scripts/projects/backfill_review_registries.py --apply; then the next erasure "
+      + 'of the deployment, or the next daily retention window, makes them on its own',
+    lineage_owed_reason: 'not_backfilled', lineage_owed_mode: 'erase',
+    files_needing_review: { count: 1, keys: ['raw/csv_upload/2026/01/05/survey.csv'], more: false },
+  }],
 };
 
 // ── Fixtures on the shared feedback ──────────────────────────────────────────
@@ -349,6 +362,18 @@ function runErasurePhase(job, phase, shared) {
   }
 }
 
+/**
+ * What a finished job's row says of its walks (lambda/jobs/retention/runs.py `_job_fields`): an erasure by email
+ * without a source walked the participants (and, the deployment's, its own projects) and erased everyone it found;
+ * a run that names no workspace read complete review registries (registries.py `fields`). The mock owes no lineage.
+ */
+function outcomeFields(job) {
+  const fields = job.workspace_id ? {} : { review_registries: 'complete' };
+  if (job.field !== 'email' || job.source) return fields;
+  return { ...fields, participants_walked: true, participants_complete: true,
+    ...(job.workspace_id ? {} : { deployment_projects_walked: true }) };
+}
+
 /** A poll moves a live job one phase: queued → running (items) → … → completed. */
 function advanceErasure(job, shared) {
   if (job.status !== 'queued' && job.status !== 'running') return;
@@ -357,6 +382,7 @@ function advanceErasure(job, shared) {
   if (next === undefined) {
     job.status = 'completed';
     job.finished_at = now();
+    Object.assign(job, outcomeFields(job));
     return;
   }
   job.status = 'running';
@@ -385,7 +411,14 @@ function sourceErasureProblem(body, value, shared) {
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
-function startErasure(body, shared) {
+/** The workspace an erasure route acts in: the one X-Workspace-Id names (the mock does not model the membership
+ *  checks of shared/erasure_scope.py), else null, the deployment. */
+function erasureWorkspace(req) {
+  const header = req.headers['x-workspace-id'];
+  return typeof header === 'string' && header.trim() !== '' ? header.trim() : null;
+}
+
+function startErasure(body, shared, workspace) {
   const field = body?.field;
   const value = typeof body?.value === 'string' ? body.value.trim() : '';
   if (!ERASURE_FIELDS.includes(field) || !value || value.length > 512) {
@@ -395,22 +428,28 @@ function startErasure(body, shared) {
   if (basisError) return [400, { success: false, error: basisError }];
   const legalBasis = body.legal_basis.trim();
   if (field === 'source') {
+    if (workspace !== null) return [400, { success: false, error: WHOLE_SOURCE_NOT_IN_WORKSPACES }];
     const problem = sourceErasureProblem(body, value, shared);
     if (problem) return problem;
-    return queueErasure(field, value, value, legalBasis);
+    return queueErasure({ field, value, source: value, legalBasis, workspace });
   }
   const source = typeof body.source === 'string' && body.source !== '' ? body.source : undefined;
   if (source && !state.sources.some((p) => p.id === source)) return [400, { success: false, error: 'Unknown source' }];
   if (!source && (field === 'source_id' || field === 'csv_row_id')) {
     return [400, { success: false, error: `source is required when field is ${field}` }];
   }
-  return queueErasure(field, value, source, legalBasis);
+  return queueErasure({ field, value, source, legalBasis, workspace });
 }
 
-function queueErasure(field, value, source, legalBasis) {
+/** The real route's words (shared/erasure_scope.py WHOLE_SOURCE_NOT_IN_WORKSPACES). */
+const WHOLE_SOURCE_NOT_IN_WORKSPACES = "An erasure in a workspace is by author, source_id, csv_row_id or email: a whole-source "
+  + "erasure is the deployment's. Send it without X-Workspace-Id as a deployment admin.";
+
+function queueErasure({ field, value, source, legalBasis, workspace }) {
   const job = {
     job_id: `er_${randomHex()}`, status: 'queued', field, source, value_hash: sha256(value), legal_basis: legalBasis,
     deleted_items: 0, deleted_objects: 0, deleted_radar_items: 0, artifacts_marked: 0, started_by: CALLER, created_at: now(),
+    ...(workspace === null ? {} : { workspace_id: workspace }),
   };
   if (!source) delete job.source;
   state.erasureJobs.unshift(job);
@@ -467,10 +506,15 @@ function route(req, url, body, shared) {
     case 'PUT /settings/dimensions': return putDimensions(body);
     case 'GET /settings/sources': return [200, { sources: state.sources }];
     case 'PUT /settings/sources': return putSources(body);
-    case 'POST /settings/erasure': return startErasure(body, shared);
-    case 'GET /settings/erasure':
+    case 'POST /settings/erasure': return startErasure(body, shared, erasureWorkspace(req));
+    case 'GET /settings/erasure': {
+      // Each scope lists its own jobs (shared/erasure_scope.py `listed_jobs`): a workspace's, or the deployment's,
+      // which name none; a workspace names no source for a whole-source erasure.
+      const workspace = erasureWorkspace(req);
       state.erasureJobs.forEach((job) => advanceErasure(job, shared));
-      return [200, { jobs: state.erasureJobs.slice(0, 20), sources: erasableSources(shared) }];
+      const jobs = state.erasureJobs.filter((job) => (job.workspace_id ?? null) === workspace);
+      return [200, { jobs: jobs.slice(0, 20), sources: workspace === null ? erasableSources(shared) : [] }];
+    }
     case 'GET /metrics/dimensions': return dimensionMetrics(url, shared);
     default: break;
   }

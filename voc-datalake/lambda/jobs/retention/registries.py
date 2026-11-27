@@ -56,7 +56,7 @@ from typing import Any, ClassVar, Final
 
 from botocore.exceptions import ClientError
 
-from shared import project_walk, review_registries
+from shared import lineage_owed, project_walk, review_registries
 from shared.aws import is_conditional_check_failure
 from shared.batch_get import batch_get_all
 from shared.company_personas import COMPANY_PERSONAS_CONTAINER
@@ -78,14 +78,24 @@ from shared.timestamps import now_iso
 #: The phase's name (handler.py), the run's field that holds its result, and the results.
 PHASE: Final = 'registries'
 RESULT: Final = 'review_registries'
-REGISTRIES_COMPLETE: Final = 'complete'
-REGISTRIES_NOT_BACKFILLED: Final = 'not_backfilled'
-REGISTRIES_INCOMPLETE: Final = 'incomplete'
+#: The results, the owed fields and the owe-failed reason are shared/lineage_owed.py's (Settings' erasure view reads them
+#: too); named here as the worker and its tests have always named them.
+REGISTRIES_COMPLETE: Final = lineage_owed.REGISTRIES_COMPLETE
+REGISTRIES_NOT_BACKFILLED: Final = lineage_owed.REGISTRIES_NOT_BACKFILLED
+REGISTRIES_INCOMPLETE: Final = lineage_owed.REGISTRIES_INCOMPLETE
+OWED_REASON: Final = lineage_owed.OWED_REASON
+OWED_MODE: Final = lineage_owed.OWED_MODE
+OWE_FAILED_REASON: Final = lineage_owed.OWE_FAILED_REASON
 RESULTS: Final = (REGISTRIES_COMPLETE, REGISTRIES_NOT_BACKFILLED, REGISTRIES_INCOMPLETE)
 #: The run's fields when it owes its lineage pass, and when it replayed what was owed.
 LINEAGE_OWED: Final = 'lineage_owed'
 INCOMPLETE_REASON: Final = 'incomplete_reason'
 REPLAYED: Final = 'lineage_owed_replayed'
+#: 7.97.00 (3g-ui): beside ``INCOMPLETE_REASON`` (English, the rows' words), why the marks are owed as a code the web
+#: app translates (shared/lineage_owed.py ``OWED_CODES``, ``OWED_REASON``), and the run's mode (``OWED_MODE``, one of
+#: ``OWED_MODES``: which later run makes them). Both derived from what the run carries already (``RESULT``,
+#: ``INCOMPLETE_REASON``, ``mode``) in ``fields``, so nothing more is carried across hand-overs.
+OWED_MODES: Final = ('retention', 'erase')
 #: Set once the run's deployment lineage pass ended (carried): a failure after it owes nothing (handler.py).
 LINEAGE_DONE: Final = 'lineage_done'
 #: The ``error_type`` a run that owes because it failed prints (its registries were complete).
@@ -119,11 +129,6 @@ _OPERATOR: Final = "ask the deployment's operator to run"
 _NOT_BACKFILLED_FIX: Final = f'the review registries are not backfilled: {_OPERATOR} {_BACKFILL} --apply'
 _INCOMPLETE_FIX: Final = (f'a live project is missing from the project registry: {_OPERATOR} {_BACKFILL} --unmark, '
                           'then --apply')
-#: Why a failed run owes its marks when the owed row could not be written (``note_owed`` after ``owe`` failed): no
-#: later run replays them, so the reason says where its sources are.
-OWE_FAILED_REASON: Final = ("this run's lineage marks are owed but could not be recorded, so no later run makes them "
-                            "on its own: the sources it erased from are on its audit row; ask the deployment's "
-                            "operator to read the worker's logs for the cause")
 
 
 class NeedsAnAdmin(RuntimeError):
@@ -343,12 +348,21 @@ def emit(metric: str, error_type: str) -> None:
     sys.stdout.flush()
 
 
+def run_owed_code(run: Mapping[str, Any]) -> str:
+    """Why the run owes its marks, as one of shared/lineage_owed.py's ``OWED_CODES`` (its one rule, ``owed_code``)."""
+    return lineage_owed.owed_code(run.get(INCOMPLETE_REASON), run.get(RESULT))
+
+
 def fields(run: Mapping[str, Any]) -> dict[str, Any]:
-    """What the job and audit rows say of the phase: its result, and, when owed or replayed, that."""
+    """What the job and audit rows say of the phase: its result, and, when owed (with why, in words and by code, and
+    the run's mode) or replayed, that."""
     result = run.get(RESULT)
     out: dict[str, Any] = {RESULT: result} if result in RESULTS else {}
     if run.get(LINEAGE_OWED) is True:
-        out.update({LINEAGE_OWED: True, INCOMPLETE_REASON: str(run.get(INCOMPLETE_REASON) or owed_reason(run))})
+        out.update({LINEAGE_OWED: True, INCOMPLETE_REASON: str(run.get(INCOMPLETE_REASON) or owed_reason(run)),
+                    OWED_REASON: run_owed_code(run)})
+        if run.get('mode') in OWED_MODES:
+            out[OWED_MODE] = run['mode']
     if run.get(REPLAYED) is True:
         out[REPLAYED] = True
     return out

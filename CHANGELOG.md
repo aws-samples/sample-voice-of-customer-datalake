@@ -17,6 +17,129 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.97.00] - 2026-11-27
+
+Administration's erasure panels show what an erasure left for an admin to do (slice 3g-ui of
+docs/multi-workspace.md's project plan; TENETS.md D5): the files it kept for review by kind, the documents it could
+not check, every counter its job row holds, whether it must be submitted again and why, owed lineage with its reason
+in the admin's language, and what a later job already finished. A completed job that still needs something never reads
+as plain "Completed".
+
+### Added
+
+- Each job's badge reads, in this order of precedence, **Completed: needs the operator**, **Completed: run again**,
+  **Completed: check the account in Users**, **Completed: files to review** or **Completed: lineage owed** (the
+  warning style) when its row calls for it, and a list headed "This erasure needs a follow-up" says why and what to do
+  for each (TENETS.md D5's rules). When in doubt the panel says something is still needed.
+  - the operator's, listed first: owed lineage whose code says the registries are not backfilled or incomplete, or
+    that its owe could not be recorded (without a code, any registries check but `complete`); a non-zero
+    `participant_guards_malformed` (mend each row, or erase by id the person it names, before the erasure is submitted
+    again: a rerun alone does not mend it); an index row kept again (`participant_index_rows_kept` on this job and on
+    a completed run of the same erasure that ended before it started); a non-zero `project_ids_malformed` (a registry,
+    link or series id not shaped like one, skipped). A completed job that owes lineage therefore reads **Completed:
+    needs the operator** (the worker writes `failed_before_marks` only on a failed run; the branch stays as a
+    defence);
+  - submit again, for an erasure by email without a source: `participants_complete` not true (every job that finished
+    before 7.72.00 too; the kept index rows counted; if a rerun keeps one again, the operator), the deployment's
+    `deployment_projects_walked` not true (7.48.00's rule), and, with the engineering agents, the agents' memory not
+    walked. The text says to submit the erasure again with the person's address and legal basis (the job keeps only a
+    hash of the address); a workspace's job from that workspace; only the deployment's participants rerun adds "if
+    this deployment has its own erasure request for this address; otherwise the workspace that received the request
+    submits it from there";
+  - `agent_memory_accounts_not_erased` above 0 (not a rerun): that many accounts hold the address unverified. The
+    words: "In Users, confirm the account is the person's and verify its email, or, if it is not theirs, change or
+    remove the address on it; then submit this erasure again with the same address and legal basis." Every deployment
+    erasure by email that walked the agents' memory says the same of an account whose email changed, or whose email is
+    unverified and is not its username: the address does not reach it;
+  - files left to review (either list's keys or `more`, or a product document not checked): a line pointing at the
+    lists below;
+  - `lineage_owed` (7.93.00), on a completed or a failed job: the personas and documents citing the erased reviews are
+    not marked yet, why (by the row's code, with the operator's command), and that the next erasure of the deployment
+    or the next daily retention window makes them. A run that replayed an earlier run's owed marks
+    (`lineage_owed_replayed`) says so, and a `review_registries` result other than `complete` is shown. On a failed
+    job, the note that a later run made its marks adds that the erasure itself still failed: see its error.
+- What a later job of the list finished, only on positive proof from a completed job of the same scope started after
+  the older one ended (a job started while it ran may have read the owed row before it was written): owed lineage reads
+  "A later run made the lineage marks this run owed" when the older row has a code other than `owe_failed` and the
+  later job replayed what was owed or read complete registries owing nothing; each rerun step, on its own, reads done
+  ("A later erasure of the same address finished the steps this one had to be submitted again for") when a later run
+  of the same erasure (value hash, field, source, workspace) reads `participants_complete` true with no row malformed
+  or kept, `deployment_projects_walked` true, or `agent_memory_complete` true (the note shows only once no rerun is
+  left, and the Users step never counts as a rerun). A missing field is never proof, and
+  malformed project ids are never resolved (their counter is on a row only once above 0). The panel lists the newest
+  20 jobs of its scope: an older job's follow-ups are on its job and audit rows (keeping jobs with an open follow-up
+  listed is 3g-ui-open), and a daily retention window's replay writes no erasure job, so the owed line says it stays
+  until a later erasure shows the marks made (a server-side check of the owed row, with the follow-ups computed by the server, is 3g-ui-api).
+- The review list by kind: the uploads kept because they also hold rows that were not erased, the S3 import originals
+  folders, and (new) the product documents and library items that hold the address, each listed apart; the documents
+  the erasure could not check (`files_not_checked`: an image, a kind that is not read, text not extracted yet) in a
+  list of their own, out of their total ("1 of 3 listed"; the total alone when the job kept no key). When a list holds
+  more than the keys the job kept (`more`: at most 200 a list, no count past them), a note tied to each list
+  (`aria-describedby`) says only the first ones are listed and to check the rest by hand.
+- The counters the job row holds once above 0, each with its label: participants erased and not erased, export
+  objects deleted, project rows de-identified, form test responses deleted, the agents' memory (people erased, people
+  it will no longer keep), engineering run rows updated, rows that name no workspace skipped (the unverified accounts,
+  malformed rows and ids and the documents not checked are in their follow-up or list instead). Every string in the
+  nine languages, with each language's plural forms.
+- The retention worker's job and audit rows name why lineage is owed by code, `lineage_owed_reason` (`not_backfilled`,
+  `incomplete`, `failed_before_marks`, `owe_failed`), and the run's mode, `lineage_owed_mode` (`retention`, `erase`),
+  beside the English `incomplete_reason` (`lambda/shared/lineage_owed.py` `owed_code`, the one rule, which
+  `lambda/jobs/retention/registries.py` `fields` uses; derived from what a run already carries, so hand-overs carry
+  nothing more). `GET /settings/erasure` gives a row written by 7.93.00 or 7.94.00 its code by the same rule, so an
+  owe that could not be recorded always reads `owe_failed`.
+
+### Changed
+
+- `GET /settings/erasure` returns each job's `files_needing_review` with its `more` flag, `files_not_checked`
+  (`{count, keys, more}`), until now on the job row only, and `lineage_owed_reason` and `lineage_owed_mode`
+  (`lambda/api/settings_handler.py` `erasure_job_view`; keys only, never content; an older owing row's code derived,
+  above). A counter in another shape (or out of range) reads 0 and a key that is not a string is dropped, never
+  failing the list.
+- The panels keep to their scope on the client too: inside a workspace the person erasure panel lists only that
+  workspace's jobs (`workspace_id`), outside one, and in the whole-source panel, only the deployment's (no
+  `workspace_id`), as the server already lists them (`useErasureJobs`, `erasureOutcome.ts` `jobInScope`).
+- The whole-source panel's job line is a `div` (it was a `p` holding the review lists), and only its progress line is
+  a live region, so a screen reader does not read the review lists out at each poll.
+- The job schema knows every phase the worker writes (`registries`, `form_tests`, `exports`, `workspace_projects`,
+  `workspace_lineage`, `participants`, `agent_memory`, `engineering_lineage`); the whole-source panel reads those as
+  "Running the other erasure steps" instead of "Deleting reviews".
+- The dev mock's erasure keeps each job's workspace (`X-Workspace-Id`), lists each scope's own jobs, refuses a
+  whole-source erasure in a workspace with the route's words, writes what a finished erasure by email walked, and
+  seeds one finished deployment job that owes its lineage and kept an upload, for the panel's preview.
+
+### Tests
+
+- `erasureOutcome.test.ts` (new: the review kinds, every rerun rule and its scope, the rerun text each step gets, a
+  malformed row and malformed project ids before any rerun, a kept index row as a rerun, an unverified agents' memory
+  account, an index row kept again, owed lineage on a completed and a failed job and when it is the operator's (by
+  code, or by the registries without one), files to review (one case per list), what a later job resolved on its
+  own proof (each rerun kind, no field never proof, another value, field, source or scope, a job that did not
+  complete, an overlapping run, an unrecorded or code-less owe), each step of the badge order, the scope filter); `erasureParts.test.tsx` (the lists by
+  kind, their totals and cut notes, every counter, the follow-ups' words by scope and step, owed lineage by code and
+  by an older row's words, the badge's words and warning style); `ErasurePanel.test.tsx` (each scope's jobs only, the
+  rerun's words for each, an older rerun done by a later erasure); `SourceErasurePanel.test.tsx` (a finished deletion
+  that owes lineage, two late phases, a current workspace that still shows the deployment's job and never a
+  workspace's); `sourceProfilesApi.test.ts`; `scripts/mock-erasure.test.mjs` (new, in validate.sh's mock step: the
+  mock's scopes, sources, an author erasure with no participants fields, the seeded job);
+  `test_settings_classification.py` (both lists with `more`, the codes, a 7.94-shaped row's derived code, a
+  malformed or out-of-range count read as 0); `test_registries_owed_codes.py` (new; the codes held to the web app's
+  list) and `test_registries_required.py` (each owing path's code and mode).
+  `test_registries_phase_lists.py` (new: every phase list that checks the registries also runs the lineage pass,
+  which the panel's reading of a later complete run relies on); and, in `erasureOutcome.test.ts`, an index row kept
+  again only after a completed earlier run of the same erasure that ended first, each proof's negative, the reruns'
+  note only once none is left, and a failed job's lineage note.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). No stack, table or permission changes; the retention worker writes two more
+  fields on an owing run's rows, the API returns them (deriving them for rows written before 7.97.00) and the web app
+  reads them.
+- On a deployment with the engineering agents (`-c engineeringAgents=true`), an erasure by email that finished before
+  7.84.00 carries no agent-memory field, so the panel shows no agent-memory rerun for it: run every such erasure again
+  as 7.84.00's upgrade notes say (the view saying whether the agents run is 3g-ui-api's, docs/multi-workspace.md).
+- The panel's follow-up rules are the web app's only (TENETS.md tenet 4's gap): an API or MCP client reads the raw job
+  fields of `GET /settings/erasure` until 3g-ui-api.
+
 ## [7.96.00] - 2026-11-27
 
 Multi-workspace, scale and erasure: a workspace's erasure no longer scans the whole feedback table. Its items phase

@@ -10,7 +10,7 @@
  *
  * @module components/SourcesManager/ErasurePanel
  */
-import { useId, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Eraser } from 'lucide-react'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
@@ -23,6 +23,7 @@ import {
   ErasureJobDetails, ErasureSection, ErasureStartError, ErasureStatusBadge, ErasureWorkspaceItems,
 } from './erasureParts'
 import { errorReason, useErasureJobs, useStartErasure } from './useErasureJobs'
+import { jobReport } from './erasureOutcome'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import { Tooltip } from '../Tooltip/Tooltip'
 
@@ -41,12 +42,15 @@ function isErasureField(value: string): value is ErasureField {
   return ERASURE_FIELDS.some((f) => f === value)
 }
 
-function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
+/** One job of the list; `jobs` (the whole list, one scope's) lets a later job resolve what this one left. */
+function JobRow({ job, jobs }: Readonly<{ job: ErasureJob; jobs: readonly ErasureJob[] }>) {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })
   const { t: tAll } = useTranslation()
+  // The row's follow-ups, what a later job resolved and its badge, computed once (q2-11).
+  const report = useMemo(() => jobReport(job, jobs), [job, jobs])
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs py-2 border-t border-border first:border-t-0">
-      <ErasureStatusBadge status={job.status} />
+      <ErasureStatusBadge report={report} />
       <span className="text-text">{tAll(FIELD_COPY[job.field].labelKey)}</span>
       {job.source !== undefined && <span className="font-mono text-muted">{job.source}</span>}
       <Tooltip kind="description" content={job.value_hash}>
@@ -56,7 +60,7 @@ function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
       <ErasureWorkspaceItems job={job} />
       <span className="text-muted">{job.started_by} · {job.created_at}</span>
       {job.error !== undefined && <span className="text-danger">{job.error}</span>}
-      <ErasureJobDetails job={job} />
+      <ErasureJobDetails job={job} report={report} />
     </li>
   )
 }
@@ -154,7 +158,7 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
       <div>
         <h4 className="text-xs font-medium text-text mb-1">{t('jobsTitle')}</h4>
         {jobs.length === 0 ? <p className="text-xs text-muted">{t('noJobs')}</p> : (
-          <ul>{jobs.map((job) => <JobRow key={job.job_id} job={job} />)}</ul>
+          <ul>{jobs.map((job) => <JobRow key={job.job_id} job={job} jobs={jobs} />)}</ul>
         )}
       </div>
       <ConfirmModal
