@@ -17,6 +17,16 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.05.01] - 2026-11-27
+
+Python dependency updates from Dependabot (#571, #565, #564), landed together with their release bump.
+
+### Changed
+
+- `aws-lambda-powertools` 3.39.0 → 3.40.0 (`requirements-dev.txt`, the ingestion-deps and processing-deps layers).
+- `pydantic` 2.14.2 → 2.14.3 (the ingestion-deps and processing-deps layers).
+- `ruff` 0.17.3 → 0.17.5, and the `boto3` / `boto3-stubs` floors 1.43.124 → 1.43.126 (`requirements-dev.txt`).
+
 ## [7.05.00] - 2026-11-25
 
 **The Documents Library**: upload a market report, interview transcripts or a deck once, tag it, and mention it in
