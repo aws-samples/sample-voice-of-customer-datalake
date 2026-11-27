@@ -2097,6 +2097,10 @@ ERASURE_VIEW_FIELDS = (
     # the engineering agents' memory (jobs/retention/runs.py `agent_memory_fields`) and left no account holding the
     # address unverified (`agent_memory_accounts_not_erased` 0): `agent_memory_complete`, the field its rerun rule reads.
     'agent_memory_walked', 'agent_memory_complete',
+    # 7.93.00 (3g-d2): the run's review registries check (`complete`, `not_backfilled`, `incomplete`), and whether it
+    # owed its deployment lineage marks (with why, and what happens next) or replayed what an earlier run owed
+    # (jobs/retention/registries.py `fields`).
+    'review_registries', 'lineage_owed', 'incomplete_reason', 'lineage_owed_replayed',
 )
 # The erasure routes' workspace (shared/erasure_scope.py): read afresh per request, members only (no platform-admin
 # entry, so nothing is written to voc-workspaces).

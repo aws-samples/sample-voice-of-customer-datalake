@@ -32,6 +32,9 @@ WRITERS: Final = {
     'lambda/shared/document_share.py': "create_share lists the series in the link's own transaction",
     'lambda/jobs/retention/project_people.py': 'updates existing threads only (de-identification)',
     'lambda/jobs/workspace_delete/sweeps.py': "deletes a workspace's threads only",
+    # 7.93.00 (3g-d2): the series' Scan moved here from shared/review_registries.py; its writes are registry rows and
+    # the marker, never a thread.
+    'scripts/projects/backfill_review_registries.py': 'puts the series registry rows the Scan finds, never a thread',
 }
 #: The generic copiers of stored rows, which list every copied comment partition's series and the copied project.
 COPIERS: Final = {'scripts/project_bundle/importer.py': ('list_copied_series', 'list_imported_project')}
@@ -43,7 +46,8 @@ PROJECT_CREATORS: Final = {
     'lambda/api/projects.py': 'register_deployment_project(',
     # Not listed, on purpose: a verification fixture's project holds no person's data (its rows carry the
     # verification run's ids, no owner, member or reviewer), expires by its own ttl, and its teardown proves zero
-    # rows remain, so no erasure has anything to find there.
+    # rows remain, so no erasure has anything to find there. Since 7.93.00 the retention worker's gap check passes its
+    # ids (shared/project_writes.py VERIFICATION_FIXTURE_PROJECT_PREFIX) instead of reading it as a gap.
     'lambda/api/verification_fixture_provider.py': None,
 }
 

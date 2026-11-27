@@ -25,7 +25,7 @@ import { Construct } from 'constructs';
 import type { PluginManifest } from '../plugin-loader';
 import { MEMORY_EXTRACT_DLQ_BASE_NAME } from './memory-workers';
 import { BRIEFING_DLQ_BASE_NAME } from './briefing-worker';
-import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
+import { GLOBAL_MCP_SERVICE_NAME, RETENTION_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { inboundEmailConfig } from '../utils/inbound-email';
 import { engineeringAgentsEnabled } from './engineering-broker';
 
@@ -274,6 +274,9 @@ export function opsAlertsWiring(inputs: OpsAlertsInputs): OpsAlertsWiring {
       OPS_ALERTS_INGESTOR_FUNCTIONS: ingestors.join(','),
       // Powertools `service` of /mcp/global (not deployment-unique: see docs/mcp.md → Alarms).
       OPS_ALERTS_MCP_SERVICE: GLOBAL_MCP_SERVICE_NAME,
+      // The retention worker's service (7.93.00): one alarm on its failed runs and owed lineage passes (EMF lines,
+      // lambda/jobs/retention/registries.py `emit`; shared/ops_alerts.py `_retention_alarm`).
+      OPS_ALERTS_RETENTION_SERVICE: RETENTION_FUNCTION_BASE_NAME,
       // Only with the engineering agents: one alarm on their workspace readers' denied reads (shared/ops_alerts.py).
       ...(engineeringAgentsEnabled(stack)
         ? { OPS_ALERTS_ENGINEERING_SERVICES: ENGINEERING_WORKSPACE_READER_SERVICES.join(',') } : {}),

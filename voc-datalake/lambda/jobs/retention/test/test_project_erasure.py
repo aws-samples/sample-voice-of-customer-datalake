@@ -991,15 +991,14 @@ def with_marker(aws) -> None:
 class TestTheDeploymentsLineageByQuery:
     """Since 7.48.00 (3g-d) the deployment's pass reads its projects through ``PROJECT_IDS`` (a deleted or half-deleted
     one too: the delete takes it off ``gsi1-by-type``, never off the registry) and each one's own partition by Query,
-    the persona library too; until the backfill's marker is there, it finds the projects by its own Scan."""
+    the persona library too; since 7.93.00 it requires the backfill's marker and never Scans
+    (test_registries_required.py)."""
 
-    @pytest.mark.parametrize('backfilled', [False, True])
-    def test_the_pass_marks_its_projects_a_half_deleted_one_and_the_library(self, aws, worker_context, backfilled):
+    def test_the_pass_marks_its_projects_a_half_deleted_one_and_the_library(self, aws, worker_context):
         put_feedback(aws, 'f1', author='Reviewer One')
         deployment_project(aws, 'p1')
         deployment_project(aws, 'p2', status='deleting')  # the fence ran, the sweep did not finish
-        if backfilled:
-            with_marker(aws)
+        with_marker(aws)
         for pk in ('PROJECT#p1', 'PROJECT#p2', 'PROJECT#company_personas'):
             aws['projects'].put_item(Item={'pk': pk, 'sk': 'PERSONA#a', 'input_feedback_ids': ['f1', 'f9']})
         aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PRD#d', 'input_feature_request_ids': ['fr_1']})
@@ -1008,8 +1007,8 @@ class TestTheDeploymentsLineageByQuery:
             result = handler.handle_event(erasure_job(aws, JOB_ID, 'author', 'Reviewer One', legal_basis=BASIS),
                                           worker_context)
 
-        # By Query once the backfill ran; until then, one Scan of the projects' META rows.
-        assert scanned == ([] if backfilled else ['test-projects'])
+        # By Query: no Scan.
+        assert scanned == []
         assert result['artifacts_marked'] == 3
         for pk in ('PROJECT#p1', 'PROJECT#p2', 'PROJECT#company_personas'):
             assert _row(aws, {'pk': pk, 'sk': 'PERSONA#a'})['input_feedback_ids'] == ['f9']
@@ -1045,7 +1044,9 @@ class TestTheDeploymentsLineageByQuery:
                                                'input_feedback_ids': ['f1'] if n else ['f9']})
         with_marker(aws)
         run, cursor, steps = {**_run(), 'erased_sources': ['web']}, None, 0
-        with patch.object(lineage, 'PAGE_SIZE', 1), patch.object(project_walk, 'ID_PAGE', 1):
+        # One-row pages everywhere, the gap check's index pages too (workspaces.py, 7.93.00).
+        with patch.object(lineage, 'PAGE_SIZE', 1), patch.object(project_walk, 'ID_PAGE', 1), \
+                patch.object(workspaces, 'ID_PAGE', 1):
             while steps < 200:
                 steps += 1
                 cursor = lineage.deployment_step(aws['projects'], aws['aggregates'], run,
@@ -1054,21 +1055,19 @@ class TestTheDeploymentsLineageByQuery:
                     break
         assert (run['artifacts_marked'], steps > 10) == (3, True)
         assert lineage.deployment_step(aws['projects'], aws['aggregates'], run, {
-            'found': 'registry', 'projects_done': True, 'library': True}) is None
+            'projects_done': True, 'library': True}) is None
 
     def test_a_cursor_of_the_scan_before_starts_the_pass_again(self, aws):
         """A hand-over across the upgrade carries the old Scan's row key: the pass starts from the top."""
         deployment_project(aws, 'p1')
         with_marker(aws)
-        found = lineage.deployment_step(aws['projects'], aws['aggregates'], _run(), {'pk': 'PROJECT#x', 'sk': 'y'})
-        assert found == {'found': 'registry'}
-        moved = lineage.deployment_step(aws['projects'], aws['aggregates'], _run(), found)
+        moved = lineage.deployment_step(aws['projects'], aws['aggregates'], _run(), {'pk': 'PROJECT#x', 'sk': 'y'})
         assert (moved or {}).get('ids') == ['p1']
 
     def test_a_registry_row_not_shaped_like_a_project_is_counted(self, aws):
         aws['projects'].put_item(Item={'pk': 'PROJECT_IDS', 'sk': 'bad#id'})
         run = _run()
-        moved = lineage.deployment_step(aws['projects'], aws['aggregates'], run, {'found': 'registry'})
+        moved = lineage.deployment_step(aws['projects'], aws['aggregates'], run, None)
         assert ((moved or {}).get('ids'), run[MALFORMED_ID_COUNTER]) == ([], 1)
 
     def test_a_workspace_row_is_never_marked_by_the_deployments_pass(self, aws, worker_context):

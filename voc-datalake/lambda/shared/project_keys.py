@@ -369,8 +369,8 @@ def series_registry_ids(sort_key: object) -> tuple[str, str] | None:
 
 def comment_partition_ids(partition_key: object) -> tuple[str, str] | None:
     """``(project id, series id)`` of a deployment's comment partition (``DCOMMENTS#{project}#{series}``,
-    ``comments_pk`` without a workspace), or None for any other key: the backfill and an erasure's Scan read a
-    series from its comment rows."""
+    ``comments_pk`` without a workspace), or None for any other key: the backfill's Scan reads a series from its
+    comment rows (scripts/projects/backfill_review_registries.py; since 7.93.00 no erasure Scans)."""
     if not isinstance(partition_key, str) or not partition_key.startswith(_COMMENTS_PREFIX):
         return None
     return series_registry_ids(partition_key[len(_COMMENTS_PREFIX):])

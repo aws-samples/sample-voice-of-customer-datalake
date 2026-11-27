@@ -18,7 +18,11 @@ from shared.exceptions import (
     ServiceError,
     ValidationError,
 )
-from shared.project_writes import VERIFICATION_FIXTURE_ATTRIBUTE, is_verification_fixture
+from shared.project_writes import (
+    VERIFICATION_FIXTURE_ATTRIBUTE,
+    is_verification_fixture,
+    is_verification_fixture_project,
+)
 from verification_fixture_provider import (
     CAPABILITY,
     FIXTURE_TTL_SECONDS,
@@ -161,6 +165,21 @@ class TestProviderLifecycle:
         assert row['is_default'] is False
         assert row['project_id'] == result['project_id']
         assert row['document_ids'] == [result['document_ids']['scorable_prd']]
+
+    @pytest.mark.parametrize('overrides', [{}, {'slot': 'c'}, {'verification_job_id': 'job-456'},
+                                           {'tested_sha': 'b' * 40}])
+    @mock_aws
+    def test_every_minted_project_id_is_the_shape_the_retention_gap_check_passes(self, overrides):
+        """7.93.00 (round 2, q-8): the project the provider mints, for any subject, is the exact shape the retention
+        worker's gap check skips (shared/project_writes.py ``is_verification_fixture_project``), and its META is
+        the one project row it writes."""
+        projects, aggregates = _tables()
+        with _provider_reads(projects, aggregates):
+            result = setup_fixture(_request('setup', **overrides))
+
+        assert is_verification_fixture_project(result['project_id'])
+        [meta] = [item for item in _items(projects) if item['sk'] == 'META']
+        assert meta['pk'] == f"PROJECT#{result['project_id']}"
 
     @mock_aws
     def test_foreign_collision_is_atomic(self):

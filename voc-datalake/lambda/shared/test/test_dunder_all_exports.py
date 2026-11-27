@@ -54,7 +54,11 @@ ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {
     # until the last refusal goes. project_partitions and its ProjectPartition (7.27.00, the project plan 3b): the
     # partitions keyed by a project's id alone, for the workspace export and the hard delete's projects entry (3g) and the
     # per-project delete (3h), which remove them here.
-    'lambda/shared/project_keys': frozenset({'NotPerWorkspaceError', 'ProjectPartition', 'project_partitions'}),
+    # COMMENT_PARTITION_PREFIX and comment_partition_ids: how a comment partition's key reads back, which since 7.93.00
+    # (3g-d2: the erasure's Scan fallback removed) only the operator's backfill reads, outside the scanned folders
+    # (scripts/projects/backfill_review_registries.py, its Scan of the series).
+    'lambda/shared/project_keys': frozenset({'COMMENT_PARTITION_PREFIX', 'NotPerWorkspaceError', 'ProjectPartition',
+                                             'comment_partition_ids', 'project_partitions'}),
     # Phase 3's registry of a workspace's project ids (7.26.00, docs/multi-workspace.md, the project plan 3a), landed
     # before its readers, the workspace export, delete and erasure (3g), which remove it here.
     'lambda/shared/project_tables': frozenset({'iter_registered_project_ids'}),

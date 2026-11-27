@@ -34,7 +34,11 @@ from processor.test import test_source_updates as issues
 from shared import reprocess_jobs
 from shared.data_version import BatchBump
 from shared.test.moto_s3 import create_versioned_bucket
-from shared.test.moto_tables import create_pk_sk_table
+from shared.test.moto_tables import (
+    create_pk_sk_table,
+    create_projects_table_with_type_index,
+    mark_review_registries_backfilled,
+)
 from shared.test.source_profile_fixtures import seeded_source_profiles
 from shared.workspace_settings import settings_key
 from shared.ws_repo import WorkspaceScope
@@ -78,7 +82,12 @@ def lake() -> Iterator[dict[str, Any]]:
         aggregates = create_pk_sk_table(retention.AGGREGATES_TABLE, resource)
         for name in ('RADAR_TABLE', 'PROJECTS_TABLE', 'FEATURE_REQUESTS_TABLE', 'WORKSPACES_TABLE'):
             table_name = getattr(retention, name) or f'test-{name.lower()}'
-            created = create_pk_sk_table(table_name, resource)
+            if name == 'PROJECTS_TABLE':
+                # voc-projects as core-stack.ts makes it (gsi1-by-type), its review registries backfilled: the
+                # deployment's erasure by email requires the marker and checks the registry on the index (7.93.00).
+                created = mark_review_registries_backfilled(create_projects_table_with_type_index(table_name, resource))
+            else:
+                created = create_pk_sk_table(table_name, resource)
             stack.enter_context(patch.object(retention, name, table_name))
             if name == 'WORKSPACES_TABLE':
                 # Both workspaces active (4d-1): the erasure reads a META's status before it takes the export lock.

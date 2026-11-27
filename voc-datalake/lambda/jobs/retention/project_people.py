@@ -94,15 +94,17 @@ The deployment's own projects (since 7.48.00, projects 3g-d), where every real r
 deployment's erasure by email walks them first (the cursor's ``DEPLOYMENT`` part, ``deployment_state``), by the same
 steps and the same writes, a step's scope None (voc-projects seen as itself, shared/ingest_tables.py ``table_view``),
 each change recorded under ``AUDIT#tombstone#deployment_projects`` / ``{kind}#{ref}#{job}`` and closing no export (the
-deployment's projects have none). Its links and commented series are found first: the backfill's marker read
-(shared/review_registries.py), then the deployment's link registry (``DOCSHARE_IDS``) and series registry
-(``COMMENT_SERIES_IDS``) by Query, or, without the marker, the backfill's own Scans (one page a step). Every link
-is scrubbed, then every series' threads (a deleted project's too: its delete leaves them), then every project the
+deployment's projects have none). Since 7.93.00 (3g-d2) the walk trusts the registries only once the run's
+``registries`` phase found them complete (registries.py: the backfill's marker and the gap check; the handler fails
+such an erasure there, by name, before it deletes anything), and no Scan finds the rows instead. Its links and
+commented series come first, from the
+deployment's link registry (``DOCSHARE_IDS``) and series registry (``COMMENT_SERIES_IDS``) by Query. Every link is
+scrubbed, then every series' threads (a deleted project's too: its delete leaves them), then every project the
 deployment's project registry lists (``PROJECT_IDS``, put at a project's create and never removed by its delete,
-shared/project_walk.py ``registry_page``; or, without the marker, the backfill's third Scan, of the projects'
-``META`` rows: the delete's fence takes a deleted or half-deleted project off ``gsi1-by-type``, so no index names it),
-its ``META``, product documents and personas, then the persona library. A product document there is
-judged by its extracted text of any kind (``_text_key``): the extractor writes text for every kind in the deployment.
+shared/project_walk.py ``registry_page``: the delete's fence takes a deleted or half-deleted project off
+``gsi1-by-type``, so no index names it), its ``META``, product documents and personas, then the persona library. A
+product document there is judged by its extracted text of any kind (``_text_key``): the extractor writes text for every
+kind in the deployment.
 
 The cursor (a hand-over carries it) holds the listing's next key and the page of workspace ids still to do (the
 first being walked), and for that workspace where its link registry, its links, its project registry, its projects
@@ -136,7 +138,6 @@ from jobs.retention.runs import (
     note_review_file,
     note_unchecked_file,
 )
-from shared import review_registries
 from shared.aws import is_conditional_check_failure
 from shared.digests import sha256_hex
 from shared.document_comments import AUTHOR_REVIEWER, COMMENT_SK_PREFIX, MAX_NAME_CHARS, TEAM_MEMBER_NAME
@@ -193,6 +194,9 @@ STORE_DEPLOYMENT_PROJECTS: Final = 'deployment_projects'
 #: first).
 DEPLOYMENT: Final = 'deployment'
 DEPLOYMENT_DONE: Final = workspaces.DEPLOYMENT_DONE
+#: How the deployment's rows were found, on the job row (``DEPLOYMENT_FOUND``): through the registries (a row written
+#: between 7.48.00 and 7.93.00 may say ``scan``).
+FOUND_REGISTRY: Final = 'registry'
 #: Set in the ``deployment`` part of a cursor carried from 7.43.00 (its listing already under way, kept as it is).
 _CARRIED: Final = 'carried'
 #: A row that changed meanwhile is read again and rewritten at most this many times, then the job fails.
@@ -329,6 +333,11 @@ class ProjectPeopleEraser:
         if not isinstance(carried, Mapping):
             raise ValueError("a carried deployment's walk is not a map")
         at = dict(carried)
+        if at.get('found') == workspaces.LEGACY_FOUND_SCAN:
+            # A 7.84.00 hand-over that found the rows by Scan: the walk starts again from the top (7.93.00).
+            at = {_CARRIED: True} if carried.get(_CARRIED) is True else {}
+        # The rows are found through the registries, the one way since 7.93.00 (the run's ``registries`` phase).
+        self._run[DEPLOYMENT_FOUND] = FOUND_REGISTRY
         moved = self._deployment_steps()[self.deployment_state(at)](None, at)
         if moved is not None:
             return {**here, DEPLOYMENT: moved}
@@ -345,7 +354,7 @@ class ProjectPeopleEraser:
 
     def _deployment_steps(self) -> Mapping[str, Callable[[None, dict[str, Any]], dict[str, Any] | None]]:
         """Each cursor state's step of the deployment's own projects (``deployment_state``)."""
-        return {'found': self._found_step, 'link_pages': self._link_pages_step, 'pair_pages': self._pair_pages_step,
+        return {'link_pages': self._link_pages_step, 'pair_pages': self._pair_pages_step,
                 'projects': self._registry_step, **self._shared_steps()}
 
     def _shared_steps(self) -> dict[str, Callable[[Any, dict[str, Any]], dict[str, Any] | None]]:
@@ -368,16 +377,11 @@ class ProjectPeopleEraser:
 
     @staticmethod
     def deployment_state(at: Mapping[str, Any]) -> str:
-        """Which step the deployment's cursor is at: how its links and series are found (``found``: the registries,
-        or the Scans until the backfill ran), then every link, then every commented series' threads (a deleted
-        project's too: the series registry is deployment-wide), then its projects (each
-        one's ``META``, product documents and personas: its series are walked already) and its persona library. The
-        cursor's names are its own: ``links_from``, ``pairs_from``, ``threads_from``, ``projects_from``. The projects
-        come from its registry, ``PROJECT_IDS``, or from the ``PROJECTS`` Scan until the backfill ran: a deleted or
-        half-deleted project's ``META`` is off ``gsi1-by-type`` (the delete's fence removes its index keys)."""
-        if 'found' not in at:
-            return 'found'
-        workspaces.checked_found(at)
+        """Which step the deployment's cursor is at: every link, then every commented series' threads (a deleted
+        project's too: the series registry is deployment-wide), then its projects (each one's ``META``, product
+        documents and personas: its series are walked already) and its persona library. The cursor's names are its own:
+        ``links_from``, ``pairs_from``, ``threads_from``, ``projects_from`` (a 7.84.00 cursor's ``found`` is ignored). The projects come from its registry, ``PROJECT_IDS``: a deleted or half-deleted project's
+        ``META`` is off ``gsi1-by-type`` (the delete's fence removes its index keys)."""
         if at.get('links'):
             return 'link'
         if not at.get('links_done'):
@@ -419,23 +423,11 @@ class ProjectPeopleEraser:
 
     # ── The deployment's own projects (since 7.48.00) ─────────────────────────────────────────────────────────────
 
-    def _found_step(self, _scope: None, at: dict[str, Any]) -> dict[str, Any]:
-        """Whether the backfill listed what was made before 7.48.00 (workspaces.py ``deployment_found``: its marker,
-        complete): then the registries are walked by Query, else the same links, series and projects are found by
-        Scan. The run keeps which (``DEPLOYMENT_FOUND``, on the job row)."""
-        found = workspaces.deployment_found(self._projects)
-        self._run[DEPLOYMENT_FOUND] = found
-        return {**at, 'found': found, 'links_done': False, 'pairs_done': False}
-
     def _link_pages_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
-        """The next page of the scope's links: a workspace's link registry, the deployment's (``DOCSHARE_IDS``, the
-        backfill's own rows left out), or, until the backfill ran, a Scan page's."""
-        if scope is None and at.get('found') == workspaces.FOUND_SCAN:
-            page = workspaces.scan(self._run, self._projects, review_registries.LINKS, at.get('links_from'))
-            links, following = page.ids, page.following
-        else:
-            partition = DEPLOYMENT_LINK_REGISTRY_PK if scope is None else review_link_registry_pk(scope)
-            links, following = self._registry_ids(scope, partition, at.get('links_from'), is_share_id)
+        """The next page of the scope's links: a workspace's link registry, or the deployment's (``DOCSHARE_IDS``, the
+        backfill's own rows left out)."""
+        partition = DEPLOYMENT_LINK_REGISTRY_PK if scope is None else review_link_registry_pk(scope)
+        links, following = self._registry_ids(scope, partition, at.get('links_from'), is_share_id)
         return {**at, 'links': links, 'links_from': following, 'links_done': following is None}
 
     def _registry_ids(self, scope: WorkspaceScope | None, partition: str, start: object,
@@ -452,19 +444,11 @@ class ProjectPeopleEraser:
         return ids, following
 
     def _pair_pages_step(self, _scope: None, at: dict[str, Any]) -> dict[str, Any]:
-        """The next page of the deployment's commented series (``{project}#{series}``): its series registry's
-        (``COMMENT_SERIES_IDS``), or a Scan page's (the last partition it met carried, ``last_pk``, so the next page
-        does not meet it again); one rule judges a series either way (shared/project_walk.py ``is_series_ref``)."""
-        if at['found'] == workspaces.FOUND_SCAN:
-            page = workspaces.scan(self._run, self._projects, review_registries.SERIES, at.get('pairs_from'),
-                                   at.get('last_pk'))
-            pairs, following, last = page.ids, page.following, page.last_pk or at.get('last_pk')
-        else:
-            pairs, following = self._registry_ids(None, DEPLOYMENT_SERIES_REGISTRY_PK, at.get('pairs_from'),
-                                                  is_series_ref)
-            last = None
-        return {**at, 'pairs': pairs, 'pairs_from': following, 'pairs_done': following is None, 'last_pk': last,
-                'threads_from': None}
+        """The next page of the deployment's commented series (``{project}#{series}``), its series registry's
+        (``COMMENT_SERIES_IDS``), each judged by the walker's rule (shared/project_walk.py ``is_series_ref``)."""
+        pairs, following = self._registry_ids(None, DEPLOYMENT_SERIES_REGISTRY_PK, at.get('pairs_from'),
+                                              is_series_ref)
+        return {**at, 'pairs': pairs, 'pairs_from': following, 'pairs_done': following is None, 'threads_from': None}
 
     def _link_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
         links = checked_ids(at.get('links'), is_share_id, 'links')
@@ -476,7 +460,7 @@ class ProjectPeopleEraser:
 
     def _registry_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
         """The scope's next page of projects (workspaces.py ``registry_step``: a workspace's registry, or the
-        deployment's, ``PROJECT_IDS``, or its ``PROJECTS`` Scan until the backfill ran; a deleted project too)."""
+        deployment's, ``PROJECT_IDS``; a deleted project too)."""
         return workspaces.registry_step(self._projects, self._run, scope, at, **_project_start(scope))
 
     def _meta_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:

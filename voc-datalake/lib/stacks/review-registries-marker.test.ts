@@ -1,7 +1,9 @@
 /**
  * The review registries' backfill marker is deleted when the release gains or loses the resource that holds it
  * (review-registries-marker.ts, in VocCoreStack, 7.48.00, projects 3g-d), by a policy that may delete in
- * `DOCSHARE_IDS` only; and the functions that run the projects handler, the one entry that writes review links,
+ * `DOCSHARE_IDS` only; since 7.93.00 a seed made after it writes a new deployment's complete marker (its Python
+ * handler inline, its role held to one index Query of the project keys and PutItem in `DOCSHARE_IDS`;
+ * lambda/custom_resources/test/test_review_registries_marker.py runs the handler); and the functions that run the projects handler, the one entry that writes review links,
  * comment threads and projects (every API bundle ships `shared/`, so the entry, not the files, tells a writer), are
  * exactly the two the backfill waits for (scripts/projects/backfill_review_registries.py `WRITER_NAMES`).
  */
@@ -14,10 +16,13 @@ import { z } from 'zod';
 
 import { apiTemplate } from '../test-support/api-stack-template';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
-import { IamPolicySchema } from '../test-support/iam-statements';
+import { IamPolicySchema, type IamStatement } from '../test-support/iam-statements';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { byCodeUnit } from '../utils/compare';
+import { appVersion } from '../utils/connector-version';
 import {
-  REVIEW_REGISTRIES_MARKER_PK, REVIEW_REGISTRIES_MARKER_RESET_TYPE, REVIEW_REGISTRIES_MARKER_SK,
+  REVIEW_REGISTRIES_MARKER_PK, REVIEW_REGISTRIES_MARKER_RESET_TYPE, REVIEW_REGISTRIES_MARKER_SEED_TYPE,
+  REVIEW_REGISTRIES_MARKER_SK,
 } from './review-registries-marker';
 
 const ResetSchema = z.object({
@@ -87,6 +92,73 @@ describe('the review registries marker reset', () => {
       'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [REVIEW_REGISTRIES_MARKER_PK] },
     }));
     expect(JSON.stringify(statements[0]?.Resource)).not.toContain('/index/');
+  });
+});
+
+const SeedSchema = z.object({
+  DependsOn: z.array(z.string()).optional(),
+  Properties: z.object({ TableName: z.unknown(), IndexName: z.string(), Partition: z.string(), Release: z.string() }),
+});
+const InlineFunctionSchema = z.object({
+  Properties: z.object({ Code: z.object({ ZipFile: z.string().optional() }), Handler: z.string() }),
+});
+
+/** The seed's role's Allow statements (the audit-row guard's Deny aside). */
+function seedAllows(): IamStatement[] {
+  return Object.entries(core.findResources('AWS::IAM::Policy'))
+    .filter(([id]) => id.startsWith('ReviewRegistriesMarkerSeedLambda'))
+    .flatMap(([, resource]) => IamPolicySchema.parse(resource).Properties.PolicyDocument.Statement)
+    .filter((statement) => statement.Effect === 'Allow');
+}
+
+describe('the review registries marker seed (7.93.00: a new deployment gets a complete marker)', () => {
+  it('is one resource of the core stack, made after the reset, naming the table and this release', () => {
+    const seeds = Object.values(core.findResources(REVIEW_REGISTRIES_MARKER_SEED_TYPE))
+      .map((resource) => SeedSchema.parse(resource));
+    expect(seeds).toHaveLength(1);
+    const [resetId] = Object.keys(core.findResources(REVIEW_REGISTRIES_MARKER_RESET_TYPE));
+    expect(seeds[0]?.DependsOn).toContain(resetId);
+    // The index and partition its role may Query (below), and this release.
+    expect(seeds[0]?.Properties).toMatchObject({
+      IndexName: 'gsi1-by-type', Partition: 'TYPE#PROJECT', Release: appVersion(),
+    });
+    expect(apiTemplate().findResources(REVIEW_REGISTRIES_MARKER_SEED_TYPE)).toStrictEqual({});
+  });
+
+  it('runs the Python handler inline, within the inline ceiling', () => {
+    const source = repoFile('lambda', 'custom_resources', 'review_registries_marker.py');
+    const [seed] = Object.entries(core.findResources('AWS::Lambda::Function'))
+      .filter(([id]) => id.startsWith('ReviewRegistriesMarkerSeedLambda'))
+      .map(([, resource]) => InlineFunctionSchema.parse(resource).Properties);
+    expect(seed?.Code.ZipFile).toBe(source);
+    expect(seed?.Handler).toBe('index.handler');
+    expect(source.length).toBeLessThanOrEqual(4096);
+  });
+
+  it('may call DynamoDB for one index Query and one PutItem only, and otherwise only the key', () => {
+    const actions = seedAllows().map((statement) => JSON.stringify(statement.Action));
+    const dynamo = actions.filter((action) => action.includes('dynamodb:'));
+    dynamo.sort(byCodeUnit);
+    expect(dynamo).toStrictEqual(['"dynamodb:PutItem"', '"dynamodb:Query"']);
+    expect(actions.filter((action) => !action.includes('dynamodb:'))
+      .every((action) => /^\[?"(kms|logs):/.test(action))).toBe(true);
+  });
+
+  it('may Query the index for the deployment\'s project keys only', () => {
+    const query = seedAllows().find((statement) => statement.Action === 'dynamodb:Query');
+    expect(JSON.stringify(query?.Resource)).toContain('/index/gsi1-by-type');
+    expect(query?.Condition).toStrictEqual({
+      'ForAllValues:StringEquals': {
+        'dynamodb:LeadingKeys': ['TYPE#PROJECT'], 'dynamodb:Attributes': ['pk', 'sk', 'gsi1pk', 'gsi1sk'],
+      },
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    });
+  });
+
+  it('may PutItem on the table in DOCSHARE_IDS only', () => {
+    const put = seedAllows().find((statement) => statement.Action === 'dynamodb:PutItem');
+    expect(JSON.stringify(put?.Resource)).not.toContain('/index/');
+    expect(JSON.stringify(put?.Condition)).toContain(JSON.stringify([REVIEW_REGISTRIES_MARKER_PK]));
   });
 });
 

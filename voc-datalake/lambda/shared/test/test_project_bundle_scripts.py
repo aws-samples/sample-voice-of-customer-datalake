@@ -348,6 +348,19 @@ class TestRefusals:
         assert _import(world, '--owner-email', 'nobody@example.com') == 2
         assert 'matches no single user' in capsys.readouterr().out
 
+    @pytest.mark.usefixtures('scripts')
+    def test_a_verification_fixtures_id_is_refused_unless_new_ids_remaps_it(self):
+        """7.93.00 (3g-d2): the retention worker's gap check passes a project of the verification fixture provider's
+        exact id shape (shared/project_writes.py ``is_verification_fixture_project``), so no import may write one."""
+        importer, remap = sys.modules['project_bundle.importer'], sys.modules['project_bundle.remap']
+        reserved = f'proj_vf_{"a" * 24}'
+        assert 'reserved for the verification fixture' in str(importer.reserved_id_refusal(reserved))
+        assert '--new-ids' in str(importer.reserved_id_refusal(reserved))
+        assert importer.reserved_id_refusal(PID) is None
+        assert importer.reserved_id_refusal(remap.new_id_map([], reserved)[reserved]) is None
+        source = Path(str(importer.__file__)).read_text(encoding='utf-8')
+        assert 'refusal := reserved_id_refusal(plan.project_id)' in source
+
     def test_an_existing_project_id_is_refused_without_new_ids(self, world, capsys):
         world['tables']['tgt-p'].put_item(Item={'pk': f'PROJECT#{PID}', 'sk': 'META', 'status': 'deleted'})
         _export(world, PID)

@@ -170,7 +170,9 @@ class TestErasureReachesWorkspaces:
     @staticmethod
     def _erase_jane_citing(aws, context: Any, cited: list[str]) -> tuple[dict, Any]:
         """A deployment project's persona citing ``cited``; erase Jane's reviews, watching the deployment's lineage
-        pass (its steps, by Query since 7.48.00)."""
+        pass (its steps, by Query since 7.48.00). The project is in ``PROJECT_IDS``, as its create lists it (the
+        walks' gap check requires it, 7.93.00)."""
+        aws['projects'].put_item(Item={'pk': 'PROJECT_IDS', 'sk': 'p1', 'created_at': 'x'})
         aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'META', 'gsi1pk': 'TYPE#PROJECT', 'gsi1sk': 'x'})
         aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PERSONA#a', 'input_feedback_ids': cited})
         with patch.object(lineage, 'deployment_step', wraps=lineage.deployment_step) as scan:

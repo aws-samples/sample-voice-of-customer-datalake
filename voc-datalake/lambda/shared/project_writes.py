@@ -13,6 +13,7 @@ registry in one scoped transaction.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Final
@@ -45,6 +46,22 @@ PROJECT_WRITABLE_CONDITION = (
 # Keep the two in lockstep: renaming it there without renaming it here makes
 # fixture projects visible in the ordinary project list.
 VERIFICATION_FIXTURE_ATTRIBUTE = 'verification_fixture_id'
+#: How the verification fixture provider's project ids start (``proj_vf_{24 hex}``, minted there from this): a project
+#: create's ids are ``proj_{UTC stamp}_{hex}`` (shared/ids.py ``timestamped_id``), digits after ``proj_``, so none
+#: takes it. The retention worker's registries check (jobs/retention/registries.py ``step``, 7.93.00) passes such a
+#: project, live on the index and never in ``PROJECT_IDS``: it holds no person's data and its teardown proves it gone.
+VERIFICATION_FIXTURE_PROJECT_PREFIX = 'proj_vf_'
+#: The exact id the provider mints: the prefix and 24 lowercase hex characters of a sha-256 (its ``_ids``).
+_VERIFICATION_FIXTURE_PROJECT_RE = re.compile(rf'{VERIFICATION_FIXTURE_PROJECT_PREFIX}[0-9a-f]{{24}}')
+
+
+def is_verification_fixture_project(project_id: object) -> bool:
+    """Whether ``project_id`` has the verification fixture provider's exact id shape (``proj_vf_`` and 24 lowercase
+    hex characters): no project create mints it, and the project bundle's importer refuses it unless ``--new-ids``
+    remaps it (scripts/project_bundle/importer.py)."""
+    return isinstance(project_id, str) and _VERIFICATION_FIXTURE_PROJECT_RE.fullmatch(project_id) is not None
+
+
 PROJECT_WRITABLE_ATTRIBUTE_NAMES = {
     '#deleting': PROJECT_DELETION_ATTRIBUTE,
     '#status': 'status',
@@ -90,7 +107,7 @@ def deployment_project_live(table: Any, project_id: str) -> bool:
 
 
 def is_verification_fixture(item: dict[str, Any] | None) -> bool:
-    """Rows seeded by the ABCA verification fixture provider.
+    """Rows seeded by the verification fixture provider.
 
     Those rows are indexed like ordinary projects — they have to be, because the
     point of the fixture is to exercise the real read paths — so nothing but this

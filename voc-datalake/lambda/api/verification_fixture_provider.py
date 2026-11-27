@@ -32,6 +32,7 @@ from shared.exceptions import (
 from shared.logging import logger, tracer
 from shared.prioritization_keys import PRIORITIZATION_PK
 from shared.project_keys import PROJECT_TYPE_PK, document_keys, project_pk
+from shared.project_writes import VERIFICATION_FIXTURE_PROJECT_PREFIX
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_aggregates_table, get_projects_table
 
@@ -119,7 +120,8 @@ def _ids(request: dict[str, str]) -> dict[str, Any]:
     ))
     digest = hashlib.sha256(subject.encode('utf-8')).hexdigest()[:24]
     fixture_id = f'vfb_{digest}'
-    project_id = f'proj_vf_{digest}'
+    # The prefix no project create mints: the retention worker's gap check reads it as this provider's (7.93.00).
+    project_id = f'{VERIFICATION_FIXTURE_PROJECT_PREFIX}{digest}'
     return {
         'fixture_id': fixture_id,
         'project_id': project_id,

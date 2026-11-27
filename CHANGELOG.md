@@ -17,6 +17,196 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.93.00] - 2026-11-27
+
+The erasure no longer scans `voc-projects` (slice 3g-d2 of docs/multi-workspace.md's project plan; TENETS.md D5): the
+deployment's own projects, review links and commented series are found through their registries only, and every run
+of the retention worker that names no workspace and can delete or replay checks those registries first, in a phase of
+its own.
+
+> **Before you deploy (from 7.48.00 or later):** in `voc-datalake/`, run
+> `.venv/bin/python scripts/projects/backfill_review_registries.py` (a dry run: its last line says whether the marker
+> is there and complete). Unless it says so, run it again with `--apply`. **From a release older than 7.48.00:**
+> deploy first, wait for the drain the script names, then run it with `--apply` whatever the dry run says (Upgrade
+> notes below). Until the marker is there, every erasure by email of the deployment fails by name
+> (`ReviewRegistriesNotBackfilled`) before it deletes anything, and every other run (the daily retention window, an
+> erasure by author, source or id) deletes as usual but owes its lineage marks until a run with the marker makes them.
+> A new deployment needs nothing: its first deploy finds no project and writes a complete marker.
+
+### Added
+
+- The `registries` phase (`lambda/jobs/retention/registries.py`), first in every run that names no workspace and can delete or replay: the
+  backfill's marker (one strongly consistent Query), then the gap check: one page of the live projects on
+  `gsi1-by-type` (`TYPE#PROJECT`, 100 a page, their keys only) and one strongly consistent BatchGetItem of their
+  `PROJECT_IDS` rows (their keys only) a step, bounded and handed over like the other phases (cursor `gap_from`,
+  `gap_checked`). Its result is the run's, `review_registries` on the job and audit rows: `complete`,
+  `not_backfilled` or `incomplete` (a live project missing from `PROJECT_IDS`). A project's create lists it in
+  `PROJECT_IDS` before its `META` reaches the index (which answers eventually consistent), so one being created never
+  reads as a gap. The persona library and a verification fixture's project (the exact id the provider mints,
+  `proj_vf_` and 24 hex: `shared/project_writes.py` `is_verification_fixture_project`; it holds no person's data and
+  its teardown proves it gone) are passed. What it cannot see: an unlisted review link, an unlisted comment series
+  (no index names either) and an unlisted deleted or half-deleted project (the delete's fence takes its `META` off the
+  index); those stay guarded by the backfill's `--unmark` (docs/deployment.md).
+- What a run does with the result:
+  - the deployment's erasure by email without a source fails in `registries`, by name, before it deletes anything
+    (`ReviewRegistriesNotBackfilled`, `ReviewRegistriesIncomplete`): its walk of the deployment's people is the erasure
+    itself, and the address is not stored, so it cannot be owed. Its row says what to do, addressed to the
+    deployment's operator: `... ask the deployment's operator to run scripts/projects/backfill_review_registries.py
+    --apply, then run the erasure again` (`--unmark`, then `--apply`, for a gap);
+  - every other run deletes as usual and, without `complete`, OWES its deployment lineage pass: one durable row in
+    voc-aggregates, `JOB#retention` / `LINEAGE_OWED`, holding the sources whose tombstones are owed and the runs that
+    owed them (the latest 50, then `runs_more`); the run completes and says so (`lineage_owed: true` and an
+    `incomplete_reason` for its mode: a window says the next daily window makes the marks on its own);
+  - any later run of the deployment whose registries are complete replays the owed sources in its lineage pass, beside
+    its own, whether it deleted anything or not (the marks are idempotent and keyed by the tombstones), then clears the
+    row on the version it read (anything owed meanwhile stays for the next run); its rows say
+    `lineage_owed_replayed: true`. Retention is opt-in, so the daily run of a deployment that retains nothing reads
+    the owed row (one GetItem) and, while it names a source, runs the `registries` phase and the lineage pass only
+    (review round 2).
+- The marker is read again at each invocation's start, and when the `registries` phase itself resumes with a cursor,
+  so an `--unmark` during a run is seen before anything more is deleted: an erasure by email whose people walk is still
+  ahead fails by name (owing first what it already deleted), and any other run owes.
+- Every failure path owes too: a run that deleted and then fails before its lineage pass ended (a named failure, an
+  unexpected error, or the hand-over cap) records its lineage as owed, best effort, before its rows are finished; its
+  `incomplete_reason` says it failed before its lineage marks, and the next run with complete registries makes them.
+  Recording it never raises (round 2), so the run's own failure stays the one recorded or raised; a run whose owed
+  row could not be written (more than 1,000 sources, `TooManyOwedSources`; a row that kept changing; an AWS error)
+  still says `lineage_owed: true`, with a reason saying the marks could not be recorded, that no later run makes them
+  and that its audit row lists its sources, and prints `RetentionLineageOwed` with `error_type` `owe_failed`
+  (follow-up 3g-d2-reowe: nothing replays such a run yet). A hand-over carrying more owed sources than a row holds
+  fails the invocation rather than drop one.
+- Every run that cannot replay what is owed (its registries not complete) says `lineage_owed: true` with the reason,
+  and prints the metric, the daily runs that only replay included.
+- The alarm: every failure the handler sees prints `RetentionRunFailed` (a named failure, an unexpected error, which is
+  counted and then raised as before, and a run stopped after too many hand-overs; a timeout, an out-of-memory or a
+  killed invocation prints nothing and shows in the worker's Lambda `Errors` metric and logs instead) and a run that
+  owes prints `RetentionLineageOwed`,
+  EMF lines in
+  the `VoC` namespace with the dimension sets `[service]` and `[service, error_type]` (`registries.py` `emit`).
+  Alerting (Settings, Logs, Alerts: created at runtime, pay per use) gains one metric math alarm, `retention-runs`,
+  summing the two by the retention worker's service over 5 minutes above 0 (`shared/ops_alerts.py`; the logs API is
+  told the service, `OPS_ALERTS_RETENTION_SERVICE`), on the ops alarm topic.
+- The marker's seed (`lib/stacks/review-registries-marker.ts`, `lambda/custom_resources/review_registries_marker.py`;
+  round 2): a second custom resource in VocCoreStack, made after the reset, whose inline Python handler reads one row
+  of `gsi1-by-type`'s `TYPE#PROJECT` on its Create (`Limit` 1, the keys only) and, finding no project, puts a complete
+  marker (each count 0, the deployed release; never over one already there), so a new deployment's erasure by email
+  works out of the box. Finding a project (an upgrade, or the release added again after a rollback below 7.48.00) it
+  writes nothing, and the operator's backfill writes the marker. Update and Delete do nothing. The stack hands it the
+  index and partition its role may Query; its log group is `/aws/lambda/<function>`, which System logs already read
+  (no new statement in the logs API's policy, which is near its size quota). It cannot see a
+  project made before 7.48.00 and since deleted, on a deployment with no live project (off the index and never
+  listed, its threads not): an upgrade from below 7.48.00 runs the backfill whatever the dry run says, and one from
+  7.48.00 or later takes its dry run before the deploy (after it, the dry run may show the seed's marker).
+- The backfill's summary says whether the marker is there and complete, incomplete or absent.
+- The project bundle's importer refuses a project id of the verification fixture's shape unless `--new-ids` remaps it.
+
+### Changed
+
+- The walks no longer carry how their rows are found or a gap state: `found` and `gap_*` left both cursors, and the
+  erasure's walk and the lineage pass rely on the run's result. A 7.84.00 hand-over that found the rows by Scan
+  starts its walk again (every step is idempotent); a run handed over from before this release, with no result yet,
+  reads the marker alone.
+- The erasure job view (`GET /settings/erasure`) returns `review_registries`, `lineage_owed`, `incomplete_reason` and
+  `lineage_owed_replayed`.
+
+### Removed
+
+- The Scan fallback: `lambda/shared/review_registries.py` keeps the marker's rule only; its Scans moved into the
+  backfill script, their one user. The backfill script stays.
+
+### Security
+
+- voc-retention holds no Scan of `voc-projects` (the `ScanDeploymentReviewRows` statement is gone). In its walks'
+  policy: one Query of `gsi1-by-type`, held to `dynamodb:LeadingKeys` `TYPE#PROJECT`, `dynamodb:Attributes` `pk`, `sk`,
+  `gsi1pk`, `gsi1sk` and `dynamodb:Select` `SPECIFIC_ATTRIBUTES`; one BatchGetItem of `PROJECT_IDS` only, held to `pk`
+  and `sk` when the request names attributes (`StringEqualsIfExists` `dynamodb:Select` `SPECIFIC_ATTRIBUTES`). IAM
+  cannot refuse a batch that names no attribute (BatchGetItem sends no `dynamodb:Select`): the code keeps it to the keys,
+  and a test records its projection; a registry row names a project, never a person. The owed row is a GetItem and a
+  conditional PutItem in voc-aggregates, which the role already holds.
+- The marker's seed has a role of its own: one Query of `gsi1-by-type`, held as the worker's is (`TYPE#PROJECT`, the
+  table's and the index's keys, `SPECIFIC_ATTRIBUTES`), and PutItem in voc-projects' `DOCSHARE_IDS` partition only (IAM
+  cannot pin the sort key: its one call, conditioned on the marker's absence, keeps it to the marker), with the
+  table key's actions a write needs.
+
+### Tests
+
+- `lambda/jobs/retention/test/test_registries_required.py`, each test seen failing before its fix: an erasure by email
+  without the marker (or with an incomplete or older one) fails by name in `registries`, deletes nothing and reads
+  nothing of voc-projects but the marker; with a gap it fails the same, reading nothing but the marker, the index's
+  page and one BatchGetItem; with complete registries it completes; an `--unmark` between invocations is seen before
+  it deletes, and one after it deleted owes first. A window without the marker deletes and owes (`deleted_items`, the
+  owed row, the persona untouched), and a later window with the marker that deletes nothing marks the persona and
+  clears the row; a gap during a window deletes and owes; an erasure by author owes and a later erasure replays, as
+  does the daily run of a deployment that retains nothing (and one with nothing owed reads no project row). Round 2: a
+  window that deletes then fails in radar owes, and the next run marks the persona; a run stopped after too many
+  hand-overs owes and is counted, as is an unexpected error, which still raises; a run whose lineage pass ended owes
+  nothing when a later phase fails; an owed-only daily run without the marker says the lineage is owed; an erasure by
+  email resumed mid-phase after an `--unmark` fails before it deletes, and a window resumed so deletes and owes. The
+  owed row's bounds and its versioned clear; one-row pages check the projects in order and find a later gap
+  (`gap_checked` exactly [1, 2, 3]); the handler hands the phase over and resumes it; the reads are keys only; the
+  fixture skip matches the exact shape only; no walk module calls `.scan(`; the 7.84.00 cursors restart; the alarm
+  sums the two metrics by the worker's service, and each EMF line names both dimension sets. Round 2's second set: a
+  failed run whose `owe` fails (too many owed sources, a row that kept changing, an AWS error) still says
+  `lineage_owed` with the could-not-be-recorded reason and prints `owe_failed`; an unexpected error while owing never
+  hides the run's own failure (recorded for a named one, raised for an unexpected one); `TooManyOwedSources` and the
+  "kept changing" failure are named; a hand-over carrying more owed sources than a row holds is refused, not cut; an
+  owed-only run never scans a store; the alarm's sum names exactly its metric ids, and its description says what it
+  cannot count.
+- `lambda/custom_resources/test/test_review_registries_marker.py` (new): a new deployment gets a complete marker, one
+  with a deployment project (a workspace's alone does not count) gets none, a marker already there is never
+  overwritten, Update and Delete do nothing, a missing property fails the deploy, the one Query is `Limit` 1 of the
+  keys on the index, the names are the Python stores', and the handler fits inline. `review-registries-marker.test.ts`:
+  the seed is one resource of the core stack, made after the reset, naming this release; its code is that file,
+  inline; its role may run exactly the index Query and PutItem in `DOCSHARE_IDS`.
+- `lambda/api/test/test_verification_fixture_provider.py`: the project id the provider mints, for any subject, is the
+  shape the gap check passes (replacing a read of the provider's source text).
+- `processing-stack-retention.test.ts`: no Scan on voc-projects; the index Query and the BatchGetItem held to their
+  keys; the worker's service is the one the logs API alarms on (`api-stack-mcp-global-ops.test.ts`).
+  `retention-policy-evaluation.test.ts` evaluates index requests: it allows the index read and the registry batch, and
+  refuses a Scan, an index read of `owner_email`, of whole rows, of a workspace's partition or of a project's
+  documents, and a batch of a project's `META`, of a registry row's other attributes or of whole rows.
+- `test_project_bundle_scripts.py` (the reserved id refused, remapped by `--new-ids`) and
+  `test_backfill_review_registries_script.py` (the dry run reports the marker; the Scans' own tests moved there).
+- `lambda/shared/test/test_agents_store_workspace.py` pops into locals before its assert (CodeQL
+  `py/side-effect-in-assert`, from 7.80.00); the test's meaning is unchanged.
+
+### Not yet
+
+- The marker's reset stays in VocCoreStack (follow-up 3g-d3): it is five resources, and VocApiStack's largest shape
+  (`-c performanceTier=true`, every plugin) synthesizes 425, the 425 gate itself (every plugin: 415; with
+  `-c snapStart=true`: 423). A VocApiStack-only rollback below 7.48.00 still needs the backfill's `--unmark`.
+- 3h's upgrade check is written into 3h's plan entry: no switch code exists yet to extend.
+- The check costs every run that names no workspace and can delete or replay one marker Query, one index Query and one BatchGetItem per 100 live
+  projects (a daily window too), and one marker Query per later invocation. A replay adds the owed sources to the
+  lineage pass's tombstone lookups: each page's keys are its distinct listed ids times the run's sources, its own and
+  the owed (up to 1,000 more), sent in BatchGetItem requests of 100 keys, so ceil(ids x sources / 100) requests a page.
+- Administration's erasure panel does not show `lineage_owed` yet (3g-ui): until it does, owed lineage shows only in
+  the `retention-runs` alarm (when alerting is on), the job row (`GET /settings/erasure`) and the `AUDIT#retention`
+  rows.
+- A run whose owed row could not be written says so, but nothing replays it yet (follow-up 3g-d2-reowe).
+
+### Upgrade notes
+
+- **Run the backfill before you deploy** (above). The marker exists once an applied backfill wrote it, after every
+  writer ran 7.48.0 or later (or once a new deployment's seed wrote it), and only until a full deploy that adds the
+  marker's reset (an upgrade from below 7.48.00, a rollback below it) or an `--unmark` deletes it; the dry run's last
+  line says which. Without it, every erasure by email of the deployment fails by name before it deletes anything;
+  every other run deletes and owes its lineage marks, which the first run after the backfill makes on its own. A
+  workspace's own erasure is not affected.
+- One upgraded from a release older than 7.48.00: deploy, wait for the drain the script names (the longer of the
+  projects API's and its assist twin's timeouts plus 5 minutes after their last update), then run the backfill with
+  `--apply`, whatever the dry run says (a deployment with no live project gets the seed's marker, and the backfill
+  still lists the threads of projects deleted before 7.48.00).
+- A new deployment: nothing to do; its first deploy writes a complete marker.
+- After the deploy, check on the live site that the worker's new reads are allowed: start an erasure by email of an
+  address nobody has (Administration, Privacy & access, Source policies, the erasure panel) and confirm its job row
+  reads `completed` with `review_registries: complete`. A row that reads `failed (AccessDeniedException)` means the
+  walks' policy did not deploy: deploy VocProcessingStack again.
+- An erasure failed with `ReviewRegistriesIncomplete`, or a run says `incomplete`: run the backfill with `--unmark`,
+  then `--apply`, then the erasure again.
+- With alerting on, turn it off and on again after the deploy (Settings, Logs, Alerts), so the new `retention-runs`
+  alarm is created.
+
 ## [7.92.01] - 2026-11-27
 
 Copy only: the page for a workspace address a person cannot open now names who can add them
