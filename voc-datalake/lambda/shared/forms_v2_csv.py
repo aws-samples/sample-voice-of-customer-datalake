@@ -1,7 +1,7 @@
 """A version 2 form's responses as a CSV file (``GET /feedback-forms/{id}/responses?format=csv``, docs/feedback-forms.md
 "Results and responses"), in one of two layouts:
 
-- ``familiar`` (the default since 7.06.00): what Excel and Sheets open as it is. A UTF-8 BOM, one header row
+- ``familiar`` (the default since 7.06.00): what Excel and Sheets open with its accents (comma-separated). A UTF-8 BOM, one header row
   (``Submission ID``, ``Submitted On`` in ISO 8601 UTC, ``Locale``, ``Tags``, the hidden fields by label, then one
   column per question by its primary-language headline, a matrix one per row and a contact question one per field it
   shows), choices joined with ``;`` and an "Other" text as ``Other: …``; ``ids`` adds a second header row of ids.

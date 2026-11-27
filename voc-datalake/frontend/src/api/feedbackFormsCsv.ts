@@ -13,7 +13,7 @@ import { foldAccents } from '../pages/FeedbackForms/model/codes'
 
 type CsvLayout = 'familiar' | 'detailed'
 
-/** Which CSV to download: its layout, and (familiar only) a second header row of ids. */
+/** Which CSV to download: its layout, and whether to add a second header row of ids. */
 export interface CsvChoice {
   readonly layout: CsvLayout
   readonly ids: boolean

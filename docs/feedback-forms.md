@@ -1048,8 +1048,9 @@ language, ending_id, answers, hidden, path, sentiment?}], next_cursor}`, 50 per 
 responses (the newest 10,000) as a CSV file, the Results tab's **Download**, in one of two layouts
 (`layout=familiar|detailed`):
 
-- **`familiar`** (the default): the file Excel and Sheets open as they are. It starts with a UTF-8 BOM
-  (accents intact) and has one header row: `Submission ID`, `Submitted On` (ISO 8601, UTC: `2026-11-20T09:30:00Z`),
+- **`familiar`** (the default): the file Excel and Sheets open as it is where the list separator is a comma (where
+  it is `;`, open it through Excel's Data → From Text/CSV). It starts with a UTF-8 BOM (accents intact) and has one
+  header row: `Submission ID`, `Submitted On` (ISO 8601, UTC: `2026-11-20T09:30:00Z`),
   `Locale`, `Tags` (the form's tags, and `test` for a test response, joined with `;`), one column per hidden field
   (its label, else its id), then one per question by its primary-language headline (a placeholder shown as `[id]`):
   a matrix one per row (`Headline - Row`), a contact question one per field it shows (`Headline - Name`, `- Email`,

@@ -59,8 +59,13 @@ export function familiarCsv(item, rows, withIds) {
   return `\uFEFF${lines.map((line) => line.map((value) => csvField(safe(String(value)))).join(',')).join('\r\n')}\r\n`;
 }
 
-/** `<form-name-slug>-responses-<yyyy-mm-dd>.csv` (the form id when the name gives no slug). */
+const SPECIAL_FOLDS = { ł: 'l', Ł: 'l', ß: 'ss', ø: 'o', Ø: 'o', æ: 'ae', Æ: 'ae', œ: 'oe', Œ: 'oe', đ: 'd', Đ: 'd', ı: 'i', þ: 'th', ð: 'd' };
+
+/** `<form-name-slug>-responses-<yyyy-mm-dd>.csv` as forms_v2_csv.py `_slug` makes it: the special letters folded too, and
+ * no `-` left at the end of the 60-character cut (the form id when the name gives no slug). */
 export function familiarFilename(item) {
-  const slug = (item.name ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).join('-').slice(0, 60);
+  const folded = (item.name ?? '').replace(/[łŁßøØæÆœŒđĐıþð]/gu, (char) => SPECIAL_FOLDS[char] ?? char);
+  const words = folded.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const slug = words.join('-').slice(0, 60).replace(/-+$/u, '');
   return `${slug || item.form_id}-responses-${new Date().toISOString().slice(0, 10)}.csv`;
 }

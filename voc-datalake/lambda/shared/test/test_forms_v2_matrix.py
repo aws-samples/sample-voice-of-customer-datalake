@@ -210,6 +210,20 @@ class TestTheLinkChecks:
             'script': {'responses': 1, 'hidden': {'event': {'filled': 0, 'missing': 1}}},
             'unknown': {'responses': 2, 'hidden': {'event': {'filled': 0, 'missing': 2}}}}
 
+    def test_a_row_counts_towards_a_field_only_when_its_revision_declared_it(self):
+        # (revision 1 had no hidden field: its 9 responses are never "missing" event, which revision 2 added)
+        before = {**_form(), 'hidden_fields': []}
+        rows = [_row({}, revision=1) for _n in range(9)] + [_row({}, hidden={'event': 'Lisbon'}, revision=2),
+                                                             _row({}, revision=2)]
+        health = link_health(_form(), rows, revisions={1: before})
+        assert (health['responses'], health['hidden'], health['warnings']) == (
+            11, {'event': {'filled': 1, 'missing': 1}}, [])
+        assert health['by_channel']['unknown']['hidden'] == {'event': {'filled': 1, 'missing': 1}}
+        # (without the snapshot every row is read on the current revision, which declares it)
+        assert link_health(_form(), rows)['warnings'] == [{'id': 'event', 'kind': 'mostly_missing', 'filled': 1,
+                                                           'total': 11}]
+        assert tally_results(_form(), rows, revisions={1: before})['link_health'] == health
+
     def test_the_results_answer_carries_it(self):
         assert tally_results(_form(), [])['link_health'] == {'responses': 0, 'hidden': {'event': {'filled': 0,
                                                                                                     'missing': 0}},

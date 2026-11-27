@@ -239,7 +239,8 @@ function fills(ids, rows) {
 
 /**
  * The link checks (lambda/shared/forms_v2_results.py `link_health`): per hidden field how many responses had it, by channel
- * too, and a warning for one never filled once 5 came in, or missing from 80 % or more once 10 did.
+ * too, and a warning for one never filled once 5 came in, or missing from 80 % or more once 10 did. The mock keeps no
+ * revision snapshots, so every row is read on the current revision, as the server reads a row whose snapshot it lacks.
  */
 function linkHealthOf(item, rows) {
   const ids = (item.hidden_fields ?? []).map((field) => field.id);

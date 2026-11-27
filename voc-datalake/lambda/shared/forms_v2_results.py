@@ -343,30 +343,58 @@ def _filled(row: ResultRow, hidden_id: str) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _hidden_counts(ids: Sequence[str], rows: Sequence[ResultRow]) -> dict[str, dict[str, int]]:
-    counts = {hid: sum(_filled(row, hid) for row in rows) for hid in ids}
-    return {hid: {'filled': filled, 'missing': len(rows) - filled} for hid, filled in counts.items()}
+Declares = Callable[[ResultRow, str], bool]
 
 
-def link_health(definition: Mapping[str, Any], rows: Sequence[ResultRow]) -> dict[str, Any]:
+def _declared_in(definition: Mapping[str, Any], revisions: Mapping[int, Mapping[str, Any]] | None) -> Declares:
+    """Whether the revision a row answered declared a hidden field: its snapshot's ``hidden_fields`` (``revisions``),
+    the current definition's for a revision with none kept (the current one). A row that names no revision was sent by
+    a version 1 widget: revision 1."""
+    def ids(source: Mapping[str, Any]) -> frozenset[str]:
+        return frozenset(str(field_['id']) for field_ in source.get('hidden_fields') or []
+                         if isinstance(field_, Mapping) and isinstance(field_.get('id'), str))
+    current = ids(definition)
+    by_revision = {int(number): ids(snapshot) for number, snapshot in (revisions or {}).items()}
+
+    def declares(row: ResultRow, hidden_id: str) -> bool:
+        number = row.revision if isinstance(row.revision, int) and not isinstance(row.revision, bool) else 1
+        return hidden_id in by_revision.get(number, current)
+    return declares
+
+
+def _hidden_counts(ids: Sequence[str], rows: Sequence[ResultRow], declares: Declares) -> dict[str, dict[str, int]]:
+    out = {}
+    for hid in ids:
+        asked = [row for row in rows if declares(row, hid)]
+        filled = sum(_filled(row, hid) for row in asked)
+        out[hid] = {'filled': filled, 'missing': len(asked) - filled}
+    return out
+
+
+def link_health(definition: Mapping[str, Any], rows: Sequence[ResultRow], *,
+                revisions: Mapping[int, Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """Whether the links that bring respondents fill the form's hidden fields: ``{responses, hidden: {id: {filled,
-    missing}}, by_channel: {channel: {responses, hidden}}, warnings: [{id, kind, filled, total}]}``. ``never_filled``
-    once ``NEVER_FILLED_AFTER`` responses came in and none had the field; ``mostly_missing`` once
+    missing}}, by_channel: {channel: {responses, hidden}}, warnings: [{id, kind, filled, total}]}``. A row counts
+    towards a field only when the revision it answered declared it (``revisions``: the form's snapshots), so a field
+    added later is never "missing" from the responses sent before it existed; ``total`` is those rows.
+    ``never_filled`` once ``NEVER_FILLED_AFTER`` of them came in and none had the field; ``mostly_missing`` once
     ``MOSTLY_MISSING_AFTER`` came in and at least ``MOSTLY_MISSING_SHARE`` lacked it."""
     ids = [str(field_['id']) for field_ in definition.get('hidden_fields') or []
            if isinstance(field_, Mapping) and isinstance(field_.get('id'), str)]
-    hidden = _hidden_counts(ids, rows)
+    declares = _declared_in(definition, revisions)
+    hidden = _hidden_counts(ids, rows, declares)
     channels: dict[str, list[ResultRow]] = {}
     for row in rows:
         channels.setdefault(row.channel if row.channel in CHANNELS else UNKNOWN_CHANNEL, []).append(row)
-    total, warnings = len(rows), []
+    warnings = []
     for hid, counts in hidden.items():
+        total = counts['filled'] + counts['missing']
         if total >= NEVER_FILLED_AFTER and counts['filled'] == 0:
             warnings.append({'id': hid, 'kind': 'never_filled', 'filled': 0, 'total': total})
         elif total >= MOSTLY_MISSING_AFTER and counts['missing'] >= MOSTLY_MISSING_SHARE * total:
             warnings.append({'id': hid, 'kind': 'mostly_missing', 'filled': counts['filled'], 'total': total})
-    return {'responses': total, 'hidden': hidden,
-            'by_channel': {name: {'responses': len(subset), 'hidden': _hidden_counts(ids, subset)}
+    return {'responses': len(rows), 'hidden': hidden,
+            'by_channel': {name: {'responses': len(subset), 'hidden': _hidden_counts(ids, subset, declares)}
                            for name, subset in sorted(channels.items())},
             'warnings': warnings}
 
@@ -420,7 +448,7 @@ def tally_results(definition: Mapping[str, Any], rows: Iterable[ResultRow], funn
         'questions': [_question_result(q, t, primary, len(kept)) for q, t in zip(questions, tallies, strict=True)],
         'endings': endings, 'hidden': hidden, 'removed_questions': _removed_questions(questions, kept),
         'funnel': None if funnel is None else {**funnel, 'completed': len(kept)},
-        'link_health': link_health(definition, kept),
+        'link_health': link_health(definition, kept, revisions=revisions),
     }
 
 

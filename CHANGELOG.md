@@ -21,7 +21,7 @@ the platform package version.
 
 **Forms data quality**: a matrix question that rates several rows on one scale, hidden fields and earlier answers
 recalled into a form's texts (`{{id}}`, `{{id|fallback}}`), link checks that say when a link leaves a hidden field
-empty, a publish guard for a placeholder respondents would see as written, and a CSV that Excel opens as it is
+empty, a publish guard for a placeholder respondents would see as written, and a CSV that opens in Excel with its accents and one header row
 ([feedback-forms.md](docs/feedback-forms.md#matrix)). No new route or resource: the existing forms routes carry it.
 Ported from the `voc-multiplayer` branch's 7.61.00 onto main's single-tenant API, without workspaces, as #568
 was.
