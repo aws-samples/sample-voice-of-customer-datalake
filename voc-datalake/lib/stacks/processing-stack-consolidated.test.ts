@@ -17,8 +17,9 @@ import { Template } from 'aws-cdk-lib/assertions';
 import { stateMachineDefinition, synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { isRecord, itemAt, recordAt } from '../test-support/guards';
 import {
-  IamPolicySchema, WORKSPACE_STATUS_READ_CONDITION, allowedActions, roleStatements,
+  IamPolicySchema, WORKSPACE_STATUS_READ_CONDITION, allowedActions, allowedWithConditions, roleStatements,
 } from '../test-support/iam-statements';
+import { WORKSPACE_CREATED_AT_ATTRIBUTES } from '../utils/workspace-resolution-grants';
 import { expectSelfInvokeOnly, findWorkerFunction } from '../test-support/worker-function';
 
 function researchDefinition(template: Template): string {
@@ -377,8 +378,38 @@ describe('category reprocess worker', () => {
     ]));
   });
 
-  it('holds exactly Scan/GetItem/UpdateItem on feedback — never Put or Delete', () => {
-    expect(actionsOn('dynamodb:', 'Feedback')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+  it('holds exactly Query/Scan/GetItem/UpdateItem on feedback — never Put or Delete', () => {
+    expect(actionsOn('dynamodb:', 'Feedback'))
+      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+  });
+
+  /** The role's Allow statements with their conditions (the audit-row guard's Denies left out). */
+  const allowed = () => allowedWithConditions(template, worker().Role['Fn::GetAtt'][0]);
+
+  it('queries only gsi1-by-date, only where the partition is one workspace\'s day (a workspace\'s own walk)', () => {
+    const queries = allowed().filter((s) => s.actions.includes('dynamodb:Query'));
+    expect(queries.map((s) => [s.actions, s.condition])).toStrictEqual([[['dynamodb:Query'], {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`WS#ws_${'?'.repeat(26)}#DATE#*`] },
+    }]]);
+    expect(queries.map((s) => s.resource)).toStrictEqual([expect.stringContaining('/index/gsi1-by-date')]);
+    expect(itemAt(queries, 0).resource).toContain('Feedback');
+    // The Scan stays on the table itself (the deployment's job), never on an index.
+    const scans = allowed().filter((s) => s.actions.includes('dynamodb:Scan'));
+    expect(scans.map((s) => [s.resource.includes('/index/'), s.condition])).toStrictEqual([[false, undefined]]);
+  });
+
+  it('reads a workspace META\'s status and its created_at, each held to its own attributes, nothing else', () => {
+    const reads = allowed().filter((s) => s.resource.includes('Workspaces'));
+    expect(reads.map((s) => [s.actions, s.condition])).toStrictEqual([
+      [['dynamodb:GetItem'], WORKSPACE_STATUS_READ_CONDITION],
+      [['dynamodb:GetItem'], { ...WORKSPACE_STATUS_READ_CONDITION,
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...WORKSPACE_CREATED_AT_ATTRIBUTES] } }],
+    ]);
+    // LOCKSTEP: the attributes the Python layer projects (lambda/shared/ws_repo.py CREATED_AT_READ_ATTRIBUTES).
+    const source = readFileSync(join(__dirname, '../../lambda/shared/ws_repo.py'), 'utf-8');
+    const declared = /^CREATED_AT_READ_ATTRIBUTES: Final = \(([^)]*)\)/m.exec(source)?.[1] ?? '';
+    expect(declared.split(',').map((name) => name.trim().replaceAll("'", '')).filter(Boolean))
+      .toStrictEqual([...WORKSPACE_CREATED_AT_ATTRIBUTES]);
   });
 
   it('holds exactly GetItem/UpdateItem on aggregates — the worker never creates or lists jobs', () => {

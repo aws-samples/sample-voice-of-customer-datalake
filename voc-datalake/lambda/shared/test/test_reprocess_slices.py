@@ -1,5 +1,5 @@
 """The reprocess slice (shared/reprocess_slices.py) and the lineage helpers (shared/reprocess_lineage.py)."""
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 from shared import reprocess_lineage as lineage
 from shared import reprocess_slices as slices
 from shared.converse import ConverseResult
+from shared.ws_repo import OutOfScopeError, WorkspaceScope
 
 
 def _days(value: object) -> int:
@@ -176,3 +177,98 @@ class TestLineage:
         assert lineage.job_actor({}) == {'sub': 'unknown', 'kind': 'admin'}
         assert lineage.change_stamps({'sub': 's', 'kind': 'admin'}, 'now') == {
             'updated_by': {'sub': 's', 'kind': 'admin'}, 'updated_at': 'now', 'change_reason': 'reprocess'}
+
+
+class TestTheWorkspaceDayWalk:
+    """A workspace's job reads its own day partitions of gsi1-by-date (``read_day_page``), the days ``walk_days``."""
+
+    WS: ClassVar[str] = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+    @pytest.mark.parametrize(('job_slice', 'window', 'expected'), [
+        (slices.ReprocessSlice(), (None, None), ('2026-11-09', '2026-11-20')),
+        (slices.ReprocessSlice(days=None), ('2026-11-12', '2026-11-14'), ('2026-11-12', '2026-11-14')),
+        (slices.ReprocessSlice(days=None), ('2026-01-01', '2027-01-01'), ('2026-11-09', '2026-11-20')),
+        (slices.ReprocessSlice(days=None), ('2026-11-12', None), ('2026-11-12', '2026-11-20')),
+        (slices.ReprocessSlice(days=None), (None, '2026-11-12'), ('2026-11-09', '2026-11-12')),
+        # A review-date window never chooses the days: a review's processing day is not its own date.
+        (slices.ReprocessSlice(days=None, date_basis='review'), ('2019-01-01', '2019-02-01'),
+         ('2026-11-09', '2026-11-20')),
+        (slices.ReprocessSlice(days=None), ('2025-01-01', '2025-02-01'), ('2026-11-09', '2025-02-01')),
+    ])
+    def test_the_days(self, job_slice, window, expected):
+        assert slices.walk_days(job_slice, window, date(2026, 11, 9), date(2026, 11, 20)) == expected
+
+    @pytest.mark.parametrize(('cursor', 'walks'), [
+        (None, True), ({}, True), ({'day': '2026-11-10'}, True), ({'day': '2026-11-10', 'start': {'pk': 'x'}}, True),
+        ({'pk': 'WS#x#SOURCE#web', 'sk': 'FEEDBACK#a'}, False),
+    ])
+    def test_which_cursor_walks(self, cursor, walks):
+        assert slices.is_walk_cursor(cursor) is walks
+
+    def _page(self, response: dict, cursor: dict | None) -> tuple[dict, MagicMock]:
+        table = MagicMock()
+        table.query.return_value = response
+        page = slices.read_day_page(table, cursor, slices.ReprocessSlice(sources=('web',)), (None, None), 25,
+                                    WorkspaceScope(self.WS), ('2026-11-09', '2026-11-11'))
+        return page, table
+
+    def test_one_query_of_the_first_days_partition_through_the_layer(self):
+        page, table = self._page({'Items': [{'pk': 'a'}]}, None)
+
+        assert page == {'Items': [{'pk': 'a'}], 'Day': '2026-11-09', 'LastEvaluatedKey': {'day': '2026-11-10'}}
+        [call] = table.query.call_args_list
+        assert (call.kwargs['IndexName'], call.kwargs['Limit']) == ('gsi1-by-date', 25)
+        assert call.kwargs['KeyConditionExpression'] == '#p = :p'
+        assert call.kwargs['ExpressionAttributeNames'] == {'#p': 'gsi1pk'}
+        assert call.kwargs['ExpressionAttributeValues'] == {':p': f'WS#{self.WS}#DATE#2026-11-09'}
+        assert call.kwargs['FilterExpression'] == slices.read_filter(
+            slices.ReprocessSlice(sources=('web',)), (None, None), WorkspaceScope(self.WS))
+        assert 'ExclusiveStartKey' not in call.kwargs
+
+    def test_a_days_last_key_stays_on_that_day(self):
+        start = {'pk': f'WS#{self.WS}#SOURCE#web', 'sk': 'FEEDBACK#a', 'gsi1pk': f'WS#{self.WS}#DATE#2026-11-10',
+                 'gsi1sk': 't#a'}
+        page, table = self._page({'Items': [], 'LastEvaluatedKey': start}, {'day': '2026-11-10', 'start': start})
+
+        assert page['LastEvaluatedKey'] == {'day': '2026-11-10', 'start': start}
+        assert table.query.call_args.kwargs['ExclusiveStartKey'] == start
+
+    def test_the_last_day_ends_the_walk(self):
+        page, _table = self._page({'Items': []}, {'day': '2026-11-11'})
+
+        assert page == {'Items': [], 'Day': '2026-11-11'}
+
+    def test_a_day_past_the_last_reads_nothing(self):
+        page, table = self._page({'Items': []}, {'day': '2026-11-12'})
+
+        assert page == {'Items': [], 'Day': '2026-11-12'}
+        table.query.assert_not_called()
+
+    @pytest.mark.parametrize('day', [
+        'yesterday', '', None, 20261110,
+        # Shapes date.fromisoformat takes that sort past '2026-11-11' as strings: unchecked, they would end the walk
+        # with 2026-11-10 and 2026-11-11 unread.
+        '20261110', '2026-W46-2', '2026-11-10T00:00:00',
+    ])
+    def test_a_cursor_day_that_is_no_yyyy_mm_dd_date_is_refused_never_skipped(self, day):
+        with pytest.raises(ValueError, match=r'walk cursor day must be a date \(YYYY-MM-DD\)'):
+            self._page({'Items': []}, {'day': day})
+
+    def test_a_cursor_day_that_is_no_real_date_is_refused(self):
+        table = MagicMock()
+        with pytest.raises(ValueError, match=r'walk cursor day must be a real date'):
+            slices.read_day_page(table, {'day': '2026-02-30'}, slices.ReprocessSlice(), (None, None), 25,
+                                 WorkspaceScope(self.WS), ('2026-02-01', '2026-03-31'))
+        table.query.assert_not_called()
+
+    def test_a_start_key_outside_the_workspace_is_refused_by_the_layer(self):
+        start = {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#a', 'gsi1pk': 'DATE#2026-11-10', 'gsi1sk': 't#a'}
+        with pytest.raises(OutOfScopeError):
+            self._page({'Items': []}, {'day': '2026-11-10', 'start': start})
+
+    def test_the_position_after_a_review(self):
+        item = {'pk': 'p', 'sk': 's', 'gsi1pk': 'g', 'gsi1sk': 'h', 'category': 'c'}
+
+        assert slices.position_after({'Day': '2026-11-10'}, item) == {
+            'day': '2026-11-10', 'start': {'pk': 'p', 'sk': 's', 'gsi1pk': 'g', 'gsi1sk': 'h'}}
+        assert slices.position_after({'Items': [item]}, item) == {'pk': 'p', 'sk': 's'}

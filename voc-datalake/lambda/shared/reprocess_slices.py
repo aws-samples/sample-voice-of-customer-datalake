@@ -16,6 +16,24 @@ The slice a category-reprocess job replays (TENETS.md D3): which reviews it read
 
 Data-layer only: the settings API parses and stores a slice on the job row, the
 worker reads it back (``slice_from_job``) and filters with ``admits``.
+
+How a page is read (``read_page``, ``read_day_page``):
+
+* The deployment's job: a Scan of voc-feedback, filtered (``read_filter``); its cursor is the Scan's
+  ``LastEvaluatedKey`` (``{pk, sk}``).
+* A workspace's job: Queries of voc-feedback's ``gsi1-by-date``, one day partition ``WS#{ws}#DATE#{day}`` at a time,
+  oldest first, with the same filter (``walk_days`` chooses the days: from the first day the workspace can hold, the
+  day before its ``META`` ``created_at``, to today UTC, clipped to a processed-date window). The processor stamps
+  ``gsi1pk`` with the day it processed a review (lambda/processor/handler.py ``build_feedback_item``: the same day as
+  ``date``), and only an active workspace is written to, so no review of a workspace is filed before it existed,
+  whatever its own ``source_created_at``. Its cursor is ``{day, start}`` (``WALK_DAY``, ``WALK_START``: the day
+  partition, and the Query's ``LastEvaluatedKey`` in it, absent at the day's start). No writer sets or removes a
+  review's ``gsi1pk`` / ``gsi1sk`` or ``date`` after the processor's put (the reprocess moves ``gsi2pk`` and
+  ``gsi3pk`` only; shared/source_updates.py and shared/csv_updates.py keep them), so a review never moves under the
+  walk. Both facts are held by guards that name this walk: lambda/shared/test/test_feedback_day_index_writers.py (no
+  production write of ``gsi1pk`` / ``gsi1sk``, or update naming ``date``, but the processor's conditional first put)
+  and lib/customer-data-deletes.test.ts "voc-feedback: only the processor puts an item" (no other role may put one). A workspace's job still Scans (through the workspace layer, ``WorkspaceTable.scan``) when its cursor is a
+  Scan's (``is_walk_cursor`` false: checkpointed before the walk) or its workspace names no creation time.
 """
 from __future__ import annotations
 
@@ -28,14 +46,21 @@ from boto3.dynamodb.conditions import Attr, ConditionBase
 
 from shared.api import ALL_TIME_DAYS
 from shared.feedback import DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, basis_date
+from shared.indexes import FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_DATE_POSITION
 from shared.retention import FEEDBACK_SK_PREFIX
+from shared.scoped_query import query_partition
 from shared.timestamps import ISO_DAY_RE
-from shared.ws_repo import WORKSPACE_KEY_PREFIX, WorkspaceScope, is_workspace_key, ws_table
+from shared.ws_repo import WORKSPACE_KEY_PREFIX, WorkspaceScope, date_pk, is_workspace_key, ws_table
 
 DATE_BASIS_PROCESSED: Final = 'processed'
 DATE_BASES: Final = (DATE_BASIS_PROCESSED, DATE_BASIS_REVIEW)
 MAX_SLICE_VALUES: Final = 50
 MAX_SLICE_VALUE_CHARS: Final = 128
+#: A workspace walk's cursor: the day partition being read, and the Query's ``LastEvaluatedKey`` in it.
+WALK_DAY: Final = 'day'
+WALK_START: Final = 'start'
+#: The key of a walk page naming the day it was read from (``position_after``).
+PAGE_DAY: Final = 'Day'
 
 
 @dataclass(frozen=True)
@@ -236,7 +261,8 @@ def read_page(
 ) -> dict:
     """One page of the slice: a Scan whose filter names the sources, categories and processed-date window; for a
     workspace's job (``scope``) through the workspace layer (shared/ws_repo.py ``WorkspaceTable.scan``), which
-    answers only ``WS#{ws}#…`` rows.
+    answers only ``WS#{ws}#…`` rows. A workspace's job reads this way only where its day walk cannot start
+    (``read_day_page``, the module docstring).
 
     Sources are matched on ``source_platform``, never on the partition: the processor stores an item under
     ``SOURCE#{brand_name}`` when it has a brand name, so a Query of ``SOURCE#{source}`` would skip it (the
@@ -248,3 +274,71 @@ def read_page(
     if scope is not None:
         return ws_table(scope, table).scan(**kwargs)
     return table.scan(**kwargs)
+
+
+def is_walk_cursor(cursor: Mapping[str, Any] | None) -> bool:
+    """Whether ``cursor`` is where a day walk goes on: none yet, or a ``{day, start}`` one (a Scan's is ``{pk, sk}``)."""
+    return not cursor or WALK_DAY in cursor
+
+
+def walk_days(job_slice: ReprocessSlice, window: tuple[str | None, str | None], first_possible: date,
+              today: date) -> tuple[str, str]:
+    """The first and last day partition a workspace's walk reads: ``first_possible`` to ``today``, inclusive, narrowed
+    to a processed-date window (a review-date window does not choose the days: a review's processing day is not its
+    own date). The first may come after the last: nothing to read."""
+    first, last = first_possible.isoformat(), today.isoformat()
+    if job_slice.date_basis == DATE_BASIS_PROCESSED:
+        since, until = window
+        first = max(first, since) if since else first
+        last = min(last, until) if until else last
+    return first, last
+
+
+def walk_day(raw: Any) -> str:
+    """A walk cursor's day, held to ``YYYY-MM-DD`` and a real date. The walk compares days as strings, so another
+    shape ``date.fromisoformat`` takes (``20261110``, ``2026-W46-2``) would sort past the last day and end the walk
+    with days unread: it is refused instead (ValueError; the job fails and is started again, never skips days)."""
+    if not isinstance(raw, str) or not ISO_DAY_RE.fullmatch(raw):
+        raise ValueError(f'walk cursor day must be a date (YYYY-MM-DD), got {raw!r}')
+    try:
+        date.fromisoformat(raw)
+    except ValueError as e:
+        raise ValueError(f'walk cursor day must be a real date (YYYY-MM-DD), got {raw!r}') from e
+    return raw
+
+
+def read_day_page(
+    table: Any, cursor: Mapping[str, Any] | None, job_slice: ReprocessSlice, window: tuple[str | None, str | None],
+    page_size: int, scope: WorkspaceScope, days: tuple[str, str],
+) -> dict:
+    """One page of a workspace's walk (the module docstring): a Query of the cursor's day partition (the first of
+    ``days`` without a cursor) on gsi1-by-date, through the workspace layer (shared/scoped_query.py
+    ``query_partition``), with ``read_filter``'s filter. Returns the page's ``Items``, its day (``PAGE_DAY``) and,
+    unless the walk is done, the next page's cursor as ``LastEvaluatedKey``: the same day from the Query's last key,
+    else the next day while it is not past the last of ``days``. A cursor whose day is past the last reads nothing; one
+    whose day is not a real ``YYYY-MM-DD`` date raises ValueError (``walk_day``): the job fails, never skips days."""
+    day = walk_day(cursor[WALK_DAY]) if cursor else days[0]
+    following_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    if day > days[1]:
+        return {'Items': [], PAGE_DAY: day}
+    kwargs: dict[str, Any] = {'IndexName': FEEDBACK_BY_DATE_INDEX, 'Limit': page_size,
+                              'FilterExpression': read_filter(job_slice, window, scope)}
+    start = cursor.get(WALK_START) if cursor else None
+    if start:
+        kwargs['ExclusiveStartKey'] = dict(start)
+    response = query_partition(scope, table, 'gsi1pk', date_pk(scope, day), **kwargs)
+    page: dict[str, Any] = {'Items': response.get('Items') or [], PAGE_DAY: day}
+    last_key = response.get('LastEvaluatedKey')
+    if last_key:
+        page['LastEvaluatedKey'] = {WALK_DAY: day, WALK_START: dict(last_key)}
+    elif following_day <= days[1]:
+        page['LastEvaluatedKey'] = {WALK_DAY: following_day}
+    return page
+
+
+def position_after(page: Mapping[str, Any], item: Mapping[str, Any]) -> dict[str, Any]:
+    """The cursor that goes on just after ``item`` of ``page``: in a walk's page its day and its gsi1 position
+    (shared/indexes.py ``FEEDBACK_BY_DATE_POSITION``), in a Scan's its table key."""
+    if PAGE_DAY in page:
+        return {WALK_DAY: page[PAGE_DAY], WALK_START: {name: item[name] for name in FEEDBACK_BY_DATE_POSITION}}
+    return {'pk': item['pk'], 'sk': item['sk']}

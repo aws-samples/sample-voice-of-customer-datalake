@@ -1,6 +1,6 @@
 """Fixtures for the category reprocess worker: moto-backed feedback + aggregates
 tables, so in-place conditional updates are really evaluated."""
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -10,7 +10,7 @@ from moto import mock_aws
 from jobs.category_reprocess import handler
 from jobs.conftest import *  # noqa: F403 — every shared job fixture
 from shared import reprocess_jobs as jobs
-from shared.test.moto_tables import create_pk_sk_table
+from shared.test.moto_tables import create_feedback_table_by_date_and_id, create_pk_sk_table
 
 CATEGORIES = [
     {'name': 'shipping', 'description': 'Shipping', 'subcategories': [{'name': 'late'}]},
@@ -22,7 +22,8 @@ CATEGORIES = [
 def tables():
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
-        feedback = create_pk_sk_table(handler.FEEDBACK_TABLE, resource)
+        # With its gsi1-by-date (all attributes, as core-stack.ts): a workspace's job reads its day partitions there.
+        feedback = create_feedback_table_by_date_and_id(handler.FEEDBACK_TABLE, resource)
         aggregates = create_pk_sk_table(handler.AGGREGATES_TABLE, resource)
         aggregates.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': CATEGORIES})
         with patch('jobs.category_reprocess.handler.get_dynamodb_resource', return_value=resource), \
@@ -35,6 +36,15 @@ def tables():
 def workspaces_active():
     """A workspace job's status check (7.28.00) answers active; test_workspace_reprocess.py runs the real one."""
     with patch.object(handler, 'workspace_active', lambda _scope: True):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def workspaces_created_a_week_ago():
+    """A workspace job's walk starts a week back (its META's created_at, read from voc-workspaces);
+    test_workspace_day_walk.py reads the real row."""
+    first = datetime.now(UTC).date() - timedelta(days=7)
+    with patch.object(handler, 'first_possible_day', lambda _scope: first):
         yield
 
 

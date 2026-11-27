@@ -17,6 +17,31 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.94.00] - 2026-11-27
+
+Multi-workspace, scale: a workspace's category reprocess reads only its own reviews. It paged the whole feedback
+table and kept the workspace's rows (read and billed for every workspace's and the deployment's); it now reads the
+workspace's own day partitions of the by-date index ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Changed
+
+- A workspace's reprocess job (`lambda/jobs/category_reprocess/`) walks the days of `gsi1-by-date`
+  (`WS#{ws}#DATE#{day}`, the day each review was processed): one Query per day, oldest first, from the day before
+  the workspace was created (its `META` `created_at`) to today, narrowed by the job's processed-date window, with the
+  job's source and category filters as before and its review-date window applied after the read. Its checkpoint is
+  the day and the Query's position, so a stopped job resumes where it was. Nothing a reprocess writes moves an item
+  between days, so the walk cannot skip or repeat one.
+- A job checkpointed before this release, and a workspace whose `META` has no `created_at`, finish with the Scan as
+  before (logged). The deployment's reprocess is unchanged.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). IAM: the reprocess role gets Query on the feedback table's `gsi1-by-date`
+  index for one workspace's day partitions (`dynamodb:LeadingKeys` `WS#<one id>#DATE#*`) and a read of a workspace's
+  `META` held to `pk`, `sk` and `created_at`. The export worker's day Query uses the same grant helper (unchanged
+  statement). Cost: about one small Query per day of the workspace's life, plus its own reviews, whatever the table's
+  size. A workspace's erasure still scans the table (a later slice).
+
 ## [7.92.01] - 2026-11-27
 
 Copy only: the page for a workspace address a person cannot open now names who can add them

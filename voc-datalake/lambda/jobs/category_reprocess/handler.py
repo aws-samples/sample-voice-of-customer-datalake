@@ -27,7 +27,7 @@ Invariants:
     fresh ``worker_token`` (a hand-over passes its token in the event); a
     duplicate delivery fails the claim or its next checkpoint and exits.
   * Slices (TENETS.md D3, ``shared/reprocess_slices.py``): a job replays the
-    reviews of its sources (a Scan filtered on ``source_platform``), categories and
+    reviews of its sources (filtered on ``source_platform``), categories and
     processed- or review-date window; everything else is read past uncounted.
   * Cost ceiling: after ``MAX_REPROCESS_ITEMS`` scanned reviews the job ends as
     'partial' (``stopped_at_ceiling``) with a ``resume_from`` cursor, which
@@ -53,14 +53,19 @@ Invariants:
     (the event's ``workspace_id``, written by the settings API from the caller's
     resolved membership) reads its row in the workspace's own job partition
     (``WS#{ws}#JOB#category_reprocess``) and fails unless the row names that
-    workspace; it scans only ``WS#{ws}#`` items, through the workspace layer
-    (shared/ws_repo.py ``WorkspaceTable.scan``), re-derives them with that
+    workspace; it reads only its own reviews: Queries of voc-feedback's ``gsi1-by-date``,
+    one day partition ``WS#{ws}#DATE#{day}`` at a time through the workspace layer, from
+    the day before its ``META`` ``created_at`` to today UTC (clipped to a processed-date
+    window), its cursor ``{day, start}`` (``scan_page``, ``shared/reprocess_slices.py``
+    ``read_day_page``); only a job checkpointed with a Scan cursor before that, or a
+    workspace with no ``created_at``, still Scans its ``WS#{ws}#`` items (shared/ws_repo.py
+    ``WorkspaceTable.scan``, which reads the whole table). It re-derives them with that
     workspace's own categories and dimensions (shared/workspace_config.py: a
     workspace that saved none gets the defaults, never the deployment's rows),
     writes every update through ``ws_table`` (``WS#{ws}#CATEGORY#…`` /
     ``WS#{ws}#URGENCY#…``), keeps the old versions under ``ws/{ws}/silver/``, and
     bumps the workspace's own ``data_version`` (after a page only when it rewrote
-    a review: most pages of the whole-table Scan hold none of the workspace's). Every review's index partitions
+    a review: many of the walk's days hold none of the slice). Every review's index partitions
     follow its own partition's scope (``category_partition``, ``urgency_partition``). The counters follow
     through the stream: the aggregator applies each rewrite's MODIFY in the
     review's scope, so a workspace's counters move and the deployment's do not
@@ -76,7 +81,7 @@ Invariants:
 import functools
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import boto3
@@ -118,11 +123,20 @@ from shared.jobs import has_time_left
 from shared.logging import logger, metrics
 from shared.raw_versions import raw_root
 from shared.reprocess_lineage import AnswerRecorder, change_stamps, job_actor, job_config
-from shared.reprocess_slices import ReprocessSlice, read_page, slice_from_job
+from shared.reprocess_slices import (
+    ReprocessSlice,
+    is_walk_cursor,
+    position_after,
+    read_day_page,
+    read_page,
+    slice_from_job,
+    walk_days,
+)
 from shared.reprocess_slices import admits as slice_admits
 from shared.source_profiles import PII_SUMMARY_ONLY
 from shared.tables import get_workspaces_table
 from shared.timestamps import now_iso, parse_iso
+from shared.timestamps import utc_today as today_utc  # the walk's last day; tests patch handler.today_utc
 from shared.usefulness import USEFULNESS_FIELD, USEFULNESS_UNRATED, item_usefulness, stored_band
 from shared.ws_repo import (
     WORKSPACE_FIELD,
@@ -132,6 +146,7 @@ from shared.ws_repo import (
     message_scope,
     partition_scope,
     urgency_pk,
+    workspace_created_at,
 )
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
@@ -139,7 +154,7 @@ AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 PRIMARY_LANGUAGE = os.environ.get('PRIMARY_LANGUAGE', 'en')
 
-# Items per Scan page — one checkpoint per page, so this bounds how much work a
+# Items per page (a Scan's or a day's Query) — one checkpoint per page, so this bounds how much work a
 # crash or a cancel can lose / let through (each item is one model call).
 PAGE_SIZE = 25
 # Stop and re-invoke when less than this remains of the Lambda's budget
@@ -200,12 +215,25 @@ def urgency_partition(item: dict, urgency: str) -> str:
 # Slice read
 # ============================================
 
+def first_possible_day(scope: WorkspaceScope) -> date | None:
+    """The first day partition a workspace's walk reads: the UTC day before its ``META`` ``created_at`` (one day of
+    margin for the clocks of the API that created it and of the processor), or None when the row names no readable
+    creation time (the job then Scans, as before). A failed read raises (the job fails and can be started again)."""
+    created = parse_iso(workspace_created_at(get_workspaces_table(), scope))
+    return None if created is None else created.astimezone(UTC).date() - timedelta(days=1)
+
+
 def scan_page(
     feedback_table: Any, cursor: dict | None, job_slice: ReprocessSlice, window: tuple[str | None, str | None],
-    scope: WorkspaceScope | None = None,
+    scope: WorkspaceScope | None = None, first_day: date | None = None,
 ) -> dict:
-    """One page of the job's slice (a filtered Scan; ``shared.reprocess_slices``): ``scope``'s rows only, through
-    the workspace layer, for a workspace's job."""
+    """One page of the job's slice (``shared.reprocess_slices``). The deployment's job: a filtered Scan. A workspace's
+    job: its own day partitions of gsi1-by-date from ``first_day`` (``first_possible_day``) to today, through the
+    workspace layer; a filtered Scan of ``scope``'s rows (``WorkspaceTable.scan``) only for a job checkpointed with a
+    Scan cursor or a workspace with no ``first_day``."""
+    if scope is not None and first_day is not None and is_walk_cursor(cursor):
+        days = walk_days(job_slice, window, first_day, today_utc())
+        return read_day_page(feedback_table, cursor, job_slice, window, PAGE_SIZE, scope, days)
     return read_page(feedback_table, cursor, job_slice, window, PAGE_SIZE, **jobs.scope_option(scope))
 
 
@@ -728,7 +756,7 @@ def _reprocess_pages(
     feedback_table: Any, aggregates_table: Any, context: Any, job_id: str, job: dict, counters: dict,
     cursor: dict | None, throttle_restarts: int, token: str, scope: WorkspaceScope | None = None,
 ) -> dict:
-    """Walk the scan from ``cursor`` until the job finishes, hands over or is cancelled.
+    """Walk the slice from ``cursor`` (``scan_page``) until the job finishes, hands over or is cancelled.
 
     ``scope``: a workspace's job, which reads that workspace's categories and dimensions (the defaults where it
     saved none, never the deployment's rows), its rows only, and writes through the workspace layer.
@@ -746,15 +774,16 @@ def _reprocess_pages(
     # later reads the same days as the first invocation did.
     job_slice = slice_from_job(job)
     window = job_slice.window(parse_iso(job.get('created_at')) or datetime.now(UTC))
+    walk = _walk_option(scope, job_id)
     while True:
         # A workspace's job asks before each page whether its workspace is still active (a hard delete's fence:
         # the delete waits out this cache and one invocation, so the job's last write lands before it sweeps).
         _require_active(scope)
         updated_before = counters['updated']
-        page = scan_page(feedback_table, cursor, job_slice, window, **jobs.scope_option(scope))
+        page = scan_page(feedback_table, cursor, job_slice, window, **jobs.scope_option(scope), **walk)
         for item in page.get('Items', []):
             if not slice_admits(item, job_slice, window, **jobs.scope_option(scope)):
-                cursor = {'pk': item['pk'], 'sk': item['sk']}
+                cursor = position_after(page, item)
                 continue
             if counters['scanned'] >= jobs.MAX_REPROCESS_ITEMS:
                 return _finish_at_ceiling(aggregates_table, job_id, counters, token, cursor, **jobs.scope_option(scope))
@@ -773,7 +802,7 @@ def _reprocess_pages(
                     aggregates_table, context, job_id, counters, cursor, throttle_restarts + 1, token,
                     **jobs.scope_option(scope),
                 )
-            cursor = {'pk': item['pk'], 'sk': item['sk']}
+            cursor = position_after(page, item)
             throttle_restarts = 0
         cursor = page.get('LastEvaluatedKey') or None
         if cursor is None:
@@ -782,8 +811,9 @@ def _reprocess_pages(
             metrics.add_metric(name="CategoryReprocessCompleted", unit="Count", value=1)
             return {'status': jobs.STATUS_COMPLETED, **_result_counters(counters)}
         if scope is not None and not has_time_left(context, TIME_RESERVE_MS):
-            # A workspace's job may read many pages of other scopes' rows in a row, where the per-review check above
-            # never runs: it hands over between pages too, from the page's cursor (run_job's bump follows).
+            # A workspace's job may read many pages without a review of its slice in a row (days with none, rows the
+            # filter leaves out; a Scan's other scopes' rows), where the per-review check above never runs: it hands
+            # over between pages too, from the page's cursor (run_job's bump follows).
             return _checkpoint_and_hand_over(aggregates_table, context, job_id, counters, cursor, throttle_restarts,
                                              token, **jobs.scope_option(scope))
         if jobs.checkpoint(aggregates_table, job_id, counters, cursor, token, **jobs.scope_option(scope)) is None:
@@ -792,10 +822,21 @@ def _reprocess_pages(
         _publish_page(aggregates_table, scope, rewrote=counters['updated'] > updated_before)
 
 
+def _walk_option(scope: WorkspaceScope | None, job_id: str) -> dict[str, date | None]:
+    """``scan_page``'s ``first_day=`` for a workspace's job (its walk starts there; read once an invocation); nothing
+    for the deployment's, whose call stays as it was."""
+    if scope is None:
+        return {}
+    first_day = first_possible_day(scope)
+    if first_day is None:
+        logger.warning("Reprocess job's workspace names no creation time: scanning", extra={'job_id': job_id})
+    return {'first_day': first_day}
+
+
 def _publish_page(aggregates_table: Any, scope: WorkspaceScope | None, *, rewrote: bool) -> None:
-    """Each page checkpoint publishes that page's rewrites to the cached reads. A workspace's job pages through the
-    whole table, most pages holding none of its rows: it bumps only after a page that rewrote one, so its read cache
-    is not emptied for nothing (the deployment's bumps every page, as before)."""
+    """Each page checkpoint publishes that page's rewrites to the cached reads. A workspace's job reads a page for
+    every day it walks, many of them rewriting nothing: it bumps only after a page that rewrote a review, so its read
+    cache is not emptied for nothing (the deployment's bumps every page, as before)."""
     if scope is None or rewrote:
         bump_data_version(aggregates_table, **jobs.scope_option(scope))
 

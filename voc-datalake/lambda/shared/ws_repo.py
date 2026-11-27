@@ -1021,6 +1021,23 @@ class WorkspaceStatusCheck:
         return workspace_is_active(self._table, scope, self._cache)
 
 
+#: Exactly what ``workspace_created_at`` reads of a workspace's ``META``, with its keys: the category reprocess's role
+#: is held to these (lib/utils/workspace-resolution-grants.ts ``WORKSPACE_CREATED_AT_ATTRIBUTES``).
+CREATED_AT_READ_ATTRIBUTES: Final = ('pk', 'sk', 'created_at')
+
+
+def workspace_created_at(table: Any, scope: WorkspaceScope) -> str | None:
+    """When the workspace was created: its ``META``'s ``created_at`` (voc-workspaces ``WS#{ws}`` / ``META``, written
+    once by shared/platform_workspaces.py), or None when the row or the field is missing or not a string. One strongly
+    consistent GetItem projected to ``CREATED_AT_READ_ATTRIBUTES``; a failed read raises. Nothing of a workspace's data
+    is older than this: every writer asks ``workspace_is_active`` first (the category reprocess's day walk starts
+    there)."""
+    found = consistent_item(table, {'pk': control_partition(scope, 'meta'), 'sk': LOOKUP_SORT_KEY},
+                            CREATED_AT_READ_ATTRIBUTES)
+    created = None if found is None else found.get('created_at')
+    return created if isinstance(created, str) and created else None
+
+
 #: The listing partition of every workspace in voc-workspaces (shared/platform_workspaces.py ``LISTING_PK``).
 LISTING_PARTITION: Final = 'WORKSPACES'
 #: A member's inverse row's partition (shared/workspace_members.py ``USER#{sub}`` / ``WS#{ws}``).
@@ -1694,8 +1711,10 @@ class WorkspaceTable:
         other attribute in it is refused. It never widens what is answered: the filter and the row check do that.
 
         A Scan still reads, and is billed for, the whole table: the filter only narrows what comes back. Its caller
-        is a workspace's category reprocess (jobs/category_reprocess), as the deployment's reprocess scans the whole
-        table for its own rows.
+        is a workspace's category reprocess (jobs/category_reprocess) in two cases only: a job checkpointed with a
+        Scan cursor before the reprocess read the workspace's own day partitions (shared/reprocess_slices.py
+        ``read_day_page``), and a workspace whose ``META`` names no ``created_at``. Every other workspace job Queries
+        its ``WS#{ws}#DATE#{day}`` partitions of gsi1-by-date.
         """
         self._check_options('scan', kwargs)
         request = dict(kwargs)

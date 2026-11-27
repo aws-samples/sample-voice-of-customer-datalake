@@ -56,7 +56,7 @@ from shared.dynamo_values import as_count, plain
 from shared.earliest_date import EARLIEST_DATE_ATTRIBUTE, earliest_date_key, parse_iso_date
 from shared.form_test_responses import TEST_RESPONSES_PK
 from shared.import_runs import DETAIL_SK, LIST_PK
-from shared.indexes import FEEDBACK_BY_DATE_INDEX
+from shared.indexes import FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_DATE_POSITION
 from shared.metric_keys import APP_FEEDBACK_SENTINEL_FIELD, DAILY_TOTAL_PK, metric_partition
 from shared.onboarding import FEEDBACK_FORM_PK
 from shared.retention import ERASURE_JOB_PREFIX
@@ -82,8 +82,6 @@ ENTITIES: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs'
                    'feedback_form_tests', *LIBRARY_ENTITIES, *AGENT_ENTITIES)
 #: The most one JSONL file holds (before compression): a longer entity continues in its next file.
 FILE_CAP: Final = 256 * 1024 * 1024
-#: The index key of a feedback row: its table key and gsi1's, the cursor that resumes after it.
-_FEEDBACK_KEY: Final = ('pk', 'sk', 'gsi1pk', 'gsi1sk')
 #: What an export never carries of a row: a hash of a person's value (it could confirm a guessed one): an erasure's
 #: value hash, and an `account_created` audit row's email hash (shared/workspace_members.py).
 _DROPPED: Final = {'erasure_jobs': ('value_hash',), 'audit': ('email_sha256',)}
@@ -327,7 +325,7 @@ class Source:
         day, last_day = str(cursor['day']), str(cursor['last'])
         page = self._feedback.query('gsi1pk', date_pk(self.scope, day), IndexName=FEEDBACK_BY_DATE_INDEX,
                                     Limit=PAGE_LIMIT, **start(cursor.get('start')))
-        rows = [Row(item, {'day': day, 'last': last_day, 'start': key(item, _FEEDBACK_KEY)})
+        rows = [Row(item, {'day': day, 'last': last_day, 'start': key(item, FEEDBACK_BY_DATE_POSITION)})
                 for item in items(page)]
         following = last_key(page)
         if following is not None:

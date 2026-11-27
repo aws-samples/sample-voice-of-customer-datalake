@@ -440,6 +440,29 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     expect(writers).toStrictEqual(WORKSPACE_WRITERS);
   });
 
+  // A workspace's category reprocess walks voc-feedback's gsi1-by-date day partitions instead of a Scan (7.94.00,
+  // lambda/shared/reprocess_slices.py `walk_days` / `read_day_page`). It finds every review only because a review's
+  // gsi1pk day is the day it was processed, stamped by the processor's first put alone and never rewritten after
+  // (the Python half: lambda/shared/test/test_feedback_day_index_writers.py). Any role that could put a whole item
+  // could file a review under another day, or before the workspace existed, and the walk would miss it. So the
+  // processor's role is the only one that may put an item there; BatchWriteItem (which can put) only where it deletes
+  // (TABLE_DELETERS above: the workspace delete's own partitions, after its tombstones; its code sends no PutRequest).
+  it('voc-feedback: only the processor puts an item (the reprocess day walk rests on it)', () => {
+    const FEEDBACK_PUT = /^dynamodb:(PutItem|BatchWriteItem|PartiQLInsert|\*)$/;
+    const putters: Record<string, string[]> = {};
+    for (const grant of grants.filter(onTable('FeedbackTable'))) {
+      for (const action of grant.actions.filter((a) => FEEDBACK_PUT.test(a))) {
+        putters[grant.role] = [...new Set([...(putters[grant.role] ?? []), action])].sort(byCodeUnit);
+      }
+    }
+    expect(putters, 'a new put on voc-feedback can file a review under a day the reprocess walk '
+      + '(lambda/shared/reprocess_slices.py walk_days) never reads: keep gsi1pk the processing day, or the walk Scans')
+      .toStrictEqual({
+        'VocProcessingStack/ProcessingLambdaRole': ['dynamodb:PutItem'],
+        [DELETE_ROLE]: ['dynamodb:BatchWriteItem'],
+      });
+  });
+
   it.each(Object.entries(RAW_BUCKET_DELETERS))('raw bucket %s: exactly the allowlisted roles delete', (prefix, allowed) => {
     expect(prefixDeleters(prefix)).toStrictEqual(Object.keys(allowed).sort(byCodeUnit));
   });

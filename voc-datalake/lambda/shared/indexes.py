@@ -14,6 +14,9 @@ The streaming Lambda has its own TypeScript mirror
 
 # voc-feedback table
 FEEDBACK_BY_DATE_INDEX = 'gsi1-by-date'
+# A review's position in gsi1-by-date: the table's key and the index's, what a Query's ExclusiveStartKey names
+# (the reprocess day walk's cursor, shared/reprocess_slices.py; the workspace export's, jobs/workspace_export).
+FEEDBACK_BY_DATE_POSITION = ('pk', 'sk', 'gsi1pk', 'gsi1sk')
 FEEDBACK_BY_CATEGORY_INDEX = 'gsi2-by-category'
 FEEDBACK_BY_URGENCY_INDEX = 'gsi3-by-urgency'
 # gsi4pk (FEEDBACK#{id}, or WS#{ws}#FEEDBACK#{id} in a workspace)

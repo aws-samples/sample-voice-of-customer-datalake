@@ -135,7 +135,7 @@ A DynamoDB or Cognito fault answers a fixed 500, never the AWS error text, which
 import json
 import os
 from collections.abc import Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -174,6 +174,7 @@ from shared.platform_workspaces import (
 )
 from shared.request_body import json_object_body
 from shared.tables import cached_table
+from shared.timestamps import utc_today as _utc_today
 from shared.trial_pause import PauseTables, resume
 from shared.trial_state import new_trial, parse_extension, stored_trial, trial_summary
 from shared.trials import convert_trial, extend_trial, trial_view
@@ -637,10 +638,6 @@ def convert_workspace_trial(ws: str) -> dict:
         logger.exception('Error converting a trial')
         raise ServiceError(FAILED_CONVERT_TRIAL) from exc
     return {'trial': trial}
-
-
-def _utc_today() -> date:
-    return datetime.now(UTC).date()
 
 
 def get_cost_table() -> Any:

@@ -86,6 +86,18 @@ const FEEDBACK_BY_DATE_INDEX = 'gsi1-by-date';
 export const EXPORT_JOB_PARTITION = `WS#${WORKSPACE_ID_PATTERN}#JOB#export`;
 /** One workspace's day partitions of that index. */
 export const WORKSPACE_DATE_PARTITIONS = `WS#${WORKSPACE_ID_PATTERN}#DATE#*`;
+
+/** Query of voc-feedback's gsi1-by-date only, where the partition is one workspace's day
+ *  ({@link WORKSPACE_DATE_PARTITIONS}; the code pins which): the export's feedback read, and a workspace's category
+ *  reprocess (lambda/shared/reprocess_slices.py `read_day_page`). Never the table, never a Scan. */
+export function grantWorkspaceDaysQuery(role: iam.IRole, feedbackTable: dynamodb.ITable): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'QueryFeedbackByDate',
+    actions: ['dynamodb:Query'],
+    resources: [`${feedbackTable.tableArn}/index/${FEEDBACK_BY_DATE_INDEX}`],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [WORKSPACE_DATE_PARTITIONS] } },
+  }));
+}
 /** Every partition of one workspace in voc-aggregates. */
 const WORKSPACE_AGGREGATE_PARTITIONS = `WS#${WORKSPACE_ID_PATTERN}#*`;
 /** voc-memory's status index (lambda/shared/indexes.py MEMORY_BY_STATUS_INDEX). */
@@ -190,12 +202,7 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
   } = props;
   const functionName = uniqueName(WORKSPACE_EXPORT_FUNCTION_BASE_NAME);
   const role = workerRole(worker, 'ExportRole');
-  role.addToPolicy(new iam.PolicyStatement({
-    sid: 'QueryFeedbackByDate',
-    actions: ['dynamodb:Query'],
-    resources: [`${feedbackTable.tableArn}/index/${FEEDBACK_BY_DATE_INDEX}`],
-    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [WORKSPACE_DATE_PARTITIONS] } },
-  }));
+  grantWorkspaceDaysQuery(role, feedbackTable);
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'ReadWorkspaceAggregates',
     actions: ['dynamodb:GetItem', 'dynamodb:Query'],

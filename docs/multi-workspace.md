@@ -1481,10 +1481,22 @@ A plugin's config list is not a credential and is not in SSM: it is a row of voc
 - **The hard delete** sweeps a workspace's `WS#{ws}#COST` rows with its settings (they are its data).
 - Also counted: reviews ingested, scraper and browser sessions, Comprehend and Translate characters. (A workspace's
   credentials parameters cost nothing a month: decision 19.)
-- Scale today (this repo keeps no separate load model, so the notes live here): a workspace's erasure (7.09.00) and its category
-  reprocess (7.13.00) each Scan the whole voc-feedback table, so N workspaces' live jobs are N whole-table Scans,
-  whatever each workspace's size; one live job of each kind per workspace bounds it. The fix is to read only the
-  workspace's own index partitions (a Query of its `WS#{ws}#DATE#…` gsi1 days, or a per-workspace index).
+- Scale today (this repo keeps no separate load model, so the notes live here): a workspace's erasure (7.09.00)
+  Scans the whole voc-feedback table, so N workspaces' live erasures are N whole-table Scans, whatever each
+  workspace's size; one live job per workspace bounds it. The fix is to read only the workspace's own index
+  partitions (a Query of its `WS#{ws}#DATE#…` gsi1 days, or a per-workspace index). A workspace's category reprocess
+  does that now: it Queries `gsi1-by-date` one day partition `WS#{ws}#DATE#{day}` at a time (pages of 25, oldest
+  first, the slice's source and category filters on each Query), from the UTC day before its `META`'s `created_at`
+  (a day's margin for the clocks; the processor files a review under the day it processed it, never the review's
+  own date, and writes only into an active workspace, so nothing of a workspace is filed earlier) to today, clipped
+  to a processed-date window (`lambda/shared/reprocess_slices.py` `walk_days`, each day read by `read_day_page`); a
+  review-date window reads every day and each review read is filtered by its own date (`reprocess_slices.py` `admits`,
+  which `lambda/jobs/category_reprocess/handler.py` applies). It reads, and is billed for, its own reviews plus one Query and one checkpoint per day it walks
+  (a workspace a year old: about 365 small Queries), whatever the table's size; its role may Query only that index,
+  where the partition is one workspace's day (`WS#{one id}#DATE#*`), and read a `META`'s `created_at` (held to it).
+  Two cases still Scan the table through the workspace layer: a job checkpointed with a Scan cursor before this
+  change (it finishes as it started) and a workspace whose `META` names no `created_at`. The deployment's own
+  reprocess Scans the table as before.
   The cost rollup (slice B) is one invocation a day (no reserved concurrency, which a Workshop Studio account cannot
   spare; two runs at once write the same whole items): two days × ⌈groups / 50⌉ Insights
   queries (about 3 a day at 100 Lambdas), each scanning that day's Lambda logs (billed per GB scanned, so it grows

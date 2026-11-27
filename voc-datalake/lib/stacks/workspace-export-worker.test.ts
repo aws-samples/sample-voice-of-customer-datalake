@@ -5,7 +5,7 @@
 import type { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { IamPolicySchema, isAttachedToRole, roleStatements, statementActions } from '../test-support/iam-statements';
+import { allowedWithConditions, roleStatements } from '../test-support/iam-statements';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { expectSelfInvokeOnly, findWorkerFunction, workerSettings } from '../test-support/worker-function';
 import { byCodeUnit } from '../utils/compare';
@@ -26,13 +26,7 @@ const keys = (partitions: string[]) => ({ 'ForAllValues:StringLike': { 'dynamodb
 const worker = () => findWorkerFunction(template, 'voc-workspace-export-');
 const statements = () => roleStatements(template, worker().Role['Fn::GetAtt'][0]);
 /** The role's Allow statements with their conditions (the audit-row guard's Denies left out). */
-const allowed = () => Object.values(template.findResources('AWS::IAM::Policy'))
-  .map((resource) => IamPolicySchema.parse(resource).Properties)
-  .filter((policy) => isAttachedToRole(policy, worker().Role['Fn::GetAtt'][0]))
-  .flatMap((policy) => policy.PolicyDocument.Statement)
-  .filter((statement) => (statement.Effect ?? 'Allow') === 'Allow')
-  .map((statement) => ({ actions: statementActions(statement), resource: JSON.stringify(statement.Resource),
-    condition: statement.Condition }));
+const allowed = () => allowedWithConditions(template, worker().Role['Fn::GetAtt'][0]);
 const on = (table: string) => allowed()
   .filter((s) => s.actions.some((action) => action.startsWith('dynamodb:')) && s.resource.includes(table))
   .map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))

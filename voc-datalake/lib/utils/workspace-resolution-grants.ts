@@ -88,6 +88,20 @@ export function grantWorkspaceStatusRead(role: iam.IRole, workspacesTable: dynam
   grantWorkspaceAttributeRead(role, workspacesTable, WORKSPACE_STATUS_ATTRIBUTES);
 }
 
+/** What the category reprocess reads of a workspace's `META` to know the first day its data can hold: the keys and
+ *  `created_at` (LOCKSTEP with lambda/shared/ws_repo.py `CREATED_AT_READ_ATTRIBUTES`, which
+ *  lib/stacks/processing-stack-consolidated.test.ts holds equal). */
+export const WORKSPACE_CREATED_AT_ATTRIBUTES = ['pk', 'sk', 'created_at'] as const;
+
+/** The status read ({@link grantWorkspaceStatusRead}) and its sibling, GetItem on voc-workspaces' `WS#*` rows held to
+ *  {@link WORKSPACE_CREATED_AT_ATTRIBUTES}: a workspace's category reprocess stops when its workspace is not active
+ *  (7.28.00) and starts its day walk at its creation (lambda/shared/ws_repo.py `workspace_created_at`). Never a
+ *  workspace's name, slug or members. */
+export function grantWorkspaceStatusAndCreatedAtReads(role: iam.IRole, workspacesTable: dynamodb.ITable): void {
+  grantWorkspaceStatusRead(role, workspacesTable);
+  grantWorkspaceAttributeRead(role, workspacesTable, WORKSPACE_CREATED_AT_ATTRIBUTES);
+}
+
 /** The reads of a writer that checks a member's role and the workspace's status and nothing else (the assistant's
  *  stream Lambda: lambda/stream/src/assistant/session/workspace-member.ts at a run's start, workspace-status.ts before
  *  each session write): the status read's statement held to {@link ROLE_AND_STATUS_ATTRIBUTES}, never a workspace's

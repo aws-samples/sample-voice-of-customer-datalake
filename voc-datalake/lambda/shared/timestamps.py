@@ -9,7 +9,7 @@ can import it. A test that freezes the time patches the caller's imported name (
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Final
 
 #: A calendar day as every stored ``YYYY-MM-DD`` field spells it (the shape only, not a valid date).
@@ -30,3 +30,9 @@ def parse_iso(value: object) -> datetime | None:
 def now_iso(now: datetime | None = None) -> str:
     """``now`` (default: the current time) as an ISO-8601 string; a naive or local ``now`` is taken as written."""
     return (now or datetime.now(UTC)).isoformat()
+
+
+def utc_today() -> date:
+    """Today's date in UTC. A caller keeps it under its own imported name as its test seam (``patch.object(module,
+    '<name>', return_value=...)``)."""
+    return datetime.now(UTC).date()

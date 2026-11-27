@@ -29,7 +29,7 @@ import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { WORKSPACE_HARD_DELETE_ENV, workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
 import { createWorkspaceDeleteWorker, type WorkspaceDeleteWorkerProps } from './workspace-delete-worker';
-import { createWorkspaceExportWorker } from './workspace-export-worker';
+import { createWorkspaceExportWorker, grantWorkspaceDaysQuery } from './workspace-export-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
@@ -37,7 +37,7 @@ import { appVersion } from '../utils/connector-version';
 import { grantSilverHistoryPut, grantWorkspaceSilverHistoryPut } from '../utils/silver-history-grants';
 import { WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 import { grantReadAndWrites } from '../utils/table-write-grants';
-import { grantWorkspaceStatusRead } from '../utils/workspace-resolution-grants';
+import { grantWorkspaceStatusAndCreatedAtReads } from '../utils/workspace-resolution-grants';
 import { grantRealtimePublish, type RealtimePublishing } from '../utils/realtime';
 import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
 import { createAggregatorRole, createProcessorRole, grantProcessorDropCount, grantTextAnalysis } from './processing-roles';
@@ -538,7 +538,7 @@ export class VocProcessingStack extends VocStack {
 
   /**
    * The category reprocess worker: re-categorises stored feedback in place after
-   * the category configuration changes (lambda/jobs/category_reprocess). Scans
+   * the category configuration changes (lambda/jobs/category_reprocess). Reads
    * voc-feedback page by page, checkpoints the job row in aggregates, and hands
    * over to a fresh async invocation of ITSELF before its 15-minute ceiling.
    *
@@ -559,8 +559,9 @@ export class VocProcessingStack extends VocStack {
     const role = new iam.Role(this, 'CategoryReprocessRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
     });
-    // A slice by source is a Scan filtered on source_platform (shared/reprocess_slices.py): no Query.
+    // The deployment's job Scans; a workspace's Queries its own gsi1 days (Scans only for an old cursor or no created_at).
     deps.feedbackTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    grantWorkspaceDaysQuery(role, deps.feedbackTable);
     // Category config + model-picker override (GetItem); the job row and its
     // lock are only ever UPDATEd by the worker (claim, checkpoint, finish,
     // release). Creating jobs (PutItem) and the latest-job lookup (Query) are
@@ -575,7 +576,8 @@ export class VocProcessingStack extends VocStack {
     grantSilverHistoryPut(deps.rawDataBucket, role);
     grantWorkspaceSilverHistoryPut(deps.rawDataBucket, role);
     deps.kmsKey.grantEncryptDecrypt(role);
-    grantWorkspaceStatusRead(role, deps.workspacesTable); // a workspace job stops when it is not active (7.28.00)
+    // A workspace job stops when it is not active (7.28.00) and walks its days from its creation.
+    grantWorkspaceStatusAndCreatedAtReads(role, deps.workspacesTable);
     // 'enrichment'/'utilities' surfaces are repointable via the picker (issue #96).
     grantClaudeModels(role, 'invoke');
     grantTextAnalysis(role, ['comprehend:DetectSentiment', 'comprehend:DetectDominantLanguage']);

@@ -156,6 +156,27 @@ export function roleStatements(
     .filter((statement) => !isAuditRowGuardStatement(statement)).map(normalize));
 }
 
+/** An Allow statement with its condition: its actions, its `Resource` serialized and its `Condition`. */
+export interface ConditionedStatement {
+  actions: string[];
+  resource: string;
+  condition: unknown;
+}
+
+/**
+ * The Allow statements, with their conditions, of every `AWS::IAM::Policy` attached to the role with logical id
+ * `roleLogicalId` (the audit-row guard's Denies left out with every other Deny).
+ */
+export function allowedWithConditions(template: Template, roleLogicalId: string): ConditionedStatement[] {
+  return Object.values(template.findResources('AWS::IAM::Policy'))
+    .map((resource) => IamPolicySchema.parse(resource).Properties)
+    .filter((policy) => isAttachedToRole(policy, roleLogicalId))
+    .flatMap((policy) => policy.PolicyDocument.Statement)
+    .filter((statement) => (statement.Effect ?? 'Allow') === 'Allow')
+    .map((statement) => ({ actions: statementActions(statement), resource: JSON.stringify(statement.Resource),
+      condition: statement.Condition }));
+}
+
 /** Sorted, de-duplicated Allow actions starting with `prefix` on resources naming `resourceFragment`. */
 export function allowedActions(statements: NormalizedStatement[], prefix: string, resourceFragment: string): string[] {
   const actions = statements
