@@ -29,8 +29,9 @@ Python dependency updates from Dependabot (#571, #565, #564), landed together wi
 
 ### Upgrade notes
 
-- The two layers' new pins are built by the next `cdk deploy` (layers are bundled at synth); a local venv takes them
-  with `pip install -r voc-datalake/requirements-dev.txt`. Nothing else to do.
+- The two layers' new pins are built by the next `cdk deploy` (layers are bundled at synth). A local venv takes them
+  with `pip install -r requirements-dev.txt -r lambda/layers/ingestion-deps/requirements.txt -r
+  lambda/layers/processing-deps/requirements.txt` in `voc-datalake/` (pydantic is pinned only in the layers).
 
 ## [7.05.00] - 2026-11-25
 
