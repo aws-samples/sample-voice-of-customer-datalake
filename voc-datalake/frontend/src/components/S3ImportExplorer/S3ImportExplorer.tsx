@@ -9,6 +9,8 @@
  * - Reprocess a file through the import pipeline (S3ImportReprocess.tsx)
  * - Delete files
  *
+ * In its card's place (s3ImportPlace.ts): a workspace's own files in its scope, the deployment's in the deployment's.
+ *
  * @module components/S3ImportExplorer
  */
 
@@ -26,6 +28,7 @@ import clsx from 'clsx'
 import { formatFileSize } from '../../utils/file'
 import { formatDateTime } from '../../utils/dateUtils'
 import S3ImportReprocess, { ReprocessFileButton } from './S3ImportReprocess'
+import { useS3ImportPlace } from './s3ImportPlace'
 import { useExpiringValue } from '../../hooks/useExpiringValue'
 import { Tooltip } from '../Tooltip/Tooltip'
 
@@ -163,29 +166,33 @@ export default function S3ImportExplorer() {
   const [uploadError, showTemporaryError] = useExpiringValue<string>(5000)
   const [reprocessKey, setReprocessKey] = useState<string | null>(null)
 
+  // The card's place (s3ImportPlace.ts): every call goes in its scope, every read is cached under it.
+  const place = useS3ImportPlace()
+  const { scope } = place
+
   const { data: sourcesData } = useQuery({
-    queryKey: ['s3-import-sources'],
-    queryFn: () => api.getS3ImportSources(),
+    queryKey: place.sourcesKey(),
+    queryFn: () => api.getS3ImportSources(scope),
   })
 
   const { data: filesData, isLoading: loadingFiles, refetch: refetchFiles } = useQuery({
-    queryKey: ['s3-import-files', selectedSource],
-    queryFn: () => api.getS3ImportFiles({ source: selectedSource === '' ? undefined : selectedSource }),
+    queryKey: place.filesKey(selectedSource),
+    queryFn: () => api.getS3ImportFiles({ source: selectedSource === '' ? undefined : selectedSource }, scope),
   })
 
   const createSourceMutation = useMutation({
-    mutationFn: (name: string) => api.createS3ImportSource(name),
+    mutationFn: (name: string) => api.createS3ImportSource(name, scope),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['s3-import-sources'] })
+      void queryClient.invalidateQueries({ queryKey: place.sourcesKey() })
       setNewSourceName('')
       setShowNewSource(false)
     },
   })
 
   const deleteFileMutation = useMutation({
-    mutationFn: (key: string) => api.deleteS3ImportFile(key),
+    mutationFn: (key: string) => api.deleteS3ImportFile(key, scope),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['s3-import-files'] })
+      void queryClient.invalidateQueries({ queryKey: place.filesKey() })
     },
   })
 
@@ -211,7 +218,7 @@ export default function S3ImportExplorer() {
 
     // `File.type` is '' (not undefined) when the browser cannot tell.
     const contentType = file.type === '' ? FALLBACK_CONTENT_TYPE : file.type
-    const result = await api.getS3UploadUrl(file.name, source, contentType)
+    const result = await api.getS3UploadUrl(file.name, source, contentType, scope)
       .then(async (urlResponse) => {
         const uploadUrl = urlResponse.upload_url ?? ''
         if (!urlResponse.success || uploadUrl === '') {
@@ -229,7 +236,7 @@ export default function S3ImportExplorer() {
     removeUploadingFile(file.name)
     if (result) {
       showTemporarySuccess(file.name)
-      void queryClient.invalidateQueries({ queryKey: ['s3-import-files'] })
+      void queryClient.invalidateQueries({ queryKey: place.filesKey() })
     }
     return result
   }

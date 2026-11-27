@@ -25,6 +25,10 @@
  *    the delete is one `POST /me/workspaces/current/delete` (`confirm_slug`, `legal_basis`) with its id, the last
  *    dialog says it is being deleted, "Go to my workspaces" is a full page load to `/` that no longer offers it, and
  *    `/workspace/acme-popup/` is "Workspace not found" (its `GET /me/workspaces/current` a 404).
+ * 9. The S3 import explorer follows its place (7.88.00): in acme (Administration → Sources, the S3 import card) it
+ *    starts empty, and an upload asks for its URL with acme's `X-Workspace-Id` and lists the file; a second workspace
+ *    the spec creates (acme-depot, the caller its admin) lists none of it; the platform admin's deployment view inside
+ *    acme (`?scope=deployment`) reads without the header and lists the deployment's seeded files, not acme's.
  *
  * MOCK ONLY: on a deployment these would create a workspace and change real memberships (the deployment-side
  * lifecycle, which deletes what it made, is workspace-lifecycle.spec.ts). The mock's state lives in its process: the
@@ -57,10 +61,20 @@ const TEXT = {
   renamed: 'Acme Outfitters Trail Co-op',
   popup: 'Acme Outfitters Pop-up',
   deleteReason: 'Pop-up season over, ticket #2207',
+  depot: 'Acme Outfitters Depot',
+  noImportFiles: 'No files found',
 } as const
 
 /** The workspace step 8 creates and deletes (mock-workspaces.js: platform admins create one). */
 const POPUP_SLUG = 'acme-popup'
+
+/** The workspace step 9 creates: a second place of the caller's, as its admin. */
+const DEPOT_SLUG = 'acme-depot'
+/** Administration → Sources, the S3 import card opened (adminPaths.ts `/admin/sources/plugins/<source>`). */
+const S3_IMPORT_CARD = '/admin/sources/plugins/s3_import'
+/** The file step 9 uploads in acme, and one of the deployment's seeded files (mock-sources.js). */
+const IMPORT_FILE = 'acme-ridge-notes.csv'
+const DEPLOYMENT_IMPORT_FILE = 'june_reviews.csv'
 
 /** platformWorkspacesApi.ts WORKSPACE_NAME_MAX (platform_workspaces.py validated_workspace_name). */
 const NAME_MAX = 80
@@ -99,6 +113,17 @@ function apiRequestsTo(page: Page, method: string, pathname: string): Request[] 
   page.on('request', (request) => {
     const url = new URL(request.url())
     if (url.origin === origin && url.pathname === pathname && request.method() === method) seen.push(request)
+  })
+  return seen
+}
+
+/** Every `method` request to the S3 import route `route` from now on, at the API's origin or through the dev
+ *  server's `/api` proxy (a dev server started without VITE_API_ENDPOINT). */
+function s3ImportRequests(page: Page, method: string, route: string): Request[] {
+  const seen: Request[] = []
+  page.on('request', (request) => {
+    const { pathname } = new URL(request.url())
+    if ((pathname === route || pathname === `/api${route}`) && request.method() === method) seen.push(request)
   })
   return seen
 }
@@ -353,6 +378,40 @@ test.describe('workspace administration', () => {
       await page.goto(site(`/workspace/${POPUP_SLUG}/`), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: 'Workspace not found' })).toBeVisible()
       await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0)
+    })
+  })
+
+  test("a workspace admin's S3 import files stay in the workspace; another workspace and the deployment keep theirs", async ({ page }, testInfo) => {
+    await assertStep(page, roleOf(testInfo), 'workspace-admin-09-s3-import', async () => {
+      // Another workspace of the caller's (its admin), so the steps above keep theirs.
+      expect((await apiCall('admin', 'POST', '/platform/workspaces', { name: TEXT.depot, slug: DEPOT_SLUG })).status).toBe(201)
+      const acmeId = await workspaceId('acme')
+      expect(acmeId).not.toBe('')
+      const uploads = s3ImportRequests(page, 'POST', '/s3-import/upload-url')
+
+      // In acme: its own place, empty at first, then the uploaded file.
+      await page.goto(site(`/workspace/acme${S3_IMPORT_CARD}`), { waitUntil: 'domcontentloaded' })
+      await expect(page.getByText(TEXT.noImportFiles)).toBeVisible()
+      await page.getByLabel('Drop files here or click to upload').setInputFiles(
+        { name: IMPORT_FILE, mimeType: 'text/csv', buffer: Buffer.from('text\nThe boots held up on the ridge\n') })
+      await expect(page.getByText(`Uploaded ${IMPORT_FILE}`)).toBeVisible()
+      await expect(page.getByText(IMPORT_FILE, { exact: true })).toBeVisible()
+      expect(uploads.map((request) => request.headers()['x-workspace-id'])).toStrictEqual([acmeId])
+      // The deployment's seeded files are not acme's.
+      await expect(page.getByText(DEPLOYMENT_IMPORT_FILE, { exact: true })).toHaveCount(0)
+
+      // In the other workspace: none of acme's.
+      await page.goto(site(`/workspace/${DEPOT_SLUG}${S3_IMPORT_CARD}`), { waitUntil: 'domcontentloaded' })
+      await expect(page.getByText(TEXT.noImportFiles)).toBeVisible()
+      await expect(page.getByText(IMPORT_FILE, { exact: true })).toHaveCount(0)
+
+      // The platform admin's deployment view, inside acme: the deployment's own files, not acme's, no header.
+      const deploymentReads = s3ImportRequests(page, 'GET', '/s3-import/files')
+      await page.goto(site(`/workspace/acme${S3_IMPORT_CARD}?scope=deployment`), { waitUntil: 'domcontentloaded' })
+      await expect(page.getByText(DEPLOYMENT_IMPORT_FILE, { exact: true })).toBeVisible()
+      await expect(page.getByText(IMPORT_FILE, { exact: true })).toHaveCount(0)
+      expect(deploymentReads.length).toBeGreaterThan(0)
+      expect(deploymentReads.every((request) => request.headers()['x-workspace-id'] === undefined)).toBe(true)
     })
   })
 })

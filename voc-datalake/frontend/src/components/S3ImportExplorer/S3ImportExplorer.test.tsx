@@ -2,9 +2,14 @@
  * @fileoverview Tests for S3ImportExplorer component.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { renderWithQueryClient } from '../../test/query-client'
+import type { QueryClient } from '@tanstack/react-query'
+import { createTestQueryClient, renderWithQueryClient } from '../../test/query-client'
+import { ACME, JUNIPER } from '../../test/workspaceFixtures'
+import { ConfigScopeContext } from '../../workspace/configScope'
+import { currentWorkspace, setCurrentWorkspace, type CurrentWorkspace } from '../../workspace/currentWorkspace'
+import type { RequestScope } from '../../api/baseUrl'
 import { useLocale } from '../../test/i18n-locale'
 import { timerOnCleanup } from '../../test/timeoutWatch'
 import deComponents from '../../../public/locales/de/components.json'
@@ -149,7 +154,7 @@ describe('S3ImportExplorer', () => {
       await user.click(screen.getByRole('button', { name: /create/i }))
 
       await waitFor(() => {
-        expect(mockCreateS3ImportSource).toHaveBeenCalledWith('new-source')
+        expect(mockCreateS3ImportSource).toHaveBeenCalledWith('new-source', 'workspace')
       })
     })
 
@@ -195,7 +200,7 @@ describe('S3ImportExplorer', () => {
       await uploadFile(new File(['a,b'], 'reviews.csv', { type: 'text/csv' }))
 
       expect(await screen.findByText('Uploaded reviews.csv')).toBeInTheDocument()
-      expect(mockGetS3UploadUrl).toHaveBeenCalledWith('reviews.csv', 'default', 'text/csv')
+      expect(mockGetS3UploadUrl).toHaveBeenCalledWith('reviews.csv', 'default', 'text/csv', 'workspace')
       expect(fetch).toHaveBeenCalledWith('https://s3.example/put', expect.objectContaining({ method: 'PUT', headers: { 'Content-Type': 'text/csv' } }))
     })
 
@@ -298,7 +303,7 @@ describe('S3ImportExplorer', () => {
       await user.click(await screen.findByRole('button', { name: 'Delete file' }))
 
       await waitFor(() => {
-        expect(mockDeleteS3ImportFile).toHaveBeenCalledWith('default/file1.json')
+        expect(mockDeleteS3ImportFile).toHaveBeenCalledWith('default/file1.json', 'workspace')
       })
     })
   })
@@ -327,6 +332,93 @@ describe('S3ImportExplorer', () => {
     })
   })
 })
+
+// The S3 import API acts in the workspace X-Workspace-Id names (7.86.00): the explorer sends its card's scope
+// (workspace/configScope.ts) and caches each place's sources and files under their own keys.
+/** The explorer cached its sources and every-source files under the deployment's place. */
+function expectDeploymentKeys(client: QueryClient): void {
+  expect(client.getQueryCache().findAll().map((query) => query.queryKey)).toStrictEqual(expect.arrayContaining([
+    ['s3-import-sources', 'deployment', null],
+    ['s3-import-files', 'deployment', null, ''],
+  ]))
+}
+
+describe('S3ImportExplorer in a place', () => {
+  beforeEach(resetApiMocks)
+  afterEach(() => setCurrentWorkspace(null))
+
+  /** Mount in `scope` with a client the spec can read, keeping answers (so a stale entry would show). */
+  function renderIn(scope: RequestScope, client: QueryClient = createTestQueryClient({ gcTime: Infinity, staleTime: Infinity })) {
+    const view = renderWithQueryClient(
+      <ConfigScopeContext.Provider value={scope}><S3ImportExplorer /></ConfigScopeContext.Provider>, client)
+    return { client, view }
+  }
+
+  const cachedKeys = (client: QueryClient) => client.getQueryCache().findAll().map((query) => query.queryKey)
+
+  it("asks in the workspace's scope inside one and keys its reads by the workspace", async () => {
+    setCurrentWorkspace(ACME)
+    const { client } = renderIn('workspace')
+
+    await waitFor(() => expect(mockGetS3ImportFiles).toHaveBeenCalledWith({ source: undefined }, 'workspace'))
+    expect(mockGetS3ImportSources).toHaveBeenCalledWith('workspace')
+    expect(cachedKeys(client)).toStrictEqual(expect.arrayContaining([
+      ['s3-import-sources', 'workspace', ACME.id],
+      ['s3-import-files', 'workspace', ACME.id, ''],
+    ]))
+  })
+
+  it("asks in the deployment's scope inside a workspace too, under the deployment's keys", async () => {
+    setCurrentWorkspace(ACME)
+    const { client } = renderIn('deployment')
+
+    await waitFor(() => expect(mockGetS3ImportFiles).toHaveBeenCalledWith({ source: undefined }, 'deployment'))
+    expect(mockGetS3ImportSources).toHaveBeenCalledWith('deployment')
+    expectDeploymentKeys(client)
+  })
+
+  it("is the deployment's outside every workspace (no header is sent there)", async () => {
+    const { client } = renderIn('workspace')
+
+    await waitFor(() => expect(mockGetS3ImportFiles).toHaveBeenCalledWith({ source: undefined }, 'workspace'))
+    expectDeploymentKeys(client)
+  })
+
+  it("never shows another workspace's cached files after a switch", async () => {
+    const pendingJuniper = new Promise<never>(() => {})
+    mockGetS3ImportFiles.mockImplementation(() => (currentWorkspaceIs(ACME)
+      ? Promise.resolve({ files: [importFile({ key: 'reviews/acme.csv', filename: 'acme.csv' })], bucket: 'test-bucket' })
+      : pendingJuniper))
+    setCurrentWorkspace(ACME)
+    renderIn('workspace')
+    expect(await screen.findByText('acme.csv')).toBeInTheDocument()
+
+    act(() => setCurrentWorkspace(JUNIPER))
+
+    await waitFor(() => expect(screen.queryByText('acme.csv')).not.toBeInTheDocument())
+  })
+
+  it("a delete refreshes its own place's files and leaves another place's cache alone", async () => {
+    const client = createTestQueryClient({ gcTime: Infinity, staleTime: Infinity })
+    const otherPlace = ['s3-import-files', 'workspace', JUNIPER.id, ''] as const
+    client.setQueryData(otherPlace, { files: [], bucket: 'test-bucket' })
+    setCurrentWorkspace(ACME)
+    mockGetS3ImportFiles.mockResolvedValue({ files: [importFile()], bucket: 'test-bucket' })
+    const user = userEvent.setup()
+    renderIn('workspace', client)
+
+    await user.click(await screen.findByRole('button', { name: 'Delete file' }))
+
+    await waitFor(() => expect(mockGetS3ImportFiles).toHaveBeenCalledTimes(2))
+    expect(mockDeleteS3ImportFile).toHaveBeenCalledWith('default/file1.json', 'workspace')
+    expect(client.getQueryState(otherPlace)?.isInvalidated).toBe(false)
+  })
+})
+
+/** Whether the app is in `workspace` now (the mock answers by it, as the server does by the header). */
+function currentWorkspaceIs(workspace: CurrentWorkspace): boolean {
+  return currentWorkspace()?.id === workspace.id
+}
 
 // Every suite above runs under `en`, where a literal and its translation are the
 // same string; this one renders under `de`, so it fails if a literal comes back.

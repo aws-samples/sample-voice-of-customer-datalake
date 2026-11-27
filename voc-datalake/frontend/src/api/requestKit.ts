@@ -25,8 +25,9 @@ export type FetchApi = <T>(endpoint: string, options?: RequestInit, scope?: 'wor
 
 /**
  * The source whose Run now is the deployment's alone: the S3 import is no workspace plugin (a workspace's S3 import
- * runs from its upload or reprocess, through the S3 import API), so the integrations API refuses its Run now in a
- * workspace (400) and the web app sends it without `X-Workspace-Id`.
+ * runs from its upload or reprocess, through the S3 import API, which the explorer calls in its card's scope:
+ * api/dataEndpoints.ts `s3ImportEndpoints`), so the integrations API refuses its Run now in a workspace (400) and the
+ * web app sends it without `X-Workspace-Id`, inside a workspace too.
  */
 const DEPLOYMENT_ONLY_RUN_SOURCE = 's3_import'
 

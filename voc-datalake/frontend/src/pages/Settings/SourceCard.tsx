@@ -25,6 +25,7 @@ import SourceCredentials from './SourceCredentials'
 import { storedCredentialsKey } from './githubSignIn'
 import SourceCircuitNotice from './SourceCircuitNotice'
 import { useSourceSchedule } from './useSourceSchedule'
+import { useBrandEditRight } from './useBrandEditRight'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import S3ImportExplorer from '../../components/S3ImportExplorer/S3ImportExplorer'
 import { scopedKey, useConfigScope } from '../../workspace/configScope'
@@ -90,7 +91,6 @@ function AdvancedWhenRaw({ sourceId, children }: Readonly<{ sourceId: string; ch
 }
 
 export default function SourceCard({ manifest, apiEndpoint, isAdmin, initiallyOpen }: SourceCardProps) {
-  const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
   const scope = useConfigScope()
   const [isExpanded, setIsExpanded] = useState(initiallyOpen === true)
@@ -177,18 +177,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin, initiallyOp
             <SetupInstructionsSection setup={manifest.setup} />
           )}
 
-          {manifest.id === 's3_import' && apiEndpoint && (
-            <div>
-              <h4 className="text-sm font-semibold text-text mb-2 sm:mb-3 flex items-center gap-2">
-                {t('sourceCard.fileExplorer')}
-              </h4>
-              {/* Every /s3-import/* route is admin-only (#242): a
-                  non-admin is told so instead of an explorer whose every call 403s. */}
-              {isAdmin
-                ? <S3ImportExplorer />
-                : <p className="text-sm text-muted">{t('components:s3Import.adminOnly')}</p>}
-            </div>
-          )}
+          {manifest.id === 's3_import' && apiEndpoint && <S3ImportSection isDeploymentAdmin={isAdmin} />}
         </div>
       )}
     </div>
@@ -198,6 +187,28 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin, initiallyOp
 // ============================================
 // Sub-Components
 // ============================================
+
+/**
+ * The S3 import card's file explorer. Every /s3-import/* route is admin-only (#242), so a non-admin is told so
+ * instead of an explorer whose every call 403s. The API acts in the workspace the header names, for its admins
+ * (7.86.00): in the workspace scope the workspace's admin role decides (`useBrandEditRight`: outside a workspace, the
+ * deployment's `admins`); in the deployment's scope, which sends no header, the deployment's `admins`, as before.
+ */
+function S3ImportSection({ isDeploymentAdmin }: Readonly<{ isDeploymentAdmin: boolean }>) {
+  const { t } = useTranslation('settings')
+  const workspaceAdmin = useBrandEditRight(isDeploymentAdmin)
+  const mayImport = useConfigScope() === 'deployment' ? isDeploymentAdmin : workspaceAdmin
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-text mb-2 sm:mb-3 flex items-center gap-2">
+        {t('sourceCard.fileExplorer')}
+      </h4>
+      {mayImport
+        ? <S3ImportExplorer />
+        : <p className="text-sm text-muted">{t('components:s3Import.adminOnly')}</p>}
+    </div>
+  )
+}
 
 interface SourceCardHeaderProps {
   readonly manifest: PluginManifest

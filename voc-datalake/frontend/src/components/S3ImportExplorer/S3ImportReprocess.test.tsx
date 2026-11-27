@@ -3,10 +3,14 @@
  * the confirmation explains duplicates and category reprocess, the run is started for
  * the row's key, and its status is polled until it settles.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderWithQueryClient } from '../../test/query-client'
+import { createTestQueryClient, renderWithQueryClient } from '../../test/query-client'
+import { ACME } from '../../test/workspaceFixtures'
+import { ConfigScopeContext } from '../../workspace/configScope'
+import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
+import type { RequestScope } from '../../api/baseUrl'
 import type { S3ImportFile } from '../../api/types'
 import type { S3ImportRun } from '../../api/s3ImportReprocessApi'
 
@@ -25,7 +29,9 @@ vi.mock('../../api/s3ImportReprocessApi', async (importOriginal) => ({
 }))
 
 import { api } from '../../api/client'
-import { getS3ImportReprocessRun, isRunSettled, reprocessS3ImportFile } from '../../api/s3ImportReprocessApi'
+import {
+  S3_IMPORT_REPROCESS_ROOT, getS3ImportReprocessRun, isRunSettled, reprocessS3ImportFile,
+} from '../../api/s3ImportReprocessApi'
 import S3ImportExplorer from './S3ImportExplorer'
 import { describeImportKey } from './importKey'
 import { deliverNotice, setRealtimeLive } from '../../realtime/hub'
@@ -102,10 +108,10 @@ describe('reprocessing a file', () => {
 
     await user.click(screen.getByRole('button', { name: 'Reprocess' }))
 
-    expect(mockStart).toHaveBeenCalledWith('reviews/june.csv')
+    expect(mockStart).toHaveBeenCalledWith('reviews/june.csv', 'workspace')
     expect(await screen.findByText(/Reprocessed june.csv: 5 rows sent to the pipeline/, {}, { timeout: 4000 }))
       .toBeInTheDocument()
-    expect(mockPoll).toHaveBeenCalledWith('run_s3_import_20260310120000_0a1b2c3d')
+    expect(mockPoll).toHaveBeenCalledWith('run_s3_import_20260310120000_0a1b2c3d', 'workspace')
   })
 
   it('with push, the run\'s end notice reads it at once instead of on the next poll', async () => {
@@ -150,9 +156,42 @@ describe('reprocessing a file', () => {
 
     expect(await screen.findByText(/Couldn't check on june.csv/, {}, { timeout: 4000 })).toBeInTheDocument()
     expect(screen.queryByText(/Reprocessing june.csv failed/)).not.toBeInTheDocument()
-    expect(mockPoll).toHaveBeenCalledWith('run_s3_import_20260310120000_0a1b2c3d')
+    expect(mockPoll).toHaveBeenCalledWith('run_s3_import_20260310120000_0a1b2c3d', 'workspace')
     await user.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByText(/Couldn't check on june.csv/)).not.toBeInTheDocument()
+  })
+})
+
+// The run is started and polled in the explorer's place (7.86.00) and cached under it, so a run id never reads
+// another place's entry.
+describe('reprocessing in a place', () => {
+  afterEach(() => setCurrentWorkspace(null))
+
+  async function startIn(scope: RequestScope) {
+    mockStart.mockResolvedValue(run('running'))
+    mockPoll.mockResolvedValue(run('running'))
+    const client = createTestQueryClient()
+    const user = userEvent.setup()
+    renderWithQueryClient(
+      <ConfigScopeContext.Provider value={scope}><S3ImportExplorer /></ConfigScopeContext.Provider>, client)
+    await user.click(await screen.findByRole('button', { name: 'Reprocess file' }))
+    await user.click(screen.getByRole('button', { name: 'Reprocess' }))
+    await screen.findByText('Reprocessing june.csv...')
+    return client.getQueryCache().findAll({ queryKey: [S3_IMPORT_REPROCESS_ROOT] }).map((query) => query.queryKey)
+  }
+
+  it("starts and polls the run in a workspace's scope, keyed by the workspace", async () => {
+    setCurrentWorkspace(ACME)
+    const keys = await startIn('workspace')
+    expect(mockStart).toHaveBeenCalledWith(FILE.key, 'workspace')
+    expect(keys).toStrictEqual([[S3_IMPORT_REPROCESS_ROOT, 'workspace', ACME.id, run('x').run_id]])
+  })
+
+  it("starts and polls the run in the deployment's scope inside a workspace too, under the deployment's key", async () => {
+    setCurrentWorkspace(ACME)
+    const keys = await startIn('deployment')
+    expect(mockStart).toHaveBeenCalledWith(FILE.key, 'deployment')
+    expect(keys).toStrictEqual([[S3_IMPORT_REPROCESS_ROOT, 'deployment', null, run('x').run_id]])
   })
 })
 

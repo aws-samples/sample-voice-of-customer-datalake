@@ -17,6 +17,10 @@ vi.mock('../store/configStore', () => import('@test/api-mocks').then(m => m.conf
 import { api } from './client'
 import { scrapersApi } from './scrapersApi'
 import type { ScraperConfig } from './types'
+import { z } from 'zod'
+import { s3ImportEndpoints } from './dataEndpoints'
+import type { FetchApi } from './requestKit'
+import type { RequestScope } from './baseUrl'
 
 const API = 'https://api.example.com'
 const OK = { success: true }
@@ -242,6 +246,40 @@ describe.each([
     mockJsonOnce(response)
 
     await expect(call()).resolves.toStrictEqual(response)
+  })
+})
+
+describe('s3ImportEndpoints: every call hands its scope to the transport', () => {
+  // The headers each scope sends are client.test.ts's; here, that the scope reaches fetchApi unchanged.
+  const CALLS: ReadonlyArray<readonly [string, (e: ReturnType<typeof s3ImportEndpoints>, scope?: RequestScope) => Promise<unknown>]> = [
+    ['getS3ImportSources', (e, scope) => e.getS3ImportSources(scope)],
+    ['createS3ImportSource', (e, scope) => e.createS3ImportSource('reviews', scope)],
+    ['getS3ImportFiles', (e, scope) => e.getS3ImportFiles({ source: 'reviews' }, scope)],
+    ['getS3UploadUrl', (e, scope) => e.getS3UploadUrl('a.csv', 'reviews', 'text/csv', scope)],
+    ['deleteS3ImportFile', (e, scope) => e.deleteS3ImportFile('reviews/a.csv', scope)],
+  ]
+
+  /** Endpoints over a transport that records the scope of every call (the answer, typed for any caller, is unused). */
+  function recording() {
+    const scopes: Array<RequestScope | undefined> = []
+    const fetchApi: FetchApi = <T,>(_endpoint: string, _init?: RequestInit, scope?: RequestScope) => {
+      scopes.push(scope)
+      return Promise.resolve(z.custom<T>(() => true).parse({}))
+    }
+    return { endpoints: s3ImportEndpoints(fetchApi), scopes }
+  }
+
+  it.each(CALLS)('%s passes the deployment scope', async (_name, call) => {
+    const { endpoints, scopes } = recording()
+    await call(endpoints, 'deployment')
+    expect(scopes).toStrictEqual(['deployment'])
+  })
+
+  it.each(CALLS)('%s passes the workspace scope, and defaults to it', async (_name, call) => {
+    const { endpoints, scopes } = recording()
+    await call(endpoints, 'workspace')
+    await call(endpoints)
+    expect(scopes).toStrictEqual(['workspace', 'workspace'])
   })
 })
 

@@ -321,7 +321,9 @@ resolved first (400 for an empty header, the one 404 for a workspace the caller 
 admins' (a member admin or an entered platform admin; an editor or a viewer 403, the deployment's `admins` group
 grants nothing there). Every route then acts on the workspace's own folder of the same bucket,
 `ws/{ws}/<source>/<file>` (shared/ws_repo.py `s3_prefix`, built from the resolved workspace only), and every key in
-a request or an answer is still `<source>/<file>`: the same explorer works on both paths. A request without the
+a request or an answer is still `<source>/<file>`: the same explorer works on both paths (since 7.88.00 the
+web app's explorer sends the workspace's header inside a workspace, shown there to the workspace's admins; a
+platform admin's deployment view and the app outside any workspace send none). A request without the
 header acts on the bucket's root folders, as before, and never lists under `ws/` or reaches a workspace's file (the
 file listing reads the root's folders one by one and skips `ws/`, so a root folder named `ws` is hidden too). A
 workspace's upload link is valid for 15 minutes, the deployment's for 2 hours (S3 checks the expiry when the upload

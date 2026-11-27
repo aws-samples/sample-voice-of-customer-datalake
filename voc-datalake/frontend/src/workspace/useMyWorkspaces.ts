@@ -29,7 +29,7 @@ export function useServerWorkspace(id: string | null) {
  * The role the server applies in `workspace` (`/current`), or null until it answers. If that read fails, the
  * membership's role, as the gate keeps it; the server decides every write either way. The members and workspace
  * settings pages wait for it, so a platform admin who is also an editor or a viewer is not shown the read-only page
- * first; the brand form reads it too (useBrandEditRight.ts).
+ * first; the brand form, the logs and the S3 import's explorer read it too (useBrandEditRight.ts).
  */
 export function useServerRole(workspace: CurrentWorkspace | null): WorkspaceRole | null {
   const server = useServerWorkspace(workspace?.id ?? null)

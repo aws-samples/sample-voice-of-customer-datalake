@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react'
  * @fileoverview Tests for SourceCard component
  * @module pages/Settings/SourceCard.test
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
@@ -14,6 +14,8 @@ import SourceCard from './SourceCard'
 import { ADMIN_ONLY } from '@test/adminOnly'
 import type { PluginManifest, SetupInfo } from '../../plugins/types'
 import { expectScheduleToggleLocked, sourceScheduleMocks } from '../Scrapers/scrapers-fixtures'
+import { ConfigScopeContext } from '../../workspace/configScope'
+import type { RequestScope } from '../../api/baseUrl'
 
 // Mock API
 const mockGetIntegrationStatus = vi.fn<(...args: unknown[]) => unknown>()
@@ -30,6 +32,12 @@ vi.mock('../../api/client', () => ({
     enableSource: (source: string) => sourceScheduleMocks.enableSource(source),
     disableSource: (source: string) => sourceScheduleMocks.disableSource(source),
   },
+}))
+
+/** Inside a workspace, its admin role decides (useBrandEditRight); null: outside one, the deployment's `admins`. */
+const workspaceRole = vi.hoisted((): { adminThere: boolean | null } => ({ adminThere: null }))
+vi.mock('./useBrandEditRight', () => ({
+  useBrandEditRight: (isDeploymentAdmin: boolean) => workspaceRole.adminThere ?? isDeploymentAdmin,
 }))
 
 // Mock S3ImportExplorer
@@ -478,6 +486,47 @@ describe('SourceCard', () => {
       expect(screen.queryByTestId('s3-import-explorer')).not.toBeInTheDocument()
       const notice = screen.getByText(i18n.t('components:s3Import.adminOnly'))
       expect(notice).toBeVisible()
+    })
+
+    // The S3 import API acts in the workspace the header names, for its admins (7.86.00): in the workspace scope the
+    // workspace's admin role decides, in the deployment's scope the deployment's `admins` group, as before.
+    describe('in a place', () => {
+      afterEach(() => { workspaceRole.adminThere = null })
+
+      async function openIn(scope: RequestScope, isAdmin: boolean) {
+        const user = userEvent.setup()
+        renderWithQueryClient(
+          <ConfigScopeContext.Provider value={scope}>
+            <SourceCard manifest={s3Manifest} apiEndpoint="https://api.example.com" isAdmin={isAdmin} />
+          </ConfigScopeContext.Provider>)
+        await user.click(screen.getByRole('button', { name: /s3 bulk import/i }))
+      }
+
+      it("shows a workspace's admin who is no deployment admin the explorer in the workspace scope", async () => {
+        workspaceRole.adminThere = true
+        await openIn('workspace', false)
+        expect(screen.getByTestId('s3-import-explorer')).toBeInTheDocument()
+      })
+
+      it("shows a deployment admin who is only a viewer of the workspace the admin-only notice there", async () => {
+        workspaceRole.adminThere = false
+        await openIn('workspace', true)
+        expect(screen.queryByTestId('s3-import-explorer')).not.toBeInTheDocument()
+        expect(screen.getByText(i18n.t('components:s3Import.adminOnly'))).toBeVisible()
+      })
+
+      it("keeps the deployment scope to the deployment's admins, whatever the workspace role", async () => {
+        workspaceRole.adminThere = false
+        await openIn('deployment', true)
+        expect(screen.getByTestId('s3-import-explorer')).toBeInTheDocument()
+      })
+
+      it("refuses the deployment scope to a workspace's admin who is no deployment admin", async () => {
+        workspaceRole.adminThere = true
+        await openIn('deployment', false)
+        expect(screen.queryByTestId('s3-import-explorer')).not.toBeInTheDocument()
+        expect(screen.getByText(i18n.t('components:s3Import.adminOnly'))).toBeVisible()
+      })
     })
   })
 

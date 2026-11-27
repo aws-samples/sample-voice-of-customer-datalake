@@ -23,6 +23,7 @@ import { csvUploadCounts, recordImportRun } from './mock-import-history.js';
 import { detectColumns, wizardCsvBody } from './mock-import-wizard.js';
 import { effectiveBrands, radarBrandError } from './mock-radar-brands.js';
 import { SYSTEM_LOG_ROUTES } from './mock-system-logs.js';
+import { resolve as resolveWorkspace } from './mock-workspaces.js';
 
 const DAY_MS = 86_400_000;
 /** How long a mock scraper / source run stays 'running' before it completes. */
@@ -1007,56 +1008,109 @@ function importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, 
 
 // ── /s3-import/* (s3_import_handler.py) + the mock presigned PUT ─────────────
 // Every /s3-import/* and /scrapers/manual/* route is ADMIN-ONLY in the real API (module
-// middleware, #242); the mock does not model roles and always
-// answers as the admin the DEV session is.
+// middleware, #242). Since 7.86.00 an /s3-import/* request acts in a PLACE: the workspace X-Workspace-Id names
+// (its `ws/{ws}/` folder on the server; here its own folders, files, upload keys and reprocess runs, kept on the
+// mock workspace, so a `PUT /__mock/workspaces` starts them afresh), for its admins only (mock-workspaces.js
+// `resolve`: a member admin or an entered platform admin; an editor or a viewer 403, an unknown workspace 404); or,
+// without the header, the deployment's (the seeded folders below), whose `admins` the DEV session is. Keys on the
+// wire stay `<source>/<file>` in either place.
 
 const UPLOAD_PATH = '/mock-s3-import-upload/';
+/** The upload URL's place segment for the deployment (a workspace's is its id). */
+const DEPLOYMENT_PLACE = 'deployment';
 const IMPORTABLE_FILE = /\.(csv|json|jsonl)$/;
 const SOURCE_FOLDER = /^[A-Za-z0-9_-]+$/;
 const INVALID_IMPORT_KEY = 'Key is outside the import layout <source>/<file.csv|.json|.jsonl>';
+const INVALID_IMPORT_SOURCE = 'source must be a source folder name (letters, digits, _ and -)';
+const IMPORT_FILE_NOT_FOUND = 'File not found';
+// The handler's RESERVED_SOURCES: `processed` and the workspaces' folder `ws` are no source name.
+const RESERVED_IMPORT_SOURCES = new Set(['processed', 'ws']);
+const reservedSource = (name) => `"${name}" is reserved; choose another source folder`;
+// The handler's upload link lifetimes (7.86.00): a workspace's 15 minutes, the deployment's 2 hours.
+const DEPLOYMENT_UPLOAD_SECONDS = 7200;
+const WORKSPACE_UPLOAD_SECONDS = 900;
 
 /** A control character or a backslash, as the handler's `_UNSAFE_FILENAME_CHARS`. */
 function hasUnsafeKeyChar(key) {
   return [...key].some((ch) => ch === '\\' || ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f);
 }
 
-/** The handler's `_deletable_key`: exactly `<source>/<file>`, never `processed/`, no `..`. */
+/** The handler's `_deletable_key`: exactly `<source>/<file>`, never `processed/` or `ws/`, no `..`. */
 function isDeletableImportKey(key) {
   if (key.startsWith('/') || key.includes('..') || hasUnsafeKeyChar(key)) return false;
   const parts = key.split('/');
   if (parts.length !== 2) return false;
   const [source, filename] = parts;
-  return SOURCE_FOLDER.test(source) && source !== 'processed' && filename.trim() !== '' && IMPORTABLE_FILE.test(filename);
+  return SOURCE_FOLDER.test(source) && !RESERVED_IMPORT_SOURCES.has(source) && filename.trim() !== ''
+    && IMPORTABLE_FILE.test(filename);
 }
-const importFolders = new Set(['reviews_export', 'support_tickets']);
-const importFiles = new Map([
+/** One place's import state: its source folders, files (key → {size, last_modified}), issued upload keys, runs. */
+function newImportPlace(id, folders = [], files = []) {
+  return { id, folders: new Set(folders), files: new Map(files), uploadKeys: new Set(), runs: new Map() };
+}
+
+// The deployment's place keeps the seeded folders and files; a workspace's starts empty.
+const deploymentImports = newImportPlace(DEPLOYMENT_PLACE, ['reviews_export', 'support_tickets'], [
   ['reviews_export/june_reviews.csv', { size: 48213, last_modified: isoAgo(3 * HOUR_MS) }],
   ['reviews_export/app_store_dump.jsonl', { size: 120488, last_modified: isoAgo(DAY_MS) }],
   ['support_tickets/q2_tickets.json', { size: 9132, last_modified: isoAgo(2 * DAY_MS) }],
   // Already ingested: listed only with ?include_processed=true.
   ['processed/reviews_export/may_reviews.csv', { size: 39950, last_modified: isoAgo(20 * DAY_MS) }],
 ]);
-const issuedUploadKeys = new Set();
+
+const NOT_WORKSPACE_ADMIN = 'Workspace admin access required';
+
+/** A workspace's own import state, on the mock workspace (made on its first request). */
+function workspaceImports(workspace) {
+  workspace.s3Import ??= newImportPlace(workspace.id);
+  return workspace.s3Import;
+}
+
+/**
+ * The place an /s3-import request acts in, or [status, error]: without X-Workspace-Id (or a blank one, as
+ * request_workspace.py reads it) the deployment's; with it the named workspace's, for its admins only.
+ */
+function importPlaceOf({ req, shared }) {
+  const header = req.headers['x-workspace-id'];
+  if (typeof header !== 'string' || header.trim() === '') return { place: deploymentImports };
+  const entry = resolveWorkspace(req, shared);
+  if (entry.refusal) return { refusal: entry.refusal };
+  if (entry.role !== 'admin') return { refusal: [403, NOT_WORKSPACE_ADMIN] };
+  return { place: workspaceImports(entry.workspace) };
+}
+
+/** The places an upload URL was issued in, by its first segment (the browser's PUT carries no workspace header). */
+const uploadPlaces = new Map([[DEPLOYMENT_PLACE, deploymentImports]]);
+
+/** `handler(place, ctx, ...rest)` in the request's place; a refusal answers instead. */
+const inImportPlace = (handler) => (ctx, ...rest) => {
+  const found = importPlaceOf(ctx);
+  return found.refusal ? fail(found.refusal[0], found.refusal[1]) : handler(found.place, ctx, ...rest);
+};
+
 const safeName = (value, pattern) => value.replace(pattern, '_');
 
-function listImportSources() {
-  const sources = [...importFolders].filter((f) => f !== 'processed').sort()
+function listImportSources(place) {
+  const sources = [...place.folders].filter((f) => !RESERVED_IMPORT_SOURCES.has(f)).sort()
     .map((name) => ({ name, display_name: `S3 - ${name}` }));
   return [200, { sources, bucket: MOCK_S3_IMPORT_BUCKET }];
 }
 
-function createImportSource(_ctx, body) {
+function createImportSource(place, _ctx, body) {
   const name = str(body.name).trim();
   if (!name) return fail(400, 'Source name is required');
   const safe = safeName(name, /[^a-zA-Z0-9_-]/g);
-  importFolders.add(safe);
+  if (RESERVED_IMPORT_SOURCES.has(safe)) return fail(400, reservedSource(safe));
+  place.folders.add(safe);
   return [200, { success: true, source: { name: safe, display_name: `S3 - ${safe}` } }];
 }
 
-function listImportFiles({ url }) {
+function listImportFiles(place, { url }) {
   const source = url.searchParams.get('source') ?? '';
   const includeProcessed = (url.searchParams.get('include_processed') ?? 'false').toLowerCase() === 'true';
-  const files = [...importFiles.entries()]
+  // A folder name only, as the handler's `list_files` (400 otherwise).
+  if (source && (!SOURCE_FOLDER.test(source) || source === 'ws')) return fail(400, INVALID_IMPORT_SOURCE);
+  const files = [...place.files.entries()]
     .filter(([key]) => (!source || key.startsWith(`${source}/`)) && IMPORTABLE_FILE.test(key))
     .filter(([key]) => includeProcessed || !key.startsWith('processed/'))
     .sort(([a], [b]) => a.localeCompare(b))
@@ -1070,63 +1124,70 @@ function listImportFiles({ url }) {
   return [200, { files, bucket: MOCK_S3_IMPORT_BUCKET }];
 }
 
-function uploadUrl({ req }, body) {
+function uploadUrl(place, { req }, body) {
   const filename = str(body.filename).trim();
   const source = (str(body.source) || 'default').trim();
   if (!filename) return fail(400, 'Filename is required');
   if (!IMPORTABLE_FILE.test(filename)) return fail(400, 'Only CSV, JSON, and JSONL files are supported');
   const safeSource = safeName(source, /[^a-zA-Z0-9_-]/g);
   const key = `${safeSource}/${safeName(filename, /[^a-zA-Z0-9_.-]/g)}`;
-  if (safeSource === 'processed') return fail(400, '"processed" is reserved; choose another source folder');
+  if (RESERVED_IMPORT_SOURCES.has(safeSource)) return fail(400, reservedSource(safeSource));
   // Create-only, like the handler: an existing key is a 409, never an overwrite.
-  if (importFiles.has(key)) return fail(409, `A file named ${key} already exists. Delete it first to upload it again.`);
-  issuedUploadKeys.add(key);
+  if (place.files.has(key)) return fail(409, `A file named ${key} already exists. Delete it first to upload it again.`);
+  place.uploadKeys.add(key);
+  uploadPlaces.set(place.id, place);
   const host = req.headers.host ?? 'localhost:3001';
   const contentType = str(body.content_type) || 'application/octet-stream';
   return [200, {
-    success: true, upload_url: `http://${host}${UPLOAD_PATH}${encodeURIComponent(key)}`,
-    key, bucket: MOCK_S3_IMPORT_BUCKET, expires_in: 7200,
+    success: true,
+    // The place is in the URL, as the real one is signed for its `ws/{ws}/` object.
+    upload_url: `http://${host}${UPLOAD_PATH}${encodeURIComponent(place.id)}/${encodeURIComponent(key)}`,
+    key, bucket: MOCK_S3_IMPORT_BUCKET,
+    expires_in: place.id === DEPLOYMENT_PLACE ? DEPLOYMENT_UPLOAD_SECONDS : WORKSPACE_UPLOAD_SECONDS,
     upload_headers: { 'Content-Type': contentType, 'If-None-Match': '*' },
   }];
 }
 
-/** The browser's PUT to the "presigned" URL: drain it, then list the object. */
-function receiveUpload({ req, res }, key) {
+/** The browser's PUT to the "presigned" URL: drain it, then list the object in the place it was issued in. */
+function receiveUpload({ req, res }, placeId, key) {
+  const place = uploadPlaces.get(placeId);
   let size = 0;
   req.on('data', (chunk) => { size += chunk.length; });
   req.on('error', () => res.destroy());
   req.on('end', () => {
-    if (!issuedUploadKeys.has(key)) {
+    if (place === undefined || !place.uploadKeys.has(key)) {
       // S3 refuses a PUT whose signature it did not issue.
       res.writeHead(403);
       res.end(JSON.stringify({ success: false, error: 'SignatureDoesNotMatch' }));
       return;
     }
-    if (importFiles.has(key)) {
+    if (place.files.has(key)) {
       // The URL is signed with If-None-Match: *, so S3 refuses an object that appeared meanwhile.
       res.writeHead(412);
       res.end(JSON.stringify({ success: false, error: 'PreconditionFailed' }));
       return;
     }
-    importFiles.set(key, { size, last_modified: new Date().toISOString() });
-    importFolders.add(key.split('/')[0]);
+    place.files.set(key, { size, last_modified: new Date().toISOString() });
+    place.folders.add(key.split('/')[0]);
     res.writeHead(200);
     res.end();
   });
   return null;
 }
 
-function deleteImportFile(_ctx, key) {
+function deleteImportFile(place, _ctx, key) {
   if (!isDeletableImportKey(key)) return fail(400, INVALID_IMPORT_KEY);
-  importFiles.delete(key); // delete_object is idempotent: a missing key also succeeds
+  // As the handler (7.86.00): a key that holds no file is a 404 that writes nothing (no delete marker).
+  if (!place.files.has(key)) return fail(404, IMPORT_FILE_NOT_FOUND);
+  place.files.delete(key);
   return [200, { success: true, deleted_key: key }];
 }
 
 // POST /s3-import/reprocess + GET /s3-import/reprocess/{run_id} (issue #144): a SOURCE_RUN#s3_import row
-// per run. A run reports `running` for REPROCESS_RUN_MS, then `completed` with a row count from the size.
+// per run, in the request's place (another place's run is a 404). A run reports `running` for REPROCESS_RUN_MS,
+// then `completed` with a row count from the size.
 const REPROCESS_RUN_MS = 1500;
 const MOCK_BYTES_PER_ROW = 400;
-const reprocessRuns = new Map();
 
 /** The handler's `_reprocessable_key`: a staged `<source>/<file>`, or one archived as `processed/<source>/<file>`. */
 function isReprocessableImportKey(key) {
@@ -1145,26 +1206,26 @@ function runView(run) {
   };
 }
 
-function startReprocess(body) {
+function startReprocess(place, _ctx, body) {
   const key = typeof body.key === 'string' ? body.key.trim() : '';
   if (!key) return fail(400, 'key is required');
   if (!isReprocessableImportKey(key)) return fail(400, INVALID_IMPORT_KEY);
-  const file = importFiles.get(key);
+  const file = place.files.get(key);
   if (!file) return fail(404, `File not found: ${key}`);
   if (!file.size) return fail(400, 'The file is empty');
   // The handler's s3_import_runs.refuse_running_duplicate: one live run per file.
-  if ([...reprocessRuns.values()].some((r) => r.key === key && runView(r).status === 'running')) {
+  if ([...place.runs.values()].some((r) => r.key === key && runView(r).status === 'running')) {
     return fail(409, 'This file is already being reprocessed');
   }
   // The real id: shared/ids.py timestamped_id ('<prefix>_<UTC YYYYmmddHHMMSS>_<8 hex>').
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
   const run = { run_id: `run_s3_import_${stamp}_${randomBytes(4).toString('hex')}`, key, size: file.size, startedMs: Date.now() };
-  reprocessRuns.set(run.run_id, run);
+  place.runs.set(run.run_id, run);
   return [202, { success: true, run: runView(run) }];
 }
 
-function getReprocessRun(_ctx, runId) {
-  const run = reprocessRuns.get(runId);
+function getReprocessRun(place, _ctx, runId) {
+  const run = place.runs.get(runId);
   return run ? [200, { run: runView(run) }] : fail(404, 'Run not found');
 }
 
@@ -1389,14 +1450,14 @@ const ROUTES = [
   ['POST', /^\/scrapers\/manual\/detect$/, 'json', detectColumns],
   ['POST', /^\/scrapers\/([^/]+)\/run$/, 'none', runScraper],
   ['DELETE', /^\/scrapers\/([^/]+)$/, 'none', deleteScraper],
-  ['GET', /^\/s3-import\/sources$/, 'none', listImportSources],
-  ['POST', /^\/s3-import\/sources$/, 'json', createImportSource],
-  ['GET', /^\/s3-import\/files$/, 'none', listImportFiles],
-  ['POST', /^\/s3-import\/upload-url$/, 'json', uploadUrl],
-  ['DELETE', /^\/s3-import\/file\/(.+)$/, 'none', deleteImportFile],
-  ['POST', /^\/s3-import\/reprocess$/, 'json', (_c, body) => startReprocess(body)],
-  ['GET', /^\/s3-import\/reprocess\/([^/]+)$/, 'none', getReprocessRun],
-  ['PUT', /^\/mock-s3-import-upload\/(.+)$/, 'raw', receiveUpload],
+  ['GET', /^\/s3-import\/sources$/, 'none', inImportPlace(listImportSources)],
+  ['POST', /^\/s3-import\/sources$/, 'json', inImportPlace(createImportSource)],
+  ['GET', /^\/s3-import\/files$/, 'none', inImportPlace(listImportFiles)],
+  ['POST', /^\/s3-import\/upload-url$/, 'json', inImportPlace(uploadUrl)],
+  ['DELETE', /^\/s3-import\/file\/(.+)$/, 'none', inImportPlace(deleteImportFile)],
+  ['POST', /^\/s3-import\/reprocess$/, 'json', inImportPlace(startReprocess)],
+  ['GET', /^\/s3-import\/reprocess\/([^/]+)$/, 'none', inImportPlace(getReprocessRun)],
+  ['PUT', /^\/mock-s3-import-upload\/([^/]+)\/(.+)$/, 'raw', receiveUpload],
   ['GET', /^\/data-explorer\/buckets$/, 'none', listBuckets],
   ['GET', /^\/data-explorer\/s3$/, 'none', listObjects],
   ['GET', /^\/data-explorer\/s3\/preview$/, 'none', previewObject],

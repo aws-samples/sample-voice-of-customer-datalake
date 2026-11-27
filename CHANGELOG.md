@@ -17,6 +17,30 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.88.00] - 2026-11-27
+
+Multi-workspace, phase 2: the web app's S3 import works inside a workspace. Since 7.86.00 the API acts in the
+workspace a request names; the web app now names it, so a workspace's admins stage, list, delete and reprocess its
+own files from Administration → Sources → Source settings → S3 Bulk Import
+([docs/data-lake-structure.md](docs/data-lake-structure.md#s3-import-bucket)).
+
+### Changed
+
+- The S3 Bulk Import explorer follows its page's place: inside a workspace every `/s3-import/*` call sends the
+  workspace's `X-Workspace-Id`; a platform admin's view of the deployment's sources and the app outside
+  any workspace send none, as before. Its lists and reprocess runs are cached per place, so another workspace's or the
+  deployment's files are never shown after a switch.
+- Inside a workspace the explorer is shown to that workspace's admins (their role there); a deployment admin who is
+  not an admin of the workspace sees the admins-only note instead of an explorer whose every call is refused. The
+  deployment's view is unchanged (its `admins` group).
+- The dev mock keeps the S3 import's folders, files and reprocess runs per workspace (`frontend/mock-sources.js`),
+  refusing a workspace's editors and viewers (403) and an unknown workspace (404) as the API does.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). Frontend only: no IAM, API or stored-data change. Run now of the S3 import
+  stays deployment-wide (a workspace's import runs from its upload or its reprocess).
+
 ## [7.86.00] - 2026-11-27
 
 Multi-workspace, phase 2: the S3 import works in a workspace. Its API answered every request with `X-Workspace-Id`

@@ -16,8 +16,9 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { CheckCircle2, AlertCircle, Loader2, RotateCw, X } from 'lucide-react'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import {
-  S3_IMPORT_REPROCESS_ROOT, getS3ImportReprocessRun, isRunSettled, reprocessS3ImportFile, type S3ImportRun,
+  getS3ImportReprocessRun, isRunSettled, reprocessS3ImportFile, type S3ImportRun,
 } from '../../api/s3ImportReprocessApi'
+import { useS3ImportPlace, type S3ImportPlace } from './s3ImportPlace'
 import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 import { describeImportKey } from './importKey'
 import { Tooltip } from '../Tooltip/Tooltip'
@@ -71,12 +72,13 @@ function RunStatusLine({ run, filename, pollFailed }: Readonly<{ run: S3ImportRu
   )
 }
 
-function RunStatus({ started, onDismiss }: Readonly<{ started: S3ImportRun; onDismiss: () => void }>) {
+function RunStatus({ started, place, onDismiss }: Readonly<{ started: S3ImportRun; place: S3ImportPlace; onDismiss: () => void }>) {
   const { t } = useTranslation('components')
-  const queryKey = [S3_IMPORT_REPROCESS_ROOT, started.run_id]
+  // Polled in the place it was started in, and cached under it (s3ImportPlace.ts).
+  const queryKey = place.runKey(started.run_id)
   const { data, isError } = useQuery({
     queryKey,
-    queryFn: () => getS3ImportReprocessRun(started.run_id),
+    queryFn: () => getS3ImportReprocessRun(started.run_id, place.scope),
     initialData: started,
     // Stops once the run settles, and on a failed poll (a 4xx is not retried; see queryPolicies).
     refetchInterval: (query) => (query.state.error !== null || isRunSettled(query.state.data ?? started)
@@ -108,8 +110,9 @@ function RunStatus({ started, onDismiss }: Readonly<{ started: S3ImportRun; onDi
 export default function S3ImportReprocess({ fileKey, onClose }: Readonly<{ fileKey: string | null; onClose: () => void }>) {
   const { t } = useTranslation('components')
   const [run, setRun] = useState<S3ImportRun | null>(null)
+  const place = useS3ImportPlace()
   const start = useMutation({
-    mutationFn: (key: string) => reprocessS3ImportFile(key),
+    mutationFn: (key: string) => reprocessS3ImportFile(key, place.scope),
     onSuccess: (started) => {
       setRun(started)
       onClose()
@@ -135,7 +138,7 @@ export default function S3ImportReprocess({ fileKey, onClose }: Readonly<{ fileK
           </p>
         )}
       </ConfirmModal>
-      {run !== null && <RunStatus key={run.run_id} started={run} onDismiss={() => setRun(null)} />}
+      {run !== null && <RunStatus key={run.run_id} started={run} place={place} onDismiss={() => setRun(null)} />}
     </>
   )
 }

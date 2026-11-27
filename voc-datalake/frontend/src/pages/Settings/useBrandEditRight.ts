@@ -2,8 +2,9 @@
  * @fileoverview Who may edit the brand, as `PUT /settings/brand` decides it (`require_settings_admin`,
  * lambda/shared/request_workspace.py): inside a workspace, its admins (the role the server applies there,
  * `GET /me/workspaces/current`; the deployment's `admins` group grants nothing inside a workspace); outside one,
- * the deployment's `admins`, as before. Administration → General asks it; the workspace's settings page reads the
- * same role itself (`useServerRole`), since it opens only inside a workspace.
+ * the deployment's `admins`, as before. Administration → General asks it, and so do the logs (LogsSection.tsx) and
+ * the S3 import's explorer (SourceCard.tsx, 7.88.00), whose routes gate on the same admin role; the workspace's
+ * settings page reads the same role itself (`useServerRole`), since it opens only inside a workspace.
  *
  * @module pages/Settings/useBrandEditRight
  */

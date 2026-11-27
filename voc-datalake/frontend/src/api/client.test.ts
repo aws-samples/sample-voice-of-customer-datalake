@@ -346,18 +346,13 @@ describe('the request scope: a deployment-wide call names no workspace', () => {
 describe('the deployment-only operator calls name no workspace, inside one too', () => {
   // The API refuses these with X-Workspace-Id (400): enable and disable of the schedule every workspace's tick fans
   // out from, and the S3 import's Run now, which stays deployment-only (docs/multi-workspace.md, 7.04.00). The S3
-  // import's own routes act in a workspace with the header since VERSION, but the web app sends none to them yet
-  // (the next slice).
+  // import's own routes act in the workspace the header names (7.86.00): they follow the scope they are given (below).
   afterEach(() => setCurrentWorkspace(null))
 
   it.each([
     ['enable a source', () => api.enableSource('webscraper')],
     ['disable a source', () => api.disableSource('webscraper')],
     ['Run now of the S3 import', () => api.runSource('s3_import')],
-    ['list the S3 import sources', () => api.getS3ImportSources()],
-    ['list the S3 import files', () => api.getS3ImportFiles({ source: 'reviews' })],
-    ['ask for an S3 import upload URL', () => api.getS3UploadUrl('a.csv', 'reviews')],
-    ['delete an S3 import file', () => api.deleteS3ImportFile('reviews/a.csv')],
   ])('%s', async (_name, call) => {
     setCurrentWorkspace(ACME)
     mockJsonOnce({})
@@ -370,6 +365,44 @@ describe('the deployment-only operator calls name no workspace, inside one too',
     mockJsonOnce({})
     await api.runSource('webscraper')
     expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
+  })
+})
+
+/** The `X-Workspace-Id` one call sent, the app in `workspace` (ACME by default; null: in none). */
+async function workspaceSent(call: () => Promise<unknown>, workspace: typeof ACME | null = ACME): Promise<string | undefined> {
+  setCurrentWorkspace(workspace)
+  mockJsonOnce({})
+  await call()
+  return requestHeaders(0)['X-Workspace-Id']
+}
+
+describe('the S3 import calls follow the scope they are given (7.86.00)', () => {
+  // The S3 import API acts in the workspace X-Workspace-Id names (its ws/{ws}/ folder, its admins), and without the
+  // header in the deployment's. The explorer passes its card's scope (workspace/configScope.ts).
+  afterEach(() => setCurrentWorkspace(null))
+
+  const S3_IMPORT_CALLS: ReadonlyArray<readonly [string, (scope?: 'workspace' | 'deployment') => Promise<unknown>]> = [
+    ['list the S3 import sources', (scope) => api.getS3ImportSources(scope)],
+    ['create an S3 import source', (scope) => api.createS3ImportSource('reviews', scope)],
+    ['list the S3 import files', (scope) => api.getS3ImportFiles({ source: 'reviews' }, scope)],
+    ['ask for an S3 import upload URL', (scope) => api.getS3UploadUrl('a.csv', 'reviews', undefined, scope)],
+    ['delete an S3 import file', (scope) => api.deleteS3ImportFile('reviews/a.csv', scope)],
+  ]
+
+  it.each(S3_IMPORT_CALLS)('%s names the current workspace in its scope', async (_name, call) => {
+    expect(await workspaceSent(() => call('workspace'))).toBe(ACME.id)
+  })
+
+  it.each(S3_IMPORT_CALLS)('%s names the current workspace by default', async (_name, call) => {
+    expect(await workspaceSent(() => call())).toBe(ACME.id)
+  })
+
+  it.each(S3_IMPORT_CALLS)("%s names none in the deployment's scope, inside a workspace too", async (_name, call) => {
+    expect(await workspaceSent(() => call('deployment'))).toBeUndefined()
+  })
+
+  it.each(S3_IMPORT_CALLS)('%s names none outside every workspace, in the workspace scope too', async (_name, call) => {
+    expect(await workspaceSent(() => call('workspace'), null)).toBeUndefined()
   })
 })
 
@@ -428,17 +461,11 @@ describe("the Data sources calls: the workspace's by default, the deployment's o
   ]
 
   it.each(calls)('%s names the current workspace by default', async (_name, call) => {
-    setCurrentWorkspace(ACME)
-    mockJsonOnce({})
-    await call()
-    expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
+    expect(await workspaceSent(() => call())).toBe(ACME.id)
   })
 
   it.each(calls)("%s names no workspace in the deployment's scope", async (_name, call) => {
-    setCurrentWorkspace(ACME)
-    mockJsonOnce({})
-    await call('deployment')
-    expect(requestHeaders(0)['X-Workspace-Id']).toBeUndefined()
+    expect(await workspaceSent(() => call('deployment'))).toBeUndefined()
   })
 })
 

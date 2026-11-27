@@ -24,7 +24,14 @@ describe('reprocessS3ImportFile', () => {
     const [path, init, scope] = fetchApi.mock.calls[0] ?? []
     expect(path).toBe('/s3-import/reprocess')
     expect(init).toMatchObject({ method: 'POST', body: JSON.stringify({ key: 'web/reviews.csv' }) })
-    expect(scope).toBe('deployment')
+    // The current workspace's by default (api/baseUrl.ts RequestScope): its own ws/{ws}/ file.
+    expect(scope).toBe('workspace')
+  })
+
+  it.each(['workspace', 'deployment'] as const)('sends the run in the %s scope it is given', async (given) => {
+    fetchApi.mockResolvedValue({ run: RUN })
+    await reprocessS3ImportFile('web/reviews.csv', given)
+    expect(fetchApi.mock.calls[0]?.[2]).toBe(given)
   })
 
   it.each([[null], [{}], [{ run: null }], [{ run: { status: 'running' } }], [{ run: { run_id: '' } }]])(
@@ -38,8 +45,14 @@ describe('getS3ImportReprocessRun', () => {
   it('polls the run by its encoded id', async () => {
     fetchApi.mockResolvedValue({ run: RUN })
     await getS3ImportReprocessRun('run 1/2')
-    // Both calls are deployment-wide (the web app sends no X-Workspace-Id to the S3 import API yet).
-    expect(fetchApi).toHaveBeenCalledWith('/s3-import/reprocess/run%201%2F2', { method: 'GET' }, 'deployment')
+    // The current workspace's by default, as the run it polls was started there.
+    expect(fetchApi).toHaveBeenCalledWith('/s3-import/reprocess/run%201%2F2', { method: 'GET' }, 'workspace')
+  })
+
+  it.each(['workspace', 'deployment'] as const)('polls in the %s scope it is given', async (given) => {
+    fetchApi.mockResolvedValue({ run: RUN })
+    await getS3ImportReprocessRun('run_1', given)
+    expect(fetchApi).toHaveBeenCalledWith('/s3-import/reprocess/run_1', { method: 'GET' }, given)
   })
 
   it('reads malformed fields as their defaults, and an unreadable status as unknown', async () => {

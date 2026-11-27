@@ -16,6 +16,7 @@
 import { z } from 'zod'
 import { post } from './requestKit'
 import { fetchApi } from './client'
+import type { RequestScope } from './baseUrl'
 
 /** Query-key root of a polled run (api/queryPolicies.ts, api/feedbackDataWatch.ts). */
 export const S3_IMPORT_REPROCESS_ROOT = 's3-import-reprocess'
@@ -45,12 +46,13 @@ function parseRun(raw: unknown): S3ImportRun {
   return parsed.data.run
 }
 
-// The S3 import API acts in a workspace with X-Workspace-Id, but the web app sends no header to it yet (the next
-// slice), so both calls go without it, inside a workspace too.
-export async function reprocessS3ImportFile(key: string): Promise<S3ImportRun> {
-  return parseRun(await fetchApi<unknown>('/s3-import/reprocess', post({ key }), 'deployment'))
+// The S3 import API acts in the workspace X-Workspace-Id names, and without it in the deployment's (7.86.00). Both
+// calls take the explorer's scope (api/dataEndpoints.ts `s3ImportEndpoints`): a run is polled in the place it was
+// started in.
+export async function reprocessS3ImportFile(key: string, scope: RequestScope = 'workspace'): Promise<S3ImportRun> {
+  return parseRun(await fetchApi<unknown>('/s3-import/reprocess', post({ key }), scope))
 }
 
-export async function getS3ImportReprocessRun(runId: string): Promise<S3ImportRun> {
-  return parseRun(await fetchApi<unknown>(`/s3-import/reprocess/${encodeURIComponent(runId)}`, { method: 'GET' }, 'deployment'))
+export async function getS3ImportReprocessRun(runId: string, scope: RequestScope = 'workspace'): Promise<S3ImportRun> {
+  return parseRun(await fetchApi<unknown>(`/s3-import/reprocess/${encodeURIComponent(runId)}`, { method: 'GET' }, scope))
 }
