@@ -69,6 +69,7 @@ export function synthProcessingTemplate(
     processingQueue: fixtureQueue(deps, 'Queue'),
     kmsKey: new kms.Key(deps, 'Key'),
     rawDataBucket: fixtureBucket(deps, 'RawData'),
+    s3ImportBucket: fixtureBucket(deps, 'S3Import'),
     engineeringWorkspaceBucket: fixtureBucket(deps, 'EngineeringWorkspace'),
     apiSecretsArn: 'arn:aws:secretsmanager:us-east-1:111111111111:secret:voc',
     config: {

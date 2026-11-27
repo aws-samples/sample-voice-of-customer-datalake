@@ -1,13 +1,12 @@
 """S3 import and manual import are admin-only, every route (#242): importing writes customer data.
 
-The S3 import gates through one resolver middleware (`shared.api.admins_only`); the manual import, which acts in
-a workspace since 7.67.00, through its two-path gate as each route's first statement
+Both act in a workspace (the manual import since 7.67.00, the S3 import since its files are keyed
+ws/{ws}/<source>/<file>) and gate through the two-path gate as each route's first statement
 (`_request.require_request_admin()`, shared/workspace_request.py). Either way the refusal must come BEFORE the route
 touches anything: a non-admin gets 403 and the S3, SQS, DynamoDB and Lambda-invoke clients (the parse job's invoke is
 what reaches Bedrock) see no call at all. An admin still reaches each route.
 
-Reverting the S3 import's `app.use(middlewares=[admins_only])`, or dropping a manual-import route's gate, fails
-every non-admin case here.
+Dropping a route's gate fails every non-admin case here.
 """
 import json
 from collections.abc import Iterator
@@ -26,8 +25,13 @@ S3_IMPORT_ROUTES = [
     ('GET', '/s3-import/files', {}),
     ('POST', '/s3-import/sources', {'body': {'name': 'web'}}),
     ('POST', '/s3-import/upload-url', {'body': {'filename': 'a.csv', 'source': 'web'}}),
-    ('DELETE', '/s3-import/file/web%2Fa.csv', {'path_params': {'key': 'web%2Fa.csv'}}),
+    ('DELETE', '/s3-import/file/web%2Fstaged.csv', {'path_params': {'key': 'web%2Fstaged.csv'}}),
+    ('POST', '/s3-import/reprocess', {'body': {'key': 'web/staged.csv'}}),
+    ('GET', '/s3-import/reprocess/run_s3_import_20260310120000_0a1b2c3d',
+     {'path_params': {'run_id': 'run_s3_import_20260310120000_0a1b2c3d'}}),
 ]
+#: The one staged file (the delete and the reprocess read it first); every other key is free for an upload.
+STAGED = 'web/staged.csv'
 
 MANUAL_IMPORT_ROUTES = [
     ('POST', '/scrapers/manual/parse', {'body': {'source_url': 'https://g2.com/x', 'raw_text': 'Great product'}}),
@@ -54,11 +58,26 @@ def _run(handler, api_gateway_event, lambda_context, groups: str, method: str, p
     return response['statusCode'], json.loads(response['body'])
 
 
+def _head(**request: str) -> dict:
+    if request['Key'] == STAGED:
+        return {'ContentLength': 10}
+    raise ClientError({'Error': {'Code': '404'}}, 'HeadObject')
+
+
 @pytest.fixture
 def s3_import() -> Iterator[MagicMock]:
+    """The S3 client, with the run table and the ingestor's invoke attached, so one mock records every call."""
+    aggregates = MagicMock(name='aggregates')
+    aggregates.query.return_value = {'Items': []}
+    aggregates.get_item.return_value = {'Item': {'sk': 'run_s3_import_20260310120000_0a1b2c3d', 'status': 'running'}}
     with patch.object(s3_import_handler, 's3_client') as client, \
-            patch.object(s3_import_handler, 'S3_IMPORT_BUCKET', 'import-bucket'):
-        client.head_object.side_effect = ClientError({'Error': {'Code': '404'}}, 'HeadObject')
+            patch.object(s3_import_handler, 'S3_IMPORT_BUCKET', 'import-bucket'), \
+            patch.object(s3_import_handler, 'S3_IMPORT_INGESTOR_FUNCTION', 'ingestor'), \
+            patch.object(s3_import_handler, 'get_aggregates_table', return_value=aggregates), \
+            patch.object(s3_import_handler.s3_import_runs, 'invoke_lambda_async') as ingestor:
+        client.attach_mock(aggregates, 'aggregates')
+        client.attach_mock(ingestor, 'ingestor')
+        client.head_object.side_effect = _head
         client.list_objects_v2.return_value = {'CommonPrefixes': []}
         client.get_paginator.return_value.paginate.return_value = []
         client.generate_presigned_url.return_value = 'https://s3.example.com/put'
@@ -95,7 +114,8 @@ class TestAnAdminReachesEveryRoute:
     def test_s3_import(self, s3_import, api_gateway_event, lambda_context, method, path, kwargs):
         status, _ = _run(s3_import_handler.lambda_handler, api_gateway_event, lambda_context,
                          'admins', method, path, kwargs)
-        assert status == 200
+        # A reprocess is started (202, polled at its run); every other route answers at once.
+        assert status == (202 if (method, path) == ('POST', '/s3-import/reprocess') else 200)
         assert s3_import.mock_calls != []
 
     @pytest.mark.usefixtures('manual_import')

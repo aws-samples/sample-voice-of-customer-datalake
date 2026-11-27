@@ -20,10 +20,9 @@ request's resolved membership only; resumed by ``POST /platform/workspaces/{ws}/
    the next generation only (the next invocation reads the checkpoint from the row). Every invocation past the fence
    first reads the workspace's ``META``: one that reads ``active`` stops the job (``failed``), whatever the phase;
 4. **verifies** (``verify``): every partition the inventory lists, each fixed partition, the workspace's versions and
-   open uploads, its credentials path, its project and review link registries and its control partition must hold
-   nothing (a re-check of what the job can
-   list, not a proof that nothing of the workspace is left anywhere: TENETS.md D5's gaps); anything found sends the
-   job back to the first sweep once (every sweep is idempotent), then fails it naming the families left (never a
+   open uploads (in the raw bucket and the import bucket), its credentials path, its project and review link
+   registries and its control partition must hold nothing (a re-check of what the job can list, not a proof that
+   nothing of the workspace is left anywhere: TENETS.md D5's gaps); anything found sends the job back to the first sweep once (every sweep is idempotent), then fails it naming the families left (never a
    key), checkpointed at the first sweep with its rounds reset, so a resume sweeps and verifies again;
 5. deletes its inventory and the export LOCK it held to the end, writes the platform's ``completed`` audit row
    (counts, never a row's content) and ends the job
@@ -39,7 +38,8 @@ events older than 40 minutes dropped, at most ``MAX_GENERATIONS``, two invocatio
 
 Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``MEMORY_TABLE``, ``WATERMARKS_TABLE``, ``RADAR_TABLE``,
 ``WORKSPACES_TABLE``, ``PROJECTS_TABLE``, ``JOBS_TABLE``, ``PARTICIPANTS_TABLE``, ``CONVERSATIONS_TABLE``,
-``AGENTS_TABLE`` (7.80.00), ``RAW_DATA_BUCKET``, ``WORKSPACE_PARAMETER_PREFIX``, ``PLUGIN_IDS`` (the deployment's plugin ids, a JSON list),
+``AGENTS_TABLE`` (7.80.00), ``RAW_DATA_BUCKET``, ``S3_IMPORT_BUCKET`` (the S3 import's staging bucket),
+``WORKSPACE_PARAMETER_PREFIX``, ``PLUGIN_IDS`` (the deployment's plugin ids, a JSON list),
 ``WORKSPACE_HARD_DELETE`` (``true``: the job is built only with ``-c workspaceHardDelete=true``, and refuses every
 event without it).
 """
@@ -110,6 +110,10 @@ PROJECTS_TABLE, JOBS_TABLE, PARTICIPANTS_TABLE = (
 CONVERSATIONS_TABLE: Final = os.environ.get('CONVERSATIONS_TABLE', '')
 #: voc-agents (7.80.00): the workspace's agents, workflows and their registry (sweeps.py ``agents``).
 AGENTS_TABLE: Final = os.environ.get('AGENTS_TABLE', '')
+#: The S3 import's staging bucket (VocIngestionStack ``s3ImportBucket``): a workspace's staged files under ``ws/{ws}/``
+#: (sweeps.py ``import_objects``). Empty, the layer refuses it as it does an empty RAW_DATA_BUCKET: the invocation
+#: stops before the fence, deleting nothing, and the job is never completed.
+S3_IMPORT_BUCKET: Final = os.environ.get('S3_IMPORT_BUCKET', '')
 
 #: Hand over to a fresh invocation when less than this remains (a page's tombstones, its deletes, the checkpoint and
 #: the invoke all fit in it).
@@ -231,6 +235,7 @@ class DeleteRun:
             watermarks=ingest_table(scope, resource, WATERMARKS_TABLE, key='source'),
             radar=ingest_table(scope, resource, RADAR_TABLE),
             workspaces=self.workspaces, objects=WorkspaceObjectVersions(scope, s3, RAW_DATA_BUCKET),
+            import_objects=WorkspaceObjectVersions(scope, s3, S3_IMPORT_BUCKET),
             exports=ExportObjects(scope, s3, RAW_DATA_BUCKET), ssm=get_ssm_run_client(),
             parameter_prefix=PARAMETER_PREFIX, plugin_ids=_plugin_ids(), job=row,
             # The config readers' handle: each read goes through the workspace's view (sweeps.py Context.settings).
@@ -486,8 +491,12 @@ def _exports_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
     return len([row for row in rows if row.get('sk') != lock['sk']]), None
 
 
-def _objects_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
-    return len(run.ctx.objects.list_page(None).versions) + len(run.ctx.objects.open_uploads()), None
+def _objects_left(field: str) -> Check:
+    """The versions, delete markers and open uploads left under ``ws/{ws}/`` of one bucket (its Context field)."""
+    def check(run: DeleteRun, _start: object) -> tuple[int, Any]:
+        bucket = getattr(run.ctx, field)
+        return len(bucket.list_page(None).versions) + len(bucket.open_uploads()), None
+    return check
 
 
 def _credentials_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
@@ -527,7 +536,8 @@ VERIFY_CHECKS: Final[tuple[tuple[str, Check], ...]] = (
     ('watermarks', _partition(lambda scope: scope.key(WATERMARK_DIRECTORY))),
     ('memory', _memory_left),
     ('exports', _exports_left),
-    ('objects', _objects_left),
+    ('objects', _objects_left('objects')),
+    ('import_objects', _objects_left('import_objects')),
     ('docshares', _review_links_left),
     ('projects', _projects_left),
     ('persona_library', _library_left),

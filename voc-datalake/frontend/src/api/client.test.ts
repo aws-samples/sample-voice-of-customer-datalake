@@ -344,8 +344,10 @@ describe('the request scope: a deployment-wide call names no workspace', () => {
 })
 
 describe('the deployment-only operator calls name no workspace, inside one too', () => {
-  // The API refuses them with X-Workspace-Id (400): the schedule every workspace's tick fans out from, and the
-  // S3 import's bucket, which is not keyed by workspace (docs/multi-workspace.md, 7.04.00).
+  // The API refuses these with X-Workspace-Id (400): enable and disable of the schedule every workspace's tick fans
+  // out from, and the S3 import's Run now, which stays deployment-only (docs/multi-workspace.md, 7.04.00). The S3
+  // import's own routes act in a workspace with the header since VERSION, but the web app sends none to them yet
+  // (the next slice).
   afterEach(() => setCurrentWorkspace(null))
 
   it.each([

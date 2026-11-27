@@ -6,8 +6,8 @@ editor or a viewer gets 403, a non-member the one 404); Run now and a scraper's 
 their invoke payload (never a body field) and write and read the workspace's run rows; the breaker routes read and
 clear the workspace's own TRIPPED row (enable and disable are refused: the schedule rule serves every workspace);
 credentials, app connectors and scraper configs live in the workspace's own SSM parameters, one per plugin and kind
-(decision 19). The S3 import API refuses the header outright. Without the header each route acts deployment-wide,
-as before.
+(decision 19). The S3 import API acts in the workspace too, for its admins only (a caller who may not act there
+reads nothing). Without the header each route acts deployment-wide, as before.
 """
 from __future__ import annotations
 
@@ -971,22 +971,29 @@ def test_the_workspace_store_is_opened_from_the_resolved_workspace_only():
     assert 'self.ws = table.scope.ws' in ast.unparse(store)
 
 
-# ── The S3 import API: deployment-wide only ─────────────────────────────────────────────────────────────────────
+# ── The S3 import API: on either path, refused before anything is read ─────────────────────────────────────────────
+# (its files in a workspace, ws/{ws}/<source>/<file>, and its runs: test_s3_import_workspace.py and the
+# cross-workspace suite)
 
-class TestTheS3ImportApiRefusesAWorkspace:
-    @pytest.mark.parametrize(('method', 'path', 'claims'), [
-        ('POST', '/s3-import/reprocess', ADMIN_A), ('POST', '/s3-import/reprocess', DEPLOYMENT_ADMIN),
-        ('GET', '/s3-import/files', VIEWER_A), ('GET', '/s3-import/reprocess/run_s3_import_20261101000000_0a0b0c0d',
-                                                ADMIN_B)])
-    @pytest.mark.parametrize('ws', [WS_A, ''])
-    def test_one_answer_for_everyone_before_anything_is_read(self, lambda_context, method, path, claims, ws):
-        # A reprocess too: the import bucket is the deployment's, so no plugin of a workspace is ever named here.
-        with patch.object(s3_import_handler, 's3_client') as s3, \
+class TestTheS3ImportApiRefusesBeforeAnythingIsRead:
+    @pytest.mark.parametrize(('method', 'path'), [
+        ('POST', '/s3-import/reprocess'), ('GET', '/s3-import/files'),
+        ('GET', '/s3-import/reprocess/run_s3_import_20261101000000_0a0b0c0d')])
+    @pytest.mark.parametrize(('claims', 'ws', 'status'), [
+        (ADMIN_A, '', 400),                  # an empty header names no workspace: never the deployment's
+        (DEPLOYMENT_ADMIN, WS_A, 404),       # the deployment's admins group grants nothing in a workspace
+        (ADMIN_B, WS_A, 404),                # another workspace's admin: the one 404
+        (VIEWER_A, WS_A, 403),               # a member who is not its admin
+    ], ids=['empty-header', 'deployment-admin', 'other-admin', 'viewer'])
+    def test_a_caller_who_may_not_act_there_reads_nothing(self, world, lambda_context, method, path, claims, ws,
+                                                          status):
+        with patch.object(s3_import_handler._request, 'workspace', world.resolver), \
+                patch.object(s3_import_handler, 's3_client') as s3, \
                 patch.object(s3_import_handler, 'get_aggregates_table') as table:
-            status, body = _call(s3_import_handler, lambda_context, method, path, claims=claims, ws=ws,
-                                 body={'key': 'default/reviews.csv'})
+            answer, _body = _call(s3_import_handler, lambda_context, method, path, claims=claims, ws=ws,
+                                  body={'key': 'default/reviews.csv'})
 
-        assert (status, body['error']) == (400, DEPLOYMENT_ONLY)
+        assert answer == status
         assert s3.mock_calls == []
         assert table.mock_calls == []
 

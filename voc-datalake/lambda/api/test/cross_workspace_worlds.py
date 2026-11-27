@@ -1147,6 +1147,68 @@ def manual_import_world(lambda_context: Any) -> Generator[World]:
                     deployment_mark='before_workspaces')
 
 
+# ── voc-s3-import-api (lambda/api/s3_import_handler.py): the import bucket's files and their reprocess runs ──
+
+#: A staged file of each place, named on the wire as ``<source>/<file>`` (the bucket's ``ws/{ws}/<source>/<file>`` in
+#: a workspace): A's and the deployment's under the same name (a request without the header names the deployment's
+#: own), B's carrying ``B_MARK``. Keys travel %-encoded in the delete's path, as the web app sends them.
+_STAGED_A, _STAGED_B, _STAGED_UNKNOWN = 'reviews/june.csv', f'reviews/{B_MARK}.csv', 'reviews/nowhere.csv'
+_STAGED_IDS = {'A': {'key': _STAGED_A}, 'B': {'key': _STAGED_B}, UNKNOWN: {'key': _STAGED_UNKNOWN}}
+_ENCODED_IDS = {side: {'key': ids['key'].replace('/', '%2F')} for side, ids in _STAGED_IDS.items()}
+#: A reprocess run of each place (``WS#{ws}#SOURCE_RUN#s3_import``), and the deployment's own under A's run id.
+S3_RUN_A = 'run_s3_import_20261101000000_000000a1'
+S3_RUN_B = 'run_s3_import_20261101000000_000000b1'
+_S3_RUN_IDS = {'A': {'run_id': S3_RUN_A}, 'B': {'run_id': S3_RUN_B},
+               UNKNOWN: {'run_id': 'run_s3_import_20261101000000_000000ff'}}
+#: Without the header the bucket's root folders are the deployment's, and its ``admins``', as before.
+_DEPLOYMENT_FILES = "the deployment as before: the bucket's own folders and run rows, no workspace's (ResolvedRoutes)"
+_S3_IMPORT_BUCKET = 'imports'
+
+
+def _seed_s3_import(s3: Any, aggregates: Any) -> None:
+    """Every place's folders, staged and archived files, and a finished reprocess run."""
+    body = b'text,rating\nGreat trail shoes,5\n'
+    places = ((f'ws/{WS_A}/', _STAGED_A, A_MARK, f'WS#{WS_A}#SOURCE_RUN#s3_import', S3_RUN_A),
+              (f'ws/{WS_B}/', _STAGED_B, B_MARK, f'WS#{WS_B}#SOURCE_RUN#s3_import', S3_RUN_B),
+              ('', _STAGED_A, 'before_workspaces', 'SOURCE_RUN#s3_import', S3_RUN_A))
+    for prefix, staged, mark, run_pk, run_id in places:
+        for key in (staged, f'{mark}/{mark}-notes.json', f'processed/reviews/{mark}.csv'):
+            s3.put_object(Bucket=_S3_IMPORT_BUCKET, Key=f'{prefix}{key}', Body=body)
+        s3.put_object(Bucket=_S3_IMPORT_BUCKET, Key=f'{prefix}{mark}-inbox/', Body=b'')
+        # (the deployment's run names its own file: a read of it inside A would show its mark)
+        aggregates.put_item(Item={'pk': run_pk, 'sk': run_id, 'status': 'completed', 'items_found': 3,
+                                  'started_at': '2026-11-01T00:00:00+00:00', 'errors': [],
+                                  'completed_at': '2026-11-01T00:01:00+00:00',
+                                  'file_key': staged if prefix else f'reviews/{mark}.csv'})
+
+
+@contextmanager
+def s3_import_world(lambda_context: Any) -> Generator[World]:
+    """The S3-import Lambda over two seeded workspaces (their admins only, ``require_request_admin``): a moto import
+    bucket holding A's, B's and the deployment's folders and files (in ``table_snapshot``), each place's reprocess
+    run, and the ingestor's invoke as a double."""
+    import s3_import_handler as h
+    from shared import s3_import_runs
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        aggregates = pk_sk_table('aggregates')
+        s3 = boto3.client('s3', region_name='us-east-1')
+        s3.create_bucket(Bucket=_S3_IMPORT_BUCKET)
+        _seed_s3_import(s3, aggregates)
+        ingestor = MagicMock(name='invoke_lambda_async')
+        resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: False)
+        for target, value in (('s3_client', s3), ('S3_IMPORT_BUCKET', _S3_IMPORT_BUCKET),
+                              ('S3_IMPORT_INGESTOR_FUNCTION', 'ingestor')):
+            stack.enter_context(patch.object(h, target, value))
+        stack.enter_context(patch.object(s3_import_runs, 'invoke_lambda_async', ingestor))
+        stack.enter_context(patch.object(h._request, 'workspace', resolver))
+        yield World(call=_caller(h, lambda_context, aggregates=aggregates),
+                    doubles={'cognito': cognito, 'ingestor': ingestor}, deployment_mark='before_workspaces')
+
+
 # ── voc-scrapers-api (lambda/api/scrapers_handler.py): a workspace's scrapers, their runs, the URL assist ──
 
 #: A scraper of each workspace (its config row ``WS#{ws}#PLUGIN_CONFIG`` / ``webscraper``) and the deployment's copy of
@@ -1439,6 +1501,7 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'feedback_edit_handler.py': feedback_edit_world,
     'feedback_form_handler.py': feedback_forms_world,
     'manual_import_handler.py': manual_import_world,
+    's3_import_handler.py': s3_import_world,
     'scrapers_handler.py': scrapers_world,
     'integrations_handler.py': integrations_world,
     'metrics_handler.py': metrics_reads_world,
@@ -1931,6 +1994,34 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the sample is new and nothing is stored: check 1', body={'format': 'csv', 'sample': _IMPORT_CSV},
         literals={'csv': 'the file format', _IMPORT_CSV: 'the file the admin chose'},
         without_a_workspace=_DEPLOYMENT_IMPORTS, deployment_admins_without_a_workspace=True),
+    # The S3 import (``ResolvedRoutes.middleware`` before every route, ``require_request_admin`` first in each): A's
+    # admins list, stage, delete and reprocess A's files only (the bucket's ``ws/{A}/…``, named ``<source>/<file>``);
+    # without the header the deployment's, its ``admins``', as before.
+    ('s3_import_handler.py', 'GET /s3-import/sources'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's folders; A lists its own)",
+        without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
+    ('s3_import_handler.py', 'POST /s3-import/sources'): RouteCase(
+        no_ids="the folder is new in A's own part of the bucket, the workspace is the header: check 1",
+        body={'name': 'web forms'}, literals={'web forms': 'the folder name the admin typed'},
+        without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
+    ('s3_import_handler.py', 'GET /s3-import/files'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's files; A lists its own)",
+        query={'source': 'reviews', 'include_processed': 'true'},
+        literals={'reviews': 'a folder name, the same words in every place', 'true': 'a view option'},
+        without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
+    ('s3_import_handler.py', 'POST /s3-import/upload-url'): RouteCase(
+        no_ids="the file is new in A's own part of the bucket, the workspace is the header: check 1",
+        body={'filename': 'july.csv', 'source': 'reviews', 'content_type': 'text/csv'},
+        literals={'july.csv': 'the name of the file the admin chose', 'reviews': 'a folder name, the same in every place',
+                  'text/csv': 'its type'},
+        without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
+    ('s3_import_handler.py', 'DELETE /s3-import/file/<key>'): RouteCase(
+        ids=_ENCODED_IDS, without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
+    ('s3_import_handler.py', 'POST /s3-import/reprocess'): RouteCase(
+        ids=_STAGED_IDS, body={'key': '{key}'}, ok_status=202, payload_names_a='ingestor',
+        without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
+    ('s3_import_handler.py', 'GET /s3-import/reprocess/<run_id>'): RouteCase(
+        ids=_S3_RUN_IDS, without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
     # The scrapers (``ResolvedRoutes.middleware`` before every route): any member reads A's scrapers, connectors,
     # learned methods and runs; A's admins save, delete and run A's scrapers; without the header the deployment's.
     **{('scrapers_handler.py', f'GET /scrapers{tail}'): RouteCase(

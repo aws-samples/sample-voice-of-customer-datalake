@@ -257,8 +257,9 @@ import file writes one run record; the **Import history** section of the Data so
 ([import-history.md](import-history.md)).
 
 S3 bulk import (`/s3-import/*`, `s3_import_handler.py`) is admin-only on every
-route for the same reason, and deployment-wide only: a request that sends `X-Workspace-Id` gets one 400 (the import
-bucket is not keyed by workspace); see [data-lake-structure.md](data-lake-structure.md).
+route for the same reason, on either path: without `X-Workspace-Id` the deployment's admins act on the import
+bucket's root folders; with it the workspace's admins act on its own `ws/{ws}/` folder (since 7.86.00); see
+[data-lake-structure.md](data-lake-structure.md#s3-import-bucket).
 
 ### Who can do what
 

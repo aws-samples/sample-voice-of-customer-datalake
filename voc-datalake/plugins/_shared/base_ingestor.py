@@ -13,11 +13,10 @@ Two paths (docs/multi-workspace.md, phase 2 "ingestion"; ``run_in_workspace``):
   parameters of this plugin), and every queued message carries ``workspace_id``. A ``workspace_id`` that is not
   a workspace id is refused.
 * A deployment-wide run: its event names no workspace (the API's Run now and scraper run
-  without ``X-Workspace-Id``, the S3 import API's reprocess, an S3 upload, the scheduled
-  tick's own run). It does exactly what it did before workspaces (``{plugin}#{key}``
-  watermarks, ``SOURCE_RUN#`` rows, the shared secret, ``raw/``). This path stays until
-  phase 2's last slice moves the S3 import, its trigger and the rest onto workspaces, and is
-  then removed.
+  without ``X-Workspace-Id``, the S3 import API's reprocess without it, an S3 upload outside any
+  ``ws/{ws}/`` folder, the scheduled tick's own run). It does exactly what it did before workspaces
+  (``{plugin}#{key}`` watermarks, ``SOURCE_RUN#`` rows, the shared secret, ``raw/``). This path
+  stays; its removal is a later owner decision.
 """
 
 import os
@@ -223,9 +222,10 @@ def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]
       for a Run now or a scraper run (``_end_refused_run``). A status that cannot be read raises and leaves that row
       alone (Lambda's asynchronous retries, or the next tick, try again).
     * An event that names none (the API's Run now and scraper run without ``X-Workspace-Id``, the S3 import API's
-      reprocess, an S3 upload's trigger) runs ``run(None)``: the deployment-wide path, exactly as before workspaces.
-      That path stays until phase 2's last slice moves the S3 import and its trigger onto workspaces, and is then
-      removed.
+      reprocess, an S3 upload outside any ``ws/{ws}/`` folder) runs ``run(None)``: the deployment-wide path, exactly
+      as before workspaces. An upload under ``ws/{ws}/`` names its workspace through its key: s3_import's
+      ``lambda_handler`` calls this with its records plus ``workspace_id``. The deployment-wide path stays; its
+      removal is a later owner decision.
     * The scheduled tick first fans out to the workspaces that enabled the plugin (``fan_out_tick``, each its own
       invoke), at most once per tick (``fan_out_once``), then runs the deployment-wide run as before.
     """

@@ -24,8 +24,9 @@ export const del = (body?: unknown): RequestInit => jsonRequest('DELETE', body)
 export type FetchApi = <T>(endpoint: string, options?: RequestInit, scope?: 'workspace' | 'deployment') => Promise<T>
 
 /**
- * The source whose Run now is the deployment's alone: the S3 import's bucket is not keyed by workspace, so the
- * integrations API refuses its Run now in a workspace (400) and the web app sends it without `X-Workspace-Id`.
+ * The source whose Run now is the deployment's alone: the S3 import is no workspace plugin (a workspace's S3 import
+ * runs from its upload or reprocess, through the S3 import API), so the integrations API refuses its Run now in a
+ * workspace (400) and the web app sends it without `X-Workspace-Id`.
  */
 const DEPLOYMENT_ONLY_RUN_SOURCE = 's3_import'
 

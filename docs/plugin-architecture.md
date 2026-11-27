@@ -261,8 +261,8 @@ the plugin (`PLUGIN#{id}` rows in `voc-workspaces`, `lambda/shared/workspace_plu
 `{"workspace_id": ws}`; then it runs the deployment-wide run. A failed claim, list read or invoke is
 logged and metered (`IngestFanOutFailures`) and never changes the deployment-wide run; the next tick
 tries again. Nothing writes those rows yet, so a tick runs no workspace. The
-deployment-wide path stays until phase 2's last slice moves the S3 import, its trigger and the rest
-of the API onto workspaces, and is then removed.
+deployment-wide path stays (the S3 import, its trigger and its API work in a workspace since 7.86.00);
+its removal is a later owner decision.
 
 **Roles** (`lib/stacks/ingestion-roles.ts`). Every ingestor role gets the same base grants:
 read/write on the watermarks and aggregates tables (DeleteItem on the aggregates table only for the
@@ -351,8 +351,9 @@ workspace.
   for a run in a workspace, `plugins/_shared/raw_original.py`) when the `s3_import` profile keeps
   whole files, and a reprocess needs the staged file
   ([data-lake-structure.md](data-lake-structure.md#every-ingested-source-has-a-raw-copy)). An
-  upload's trigger names no workspace, so it runs deployment-wide until the import bucket is keyed by
-  workspace ([multi-workspace.md](multi-workspace.md)).
+  upload's trigger names no workspace: since 7.86.00 an upload under `ws/{ws}/` runs in that workspace
+  (read from its key), every other upload deployment-wide as before
+  ([multi-workspace.md](multi-workspace.md)).
 - **Shared secret:** `voc-datalake/api-credentials` (with the account/region suffix), seeded with
   every loaded plugin's `secrets` as `<id>_<key>`, plus `webscraper_configs: "[]"`. The API saves
   plugin credentials, app connectors and scraper configs there; the webhooks and the ingestors'
@@ -614,8 +615,8 @@ and **disable** answer 400, because the schedule rule serves every workspace (wh
 workspace runs is its plugin settings', the `PLUGIN#` rows its admins enable on Workspace settings). Also refused there (400): an app connector or a review page
 that names a `radar_brand` (a workspace's Radar takes no reviews yet), a `configs` key on
 `PUT /integrations/<source>/credentials` (save the lists through `POST /scrapers` and `POST
-/integrations/<source>/apps`, which check each entry), and a **Run now** of `s3_import` (the import bucket is not
-keyed by workspace). The credentials routes, `GET /integrations/status`, the app connector routes and the scrapers
+/integrations/<source>/apps`, which check each entry), and a **Run now** of `s3_import` (it is no workspace
+plugin: a workspace's S3 import runs from its upload or reprocess, through the S3 import API). The credentials routes, `GET /integrations/status`, the app connector routes and the scrapers
 API's list, save, delete and connectors read and write the workspace's own credentials parameter and config row
 ([multi-workspace.md](multi-workspace.md#credentials), decision 19): nothing saved reads as empty, and a save whose
 credentials would pass one parameter's 4096 bytes, or whose list would pass the shared secret's own limits, answers

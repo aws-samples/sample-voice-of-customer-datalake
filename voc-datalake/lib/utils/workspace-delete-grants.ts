@@ -20,10 +20,13 @@
  *     `AUDIT#workspace-deletes` (the completed row) in voc-workspaces;
  *   - the closed counter families' names read from the workspace's own `WS#{id}#SETTINGS#categories` and
  *     `#dimensions` rows (the `aggregates` grant's GetItem on `WS#{id}#*`), never the deployment's settings;
- *   - S3: versions listed only with the `s3:prefix` `ws/{id}/*`, deleted by version id and uploads aborted under
- *     `ws/{id}/*` only; ListBucketMultipartUploads is bucket-wide (it takes no `s3:prefix` condition), so the role
- *     could list every open upload's key and upload id in the bucket, other workspaces' and the deployment's too, but
- *     no object's data; the code asks for `ws/{id}/` only. Accepted (docs/multi-workspace.md, step 4's IAM);
+ *   - S3 (`objects`: the raw bucket; `importObjects`: the S3 import's staging bucket, the workspace's staged files
+ *     under `ws/{id}/<source>/<file>`; the same statements on each): versions listed only with the `s3:prefix`
+ *     `ws/{id}/*`, deleted by version id and uploads aborted under `ws/{id}/*` only, no object read, no KMS call
+ *     (none of those calls touches an object's data); ListBucketMultipartUploads is bucket-wide (it takes no
+ *     `s3:prefix` condition), so the role could list every open upload's key and upload id in either bucket, other
+ *     workspaces' and the deployment's too, but no object's data; the code asks for `ws/{id}/` only. Accepted
+ *     (docs/multi-workspace.md, step 4's IAM);
  *   - SSM: the workspace's credentials path listed and its parameters deleted; kms:Decrypt through SSM is denied
  *     outright (lib/stacks/workspace-delete-worker.ts), so no value is ever read;
  *   - `projects`: Query of the registry `WS#{id}#PROJECT_IDS` and of each project's partitions (`WS#{id}#PROJECT#*`,
@@ -57,8 +60,8 @@
  */
 export type DeleteGrant =
   | 'aggregates' | 'metricTypeIndex' | 'tombstones' | 'exportJobs' | 'feedback'
-  | 'watermarks' | 'memory' | 'objects' | 'credentials' | 'controlRows' | 'radar' | 'projects' | 'docshares'
-  | 'participants' | 'conversations' | 'agents';
+  | 'watermarks' | 'memory' | 'objects' | 'importObjects' | 'credentials' | 'controlRows' | 'radar' | 'projects'
+  | 'docshares' | 'participants' | 'conversations' | 'agents';
 
 /** Each sweep (SWEEPS' names, in order) and the grants it needs. */
 export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGrant[]>> = {
@@ -80,6 +83,7 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
   memory: ['memory', 'tombstones'],
   exports: ['aggregates', 'exportJobs', 'objects'],
   objects: ['objects'],
+  import_objects: ['importObjects'],
   radar: ['radar', 'aggregates'],
   settings: ['aggregates'],
   user_contexts: ['aggregates'],
@@ -101,8 +105,8 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
 export const REQUIRED_DELETE_SWEEPS: readonly string[] = [
   'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
   'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
-  'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
-  'participants', 'library', 'agents', 'conversations', 'control_rows',
+  'watermarks', 'memory', 'exports', 'objects', 'import_objects', 'radar', 'settings', 'user_contexts', 'docshares',
+  'projects', 'participants', 'library', 'agents', 'conversations', 'control_rows',
 ];
 
 /** Throws, naming them, when `registry` lacks any of `REQUIRED_DELETE_SWEEPS`. */

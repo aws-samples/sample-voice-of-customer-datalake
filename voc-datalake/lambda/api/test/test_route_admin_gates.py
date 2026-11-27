@@ -227,7 +227,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     'radar_handler.py': frozenset({'PUT /radar/settings', 'POST /radar/scan', 'PUT /radar/brands'}),
     # Radar's Exa key (docs/radar.md): a paid third-party search account's credential.
     'radar_exa_routes.py': frozenset({'PUT /radar/settings/exa-key', 'DELETE /radar/settings/exa-key'}),
-    's3_import_handler.py': frozenset({  # #242, module middleware
+    # #242: each route's first statement is the two-path gate (since the S3 import learned workspaces: in one, the
+    # caller's admin role there; without the header the deployment's admins, as before).
+    's3_import_handler.py': frozenset({
         'POST /s3-import/sources', 'POST /s3-import/upload-url', 'DELETE /s3-import/file/<key>',
         'POST /s3-import/reprocess',  # re-runs a file through the ingestor (issue #144)
     }),
@@ -859,6 +861,13 @@ WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
         'POST /scrapers/manual/csv-upload', 'POST /scrapers/manual/json-upload', 'POST /scrapers/manual/detect',
         'GET /scrapers/manual/history', 'GET /scrapers/manual/history/<run_id>',
     }),
+    # The S3 import: every route acts in the request's workspace (its files the bucket's ws/{ws}/<source>/<file>,
+    # named <source>/<file> on the wire; its reprocess runs WS#{ws}#SOURCE_RUN#s3_import), its admins only (ADMIN_ONLY
+    # and TWO_PATH_ADMIN_READS, the two-path gate first); without the header the deployment's, as before.
+    's3_import_handler.py': frozenset({
+        'GET /s3-import/sources', 'POST /s3-import/sources', 'GET /s3-import/files', 'POST /s3-import/upload-url',
+        'DELETE /s3-import/file/<key>', 'POST /s3-import/reprocess', 'GET /s3-import/reprocess/<run_id>',
+    }),
 }
 #: How each module resolves the workspace before a route reads: a middleware (module-wide: its name and the call
 #: its first statement makes, afresh for each request) or a per-route call.
@@ -881,18 +890,13 @@ WORKSPACE_WRITE_CALL = {'feedback_form_handler.py': "_request_scope(write=True)"
 #: `_request = ResolvedRoutes(app)` and `app.use(middlewares=[_request.middleware])`; its admin gate is
 #: `_request.require_request_admin()`.
 SHARED_RESOLVER = 'ResolvedRoutes'
-TWO_PATH_MODULES = frozenset({'integrations_handler.py', 'scrapers_handler.py', 'manual_import_handler.py'})
+TWO_PATH_MODULES = frozenset({'integrations_handler.py', 'scrapers_handler.py', 'manual_import_handler.py',
+                              's3_import_handler.py'})
 #: Routes of a two-path module that a request in a workspace may not use: each calls the module's refusal as an
 #: unconditional top-level statement, right after its admin gate.
 WORKSPACE_REFUSAL = 'refuse_in_workspace'
 WORKSPACE_REFUSED: dict[str, frozenset[str]] = {
     'integrations_handler.py': frozenset({'PUT /sources/<source>/enable', 'PUT /sources/<source>/disable'}),
-}
-#: Modules that do not act in a workspace yet: their first middleware refuses any request that sends
-#: X-Workspace-Id (shared/workspace_request.py `deployment_only`: one 400 for everyone, nothing read).
-DEPLOYMENT_ONLY_MODULES: dict[str, str] = {
-    's3_import_handler.py': 'the import bucket is not keyed by workspace: a reprocess in a workspace would ingest '
-                            "the deployment's staged files into it",
 }
 ALL_METHODS = PLATFORM_GATED_METHODS
 
@@ -1093,6 +1097,10 @@ def test_the_shared_middleware_resolves_before_it_hands_on():
 #: The admin-only reads of the two-path operator modules (also in ADMIN_ONLY_READS below).
 TWO_PATH_ADMIN_READS: dict[str, frozenset[str]] = {
     'integrations_handler.py': frozenset({'GET /integrations/status', 'GET /integrations/<source>/credentials'}),
+    # #242: the import bucket's folders, files and reprocess runs.
+    's3_import_handler.py': frozenset({
+        'GET /s3-import/sources', 'GET /s3-import/files', 'GET /s3-import/reprocess/<run_id>',
+    }),
 }
 
 
@@ -1135,19 +1143,6 @@ def test_only_the_listed_routes_refuse_a_workspace():
                 for fn in _module_functions(ast.parse(_source(handler))).values()
                 if WORKSPACE_REFUSAL in _top_level_calls(fn) for key in _route_keys(fn, ALL_METHODS)}
     assert refusing == {(handler, route) for handler, routes in WORKSPACE_REFUSED.items() for route in routes}
-
-
-@pytest.mark.parametrize('handler', sorted(DEPLOYMENT_ONLY_MODULES))
-def test_a_deployment_only_module_refuses_the_header_first(handler):
-    tree = ast.parse(_source(handler))
-    [use] = [stmt.value for stmt in tree.body if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
-             and _called_name(stmt.value) == 'use']
-    [middlewares] = [keyword.value for keyword in use.keywords if keyword.arg == 'middlewares']
-    assert isinstance(middlewares, ast.List)
-    first = middlewares.elts[0]
-    assert isinstance(first, ast.Name)
-    assert first.id == 'deployment_only'
-    assert not _resolves(_source(handler))
 
 
 @pytest.mark.parametrize(('handler', 'route'), sorted(
@@ -1195,10 +1190,7 @@ def test_only_the_recorded_handlers_are_not_resolvers():
 # pinned so they cannot silently reopen. The reads in OPEN_BY_DESIGN_READS are pinned the other
 # way: open to every signed-in user, each with its reason, so gating one is a visible decision.
 ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
-    # #242: the import bucket and parse jobs are admin-only.
-    's3_import_handler.py': frozenset({
-        'GET /s3-import/sources', 'GET /s3-import/files', 'GET /s3-import/reprocess/<run_id>',
-    }),
+    # #242: the import bucket and parse jobs are admin-only (the S3 import's reads: TWO_PATH_ADMIN_READS).
     'manual_import_handler.py': frozenset({
         'GET /scrapers/manual/parse/<job_id>',
         # Import history (#237): who imported what, from which file — admin data like the imports themselves.

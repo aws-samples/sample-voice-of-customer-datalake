@@ -9,8 +9,9 @@
  *   - voc-workspaces: UpdateItem on its job rows (`WSDELETE`: the generation claim, the progress, the outcome), Query
  *     of a workspace's `WS#{one id}` (its META's status), PutItem and GetItem on `AUDIT#workspace-deletes` only (the
  *     completed row, read back after a retried put);
- *   - KMS (the tables' and the bucket's key), with kms:Decrypt denied where kms:ViaService is SSM; its own invoke.
- *     No Scan anywhere, no table delete, no SSM decrypt.
+ *   - KMS (the tables' and the raw bucket's key; its S3 calls on the raw and the import bucket decrypt nothing), with
+ *     kms:Decrypt denied where kms:ViaService is SSM; its own invoke. No Scan anywhere, no table delete, no SSM
+ *     decrypt.
  *
  * Reserved concurrency 2 (free): one invocation runs per deleting workspace (the job row's generation claim), and two
  * workspaces deleting at once is far more than a deployment needs; a third waits in Lambda's throttling retries.
@@ -39,6 +40,7 @@ import { WORKSPACE_HARD_DELETE_ENV } from '../utils/workspace-hard-delete';
 import { grantInvokeByName, workerRole } from '../utils/worker-lambda';
 import { workspaceParameterEnv } from '../utils/workspace-secrets';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_OBJECTS_PREFIX } from './core-buckets';
+import { S3_IMPORT_BUCKET_ENV } from './ingestion-stack';
 
 /** Path-style handler: the bundle keeps `jobs/workspace_delete/` with `shared/` beside `jobs/`. */
 const DELETE_HANDLER = 'jobs/workspace_delete/handler.lambda_handler';
@@ -127,6 +129,9 @@ export interface WorkspaceDeleteWorkerProps {
   /** voc-agents: the workspace's agents, workflows and their registry (the `agents` grant, 7.80.00). */
   agentsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
+  /** The S3 import's staging bucket (VocIngestionStack `s3ImportBucket`): a workspace's staged files under `ws/{id}/`
+   * (the `importObjects` grant). */
+  s3ImportBucket: s3.IBucket;
   /** Every plugin id of the deployment (its PLUGIN#{p} rows and per-plugin partitions are found by them). */
   pluginIds: readonly string[];
 }
@@ -297,6 +302,27 @@ const KEYS_ONLY_SWEEPS: Partial<Record<DeleteGrant,
   agents: (props) => [props.agentsTable, AGENT_PARTITIONS],
 };
 
+/**
+ * The `objects` and `importObjects` grants, one bucket each: one workspace's versions listed (`s3:prefix`
+ * `ws/{one id}/*`), deleted by version id and its uploads aborted under `ws/{one id}/*`. No object is read, so no KMS
+ * call is made (deleting a version or aborting an upload decrypts nothing).
+ */
+function grantWorkspaceObjectVersions(role: iam.Role, bucket: s3.IBucket): void {
+  const versionsOfOneWorkspace = { StringLike: { 's3:prefix': [WORKSPACE_OBJECTS_PREFIX] } };
+  // ListBucketMultipartUploads takes no s3:prefix condition, so it is bucket-wide: the role could list every open
+  // upload's key and upload id, other workspaces' and the deployment's too, but no object's data. Accepted
+  // (docs/multi-workspace.md, step 4's IAM); the code lists one workspace's prefix (shared/ws_repo.py
+  // WorkspaceObjectVersions.open_uploads, ExportObjects.open_uploads).
+  const statements: [string[], string, Record<string, unknown> | undefined][] = [
+    [['s3:ListBucketVersions'], bucket.bucketArn, versionsOfOneWorkspace],
+    [['s3:ListBucketMultipartUploads'], bucket.bucketArn, undefined],
+    [['s3:AbortMultipartUpload', 's3:DeleteObjectVersion'], bucket.arnForObjects(WORKSPACE_OBJECTS_PREFIX), undefined],
+  ];
+  for (const [actions, resource, conditions] of statements) {
+    role.addToPolicy(new iam.PolicyStatement({ actions, resources: [resource], conditions }));
+  }
+}
+
 /** Each grant's statements (lib/utils/workspace-delete-grants.ts). */
 function grant(scope: Construct, role: iam.Role, which: DeleteGrant, props: WorkspaceDeleteWorkerProps): void {
   const { feedbackTable, aggregatesTable, workspacesTable, memoryTable, watermarksTable, radarTable, rawDataBucket } = props;
@@ -330,23 +356,22 @@ function grant(scope: Construct, role: iam.Role, which: DeleteGrant, props: Work
       query(role, `${memoryTable.tableArn}/index/${MEMORY_BY_STATUS_INDEX}`, [`WS#${ONE}#MEMSTATUS#personal#*`]);
       sweep(role, [memoryTable], [WORKSPACE_PARTITIONS], []);
       return;
-    case 'objects': {
-      const versionsOfOneWorkspace = { StringLike: { 's3:prefix': [WORKSPACE_OBJECTS_PREFIX] } };
-      // ListBucketMultipartUploads takes no s3:prefix condition, so it is bucket-wide: the role could list every open
-      // upload's key and upload id, other workspaces' and the deployment's too, but no object's data. Accepted
-      // (docs/multi-workspace.md, step 4's IAM); the code lists one workspace's prefix (shared/ws_repo.py
-      // WorkspaceObjectVersions.open_uploads, ExportObjects.open_uploads).
-      const statements: [string[], string, Record<string, unknown> | undefined][] = [
-        [['s3:ListBucketVersions'], rawDataBucket.bucketArn, versionsOfOneWorkspace],
-        [['s3:ListBucketMultipartUploads'], rawDataBucket.bucketArn, undefined],
-        [['s3:AbortMultipartUpload', 's3:DeleteObjectVersion'], rawDataBucket.arnForObjects(WORKSPACE_OBJECTS_PREFIX),
-          undefined],
-      ];
-      for (const [actions, resource, conditions] of statements) {
-        role.addToPolicy(new iam.PolicyStatement({ actions, resources: [resource], conditions }));
-      }
+    case 'objects':
+      grantWorkspaceObjectVersions(role, rawDataBucket);
       return;
-    }
+    case 'importObjects':
+      // The workspace's staged files in the S3 import's bucket (ws/{id}/<source>/<file>), as the raw bucket's.
+      grantWorkspaceObjectVersions(role, props.s3ImportBucket);
+      // Acknowledged here, on the role (the raw bucket's ws/{one id}/* is among VocProcessingStack's own,
+      // lib/utils/nag-stack-acknowledgements.ts): only this job reaches the import bucket from this stack.
+      acknowledgeNag(role, [{
+        id: 'AwsSolutions-IAM5',
+        reason: 'A workspace\'s hard delete deletes that workspace\'s staged import files (every version, delete marker '
+          + 'and open upload under ws/{ws}/ of the S3 import bucket), the prefix built from the job row\'s workspace '
+          + 'only; one workspace id segment, DeleteObjectVersion and AbortMultipartUpload only, no object read',
+        findings: [resourceFinding(props.s3ImportBucket.arnForObjects(WORKSPACE_OBJECTS_PREFIX))],
+      }]);
+      return;
     case 'credentials':
       grantCredentials(cdk.Stack.of(scope), role, props.parameterBasePath);
       return;
@@ -408,6 +433,7 @@ export function createWorkspaceDeleteWorker(scope: Construct, id: string,
       CONVERSATIONS_TABLE: props.conversationsTable.tableName,
       AGENTS_TABLE: props.agentsTable.tableName,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
+      [S3_IMPORT_BUCKET_ENV]: props.s3ImportBucket.bucketName,
       PLUGIN_IDS: JSON.stringify([...props.pluginIds].sort(byCodeUnit)),
       // Built only with the flag on (lib/utils/workspace-hard-delete.ts); the job refuses to run without it.
       [WORKSPACE_HARD_DELETE_ENV]: 'true',

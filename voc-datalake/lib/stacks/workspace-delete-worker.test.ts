@@ -189,7 +189,8 @@ describe('the voc-workspace-delete job', () => {
     const variables = worker().Environment.Variables;
     expect(Object.keys(variables)).toStrictEqual(expect.arrayContaining([
       'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'WORKSPACES_TABLE', 'MEMORY_TABLE', 'WATERMARKS_TABLE', 'RAW_DATA_BUCKET',
-      'WORKSPACE_PARAMETER_PREFIX', 'PLUGIN_IDS', 'PROJECTS_TABLE', 'JOBS_TABLE', 'PARTICIPANTS_TABLE']));
+      'WORKSPACE_PARAMETER_PREFIX', 'PLUGIN_IDS', 'PROJECTS_TABLE', 'JOBS_TABLE', 'PARTICIPANTS_TABLE',
+      'S3_IMPORT_BUCKET']));
     expect([variables.WORKSPACE_PARAMETER_PREFIX, variables.WORKSPACE_HARD_DELETE]).toStrictEqual(['/voc/ws', 'true']);
     expect(JSON.parse(String(variables.PLUGIN_IDS))).toStrictEqual(expect.arrayContaining(['webscraper']));
     for (const name of ['SECRETS_ARN', 'KMS_KEY_ARN', 'WORKSPACE_PARAMETER_KEY_ARN']) expect(variables).not.toHaveProperty(name);
@@ -199,11 +200,11 @@ describe('the voc-workspace-delete job', () => {
     expect(Object.keys(WORKSPACE_DELETE_GRANTS)).toStrictEqual([
       'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
       'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
-      'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
-      'participants', 'library', 'agents', 'conversations', 'control_rows']);
+      'watermarks', 'memory', 'exports', 'objects', 'import_objects', 'radar', 'settings', 'user_contexts', 'docshares',
+      'projects', 'participants', 'library', 'agents', 'conversations', 'control_rows']);
     expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['agents', 'aggregates', 'controlRows', 'conversations',
-      'credentials', 'docshares', 'exportJobs', 'feedback', 'memory', 'metricTypeIndex', 'objects', 'participants',
-      'projects', 'radar', 'tombstones', 'watermarks']);
+      'credentials', 'docshares', 'exportJobs', 'feedback', 'importObjects', 'memory', 'metricTypeIndex', 'objects',
+      'participants', 'projects', 'radar', 'tombstones', 'watermarks']);
   });
 
   it('voc-agents: BatchWriteItem and a keys-only Query of one workspace\'s registry and the partitions it names', () => {
@@ -342,15 +343,26 @@ describe('the voc-workspace-delete job', () => {
     expect(batches.every((s) => JSON.stringify(s.condition).includes(`WS#${ONE}#`))).toBe(true);
   });
 
-  it('S3: lists one workspace\'s versions, deletes them by version id and aborts its uploads, nothing else', () => {
+  it('S3: in the raw and the import bucket, lists one workspace\'s versions, deletes them by version id and aborts its uploads, nothing else', () => {
+    // Each statement's bucket, by the fixture's logical id in its ARN (lib/test-support/processing-stack-fixture.ts).
+    const bucketsOf = (resource: string) => ['RawData', 'S3Import'].filter((id) => resource.includes(id));
     const s3 = allowed().filter((s) => s.actions.some((action) => action.startsWith('s3:')))
-      .map((s) => ({ actions: s.actions, paths: [...s.resource.matchAll(/"\/([^"]*)"/g)].map((match) => match[1]),
-        condition: s.condition }));
-    expect(sorted(s3)).toStrictEqual(sorted([
-      { actions: ['s3:ListBucketVersions'], paths: [], condition: { StringLike: { 's3:prefix': [`ws/${ONE}/*`] } } },
-      { actions: ['s3:ListBucketMultipartUploads'], paths: [], condition: undefined },
-      { actions: ['s3:AbortMultipartUpload', 's3:DeleteObjectVersion'], paths: [`ws/${ONE}/*`], condition: undefined },
-    ]));
+      .map((s) => ({ actions: s.actions, buckets: bucketsOf(s.resource),
+        paths: [...s.resource.matchAll(/"\/([^"]*)"/g)].map((match) => match[1]), condition: s.condition }));
+    const oneWorkspace = (bucket: string) => [
+      { actions: ['s3:ListBucketVersions'], buckets: [bucket], paths: [],
+        condition: { StringLike: { 's3:prefix': [`ws/${ONE}/*`] } } },
+      { actions: ['s3:ListBucketMultipartUploads'], buckets: [bucket], paths: [], condition: undefined },
+      { actions: ['s3:AbortMultipartUpload', 's3:DeleteObjectVersion'], buckets: [bucket], paths: [`ws/${ONE}/*`],
+        condition: undefined },
+    ];
+    expect(sorted(s3)).toStrictEqual(sorted([...oneWorkspace('RawData'), ...oneWorkspace('S3Import')]));
+  });
+
+  it('is told the import bucket by its name, the bucket its S3 statements reach', () => {
+    const variables = worker().Environment.Variables;
+    expect(JSON.stringify(variables.S3_IMPORT_BUCKET)).toMatch(/ExportsOutputRefS3Import[0-9A-F]+/);
+    expect(JSON.stringify(variables.RAW_DATA_BUCKET)).toMatch(/ExportsOutputRefRawData[0-9A-F]+/);
   });
 
   it('SSM: lists one workspace\'s credentials path and deletes its parameters, with no decrypt through SSM', () => {

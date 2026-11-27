@@ -149,8 +149,10 @@ class TestStartingAReprocess:
         status, body = _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/gone.csv'})
 
         assert status == 404
-        # Names where the original went: the staged copy expires, the raw lake keeps it.
-        assert body['error'] == f'File not found: reviews/gone.csv. {h.STAGED_FILE_GONE}'
+        # Names where the original went: the staged copy expires, the raw lake keeps it. One fixed answer that never
+        # repeats the key (another place's file answers as one that exists nowhere).
+        assert body['error'] == f'File not found. {h.STAGED_FILE_GONE}'
+        assert 'gone.csv' not in body['error']
         assert 'raw/s3_import/' in h.STAGED_FILE_GONE
         table.put_item.assert_not_called()
         invoke.assert_not_called()

@@ -7,6 +7,12 @@
  * through the `s3_import` ingestor, reached BY NAME like every ingestor the API
  * invokes (`POST /sources/{source}/run`, api-data-lambdas.ts): VocIngestionStack
  * deploys first, and a construct reference would add a cross-stack export.
+ *
+ * Every route serves both paths (lambda/api/s3_import_handler.py, docs/multi-workspace.md): with X-Workspace-Id it
+ * resolves the workspace (the stack's one workspace-resolution policy and the live platform-admin check,
+ * grantRequestWorkspace) and acts on that workspace's ws/{ws}/<source>/<file> objects and its run rows. The bucket
+ * grant stays bucket-wide: the deployment's path needs the root keys and IAM's * matches /, so the handler builds the
+ * workspace's prefix from the resolved workspace only.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -15,11 +21,16 @@ import { getPluginsWithIngestor, type PluginManifest } from '../plugin-loader';
 import { ingestorFunctionBaseName } from './dlq-alarms';
 import { functionArnByName } from './api-assist-workers';
 import type { ApiStackContext } from './api-context';
+import { WORKSPACE_ID_PATTERN } from './core-buckets';
 import { IMPORT_STAGED_EXPIRATION_DAYS } from './ingestion-stack';
+import { grantRequestWorkspace } from '../utils/workspace-resolution-grants';
 
 const S3_IMPORT_PLUGIN_ID = 's3_import';
 /** The reprocess run rows (`SOURCE_RUN#s3_import` / `<run id>`, lambda/shared/s3_import_runs.py SOURCE_RUN_PK). */
 export const S3_IMPORT_RUN_PARTITION = `SOURCE_RUN#${S3_IMPORT_PLUGIN_ID}`;
+/** A workspace's reprocess run rows (`WS#{ws}#SOURCE_RUN#s3_import`, shared/run_rows.py source_run_partition): ONE
+ *  workspace id (WORKSPACE_ID_PATTERN, never `*`, which also matches `#`), the partition the ingestor's run there moves. */
+export const S3_IMPORT_WORKSPACE_RUN_PARTITION = `WS#${WORKSPACE_ID_PATTERN}#${S3_IMPORT_RUN_PARTITION}`;
 
 /** Whether VocIngestionStack creates the s3_import ingestor in this deployment (plugin enabled, ingestor on). */
 export function s3ImportIngestorDeployed(enabledPlugins: readonly PluginManifest[]): boolean {
@@ -29,7 +40,8 @@ export function s3ImportIngestorDeployed(enabledPlugins: readonly PluginManifest
 /**
  * The reprocess grants: invoke exactly the s3_import ingestor (unqualified ARN by
  * name), and Put/Get/Update/Query on the aggregates table pinned by `dynamodb:LeadingKeys`
- * to the run partition, so the role can write nothing else there. Returns the env
+ * to the run partitions (the deployment's and one workspace's), so the role can write nothing else there
+ * (StringLike: the workspace's partition is a pattern). Returns the env
  * the handler reads, empty when the ingestor is not deployed (the route then
  * answers "not configured").
  */
@@ -45,7 +57,11 @@ function grantReprocess(ctx: ApiStackContext, role: iam.Role, ingestorDeployed: 
     // Query: the duplicate-run check reads the run partition (s3_import_runs.refuse_running_duplicate).
     actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
     resources: [aggregatesTable.tableArn],
-    conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [S3_IMPORT_RUN_PARTITION] } },
+    conditions: {
+      'ForAllValues:StringLike': {
+        'dynamodb:LeadingKeys': [S3_IMPORT_RUN_PARTITION, S3_IMPORT_WORKSPACE_RUN_PARTITION],
+      },
+    },
   }));
   return { S3_IMPORT_INGESTOR_FUNCTION: ingestorName, AGGREGATES_TABLE: aggregatesTable.tableName };
 }
@@ -53,13 +69,16 @@ function grantReprocess(ctx: ApiStackContext, role: iam.Role, ingestorDeployed: 
 /** *ingestorDeployed*: `s3ImportIngestorDeployed` of the stack's enabled plugins (loaded once, in api-data-lambdas.ts). */
 export function createS3ImportLambda(ctx: ApiStackContext, ingestorDeployed: boolean): lambda.Function {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
-  const { kmsKey, s3ImportBucket } = ctx.props;
+  const { kmsKey, s3ImportBucket, workspacesTable, userPool } = ctx.props;
 
   const s3ImportRole = ctx.role('S3ImportLambdaRole');
   s3ImportBucket.grantReadWrite(s3ImportRole);
   // Also the aggregates table's CMK for the run rows.
   kmsKey.grantEncryptDecrypt(s3ImportRole);
   const reprocessEnv = grantReprocess(ctx, s3ImportRole, ingestorDeployed);
+  // X-Workspace-Id as the manual import resolves it: the stack's one workspace-resolution policy (membership reads, a
+  // platform admin's entry audited) and the live platform-admin check in Cognito.
+  const workspaceEnv = grantRequestWorkspace(workspacesTable, s3ImportRole, userPool);
 
   return new lambda.Function(stack, 'S3ImportApi', {
     functionName: ctx.uniqueName('voc-s3-import-api'),
@@ -74,7 +93,7 @@ export function createS3ImportLambda(ctx: ApiStackContext, ingestorDeployed: boo
       S3_IMPORT_BUCKET: s3ImportBucket.bucketName, ALLOWED_ORIGIN: allowedOrigin,
       // The reprocess 404 names the import bucket's real staged-file expiry (lambda/api/s3_import_handler.py).
       IMPORT_STAGED_EXPIRATION_DAYS: String(IMPORT_STAGED_EXPIRATION_DAYS),
-      POWERTOOLS_SERVICE_NAME: 'voc-s3-import-api', LOG_LEVEL: 'INFO', ...reprocessEnv,
+      POWERTOOLS_SERVICE_NAME: 'voc-s3-import-api', LOG_LEVEL: 'INFO', ...reprocessEnv, ...workspaceEnv,
     },
     layers: [apiLayer],
     logGroup: ctx.logGroup('S3ImportApiLogs', ctx.uniqueName('voc-s3-import-api')),

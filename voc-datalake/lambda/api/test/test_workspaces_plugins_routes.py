@@ -84,8 +84,9 @@ def test_every_member_lists_the_plugins_the_deployment_offers_in_its_order(world
 
 
 def test_a_deployment_only_plugin_is_neither_listed_nor_enabled_in_a_workspace(world, lambda_context, monkeypatch):
-    """The S3 import never runs in a workspace (its API acts deployment-wide only): a workspace is not offered it,
-    and enabling it is the one 404 of a plugin the deployment does not offer, with nothing written."""
+    """The S3 import has no scheduled or Run now run in a workspace (a workspace's runs come from its uploads and
+    reprocesses, through the S3 import API): a workspace is not offered it, and enabling it is the one 404 of a plugin
+    the deployment does not offer, with nothing written."""
     monkeypatch.setenv('ENABLED_SOURCES', '["webscraper", "s3_import", "app_reviews_ios"]')
 
     listed = _call(world, lambda_context, 'GET', PLUGINS)

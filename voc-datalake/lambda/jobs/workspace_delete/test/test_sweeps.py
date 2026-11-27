@@ -17,6 +17,9 @@ from jobs.workspace_delete.test.conftest import (
     CONVERSATION_ROWS,
     EVENTS_PER_MEMORY,
     FEEDBACK_ITEMS,
+    IMPORT_BUCKET,
+    IMPORT_FILES,
+    IMPORT_UPLOAD,
     OTHER,
     PERSONAL_MEMORIES,
     PLUGINS,
@@ -86,7 +89,7 @@ def test_the_entries_run_in_the_designs_order():
     assert [sweep.name for sweep in SWEEPS] == [
         'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
         'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
-        'watermarks', 'memory', 'exports', 'objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
+        'watermarks', 'memory', 'exports', 'objects', 'import_objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
         'participants', 'library', 'agents', 'conversations', 'control_rows']
 
 
@@ -409,6 +412,99 @@ class TestObjects:
             run(seeded, 'objects')
         listed = seeded.s3.list_object_versions(Bucket=BUCKET, Prefix=f'ws/{WS}/')
         assert listed.get('Versions')
+
+
+class TestImportObjects:
+    """The import bucket's sweep: the workspace's staged files (every version, delete marker and open upload under
+    ``ws/{ws}/``), nothing of another workspace or of the deployment's root, and nothing of the raw bucket."""
+
+    @staticmethod
+    def _mine(entries: list) -> list:
+        return [entry for entry in entries if (entry if isinstance(entry, str) else entry[0]).startswith(f'ws/{WS}/')]
+
+    def test_every_version_marker_and_upload_of_the_workspace_goes_and_nothing_else(self, seeded):
+        before = snapshot(seeded)
+        # Two versions of each staged file and the delete marker; the upload.
+        assert len(self._mine(before['import_objects'])) == 2 * len(IMPORT_FILES) + 1
+        assert self._mine(before['import_uploads']) == [f'ws/{WS}/{IMPORT_UPLOAD}']
+
+        counts = run(seeded, 'import_objects')
+
+        after = snapshot(seeded)
+        assert self._mine(after['import_objects']) == []
+        assert self._mine(after['import_uploads']) == []
+        assert after['import_objects'] == [e for e in before['import_objects'] if e not in self._mine([e])]
+        assert after['import_uploads'] == [k for k in before['import_uploads'] if not k.startswith(f'ws/{WS}/')]
+        assert f'ws/{OTHER}/{IMPORT_FILES[0]}' in {key for key, _version in after['import_objects']}
+        assert {'s3_import/reviews-2026-11.csv', 'processed/s3_import/reviews-2026-10.csv'} <= {
+            key for key, _version in after['import_objects']}
+        assert {'s3_import/large-export.csv', f'ws/{OTHER}/{IMPORT_UPLOAD}'} <= set(after['import_uploads'])
+        # The raw bucket is the objects sweep's, untouched here.
+        assert (after['objects'], after['uploads']) == (before['objects'], before['uploads'])
+        assert counts['import_objects'] == 2 * len(IMPORT_FILES) + 1
+        assert counts['import_uploads_aborted'] == 1
+        assert 'objects' not in counts
+        assert 'uploads_aborted' not in counts
+
+    def test_the_objects_sweep_leaves_the_import_bucket_alone(self, seeded):
+        before = snapshot(seeded)
+        run(seeded, 'objects')
+        after = snapshot(seeded)
+        assert (after['import_objects'], after['import_uploads']) == (before['import_objects'], before['import_uploads'])
+
+    def test_a_version_s3_will_not_delete_fails_the_sweep_after_its_retries(self, seeded):
+        from shared.ws_repo import VersionDeleteFailure, WorkspaceObjectVersions
+
+        calls: list[int] = []
+
+        def refuse(_self, versions):
+            calls.append(1)
+            return [VersionDeleteFailure(v.key, v.version_id, 'AccessDenied') for v in versions]
+
+        with patch.object(WorkspaceObjectVersions, 'delete', refuse), pytest.raises(RuntimeError, match='versions'):
+            run(seeded, 'import_objects')
+        assert len(calls) == sweeps._OBJECT_RETRIES + 1
+        listed = seeded.s3.list_object_versions(Bucket=IMPORT_BUCKET, Prefix=f'ws/{WS}/')
+        assert listed.get('Versions')
+
+    def test_a_sweep_stopped_partway_resumes_from_its_cursor_and_ends_like_one_run(self, seeded):
+        from shared.ws_repo import WorkspaceObjectVersions
+
+        real, calls = WorkspaceObjectVersions.delete, []
+
+        def fail_once(self_, versions):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError('stopped partway')
+            return real(self_, versions)
+
+        delete = _delete(seeded)
+        delete.run.phase, delete.run.cursor = 'import_objects', None
+        with patch.object(WorkspaceObjectVersions, 'delete', fail_once), pytest.raises(RuntimeError, match='partway'):
+            delete._sweep(BY_NAME['import_objects'])
+        # The uploads went first; the versions are all still there, and the run's cursor is past the aborts.
+        assert delete.run.cursor == {'failed_rounds': 0}
+        left = snapshot(seeded)
+        assert [k for k in left['import_uploads'] if k.startswith(f'ws/{WS}/')] == []
+        assert len([e for e in left['import_objects'] if e[0].startswith(f'ws/{WS}/')]) == 2 * len(IMPORT_FILES) + 1
+
+        # The next invocation, from the checkpointed cursor.
+        resumed = _delete(seeded)
+        cursor = delete.run.cursor
+        assert cursor is not None, 'the stopped sweep checkpointed its cursor'
+        resumed.run.phase, resumed.run.cursor = 'import_objects', dict(cursor)
+        resumed._sweep(BY_NAME['import_objects'])
+        after = snapshot(seeded)
+        assert [e for e in after['import_objects'] if e[0].startswith(f'ws/{WS}/')] == []
+        assert resumed.ctx.counts['import_objects'] == 2 * len(IMPORT_FILES) + 1
+
+    def test_the_verify_pass_sees_a_staged_file_left(self, seeded):
+        delete = _delete(seeded)
+        check = dict(handler.VERIFY_CHECKS)['import_objects']
+        # Two staged files' versions and a marker, and the open upload.
+        assert check(delete, None) == (2 * len(IMPORT_FILES) + 1 + 1, None)
+        run(seeded, 'import_objects')
+        assert check(_delete(seeded), None) == (0, None)
 
 
 class TestProjects:

@@ -62,10 +62,10 @@ In `voc-aggregates`, two rows per run, with no `ttl` (kept while the platform ru
 | `IMPORT_RUN#{run_id}` | `RUN` | The detail: the summary fields plus `warnings` and `errors` |
 
 An S3 import run in a workspace (multi-workspace, since 7.00.00, [multi-workspace.md](multi-workspace.md))
-writes the same two rows under `WS#{ws}#IMPORT_RUN` and `WS#{ws}#IMPORT_RUN#{run_id}`; the history routes read the
-deployment-wide rows above until they are keyed by workspace. Nothing in the app starts such a run yet: the import
-bucket is not keyed by workspace, so the S3 import API (its reprocess included) answers 400 to a request that sends
-`X-Workspace-Id`.
+writes the same two rows under `WS#{ws}#IMPORT_RUN` and `WS#{ws}#IMPORT_RUN#{run_id}`, and the history routes read
+them in that workspace (7.67.00). Such a run starts when a workspace's admin uploads a file to the workspace's folder
+of the import bucket, or reprocesses one, through the S3 import API with `X-Workspace-Id` (since 7.86.00,
+[data-lake-structure.md](data-lake-structure.md#s3-import-bucket)).
 
 The detail row is written first, so a listed run always has a detail. One partition holds every
 summary row; imports are a few per day, far below a partition's write limit. A row written by an

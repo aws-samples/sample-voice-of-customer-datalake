@@ -67,9 +67,9 @@ PLUGIN_ENABLED: Final = 'plugin_enabled'
 PLUGIN_DISABLED: Final = 'plugin_disabled'
 #: A run in a workspace of a plugin the workspace has not enabled (``require_plugin_enabled``).
 PLUGIN_NOT_ENABLED: Final = 'Enable this plugin for the workspace first'
-#: The plugins of the ceiling that never run in a workspace, so a workspace is neither shown nor allowed to enable
-#: them: the S3 import (its bucket, upload routes and trigger are the deployment's; its API answers a request that
-#: names a workspace with one 400, shared/workspace_request.py ``deployment_only``).
+#: The plugins of the ceiling a workspace is neither shown nor allowed to enable, as they have no scheduled or Run now
+#: run there: the S3 import (it runs on an upload, not a schedule: a workspace's runs come from its uploads under
+#: ``ws/{ws}/`` of the import bucket and its reprocesses, through the S3 import API, lambda/api/s3_import_handler.py).
 DEPLOYMENT_ONLY_PLUGINS: Final = frozenset({S3_IMPORT_SOURCE})
 #: One answer for a plugin outside the ceiling and an id that is not a plugin's.
 PLUGIN_NOT_FOUND: Final = 'Plugin not found'

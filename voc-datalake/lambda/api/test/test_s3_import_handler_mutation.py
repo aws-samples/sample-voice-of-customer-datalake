@@ -8,7 +8,8 @@ run found what it could not see:
   required'`, `'Filename is required'`, `'Only CSV, JSON, and JSONL files are supported'`, the
   four `'Failed to …'` service errors — and the log line each S3 failure leaves behind;
 * the exact S3 calls: `list_objects_v2(Bucket, Delimiter='/')`, the `list_objects_v2`
-  paginator with `Prefix='<source>/'` (or `''`), `put_object(Key='<name>/', Body=b'')`, the
+  paginator with `Prefix='<source>/'` (or, without a source, the root by `Delimiter='/'` and then each
+  folder but `ws/` by its own `Prefix`), `put_object(Key='<name>/', Body=b'')`, the
   presigned `put_object` URL with its `ContentType` and `ExpiresIn=7200`, the decoded
   `delete_object` key;
 * the sanitising: a source/folder name keeps only `[a-zA-Z0-9_-]`, a filename also keeps `.`,
@@ -81,6 +82,27 @@ def _pages(s3: MagicMock, *pages: dict) -> MagicMock:
     paginator.paginate.side_effect = [list(pages)]
     s3.get_paginator.return_value = paginator
     return paginator
+
+
+def _bucket_listing(s3: MagicMock, root_pages: list[dict], folders: dict[str, list[dict]]) -> MagicMock:
+    """A listing without a source: the root's `Delimiter='/'` pages are *root_pages*, a folder's (`Prefix='web/'`)
+    pages are its entry of *folders*. Each listing answers once; any other (a folder not in *folders*, `ws/`
+    included, or the whole bucket by `Prefix=''`) raises, which the route answers as its 500."""
+    answers = {('', '/'): list(root_pages), **{(prefix, None): list(pages) for prefix, pages in folders.items()}}
+
+    def paginate(*, Bucket: str, Prefix: str = '', Delimiter: str | None = None) -> list[dict]:
+        assert Bucket == BUCKET
+        return answers.pop((Prefix, Delimiter))
+
+    paginator = MagicMock()
+    paginator.paginate.side_effect = paginate
+    s3.get_paginator.return_value = paginator
+    return paginator
+
+
+def _folders(*names: str) -> dict:
+    """A root page's `CommonPrefixes` for *names* (each `<name>/`)."""
+    return {'CommonPrefixes': [{'Prefix': f'{name}/'} for name in names]}
 
 
 def _obj(key: str, size: int = 10) -> dict:
@@ -234,31 +256,58 @@ class TestListFiles:
         s3.get_paginator.assert_called_once_with('list_objects_v2')
         paginator.paginate.assert_called_once_with(Bucket=BUCKET, Prefix='web/')
 
-    def test_without_a_source_the_whole_bucket_is_listed(self, s3, api_gateway_event, lambda_context):
-        paginator = _pages(s3, {'Contents': []})
+    def test_without_a_source_the_root_is_listed_by_folder_and_ws_is_never_listed(self, s3, api_gateway_event,
+                                                                                  lambda_context):
+        """No request outside a workspace lists under `ws/`: the root by `Delimiter='/'`, then each folder by its own
+        `Prefix`, but not `ws/` (nor `processed/` unless asked for, nor a prefix-less row)."""
+        paginator = _bucket_listing(
+            s3, [{'Contents': [_obj('top.csv')], 'CommonPrefixes': [{'Prefix': 'web/'}, {'Prefix': 'ws/'}, {}]},
+                 _folders('processed')],
+            {'web/': [{'Contents': [_obj('web/a.csv')]}]})
+        status, body = _files(api_gateway_event, lambda_context)
+        assert (status, [f['key'] for f in body['files']], body['bucket']) == (200, ['top.csv', 'web/a.csv'], BUCKET)
+        s3.get_paginator.assert_called_once_with('list_objects_v2')
+        assert paginator.paginate.call_args_list == [call(Bucket=BUCKET, Delimiter='/'),
+                                                     call(Bucket=BUCKET, Prefix='web/')]
+
+    def test_an_empty_bucket_lists_nothing_with_one_request(self, s3, api_gateway_event, lambda_context):
+        paginator = _bucket_listing(s3, [{}], {})
         assert _files(api_gateway_event, lambda_context) == (200, {'files': [], 'bucket': BUCKET})
-        paginator.paginate.assert_called_once_with(Bucket=BUCKET, Prefix='')
+        paginator.paginate.assert_called_once_with(Bucket=BUCKET, Delimiter='/')
+
+    def test_the_files_come_in_the_buckets_key_order_across_every_page(self, s3, api_gateway_event, lambda_context):
+        """As the flat listing of the bucket had them: each folder's files where its name sorts among the root's."""
+        _bucket_listing(
+            s3, [{'Contents': [_obj('a.csv'), _obj('c.csv')], 'CommonPrefixes': [{'Prefix': 'b/'}]},
+                 {'Contents': [_obj('e.csv')], 'CommonPrefixes': [{'Prefix': 'd/'}]}],
+            {'b/': [{'Contents': [_obj('b/1.csv')]}, {}, {'Contents': [_obj('b/2.csv')]}],
+             'd/': [{'Contents': [_obj('d/x.json')]}]})
+        assert [f['key'] for f in _files(api_gateway_event, lambda_context)[1]['files']] == [
+            'a.csv', 'b/1.csv', 'b/2.csv', 'c.csv', 'd/x.json', 'e.csv']
 
     def test_each_row_is_described_field_by_field(self, s3, api_gateway_event, lambda_context):
-        _pages(s3, {'Contents': [_obj('web/2026/deep.json', 42), _obj('top.csv', 7), {'Key': 'bare.jsonl'}]})
+        _bucket_listing(s3, [{'Contents': [{'Key': 'bare.jsonl'}, _obj('top.csv', 7)], **_folders('web')}],
+                        {'web/': [{'Contents': [_obj('web/2026/deep.json', 42)]}]})
         assert _files(api_gateway_event, lambda_context)[1]['files'] == [
-            {'key': 'web/2026/deep.json', 'filename': 'deep.json', 'source': 'web', 'size': 42,
-             'last_modified': '2026-03-10T12:00:00+00:00', 'status': 'pending'},
-            {'key': 'top.csv', 'filename': 'top.csv', 'source': 'root', 'size': 7,
-             'last_modified': '2026-03-10T12:00:00+00:00', 'status': 'pending'},
             {'key': 'bare.jsonl', 'filename': 'bare.jsonl', 'source': 'root', 'size': 0,
              'last_modified': '', 'status': 'pending'},
+            {'key': 'top.csv', 'filename': 'top.csv', 'source': 'root', 'size': 7,
+             'last_modified': '2026-03-10T12:00:00+00:00', 'status': 'pending'},
+            {'key': 'web/2026/deep.json', 'filename': 'deep.json', 'source': 'web', 'size': 42,
+             'last_modified': '2026-03-10T12:00:00+00:00', 'status': 'pending'},
         ]
 
     @pytest.mark.parametrize('query', [{}, {'include_processed': 'false'}, {'include_processed': 'yes'}])
     def test_processed_files_are_hidden_unless_asked_for(self, s3, api_gateway_event, lambda_context, query):
-        _pages(s3, {'Contents': [_obj('processed/old.csv'), _obj('web/new.csv')]})
+        """Hidden by never listing `processed/` (the double answers a listing of it with the route's 500)."""
+        _bucket_listing(s3, [_folders('processed', 'web')], {'web/': [{'Contents': [_obj('web/new.csv')]}]})
         assert [f['key'] for f in _files(api_gateway_event, lambda_context, query)[1]['files']] == ['web/new.csv']
 
     @pytest.mark.parametrize('flag', ['true', 'TRUE', 'True'])
     def test_include_processed_true_in_any_case_lists_them_as_processed(self, s3, api_gateway_event,
                                                                          lambda_context, flag):
-        _pages(s3, {'Contents': [_obj('processed/old.csv', 5)]})
+        _bucket_listing(s3, [_folders('processed', 'ws')],
+                        {'processed/': [{'Contents': [_obj('processed/old.csv', 5)]}]})
         assert _files(api_gateway_event, lambda_context, {'include_processed': flag})[1]['files'] == [
             {'key': 'processed/old.csv', 'filename': 'old.csv', 'source': 'processed', 'size': 5,
              'last_modified': '2026-03-10T12:00:00+00:00', 'status': 'processed'},
@@ -352,11 +401,33 @@ class TestUploadUrl:
 # ============================================
 
 class TestDeleteFile:
+    @pytest.fixture(autouse=True)
+    def staged(self, s3: MagicMock) -> None:
+        """Every key holds a staged file (the delete reads it first)."""
+        s3.head_object.side_effect = None
+        s3.head_object.return_value = {'ContentLength': 10}
+
     def test_deletes_the_url_decoded_key(self, s3, api_gateway_event, lambda_context):
         status, body = _route(api_gateway_event, lambda_context, 'DELETE', '/s3-import/file/web%2Fmy%20data.json',
                               path_params={'key': 'web%2Fmy%20data.json'})
         assert (status, body) == (200, {'success': True, 'deleted_key': 'web/my data.json'})
+        s3.head_object.assert_called_once_with(Bucket=BUCKET, Key='web/my data.json')
         s3.delete_object.assert_called_once_with(Bucket=BUCKET, Key='web/my data.json')
+
+    def test_a_missing_file_is_the_one_404_and_nothing_is_deleted(self, s3, api_gateway_event, lambda_context):
+        """On the versioned bucket a delete of a missing key would still write a delete marker."""
+        s3.head_object.side_effect = _missing()
+        assert _route(api_gateway_event, lambda_context, 'DELETE', '/s3-import/file/web%2Fgone.csv',
+                      path_params={'key': 'web%2Fgone.csv'}) == (404, {'success': False, 'error': 'File not found'})
+        assert s3.delete_object.call_count == 0
+
+    def test_an_unreadable_file_is_a_named_service_error_and_logged(self, s3, log, api_gateway_event,
+                                                                    lambda_context):
+        s3.head_object.side_effect = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'x'}}, 'HeadObject')
+        assert _route(api_gateway_event, lambda_context, 'DELETE', '/s3-import/file/web%2Fa.csv',
+                      path_params={'key': 'web%2Fa.csv'}) == (500, {'success': False, 'error': 'Failed to delete file'})
+        assert s3.delete_object.call_count == 0
+        assert log.exception.call_count == 1
 
     def test_an_s3_failure_is_a_named_service_error_and_logged(self, s3, log, api_gateway_event, lambda_context):
         s3.delete_object.side_effect = RuntimeError('locked')
@@ -390,11 +461,14 @@ class TestDeleteFile:
         'web/a\\b.csv',             # backslash
         'web/a\x00.csv',            # control character
         'web/a\t.csv',
+        'ws/a.csv',                 # the workspaces' folder is no source
+        'ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/web/a.csv',
     ])
     def test_a_key_outside_the_import_layout_is_refused_before_any_s3_call(self, s3, api_gateway_event,
                                                                          lambda_context, key):
         encoded = urllib.parse.quote(key, safe='')
         status, body = _route(api_gateway_event, lambda_context, 'DELETE', f'/s3-import/file/{encoded}',
                               path_params={'key': encoded})
-        assert (status, body) == (400, {'success': False, 'error': h.INVALID_KEY})
-        assert s3.delete_object.call_count == 0
+        reserved = '"ws" is reserved; choose another source folder'
+        assert (status, body) == (400, {'success': False, 'error': reserved if key == 'ws/a.csv' else h.INVALID_KEY})
+        assert s3.mock_calls == []

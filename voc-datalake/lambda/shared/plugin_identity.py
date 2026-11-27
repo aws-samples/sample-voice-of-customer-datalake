@@ -43,7 +43,8 @@ import re
 __all__ = ["PLUGIN_IDENTIFIER_RULES", "S3_IMPORT_SOURCE", "is_valid_plugin_identifier"]
 
 #: The S3 import plugin's id: its whole-file originals (plugins/_shared/raw_original.py) and the integrations API's
-#: refusal of its Run now in a workspace (the import bucket is not keyed by workspace) name it.
+#: refusal of its Run now in a workspace (a workspace's S3 import runs from its upload or reprocess, through the S3
+#: import API) name it.
 S3_IMPORT_SOURCE = "s3_import"
 
 PLUGIN_IDENTIFIER_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')

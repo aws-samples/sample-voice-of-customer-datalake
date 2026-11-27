@@ -233,7 +233,8 @@ def test_the_conversations_entry_reads_keys_alone_and_never_the_deployments_part
 #: What an entry's table needs of the grants, and what each hook needs (the inventory and the tombstones live in
 #: voc-aggregates).
 TABLE_GRANTS: Final = {'ssm': 'credentials', 'feedback': 'feedback', 'aggregates': 'aggregates',
-                       'watermarks': 'watermarks', 'memory': 'memory', 'bucket': 'objects', 'workspaces': 'controlRows',
+                       'watermarks': 'watermarks', 'memory': 'memory', 'bucket': 'objects', 'import_bucket': 'importObjects',
+                       'workspaces': 'controlRows',
                        'radar': 'radar', 'projects': 'projects', 'docshares': 'docshares',
                        'participants': 'participants', 'conversations': 'conversations', 'agents': 'agents'}
 

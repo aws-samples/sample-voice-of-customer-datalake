@@ -33,9 +33,10 @@ middleware, admin gate, stored credentials and Radar refusal); its rules:
   refuse every message it stamped);
 * ``ResolvedRoutes.require_plugin_enabled``: a run in a workspace runs only a plugin the workspace enabled
   (shared/workspace_plugin_settings.py ``PLUGIN_NOT_ENABLED``, 409), before anything is read, written or invoked;
-* ``deployment_only``: the resolver middleware of a module that does not act in a workspace yet
-  (lambda/api/s3_import_handler.py): a request that sends the header is refused with one fixed 400 before anything
-  is read, whoever sends it, so the answer confirms no workspace.
+* ``DEPLOYMENT_ONLY``: the one fixed 400 of a route that does not act in a workspace yet (the integrations API's
+  Run now of ``s3_import``), answered before anything is read, whoever sends it, so it confirms no workspace. (The
+  module-wide middleware that answered it, ``deployment_only``, went with its last user: the S3 import API serves
+  both paths through ``ResolvedRoutes``.)
 """
 from __future__ import annotations
 
@@ -65,10 +66,9 @@ from shared.ws_repo import WorkspaceScope, scope_of
 __all__ = [
     'RequestWorkspace',
     'ResolvedRoutes',
-    'deployment_only',
 ]
 
-#: The one answer of a module that does not act in a workspace yet to a request that sends ``X-Workspace-Id``.
+#: The one answer of a route that does not act in a workspace yet to a request that sends ``X-Workspace-Id``.
 DEPLOYMENT_ONLY: Final = ('This API acts deployment-wide only, not in a workspace yet: '
                           'send the request without X-Workspace-Id.')
 
@@ -229,14 +229,3 @@ class ResolvedRoutes:
         context = self.context()
         if context is not None:
             self.workspace.require_plugin_enabled(context, plugin_id)
-
-
-def deployment_only(app: Any, next_middleware: Callable[[Any], Any]) -> Any:
-    """Resolver middleware of a module that does not act in a workspace yet: a request that sends
-    ``X-Workspace-Id`` (empty or not) is refused with ``DEPLOYMENT_ONLY`` (400) before anything is read, never served
-    deployment-wide (the rule of the module docstring). One answer for every caller, an S3 import's reprocess
-    included: it confirms no workspace."""
-    event = app.current_event
-    if names_a_workspace(event.raw_event):
-        raise ValidationError(DEPLOYMENT_ONLY)
-    return next_middleware(app)

@@ -19,7 +19,7 @@ The entry kinds: a fixed set of partitions listed once into the inventory, then 
 (``_partitions_sweep``); an owner list (``owner_list_sweep``: a partition of rows naming further partitions of the same
 table, each deleted in full, then the list itself LAST, so a sweep stopped anywhere resumes from the list: the import
 runs, the members' objectives, the people and lists, the conversations); and entries with their own pages (the feedback, the counters, the
-memory, the objects, the projects with each project's comments child, the review links, the control rows). ``Sweep.partitions`` is an entry's enumeration of what it reads, where it has
+memory, the objects of each bucket, the projects with each project's comments child, the review links, the control rows). ``Sweep.partitions`` is an entry's enumeration of what it reads, where it has
 a fixed one; the memory's is shared/memory_partitions.py, the export's too.
 
 What a tombstone or an audit row holds: counts and item ids only (a feedback id, a memory id: ``{ws}#{memory id}``),
@@ -215,7 +215,10 @@ class Context:
     #: ``WS#{ws}#RADAR_OWNED`` names).
     radar: WorkspaceTable
     workspaces: Any
+    #: The raw bucket's ``ws/{ws}/`` (the ``objects`` entry) and the S3 import's staging bucket's (the
+    #: ``import_objects`` entry: the workspace's staged files, ``ws/{ws}/<source>/<file>``).
     objects: WorkspaceObjectVersions
+    import_objects: WorkspaceObjectVersions
     exports: ExportObjects
     ssm: Any
     parameter_prefix: str
@@ -889,36 +892,54 @@ def _export_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
                  {'start': following} if following else None)
 
 
-# ── objects ────────────────────────────────────────────────────────────────────────────────────────────────────
+# ── objects (the raw bucket's, then the import bucket's) ───────────────────────────────────────────────────────
 
 #: Rounds a version S3 would not delete gets before the sweep fails (it resumes from the start of the prefix).
 _OBJECT_RETRIES: Final = 5
+#: A bucket's versions, by the Context field holding them.
+Versions = Callable[[Context], WorkspaceObjectVersions]
 
 
-def _object_pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
-    """Every open upload under ``ws/{ws}/`` aborted first, then the first page of versions and delete markers left
-    (no listing cursor: what was listed is deleted, so each page lists what is left)."""
-    if cursor is None:
-        for upload_key, upload_id in ctx.objects.open_uploads():
-            ctx.objects.abort_upload(upload_key, upload_id)
-            ctx.count('uploads_aborted')
-        return Batch([], {'failed_rounds': 0})
-    page = ctx.objects.list_page(None)
-    rows = [{'key': version.key, 'version_id': version.version_id} for version in page.versions]
-    return Batch(rows, {'failed_rounds': int(cursor.get('failed_rounds') or 0)} if rows else None)
+def _object_pages_for(versions: Versions, aborted: str) -> Callable[[Context, dict[str, Any] | None], Batch]:
+    """The pages of one bucket's ``ws/{ws}/``: every open upload there aborted first (each counted as ``aborted``),
+    then the first page of versions and delete markers left (no listing cursor: what was listed is deleted, so each
+    page lists what is left)."""
+    def pages(ctx: Context, cursor: dict[str, Any] | None) -> Batch:
+        bucket = versions(ctx)
+        if cursor is None:
+            for upload_key, upload_id in bucket.open_uploads():
+                bucket.abort_upload(upload_key, upload_id)
+                ctx.count(aborted)
+            return Batch([], {'failed_rounds': 0})
+        page = bucket.list_page(None)
+        rows = [{'key': version.key, 'version_id': version.version_id} for version in page.versions]
+        return Batch(rows, {'failed_rounds': int(cursor.get('failed_rounds') or 0)} if rows else None)
+    return pages
 
 
-def _delete_objects(ctx: Context, batch: Batch) -> int:
-    if not batch.rows:
-        return 0
-    failures = ctx.objects.delete([ObjectVersion(str(row['key']), str(row['version_id'])) for row in batch.rows])
-    if failures:
-        rounds = int((batch.following or {}).get('failed_rounds') or 0) + 1
-        if rounds > _OBJECT_RETRIES:
-            raise RuntimeError(f'{len(failures)} object versions could not be deleted')
-        if batch.following is not None:
-            batch.following['failed_rounds'] = rounds
-    return len(batch.rows) - len(failures)
+def _delete_objects_for(versions: Versions) -> Step:
+    """A page's versions deleted by version id; a version S3 refuses is listed again with the next page, and fails
+    the sweep after ``_OBJECT_RETRIES`` rounds."""
+    def delete(ctx: Context, batch: Batch) -> int:
+        if not batch.rows:
+            return 0
+        failures = versions(ctx).delete([ObjectVersion(str(row['key']), str(row['version_id'])) for row in batch.rows])
+        if failures:
+            rounds = int((batch.following or {}).get('failed_rounds') or 0) + 1
+            if rounds > _OBJECT_RETRIES:
+                raise RuntimeError(f'{len(failures)} object versions could not be deleted')
+            if batch.following is not None:
+                batch.following['failed_rounds'] = rounds
+        return len(batch.rows) - len(failures)
+    return delete
+
+
+def _raw_objects(ctx: Context) -> WorkspaceObjectVersions:
+    return ctx.objects
+
+
+def _import_objects(ctx: Context) -> WorkspaceObjectVersions:
+    return ctx.import_objects
 
 
 # ── projects ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1251,7 +1272,12 @@ SWEEPS: Final = (
           grants=('memory', 'tombstones')),
     Sweep('exports', 'aggregates', _export_pages, delete_keys(lambda ctx: ctx.aggregates),
           grants=('aggregates', 'exportJobs', 'objects')),
-    Sweep('objects', 'bucket', _object_pages, _delete_objects, grants=('objects',)),
+    Sweep('objects', 'bucket', _object_pages_for(_raw_objects, 'uploads_aborted'), _delete_objects_for(_raw_objects),
+          grants=('objects',)),
+    # The workspace's staged files in the S3 import's bucket (ws/{ws}/<source>/<file>), the same way as the raw
+    # bucket's: its open uploads aborted, then every version and delete marker under ws/{ws}/.
+    Sweep('import_objects', 'import_bucket', _object_pages_for(_import_objects, 'import_uploads_aborted'),
+          _delete_objects_for(_import_objects), grants=('importObjects',)),
     _family('radar'),
     _family('settings'),
     owner_list_sweep('user_contexts', OWNER_LISTS['user_contexts']),

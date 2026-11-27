@@ -45,8 +45,8 @@ function parseRun(raw: unknown): S3ImportRun {
   return parsed.data.run
 }
 
-// The S3 import API is the deployment's alone (its bucket is not keyed by workspace): it refuses X-Workspace-Id
-// (400), so both calls go without it, inside a workspace too.
+// The S3 import API acts in a workspace with X-Workspace-Id, but the web app sends no header to it yet (the next
+// slice), so both calls go without it, inside a workspace too.
 export async function reprocessS3ImportFile(key: string): Promise<S3ImportRun> {
   return parseRun(await fetchApi<unknown>('/s3-import/reprocess', post({ key }), 'deployment'))
 }

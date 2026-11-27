@@ -325,7 +325,9 @@ describe('cdk-nag acknowledgements', () => {
       // 151 -> 150 (7.71.00, review round 1, F1): the count above held 7.71.00's own trial schedules' AwsSolutions-IAM5
       // on WorkspacesLambdaRole (`scheduler:CreateSchedule` on the trials group's `voc-trial-*` names), gone with the
       // per-trial schedules: the expiry's hourly rule reads the ends from the listing.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 150, used: 150 });
+      // 150 -> 151 (the all-features shape's -c workspaceHardDelete=true): voc-workspace-delete's version deletes and
+      // upload aborts under the S3 import bucket's `ws/{one id}/*` (the `importObjects` grant), acknowledged on its role.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 151, used: 151 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

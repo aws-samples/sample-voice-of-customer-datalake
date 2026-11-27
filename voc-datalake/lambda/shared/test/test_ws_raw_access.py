@@ -267,6 +267,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/projects.py': (3, {'batch': 3, 'copy_object': 1, 'get_aggregates_table': 1, 'get_feedback_table': 1, 'get_jobs_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'transact': 2}),
     'lambda/api/projects_handler.py': (3, {'batch': 1, 'get_aggregates_table': 12, 'get_jobs_table': 3, 'get_projects_table': 16, 'meta.client': 3, 'transact': 2}),
     'lambda/api/radar_handler.py': (3, {'cached_table': 1, 'get_aggregates_table': 1}),
+    # Both paths since the S3 import learned workspaces: its object calls name `ws/{ws}/…` keys built from the
+    # resolved scope (`_bucket_key`, ws_repo.s3_prefix); its run rows go through shared/s3_import_runs.py's views.
     'lambda/api/s3_import_handler.py': (
         2, {'delete_object': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
     # One voc-aggregates handle (`_aggregates`, 7.44.00): a scraper's labels, its run rows and the web_reviews learned
@@ -321,9 +323,6 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # themselves: the registry's scoped Query (iter_registered_project_ids) and the claim's read and conditional
     # delete (project_claim, release_project_claim), outside every workspace by design.
     'lambda/jobs/workspace_delete/handler.py': (3, {'Table': 1, 'ingest_table(None)': 1}),
-    # Not raw: `ctx.objects.delete(...)` is the layer's own WorkspaceObjectVersions.delete (shared/ws_repo.py, by
-    # version id under ws/{ws}/ only), which the collection-delete rule reads by its attribute name `objects`.
-    'lambda/jobs/workspace_delete/sweeps.py': (3, {'collection.delete()': 1}),
     'lambda/memory/extractor/handler.py': (3, {'Table': 1, 'get_aggregates_table': 3}),
     'lambda/memory/scanner/handler.py': (3, {'Table': 1}),
     # The processor's two paths (docs/multi-workspace.md) go through shared/ingest_tables.py `table_view` (its message's
@@ -411,6 +410,7 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # the run status) and the ingestors' one (plugins/_shared/base_ingestor.py); a workspace's partitions come from
     # the layer (source_run_pk).
     'lambda/shared/run_rows.py': (2, {'SOURCE_RUN#': 1}),
+    # The deployment's run partition, spelled once (CDK's test reads it); a workspace's from the layer (run_rows).
     'lambda/shared/s3_import_runs.py': (2, {'SOURCE_RUN#': 1}),
     'lambda/shared/s3_versions.py': (3, {'delete_objects': 1}),
     'lambda/shared/silver_provenance.py': (2, {'SOURCE#': 2, 'put_object': 1, 'silver/': 1}),

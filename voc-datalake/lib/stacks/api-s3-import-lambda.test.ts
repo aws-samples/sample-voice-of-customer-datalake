@@ -2,16 +2,18 @@
  * The S3 import API's reprocess grants (issue #144, api-s3-import-lambda.ts, docs/data-lake-structure.md).
  *
  * `POST /s3-import/reprocess` invokes exactly the s3_import ingestor, by name, and
- * writes only its `SOURCE_RUN#s3_import` run rows. The partition is read from the
- * Python that writes it, so a rename on either side fails here.
+ * writes only its `SOURCE_RUN#s3_import` run rows, or one workspace's `WS#{ws}#SOURCE_RUN#s3_import`. The
+ * deployment's partition is read from the Python that writes it, so a rename on either side fails here. Every route
+ * resolves X-Workspace-Id (the stack's workspace-resolution policy and its environment).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  apiTemplate, apiTemplateAllPlugins, policyStatementsOf, readRepoFile, serviceEnvironment,
+  actionsWithPrefix, apiTemplate, apiTemplateAllPlugins, policyStatementsOf, readRepoFile, serviceEnvironment,
 } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
-import { S3_IMPORT_RUN_PARTITION } from './api-s3-import-lambda';
+import { S3_IMPORT_RUN_PARTITION, S3_IMPORT_WORKSPACE_RUN_PARTITION } from './api-s3-import-lambda';
+import { WORKSPACE_ID_PATTERN } from './core-buckets';
 
 const ROLE = 'S3ImportLambdaRole';
 const SERVICE = 'voc-s3-import-api';
@@ -45,14 +47,35 @@ describe('with the s3_import plugin enabled', () => {
     expect(dynamo).toStrictEqual([{
       actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
       resource: expect.stringContaining('Aggregates'),
-      condition: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [S3_IMPORT_RUN_PARTITION] } },
+      condition: {
+        'ForAllValues:StringLike': {
+          'dynamodb:LeadingKeys': ['SOURCE_RUN#s3_import', `WS#${WORKSPACE_ID_PATTERN}#SOURCE_RUN#s3_import`],
+        },
+      },
     }]);
+  });
+
+  it('pins the workspace run partition to exactly one workspace id', () => {
+    expect(S3_IMPORT_WORKSPACE_RUN_PARTITION).toBe(`WS#ws_${'?'.repeat(26)}#SOURCE_RUN#s3_import`);
+    expect(S3_IMPORT_WORKSPACE_RUN_PARTITION).not.toContain('*');
   });
 
   it('hands the handler the ingestor name and the aggregates table', () => {
     const env = serviceEnvironment(apiTemplateAllPlugins(), SERVICE);
     expect(JSON.stringify(env['S3_IMPORT_INGESTOR_FUNCTION'])).toContain('voc-ingestor-s3_import-');
     expect(env['AGGREGATES_TABLE']).toBeDefined();
+  });
+});
+
+describe('on either path (X-Workspace-Id)', () => {
+  it('resolves the workspace through the stack resolution policy and the live platform-admin check', () => {
+    for (const template of [apiTemplate(), apiTemplateAllPlugins()]) {
+      const env = serviceEnvironment(template, SERVICE);
+      expect(env['WORKSPACES_TABLE']).toBeDefined();
+      expect(env['USER_POOL_ID']).toBeDefined();
+      expect(actionsWithPrefix(policyStatementsOf(template, ROLE), 'cognito-idp:'))
+        .toStrictEqual(['cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser']);
+    }
   });
 });
 

@@ -291,7 +291,8 @@ The S3 import bucket (`voc-import-<account>-<region>`, `VocIngestionStack` outpu
 `.jsonl` file uploaded under `<source>/` triggers the `s3_import` ingestor, which queues each row for
 processing under the source `S3 - <source>`. The bucket is versioned (an overwrite or delete is
 recoverable for 7 days), staged files expire 90 days after upload, and `processed/` is reserved
-(moved to Glacier after 30 days). The import bucket is an inbox, not the archive: before a file is read,
+(moved to Glacier after 30 days; that rule covers the bucket's root `processed/` only, so a workspace's
+`ws/{ws}/processed/` copies keep their storage class until they expire). The import bucket is an inbox, not the archive: before a file is read,
 its original goes to the raw lake (`raw/s3_import/…`, above) when the `s3_import` profile keeps whole
 files. Reprocess works on staged files only: once a file has expired, `POST /s3-import/reprocess`
 answers 404 naming the raw copy, and the file is uploaded again from it. Administrators use the file
@@ -309,6 +310,30 @@ expose the bucket name and every staged file.
 | DELETE | `/s3-import/file/{key}` | Admin | Delete one staged file. 400 unless the key is exactly `<source>/<file.csv\|.json\|.jsonl>`: no leading `/`, no `..`, never `processed/` |
 | POST | `/s3-import/reprocess` | Admin | Re-run one file through the `s3_import` ingestor, body `{key}` → **202** `{success, run}`. The key is `<source>/<file>` (validated as for delete) or `processed/<source>/<file>`; 400 for any other key, an empty file or one over the ingestor's 50 MB limit, 404 when the key holds nothing (the message says the staged copy expires and where the raw copy is) |
 | GET | `/s3-import/reprocess/{run_id}` | Admin | One reprocess run `{run: {run_id, key, status: running\|completed\|error, items_found, started_at, completed_at, errors}}`; 404 when unknown |
+
+`processed` and `ws` are reserved: neither is a source name (400 on create, upload, delete and reprocess), the
+sources list never shows them, and `?source=` must be a source name (400 otherwise). A delete of a key that holds no
+file answers 404 and writes nothing (the bucket is versioned, so deleting a missing key would add a delete marker);
+the 404s never repeat the key they were sent.
+
+**In a workspace** (since 7.86.00, [multi-workspace.md](multi-workspace.md)): a request with `X-Workspace-Id` is
+resolved first (400 for an empty header, the one 404 for a workspace the caller is not in) and is the workspace's
+admins' (a member admin or an entered platform admin; an editor or a viewer 403, the deployment's `admins` group
+grants nothing there). Every route then acts on the workspace's own folder of the same bucket,
+`ws/{ws}/<source>/<file>` (shared/ws_repo.py `s3_prefix`, built from the resolved workspace only), and every key in
+a request or an answer is still `<source>/<file>`: the same explorer works on both paths. A request without the
+header acts on the bucket's root folders, as before, and never lists under `ws/` or reaches a workspace's file (the
+file listing reads the root's folders one by one and skips `ws/`, so a root folder named `ws` is hidden too). A
+workspace's upload link is valid for 15 minutes, the deployment's for 2 hours (S3 checks the expiry when the upload
+starts). A workspace's
+reprocess run is `WS#{ws}#SOURCE_RUN#s3_import` / `<run id>` and its ingestor event names the workspace; another
+place's run id is the unknown one's 404. An upload under `ws/{ws}/…` is ingested in that workspace: the trigger
+reads the workspace from the key (only this API, for the workspace's admins, and the deployment's own operators
+write there; the presigned PUT is for one exact key), a workspace that is not active is refused, and a key under
+`ws/` whose id is malformed is refused unread. Its raw copy is under `ws/{ws}/raw/s3_import/…`, its import history
+in `WS#{ws}#IMPORT_RUN`. The workspace's hard delete removes every version, delete marker and open upload under its
+`ws/{ws}/` of this bucket (the `import_objects` sweep). A workspace's staged files are not in its export: the export
+holds the raw copy when the source keeps whole files, as the bucket is an inbox.
 
 ### Reprocessing a file
 
@@ -332,7 +357,8 @@ processing failure, or to restore rows after an accidental erasure.
   (`running`) in the aggregates table, and the ingestor moves it to `completed` (with `items_found`,
   the rows sent to the processing queue, duplicates included) or `error` (the exception type only).
   `GET /sources/status?run_status=s3_import` and the assistant's `get_source_run` read the same rows.
-  The S3 import API role may read and write only that partition (`dynamodb:LeadingKeys`) and invoke
+  The S3 import API role may read and write only that partition and one workspace's
+  `WS#{ws}#SOURCE_RUN#s3_import` (`dynamodb:LeadingKeys`, the workspace id pinned to one id's shape) and invoke
   only the `s3_import` ingestor. Without the plugin enabled, the route answers "not configured".
 - **One live run per file (409).** A second `POST /s3-import/reprocess` for a file answers **409**
   ("This file is already being reprocessed") while a `running` run of that file started less than the

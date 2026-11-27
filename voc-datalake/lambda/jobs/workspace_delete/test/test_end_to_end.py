@@ -16,6 +16,8 @@ from jobs.workspace_delete.test.conftest import (
     BUCKET,
     COMPANY_MEMORIES,
     FEEDBACK_ITEMS,
+    IMPORT_BUCKET,
+    IMPORT_FILES,
     OTHER,
     PERSONAL_MEMORIES,
     PREFIX,
@@ -68,9 +70,9 @@ def _is_kept(table: str, item: dict[str, Any]) -> bool:
 
 def _of_the_deleted(table: str, item: Any) -> bool:
     """A row, object or parameter of the deleted workspace (what must be gone, or kept)."""
-    if table == 'objects':
+    if table in ('objects', 'import_objects'):
         return item[0].startswith(f'ws/{WS}/')
-    if table == 'uploads':
+    if table in ('uploads', 'import_uploads'):
         return item.startswith(f'ws/{WS}/')
     if table == 'parameters':
         return item.startswith(f'{PREFIX}/{WS}/')
@@ -98,7 +100,8 @@ class TestDeletingAWorkspace:
 
         after = snapshot(world)
         left = {table: [row for row in rows if _of_the_deleted(table, row) and not (
-            table not in ('objects', 'uploads', 'parameters') and _is_kept(table, row))]
+            table not in ('objects', 'uploads', 'import_objects', 'import_uploads', 'parameters')
+            and _is_kept(table, row))]
             for table, rows in after.items()}
         assert left == {table: [] for table in after}
 
@@ -162,6 +165,8 @@ class TestDeletingAWorkspace:
         assert counts['tombstones_written'] == FEEDBACK_ITEMS + MEMORIES
         assert counts['credentials'] == 2
         assert counts['objects'] >= 7
+        assert counts['import_objects'] == 2 * len(IMPORT_FILES) + 1
+        assert counts['import_uploads_aborted'] == 1
         assert set(completed['kept']) == set(handler.KEPT)
         assert 'original_text' not in str(completed)
         # At least that many messages were dropped while it was deleting; the counter went with the workspace.
@@ -223,11 +228,13 @@ class TestHandOvers:
         after = snapshot(world)
         assert not [row for row in after['feedback'] if str(row['pk']).startswith(f'WS#{WS}#')]
         assert not [key for key, _version in after['objects'] if key.startswith(f'ws/{WS}/')]
+        assert not [key for key, _version in after['import_objects'] if key.startswith(f'ws/{WS}/')]
         assert _job(world)['counts']['feedback'] == FEEDBACK_ITEMS
 
     # Each invocation's clock checks (Budget) chosen so a hand-over falls inside the phase: which one does depends on
     # how many checks the phases before it make (each sweep added before one shifts it).
-    @pytest.mark.parametrize(('phase', 'checks'), [('feedback', 3), ('objects', 2), ('memory', 3), ('counters', 3)])
+    @pytest.mark.parametrize(('phase', 'checks'), [('feedback', 3), ('objects', 2), ('import_objects', 2),
+                                                 ('memory', 3), ('counters', 3)])
     def test_a_hand_over_mid_phase_resumes_from_its_cursor(self, world, phase, checks):
         event = _seed(world)
         checkpoints: list[dict] = []
@@ -581,6 +588,38 @@ class TestTheVerifyPass:
         assert 'Item' not in world.feedback.get_item(Key={'pk': late['pk'], 'sk': late['sk']})
         assert 'Item' in world.aggregates.get_item(Key={'pk': 'AUDIT#tombstone#webscraper', 'sk': f'{WS}#late'})
 
+    def test_a_file_staged_after_the_import_sweep_sends_the_job_back_once_then_it_goes(self, world):
+        event = _seed(world)
+        real = handler.DeleteRun._verify
+        late = f'ws/{WS}/s3_import/late.csv'
+        arrived: list[bool] = []
+
+        def verify_after_a_late_file(run):
+            if not arrived:
+                world.s3.put_object(Bucket=IMPORT_BUCKET, Key=late, Body=b'late')
+                arrived.append(True)
+            return real(run)
+
+        with patch.object(handler.DeleteRun, '_verify', verify_after_a_late_file):
+            assert run_to_the_end(world, event)[-1]['status'] == 'completed'
+        assert arrived == [True]
+        assert not world.s3.list_object_versions(Bucket=IMPORT_BUCKET, Prefix=late).get('Versions')
+
+    def test_a_file_staged_again_before_every_verify_fails_the_job_naming_the_import_bucket(self, world):
+        """A file the sweep cannot keep gone (staged again before each verify pass) fails the job after its two
+        rounds, naming the import bucket's family: never completed while a staged file of the workspace is left."""
+        event = _seed(world)
+        real = handler.DeleteRun._verify
+
+        def verify_after_a_new_file(run):
+            world.s3.put_object(Bucket=IMPORT_BUCKET, Key=f'ws/{WS}/s3_import/again.csv', Body=b'again')
+            return real(run)
+
+        with patch.object(handler.DeleteRun, '_verify', verify_after_a_new_file):
+            outcomes = run_to_the_end(world, event)
+        assert outcomes[-1]['status'] == 'failed'
+        assert _job(world)['error'] == 'The verify pass found rows left in import_objects'
+
     def test_rows_that_stay_after_two_passes_fail_the_job_naming_their_family(self, world):
         event = _seed(world)
         with _feedback_never_deleted():
@@ -712,9 +751,41 @@ def test_an_erasure_meeting_the_deleted_workspace_recreates_no_export_lock(world
     assert not [row for row in snapshot(world)['aggregates'] if str(row['pk']).startswith(f'WS#{WS}#')]
 
 
-def test_the_bucket_holds_no_version_of_the_workspace_after_the_delete(world):
+@pytest.mark.parametrize('bucket', [BUCKET, IMPORT_BUCKET])
+def test_the_bucket_holds_no_version_of_the_workspace_after_the_delete(world, bucket):
     run_to_the_end(world, _seed(world))
-    listed = world.s3.list_object_versions(Bucket=BUCKET, Prefix=f'ws/{WS}/')
+    listed = world.s3.list_object_versions(Bucket=bucket, Prefix=f'ws/{WS}/')
     assert not listed.get('Versions')
     assert not listed.get('DeleteMarkers')
-    assert not world.s3.list_multipart_uploads(Bucket=BUCKET, Prefix=f'ws/{WS}/').get('Uploads')
+    assert not world.s3.list_multipart_uploads(Bucket=bucket, Prefix=f'ws/{WS}/').get('Uploads')
+
+
+def test_another_workspaces_and_the_deployments_staged_files_are_untouched(world):
+    event = _seed(world)
+    before = snapshot(world)
+    assert run_to_the_end(world, event)[-1]['status'] == 'completed'
+    after = snapshot(world)
+    kept = [entry for entry in before['import_objects'] if not entry[0].startswith(f'ws/{WS}/')]
+    assert {key for key, _version in kept} >= {f'ws/{OTHER}/{name}' for name in IMPORT_FILES} | {
+        's3_import/reviews-2026-11.csv', 'processed/s3_import/reviews-2026-10.csv'}
+    assert after['import_objects'] == kept
+    assert after['import_uploads'] == [key for key in before['import_uploads'] if not key.startswith(f'ws/{WS}/')]
+    assert after['import_uploads'] == sorted([f'ws/{OTHER}/s3_import/large-export.csv', 's3_import/large-export.csv'])
+
+
+def test_without_its_import_bucket_the_job_deletes_nothing_and_never_completes(world):
+    """No S3_IMPORT_BUCKET (a stack built without one): the layer refuses an empty bucket before any call, as it does
+    for RAW_DATA_BUCKET, so the invocation stops before the fence and the sweeps; the job is never completed, and its
+    row reads stalled after STALE_AFTER for a platform admin's resume once the bucket is configured."""
+    event = _seed(world)
+    before = snapshot(world)
+    with patch.object(handler, 'S3_IMPORT_BUCKET', ''), pytest.raises(ValueError, match='bucket'):
+        handler.handle_event(event, Budget())
+    after = snapshot(world)
+    assert {table: rows for table, rows in after.items() if table != 'workspaces'} == {
+        table: rows for table, rows in before.items() if table != 'workspaces'}
+    def others(rows: list) -> list:
+        return [row for row in rows if (row['pk'], row['sk']) != ('WSDELETE', WS)]
+    assert others(after['workspaces']) == others(before['workspaces'])
+    assert _job(world)['status'] != workspace_deletes.COMPLETED
+    assert not world.invoke.called

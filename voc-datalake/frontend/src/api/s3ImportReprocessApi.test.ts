@@ -38,7 +38,7 @@ describe('getS3ImportReprocessRun', () => {
   it('polls the run by its encoded id', async () => {
     fetchApi.mockResolvedValue({ run: RUN })
     await getS3ImportReprocessRun('run 1/2')
-    // Both calls are deployment-wide (the S3 import API refuses X-Workspace-Id).
+    // Both calls are deployment-wide (the web app sends no X-Workspace-Id to the S3 import API yet).
     expect(fetchApi).toHaveBeenCalledWith('/s3-import/reprocess/run%201%2F2', { method: 'GET' }, 'deployment')
   })
 

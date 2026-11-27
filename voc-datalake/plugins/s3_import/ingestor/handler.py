@@ -3,15 +3,23 @@ S3 Import Ingestor - Imports feedback from S3 bucket files (CSV, JSON, JSONL).
 Triggered by S3 events when files are uploaded.
 Folder name becomes the source: {folder}/file.csv -> source = "S3 - {folder}"
 
-A run is deployment-wide when its event names no workspace (an S3 upload's trigger, the S3 import API's reprocess,
-which refuses X-Workspace-Id, and Run now without it), as always, and runs in the workspace an event names in
-``workspace_id`` otherwise (``_shared/base_ingestor.py run_in_workspace``; Run now sent with X-Workspace-Id names it).
+A run is in the workspace an event names in ``workspace_id`` (``_shared/base_ingestor.py run_in_workspace``: a
+malformed id, or a workspace that is not active, is refused), and deployment-wide when the event names none (the S3
+import API's reprocess without ``X-Workspace-Id``, and Run now; the operator API refuses Run now of s3_import in a workspace,
+lambda/api/integrations_handler.py), as always. The bucket's own upload notification names no workspace: its records
+are run where their keys put them (``lambda_handler``): a key ``ws/{ws}/...`` with a well-formed ``{ws}`` in that
+workspace (an event of its records plus ``workspace_id``, through ``run_in_workspace``), every other record in one
+deployment-wide run as before. The key is trusted for this because only the S3 import API (for a member of the
+workspace: a presigned, create-only PUT for one exact key it built from the resolved membership) and the
+deployment's own IAM principals write under ``ws/{ws}/``. An event that carries ``workspace_id``, ``execution_id`` or
+``reprocess`` is never routed by its keys.
 A workspace's files sit under its own ``ws/{ws}/`` in the import bucket (``ws/{ws}/{folder}/file.csv``, the folder
 rule read after that prefix); a run in a workspace refuses any other key unread, and any key with an empty, ``.`` or
 ``..`` segment after the prefix (``process_file``). A deployment-wide run refuses unread any key of three or more
-segments whose first is ``ws`` (a workspace's folder); the import API's keys are ``<source>/<file>``, so nothing it
-uploads is refused. A refused file's history row names the neutral source ``S3 - Import`` and no raw file
-(``raw_s3_key`` None); its file name goes into the error only when it has a supported extension.
+segments whose first is ``ws`` (an upload's such key reaches it only when its ``{ws}`` is malformed; a reprocess's
+whenever it names one); the deployment's own keys are ``<source>/<file>``, so none is refused. A refused file's
+history row names the neutral source ``S3 - Import`` and no raw file (``raw_s3_key`` None); its file name goes into
+the error only when it has a supported extension.
 
 Raw copies: the staged file as uploaded goes to ``raw/s3_import/...`` (a workspace run: ``ws/{ws}/raw/s3_import/...``)
 before it is read
@@ -25,7 +33,7 @@ import io
 import json
 import os
 import urllib.parse
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from dataclasses import dataclass, field
 
 import boto3
@@ -37,7 +45,8 @@ from shared import job_notices
 from shared.import_runs import MAX_MESSAGES, S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
-from shared.ws_repo import WorkspaceScope, s3_prefix
+from shared.workspace_ids import is_workspace_id
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, s3_prefix
 
 s3_client = boto3.client("s3")
 
@@ -335,7 +344,8 @@ class S3ImportIngestor(BaseIngestor):
         None for a key the run never reads.
 
         Deployment-wide (no scope) the key itself, as always, but for a key of three or more segments under
-        ``ws/`` (a workspace's folder; the import API's keys are ``<source>/<file>``). In a workspace only a key
+        ``ws/`` (a workspace's folder; an upload's reaches this run only when its id is malformed, ``lambda_handler``
+        routing the rest to their workspace; the deployment's keys are ``<source>/<file>``). In a workspace only a key
         under the workspace's own ``ws/{ws}/`` (``ws_repo.s3_prefix``) whose segments after it are none empty,
         ``.`` or ``..``, read without that prefix; any other key, another workspace's or the deployment's, is None.
         """
@@ -431,6 +441,11 @@ class NoImportFileRead(Exception):
     """
 
 
+def _record_key(record: Mapping) -> str:
+    """A record's object key as S3 names it in a notification (URL-encoded, ``+`` for a space), decoded."""
+    return urllib.parse.unquote_plus(record["s3"]["object"]["key"])
+
+
 def _read_records(ingestor: S3ImportIngestor, records: list, results: list[dict], *, reprocess: bool) -> None:
     """Process each S3 record of the import bucket, appending `{file, items_processed}` to *results* as it goes."""
     for record in records:
@@ -441,7 +456,7 @@ def _read_records(ingestor: S3ImportIngestor, records: list, results: list[dict]
             logger.warning("Skipping a record for a bucket other than the import bucket",
                            extra={"bucket": bucket})
             continue
-        key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
+        key = _record_key(record)
         logger.info(f"Processing s3://{bucket}/{key}")
         count = ingestor.process_file(bucket, key, reprocess=reprocess)
         results.append({"file": key, "items_processed": count})
@@ -492,14 +507,124 @@ def lambda_handler(event, context):
 
     `workspace_id` (the workspace of the run), `execution_id` (a run the API recorded)
     and `reprocess: True` (a re-run of one file, issue #144) are the only additions to
-    the trigger's event shape. An event without `workspace_id` (a plain S3 trigger, the
-    API's reprocess) runs deployment-wide as it always did (`run_in_workspace`). A failed reprocess answers
-    `{"status": "error", "error": <type>}` instead of raising, so Lambda does not retry it.
+    the trigger's event shape. An event that carries any of the three runs as it says (`run_in_workspace`): in the
+    workspace it names (a malformed one refused), or deployment-wide without `workspace_id` (the API's reprocess),
+    and its records' keys never move it. The bucket's own notification carries none of them: its records are run
+    where their keys put them (``_upload_groups``): a key under ``ws/{ws}/`` in that workspace, every other record in
+    one deployment-wide run of the event, as before workspaces (an event with no workspace key is that run itself).
+    A failed reprocess answers `{"status": "error", "error": <type>}` instead of raising, so Lambda does not retry it.
     """
+    groups = _upload_groups(event)
+    if groups is None:
+        return _run_event(event)
+    return _run_upload_groups(event, groups)
+
+
+def _run_event(event: Mapping) -> dict:
+    """One run of *event* where it says (``run_in_workspace``)."""
     return run_in_workspace(event, lambda scope: _handle_in_workspace(scope, event))
 
 
-def _handle_in_workspace(scope: WorkspaceScope | None, event: dict) -> dict:
+#: The fields by which an event names its run: an event that carries any of them (whatever its value) is never routed
+#: by its records' keys.
+_RUN_FIELDS = (WORKSPACE_FIELD, "execution_id", "reprocess")
+
+
+def _upload_workspace(record: object) -> str | None:
+    """The workspace an upload record's key names, or None for the deployment.
+
+    A workspace only for an S3 record of the import bucket whose decoded key (``_record_key``) is ``ws/{ws}/<more>``
+    with ``{ws}`` a well-formed workspace id (``is_workspace_id``, the check ``WorkspaceScope`` and
+    ``ws_repo.message_scope`` apply). Any other record, a malformed one included, is the deployment's: the
+    deployment-wide run treats it exactly as before (skipped, read, or refused unread by ``_staged_key``).
+    """
+    if not isinstance(record, Mapping) or record.get("eventSource") != "aws:s3":
+        return None
+    try:
+        if not IMPORT_BUCKET or record["s3"]["bucket"]["name"] != IMPORT_BUCKET:
+            return None
+        segments = _record_key(record).split("/")
+    except (KeyError, TypeError, AttributeError):
+        return None
+    if len(segments) >= 3 and segments[0] == WORKSPACE_FOLDER and is_workspace_id(segments[1]):
+        return segments[1]
+    return None
+
+
+def _upload_groups(event: object) -> list[tuple[str | None, list]] | None:
+    """The records of the bucket's own notification by the place each runs in (a workspace id, or None for the
+    deployment), the places in the order their first record comes, each one's records in the event's order.
+
+    None (the event is run as it is, ``_run_event``) for an event that names its run (``_RUN_FIELDS``), has no
+    record list, or has no record that names a workspace.
+
+    Why a key may be trusted to name the workspace: only two writers put objects under ``ws/{ws}/`` in the import
+    bucket. The S3 import API, for a member of that workspace (the key built from the request's resolved membership,
+    never from its input; a presigned, create-only PUT for that one exact key), and the deployment's own IAM
+    principals. Each run then goes through ``run_in_workspace``, so a workspace that is not active is refused there.
+    """
+    if not isinstance(event, Mapping) or any(name in event for name in _RUN_FIELDS):
+        return None
+    records = event.get("Records")
+    if not isinstance(records, list):
+        return None
+    groups: dict[str | None, list] = {}
+    for record in records:
+        groups.setdefault(_upload_workspace(record), []).append(record)
+    if all(ws is None for ws in groups):
+        return None
+    return list(groups.items())
+
+
+def _run_upload_groups(event: Mapping, groups: list[tuple[str | None, list]]) -> dict:
+    """Run each place's records (``_upload_groups``) as its own event, and answer as one.
+
+    A workspace's event is its records plus ``workspace_id``; the deployment's is the event with only its records.
+    With one place its answer is returned as it is (the not-active refusal included). With several: the success
+    shape (``status``, ``files_processed``, ``items_processed``, ``results`` in the order the places ran) over the
+    places that ran, ``refused`` (``workspace_id``, ``reason``, ``files``) for each place refused, and ``status``
+    ``partial`` when some were refused, ``refused`` when all were.
+
+    Errors: a place that raises does not stop the others: each runs in this attempt, and the first error is raised
+    again afterwards (every one logged), so Lambda retries the S3 event as before. The retry runs every record
+    again; that is safe, the feedback processor skips the duplicates (each re-read file gets one more history row).
+    """
+    events = [({**event, "Records": records} if ws is None else {"Records": records, WORKSPACE_FIELD: ws}, ws)
+              for ws, records in groups]
+    if len(events) == 1:
+        return _run_event(events[0][0])
+    results: list[dict] = []
+    refused: list[dict] = []
+    ran = 0
+    first_error: Exception | None = None
+    for group_event, ws in events:
+        try:
+            answer = _run_event(group_event)
+        except Exception as error:
+            logger.exception("An upload's records failed in one place; the other places still run",
+                             extra={"place": ws or "deployment"})
+            first_error = first_error or error
+            continue
+        if answer.get("status") == "success":
+            ran += 1
+            results.extend(answer["results"])
+        else:
+            refused.append({"workspace_id": ws, "reason": answer.get("reason") or answer.get("status"),
+                            "files": [_record_key(r) for r in group_event["Records"]]})
+    if first_error is not None:
+        raise first_error
+    combined: dict = {
+        "status": "success" if not refused else ("partial" if ran else "refused"),
+        "files_processed": len(results),
+        "items_processed": sum(r["items_processed"] for r in results),
+        "results": results,
+    }
+    if refused:
+        combined["refused"] = refused
+    return combined
+
+
+def _handle_in_workspace(scope: WorkspaceScope | None, event: Mapping) -> dict:
     """``lambda_handler``'s body, in the workspace the event named, or deployment-wide (scope None)."""
     execution_id = event.get("execution_id") if isinstance(event.get("execution_id"), str) else None
     records = event.get("Records") or []

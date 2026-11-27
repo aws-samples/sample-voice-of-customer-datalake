@@ -1,6 +1,6 @@
 """The shared pieces of the operator routes' two paths (docs/multi-workspace.md): shared/workspace_request.py
 (``ResolvedRoutes``: its middleware, admin gate, context, stored credentials and Radar refusal;
-``workspace_payload``, ``deployment_only``), shared/run_rows.py (the run partitions) and shared/plugin_circuit.py
+``workspace_payload``), shared/run_rows.py (the run partitions) and shared/plugin_circuit.py
 (the breaker's TRIPPED row per path). The stores themselves: shared/test/test_workspace_plugin_store.py.
 """
 from __future__ import annotations
@@ -19,13 +19,11 @@ from shared.run_rows import latest_run, scraper_run_partition, source_run_partit
 from shared.workspace import WorkspaceContext
 from shared.workspace_plugin_store import SharedSecretStore, StoreClients, WorkspaceStore
 from shared.workspace_request import (
-    DEPLOYMENT_ONLY,
     RADAR_NOT_IN_WORKSPACES,
     WORKSPACE_CONTEXT_KEY,
     RequestWorkspace,
     ResolvedRoutes,
     WorkspaceNotResolved,
-    deployment_only,
 )
 from shared.workspace_routing import workspace_payload
 from shared.ws_repo import OutOfScopeError, scope_from_key
@@ -141,29 +139,6 @@ class TestTheInvokePayload:
     def test_a_stand_in_for_a_resolved_membership_is_refused(self):
         with pytest.raises(TypeError):
             workspace_payload({}, SimpleNamespace(ws=OTHER))  # type: ignore[arg-type]
-
-
-class TestDeploymentOnly:
-    @pytest.mark.parametrize('header', [WS, '', 'not-a-workspace'])
-    def test_any_header_is_refused_before_the_route(self, header):
-        app, route = _app(_event(header=header), 'GET', '/s3-import/files'), MagicMock()
-
-        with pytest.raises(ValidationError, match=DEPLOYMENT_ONLY):
-            deployment_only(app, route)
-        route.assert_not_called()
-
-    @pytest.mark.parametrize('header', [WS, ''])
-    def test_a_reprocess_that_names_a_workspace_gets_the_one_400(self, header):
-        app, route = _app(_event(header=header), 'POST', '/s3-import/reprocess'), MagicMock()
-
-        with pytest.raises(ValidationError, match=DEPLOYMENT_ONLY):
-            deployment_only(app, route)
-        route.assert_not_called()
-
-    def test_without_it_the_route_runs(self):
-        app, route = _app(_event(), 'POST', '/s3-import/reprocess'), MagicMock(return_value='ok')
-
-        assert deployment_only(app, route) == 'ok'
 
 
 class TestTheMiddleware:

@@ -11,7 +11,6 @@ workspace is refused and touches nothing.
 
 import hashlib
 import importlib
-import io
 import json
 import urllib.parse
 from datetime import UTC, datetime
@@ -22,6 +21,7 @@ import pytest
 
 from _shared import raw_original
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
+from _shared.test.s3_import_fixtures import queued_messages, serve_staged_file, with_raw_lake
 from _shared.test.workspace_fixtures import (
     EVENTS_WITH_A_MALFORMED_WORKSPACE,
     OTHER_WS,
@@ -36,7 +36,6 @@ from s3_import.ingestor import handler
 from s3_import.ingestor.handler import _get_source_from_key, lambda_handler
 from shared import s3_import_runs
 from shared.ingest_tables import DeploymentTable
-from shared.test.source_profile_fixtures import seeded_source_profiles
 from shared.ws_repo import WORKSPACE_FIELD, WorkspaceTable
 
 RUN_ID = "run_s3_import_20260310120000_0a1b2c3d"
@@ -93,8 +92,7 @@ def run():
     with offline_ingestor_construction(), patch.object(handler, "s3_client") as s3, \
             patch.object(handler, "IMPORT_BUCKET", IMPORT_BUCKET):
         built["s3"] = s3
-        s3.head_object.return_value = {"ContentLength": len(CSV)}
-        s3.get_object.side_effect = lambda **_: {"Body": io.BytesIO(CSV)}
+        serve_staged_file(s3, CSV)
         real_class = handler.S3ImportIngestor
 
         def build(scope, **kwargs):
@@ -261,9 +259,7 @@ class TestAnEventNamingNoWorkspaceRunsDeploymentWide:
 
     @pytest.fixture
     def raw_lake(self, monkeypatch):
-        monkeypatch.setenv("RAW_DATA_BUCKET", "raw-lake")
-        monkeypatch.setenv("PLUGIN_VERSION", "1.4.0")
-        with seeded_source_profiles():
+        with with_raw_lake(monkeypatch):
             yield
 
     def test_the_apis_reprocess_event_closes_the_deployment_wide_run_row(self, run):
@@ -320,13 +316,8 @@ class TestAnEventNamingNoWorkspaceRunsDeploymentWide:
     def test_a_plain_upload_trigger_reads_the_file_archives_it_under_raw_and_queues_no_workspace(self, run):
         invoke, built = run
         built["real_queue"] = True
-        queued: list[dict] = []
 
-        def send(_sqs, _url, messages, **_kwargs) -> int:
-            queued.extend(messages)
-            return len(messages)
-
-        with patch("_shared.base_ingestor.send_messages_to_queue", side_effect=send):
+        with queued_messages() as queued:
             result = invoke(_no_workspace(_event("reviews/june.csv", execution_id=None, reprocess=False)))
 
         assert (result["status"], result["items_processed"]) == ("success", 2)
@@ -487,19 +478,17 @@ class TestAWorkspaceRunReadsOnlyItsOwnFiles:
 
     @pytest.fixture
     def raw_lake(self, monkeypatch):
-        monkeypatch.setenv("RAW_DATA_BUCKET", "raw-lake")
-        monkeypatch.setenv("PLUGIN_VERSION", "1.4.0")
         # Since 7.08.00 a run in a workspace reads the workspace's own source profiles (a source it saved none for
         # redacts, so keeps no original): the workspace keeps whole files for s3_import.
-        with seeded_source_profiles(workspaces={WS: [{"id": "s3_import", "pii": "allow"}]}):
+        with with_raw_lake(monkeypatch, workspaces={WS: [{"id": "s3_import", "pii": "allow"}]}):
             yield
 
 
 def _api_event(bucket: str, key: str) -> dict:
     """The event `POST /s3-import/reprocess` sends, in ``WS``.
 
-    `reprocess_event` names no workspace yet (the API's slice adds it); without one the run is deployment-wide
-    (`TestAnEventNamingNoWorkspaceRunsDeploymentWide`).
+    `reprocess_event` names no workspace (`start_run` adds it, through `workspace_payload`); without one the run is
+    deployment-wide (`TestAnEventNamingNoWorkspaceRunsDeploymentWide`).
     """
     return {**s3_import_runs.reprocess_event(bucket, key, RUN_ID), "workspace_id": WS}
 

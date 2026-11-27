@@ -983,8 +983,9 @@ def run_source(source: str):
     read or written. A run whose workspace holds none of the plugin's credentials (no parameter saved for it) ends ``error``
     on its run row,
     naming ``WorkspaceCredentialsNotSet``, and is not counted against the workspace's breaker (plugins/_shared/
-    base_ingestor.py). ``s3_import`` is refused there (400, the S3 import API's one answer: the import bucket is not
-    keyed by workspace), before anything is written or invoked. A deployment source profile that names a Radar
+    base_ingestor.py). ``s3_import`` is refused there (400 ``DEPLOYMENT_ONLY``: it is no workspace plugin, and a
+    workspace's S3 import runs from its upload or its reprocess, through the S3 import API), before anything is
+    written or invoked. A deployment source profile that names a Radar
     brand does not claim a workspace's messages (lambda/processor/handler.py ``_radar_result``): they are the
     workspace's own feedback.
     """

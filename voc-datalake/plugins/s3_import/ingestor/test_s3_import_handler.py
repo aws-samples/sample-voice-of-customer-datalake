@@ -302,8 +302,9 @@ class TestLambdaHandler:
 
 
 class TestADeploymentWideRunLeavesWorkspaceFolders:
-    """A deployment-wide run (no scope) never reads a workspace's folder: a key of 3+ segments under `ws/` is
-    refused unread; a 2-segment key (`<source>/<file>`, what the import API writes) imports as before."""
+    """A deployment-wide run (no scope) never reads a workspace's folder: a key of 3+ segments under `ws/` that
+    reaches it (an upload's only with a malformed id) is refused unread; a 2-segment key (`<source>/<file>`) imports
+    as before."""
 
     @pytest.fixture
     def deployment_run(self, lambda_context):
@@ -324,8 +325,10 @@ class TestADeploymentWideRunLeavesWorkspaceFolders:
             yield invoke, mock_s3, recorded
 
     def test_a_workspace_folder_key_is_refused_unread(self, deployment_run):
+        """A malformed workspace id: the upload is not routed (a well-formed one runs in its workspace,
+        test_s3_import_upload_routing.py), so the deployment-wide run refuses it."""
         invoke, mock_s3, recorded = deployment_run
-        key = f"ws/{WS}/reviews/a.csv"
+        key = f"ws/{WS}x/reviews/a.csv"
 
         with patch("s3_import.ingestor.handler.metrics") as m:
             result = invoke(key)

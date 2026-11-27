@@ -1,7 +1,7 @@
 """Fixtures for the workspace delete job: every table it reaches in moto (voc-feedback with ``gsi1-by-date``,
 voc-aggregates with ``gsi1-by-metric-type``, voc-memory with ``gsi1-by-memory-status``, voc-watermarks, voc-workspaces,
 voc-radar, voc-projects with ``gsi1-by-type``, voc-jobs, voc-participants, voc-conversations, voc-agents with
-``gsi1-by-agents-listing``), a versioned bucket, SSM, and two
+``gsi1-by-agents-listing``), the versioned raw bucket and import bucket, SSM, and two
 workspaces seeded with a row of every family beside the deployment's own rows.
 
 The fictional workspaces: Acme Outfitters (``acme``, the one deleted) and Birch Bakery (``birch``, which must not
@@ -43,6 +43,13 @@ from shared.ws_repo import WorkspaceScope
 WS: Final = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 OTHER: Final = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
 BUCKET: Final = 'test-raw-data-bucket'
+#: The S3 import's staging bucket (VocIngestionStack ``s3ImportBucket``): a workspace's staged files under
+#: ``ws/{ws}/<source>/<file>``, the deployment's at its root.
+IMPORT_BUCKET: Final = 'test-s3-import-bucket'
+#: Each workspace's staged files in the import bucket: two versions of each, the second key then deleted (a delete
+#: marker), and one open multipart upload.
+IMPORT_FILES: Final = ('s3_import/reviews-2026-11.csv', 's3_import/survey/answers.json')
+IMPORT_UPLOAD: Final = 's3_import/large-export.csv'
 PREFIX: Final = '/voc/ws'
 MEMORY_TABLE: Final = 'test-memory'
 WATERMARKS_TABLE: Final = 'test-watermarks'
@@ -114,6 +121,8 @@ def world() -> Iterator[World]:
         s3 = boto3.client('s3', region_name='us-east-1')
         s3.create_bucket(Bucket=BUCKET)
         s3.put_bucket_versioning(Bucket=BUCKET, VersioningConfiguration={'Status': 'Enabled'})
+        s3.create_bucket(Bucket=IMPORT_BUCKET)
+        s3.put_bucket_versioning(Bucket=IMPORT_BUCKET, VersioningConfiguration={'Status': 'Enabled'})
         ssm = boto3.client('ssm', region_name='us-east-1')
         invoke = MagicMock()
         with patch.object(handler, 'get_dynamodb_resource', return_value=resource), \
@@ -130,6 +139,7 @@ def world() -> Iterator[World]:
                 patch.object(handler, 'CONVERSATIONS_TABLE', CONVERSATIONS_TABLE), \
                 patch.object(handler, 'AGENTS_TABLE', AGENTS_TABLE), \
                 patch.object(handler, 'RAW_DATA_BUCKET', BUCKET), \
+                patch.object(handler, 'S3_IMPORT_BUCKET', IMPORT_BUCKET), \
                 patch.object(handler, 'PARAMETER_PREFIX', PREFIX), \
                 patch.dict('os.environ', {'PLUGIN_IDS': json.dumps(list(PLUGINS)), 'WORKSPACE_HARD_DELETE': 'true'}):
             yield World(feedback, aggregates, memory, watermarks, workspaces, s3, ssm, invoke, radar, projects, jobs,
@@ -222,9 +232,20 @@ def _seed_objects_and_credentials(world: World, ws: str) -> None:
     world.s3.delete_object(Bucket=BUCKET, Key=f'ws/{ws}/silver/webscraper/fb-1/v1.json')  # a delete marker
     world.s3.create_multipart_upload(Bucket=BUCKET, Key=f'ws/{ws}/exports/ex_2/workspace-export.zip')
     world.s3.create_multipart_upload(Bucket=BUCKET, Key=f'ws/{ws}/raw/s3_import/big.csv')
+    seed_import_files(world, ws)
     for plugin in PLUGINS:
         world.ssm.put_parameter(Name=f'{PREFIX}/{ws}/credentials/{plugin}', Value='{"api_key": "k-secret"}',
                                 Type='SecureString')
+
+
+def seed_import_files(world: World, ws: str) -> None:
+    """The workspace's staged files in the import bucket (``IMPORT_FILES``: two versions each, the last one then
+    deleted, a delete marker) and an open multipart upload (``IMPORT_UPLOAD``)."""
+    for name in IMPORT_FILES:
+        for body in (b'first', b'second'):
+            world.s3.put_object(Bucket=IMPORT_BUCKET, Key=f'ws/{ws}/{name}', Body=body)
+    world.s3.delete_object(Bucket=IMPORT_BUCKET, Key=f'ws/{ws}/{IMPORT_FILES[-1]}')
+    world.s3.create_multipart_upload(Bucket=IMPORT_BUCKET, Key=f'ws/{ws}/{IMPORT_UPLOAD}')
 
 
 def project_id_of(ws: str) -> str:
@@ -361,6 +382,10 @@ def seed_deployment(world: World) -> None:
     world.watermarks.put_item(Item={'source': 'webscraper#last_id', 'value': '7'})
     world.memory.put_item(Item={'pk': 'MEM#company', 'sk': 'MEM#mem_d', 'memory_id': 'mem_d'})
     world.s3.put_object(Bucket=BUCKET, Key='raw/webscraper/2026/11/01/a/0123456789abcdef.json', Body=b'd')
+    # The deployment's own staged files at the import bucket's root (and one already processed), an open upload too.
+    for key in ('s3_import/reviews-2026-11.csv', 'processed/s3_import/reviews-2026-10.csv'):
+        world.s3.put_object(Bucket=IMPORT_BUCKET, Key=key, Body=b'deployment')
+    world.s3.create_multipart_upload(Bucket=IMPORT_BUCKET, Key='s3_import/large-export.csv')
     world.workspaces.put_item(Item={'pk': 'USER#sub-ada', 'sk': 'PROFILE', 'name': 'Ada'})
     # A deployment project, its version partition, a job and a list link: no claim and no registry row (7.26.00).
     world.projects.put_item(Item={'pk': 'PROJECT#proj_d', 'sk': 'META', 'project_id': 'proj_d'})
@@ -401,7 +426,8 @@ def run_to_the_end(world: World, event: dict, *, budget: int | None = None, limi
 
 
 def snapshot(world: World) -> dict[str, list]:
-    """Every row of every table, every object version and every parameter name, sorted."""
+    """Every row of every table, every object version and open upload of both buckets and every parameter name,
+    sorted."""
     def rows(table: Any) -> list:
         scanned, kwargs = [], {}
         while True:
@@ -410,16 +436,20 @@ def snapshot(world: World) -> dict[str, list]:
             if 'LastEvaluatedKey' not in page:
                 return sorted(scanned, key=lambda item: json.dumps(item, sort_keys=True, default=str))
             kwargs['ExclusiveStartKey'] = page['LastEvaluatedKey']
-    listed = world.s3.list_object_versions(Bucket=BUCKET)
-    uploads = world.s3.list_multipart_uploads(Bucket=BUCKET).get('Uploads') or []
+    def versions(bucket: str) -> list:
+        listed = world.s3.list_object_versions(Bucket=bucket)
+        return sorted((entry['Key'], entry['VersionId']) for part in ('Versions', 'DeleteMarkers')
+                      for entry in listed.get(part) or [])
+
+    def uploads(bucket: str) -> list:
+        return sorted(upload['Key'] for upload in world.s3.list_multipart_uploads(Bucket=bucket).get('Uploads') or [])
     return {
         'feedback': rows(world.feedback), 'aggregates': rows(world.aggregates), 'memory': rows(world.memory),
         'watermarks': rows(world.watermarks), 'workspaces': rows(world.workspaces), 'radar': rows(world.radar),
         'projects': rows(world.projects), 'jobs': rows(world.jobs), 'participants': rows(world.participants),
         'conversations': rows(world.conversations),
-        'objects': sorted((entry['Key'], entry['VersionId']) for part in ('Versions', 'DeleteMarkers')
-                          for entry in listed.get(part) or []),
-        'uploads': sorted(upload['Key'] for upload in uploads),
+        'objects': versions(BUCKET), 'uploads': uploads(BUCKET),
+        'import_objects': versions(IMPORT_BUCKET), 'import_uploads': uploads(IMPORT_BUCKET),
         'parameters': sorted(parameter['Name'] for page in world.ssm.get_paginator('describe_parameters').paginate()
                              for parameter in page['Parameters']),
     }

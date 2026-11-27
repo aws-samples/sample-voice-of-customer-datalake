@@ -175,7 +175,7 @@ describe('audit rows (AUDIT#*) across every stack', () => {
   // the stack's one workspace-resolution policy, which carries the voc-workspaces Denies (below); their own policies
   // write nothing there, so they carry no voc-workspaces one-partition Deny of their own.
   it.each(['VocApiStack/MetricsLambdaRole', 'VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/IntegrationsLambdaRole',
-    'VocApiStack/ScrapersLambdaRole', 'VocApiStack/ManualImportLambdaRole'])(
+    'VocApiStack/ScrapersLambdaRole', 'VocApiStack/ManualImportLambdaRole', 'VocApiStack/S3ImportLambdaRole'])(
     '%s carries no voc-workspaces audit Deny of its own (the workspace-resolution policy does)',
     (role) => {
       const other = denied(byRole.get(role) ?? [], AUDIT_DENY_OTHER_PARTITION_SID);

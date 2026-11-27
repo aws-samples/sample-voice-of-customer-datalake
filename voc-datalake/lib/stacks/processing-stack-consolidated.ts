@@ -28,7 +28,7 @@ import { addProcessingEngineering } from './processing-engineering';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { WORKSPACE_HARD_DELETE_ENV, workspaceHardDeleteEnabled } from '../utils/workspace-hard-delete';
-import { createWorkspaceDeleteWorker } from './workspace-delete-worker';
+import { createWorkspaceDeleteWorker, type WorkspaceDeleteWorkerProps } from './workspace-delete-worker';
 import { createWorkspaceExportWorker } from './workspace-export-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
@@ -53,7 +53,10 @@ import { WORKSPACE_PARAMETER_BASE_PATH } from '../utils/workspace-secrets';
  */
 const UPDATE_CAPABLE_SOURCES_ENV = 'UPDATE_CAPABLE_SOURCES';
 
-export interface VocProcessingStackProps extends VocStackProps {
+/** With VocStackProps, the delete job's `s3ImportBucket` (VocIngestionStack's S3 import staging bucket: a workspace's
+ * hard delete removes its staged files under `ws/{ws}/`; referenced only with the flag, so no cross-stack export
+ * without it). */
+export interface VocProcessingStackProps extends VocStackProps, Pick<WorkspaceDeleteWorkerProps, 's3ImportBucket'> {
   /** VocCoreStack's Event API (core-realtime.ts): job workers publish on `jobs`, the conductor on `runs`. */
   realtime: RealtimePublishing;
   feedbackTable: dynamodb.Table;
@@ -368,7 +371,7 @@ export class VocProcessingStack extends VocStack {
         layer: processingLayer,
         kmsKey, feedbackTable, aggregatesTable, workspacesTable: props.workspacesTable,
         memoryTable: props.memoryTable, watermarksTable: props.watermarksTable, radarTable: props.radarTable,
-        projectsTable, jobsTable, participantsTable: props.participantsTable,
+        projectsTable, jobsTable, participantsTable: props.participantsTable, s3ImportBucket: props.s3ImportBucket,
         conversationsTable: props.conversationsTable, agentsTable: props.agentsTable, rawDataBucket,
         pluginIds: loadPlugins(path.join(__dirname, '../../plugins')).map((plugin) => plugin.id),
       });

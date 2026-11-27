@@ -268,6 +268,8 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
   apiSecretsArn: ingestionStack.secretsArn,
   kmsKey: coreStack.kmsKey,
   rawDataBucket: coreStack.rawDataBucket,
+  // The S3 import's staging bucket: the hard delete removes a workspace's staged files (with -c workspaceHardDelete).
+  s3ImportBucket: ingestionStack.s3ImportBucket,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,
   webSearchGatewayArn: webSearchStack?.gatewayArn,
   webSearchToolName: webSearchStack?.toolName,

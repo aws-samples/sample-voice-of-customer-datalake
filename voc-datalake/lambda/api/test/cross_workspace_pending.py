@@ -35,15 +35,6 @@ PHASE_2: dict[str, frozenset[str]] = {
         'POST /feedback-forms/<form_id>/submit',
         'POST /feedback-forms/<form_id>/events',
     }),
-    's3_import_handler.py': frozenset({
-        'DELETE /s3-import/file/<key>',
-        'GET /s3-import/files',
-        'GET /s3-import/reprocess/<run_id>',
-        'GET /s3-import/sources',
-        'POST /s3-import/reprocess',
-        'POST /s3-import/sources',
-        'POST /s3-import/upload-url',
-    }),
 }
 
 PHASE_3: dict[str, frozenset[str]] = {

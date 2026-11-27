@@ -9,9 +9,9 @@ import type { FeedbackItem, S3ImportFile, S3ImportSource } from './types'
 const DEFAULT_UPLOAD_CONTENT_TYPE = 'application/octet-stream'
 
 /**
- * `/s3-import/*` — the drop bucket the S3 import plugin ingests from. The deployment's alone: the bucket is not
- * keyed by workspace and the API refuses `X-Workspace-Id` (400), so every call here is sent without it
- * (`'deployment'`), inside a workspace too.
+ * `/s3-import/*` — the drop bucket the S3 import plugin ingests from. The API acts in a workspace with
+ * `X-Workspace-Id` (its own `ws/{ws}/` folder), but the web app sends no header to it yet (the next slice), so every
+ * call here is sent without it (`'deployment'`), inside a workspace too.
  */
 export function s3ImportEndpoints(apiFetch: FetchApi) {
   const fetchApi: FetchApi = (endpoint, options) => apiFetch(endpoint, options, 'deployment')

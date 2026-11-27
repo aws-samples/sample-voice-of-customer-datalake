@@ -17,6 +17,52 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.86.00] - 2026-11-27
+
+Multi-workspace, phase 2: the S3 import works in a workspace. Its API answered every request with `X-Workspace-Id`
+with one 400; it now acts on the workspace's own folder of the import bucket, for the workspace's admins, and an
+upload there is ingested in that workspace ([docs/data-lake-structure.md](docs/data-lake-structure.md#s3-import-bucket),
+[docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- The S3 import API (`/s3-import/*`) resolves `X-Workspace-Id` before every route, as the manual import does (400 for
+  an empty header, the one 404 for a workspace the caller is not in). In a workspace every route is its admins' (a
+  member admin or an entered platform admin; an editor or a viewer 403) and acts on `ws/{ws}/<source>/<file>`; the
+  keys in requests and answers stay `<source>/<file>`. A workspace's reprocess runs are
+  `WS#{ws}#SOURCE_RUN#s3_import` rows, and the ingestor's event names the workspace.
+- The import bucket's trigger ingests an upload under `ws/{ws}/` in that workspace (its raw copy, queue messages, run
+  and history rows there); a workspace that is not active is refused, a malformed id's key refused unread as before.
+  An event with uploads of several places runs each place on its own; one place's failure is raised after the others
+  ran, so Lambda retries the event (duplicates are skipped).
+- The workspace hard delete removes the workspace's staged files: every version, delete marker and open upload under
+  `ws/{ws}/` of the import bucket (the `import_objects` sweep, checked again by the verify pass).
+- The cross-workspace suite covers the S3 import's seven routes (taken off the pending list).
+
+### Changed
+
+- Without the header the API is the deployment's, as before, but no request of it lists under `ws/` (the file
+  listing reads the bucket's root folders one by one, in the same key order as before, and skips `ws/`), and
+  `ws` is a reserved source name beside `processed` (400 on create, upload, delete and reprocess; creating a source
+  named `processed` is now refused too). `GET /s3-import/files?source=` must be a source name (400 otherwise).
+- An upload link in a workspace is valid for 15 minutes (S3 checks it when the upload starts, so a long upload begun
+  in time still completes); the deployment's stay 2 hours.
+- `DELETE /s3-import/file/{key}` answers 404 for a key that holds no file (it answered 200 and, on the versioned
+  bucket, added a delete marker). The reprocess 404 no longer repeats the key it was sent; in a workspace it names the
+  workspace's raw folder (`ws/<workspace>/raw/s3_import/`) as where a kept original is.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). IAM: the S3 import API role gets the workspace-resolution grants and its
+  run-row statement also allows one workspace's `WS#{ws}#SOURCE_RUN#s3_import` (`ForAllValues:StringLike`). With
+  `-c workspaceHardDelete=true` the delete worker gets the import bucket's version list, version delete and upload
+  abort under `ws/{one id}/*` and its name (`S3_IMPORT_BUCKET`), and VocIngestionStack exports the bucket's name and
+  ARN to VocProcessingStack. No stored data changes. The web app still calls the S3 import without the header (the
+  next slice).
+- A deployment that has a source folder named `ws` at the import bucket's root should move its files to another
+  folder before upgrading: the folder is reserved for the workspaces, so it is hidden from the listings and its files
+  can no longer be deleted or reprocessed through the API.
+
 ## [7.83.00] - 2026-11-26
 
 Multi-workspace, phase 4: the platform console shows the cost per workspace. `GET /platform/costs` (7.30.00) had no
