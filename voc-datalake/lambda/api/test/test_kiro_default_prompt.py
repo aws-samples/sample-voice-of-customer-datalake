@@ -132,7 +132,8 @@ class TestStoredPromptIsUnused:
     def test_update_project_ignores_the_prompt(self):
         with patch('projects.projects_table') as mock_table:
             from projects import update_project
-            assert update_project('p1', {'name': 'Renamed', 'kiro_export_prompt': 'Use Rust.'})['success'] is True
+            assert update_project('p1', {'name': 'Renamed', 'kiro_export_prompt': 'Use Rust.'},
+                                  workspace=None)['success'] is True
             call_kwargs = mock_table.update_item.call_args[1]
             assert 'kiro_export_prompt' not in call_kwargs['UpdateExpression']
             assert 'Use Rust.' not in call_kwargs['ExpressionAttributeValues'].values()
@@ -141,7 +142,7 @@ class TestStoredPromptIsUnused:
     def test_get_project_serves_the_default_and_drops_a_stored_prompt(self, mock_table):
         from projects import KIRO_DEFAULT_EXPORT_PROMPT, get_project
         mock_table.query.return_value = {'Items': [_meta(kiro_export_prompt='Use Rust only.')]}
-        project = get_project('p1')['project']
+        project = get_project('p1', workspace=None, membership=None)['project']
         assert project['kiro_default_export_prompt'] == KIRO_DEFAULT_EXPORT_PROMPT
         assert 'kiro_export_prompt' not in project
 
@@ -149,6 +150,6 @@ class TestStoredPromptIsUnused:
     def test_get_project_without_a_stored_prompt(self, mock_table):
         from projects import KIRO_DEFAULT_EXPORT_PROMPT, get_project
         mock_table.query.return_value = {'Items': [_meta()]}
-        project = get_project('p1')['project']
+        project = get_project('p1', workspace=None, membership=None)['project']
         assert project['kiro_default_export_prompt'] == KIRO_DEFAULT_EXPORT_PROMPT
         assert 'kiro_export_prompt' not in project

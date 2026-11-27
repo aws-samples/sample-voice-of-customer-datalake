@@ -77,6 +77,11 @@ INSTANCE_RESOLVER_METHODS = frozenset({'context', 'scope'})
 #: the module (test_cross_workspace_routes.py proves it); followed in the same files.
 ROUTES_RESOLVER: FunctionKey = ('shared.workspace_request', 'ResolvedRoutes')
 ROUTES_RESOLVER_MIDDLEWARE = 'middleware'
+#: Seams whose resolution waits behind a module flag that is off in production, each with its flag (since 7.103.00,
+#: 3h-S3a: the projects API's shared/project_request_scope.py ``project_scope``, ``RESOLVE`` off until the flip,
+#: 3h-S12): not followed, so the routes behind one stay in cross_workspace_pending.py while it is off. The suite holds
+#: each flag off (test_cross_workspace_routes.py ``test_every_seam_the_scan_skips_is_off``); the flip removes the entry.
+SEAMS_OFF: dict[FunctionKey, str] = {('shared.project_request_scope', 'project_scope'): 'RESOLVE'}
 
 
 def _resolver_instances(module: _Module, cls: FunctionKey = INSTANCE_RESOLVER) -> set[str]:
@@ -167,7 +172,7 @@ def routes_reaching_the_resolver(lambda_dir: Path,
     calls = {(name, fn_name): _callees(name, module, fn, instances[name])
              for name, module in modules.items() for fn_name, fn in module.functions.items()}
     resolvers = {RESOLVER}
-    while more := {key for key, callees in calls.items() if callees & resolvers} - resolvers:
+    while more := {key for key, callees in calls.items() if callees & resolvers} - resolvers - SEAMS_OFF.keys():
         resolvers |= more
     # Routes are read from every function at any depth (async ones and methods too); one that is not a module
     # function reaches the resolver when it calls one itself.

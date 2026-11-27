@@ -56,7 +56,7 @@ def test_the_generic_document_edit_refuses_a_decision():
 
     with patch('projects._source_document_item', return_value=DECISION), \
             patch('projects.projects_table'), pytest.raises(ValidationError, match='decisions'):
-        projects.update_document('proj-123', 'doc_1', {'content': 'x'})
+        projects.update_document('proj-123', 'doc_1', {'content': 'x'}, workspace=None)
 
 
 def test_restoring_a_decision_version_is_refused():
@@ -64,4 +64,4 @@ def test_restoring_a_decision_version_is_refused():
 
     with patch('projects._source_document_item', return_value=DECISION), \
             patch('projects.projects_table'), pytest.raises(ValidationError, match='decisions'):
-        projects.restore_document('proj-123', 'doc_1', 'r1', {}, actor={'sub': 'u1', 'kind': 'user'})
+        projects.restore_document('proj-123', 'doc_1', 'r1', {}, actor={'sub': 'u1', 'kind': 'user'}, workspace=None)

@@ -36,7 +36,7 @@ class TestWithSignedPrototypeUrl:
                 'document_id': 'prototype_1',
                 'prototype_url': STALE_UNSIGNED_URL,
             },
-            'proj_1',
+            'proj_1', None,
         )
 
         assert item['prototype_url'] != STALE_UNSIGNED_URL
@@ -51,7 +51,7 @@ class TestWithSignedPrototypeUrl:
 
         item = _with_signed_prototype_url(
             {'document_type': 'prototype', 'document_id': 'prototype_7'},
-            'proj_7',
+            'proj_7', None,
         )
 
         assert urlparse(item['prototype_url']).path == '/prototypes/proj_7/prototype_7.html'
@@ -72,7 +72,7 @@ class TestWithSignedPrototypeUrl:
                     'document_id': 'prototype_1',
                     'prototype_url': STALE_UNSIGNED_URL,
                 },
-                'proj_1',
+                'proj_1', None,
             )
 
         assert 'prototype_url' not in item
@@ -97,7 +97,7 @@ class TestWithSignedPrototypeUrl:
                 'prototype_format': 'html',
                 'content': '<!DOCTYPE html><html><body>inline</body></html>',
             },
-            'proj_1',
+            'proj_1', None,
         )
 
         assert 'prototype_url' not in item
@@ -109,7 +109,7 @@ class TestWithSignedPrototypeUrl:
 
         item = _with_signed_prototype_url(
             {'document_type': 'prototype', 'document_id': 'prototype_9', 'prototype_format': 'html'},
-            'proj_9',
+            'proj_9', None,
         )
 
         assert 'Signature=' in item['prototype_url']
@@ -120,12 +120,12 @@ class TestWithSignedPrototypeUrl:
 
         prd = {'document_type': 'prd', 'document_id': 'prd_1', 'content': 'body'}
 
-        assert _with_signed_prototype_url(dict(prd), 'proj_1') == prd
+        assert _with_signed_prototype_url(dict(prd), 'proj_1', None) == prd
 
     @pytest.mark.usefixtures("prototypes_cdn_configured")
     def test_leaves_a_prototype_without_a_document_id_untouched(self):
         from api.projects import _with_signed_prototype_url
 
-        item = _with_signed_prototype_url({'document_type': 'prototype'}, 'proj_1')
+        item = _with_signed_prototype_url({'document_type': 'prototype'}, 'proj_1', None)
 
         assert 'prototype_url' not in item

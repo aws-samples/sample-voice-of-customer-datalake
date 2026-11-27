@@ -278,7 +278,7 @@ class TestTheComposeRoute:
 
 def _gate_refusing(refused_project_id: str) -> MagicMock:
     """A `_project_access_for` double that 404s `refused_project_id` and admits the rest."""
-    def gate(project_id, _caller, _level):
+    def gate(project_id, _caller, _level, _scope):
         if project_id == refused_project_id:
             raise NotFoundError(f'gated: {project_id}')
 

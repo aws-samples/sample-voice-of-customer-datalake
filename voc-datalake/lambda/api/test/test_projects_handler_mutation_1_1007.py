@@ -106,45 +106,49 @@ BODY = {'name': 'N', 'role': 'editor'}
 ACTOR = {'sub': 'test-user-id', 'kind': 'admin'}
 ADMIN_ACCESS = ProjectAccess(role=ROLE_ADMIN)
 
+#: The request's scope as the routes pass it on: the deployment's until the flip (3h-S12; 7.103.00, 3h-S3a).
+WS = {'workspace': None}
+WSM = {'workspace': None, 'membership': None}
+
 # (method, path, body, query, delegate, expected args, expected kwargs)
 THIN_ROUTES = [
-    ('GET', '/projects', None, None, 'list_projects', (ADMIN,), {}),
+    ('GET', '/projects', None, None, 'list_projects', (ADMIN,), WSM),
     # (7.99.00: the create names its scope, the deployment's until the switch)
-    ('POST', '/projects', BODY, None, 'create_project', (BODY, ADMIN), {'workspace': None, 'membership': None}),
-    ('POST', '/projects', None, None, 'create_project', ({}, ADMIN), {'workspace': None, 'membership': None}),
-    ('GET', '/projects/p1', None, None, 'get_project', ('p1', ADMIN), {}),
+    ('POST', '/projects', BODY, None, 'create_project', (BODY, ADMIN), WSM),
+    ('POST', '/projects', None, None, 'create_project', ({}, ADMIN), WSM),
+    ('GET', '/projects/p1', None, None, 'get_project', ('p1', ADMIN), WSM),
     ('POST', '/projects/p1/chat-context', {'selected_document_ids': ['d1']}, None,
-     'get_project_chat_context', ('p1', ['d1'], ADMIN), {}),
+     'get_project_chat_context', ('p1', ['d1'], ADMIN), WSM),
     ('POST', '/projects/p1/chat-context', {'other': 1}, None,
-     'get_project_chat_context', ('p1', [], ADMIN), {}),
-    ('PUT', '/projects/p1', BODY, None, 'update_project', ('p1', BODY), {}),
+     'get_project_chat_context', ('p1', [], ADMIN), WSM),
+    ('PUT', '/projects/p1', BODY, None, 'update_project', ('p1', BODY), WS),
     ('DELETE', '/projects/p1', None, None, 'delete_project', ('p1',), {'actor': ACTOR}),
-    ('PUT', '/projects/p1/visibility', BODY, None, 'set_project_visibility', ('p1', BODY), {}),
-    ('GET', '/projects/p1/members', None, None, 'get_project_members', ('p1', ADMIN), {}),
+    ('PUT', '/projects/p1/visibility', BODY, None, 'set_project_visibility', ('p1', BODY), WS),
+    ('GET', '/projects/p1/members', None, None, 'get_project_members', ('p1', ADMIN), WSM),
     ('GET', '/projects/p1/members/candidates', None, {'q': 'ad'}, 'search_member_candidates',
-     ('p1', 'ad'), {}),
-    ('GET', '/projects/p1/members/candidates', None, None, 'search_member_candidates', ('p1', ''), {}),
-    ('POST', '/projects/p1/members', BODY, None, 'add_project_member', ('p1', BODY, ADMIN), {}),
-    ('PUT', '/projects/p1/members/m1', BODY, None, 'update_project_member', ('p1', 'm1', BODY), {}),
+     ('p1', 'ad'), WS),
+    ('GET', '/projects/p1/members/candidates', None, None, 'search_member_candidates', ('p1', ''), WS),
+    ('POST', '/projects/p1/members', BODY, None, 'add_project_member', ('p1', BODY, ADMIN), WS),
+    ('PUT', '/projects/p1/members/m1', BODY, None, 'update_project_member', ('p1', 'm1', BODY), WS),
     ('DELETE', '/projects/p1/members/m1', None, None, 'remove_project_member',
-     ('p1', 'm1', ADMIN, ADMIN_ACCESS), {}),
-    ('POST', '/projects/p1/owner', BODY, None, 'transfer_project_owner', ('p1', BODY, ADMIN), {}),
-    ('PUT', '/projects/p1/personas/x1', BODY, None, 'update_persona', ('p1', 'x1', BODY), {}),
+     ('p1', 'm1', ADMIN, ADMIN_ACCESS), WS),
+    ('POST', '/projects/p1/owner', BODY, None, 'transfer_project_owner', ('p1', BODY, ADMIN), WSM),
+    ('PUT', '/projects/p1/personas/x1', BODY, None, 'update_persona', ('p1', 'x1', BODY), WS),
     ('DELETE', '/projects/p1/personas/x1', None, None, 'delete_persona', ('p1', 'x1'), {'actor': ACTOR}),
-    ('POST', '/projects/p1/personas/x1/notes', BODY, None, 'add_persona_note', ('p1', 'x1', BODY), {}),
+    ('POST', '/projects/p1/personas/x1/notes', BODY, None, 'add_persona_note', ('p1', 'x1', BODY), WS),
     # (7.64.00: a focus group's save takes the caller's category scope; every other type none)
     ('POST', '/projects/p1/documents', BODY, None, 'create_document', ('p1', BODY),
-     {'creator_sub': 'test-user-id', 'category_scope': None}),
+     {'creator_sub': 'test-user-id', 'category_scope': None, **WS}),
     ('PUT', '/projects/p1/documents/d1', BODY, None, 'update_document', ('p1', 'd1', BODY),
-     {'proposal': None}),
+     {'proposal': None, **WS}),
     # A save naming its pass (revise_job_id) is checked against the job: test_document_review_routes.py.
     # A client's own edit_kind is passed on unread: it never makes the save a proposal's.
     ('PUT', '/projects/p1/documents/d1', {'content': 'x', 'edit_kind': 'revise'}, None, 'update_document',
-     ('p1', 'd1', {'content': 'x', 'edit_kind': 'revise'}), {'proposal': None}),
-    ('GET', '/projects/p1/documents/d1/versions', None, None, 'get_document_versions', ('p1', 'd1'), {}),
+     ('p1', 'd1', {'content': 'x', 'edit_kind': 'revise'}), {'proposal': None, **WS}),
+    ('GET', '/projects/p1/documents/d1/versions', None, None, 'get_document_versions', ('p1', 'd1'), WS),
     # A prototype's restore (Back to vN) records who asked.
     ('POST', '/projects/p1/documents/d1/versions/v1/restore', BODY, None, 'restore_document',
-     ('p1', 'd1', 'v1', BODY), {'actor': ACTOR}),
+     ('p1', 'd1', 'v1', BODY), {'actor': ACTOR, **WS}),
     ('DELETE', '/projects/p1/documents/d1', None, None, 'delete_document', ('p1', 'd1'), {'actor': ACTOR}),
 ]
 
@@ -442,7 +446,7 @@ class TestTheDuplicateTarget:
             status, _, _ = world.call('POST', '/projects/p1/documents/d1/duplicate',
                                       body={'target_project_id': target})
         assert status == 200
-        dup.assert_called_once_with('p1', 'd1', target)
+        dup.assert_called_once_with('p1', 'd1', target, workspace=None)
 
     def test_a_missing_target_is_404_for_an_admin(self, world):
         with patch.object(projects_handler, 'duplicate_document') as duplicate:
@@ -592,7 +596,7 @@ class TestTheMiddleware:
             patch.object(projects_handler, 'get_projects_table', return_value=None),
             pytest.raises(ConfigurationError) as raised,
         ):
-            projects_handler._gate_meta('p1')
+            projects_handler._gate_meta('p1', None)
         assert raised.value.message == 'Projects table not configured'
 
     def test_the_caller_guard_names_its_refusal(self):
@@ -637,7 +641,7 @@ def _batch_table(*responses: dict) -> MagicMock:
 class TestTheBatchedAccessRead:
     def test_the_request_is_consistent_and_projected(self):
         table = _batch_table({'Responses': {'t': [{'pk': 'PROJECT#a'}]}})
-        projects_handler._gate_meta_batch_chunk(table, ['a', 'b'])
+        projects_handler._gate_meta_batch_chunk(table, ['a', 'b'], None)
         request = table.meta.client.batch_get_item.call_args.kwargs['RequestItems']['t']
         assert request['Keys'] == [{'pk': 'PROJECT#a', 'sk': 'META'}, {'pk': 'PROJECT#b', 'sk': 'META'}]
         assert request['ConsistentRead'] is True
@@ -650,10 +654,10 @@ class TestTheBatchedAccessRead:
         table = _batch_table({'Responses': {'t': [
             {'pk': 'PROJECT#a', 'v': 1}, {'pk': 'OTHER#b'}, {'pk': 7}, 'junk', {},
         ]}})
-        assert projects_handler._gate_meta_batch_chunk(table, ['a']) == {'a': {'pk': 'PROJECT#a', 'v': 1}}
+        assert projects_handler._gate_meta_batch_chunk(table, ['a'], None) == {'a': {'pk': 'PROJECT#a', 'v': 1}}
 
     def test_a_response_without_responses_is_empty(self):
-        assert projects_handler._gate_meta_batch_chunk(_batch_table({}), ['a']) == {}
+        assert projects_handler._gate_meta_batch_chunk(_batch_table({}), ['a'], None) == {}
 
     def test_unprocessed_keys_are_re_asked_after_a_growing_back_off(self):
         left = {'t': {'Keys': [{'pk': 'PROJECT#b', 'sk': 'META'}]}}
@@ -663,7 +667,7 @@ class TestTheBatchedAccessRead:
             {'Responses': {'t': [{'pk': 'PROJECT#b'}]}, 'UnprocessedKeys': {'t': {'Keys': []}}},
         )
         with patch.object(projects_handler.time, 'sleep') as sleep:
-            metas = projects_handler._gate_meta_batch_chunk(table, ['a', 'b'])
+            metas = projects_handler._gate_meta_batch_chunk(table, ['a', 'b'], None)
         assert metas == {'a': {'pk': 'PROJECT#a'}, 'b': {'pk': 'PROJECT#b'}}
         assert sleep.call_args_list == [call(0.1), call(0.2)]
         assert table.meta.client.batch_get_item.call_args_list[1] == call(RequestItems=left)
@@ -677,7 +681,7 @@ class TestTheBatchedAccessRead:
             patch.object(projects_handler, 'logger', logger),
             pytest.raises(ServiceError) as raised,
         ):
-            projects_handler._gate_meta_batch_chunk(table, ['a'])
+            projects_handler._gate_meta_batch_chunk(table, ['a'], None)
         assert raised.value.message == 'Failed to check project access'
         # Doubling from the second attempt: 0.05 * 2**n, so the fourth wait is 0.8 s.
         assert [c.args[0] for c in sleep.call_args_list] == pytest.approx([0.1, 0.2, 0.4, 0.8])
@@ -691,7 +695,7 @@ class TestTheViewableProjects:
         ids = [f'p{n:03d}' for n in range(101)]
         chunks: list[list[str]] = []
 
-        def chunk(_table, project_ids):
+        def chunk(_table, project_ids, _workspace):
             chunks.append(project_ids)
             return {pid: {'pk': f'PROJECT#{pid}', 'visibility': 'public'} for pid in project_ids}
 
@@ -700,7 +704,7 @@ class TestTheViewableProjects:
             patch.object(projects_handler, '_gate_meta_batch_chunk', side_effect=chunk),
         ):
             viewable = projects_handler._viewable_project_ids(
-                [*reversed(ids), 'p000', ''], Caller(subject='s'))
+                [*reversed(ids), 'p000', ''], Caller(subject='s'), projects_handler.DEPLOYMENT)
         assert chunks == [ids[:100], ids[100:]]
         assert viewable == set(ids)
 
@@ -711,21 +715,22 @@ class TestTheViewableProjects:
             patch.object(projects_handler, 'get_projects_table', return_value=MagicMock()),
             patch.object(projects_handler, '_gate_meta_batch_chunk', return_value=metas),
         ):
-            assert projects_handler._viewable_project_ids(['pub'], Caller(subject='s')) == {'pub'}
+            assert projects_handler._viewable_project_ids(['pub'], Caller(subject='s'),
+                                                          projects_handler.DEPLOYMENT) == {'pub'}
 
     def test_an_unconfigured_projects_table_is_named(self):
         with (
             patch.object(projects_handler, 'get_projects_table', return_value=None),
             pytest.raises(ConfigurationError) as raised,
         ):
-            projects_handler._viewable_project_ids(['a'], Caller(subject='s'))
+            projects_handler._viewable_project_ids(['a'], Caller(subject='s'), projects_handler.DEPLOYMENT)
         assert raised.value.message == 'Projects table not configured'
 
 
 class TestTheRowsHiddenFromTheCaller:
     def _hidden(self, caller: Caller, rows: dict, viewable: set[str]) -> tuple[set[str], MagicMock]:
         app = MagicMock()
-        app.context = {'project_caller': caller}
+        app.context = {'project_caller': caller, 'project_scope': projects_handler.DEPLOYMENT}
         with (
             patch.object(projects_handler, 'app', app),
             patch.object(projects_handler, '_viewable_project_ids', return_value=viewable) as read,

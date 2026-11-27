@@ -98,8 +98,8 @@ def test_a_colliding_document_id_is_retried_inside_the_transaction(table):
 
     project_id = _create_project()
     with patch('shared.ids.secrets.token_hex', side_effect=['cccc0000', 'cccc0000', 'dddd1111']):
-        first = create_document(project_id, {'title': 'A', 'content': 'a'})['document']['document_id']
-        second = create_document(project_id, {'title': 'B', 'content': 'b'})['document']['document_id']
+        first = create_document(project_id, {'title': 'A', 'content': 'a'}, workspace=None)['document']['document_id']
+        second = create_document(project_id, {'title': 'B', 'content': 'b'}, workspace=None)['document']['document_id']
 
     assert (first, second) == ('doc_20261006120000_cccc0000', 'doc_20261006120000_dddd1111')
     meta = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})['Item']

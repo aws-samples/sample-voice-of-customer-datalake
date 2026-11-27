@@ -60,19 +60,20 @@ def _row(table: Any, sk: str) -> dict:
 def _edit(document_id: str, body: dict) -> dict:
     from projects import update_document
 
-    return update_document(PROJECT, document_id, body)
+    return update_document(PROJECT, document_id, body, workspace=None)
 
 
 def _versions(document_id: str) -> list[dict]:
     from projects import get_document_versions
 
-    return get_document_versions(PROJECT, document_id)['versions']
+    return get_document_versions(PROJECT, document_id, workspace=None)['versions']
 
 
 def _restore(document_id: str, version_id: str) -> dict:
     from projects import restore_document
 
-    return restore_document(PROJECT, document_id, version_id, {}, actor={'sub': 'u1', 'kind': 'user'})
+    return restore_document(PROJECT, document_id, version_id, {}, actor={'sub': 'u1', 'kind': 'user'},
+                            workspace=None)
 
 
 class TestAManagedEditIsTheNextVersion:

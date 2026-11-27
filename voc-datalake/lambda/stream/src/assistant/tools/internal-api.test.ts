@@ -11,6 +11,9 @@ import {
   type ApiCall,
   type ApiFunction,
 } from './internal-api.js';
+import { loadChatContext } from './server/chat-context.js';
+import { getProjectRoute } from './server/common.js';
+import { fakeContext } from './test-fixtures.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -109,6 +112,35 @@ describe('buildProxyEvent', () => {
     const event = buildProxyEvent({ fn: 'agents', method: 'GET', path: '/agents/plans/pl_0123456789ab', resource: '/agents/{proxy+}' },
       { ...CLAIMS, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
     expect(event.headers).toStrictEqual({ 'Content-Type': 'application/json', 'X-Workspace-Id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' });
+  });
+});
+
+// 7.103.00 (3h-S3a): the projects API takes the request's workspace from X-Workspace-Id once the switch's flip
+// (3h-S12) turns its seam on. The assistant's project tools and its chat context reach projects only through that API,
+// so the flip covers them only while every one of their calls carries the header: pinned here on the calls themselves.
+describe("the assistant's project calls carry the caller's workspace", () => {
+  const WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8';
+  const claims = { ...CLAIMS, 'voc:workspace': WS };
+
+  it('sends X-Workspace-Id with the chat context', async () => {
+    const { send, invoke } = setup(proxy(200, { project: { name: 'P' }, personas: [], documents: [] }));
+    await loadChatContext(invoke, 'p1', ['d1'], claims);
+    expect(sentEvent(send)).toMatchObject({
+      path: '/projects/p1/chat-context', resource: CHAT_CONTEXT_RESOURCE,
+      headers: { 'Content-Type': 'application/json', 'X-Workspace-Id': WS },
+    });
+  });
+
+  it.each([undefined, 'documents/d1/versions'])('sends X-Workspace-Id with a project read (%s)', async (subpath) => {
+    const { send, invoke } = setup(proxy(200, {}));
+    await getProjectRoute({ invoke }, fakeContext('project', {}, { claims }), 'p1', subpath);
+    expect(sentEvent(send)).toMatchObject({ headers: { 'X-Workspace-Id': WS } });
+  });
+
+  it('sends X-Workspace-Id with the project list', async () => {
+    const { send, invoke } = setup(proxy(200, { projects: [] }));
+    await invoke({ fn: 'projects', method: 'GET', path: '/projects', resource: '/projects' }, claims);
+    expect(sentEvent(send)).toMatchObject({ headers: { 'X-Workspace-Id': WS } });
   });
 });
 

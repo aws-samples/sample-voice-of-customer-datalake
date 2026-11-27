@@ -35,6 +35,7 @@ before. Both branches refuse (403), so the route-gate inventory counts it as a g
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -60,7 +61,7 @@ from shared.workspace import (
 )
 from shared.ws_repo import WorkspaceScope, scope_of
 
-__all__ = ['is_current_member', 'request_workspace', 'require_settings_admin', 'require_workspace_writer',
+__all__ = ['current_members', 'current_role', 'is_current_member', 'request_workspace', 'require_settings_admin', 'require_workspace_writer',
            'route_kwargs', 'route_scope', 'route_workspace']
 
 #: This warm container's resolved memberships (30 s, shared/workspace.py).
@@ -126,8 +127,25 @@ def is_current_member(ws: str, sub: str) -> bool:
     record acts for with no request to resolve (a plan's approver before each of its steps and waits,
     agents/plan_identity.py). A platform admin's entry counts for nothing here, as in a worker. A DynamoDB error
     propagates; ``ConfigurationError`` without the table."""
+    return current_role(ws, sub) is not None
+
+
+def current_role(ws: str, sub: str) -> str | None:
+    """``sub``'s role in ``ws`` now (``stored_role``), or None for a non-member or a workspace that is not active (its
+    ``META`` read only for a member). Read strongly consistent, as ``is_current_member``."""
     table = _workspaces_table()
-    return stored_role(table, ws, sub) is not None and is_active(table, ws)
+    role = stored_role(table, ws, sub)
+    return role if role is not None and is_active(table, ws) else None
+
+
+def current_members(ws: str, subs: Iterable[str]) -> set[str]:
+    """Which of ``subs`` are members of ``ws`` now: the workspace's status read once, then each one's ``MEMBER#`` row
+    (one GetItem each, the resolver's own projection), strongly consistent; nobody while ``ws`` is not active."""
+    wanted = list(dict.fromkeys(subs))
+    table = _workspaces_table()
+    if not wanted or not is_active(table, ws):
+        return set()
+    return {sub for sub in wanted if stored_role(table, ws, sub) is not None}
 
 
 def _never(_event: dict) -> bool:

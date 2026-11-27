@@ -170,10 +170,12 @@ def rest_event(method, path, *, claims, body=None, path_params=None):
 
 
 def workspace_route_call(handler: Any, lambda_context: Any, method: str, path: str, *, claims: dict, ws: str | None,
-                         body: Any = None, path_params: dict | None = None) -> tuple[int, Any]:
+                         body: Any = None, path_params: dict | None = None,
+                         query: dict | None = None) -> tuple[int, Any]:
     """``method path`` through ``handler.lambda_handler`` as ``claims``, in workspace ``ws`` when given (its
-    ``X-Workspace-Id``); ``(status, decoded body)``."""
+    ``X-Workspace-Id``), with ``query`` as its query string; ``(status, decoded body)``."""
     event = rest_event(method, path, claims=claims, body=body, path_params=path_params)
+    event['queryStringParameters'] = query
     if ws is not None:
         event['headers']['X-Workspace-Id'] = ws
     response = handler.lambda_handler(event, lambda_context)

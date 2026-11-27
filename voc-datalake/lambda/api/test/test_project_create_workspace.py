@@ -18,6 +18,7 @@ from botocore.exceptions import ClientError
 from moto import mock_aws
 from moto_helpers import pk_sk_table
 
+from shared.exceptions import AuthorizationError
 from shared.project_access import Caller, WorkspaceMembership, WorkspaceMembershipError
 from shared.project_keys import project_pk, project_registry_key, project_registry_pk
 from shared.project_tables import iter_registered_project_ids
@@ -100,16 +101,17 @@ def test_a_workspace_create_without_the_creators_membership_writes_nothing(table
     assert _keys(table) == []
 
 
-def test_a_workspace_viewer_creates_a_project_they_then_only_read():
-    """The create itself is the route's to allow (an editor or an admin, in its slice); the answer already says what
-    the workspace's viewer role leaves the owner: view."""
-    from projects import create_project
+def test_a_workspace_viewer_creates_nothing():
+    """A viewer reads only (since 7.103.00, 3h-S3a: before it the create wrote for one, answering the owner a viewer's
+    access): refused before anything is written."""
+    from projects import CREATE_NEEDS_AN_EDITOR, create_project
 
-    with patch('projects.projects_table', MagicMock()), \
-            patch('projects.create_workspace_project'), patch('shared.ids.secrets.token_hex', return_value='aaaa0000'):
-        project = create_project({'name': 'Launch'}, OWNER, workspace=A, membership=_membership(A, 'viewer'))['project']
-    assert project['access']['role'] == 'viewer'
-    assert 'owner_email' not in project
+    table = MagicMock()
+    with patch('projects.projects_table', table), patch('projects.create_workspace_project') as create, \
+            pytest.raises(AuthorizationError, match=CREATE_NEEDS_AN_EDITOR):
+        create_project({'name': 'Launch'}, OWNER, workspace=A, membership=_membership(A, 'viewer'))
+    create.assert_not_called()
+    assert table.mock_calls == []
 
 
 def test_a_held_claim_mints_a_fresh_id(table):

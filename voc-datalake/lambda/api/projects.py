@@ -114,14 +114,18 @@ from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, resolve_evidenc
 from shared.persona_knowledge import PERSONA_KNOWLEDGE_STEP, persona_knowledge_fields, with_persona_knowledge
 from shared.project_access import Caller
 from shared.project_keys import (
+    PROTOTYPE_BUILDER_STORE,
+    REVISE_FROM_COMMENTS_STORE,
     document_keys,
     document_listing,
     persona_keys,
     project_id_of,
     project_pk,
     project_type_pk,
+    require_deployment,
     version_partition_key,
 )
+from shared.project_request_scope import is_workspace_member, workspace_members, workspace_role
 from shared.project_validation import RUN_TYPE as VALIDATION_RUN_TYPE
 from shared.project_writes import (
     NEW_ROW_CONDITION,
@@ -159,6 +163,7 @@ from shared.scoped_keys import scoped_object_key
 from shared.tables import get_aggregates_table, get_feedback_table, get_jobs_table, get_projects_table
 from shared.timestamps import now_iso
 from shared.voice_sessions import session_keys_of_pointers, validated_voice_id
+from shared.workspace import EDITING_ROLES
 from shared.ws_repo import OUTSIDE_ENTRY_INDEX, WorkspaceScope
 
 # The instructions "Copy to Kiro" on a document pastes ahead of that document.
@@ -411,17 +416,21 @@ def fix_persona_name(name: str) -> str:
 
 
 @tracer.capture_method
-def list_projects(caller: Caller) -> dict:
-    """List the projects ``caller`` can view, with accurate counts.
+def list_projects(caller: Caller, *, workspace: WorkspaceScope | None,
+                  membership: project_access.WorkspaceMembership | None) -> dict:
+    """List the projects ``caller`` can view in ``workspace`` (the deployment's when None), with accurate counts.
 
     Filtering happens before the per-project count query, so a private project
-    the caller cannot see costs nothing beyond its index row.
+    the caller cannot see costs nothing beyond its index row. A workspace's list
+    reads only its own index partition (``WS#{ws}#TYPE#PROJECT``) and decides
+    each project from ``membership`` (since 7.103.00, 3h-S3a).
     """
+    project_access.require_membership(caller, workspace=workspace, membership=membership)
     if not projects_table:
         return {'projects': []}
 
     projects = []
-    for item in _iter_project_index_rows():
+    for item in _iter_project_index_rows(workspace):
         if is_project_tombstone(item):
             continue
         # Verification fixtures are indexed like real projects on purpose, so the
@@ -429,10 +438,10 @@ def list_projects(caller: Caller) -> dict:
         # excluding them from the by-id reads below would defeat that purpose.
         if is_verification_fixture(item):
             continue
-        if not project_access.resolve_access(item, caller, workspace=None, membership=None).can_view:
+        if not project_access.resolve_access(item, caller, workspace=workspace, membership=membership).can_view:
             continue
         project_id = item.get('project_id')
-        persona_count, document_count = _count_project_children(project_id)
+        persona_count, document_count = _count_project_children(project_id, workspace)
 
         projects.append(_without_emails_unless_manager({
             'project_id': project_id,
@@ -446,8 +455,8 @@ def list_projects(caller: Caller) -> dict:
             'document_count': document_count,
             **({'created_by_agent': item['created_by_agent']}
                if isinstance(item.get('created_by_agent'), str) else {}),
-            **project_access.sharing_summary(item, caller, workspace=None, membership=None),
-        }, item, caller, workspace=None, membership=None))
+            **project_access.sharing_summary(item, caller, workspace=workspace, membership=membership),
+        }, item, caller, workspace=workspace, membership=membership))
 
     return {'projects': projects}
 
@@ -460,21 +469,21 @@ def _paginated_items(query: dict) -> Iterator[dict]:
     return iter_query(projects_table, query)
 
 
-def _iter_project_index_rows() -> Iterator[dict]:
-    """Every project META row on the by-type index, newest first, all pages."""
+def _iter_project_index_rows(workspace: WorkspaceScope | None) -> Iterator[dict]:
+    """Every project META row of the scope on the by-type index, newest first, all pages."""
     return _paginated_items({
         'IndexName': PROJECTS_BY_TYPE_INDEX,
-        'KeyConditionExpression': Key('gsi1pk').eq(project_type_pk(workspace=None)),
+        'KeyConditionExpression': Key('gsi1pk').eq(project_type_pk(workspace=workspace)),
         'ScanIndexForward': False,
     })
 
 
-def _count_project_children(project_id: object) -> tuple[int, int]:
-    """(persona_count, document_count) over the project's whole partition."""
+def _count_project_children(project_id: object, workspace: WorkspaceScope | None) -> tuple[int, int]:
+    """(persona_count, document_count) over the project's whole partition (in its scope)."""
     persona_count = 0
     document_count = 0
     for child in _paginated_items({
-        'KeyConditionExpression': Key('pk').eq(project_pk(str(project_id), workspace=None)),
+        'KeyConditionExpression': Key('pk').eq(project_pk(str(project_id), workspace=workspace)),
         'ProjectionExpression': 'sk',
     }):
         sk = child.get('sk')
@@ -485,6 +494,12 @@ def _count_project_children(project_id: object) -> tuple[int, int]:
         elif sk.startswith(_DOCUMENT_SORT_KEY_PREFIXES):
             document_count += 1
     return persona_count, document_count
+
+
+#: The create's refusal in a workspace of a caller its gate would not admit (an agent).
+AGENT_CREATE_REFUSED = 'Only a member of this workspace can create a project here: an agent cannot'
+#: The create's refusal of a workspace's viewer (docs/multi-workspace.md, "Roles": a viewer reads, an editor writes).
+CREATE_NEEDS_AN_EDITOR = 'Creating a project needs the editor or admin role in this workspace'
 
 
 @tracer.capture_method
@@ -505,8 +520,16 @@ def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | No
     once with a fresh one. ``membership`` (since 7.101.00) is the caller's of
     that workspace (None for the deployment), checked before anything is
     written: the answer's sharing fields are decided in the project's scope.
+    In a workspace a caller the gate would not admit there (an agent: no agent
+    runs in a workspace, 3g3-a's owner decision 1; or no role) is refused
+    before anything is written, and so is a viewer, who reads only (since
+    7.103.00, 3h-S3a; both 403).
     """
     project_access.require_membership(caller, workspace=workspace, membership=membership)
+    if membership is not None and not project_access.workspace_admits(caller, membership):
+        raise AuthorizationError(AGENT_CREATE_REFUSED)
+    if membership is not None and membership.role not in EDITING_ROLES:
+        raise AuthorizationError(CREATE_NEEDS_AN_EDITOR)
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     if caller.agent_id:
@@ -693,7 +716,7 @@ def _without_stored_emails(meta: dict) -> dict:
     return redacted
 
 
-def _with_signed_prototype_url(item: dict, project_id: str) -> dict:
+def _with_signed_prototype_url(item: dict, project_id: str, workspace: WorkspaceScope | None) -> dict:
     """Attach a freshly signed `prototype_url` to a prototype document.
 
     Only HTML prototypes have one; PRDs, PR-FAQs and legacy JSON-spec
@@ -711,6 +734,9 @@ def _with_signed_prototype_url(item: dict, project_id: str) -> dict:
     `content`, so inventing one would swap a working inline render for a broken
     iframe. Presence of `content` is the discriminator (S3-only storage stopped
     writing it), NOT `prototype_format`, which is 'html' in both cases.
+
+    A workspace's prototype is never signed yet (``prototype_signed_url`` gives
+    None until its slice, 3h-S7), so it reads as having no URL there.
     """
     if item.get('document_type') != 'prototype':
         return item
@@ -721,7 +747,7 @@ def _with_signed_prototype_url(item: dict, project_id: str) -> dict:
         # Legacy inline prototype: leave it for the frontend's `srcDoc` path.
         item.pop('prototype_url', None)
         return item
-    signed = prototype_signed_url(project_id, doc_id, workspace=None)
+    signed = prototype_signed_url(project_id, doc_id, workspace=workspace)
     if signed:
         item['prototype_url'] = signed
     else:
@@ -739,10 +765,10 @@ def _query_partition_items(partition_key: str) -> list[dict]:
     }))
 
 
-def _find_document(project_id: str, document_id: str) -> dict | None:
-    """Find one document using projected pages and stop at the first match."""
+def _find_document(project_id: str, document_id: str, workspace: WorkspaceScope | None) -> dict | None:
+    """Find one document (in the project's scope) using projected pages and stop at the first match."""
     query = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=None)),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=workspace)),
         'ConsistentRead': True,
         'ProjectionExpression': (
             'pk, sk, document_id, #type, #title, base_title, #version'
@@ -813,10 +839,10 @@ def _fenced_json(raw: str | None, failure_message: str) -> dict:
     return parsed
 
 
-def _stored_persona(project_id: str, persona_id: str) -> dict:
-    """The persona record, or a 404."""
+def _stored_persona(project_id: str, persona_id: str, workspace: WorkspaceScope | None) -> dict:
+    """The persona record (in the project's scope), or a 404."""
     response = projects_table.get_item(
-        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'}
+        Key={'pk': project_pk(project_id, workspace=workspace), 'sk': f'PERSONA#{persona_id}'}
     )
     item = response.get('Item')
     if not item:
@@ -911,8 +937,10 @@ def filters_log_summary(filters: object) -> dict:
 
 
 @tracer.capture_method
-def get_project(project_id: str, caller: Caller | None = None, *, include_personas: bool = True) -> dict:
-    """Get a project with all its data.
+def get_project(project_id: str, caller: Caller | None = None, *, workspace: WorkspaceScope | None,
+                membership: project_access.WorkspaceMembership | None, include_personas: bool = True) -> dict:
+    """Get a project with all its data, read in ``workspace`` (the deployment's when None) and decided there from
+    ``membership`` (since 7.103.00, 3h-S3a; an internal read, without a caller, passes no membership).
 
     With ``caller`` (the HTTP route) the response carries the computed sharing
     fields and a caller without view gets the same 404 as a missing project.
@@ -929,7 +957,7 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
 
     # Read the complete partition before assigning legacy versions. A partial
     # collection can give two same-title documents the same apparent position.
-    items = _query_partition_items(project_pk(project_id, workspace=None))
+    items = _query_partition_items(project_pk(project_id, workspace=workspace))
     if not items:
         raise NotFoundError('Project not found')
 
@@ -953,11 +981,11 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
     if caller is None:
         project = _without_stored_emails(project)
     else:
-        if not project_access.resolve_access(project, caller, workspace=None, membership=None).can_view:
+        if not project_access.resolve_access(project, caller, workspace=workspace, membership=membership).can_view:
             raise NotFoundError('Project not found')
-        project = _with_sharing_fields(project, caller, workspace=None, membership=None)
+        project = _with_sharing_fields(project, caller, workspace=workspace, membership=membership)
 
-    documents = [_with_signed_prototype_url(item, project_id) for item in documents]
+    documents = [_with_signed_prototype_url(item, project_id, workspace) for item in documents]
 
     # Normalize copies for this response only. GET must remain read-only and
     # latency-bounded; durable legacy assignment happens on managed mutations.
@@ -977,18 +1005,19 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
         return {'project': project, 'documents': documents}
     return {
         'project': project,
-        'personas': with_signed_avatars(personas),
+        'personas': with_signed_avatars(personas, workspace=workspace),
         'documents': documents,
         # The per-step upstream gaps the Overview cards render (tenet 2, shared/methodology.py).
         'methodology': methodology.overview(items),
     }
 
 
-def with_signed_avatars(personas: list[dict]) -> list[dict]:
-    """Each persona's S3 avatar URI swapped for a signed CloudFront CDN URL (in place)."""
+def with_signed_avatars(personas: list[dict], *, workspace: WorkspaceScope | None) -> list[dict]:
+    """Each persona's S3 avatar URI swapped for a signed CloudFront CDN URL (in place), for a reader in ``workspace``
+    (a workspace's avatar is not signed until its slice, 3h-S6: ``get_avatar_cdn_url`` gives None there)."""
     for persona in personas:
         if persona.get('avatar_url') and persona['avatar_url'].startswith('s3://'):
-            persona['avatar_url'] = get_avatar_cdn_url(persona['avatar_url'], workspace=None)
+            persona['avatar_url'] = get_avatar_cdn_url(persona['avatar_url'], workspace=workspace)
     return personas
 
 
@@ -1008,21 +1037,24 @@ def parse_project_detail_ids(raw: str) -> list[str]:
     return ids
 
 
-def _viewable_ids(project_ids: list[str], caller: Caller) -> set[str]:
-    """Which ids name a live project ``caller`` may VIEW — decided on META alone,
+def _viewable_ids(project_ids: list[str], caller: Caller, *, workspace: WorkspaceScope | None,
+                  membership: project_access.WorkspaceMembership | None) -> set[str]:
+    """Which ids name a live project of ``workspace`` ``caller`` may VIEW — decided on META alone,
     before any partition read or URL signing on the caller's behalf."""
-    keys = [{'pk': project_pk(project_id, workspace=None), 'sk': 'META'} for project_id in project_ids]
+    keys = [{'pk': project_pk(project_id, workspace=workspace), 'sk': 'META'} for project_id in project_ids]
     metas = batch_get_all(projects_table, keys, failure=ServiceError('Failed to read projects'))
     # The ids were checked (LONG_OPAQUE_ID_RE: no `#`), so each META read back names its project's id.
     return {
         project_id for meta in metas
-        if (project_id := project_id_of(meta.get('pk'), workspace=None)) is not None and not is_project_tombstone(meta)
-        and project_access.resolve_access(meta, caller, workspace=None, membership=None).can_view
+        if (project_id := project_id_of(meta.get('pk'), workspace=workspace)) is not None
+        and not is_project_tombstone(meta)
+        and project_access.resolve_access(meta, caller, workspace=workspace, membership=membership).can_view
     }
 
 
-def get_project_details(project_ids: list[str], caller: Caller) -> dict:
-    """``{'details': [{project, documents}, …]}`` for the ids ``caller`` can view.
+def get_project_details(project_ids: list[str], caller: Caller, *, workspace: WorkspaceScope | None,
+                        membership: project_access.WorkspaceMembership | None) -> dict:
+    """``{'details': [{project, documents}, …]}`` for the ids ``caller`` can view (in ``workspace``).
 
     Same answer per project as ``GET /projects/{id}`` minus personas. An id that is
     missing, deleted or not viewable is simply absent — the reply never says which,
@@ -1032,11 +1064,14 @@ def get_project_details(project_ids: list[str], caller: Caller) -> dict:
         raise ConfigurationError('Projects table not configured')
     # The company persona library's container is not a project (shared/company_personas.py).
     project_ids = [project_id for project_id in project_ids if not is_company_container(project_id)]
-    viewable = _viewable_ids(project_ids, caller) if project_ids else set()
+    project_access.require_membership(caller, workspace=workspace, membership=membership)
+    viewable = (_viewable_ids(project_ids, caller, workspace=workspace, membership=membership) if project_ids
+                else set())
     details = []
     for project_id in (pid for pid in project_ids if pid in viewable):
         try:
-            details.append(get_project(project_id, caller, include_personas=False))
+            details.append(get_project(project_id, caller, workspace=workspace, membership=membership,
+                                       include_personas=False))
         except NotFoundError:
             continue  # deleted or unshared between the two reads
     return {'details': details}
@@ -1070,11 +1105,11 @@ def _validated_chat_context_document_ids(raw: object) -> list[str]:
 
 
 @tracer.capture_method
-def _query_project_chat_items(project_id: str) -> list[dict]:
+def _query_project_chat_items(project_id: str, workspace: WorkspaceScope | None) -> list[dict]:
     # `created_at` is load-bearing for normalize_document_versions; `status`
     # preserves compatibility with status-only historical tombstones.
     query = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=None)),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=workspace)),
         'ConsistentRead': True,
         'ProjectionExpression': (
             'pk, sk, project_id, #name, #status, #deleting, persona_id, '
@@ -1100,13 +1135,16 @@ def _query_project_chat_items(project_id: str) -> list[dict]:
 
 @tracer.capture_method
 def get_project_chat_context(
-    project_id: object, selected_document_ids: object, caller: Caller,
+    project_id: object, selected_document_ids: object, caller: Caller, *, workspace: WorkspaceScope | None,
+    membership: project_access.WorkspaceMembership | None,
 ) -> dict:
-    """Canonical project context bounded for synchronous Lambda transport.
+    """Canonical project context bounded for synchronous Lambda transport, read in ``workspace`` (the
+    deployment's when None) and decided there from ``membership``.
 
     The top-level ``access`` tells the streaming assistant what the person it
     is acting for may do, so it never offers an edit that would be refused.
     """
+    project_access.require_membership(caller, workspace=workspace, membership=membership)
     if (
         not isinstance(project_id, str)
         or not project_id
@@ -1120,14 +1158,14 @@ def get_project_chat_context(
     selected_ids = set(
         _validated_chat_context_document_ids(selected_document_ids)
     )
-    items = _query_project_chat_items(project_id)
+    items = _query_project_chat_items(project_id, workspace)
     project = next(
         (item for item in items if item.get('sk') == 'META'),
         None,
     )
     if project is None or is_project_tombstone(project):
         raise NotFoundError('Project not found')
-    access = project_access.resolve_access(project, caller, workspace=None, membership=None)
+    access = project_access.resolve_access(project, caller, workspace=workspace, membership=membership)
     if not access.can_view:
         raise NotFoundError('Project not found')
     personas = [
@@ -1178,7 +1216,7 @@ def get_project_chat_context(
             and isinstance(document_sk, str)
         ):
             response = projects_table.get_item(
-                Key={'pk': project_pk(project_id, workspace=None), 'sk': document_sk},
+                Key={'pk': project_pk(project_id, workspace=workspace), 'sk': document_sk},
                 ConsistentRead=True,
                 ProjectionExpression='document_id, content',
             )
@@ -1200,8 +1238,8 @@ def get_project_chat_context(
 
 
 @tracer.capture_method
-def update_project(project_id: str, body: dict) -> dict:
-    """Update a project."""
+def update_project(project_id: str, body: dict, *, workspace: WorkspaceScope | None) -> dict:
+    """Update a project (its ``META`` in ``workspace``, the deployment's when None)."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
@@ -1238,7 +1276,7 @@ def update_project(project_id: str, body: dict) -> dict:
         expr_values[':filters'] = body['filters']
 
     update_params = {
-        'Key': {'pk': project_pk(project_id, workspace=None), 'sk': 'META'},
+        'Key': {'pk': project_pk(project_id, workspace=workspace), 'sk': 'META'},
         'UpdateExpression': update_expr,
         'ConditionExpression': PROJECT_WRITABLE_CONDITION,
         'ExpressionAttributeValues': expr_values,
@@ -2810,7 +2848,7 @@ def autofill_prfaq_questions(project_id: str, body: dict, *, category_scope: dic
 
     from shared.converse import converse
 
-    project_data = get_project(project_id)
+    project_data = get_project(project_id, workspace=None, membership=None)
     personas = project_data.get('personas', [])
     # The wizard's selected feedback when it sends one, else the project's saved filters.
     filters = (body or {}).get('filters') or project_data.get('project', {}).get('filters', {})
@@ -2917,7 +2955,7 @@ def suggest_document_brief(project_id: str, body: dict, *, category_scope: dict 
 
     from shared.converse import converse
 
-    project_data = get_project(project_id)
+    project_data = get_project(project_id, workspace=None, membership=None)
     filters = (body or {}).get('filters') or project_data.get('project', {}).get('filters', {})
 
     feedback_items = get_scoped_feedback_context(filters, FEEDBACK_LIMIT_BRIEF, category_scope)
@@ -2989,7 +3027,7 @@ def suggest_research_questions(project_id: str, body: dict, *, category_scope: d
 
     from shared.converse import converse
 
-    project_data = get_project(project_id)
+    project_data = get_project(project_id, workspace=None, membership=None)
     project = project_data.get('project', {})
     filters = (body or {}).get('filters') or project.get('filters', {})
 
@@ -3061,8 +3099,14 @@ def _visible_feedback(category_scope: dict | None) -> Callable[[Sequence[str]], 
     return lambda ids: persona_grounding.visible_ids(reader, ids)
 
 
+#: A saved focus group's transcript (shared/focus_group_documents.py), whose cited reviews are checked against the
+#: deployment's feedback: not per workspace yet (with the personas' grounding, 3h's jobs slice).
+FOCUS_GROUPS_STORE = 'Focus group transcripts'
+
+
 @tracer.capture_method
-def create_document(project_id: str, body: dict, *, creator_sub: str = '', category_scope: dict | None = None) -> dict:
+def create_document(project_id: str, body: dict, *, creator_sub: str = '', category_scope: dict | None = None,
+                    workspace: WorkspaceScope | None) -> dict:
     """Create a custom document, or a hand-written PR/FAQ / PRD from a blank template.
 
     ``prfaq`` / ``prd`` join their series as a person's draft (shared/human_documents.py);
@@ -3072,6 +3116,8 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '', categ
     ``focus_group`` is a saved focus group's transcript (shared/focus_group_documents.py):
     always ``synthetic``, with its derivation of persona and document ids, and of the cited reviews
     the saver may see (``category_scope``, the caller's as stored config; None reads unrestricted).
+    Written in ``workspace`` (the deployment's when None); a focus group's is refused there
+    (``FOCUS_GROUPS_STORE``): its cited reviews are checked against the deployment's feedback.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -3082,8 +3128,10 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '', categ
 
     if document_type in HUMAN_DOC_TYPES:
         item = create_human_document(projects_table, project_id, document_type, body, creator_sub=creator_sub,
-                                     workspace=None)
+                                     workspace=workspace)
         return {'success': True, 'document': item}
+    if document_type == FOCUS_GROUP_TYPE:
+        require_deployment(workspace, FOCUS_GROUPS_STORE)
     if document_type not in ('custom', FOCUS_GROUP_TYPE):
         raise ValidationError(
             'Only custom, focus_group, prfaq and prd documents can be created directly. Every other '
@@ -3100,7 +3148,7 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '', categ
 
     def build(doc_id: str) -> dict:
         return {
-            **document_keys(project_id, f'DOC#{doc_id}', now, workspace=None),
+            **document_keys(project_id, f'DOC#{doc_id}', now, workspace=workspace),
             'document_id': doc_id,
             **fields,
             'created_at': now,
@@ -3109,7 +3157,7 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '', categ
         }
 
     item = create_counted_project_child(
-        projects_table, project_id, 'doc', build, now=now_dt, workspace=None,
+        projects_table, project_id, 'doc', build, now=now_dt, workspace=workspace,
     )
     return {'success': True, 'document': item}
 
@@ -3131,7 +3179,7 @@ def _refuse_decision_edit(document: dict) -> None:
 
 @tracer.capture_method
 def update_document(project_id: str, document_id: str, body: dict, *,
-                    proposal: ProposalSave | None = None) -> dict:
+                    proposal: ProposalSave | None = None, workspace: WorkspaceScope | None) -> dict:
     """Save an edit as a NEW version; the previous content stays retrievable.
 
     A PRD / PR/FAQ edit is the next version of its series (a new document, like a
@@ -3140,12 +3188,17 @@ def update_document(project_id: str, document_id: str, body: dict, *,
     "Revise from comments" pass whose proposal it holds (``revise_job_id``); it is recorded
     as a revise only when ``shared.document_revision.verify_saved_proposal`` says so (else
     400), with the pass's model and prompt version. Answers the
-    saved document.
+    saved document. Saved in ``workspace`` (the deployment's when None); a
+    proposal is refused there (Revise from comments is the deployment's yet).
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
+    if proposal is not None:
+        # A revise pass's proposal is the deployment's (3h-S8); the route refuses it first, before it reads the pass's
+        # job row, and this holds for any other caller that hands one in.
+        require_deployment(workspace, REVISE_FROM_COMMENTS_STORE)
 
-    document = _source_document_item(project_id, document_id)
+    document = _source_document_item(project_id, document_id, workspace)
     _refuse_decision_edit(document)
     document_type = managed_document_type(document)
     title: str | None = None
@@ -3179,21 +3232,21 @@ def update_document(project_id: str, document_id: str, body: dict, *,
         content = body.get('content') if isinstance(body.get('content'), str) else document.get('content') or ''
         revise = verify_saved_proposal(proposal, project_id=project_id, document=document, content=str(content))
     return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title, revise=revise,
-                         workspace=None)
+                         workspace=workspace)
 
 
 @tracer.capture_method
-def get_document_versions(project_id: str, document_id: str) -> dict:
-    """The document's versions, newest first (content included, for open / compare)."""
+def get_document_versions(project_id: str, document_id: str, *, workspace: WorkspaceScope | None) -> dict:
+    """The document's versions (in ``workspace``), newest first (content included, for open / compare)."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    source = _source_document_item(project_id, document_id)
-    return {'success': True, **list_document_versions(projects_table, project_id, source, workspace=None)}
+    source = _source_document_item(project_id, document_id, workspace)
+    return {'success': True, **list_document_versions(projects_table, project_id, source, workspace=workspace)}
 
 
-def stored_document_type(project_id: str, document_id: str) -> str | None:
+def stored_document_type(project_id: str, document_id: str, *, workspace: WorkspaceScope | None) -> str | None:
     """The managed type (prd / prfaq / prototype) of a stored document, else None (404 when absent)."""
-    return managed_document_type(_source_document_item(project_id, document_id))
+    return managed_document_type(_source_document_item(project_id, document_id, workspace))
 
 
 def prototype_store() -> PrototypeStore:
@@ -3221,30 +3274,33 @@ def prototype_document(project_id: str, document_id: str) -> dict:
 
 
 def signed_prototype_document(item: dict, project_id: str) -> dict:
-    """A prototype row as a route answers it: with the fresh signed URL the project read would mint."""
-    return _with_signed_prototype_url(dict(item), project_id)
+    """A prototype row as a route answers it: with the fresh signed URL the project read would mint (the prototype
+    routes are the deployment's: refused in a workspace, 3h-S7)."""
+    return _with_signed_prototype_url(dict(item), project_id, workspace=None)
 
 
 @tracer.capture_method
 def restore_document(project_id: str, document_id: str, version_id: str, body: dict, *,
-                     actor: Mapping[str, str]) -> dict:
-    """Restore = a new version with an earlier version's content.
+                     actor: Mapping[str, str], workspace: WorkspaceScope | None) -> dict:
+    """Restore = a new version with an earlier version's content (in ``workspace``, the deployment's when None).
 
     A prototype's is Back to vN (docs/prototype-builder.md): vN's HTML as a new version
     with its own pin form (shared/prototype_versions.py; the pin forms live in the
-    aggregates table), recorded ``edited_by`` ``actor``.
+    aggregates table), recorded ``edited_by`` ``actor``; refused in a workspace (the
+    Prototype builder is the deployment's yet, 3h-S7).
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    document = _source_document_item(project_id, document_id)
+    document = _source_document_item(project_id, document_id, workspace)
     _refuse_decision_edit(document)
     if managed_document_type(document) == 'prototype':
+        require_deployment(workspace, PROTOTYPE_BUILDER_STORE)
         answer = restore_prototype_version(prototype_store(), project_id, document, version_id, body, now=now_iso(),
                                            actor=actor)
         # The SPA shows the answered row at once: it needs the fresh signed URL the project read would mint.
-        return {**answer, 'document': _with_signed_prototype_url(dict(answer['document']), project_id)}
+        return {**answer, 'document': _with_signed_prototype_url(dict(answer['document']), project_id, workspace)}
     return restore_document_version(projects_table, project_id, document, version_id, body,
-                                    now=now_iso(), workspace=None)
+                                    now=now_iso(), workspace=workspace)
 
 
 @tracer.capture_method
@@ -3445,10 +3501,10 @@ _DUPLICATE_DROPPED_FIELDS = frozenset({
 _MANAGED_DUPLICATE_TYPES = {'PRD#': 'prd', 'PRFAQ#': 'prfaq', 'PROTOTYPE#': 'prototype'}
 
 
-def _source_document_item(project_id: str, document_id: str) -> dict:
-    sk = _stored_document_sort_key(_find_document(project_id, document_id))
+def _source_document_item(project_id: str, document_id: str, workspace: WorkspaceScope | None) -> dict:
+    sk = _stored_document_sort_key(_find_document(project_id, document_id, workspace))
     item = projects_table.get_item(
-        Key={'pk': project_pk(project_id, workspace=None), 'sk': sk}, ConsistentRead=True,
+        Key={'pk': project_pk(project_id, workspace=workspace), 'sk': sk}, ConsistentRead=True,
     ).get('Item')
     if not isinstance(item, dict) or item.get('document_id') != document_id:
         raise NotFoundError('Document not found')
@@ -3490,27 +3546,30 @@ def _duplicate_summary(item: dict, target_project_id: str) -> dict:
 
 
 @tracer.capture_method
-def duplicate_document(project_id: str, document_id: str, target_project_id: str) -> dict:
-    """Copy one document into ``target_project_id``.
+def duplicate_document(project_id: str, document_id: str, target_project_id: str, *,
+                       workspace: WorkspaceScope | None) -> dict:
+    """Copy one document into ``target_project_id``, both projects of ``workspace`` (the deployment's when None).
 
     Access (edit on BOTH projects) is the route's job. The copy is idempotent:
     the target id derives from (source project, document, target), so a retry —
     or an agent re-running the same step — returns the existing copy instead of
     a second one. Managed types (PRD, PR/FAQ, prototype) join the target's
     version series for their title; the prototype HTML is copied to the
-    target's own S3 key. The source document is never modified.
+    target's own S3 key (the deployment's only: a prototype is refused in a
+    workspace, the Prototype builder's slice, 3h-S7). The source document is
+    never modified.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     if target_project_id == project_id:
         raise ValidationError('target_project_id must name a different project')
-    source = _source_document_item(project_id, document_id)
+    source = _source_document_item(project_id, document_id, workspace)
     sk = str(source['sk'])
     allocation_id = f'duplicate:{project_id}:{document_id}'
     now = now_iso()
     fields = {key: value for key, value in source.items() if key not in _DUPLICATE_DROPPED_FIELDS}
     fields.update({
-        **document_listing(target_project_id, now, workspace=None),
+        **document_listing(target_project_id, now, workspace=workspace),
         'created_at': now,
         'updated_at': now,
         'duplicated_from': {'project_id': project_id, 'document_id': document_id},
@@ -3522,15 +3581,16 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
     if managed_type is not None:
         title, _ = split_versioned_title(source.get('base_title') or source.get('title') or 'Untitled')
         if managed_type == 'prototype':
+            require_deployment(workspace, PROTOTYPE_BUILDER_STORE)
             existing = get_versioned_document_by_allocation(
-                projects_table, target_project_id, 'prototype', allocation_id, workspace=None,
+                projects_table, target_project_id, 'prototype', allocation_id, workspace=workspace,
             )
             if existing is not None:
                 return {'success': True, 'document': _duplicate_summary(existing, target_project_id)}
             target_doc = versioned_document_id(target_project_id, 'prototype', allocation_id)
             fields.update(_copy_prototype_html(project_id, document_id, target_project_id, target_doc))
         item = persist_versioned_document(
-            projects_table, target_project_id, managed_type, title, allocation_id, fields, workspace=None,
+            projects_table, target_project_id, managed_type, title, allocation_id, fields, workspace=workspace,
         )
         return {'success': True, 'document': _duplicate_summary(item, target_project_id)}
 
@@ -3539,13 +3599,14 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
     new_id = f'dup_{digest}'
     item = {
         **fields,
-        'pk': project_pk(target_project_id, workspace=None),
+        'pk': project_pk(target_project_id, workspace=workspace),
         'sk': f'{prefix}{new_id}',
         'document_id': new_id,
         'title': source.get('title') or 'Untitled',
     }
     try:
-        put_project_item_and_increment(projects_table, target_project_id, item, 'document_count', workspace=None)
+        put_project_item_and_increment(projects_table, target_project_id, item, 'document_count',
+                                       workspace=workspace)
     except ClientError as error:
         if error.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
             raise
@@ -3559,8 +3620,8 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
 
 
 @tracer.capture_method
-def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
-    """Update a persona with support for all 8 sections."""
+def update_persona(project_id: str, persona_id: str, body: dict, *, workspace: WorkspaceScope | None) -> dict:
+    """Update a persona (of the project in ``workspace``) with support for all 8 sections."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
@@ -3594,7 +3655,7 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
             expr_values[f':{field}'] = body[field]
 
     update_params = {
-        'Key': {'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'},
+        'Key': {'pk': project_pk(project_id, workspace=workspace), 'sk': f'PERSONA#{persona_id}'},
         'UpdateExpression': update_expr,
         'ConditionExpression': 'attribute_exists(pk) AND attribute_exists(sk)',
         'ExpressionAttributeValues': expr_values,
@@ -3611,8 +3672,8 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
 
 
 @tracer.capture_method
-def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
-    """Add a research note to a persona."""
+def add_persona_note(project_id: str, persona_id: str, body: dict, *, workspace: WorkspaceScope | None) -> dict:
+    """Add a research note to a persona (of the project in ``workspace``)."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
@@ -3635,7 +3696,7 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
 
     try:
         projects_table.update_item(
-            Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'},
+            Key={'pk': project_pk(project_id, workspace=workspace), 'sk': f'PERSONA#{persona_id}'},
             UpdateExpression='SET research_notes = list_append(if_not_exists(research_notes, :empty), :note), updated_at = :now',
             ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
             ExpressionAttributeValues={
@@ -3650,7 +3711,8 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
     return {'success': True, 'note': new_note}
 
 
-def set_persona_protection(project_id: str, persona_id: str, body: dict) -> dict:
+def set_persona_protection(project_id: str, persona_id: str, body: dict, *,
+                           workspace: WorkspaceScope | None) -> dict:
     """``PUT /projects/{id}/personas/{pid}/protection``: a protected persona survives a replace run.
 
     ``protected`` must be a real boolean: ``"false"`` read as truthy would protect a persona the
@@ -3660,15 +3722,15 @@ def set_persona_protection(project_id: str, persona_id: str, body: dict) -> dict
     protected = body.get('protected')
     if not isinstance(protected, bool):
         raise ValidationError('protected must be true or false')
-    persona_replace.set_protection(projects_table, project_id, persona_id, protected, now_iso(), workspace=None)
+    persona_replace.set_protection(projects_table, project_id, persona_id, protected, now_iso(), workspace=workspace)
     return {'success': True, 'persona_id': persona_id, 'protected': protected}
 
 
-def require_persona(project_id: str, persona_id: str) -> None:
-    """404 unless the persona exists: the regenerate route's check before its assist job starts."""
+def require_persona(project_id: str, persona_id: str, *, workspace: WorkspaceScope | None) -> None:
+    """404 unless the persona exists (in ``workspace``): the regenerate route's check before its assist job starts."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    _stored_persona(project_id, persona_id)
+    _stored_persona(project_id, persona_id, workspace)
 
 
 @tracer.capture_method
@@ -3677,7 +3739,7 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
-    item = _stored_persona(project_id, persona_id)
+    item = _stored_persona(project_id, persona_id, workspace=None)  # the avatars' assist: the deployment's (3h-S6)
 
     # Generate new avatar, stamping the owner: a regeneration also re-stamps an
     # object written before ownership was recorded.
@@ -3904,7 +3966,7 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
     skipped_note = f"\n{fallback_skipped_note(body.get('response_language'))}\n" if skipped_requests else ''
 
     # Get project data - exceptions will propagate
-    project_data = get_project(project_id)
+    project_data = get_project(project_id, workspace=None, membership=None)
 
     # Use filters from request body, fallback to project filters. date_basis is
     # carried either way: it decides WHICH dates the window applies to, and the
@@ -4057,12 +4119,12 @@ def _member_limit_error() -> ValidationError:
 
 
 @tracer.capture_method
-def read_project_meta(project_id: str) -> dict:
-    """Strongly consistent META read; missing or tombstoned -> 404."""
+def read_project_meta(project_id: str, *, workspace: WorkspaceScope | None) -> dict:
+    """Strongly consistent META read (in ``workspace``); missing or tombstoned -> 404."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     response = projects_table.get_item(
-        Key=project_meta_key(project_id, workspace=None), ConsistentRead=True,
+        Key=project_meta_key(project_id, workspace=workspace), ConsistentRead=True,
     )
     meta = response.get('Item') if isinstance(response, dict) else None
     if not isinstance(meta, dict) or is_project_tombstone(meta):
@@ -4074,12 +4136,13 @@ def _guarded_meta_update(
     project_id: str,
     update_expression: str,
     *,
+    workspace: WorkspaceScope | None,
     condition: str = '',
     names: dict | None = None,
     values: dict | None = None,
     return_values: str = 'NONE',
 ) -> dict:
-    """update_item on META under PROJECT_WRITABLE_CONDITION (+ ``condition``).
+    """update_item on META (in ``workspace``) under PROJECT_WRITABLE_CONDITION (+ ``condition``).
 
     Lets ClientError (including ConditionalCheckFailedException) propagate so
     each caller can classify its own failure.
@@ -4088,7 +4151,7 @@ def _guarded_meta_update(
     if condition:
         full_condition = f'({full_condition}) AND ({condition})'
     params = {
-        'Key': project_meta_key(project_id, workspace=None),
+        'Key': project_meta_key(project_id, workspace=workspace),
         'UpdateExpression': update_expression,
         'ConditionExpression': full_condition,
         'ExpressionAttributeNames': {**PROJECT_WRITABLE_ATTRIBUTE_NAMES, **(names or {})},
@@ -4098,7 +4161,7 @@ def _guarded_meta_update(
     return projects_table.update_item(**params)
 
 
-def _ensure_members_map(project_id: str, meta: dict) -> None:
+def _ensure_members_map(project_id: str, meta: dict, workspace: WorkspaceScope | None) -> None:
     """Legacy META has no ``members`` map, and `SET members.#sub` needs one."""
     if isinstance(meta.get('members'), dict):
         return
@@ -4106,6 +4169,7 @@ def _ensure_members_map(project_id: str, meta: dict) -> None:
         _guarded_meta_update(
             project_id,
             'SET #members = :empty',
+            workspace=workspace,
             condition='attribute_not_exists(#members)',
             names={'#members': 'members'},
             values={':empty': {}},
@@ -4115,7 +4179,7 @@ def _ensure_members_map(project_id: str, meta: dict) -> None:
             raise
         # Either a concurrent writer created the map (fine) or the project is
         # gone; the re-read distinguishes the two.
-        read_project_meta(project_id)
+        read_project_meta(project_id, workspace=workspace)
 
 
 # --------------------------------------------
@@ -4123,7 +4187,8 @@ def _ensure_members_map(project_id: str, meta: dict) -> None:
 # --------------------------------------------
 
 @tracer.capture_method
-def set_project_visibility(project_id: str, body: object) -> dict:
+def set_project_visibility(project_id: str, body: object, *, workspace: WorkspaceScope | None) -> dict:
+    """``public`` (in a workspace: every member of the workspace) or ``private``, on the project in ``workspace``."""
     if not isinstance(body, dict):
         raise ValidationError('Request body must be a JSON object')
     visibility = _validated_visibility(body.get('visibility'))
@@ -4131,6 +4196,7 @@ def set_project_visibility(project_id: str, body: object) -> dict:
         _guarded_meta_update(
             project_id,
             'SET #visibility = :visibility, updated_at = :now',
+            workspace=workspace,
             names={'#visibility': 'visibility'},
             values={':visibility': visibility, ':now': now_iso()},
         )
@@ -4203,11 +4269,30 @@ def _resolve_user(sub: str) -> dict:
     return users[0]
 
 
+#: Who a workspace's project can have as a member or an owner: that workspace's current members only (the gate would
+#: give anyone else nothing there).
+NOT_A_WORKSPACE_MEMBER = 'Only a member of this workspace can be added to its projects'
+
+
+def _require_workspace_member(sub: str, workspace: WorkspaceScope | None) -> None:
+    """400 unless ``sub`` is a current member of ``workspace`` (their ``MEMBER#`` row, read strongly consistent);
+    nothing to check for the deployment's project."""
+    if workspace is not None and not is_workspace_member(workspace, sub):
+        raise ValidationError(NOT_A_WORKSPACE_MEMBER)
+
+
 @tracer.capture_method
-def search_member_candidates(project_id: str, query: object) -> dict:
+def search_member_candidates(project_id: str, query: object, *, workspace: WorkspaceScope | None) -> dict:
     """Enabled users matching ``query`` by username or email prefix.
 
-    Excludes the owner and existing members, so every row is invitable.
+    Excludes the owner and existing members, so every row is invitable. For a
+    workspace's project only that workspace's current members are listed: of
+    the directory's matches (its first page of ``MAX_CANDIDATE_RESULTS`` per
+    search, as for the deployment), the workspace's status is read once and
+    each match's ``MEMBER#`` row once (at most 1 + 2 x ``MAX_CANDIDATE_RESULTS``
+    reads, strongly consistent), so every row can be added there too. A member
+    the directory's first page does not reach is not listed (a narrower search
+    finds them).
     """
     prefix = _validated_filter_value(
         query if query is not None else '', 'q', MAX_CANDIDATE_QUERY_LENGTH,
@@ -4220,7 +4305,7 @@ def search_member_candidates(project_id: str, query: object) -> dict:
         raise ValidationError(
             f'Type at least {MIN_CANDIDATE_QUERY_LENGTH} characters to search for people'
         )
-    meta = read_project_meta(project_id)
+    meta = read_project_meta(project_id, workspace=workspace)
     excluded = set(project_access.project_members(meta))
     owner = meta.get('owner_sub')
     if isinstance(owner, str):
@@ -4235,6 +4320,9 @@ def search_member_candidates(project_id: str, query: object) -> dict:
     for user in found:
         if user['sub'] not in excluded and user['sub'] not in users:
             users[user['sub']] = user
+    if workspace is not None:
+        members = workspace_members(workspace, users)
+        users = {sub: user for sub, user in users.items() if sub in members}
     ordered = sorted(users.values(), key=lambda user: (user['username'].lower(), user['sub']))
     return {'users': ordered[:MAX_CANDIDATE_RESULTS]}
 
@@ -4256,14 +4344,15 @@ def _public_member(sub: str, entry: dict) -> dict:
 
 
 @tracer.capture_method
-def get_project_members(project_id: str, caller: Caller) -> dict:
-    meta = read_project_meta(project_id)
+def get_project_members(project_id: str, caller: Caller, *, workspace: WorkspaceScope | None,
+                        membership: project_access.WorkspaceMembership | None) -> dict:
+    meta = read_project_meta(project_id, workspace=workspace)
     return _without_emails_unless_manager({
         'visibility': project_access.project_visibility(meta),
         'owner': project_access.public_owner(meta),
         'members': project_access.public_members(meta),
-        'access': project_access.resolve_access(meta, caller, workspace=None, membership=None).to_dict(),
-    }, meta, caller, workspace=None, membership=None)
+        'access': project_access.resolve_access(meta, caller, workspace=workspace, membership=membership).to_dict(),
+    }, meta, caller, workspace=workspace, membership=membership)
 
 
 def _member_add_refusal(meta: dict, sub: str) -> None:
@@ -4278,14 +4367,16 @@ def _member_add_refusal(meta: dict, sub: str) -> None:
 
 
 @tracer.capture_method
-def add_project_member(project_id: str, body: object, caller: Caller) -> dict:
+def add_project_member(project_id: str, body: object, caller: Caller, *, workspace: WorkspaceScope | None) -> dict:
+    """Add ``sub`` to the project in ``workspace``: in a workspace only a current member of it (400 otherwise)."""
     if not isinstance(body, dict):
         raise ValidationError('Request body must be a JSON object')
     sub = _validated_user_sub(body.get('sub'))
     role = _validated_role(body.get('role'))
 
-    meta = read_project_meta(project_id)
+    meta = read_project_meta(project_id, workspace=workspace)
     _member_add_refusal(meta, sub)
+    _require_workspace_member(sub, workspace)
     user = _resolve_user(sub)
     entry = {
         'role': role,
@@ -4294,11 +4385,12 @@ def add_project_member(project_id: str, body: object, caller: Caller) -> dict:
         'added_by': caller.subject,
         'added_at': now_iso(),
     }
-    _ensure_members_map(project_id, meta)
+    _ensure_members_map(project_id, meta, workspace)
     try:
         _guarded_meta_update(
             project_id,
             'SET #members.#sub = :entry, updated_at = :now',
+            workspace=workspace,
             condition=(
                 'attribute_not_exists(#members.#sub) AND size(#members) < :max '
                 'AND (attribute_not_exists(owner_sub) OR owner_sub <> :sub)'
@@ -4315,13 +4407,14 @@ def add_project_member(project_id: str, body: object, caller: Caller) -> dict:
         if not _is_conditional_failure(error):
             raise
         # Lost a race: report the reason the current state gives.
-        _member_add_refusal(read_project_meta(project_id), sub)
+        _member_add_refusal(read_project_meta(project_id, workspace=workspace), sub)
         raise ConflictError('Project changed while adding the member; please retry') from error
     return {'success': True, 'member': _public_member(sub, entry)}
 
 
 @tracer.capture_method
-def update_project_member(project_id: str, member_sub: str, body: object) -> dict:
+def update_project_member(project_id: str, member_sub: str, body: object, *,
+                          workspace: WorkspaceScope | None) -> dict:
     if not isinstance(body, dict):
         raise ValidationError('Request body must be a JSON object')
     role = _validated_role(body.get('role'))
@@ -4329,6 +4422,7 @@ def update_project_member(project_id: str, member_sub: str, body: object) -> dic
         response = _guarded_meta_update(
             project_id,
             'SET #members.#sub.#role = :role, updated_at = :now',
+            workspace=workspace,
             condition='attribute_exists(#members.#sub)',
             names={'#members': 'members', '#sub': member_sub, '#role': 'role'},
             values={':role': role, ':now': now_iso()},
@@ -4336,7 +4430,7 @@ def update_project_member(project_id: str, member_sub: str, body: object) -> dic
         )
     except ClientError as error:
         if _is_missing_member_failure(error):
-            read_project_meta(project_id)  # 404s a missing project first
+            read_project_meta(project_id, workspace=workspace)  # 404s a missing project first
             raise NotFoundError('Member not found') from error
         raise
     attributes = response.get('Attributes')
@@ -4352,6 +4446,8 @@ def remove_project_member(
     member_sub: str,
     caller: Caller,
     access: project_access.ProjectAccess,
+    *,
+    workspace: WorkspaceScope | None,
 ) -> dict:
     """Remove a member. Managers may remove anyone; a member may leave.
 
@@ -4368,13 +4464,14 @@ def remove_project_member(
         _guarded_meta_update(
             project_id,
             'REMOVE #members.#sub SET updated_at = :now',
+            workspace=workspace,
             condition='attribute_exists(#members.#sub)',
             names={'#members': 'members', '#sub': member_sub},
             values={':now': now_iso()},
         )
     except ClientError as error:
         if _is_missing_member_failure(error):
-            read_project_meta(project_id)
+            read_project_meta(project_id, workspace=workspace)
             raise NotFoundError('Member not found') from error
         raise
     return {'success': True}
@@ -4385,6 +4482,8 @@ def remove_project_member(
 # --------------------------------------------
 
 OWNERSHIP_CHANGED_MESSAGE = 'Project ownership changed; reload and retry'
+#: A workspace's project is owned by someone who writes there (docs/multi-workspace.md, "Roles").
+OWNER_NEEDS_AN_EDITOR = 'The owner must be an editor or admin of this workspace'
 
 
 def _new_owner_identity(sub: str) -> dict:
@@ -4399,7 +4498,8 @@ def _new_owner_identity(sub: str) -> dict:
 
 
 def _owner_transfer_update(
-    previous: dict | None, new_owner: dict, caller: Caller, now: str,
+    previous: dict | None, new_owner: dict, caller: Caller, now: str, *, is_admin: bool,
+    readd_previous: bool = True,
 ) -> tuple[str, str, dict, dict]:
     """(update expression, condition, names, values) for one ownership transfer.
 
@@ -4411,6 +4511,10 @@ def _owner_transfer_update(
         not race a second transfer through;
       * re-adding the previous owner as a member must respect the member cap,
         unless the new owner's entry (removed in the same write) frees a slot.
+
+    ``readd_previous`` False (a workspace's previous owner who is no longer
+    its member): the previous owner is not re-added, so neither the entry nor
+    the cap; the compare-and-swap on them stays.
     """
     set_clauses = [
         'owner_sub = :new_sub', 'owner_username = :new_username',
@@ -4424,7 +4528,10 @@ def _owner_transfer_update(
         ':now': now,
     }
     conditions = []
-    if previous is not None:
+    if previous is not None and not readd_previous:
+        values[':prev_sub'] = previous['sub']
+        conditions.append('owner_sub = :prev_sub')
+    elif previous is not None:
         set_clauses.append('#members.#prev = :prev_entry')
         names['#prev'] = previous['sub']
         values[':prev_entry'] = {
@@ -4440,7 +4547,7 @@ def _owner_transfer_update(
         conditions.append('(attribute_exists(#members.#new) OR size(#members) < :max)')
     else:
         conditions.append('attribute_not_exists(owner_sub)')
-    if not caller.is_admin:
+    if not is_admin:
         values[':caller_sub'] = caller.subject
         conditions.append('owner_sub = :caller_sub')
     update = f'SET {", ".join(set_clauses)} REMOVE #members.#new'
@@ -4448,36 +4555,44 @@ def _owner_transfer_update(
 
 
 @tracer.capture_method
-def transfer_project_owner(project_id: str, body: object, caller: Caller) -> dict:
-    """Make ``sub`` the owner; the previous owner (if any) becomes an editor."""
+def transfer_project_owner(project_id: str, body: object, caller: Caller, *, workspace: WorkspaceScope | None,
+                           membership: project_access.WorkspaceMembership | None) -> dict:
+    """Make ``sub`` the owner; the previous owner (if any) becomes an editor. In a workspace the new owner must hold
+    an editing role there (an editor or an admin: 400 otherwise), the previous owner is re-added only while still a
+    member of it, and only the workspace's admin role stands in for the owner (``project_access.admin_bypass``)."""
+    project_access.require_membership(caller, workspace=workspace, membership=membership)
     if not isinstance(body, dict):
         raise ValidationError('Request body must be a JSON object')
     new_sub = _validated_user_sub(body.get('sub'))
-    meta = read_project_meta(project_id)
+    is_admin = project_access.admin_bypass(caller, membership)
+    meta = read_project_meta(project_id, workspace=workspace)
     previous = project_access.public_owner(meta)
-    if not caller.is_admin and (previous is None or previous['sub'] != caller.subject):
+    if not is_admin and (previous is None or previous['sub'] != caller.subject):
         # The gate passed on an earlier read; ownership has moved since.
         raise ConflictError(OWNERSHIP_CHANGED_MESSAGE)
     if previous and previous['sub'] == new_sub:
         return {'success': True, 'owner': previous}
 
+    readd_previous = previous is not None and (workspace is None or is_workspace_member(workspace, previous['sub']))
     members = project_access.project_members(meta)
-    grows = previous is not None and new_sub not in members
+    grows = readd_previous and new_sub not in members
     if grows and len(members) >= project_access.MAX_PROJECT_MEMBERS:
         raise _member_limit_error()
+    if workspace is not None and workspace_role(workspace, new_sub) not in EDITING_ROLES:
+        raise ValidationError(OWNER_NEEDS_AN_EDITOR)
     new_owner = _new_owner_identity(new_sub)
     update, condition, names, values = _owner_transfer_update(
-        previous, new_owner, caller, now_iso(),
+        previous, new_owner, caller, now_iso(), is_admin=is_admin, readd_previous=readd_previous,
     )
 
-    _ensure_members_map(project_id, meta)
+    _ensure_members_map(project_id, meta, workspace)
     try:
         _guarded_meta_update(
-            project_id, update, condition=condition, names=names, values=values,
+            project_id, update, workspace=workspace, condition=condition, names=names, values=values,
         )
     except ClientError as error:
         if _is_conditional_failure(error):
-            read_project_meta(project_id)
+            read_project_meta(project_id, workspace=workspace)
             raise ConflictError(OWNERSHIP_CHANGED_MESSAGE) from error
         raise
     return {'success': True, 'owner': new_owner}

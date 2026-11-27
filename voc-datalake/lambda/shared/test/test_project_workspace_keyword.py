@@ -121,11 +121,21 @@ LITERAL_NONE: Final[dict[str, int]] = {
     # while `_with_sharing_fields` and the create pass theirs on. Lifted with the projects routes' slice.
     # +9 (3h-S1b): the persona job's save, count, clear, protection, kept-personas read and writable check, the human
     # document's create and the two deleted-source marks.
-    'lambda/api/projects.py': 75,
+    # -34 (3h-S3a): the project core routes take the request's scope (shared/project_request_scope.py): the list, the
+    # get and its details, the chat context, the update, the sharing routes (visibility, members, owner), the
+    # documents' create, edit, versions, restore and duplicate, and the personas' edit, note and protection. What stays
+    # is the deployment's by its route's slice (the deletes, the jobs and assists, the prototypes, the avatars), and
+    # the four assists' internal `get_project` reads (+4: they took the default; their routes are refused in a
+    # workspace).
+    'lambda/api/projects.py': 41,
     # +6 -4 (3h-S1b): the job row (`create_job` in `_started_job`), the project assist (`assist_jobs.start`) and the
     # four decision routes name the deployment; the four `version_html` calls pass their PrototypeStore's
     # `store.workspace` (the S1 follow-up).
-    'lambda/api/projects_handler.py': 34,
+    # -5 +4 (3h-S3a): the gate (`_gate_meta`, `_project_access_for`), the create and the board's viewable filter
+    # (`_gate_meta_batch_chunk`, `_viewable_project_ids`) pass the request's scope; the company library's four persona
+    # ops, handed on as values before, now call `update_persona`, `add_persona_note`, `require_persona` and
+    # `with_signed_avatars` naming the deployment (the library is refused in a workspace by the middleware).
+    'lambda/api/projects_handler.py': 33,
     # +3 each (3h-S1b): the caller's own assists outside any project (`start_owned`, `owner_pk`, `get`).
     'lambda/api/scrapers_handler.py': 3,
     'lambda/api/settings_handler.py': 3,

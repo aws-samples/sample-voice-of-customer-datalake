@@ -229,6 +229,16 @@ def workspace_admits(caller: Caller, membership: WorkspaceMembership) -> bool:
     return isinstance(role, str) and role in _WORKSPACE_ROLES and not caller.agent_id
 
 
+def admin_bypass(caller: Caller, membership: WorkspaceMembership | None) -> bool:
+    """Whether ``caller`` holds the projects' admin bypass: for the deployment's project (no ``membership``) its
+    ``admins`` group (never a delegated credential's: ``caller_from_claims`` gives one no group), in a workspace only
+    that workspace's admin role (a platform admin's audited entry included; a delegated caller's is capped at editor
+    when it is resolved), never the deployment's ``admins``. The one predicate the policy and the owner transfer use."""
+    if membership is None:
+        return caller.is_admin
+    return workspace_admits(caller, membership) and membership.role == ROLE_ADMIN
+
+
 def require_membership(caller: Caller, *, workspace: WorkspaceScope | None,
                        membership: WorkspaceMembership | None) -> None:
     """Refuse (``WorkspaceMembershipError``) unless ``membership`` fits: None for the deployment's project, else
@@ -445,7 +455,7 @@ def _base_role(meta: Mapping[str, Any], caller: Caller) -> str | None:
     """The deployment's policy: the owner, the deployment's admins, an agent on what it created, public, members."""
     if owner := _owner_role(meta, caller):
         return owner
-    if caller.is_admin:
+    if admin_bypass(caller, None):
         return ROLE_ADMIN
     if caller.agent_id and meta.get(CREATED_BY_AGENT_ATTRIBUTE) == caller.agent_id:
         # The agent keeps working on what it created after handing it off.
@@ -475,7 +485,7 @@ def _workspace_role(meta: Mapping[str, Any], caller: Caller, membership: Workspa
         return None
     workspace_role = membership.role
     role = _owner_role(meta, caller)
-    if role is None and workspace_role == ROLE_ADMIN:
+    if role is None and admin_bypass(caller, membership):
         role = ROLE_ADMIN
     if role is None and project_visibility(meta) == VISIBILITY_PUBLIC:
         role = ROLE_EDITOR

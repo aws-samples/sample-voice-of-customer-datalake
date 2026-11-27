@@ -424,7 +424,7 @@ class TestReadingADraft:
         _, v2 = _two_versions(world)
         world.draft(v2)
 
-        read = projects.get_project(PROJECT, Caller(subject=EDITOR['sub']))
+        read = projects.get_project(PROJECT, Caller(subject=EDITOR['sub']), workspace=None, membership=None)
 
         assert sorted(d['document_id'] for d in read['documents']) == sorted(
             r['document_id'] for r in world.prototype_rows())
@@ -788,7 +788,7 @@ class TestIncorporate:
 
         assert (feedback['revised_from_draft_id'], chat['document']['revised_from_draft_id']) == (
             DRAFT_ID, 'job_00000000000000cc')
-        read = projects.get_project(PROJECT, Caller(subject=EDITOR['sub']))
+        read = projects.get_project(PROJECT, Caller(subject=EDITOR['sub']), workspace=None, membership=None)
         by_id = {d['document_id']: d.get('revised_from_draft_id') for d in read['documents']}
         assert (by_id[feedback['document_id']], by_id[chat['document']['document_id']]) == (
             DRAFT_ID, 'job_00000000000000cc')

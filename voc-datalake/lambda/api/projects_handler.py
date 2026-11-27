@@ -11,7 +11,7 @@ import re
 import secrets
 import time
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, Final
 
 import boto3
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -105,6 +105,7 @@ from shared import (
     persona_grounding_routes,
     project_access,
     project_gate,
+    project_request_scope,
     project_validation_routes,
     prototype_drafts,
     prototype_feedback,
@@ -161,7 +162,14 @@ from shared.prioritization_keys import (
 )
 from shared.prioritization_row_batch import batch_project_ids, ensure_rows_batch
 from shared.project_access import Caller, ProjectAccess
-from shared.project_keys import PROJECT_PREFIX, PROTOTYPE_SK_PREFIX, project_pk
+from shared.project_keys import (
+    PROTOTYPE_SK_PREFIX,
+    REVISE_FROM_COMMENTS_STORE,
+    project_id_of,
+    project_pk,
+    require_deployment,
+)
+from shared.project_request_scope import DEPLOYMENT, ProjectScope
 from shared.project_writes import (
     PROJECT_DELETION_ATTRIBUTE,
     is_project_tombstone,
@@ -176,6 +184,7 @@ from shared.timestamps import now_iso
 from shared.voting_session_close import close_project_sessions, close_row_sessions
 from shared.warm_init import warm_at_init
 from shared.workspace_routing import workspace_payload
+from shared.ws_repo import WorkspaceScope
 
 # API resolver with standard CORS
 app = create_api_resolver()
@@ -213,15 +222,19 @@ def _caller_category_scope() -> dict:
     return category_access.scope_to_config(scope)
 
 
-def _gate_meta(project_id: str) -> dict | None:
+_SCOPE_CONTEXT_KEY = 'project_scope'
+
+
+def _gate_meta(project_id: str, workspace: WorkspaceScope | None) -> dict | None:
     table = get_projects_table()
     if not table:
         raise ConfigurationError('Projects table not configured')
-    return project_gate.read_gate_meta(table, project_id, workspace=None)
+    return project_gate.read_gate_meta(table, project_id, workspace=workspace)
 
 
-def _project_access_for(project_id: str, caller: Caller, level: str) -> ProjectAccess:
-    """The caller's access, or the refusal the HTTP contract prescribes.
+def _project_access_for(project_id: str, caller: Caller, level: str, scope: ProjectScope) -> ProjectAccess:
+    """The caller's access, or the refusal the HTTP contract prescribes, decided in the request's ``scope`` (the
+    deployment's projects, or a workspace's from the caller's membership there: shared/project_request_scope.py).
 
     The company persona library's reserved container (shared/company_personas.py) is not a
     project: every ``/projects/{id}/...`` route answers it 404, admins included.
@@ -229,14 +242,134 @@ def _project_access_for(project_id: str, caller: Caller, level: str) -> ProjectA
     if is_company_container(project_id):
         raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
     return project_gate.require_project_level(
-        lambda: _gate_meta(project_id), caller, level, workspace=None, membership=None,
+        lambda: _gate_meta(project_id, scope.workspace), caller, level,
+        workspace=scope.workspace, membership=scope.membership,
     )
+
+
+_P = '/projects/<project_id>'
+_DOC = f'{_P}/documents/<document_id>'
+_PROTO = f'{_P}/prototypes/<document_id>'
+_PERSONA = f'{_P}/personas/<persona_id>'
+
+#: The routes that act in the request's workspace (3h-S3a), as ``(method, Powertools route template)``: each passes
+#: the request's scope to every store and gate call it makes.
+THREADED_ROUTES: Final = frozenset({
+    ('GET', '/projects'), ('POST', '/projects'), ('GET', _P), ('PUT', _P), ('POST', f'{_P}/chat-context'),
+    ('PUT', f'{_P}/visibility'), ('POST', f'{_P}/owner'),
+    ('GET', f'{_P}/members'), ('GET', f'{_P}/members/candidates'), ('POST', f'{_P}/members'),
+    ('PUT', f'{_P}/members/<member_sub>'), ('DELETE', f'{_P}/members/<member_sub>'),
+    ('POST', f'{_P}/documents'), ('PUT', _DOC), ('GET', f'{_DOC}/versions'),
+    ('POST', f'{_DOC}/versions/<version_id>/restore'), ('POST', f'{_DOC}/duplicate'),
+    ('PUT', _PERSONA), ('PUT', f'{_PERSONA}/protection'), ('POST', f'{_PERSONA}/notes'),
+})
+
+
+def _family(slice_id: str, *routes: tuple[str, str]) -> dict[tuple[str, str], str]:
+    return dict.fromkeys(routes, slice_id)
+
+
+#: Every other route of this API, by the 3h slice that moves it (docs/multi-workspace.md, "3h, the switch"). In a
+#: workspace each is refused by name before anything is read (``_request_scope_of``), never served from the
+#: deployment's rows; the flip (3h-S12) needs this map empty. The reviewer routes (``/review/…``) are here too, and
+#: never resolve a workspace (a reviewer is outside it: ``_resolves_its_own_scope``).
+NOT_YET: Final[dict[tuple[str, str], str]] = {
+    # The product documents.
+    **_family('3h-S3b', ('GET', f'{_P}/product-context'), ('PUT', f'{_P}/product-context'),
+              ('GET', f'{_P}/product-docs'), ('POST', f'{_P}/product-docs/upload-url'),
+              ('DELETE', f'{_P}/product-docs/<doc_id>')),
+    # The company persona library, the board, the persona copy and grounding, the decisions, the validation and voice.
+    **_family('3h-S3c', ('GET', '/company-personas'), ('POST', '/company-personas/generate'),
+              ('POST', '/company-personas/import'), ('GET', '/company-personas/jobs'),
+              ('GET', '/company-personas/jobs/<job_id>'), ('PUT', '/company-personas/<persona_id>'),
+              ('DELETE', '/company-personas/<persona_id>'), ('POST', '/company-personas/<persona_id>/notes'),
+              ('POST', '/company-personas/<persona_id>/regenerate-avatar'),
+              ('POST', '/projects/prioritization/rows/compose'), ('PATCH', '/projects/prioritization/rows/<row_id>'),
+              ('PUT', '/projects/prioritization/rows/<row_id>/lineage-ack'),
+              ('DELETE', '/projects/prioritization/rows/<row_id>'), ('POST', '/projects/prioritization/rows'),
+              ('GET', '/projects/prioritization'), ('PUT', '/projects/prioritization'),
+              ('PATCH', '/projects/prioritization'), ('GET', '/projects/prioritization/config'),
+              ('PUT', '/projects/prioritization/config'),
+              ('POST', f'{_PERSONA}/promote'), ('GET', f'{_P}/personas/copy-sources'), ('POST', f'{_P}/personas/copy'),
+              ('POST', f'{_P}/personas/evidence-pack'), ('GET', f'{_PERSONA}/evidence-freshness'),
+              ('POST', f'{_PERSONA}/evidence/refresh'),
+              ('POST', f'{_P}/decisions'), ('PUT', f'{_P}/decisions/<document_id>'),
+              ('POST', f'{_P}/decisions/<document_id>/pursue'),
+              ('GET', f'{_P}/validation'), ('POST', f'{_P}/validation/criteria'),
+              ('PUT', f'{_P}/validation/criteria'), ('POST', f'{_P}/validation/plan'),
+              ('POST', f'{_P}/validation/synthetic'), ('PUT', f'{_P}/validation/form'),
+              ('POST', f'{_P}/validation/report'),
+              ('GET', f'{_PERSONA}/voice-sessions'), ('POST', f'{_PERSONA}/voice-sessions'),
+              ('GET', f'{_PERSONA}/voice-sessions/<session_id>'),
+              ('POST', f'{_PERSONA}/voice-sessions/<session_id>/end'), ('GET', '/projects/voice/usage')),
+    # The deletes.
+    **_family('3h-S4', ('DELETE', _P), ('DELETE', _DOC), ('DELETE', _PERSONA), ('DELETE', f'{_P}/jobs/<job_id>')),
+    # The document comments, the review links and the reviewer routes.
+    **_family('3h-S5', ('GET', f'{_DOC}/comments'), ('POST', f'{_DOC}/comments'),
+              ('POST', f'{_DOC}/comments/<comment_id>/replies'), ('POST', f'{_DOC}/comments/<comment_id>/resolve'),
+              ('POST', f'{_DOC}/comments/<comment_id>/reopen'), ('POST', f'{_DOC}/comments/addressed'),
+              ('DELETE', f'{_DOC}/comments/<comment_id>'), ('GET', f'{_DOC}/share'), ('POST', f'{_DOC}/share'),
+              ('DELETE', f'{_DOC}/share'), ('GET', '/review/<share_id>'), ('POST', '/review/<share_id>/comments'),
+              ('POST', '/review/<share_id>/comments/<comment_id>/replies')),
+    # The avatars.
+    **_family('3h-S6', ('POST', f'{_PERSONA}/regenerate-avatar')),
+    # The prototypes.
+    **_family('3h-S7', ('GET', f'{_PROTO}/pins'), ('GET', f'{_PROTO}/feedback'),
+              ('POST', f'{_PROTO}/pins/<pin_id>/replies'), ('POST', f'{_PROTO}/pins/<pin_id>/resolve'),
+              ('POST', f'{_PROTO}/pins/<pin_id>/reopen'), ('POST', f'{_PROTO}/pins/addressed'),
+              ('POST', f'{_PROTO}/pins/resolve'), ('POST', f'{_PROTO}/drafts'),
+              ('GET', f'{_PROTO}/drafts/<draft_id>'), ('POST', f'{_PROTO}/drafts/<draft_id>/apply'),
+              ('DELETE', f'{_PROTO}/drafts/<draft_id>'), ('GET', f'{_PROTO}/outline'),
+              ('GET', f'{_PROTO}/walkthrough'), ('PUT', f'{_PROTO}/walkthrough'),
+              ('POST', f'{_PROTO}/walkthrough/draft'), ('POST', f'{_P}/build-prototype')),
+    # The jobs and the assists.
+    **_family('3h-S8', ('POST', f'{_P}/personas/import'), ('POST', f'{_P}/feedback-preview'),
+              ('POST', f'{_P}/personas/generate'), ('POST', f'{_P}/research'), ('POST', f'{_P}/document'),
+              ('POST', f'{_P}/documents/merge'), ('GET', f'{_P}/jobs/<job_id>'), ('GET', f'{_P}/jobs'),
+              ('POST', f'{_P}/prfaq-autofill'), ('POST', f'{_P}/research/suggest-questions'),
+              ('POST', f'{_P}/documents/suggest-brief'), ('POST', f'{_P}/product-report'),
+              ('POST', f'{_DOC}/persona-review'), ('POST', f'{_DOC}/revise-from-comments')),
+}
+#: The reads that resolve fresh anyway: the member picker answers addresses, so a member removed a moment ago in
+#: another container must not list them.
+_FRESH_READS: Final = frozenset({('GET', f'{_P}/members/candidates')})
+#: The writes by method that are reads: the chat context (a POST for its body) resolves from the warm cache.
+_POSTED_READS: Final = frozenset({('POST', f'{_P}/chat-context')})
+
+
+def _route_template() -> str:
+    """The template Powertools matched (``/projects/<project_id>``), or '' when no route matched."""
+    template = getattr(app.context.get('_route'), 'path', '')
+    return template if isinstance(template, str) else ''
+
+
+def _resolves_its_own_scope(path: str) -> bool:
+    """The Documents Library (``/projects/library`` and below: shared/library_routes.py resolves its own scope) and
+    the reviewer routes (``/review/…``: a reviewer is outside the workspace, the link names it, 3h-S5)."""
+    segments = [part for part in path.split('/') if part]
+    return segments[:2] == ['projects', 'library'] or segments[:1] == ['review']
+
+
+def _request_scope_of(raw_event: dict, method: str, path: str, template: str) -> ProjectScope:
+    """The request's scope (shared/project_request_scope.py; the deployment's until the flip, 3h-S12), never resolved
+    for a route that resolves its own (``_resolves_its_own_scope``). In a workspace a route not in ``THREADED_ROUTES``
+    is refused by name, with its slice (``NotPerWorkspaceError``, a 500), before the gate reads anything."""
+    if _resolves_its_own_scope(path):
+        return DEPLOYMENT
+    key = (method, template)
+    # A write resolves the membership from the table, never the warm cache; so does the picker (it answers addresses).
+    fresh = (method not in ('GET', 'HEAD') and key not in _POSTED_READS) or key in _FRESH_READS
+    scope = project_request_scope.project_scope(raw_event, fresh=fresh)
+    if scope.workspace is not None and key not in THREADED_ROUTES:
+        require_deployment(scope.workspace,
+                           f'The projects route {method} {template or "(none matched)"} ({NOT_YET.get(key, "no slice")})')
+    return scope
 
 
 def project_access_middleware(app, next_middleware):
     """Powertools middleware enforcing per-project permissions.
 
-    BOTH context keys are written on every non-preflight request, gated or not.
+    EVERY context key is written on every non-preflight request, gated or not.
     Powertools clears `app.context` only after a SUCCESSFUL resolve, so a request
     that raised could otherwise leave its caller behind in a warm container for
     the next request's ungated route (list/create) to pick up.
@@ -253,13 +386,14 @@ def project_access_middleware(app, next_middleware):
         # /projects/library/jobs (or /projects/voice/…) reached a project route with a reserved segment as its id: no
         # such project.
         raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
+    scope = _request_scope_of(event.raw_event, method, event.path, _route_template())
     if route is not None:
         # Powertools' `<project_id>` group captures exactly this path segment, so
         # the gate and the route address one project.
         project_id, rest = route
         level = project_access.required_level(method, rest)
-        access = _project_access_for(project_id, caller, level)
-    app.append_context(**{_CALLER_CONTEXT_KEY: caller, _ACCESS_CONTEXT_KEY: access})
+        access = _project_access_for(project_id, caller, level, scope)
+    app.append_context(**{_CALLER_CONTEXT_KEY: caller, _ACCESS_CONTEXT_KEY: access, _SCOPE_CONTEXT_KEY: scope})
     return next_middleware(app)
 
 
@@ -274,8 +408,18 @@ def _request_caller() -> Caller:
     return caller
 
 
-def _require_ai_writing(project_id: str, doc_type: object) -> ai_mode.AiMode | None:
-    """403 with a coaching message unless the AI may write ``doc_type`` here (shared/ai_writing.py).
+def _request_scope() -> ProjectScope:
+    """The scope the middleware resolved for this request (``DEPLOYMENT`` until the flip, 3h-S12)."""
+    scope = app.context.get(_SCOPE_CONTEXT_KEY)
+    if not isinstance(scope, ProjectScope):
+        # Unreachable: the middleware sets it for every routed request.
+        raise AuthorizationError("The request's project scope could not be determined")
+    return scope
+
+
+def _require_ai_writing(project_id: str, doc_type: object, workspace: WorkspaceScope | None) -> ai_mode.AiMode | None:
+    """403 with a coaching message unless the AI may write ``doc_type`` here (shared/ai_writing.py), the project's
+    owner read in ``workspace`` (the request's scope).
 
     Only prfaq / prd are gated. An autonomous call (agent, plan step, MCP token) writes for
     the person it acts as AND for the project's owner when that is someone else (an agent
@@ -289,21 +433,22 @@ def _require_ai_writing(project_id: str, doc_type: object) -> ai_mode.AiMode | N
     table = get_aggregates_table()
     caller_mode = ai_writing.require_ai_writing(table, subject, doc_type, kind)
     if kind == ai_writing.KIND_AUTONOMOUS:
-        owner = (_gate_meta(project_id) or {}).get('owner_sub')
+        owner = (_gate_meta(project_id, workspace) or {}).get('owner_sub')
         if isinstance(owner, str) and owner and owner != subject and not project_access.is_synthetic_subject(owner):
             ai_writing.require_ai_writing(table, owner, doc_type, kind)
     return caller_mode
 
 
-def _require_autonomous_edit_allowed(project_id: str, document_id: str) -> None:
-    """An agent, plan step or MCP token editing a PR/FAQ / PRD is AI writing for its person.
+def _require_autonomous_edit_allowed(project_id: str, document_id: str, workspace: WorkspaceScope | None) -> None:
+    """An agent, plan step or MCP token editing a PR/FAQ / PRD is AI writing for its person (the document read in
+    ``workspace``, the request's scope).
 
     A person's own PUT (the editor, or an assistant card they approved) is their text and
     stays allowed in every mode, so the document is read only for an autonomous caller.
     """
     if ai_writing.writing_kind(app.current_event.raw_event) != ai_writing.KIND_AUTONOMOUS:
         return
-    _require_ai_writing(project_id, stored_document_type(project_id, document_id))
+    _require_ai_writing(project_id, stored_document_type(project_id, document_id, workspace=workspace), workspace)
 
 
 def _request_access() -> ProjectAccess:
@@ -330,15 +475,15 @@ _GATE_BATCH_ATTEMPTS = 5
 _GATE_BATCH_BACKOFF_SECONDS = 0.05
 
 
-def _gate_meta_batch_chunk(table, project_ids: list[str]) -> dict[str, dict]:
-    """Gate projections for up to 100 projects, keyed by project id.
+def _gate_meta_batch_chunk(table, project_ids: list[str], workspace: WorkspaceScope | None) -> dict[str, dict]:
+    """Gate projections for up to 100 projects of ``workspace``, keyed by project id.
 
     Issued on the RESOURCE's client, which (like the ballot transaction's) takes and
     returns native Python values rather than `{'S': ...}` wire types.
     """
     client = table.meta.client
     gate_read = [
-        project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE, workspace=None)
+        project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE, workspace=workspace)
         for project_id in project_ids
     ]
     request: dict[str, Any] = {
@@ -357,8 +502,8 @@ def _gate_meta_batch_chunk(table, project_ids: list[str]) -> dict[str, dict]:
         response = client.batch_get_item(RequestItems=request)
         for item in (response.get('Responses') or {}).get(table.name, []):
             pk = item.get('pk') if isinstance(item, dict) else None
-            if isinstance(pk, str) and pk.startswith(PROJECT_PREFIX):
-                metas[pk[len(PROJECT_PREFIX):]] = item
+            if (project_id := project_id_of(pk, workspace=workspace)) is not None:
+                metas[project_id] = item
         unprocessed = response.get('UnprocessedKeys') or {}
         if not unprocessed.get(table.name, {}).get('Keys'):
             return metas
@@ -368,8 +513,9 @@ def _gate_meta_batch_chunk(table, project_ids: list[str]) -> dict[str, dict]:
     raise ServiceError('Failed to check project access')
 
 
-def _viewable_project_ids(project_ids: Iterable[str], caller: Caller) -> set[str]:
-    """Which of ``project_ids`` the (non-admin) caller may VIEW.
+def _viewable_project_ids(project_ids: Iterable[str], caller: Caller, scope: ProjectScope) -> set[str]:
+    """Which of ``project_ids`` the (non-admin) caller may VIEW in the request's ``scope`` (the board's rows are the
+    deployment's: the middleware refuses the board in a workspace, its own slice).
 
     Each distinct id is read once. A missing or tombstoned META is not viewable.
     """
@@ -379,22 +525,23 @@ def _viewable_project_ids(project_ids: Iterable[str], caller: Caller) -> set[str
     distinct = sorted({pid for pid in project_ids if pid})
     viewable: set[str] = set()
     for start in range(0, len(distinct), _GATE_BATCH_SIZE):
-        metas = _gate_meta_batch_chunk(table, distinct[start:start + _GATE_BATCH_SIZE])
+        metas = _gate_meta_batch_chunk(table, distinct[start:start + _GATE_BATCH_SIZE], scope.workspace)
         viewable.update(
             project_id for project_id, meta in metas.items()
             if not is_project_tombstone(meta)
-            and project_access.resolve_access(meta, caller, workspace=None, membership=None).can_view
+            and project_access.resolve_access(meta, caller, workspace=scope.workspace,
+                                              membership=scope.membership).can_view
         )
     return viewable
 
 
 def _require_row_project_edit(project_id: str) -> None:
     """EDIT on the project a row is composed from; 404 without view, 403 view-only."""
-    _project_access_for(project_id, _request_caller(), project_access.LEVEL_EDIT)
+    _project_access_for(project_id, _request_caller(), project_access.LEVEL_EDIT, _request_scope())
 
 
-def _require_project_exists(project_id: str) -> None:
-    """404 unless the project's META exists and is not a tombstone.
+def _require_project_exists(project_id: str, workspace: WorkspaceScope | None) -> None:
+    """404 unless the project's META exists in ``workspace`` and is not a tombstone.
 
     The gate decides an ADMIN without reading META (`require_project_level`), so
     on an admin request a route that writes a record keyed to the project before
@@ -408,7 +555,7 @@ def _require_project_exists(project_id: str) -> None:
     """
     if is_company_container(project_id):
         return
-    meta = _gate_meta(project_id)
+    meta = _gate_meta(project_id, workspace)
     if not meta or is_project_tombstone(meta):
         raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
 
@@ -446,8 +593,10 @@ def _started_job(
     ``precheck`` runs after the existence read and before the row: a route's
     synchronous "would this job only fail?" check (F1, the no-feedback 400), so
     a missing project still answers 404 rather than 400.
+
+    The deployment's project and job row only: every job route is refused in a workspace (3h-S8).
     """
-    _require_project_exists(project_id)
+    _require_project_exists(project_id, None)
     if precheck is not None:
         precheck()
     # The job config carries the starter's model profile (and never a client-sent one), so the job
@@ -480,9 +629,10 @@ def _started_assist(project_id: str, job_type: str, config: dict) -> Response:
     The worker runs ``ASSIST_WORK[job_type]``; the client polls
     ``GET /projects/{id}/jobs/{job_id}``. Every synchronous refusal (400/403/404)
     has already been answered by the caller, and the project's existence is
-    checked here for the admin the gate decides without a META read.
+    checked here for the admin the gate decides without a META read (the deployment's: every assist route is
+    refused in a workspace, 3h-S8).
     """
-    _require_project_exists(project_id)
+    _require_project_exists(project_id, None)
     started = assist_jobs.start(
         project_pk(project_id, workspace=None), job_type, config,
         worker_function=assist_jobs.worker_function(),
@@ -505,7 +655,7 @@ def _rows_hidden_from_caller(rows_by_id: dict[str, dict]) -> set[str]:
             project_id for row in rows_by_id.values()
             if isinstance(project_id := row.get('project_id'), str)
         ),
-        caller,
+        caller, _request_scope(),
     )
     return {
         row_id for row_id, row in rows_by_id.items()
@@ -548,36 +698,44 @@ def api_list_projects():
     API Gateway resource (VocApiStack sits near CloudFormation's 500 ceiling).
     """
     params = app.current_event.query_string_parameters or {}
+    scope = _request_scope()
     if 'ids' in params:
-        return get_project_details(parse_project_detail_ids(params.get('ids') or ''), _request_caller())
-    return list_projects(_request_caller())
+        return get_project_details(parse_project_detail_ids(params.get('ids') or ''), _request_caller(),
+                                   workspace=scope.workspace, membership=scope.membership)
+    return list_projects(_request_caller(), workspace=scope.workspace, membership=scope.membership)
 
 
 @app.post("/projects")
 @tracer.capture_method
 def api_create_project():
-    return create_project(json_object_body(app), _request_caller(), workspace=None, membership=None)
+    """Create a project in the request's scope (in a workspace ``create_project`` refuses a viewer and an agent)."""
+    scope = _request_scope()
+    return create_project(json_object_body(app), _request_caller(), workspace=scope.workspace,
+                          membership=scope.membership)
 
 
 @app.get("/projects/<project_id>")
 @tracer.capture_method
 def api_get_project(project_id: str):
-    return get_project(project_id, _request_caller())
+    scope = _request_scope()
+    return get_project(project_id, _request_caller(), workspace=scope.workspace, membership=scope.membership)
 
 
 @app.post("/projects/<project_id>/chat-context")
 @tracer.capture_method
 def api_project_chat_context(project_id: str):
     body = json_object_body(app)
+    scope = _request_scope()
     return get_project_chat_context(
         project_id, body.get('selected_document_ids', []), _request_caller(),
+        workspace=scope.workspace, membership=scope.membership,
     )
 
 
 @app.put("/projects/<project_id>")
 @tracer.capture_method
 def api_update_project(project_id: str):
-    return update_project(project_id, json_object_body(app))
+    return update_project(project_id, json_object_body(app), workspace=_request_scope().workspace)
 
 
 @app.delete("/projects/<project_id>")
@@ -597,46 +755,49 @@ def api_delete_project(project_id: str):
 @app.put("/projects/<project_id>/visibility")
 @tracer.capture_method
 def api_set_project_visibility(project_id: str):
-    return set_project_visibility(project_id, json_body_value(app))
+    return set_project_visibility(project_id, json_body_value(app), workspace=_request_scope().workspace)
 
 
 @app.get("/projects/<project_id>/members")
 @tracer.capture_method
 def api_list_project_members(project_id: str):
-    return get_project_members(project_id, _request_caller())
+    scope = _request_scope()
+    return get_project_members(project_id, _request_caller(), workspace=scope.workspace, membership=scope.membership)
 
 
 @app.get("/projects/<project_id>/members/candidates")
 @tracer.capture_method
 def api_member_candidates(project_id: str):
     params = app.current_event.query_string_parameters or {}
-    return search_member_candidates(project_id, params.get('q', ''))
+    return search_member_candidates(project_id, params.get('q', ''), workspace=_request_scope().workspace)
 
 
 @app.post("/projects/<project_id>/members")
 @tracer.capture_method
 def api_add_project_member(project_id: str):
-    return add_project_member(project_id, json_body_value(app), _request_caller())
+    return add_project_member(project_id, json_body_value(app), _request_caller(), workspace=_request_scope().workspace)
 
 
 @app.put("/projects/<project_id>/members/<member_sub>")
 @tracer.capture_method
 def api_update_project_member(project_id: str, member_sub: str):
-    return update_project_member(project_id, member_sub, json_body_value(app))
+    return update_project_member(project_id, member_sub, json_body_value(app), workspace=_request_scope().workspace)
 
 
 @app.delete("/projects/<project_id>/members/<member_sub>")
 @tracer.capture_method
 def api_remove_project_member(project_id: str, member_sub: str):
     return remove_project_member(
-        project_id, member_sub, _request_caller(), _request_access(),
+        project_id, member_sub, _request_caller(), _request_access(), workspace=_request_scope().workspace,
     )
 
 
 @app.post("/projects/<project_id>/owner")
 @tracer.capture_method
 def api_transfer_project_owner(project_id: str):
-    return transfer_project_owner(project_id, json_body_value(app), _request_caller())
+    scope = _request_scope()
+    return transfer_project_owner(project_id, json_body_value(app), _request_caller(), workspace=scope.workspace,
+                                  membership=scope.membership)
 
 
 # ============================================
@@ -679,14 +840,15 @@ def _start_persona_import(project_id: str, body: dict) -> dict:
 @app.put("/projects/<project_id>/personas/<persona_id>")
 @tracer.capture_method
 def api_update_persona(project_id: str, persona_id: str):
-    return update_persona(project_id, persona_id, json_object_body(app))
+    return update_persona(project_id, persona_id, json_object_body(app), workspace=_request_scope().workspace)
 
 
 @app.put("/projects/<project_id>/personas/<persona_id>/protection")
 @tracer.capture_method
 def api_set_persona_protection(project_id: str, persona_id: str):
     """Protect a persona (or release it): a replace regeneration keeps a protected one."""
-    return projects.set_persona_protection(project_id, persona_id, json_object_body(app))
+    return projects.set_persona_protection(project_id, persona_id, json_object_body(app),
+                                           workspace=_request_scope().workspace)
 
 
 @app.delete("/projects/<project_id>/personas/<persona_id>")
@@ -708,14 +870,15 @@ def _delete_persona_as_caller(project_id: str, persona_id: str) -> dict:
 @app.post("/projects/<project_id>/personas/<persona_id>/notes")
 @tracer.capture_method
 def api_add_persona_note(project_id: str, persona_id: str):
-    return add_persona_note(project_id, persona_id, json_object_body(app))
+    return add_persona_note(project_id, persona_id, json_object_body(app), workspace=_request_scope().workspace)
 
 
 @app.post("/projects/<project_id>/personas/<persona_id>/regenerate-avatar")
 @tracer.capture_method
 def api_regenerate_persona_avatar(project_id: str, persona_id: str):
-    """202 + an assist job; the 404 for a missing persona stays synchronous."""
-    require_persona(project_id, persona_id)
+    """202 + an assist job; the 404 for a missing persona stays synchronous. (The deployment's only: the middleware
+    refuses it in a workspace, the avatars' slice, 3h-S6.)"""
+    require_persona(project_id, persona_id, workspace=_request_scope().workspace)
     return _start_avatar_assist(project_id, persona_id)
 
 
@@ -988,7 +1151,7 @@ def api_generate_document(project_id: str):
     # Validated BEFORE create_job, so a rejected request leaves no job row
     # describing work nobody will do, and bills no Bedrock call.
     doc_type = _validated_doc_type(body.get('doc_type'))
-    _require_ai_writing(project_id, doc_type)
+    _require_ai_writing(project_id, doc_type, None)  # the generator's route: the deployment's (3h-S8)
     title, _ = split_versioned_title(body.get('title', 'Untitled'))
     # A COPY, so the resolved values reach the stored config without rewriting
     # the request as received: `json_body` is a cached_property, and mutating it
@@ -1074,7 +1237,7 @@ def api_update_decision(project_id: str, document_id: str):
 def api_pursue_decision(project_id: str, document_id: str):
     """Seed the PR/FAQ chain from a Pursue decision: the ordinary PR/FAQ generation,
     with the decision as its first reference document. A user action, never automatic."""
-    _require_ai_writing(project_id, 'prfaq')
+    _require_ai_writing(project_id, 'prfaq', None)  # an assist or a decision: the deployment's (3h-S3c, S8)
     table = get_projects_table()
     decision = decision_records.stored_decision(table, project_id, document_id, workspace=None)
     doc_config = {
@@ -1099,11 +1262,15 @@ def api_create_document(project_id: str):
     files PR/FAQ / PRD text is AI writing and is gated like any other."""
     body = json_object_body(app)
     caller = _request_caller()
+    workspace = _request_scope().workspace
     if ai_writing.writing_kind(app.current_event.raw_event) == ai_writing.KIND_AUTONOMOUS:
-        _require_ai_writing(project_id, body.get('document_type'))
-    # A saved focus group keeps only the cited reviews its saver may see (shared/focus_group_documents.py).
-    scope = _caller_category_scope() if body.get('document_type') == FOCUS_GROUP_TYPE else None
-    return create_document(project_id, body, creator_sub=caller.subject, category_scope=scope)
+        _require_ai_writing(project_id, body.get('document_type'), workspace)
+    # A saved focus group keeps only the cited reviews its saver may see (shared/focus_group_documents.py); in a
+    # workspace create_document refuses one first, before the deployment's categories are read.
+    categories = (_caller_category_scope() if body.get('document_type') == FOCUS_GROUP_TYPE and workspace is None
+                  else None)
+    return create_document(project_id, body, creator_sub=caller.subject, category_scope=categories,
+                           workspace=workspace)
 
 
 @app.post("/projects/<project_id>/documents/merge")
@@ -1117,7 +1284,7 @@ def api_merge_documents(project_id: str):
             f'output_type must be one of: {", ".join(MERGE_OUTPUT_TYPES)} '
             f'(got {type(output_type).__name__})'
         )
-    _require_ai_writing(project_id, output_type)
+    _require_ai_writing(project_id, output_type, None)  # the merge job: the deployment's (3h-S8)
     # Always a copy carrying the starter's scope (never the request body itself).
     merge_config = {**body, category_access.SCOPE_CONFIG_KEY: _caller_category_scope()}
     if output_type in MERGE_VERSIONED_DOCUMENT_TYPES:
@@ -1158,27 +1325,33 @@ def api_update_document(project_id: str, document_id: str):
     """
     body = json_object_body(app)
     revise_job_id = document_history.validated_revise_job_id(body.get('revise_job_id'))
-    _require_autonomous_edit_allowed(project_id, document_id)
+    workspace = _request_scope().workspace
+    if revise_job_id is not None:
+        # Refused here, before the pass's job row is read: that row and its proposal are the deployment's (Revise
+        # from comments, 3h-S8). update_document refuses it again for any other caller that hands it a proposal.
+        require_deployment(workspace, REVISE_FROM_COMMENTS_STORE)
+    _require_autonomous_edit_allowed(project_id, document_id, workspace)
     proposal = None if revise_job_id is None else document_revision.ProposalSave(
         job_id=revise_job_id, job=_project_job_row(project_id, revise_job_id),
         caller_sub=_request_caller().subject, actor=actor_from_event(app.current_event.raw_event))
-    return update_document(project_id, document_id, body, proposal=proposal)
+    return update_document(project_id, document_id, body, proposal=proposal, workspace=workspace)
 
 
 @app.get("/projects/<project_id>/documents/<document_id>/versions")
 @tracer.capture_method
 def api_document_versions(project_id: str, document_id: str):
     """Every version of a document, newest first, with content (open / compare)."""
-    return get_document_versions(project_id, document_id)
+    return get_document_versions(project_id, document_id, workspace=_request_scope().workspace)
 
 
 @app.post("/projects/<project_id>/documents/<document_id>/versions/<version_id>/restore")
 @tracer.capture_method
 def api_restore_document_version(project_id: str, document_id: str, version_id: str):
     """Restore = a NEW version carrying that version's content; nothing is rewritten (a prototype: Back to vN)."""
-    _require_autonomous_edit_allowed(project_id, document_id)
+    workspace = _request_scope().workspace
+    _require_autonomous_edit_allowed(project_id, document_id, workspace)
     return restore_document(project_id, document_id, version_id, json_object_body(app),
-                            actor=actor_from_event(app.current_event.raw_event))
+                            actor=actor_from_event(app.current_event.raw_event), workspace=workspace)
 
 
 @app.delete("/projects/<project_id>/documents/<document_id>")
@@ -1206,9 +1379,10 @@ def api_duplicate_document(project_id: str, document_id: str):
         or len(target) > _MAX_TARGET_PROJECT_ID_LENGTH
     ):
         raise ValidationError('target_project_id is required')
-    _project_access_for(target, _request_caller(), project_access.LEVEL_EDIT)
-    _require_project_exists(target)
-    return duplicate_document(project_id, document_id, target)
+    scope = _request_scope()
+    _project_access_for(target, _request_caller(), project_access.LEVEL_EDIT, scope)
+    _require_project_exists(target, scope.workspace)
+    return duplicate_document(project_id, document_id, target, workspace=scope.workspace)
 
 
 # ============================================
@@ -3094,7 +3268,7 @@ def api_recompose_prioritization_row(row_id: str):
         stored = _fetched_row(table, path_row_id)
         stored_project = stored.get('project_id') if stored else None
         if isinstance(stored_project, str) and stored_project != project_id:
-            _project_access_for(stored_project, caller, project_access.LEVEL_EDIT)
+            _project_access_for(stored_project, caller, project_access.LEVEL_EDIT, _request_scope())
 
     # The LEGACY half of the freeze — see the docstring. A row balloted before the
     # mark existed satisfies the write's condition, so it has to be refused here,
@@ -4691,7 +4865,7 @@ def api_autofill_prfaq_questions(project_id: str):
     Body: ``{title?, feature_idea?, answers?: [≤5 texts], filters?, response_language?}``;
     typed text is kept as the author's intent (shared/draft_intent.py, caps → 400).
     """
-    _require_ai_writing(project_id, 'prfaq')
+    _require_ai_writing(project_id, 'prfaq', None)  # an assist or a decision: the deployment's (3h-S3c, S8)
     return _started_feedback_assist(project_id, ASSIST_PRFAQ_AUTOFILL, draft_intent.validate_autofill_body)
 
 
@@ -4711,7 +4885,8 @@ def api_suggest_document_brief(project_id: str):
     rewritten and expanded, never replaced (shared/draft_intent.py, caps → 400).
     """
     # The worker drafts a PRD unless asked for a PR/FAQ (projects.suggest_document_brief).
-    _require_ai_writing(project_id, 'prfaq' if json_object_body(app).get('doc_type') == 'prfaq' else 'prd')
+    _require_ai_writing(project_id, 'prfaq' if json_object_body(app).get('doc_type') == 'prfaq' else 'prd',
+                        None)  # an assist: the deployment's (3h-S8)
     return _started_feedback_assist(project_id, ASSIST_DOCUMENT_BRIEF, draft_intent.validate_brief_body)
 
 
@@ -4857,7 +5032,7 @@ _PIN_DOCUMENT_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{1,128}\Z')
 
 def _pin_prototype_row(project_id: str, document_id: str, *, whole: bool = False) -> dict:
     """EDIT on the project and the prototype's row (only its key unless ``whole``) — else 4xx."""
-    _project_access_for(project_id, _request_caller(), project_access.LEVEL_EDIT)
+    _project_access_for(project_id, _request_caller(), project_access.LEVEL_EDIT, _request_scope())
     if not _PIN_DOCUMENT_ID_RE.fullmatch(document_id):
         raise ValidationError('Invalid document id')
     table = get_projects_table()
@@ -5077,7 +5252,7 @@ def api_apply_prototype_draft(project_id: str, document_id: str, draft_id: str):
     draft's answer adds ``incorporation: {marked, replied, not_written}``: after the version, on every
     call (a replay finishes the set), its Done pins marked addressed and its Not done reasons posted.
     """
-    _require_autonomous_edit_allowed(project_id, document_id)
+    _require_autonomous_edit_allowed(project_id, document_id, None)  # a prototype draft: the deployment's (3h-S7)
     job, draft, base = _draft_job(project_id, document_id, draft_id)
     store = projects.prototype_store()
     actor = actor_from_event(app.current_event.raw_event)
@@ -5301,7 +5476,7 @@ def api_build_prototype(project_id: str):
     # refused here now (409), before any job row (tenet 2, shared/methodology.py).
     assessment = methodology.for_prototype_request(_methodology_items(project_id))
     if methodology.is_blocked(assessment):
-        _require_project_exists(project_id)
+        _require_project_exists(project_id, None)  # the prototype build: the deployment's (3h-S7)
         raise ConflictError('No PRD or PR/FAQ found for this project. Generate at least one first.')
     doc_config['methodology'] = assessment
     return {**_started_generator_job(project_id, 'build_prototype', doc_config, 'Prototype build started.'),
@@ -5443,7 +5618,7 @@ def _revise_outcome(project_id: str, doc_type: str) -> str:
     (a refusal recommends only); then the caller's mode, as the gate read it, decides. A mode that
     could not be read fails the start, as it fails every other AI-writing route."""
     try:
-        caller_mode = _require_ai_writing(project_id, doc_type)
+        caller_mode = _require_ai_writing(project_id, doc_type, None)  # Revise from comments: the deployment's (3h-S8)
     except ai_writing.ModeUnreadableError:
         raise
     except AuthorizationError:
@@ -5516,12 +5691,16 @@ app.include_router(document_review_routes.app)
 
 # The company persona library (shared/company_personas_routes.py) and copying personas into / out of
 # a project (shared/persona_copy_routes.py), docs/project-workspace.md → Company personas. The library
-# runs these same persona functions on its reserved container.
+# runs these same persona functions on its reserved container, the deployment's (refused in a workspace by the
+# middleware: the library's slice moves it).
 company_personas_routes.configure(company_personas_routes.PersonaOps(
     start_generation=_start_persona_generation, start_import=_start_persona_import,
     start_avatar=_start_avatar_assist, job_list=_job_list, job_status=_job_status,
-    update_persona=update_persona, delete_persona=_delete_persona_as_caller, add_note=add_persona_note,
-    require_persona=require_persona, sign_avatars=projects.with_signed_avatars,
+    update_persona=lambda project_id, persona_id, body: update_persona(project_id, persona_id, body, workspace=None),
+    delete_persona=_delete_persona_as_caller,
+    add_note=lambda project_id, persona_id, body: add_persona_note(project_id, persona_id, body, workspace=None),
+    require_persona=lambda project_id, persona_id: require_persona(project_id, persona_id, workspace=None),
+    sign_avatars=lambda personas: projects.with_signed_avatars(personas, workspace=None),
 ))
 app.include_router(company_personas_routes.app)
 app.include_router(persona_copy_routes.app)

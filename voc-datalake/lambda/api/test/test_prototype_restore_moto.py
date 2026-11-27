@@ -63,7 +63,7 @@ class World:
     def restore(self, document_id: str, version_id: str, body: dict | None = None) -> dict:
         from projects import restore_document
 
-        return restore_document(PROJECT, document_id, version_id, body or {}, actor=ACTOR)
+        return restore_document(PROJECT, document_id, version_id, body or {}, actor=ACTOR, workspace=None)
 
     def back_to_v1(self) -> str:
         """Builds v1 and v2, then restores v1 from v2: the restored version's id."""

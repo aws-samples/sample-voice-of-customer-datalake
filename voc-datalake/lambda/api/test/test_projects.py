@@ -179,7 +179,7 @@ class TestDocumentVersionBoundaries:
 
         from projects import get_project
 
-        documents = get_project('p1')['documents']
+        documents = get_project('p1', workspace=None, membership=None)['documents']
 
         assert {
             document['document_id']: (
@@ -224,7 +224,7 @@ class TestDocumentVersionBoundaries:
 
         from projects import get_project
 
-        read = get_project('p1')
+        read = get_project('p1', workspace=None, membership=None)
 
         assert {d['document_id']: d['section'] for d in read['documents']} == {
             'a': 'prd', 'b': 'prfaq', 'c': 'prototypes', 'd': 'documents', 'e': 'documents', 'f': 'documents',
@@ -251,7 +251,7 @@ class TestDocumentVersionBoundaries:
                 'title': 'Launch',
                 'content': '# Document',
                 'document_type': document_type,
-            })
+            }, workspace=None)
 
         mock_table.put_item.assert_not_called()
         mock_table.update_item.assert_not_called()
@@ -265,7 +265,7 @@ class TestDocumentVersionBoundaries:
             'title': 'Operator notes',
             'content': '# Notes',
             'document_type': 'custom',
-        })
+        }, workspace=None)
 
         assert result['success'] is True
         assert result['document']['document_type'] == 'custom'
@@ -311,7 +311,7 @@ class TestDocumentVersionBoundaries:
 
         from projects import update_document
 
-        assert update_document('p1', 'd1', {'content': '# edited', 'edit_id': 'e1'}) == {
+        assert update_document('p1', 'd1', {'content': '# edited', 'edit_id': 'e1'}, workspace=None) == {
             'success': True, 'document': {'document_id': 'd2', 'version': 3},
         }
         # Never in place: the stored v2 is untouched, v3 is allocated like a regeneration.
@@ -339,7 +339,7 @@ class TestDocumentVersionBoundaries:
         from shared.exceptions import ValidationError
 
         with pytest.raises(ValidationError, match=refusal):
-            update_document('p1', 'd1', body)
+            update_document('p1', 'd1', body, workspace=None)
 
         mock_table.update_item.assert_not_called()
 
@@ -469,7 +469,7 @@ class TestDocumentVersionBoundaries:
 
         from projects import update_document
 
-        result = update_document('p1', 'd1', {'content': '# edited'})
+        result = update_document('p1', 'd1', {'content': '# edited'}, workspace=None)
 
         assert result['success'] is True
         assert result['document']['content'] == '# edited'
@@ -506,7 +506,7 @@ class TestDocumentVersionBoundaries:
         from shared.exceptions import NotFoundError
 
         with pytest.raises(NotFoundError, match='not found'):
-            update_document('p1', 'd1', {'content': '# edited'})
+            update_document('p1', 'd1', {'content': '# edited'}, workspace=None)
 
     @patch('projects.projects_table')
     def test_content_edit_cannot_rename_a_versioned_series(self, mock_table):
@@ -525,7 +525,7 @@ class TestDocumentVersionBoundaries:
         from shared.exceptions import ValidationError
 
         with pytest.raises(ValidationError, match='cannot change series'):
-            update_document('p1', 'd1', {'title': 'Different series', 'content': '# edited'})
+            update_document('p1', 'd1', {'title': 'Different series', 'content': '# edited'}, workspace=None)
 
         mock_table.update_item.assert_not_called()
 
@@ -588,7 +588,7 @@ class TestProjectChatContext:
         from projects import get_project_chat_context
 
         result = get_project_chat_context(
-            'p1', ['prd', 'product_report', 'prototype', 'prd'], ADMIN_CALLER,
+            'p1', ['prd', 'product_report', 'prototype', 'prd'], ADMIN_CALLER, workspace=None, membership=None,
         )
 
         assert result['project'] == {'sk': 'META', 'name': 'Project'}
@@ -648,7 +648,7 @@ class TestProjectChatContext:
         from shared.exceptions import ValidationError
 
         with pytest.raises(ValidationError):
-            get_project_chat_context(project_id, selected_document_ids, ADMIN_CALLER)
+            get_project_chat_context(project_id, selected_document_ids, ADMIN_CALLER, workspace=None, membership=None)
 
         mock_table.query.assert_not_called()
 

@@ -145,7 +145,7 @@ class TestGetProjectEndpoint:
             path_params={'project_id': 'proj-123'},
         )
 
-        mock_get_project.assert_called_once_with('proj-123', ANY_CALLER)
+        mock_get_project.assert_called_once_with('proj-123', ANY_CALLER, workspace=None, membership=None)
         assert body['project']['project_id'] == 'proj-123'
 
 
@@ -925,7 +925,7 @@ class TestProjectChatContextEndpoint:
         )
 
         assert response['statusCode'] == 200
-        mock_get_context.assert_called_once_with('proj-123', ['d1'], ANY_CALLER)
+        mock_get_context.assert_called_once_with('proj-123', ['d1'], ANY_CALLER, workspace=None, membership=None)
 
     @patch('projects_handler.get_project_chat_context')
     def test_replaces_an_oversized_proxy_response_with_a_small_413(

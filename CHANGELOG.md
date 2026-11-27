@@ -17,6 +17,115 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.103.00] - 2026-11-27
+
+The project core routes take their workspace from one seam (slice 3h-S3a of docs/multi-workspace.md's project plan;
+no production behaviour change). `lambda/shared/project_request_scope.py` `project_scope(event, fresh=…)` answers
+the request's `ProjectScope` (its workspace and the caller's membership there) and, until the flip slice (3h-S12),
+always the deployment's: the projects API keeps ignoring `X-Workspace-Id`, as it always has. The flip is one change,
+its `RESOLVE` flag turned on together with the switch's reader; tests turn it on to prove the routes are ready.
+
+### Changed
+
+- **The seam** (`shared/project_request_scope.py`): `RESOLVE` off returns `DEPLOYMENT` (no workspace, no membership)
+  without reading anything; on, a request that names a workspace is resolved by `shared/request_workspace.py`
+  `request_workspace` (fresh for a write, `elevate=False`: the projects role has no live platform-admin check, so a
+  platform admin who is not a member gets the one 404, as in the Documents Library) and turned into the gate's
+  membership by `shared/workspace.py` `membership_of`; a request that names none stays the deployment's.
+  `is_workspace_member` reads a person's `MEMBER#` row and the workspace's status, strongly consistent.
+- **The middleware** (`api/projects_handler.py` `project_access_middleware`) resolves the scope once per request,
+  hands it to the gate (`_project_access_for`, `_gate_meta`) and keeps it on the request (`_request_scope`). Two
+  route families never resolve one: the Documents Library (`/projects/library` and below, matched on its first two
+  path segments; it resolves its own) and the reviewer routes (`/review/…`: a reviewer is outside the workspace,
+  3h-S5). A write resolves fresh; the chat context (a POST that reads) from the warm cache; the member picker fresh
+  (it answers addresses).
+- **The route table**: every route is matched by its exact Powertools template, `(method, template)`.
+  `THREADED_ROUTES` (20) act in the workspace; `NOT_YET` (93) names each other route's slice, and in a workspace
+  each is refused by name before the gate reads anything (`NotPerWorkspaceError`, a 500: "The projects route
+  `<method> <template>` (`<slice>`) is not per workspace yet"), never served from the deployment's rows:
+  - 3h-S3b, the product documents: product context and product docs (5);
+  - 3h-S3c (new follow-up), the company persona library (`/company-personas/*`), the prioritization board
+    (`/projects/prioritization*`), the persona copy and grounding, the decisions, the validation and the voice
+    sessions (`/projects/voice/usage` included) (40);
+  - 3h-S4, the deletes of a project, a document, a persona and a job (4);
+  - 3h-S5, the document comments, the review links and the reviewer routes (13; the reviewer routes skip the seam);
+  - 3h-S6, the avatar's regeneration (1);
+  - 3h-S7, the prototypes' pins, feedback, drafts, outline, walkthrough and build (16);
+  - 3h-S8, the jobs and the assists: persona generate and import, research, the generator, merge, the job reads,
+    the AI assists, the product report, the persona review and Revise from comments (14).
+  The flip (3h-S12) needs `NOT_YET` empty.
+- **The routes threaded** (each passes the scope to every store and gate call): the list and its `?ids=` details
+  (`list_projects`, `get_project_details`, `_viewable_ids`: a workspace's own index partition, decided from the
+  membership), the get (`get_project`; a workspace's avatars and prototypes read unsigned until their slices), the
+  chat context, the update, the visibility, the members (list, picker, add, role change, remove), the owner transfer,
+  the documents (create, edit, versions, restore, duplicate) and the personas (edit, note, protection). Where one of
+  them reaches another slice's store in a workspace it refuses it by name: a focus group's transcript (its cited
+  reviews are checked against the deployment's feedback, `FOCUS_GROUPS_STORE`), a save naming a Revise from comments
+  pass (`REVISE_FROM_COMMENTS_STORE`, before the pass's job row is read), a prototype's restore or duplicate
+  (`PROTOTYPE_BUILDER_STORE`).
+- **Members and owner in a workspace**: `POST …/members` adds only someone who is a member of the workspace at that
+  moment (their `MEMBER#` row and the workspace's status, read strongly consistent; 400 "Only a member of this
+  workspace can be added to its projects" otherwise); someone removed from the workspace later stays in the members
+  map, and the gate gives them nothing there. `POST …/owner` hands the project only to someone who writes in the
+  workspace (an editor or an admin; 400 "The owner must be an editor or admin of this workspace"), and re-adds the
+  previous owner as an editor only while they are still a member. The picker (`GET …/members/candidates`) lists only
+  the workspace's members among the directory's matches: the workspace's status read once, then each match's
+  `MEMBER#` row (at most 1 + 40 GetItems). The owner transfer's admin bypass is `project_access.admin_bypass`, the
+  one predicate the policy uses too: the workspace's admin role, never the deployment's `admins`.
+- **The create in a workspace**: `create_project` refuses a viewer (403 "Creating a project needs the editor or admin
+  role in this workspace") and a caller the gate would not admit there, an agent (403), before anything is written
+  (7.101.00's follow-up).
+- The handler's helpers take the scope they act in from their caller (`_require_ai_writing`,
+  `_require_autonomous_edit_allowed`, `_require_project_exists`); the job and assist starters name the deployment
+  (their routes are refused in a workspace).
+- The board's viewable filter (`_viewable_project_ids`, `_gate_meta_batch_chunk`) takes the request's scope too (the
+  board itself is refused in a workspace); its `META` read names its project by `project_id_of`.
+- The company persona library's four persona ops (`update_persona`, `add_persona_note`, `require_persona`,
+  `with_signed_avatars`), handed on as values before, are called naming the deployment.
+- `shared/project_keys.py`'s `__all__` drops `PROJECT_PREFIX`, which no Lambda module imports any more (the operator's
+  backfill script still does, by name).
+- IAM: the picker and the member checks use the resolution policy's GetItem on `WS#*` (the role projection), already
+  on the projects role; nothing changes in the stacks. The CDK baseline's template hashes of VocApiStack, VocCoreStack
+  and VocProcessingStack move with the release number alone (`APP_VERSION`, 7.103.0, in their Lambdas' environment:
+  `lib/utils/connector-version.ts`); the canonical template masks the code assets' hashes, and its names inventory
+  is unchanged.
+- Not yet (follow-ups): the picker searches the directory's first page per search (20 by username, 20 by email), so a
+  member it does not reach is not listed (a narrower search finds them); a search of the workspace's own `MEMBER#`
+  rows needs a Query grant the projects role does not have. A `BatchGetItem` of the matches' rows would need its
+  grant too.
+
+### Tests
+
+- `lambda/api/test/test_project_routes_workspace.py` (new, 137 cases): with `RESOLVE` on, in moto, two workspaces
+  and a deployment project: every route the app registers (its included routers' too) is in exactly one of
+  `THREADED_ROUTES`, `NOT_YET` or the Documents Library's own, and `NOT_YET` names only the seven slices; a test the
+  flip removes (strict xfail) needs `NOT_YET` empty. A's member lists A's projects only (and their details); B's
+  member gets, for A's project, the exact 404 of an id that exists nowhere on each of the 18 threaded project routes
+  (built from `THREADED_ROUTES`, restore included), changing nothing; another workspace's header is the one 404; the
+  deployment's `admins` get nothing in A and lift no member's role there; A's viewer reads and does not write (nor
+  create); a member's writes land in A's partition only; the picker lists A's members only; adding someone outside A,
+  B's admin included, is 400 and writes nothing; the owner transfer takes A's editors and admins only, does not re-add
+  a previous owner who left A, and A's admin still manages; an agent creates nothing in A, an editor creates there; a
+  document is duplicated within A and B's project is no target; each of the 90 `NOT_YET` routes outside `/review/` is
+  refused in A with its slice before any read; `/company-personas/library` is refused (no Documents Library route),
+  the reviewer routes and the Documents Library never reach the seam's resolver; a write and the picker resolve
+  fresh, a read and the chat context do not; a focus group, a revise save, a prototype's duplicate and restore are
+  refused by name. With `RESOLVE` off a header changes nothing. Seen red: 21 of the first 42 with the middleware
+  ignoring the seam (7.102.00's behaviour); the review round's cases 9 red on the round's first code (the old library
+  match, every write fresh, the previous owner always re-added, any member as owner, a viewer's create).
+- `test_project_create_workspace.py`: a workspace viewer's create writes nothing (403), where the store wrote for one.
+- `test_cross_workspace_routes.py`, `cross_workspace_closure.py`: the cross-module scan does not follow a seam whose
+  flag is off (`SEAMS_OFF`), so the project routes stay in `cross_workspace_pending.py` (they act deployment-wide in
+  production until the flip); a test holds each flag off and calls the seam with a header, its resolver made to fail,
+  answering the deployment; another proves the skip is what keeps them pending.
+- `lambda/stream/src/assistant/tools/internal-api.test.ts`: the chat context, a project read and the project list
+  send the caller's `X-Workspace-Id`, so the flip covers the assistant's project tools.
+- The keyword guard's ratchet (`LITERAL_NONE`) goes down, from 265 to 230: `api/projects.py` 75 to 41 (the threaded
+  routes; +4 for the assists' internal `get_project` reads, which took the default), `api/projects_handler.py` 34 to
+  33 (the gate, the create and the board's filter pass the scope; the company library's four ops name the
+  deployment). `test_ws_raw_access.py`: `api/projects.py`'s `project accessor(workspace=None)` 15 to 11. The projects
+  module's unit and mutation suites pass the scope (`workspace=None`, the deployment) at every call.
+
 ## [7.102.00] - 2026-11-27
 
 The rest of the project-adjacent stores name their scope at every call (slice 3h-S1b of docs/multi-workspace.md's

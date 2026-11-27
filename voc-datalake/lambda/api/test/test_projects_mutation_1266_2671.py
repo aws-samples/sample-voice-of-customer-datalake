@@ -1195,7 +1195,7 @@ class TestAutofillPrfaqQuestions(_Assist):
             {'title': '  Faster sync  ', 'feature_idea': ' Sync in the background ', 'response_language': 'ko'},
             raw='{"answers": ["a", "b", "c", "d", "e"]}', language='Respond in Korean.',
         )
-        stubs['get_project'].assert_called_once_with('proj-1')
+        stubs['get_project'].assert_called_once_with('proj-1', workspace=None, membership=None)
         stubs['feedback'].assert_called_once_with(PROJECT_FILTERS, 20, SCOPE)
         stubs['format'].assert_called_once_with([{'text': 'app crashes'}], stubs['labels'].return_value)
         stubs['personas'].assert_called_once_with([{'name': 'Kim Jisu'}])
@@ -1391,7 +1391,7 @@ class TestCreateDocument:
                 patch.object(project_writes, 'put_project_item_and_increment') as put, \
                 frozen_clock(projects) as dt:
             dt.now.return_value = NOW_DT
-            result = projects.create_document('proj-1', body, creator_sub=creator_sub)
+            result = projects.create_document('proj-1', body, creator_sub=creator_sub, workspace=None)
         return result, put, table
 
     def test_the_stored_item_field_for_field_and_the_counter_it_increments(self):
@@ -1434,14 +1434,14 @@ class TestCreateDocument:
         with patch.object(projects, 'projects_table', MagicMock()), \
                 patch.object(project_writes, 'put_project_item_and_increment') as put, \
                 pytest.raises(ValidationError) as exc:
-            projects.create_document('proj-1', {'title': 'Notes', 'content': content})
+            projects.create_document('proj-1', {'title': 'Notes', 'content': content}, workspace=None)
         assert str(exc.value) == 'content must be a string'
         put.assert_not_called()
 
     @pytest.mark.parametrize('document_type', ['prototype', 'research', 'product_report'])
     def test_every_other_type_is_sent_to_its_own_route(self, document_type):
         with patch.object(projects, 'projects_table', MagicMock()), pytest.raises(ValidationError) as exc:
-            projects.create_document('proj-1', {'content': 'x', 'document_type': document_type})
+            projects.create_document('proj-1', {'content': 'x', 'document_type': document_type}, workspace=None)
         assert str(exc.value) == (
             'Only custom, focus_group, prfaq and prd documents can be created directly. Every other '
             'managed or workflow document type must use its dedicated route.'
@@ -1453,14 +1453,14 @@ class TestCreateDocument:
         with patch.object(projects, 'projects_table', table), \
                 patch.object(projects, 'create_human_document', return_value={'document_id': 'd1'}) as create:
             result = projects.create_document('proj-1', {'title': 'T', 'document_type': document_type},
-                                              creator_sub='sub-1')
+                                              creator_sub='sub-1', workspace=None)
         assert result == {'success': True, 'document': {'document_id': 'd1'}}
         create.assert_called_once_with(table, 'proj-1', document_type, {'title': 'T', 'document_type': document_type},
                                        creator_sub='sub-1', workspace=None)
 
     def test_without_a_table_the_refusal_names_it(self):
         with patch.object(projects, 'projects_table', None), pytest.raises(ConfigurationError) as exc:
-            projects.create_document('proj-1', {'content': 'x'})
+            projects.create_document('proj-1', {'content': 'x'}, workspace=None)
         assert str(exc.value) == 'Projects table not configured'
 
 
@@ -1480,8 +1480,8 @@ class TestUpdateDocument:
                 patch.object(projects, 'edit_document', return_value={'success': True}) as edit, \
                 frozen_clock(projects) as dt:
             dt.now.return_value = NOW_DT
-            result = projects.update_document('proj-1', 'd1', body)
-        find.assert_called_once_with('proj-1', 'd1')
+            result = projects.update_document('proj-1', 'd1', body, workspace=None)
+        find.assert_called_once_with('proj-1', 'd1', None)
         return result, edit
 
     def test_a_custom_documents_new_title_is_handed_to_the_edit(self):
@@ -1540,11 +1540,11 @@ class TestUpdateDocument:
         with patch.object(projects, 'projects_table', table), \
                 patch.object(projects, '_find_document', return_value={'sk': 'DOC#d1', 'document_id': 'd1'}), \
                 pytest.raises(NotFoundError):
-            projects.update_document('proj-1', 'd1', {'content': 'x'})
+            projects.update_document('proj-1', 'd1', {'content': 'x'}, workspace=None)
 
     def test_without_a_table_the_refusal_names_it(self):
         with patch.object(projects, 'projects_table', None), pytest.raises(ConfigurationError) as exc:
-            projects.update_document('proj-1', 'd1', {})
+            projects.update_document('proj-1', 'd1', {}, workspace=None)
         assert str(exc.value) == 'Projects table not configured'
 
 
@@ -1745,8 +1745,8 @@ class TestSourceDocumentItem:
         table.get_item.return_value = {'Item': stored} if stored is not None else {}
         with patch.object(projects, 'projects_table', table), \
                 patch.object(projects, '_find_document', return_value={'sk': 'PRD#d1'}) as find:
-            item = projects._source_document_item('proj-1', 'd1')
-        find.assert_called_once_with('proj-1', 'd1')
+            item = projects._source_document_item('proj-1', 'd1', None)
+        find.assert_called_once_with('proj-1', 'd1', None)
         return item, table
 
     def test_the_full_row_is_read_consistently_by_its_stored_key(self):

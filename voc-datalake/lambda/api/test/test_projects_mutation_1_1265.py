@@ -339,7 +339,7 @@ class TestPaginatedItems:
 class TestIndexAndPartitionReads:
     def test_the_project_index_is_read_newest_first(self, table):
         table.query.return_value = {'Items': [{'sk': 'META'}]}
-        assert list(projects._iter_project_index_rows()) == [{'sk': 'META'}]
+        assert list(projects._iter_project_index_rows(None)) == [{'sk': 'META'}]
         table.query.assert_called_once_with(
             IndexName='gsi1-by-type',
             KeyConditionExpression=Key('gsi1pk').eq('TYPE#PROJECT'),
@@ -352,7 +352,7 @@ class TestIndexAndPartitionReads:
             {'sk': 'RESEARCH#1'}, {'sk': 'VOTE#1'}, {'sk': 'DOC#1'}, {'sk': 'PRODUCT_REPORT#1'},
             {'sk': 'PROTOTYPE#1'}, {'sk': 'PERSONA#b'},
         ]}
-        assert projects._count_project_children('proj_1') == (2, 6)
+        assert projects._count_project_children('proj_1', None) == (2, 6)
         table.query.assert_called_once_with(
             KeyConditionExpression=Key('pk').eq('PROJECT#proj_1'),
             ProjectionExpression='sk',
@@ -372,7 +372,7 @@ class TestIndexAndPartitionReads:
              'LastEvaluatedKey': {'pk': 'p', 'sk': 'y'}},
             {'Items': [{'document_id': 'doc_3'}]},
         ]
-        assert projects._find_document('proj_1', 'doc_1') == {'document_id': 'doc_1', 'sk': 'PRD#doc_1'}
+        assert projects._find_document('proj_1', 'doc_1', None) == {'document_id': 'doc_1', 'sk': 'PRD#doc_1'}
         expected = {
             'KeyConditionExpression': Key('pk').eq('PROJECT#proj_1'),
             'ConsistentRead': True,
@@ -385,7 +385,7 @@ class TestIndexAndPartitionReads:
 
     def test_a_missing_document_is_none_after_every_page(self, table):
         table.query.return_value = {'Items': [{'document_id': 'other'}]}
-        assert projects._find_document('proj_1', 'doc_1') is None
+        assert projects._find_document('proj_1', 'doc_1', None) is None
 
     def test_partition_keys_project_pk_and_sk_and_drop_malformed_rows(self, table):
         table.query.return_value = {'Items': [
@@ -407,7 +407,7 @@ class TestIndexAndPartitionReads:
 class TestListProjects:
     def test_without_a_table_the_list_is_empty(self):
         with patch.object(projects, 'projects_table', None):
-            assert projects.list_projects(ADMIN) == {'projects': []}
+            assert projects.list_projects(ADMIN, workspace=None, membership=None) == {'projects': []}
 
     @pytest.mark.usefixtures('table')
     def test_each_visible_row_is_built_key_by_key_for_a_manager(self):
@@ -417,8 +417,8 @@ class TestListProjects:
             _meta(project_id='hidden', owner_sub='someone-else', members={}),
             _meta(purpose='Keep the lights on', status='archived', created_by_agent='agent-1'),
         ])), patch.object(projects, '_count_project_children', return_value=(3, 4)) as counts:
-            result = projects.list_projects(OWNER)
-        counts.assert_called_once_with('proj_1')
+            result = projects.list_projects(OWNER, workspace=None, membership=None)
+        counts.assert_called_once_with('proj_1', None)
         assert result == {'projects': [{
             'project_id': 'proj_1', 'name': 'Project One', 'description': 'desc',
             'purpose': 'Keep the lights on', 'status': 'archived',
@@ -435,7 +435,7 @@ class TestListProjects:
         meta = _meta(created_by_agent=7)
         with patch.object(projects, '_iter_project_index_rows', return_value=iter([meta])), \
                 patch.object(projects, '_count_project_children', return_value=(0, 0)):
-            [row] = projects.list_projects(VIEWER)['projects']
+            [row] = projects.list_projects(VIEWER, workspace=None, membership=None)['projects']
         assert row['purpose'] == ''
         assert row['status'] == 'active'
         assert 'created_by_agent' not in row
@@ -446,7 +446,7 @@ class TestListProjects:
     def test_a_hidden_project_costs_no_count_query(self):
         with patch.object(projects, '_iter_project_index_rows', return_value=iter([_meta()])), \
                 patch.object(projects, '_count_project_children') as counts:
-            assert projects.list_projects(STRANGER) == {'projects': []}
+            assert projects.list_projects(STRANGER, workspace=None, membership=None) == {'projects': []}
         counts.assert_not_called()
 
 
@@ -654,7 +654,7 @@ class TestSignedPrototypeUrl:
     def test_a_signed_url_overwrites_the_stored_one_for_an_s3_backed_prototype(self):
         item = {'document_type': 'prototype', 'document_id': 'd1', 'prototype_url': 'stale'}
         with patch.object(projects, 'prototype_signed_url', return_value='https://signed') as sign:
-            assert projects._with_signed_prototype_url(item, 'proj_1') == {
+            assert projects._with_signed_prototype_url(item, 'proj_1', None) == {
                 'document_type': 'prototype', 'document_id': 'd1', 'prototype_url': 'https://signed',
             }
         sign.assert_called_once_with('proj_1', 'd1', workspace=None)
@@ -662,14 +662,14 @@ class TestSignedPrototypeUrl:
     def test_an_unsignable_prototype_loses_its_stale_url(self):
         item = {'document_type': 'prototype', 'document_id': 'd1', 'prototype_url': 'stale'}
         with patch.object(projects, 'prototype_signed_url', return_value=None):
-            assert projects._with_signed_prototype_url(item, 'proj_1') == {
+            assert projects._with_signed_prototype_url(item, 'proj_1', None) == {
                 'document_type': 'prototype', 'document_id': 'd1',
             }
 
     def test_an_inline_prototype_is_never_signed(self):
         item = {'document_type': 'prototype', 'document_id': 'd1', 'content': '<html>', 'prototype_url': 'stale'}
         with patch.object(projects, 'prototype_signed_url') as sign:
-            assert projects._with_signed_prototype_url(item, 'proj_1') == {
+            assert projects._with_signed_prototype_url(item, 'proj_1', None) == {
                 'document_type': 'prototype', 'document_id': 'd1', 'content': '<html>',
             }
         sign.assert_not_called()
@@ -681,7 +681,7 @@ class TestSignedPrototypeUrl:
     ])
     def test_other_documents_and_id_less_prototypes_are_returned_as_is(self, item):
         with patch.object(projects, 'prototype_signed_url') as sign:
-            assert projects._with_signed_prototype_url(item, 'proj_1') is item
+            assert projects._with_signed_prototype_url(item, 'proj_1', None) is item
         sign.assert_not_called()
         assert item['prototype_url'] == 'kept'
 
@@ -740,14 +740,14 @@ class TestFencedJson:
 class TestStoredRecordHelpers:
     def test_a_stored_persona_is_read_by_its_exact_key(self, table):
         table.get_item.return_value = {'Item': {'sk': 'PERSONA#p1'}}
-        assert projects._stored_persona('proj_1', 'p1') == {'sk': 'PERSONA#p1'}
+        assert projects._stored_persona('proj_1', 'p1', None) == {'sk': 'PERSONA#p1'}
         table.get_item.assert_called_once_with(Key={'pk': 'PROJECT#proj_1', 'sk': 'PERSONA#p1'})
 
     @pytest.mark.parametrize('response', [{}, {'Item': None}, {'Item': {}}])
     def test_a_missing_persona_is_a_named_404(self, table, response):
         table.get_item.return_value = response
         with pytest.raises(NotFoundError, match=r'^Persona not found$'):
-            projects._stored_persona('proj_1', 'p1')
+            projects._stored_persona('proj_1', 'p1', None)
 
     def test_require_document_returns_the_found_document_or_a_named_404(self):
         assert projects._require_document({'sk': 'PRD#1'}) == {'sk': 'PRD#1'}
@@ -788,12 +788,12 @@ class TestGetProject:
     def test_without_a_table_the_read_is_a_configuration_error(self):
         with patch.object(projects, 'projects_table', None), \
                 pytest.raises(ConfigurationError, match=r'^Projects table not configured$'):
-            projects.get_project('proj_1', OWNER)
+            projects.get_project('proj_1', OWNER, workspace=None, membership=None)
 
     def test_an_empty_partition_is_a_named_404(self):
         with patch.object(projects, '_query_partition_items', return_value=[]) as read, \
                 pytest.raises(NotFoundError, match=r'^Project not found$'):
-            projects.get_project('proj_1', OWNER)
+            projects.get_project('proj_1', OWNER, workspace=None, membership=None)
         read.assert_called_once_with('PROJECT#proj_1')
 
     @pytest.mark.parametrize('rows', [
@@ -804,25 +804,25 @@ class TestGetProject:
     def test_a_partition_without_a_live_meta_is_a_metadata_404(self, rows):
         with patch.object(projects, '_query_partition_items', return_value=rows), \
                 pytest.raises(NotFoundError, match=r'^Project metadata not found$'):
-            projects.get_project('proj_1', OWNER)
+            projects.get_project('proj_1', OWNER, workspace=None, membership=None)
 
     def test_a_refused_caller_gets_the_generic_404_before_any_signing(self):
         with patch.object(projects, '_query_partition_items', return_value=self._partition()), \
                 patch.object(projects, 'get_avatar_cdn_url') as sign_avatar, \
                 patch.object(projects, '_with_signed_prototype_url') as sign_prototype, \
                 pytest.raises(NotFoundError, match=r'^Project not found$'):
-            projects.get_project('proj_1', STRANGER)
+            projects.get_project('proj_1', STRANGER, workspace=None, membership=None)
         sign_avatar.assert_not_called()
         sign_prototype.assert_not_called()
 
     def test_a_manager_gets_sharing_fields_signed_avatars_and_the_default_prompt(self):
         with patch.object(projects, '_query_partition_items', return_value=self._partition()), \
                 patch.object(projects, 'get_avatar_cdn_url', return_value='https://cdn/signed') as sign_avatar, \
-                patch.object(projects, '_with_signed_prototype_url', side_effect=lambda item, _pid: {**item, 'signed': True}) as sign_prototype, \
+                patch.object(projects, '_with_signed_prototype_url', side_effect=lambda item, _pid, _ws: {**item, 'signed': True}) as sign_prototype, \
                 patch.object(projects, 'normalize_document_versions', side_effect=lambda docs: [{**d, 'normalized': True} for d in docs]):
-            result = projects.get_project('proj_1', OWNER)
+            result = projects.get_project('proj_1', OWNER, workspace=None, membership=None)
         sign_avatar.assert_called_once_with('s3://bucket/avatars/p1.png', workspace=None)
-        sign_prototype.assert_called_once_with(self._partition()[4], 'proj_1')
+        sign_prototype.assert_called_once_with(self._partition()[4], 'proj_1', None)
         assert result['personas'] == [
             {'sk': 'PERSONA#p1', 'persona_id': 'p1', 'avatar_url': 'https://cdn/signed'},
             {'sk': 'PERSONA#p2', 'persona_id': 'p2', 'avatar_url': 'https://cdn/kept.png'},
@@ -839,7 +839,7 @@ class TestGetProject:
     def test_an_internal_read_redacts_every_email_and_computes_no_sharing(self):
         with patch.object(projects, '_query_partition_items', return_value=self._partition()), \
                 patch.object(projects, 'get_avatar_cdn_url', return_value='signed'):
-            project = projects.get_project('proj_1')['project']
+            project = projects.get_project('proj_1', workspace=None, membership=None)['project']
         assert 'owner_email' not in project
         assert project['members'] == {'viewer-sub': {
             'role': 'viewer', 'username': 'viewer', 'added_by': 'owner-sub',
@@ -904,7 +904,7 @@ class TestQueryProjectChatItems:
             {'Items': [{'sk': 'META'}, 'junk'], 'LastEvaluatedKey': {'pk': 'p', 'sk': 'META'}},
             {'Items': [{'sk': 'PRD#1'}], 'LastEvaluatedKey': {}},
         ]
-        assert projects._query_project_chat_items('proj_1') == [{'sk': 'META'}, {'sk': 'PRD#1'}]
+        assert projects._query_project_chat_items('proj_1', None) == [{'sk': 'META'}, {'sk': 'PRD#1'}]
         assert table.query.call_args_list == [
             call(**self.EXPECTED_QUERY),
             call(**self.EXPECTED_QUERY, ExclusiveStartKey={'pk': 'p', 'sk': 'META'}),
@@ -914,7 +914,7 @@ class TestQueryProjectChatItems:
     def test_a_malformed_page_or_cursor_ends_the_walk(self, table, response):
         table.query.side_effect = [response]
         expected = [{'sk': 'A'}] if isinstance(response, dict) and isinstance(response['Items'], list) else []
-        assert projects._query_project_chat_items('proj_1') == expected
+        assert projects._query_project_chat_items('proj_1', None) == expected
         table.query.assert_called_once()
 
 
@@ -935,30 +935,30 @@ class TestGetProjectChatContext:
     @pytest.mark.parametrize('project_id', [7, None, '', ' p1', 'p1 ', 'p' * 129])
     def test_a_malformed_project_id_is_refused_before_the_ids_are_checked(self, table, project_id):
         with pytest.raises(ValidationError, match=r'^project_id must be 1-128 characters$'):
-            projects.get_project_chat_context(project_id, 'not-a-list', OWNER)
+            projects.get_project_chat_context(project_id, 'not-a-list', OWNER, workspace=None, membership=None)
         table.query.assert_not_called()
 
     def test_a_128_character_project_id_reaches_the_read(self, table):
         table.query.return_value = {'Items': []}
         with pytest.raises(NotFoundError, match=r'^Project not found$'):
-            projects.get_project_chat_context('p' * 128, [], OWNER)
+            projects.get_project_chat_context('p' * 128, [], OWNER, workspace=None, membership=None)
         table.query.assert_called_once()
 
     @pytest.mark.parametrize('items', [[], [_meta(deletion_started_at='x')], [_meta(status='deleting')]])
     def test_a_missing_or_tombstoned_project_is_a_named_404(self, table, items):
         table.query.return_value = {'Items': items}
         with pytest.raises(NotFoundError, match=r'^Project not found$'):
-            projects.get_project_chat_context('proj_1', [], OWNER)
+            projects.get_project_chat_context('proj_1', [], OWNER, workspace=None, membership=None)
 
     def test_a_refused_caller_gets_the_same_404(self, table):
         table.query.return_value = {'Items': self.ITEMS}
         with pytest.raises(NotFoundError, match=r'^Project not found$'):
-            projects.get_project_chat_context('proj_1', [], STRANGER)
+            projects.get_project_chat_context('proj_1', [], STRANGER, workspace=None, membership=None)
         table.get_item.assert_not_called()
 
     def test_summaries_carry_exactly_the_allowlisted_fields_and_the_access(self, table):
         table.query.return_value = {'Items': self.ITEMS}
-        result = projects.get_project_chat_context('proj_1', [], VIEWER)
+        result = projects.get_project_chat_context('proj_1', [], VIEWER, workspace=None, membership=None)
         assert result == {
             'project': {'sk': 'META', 'name': 'Project One'},
             'personas': [{
@@ -980,7 +980,8 @@ class TestGetProjectChatContext:
     def test_a_selected_document_is_read_consistently_for_its_content_only(self, table):
         table.query.return_value = {'Items': self.ITEMS}
         table.get_item.return_value = {'Item': {'document_id': 'd1', 'content': 'BODY'}}
-        result = projects.get_project_chat_context('proj_1', ['d1', 'd2', 'd3'], OWNER)
+        result = projects.get_project_chat_context('proj_1', ['d1', 'd2', 'd3'], OWNER, workspace=None,
+                                                   membership=None)
         table.get_item.assert_called_once_with(
             Key={'pk': 'PROJECT#proj_1', 'sk': 'PRD#d1'}, ConsistentRead=True,
             ProjectionExpression='document_id, content',
@@ -995,7 +996,7 @@ class TestGetProjectChatContext:
     def test_a_mismatched_or_non_text_point_read_adds_no_content(self, table, response):
         table.query.return_value = {'Items': self.ITEMS}
         table.get_item.return_value = response
-        result = projects.get_project_chat_context('proj_1', ['d1'], OWNER)
+        result = projects.get_project_chat_context('proj_1', ['d1'], OWNER, workspace=None, membership=None)
         assert 'content' not in result['documents'][0]
 
 
@@ -1008,17 +1009,17 @@ class TestUpdateProject:
     def test_without_a_table_the_update_is_a_configuration_error(self):
         with patch.object(projects, 'projects_table', None), \
                 pytest.raises(ConfigurationError, match=r'^Projects table not configured$'):
-            projects.update_project('proj_1', {'name': 'x'})
+            projects.update_project('proj_1', {'name': 'x'}, workspace=None)
 
     @pytest.mark.parametrize('status', [None, 7, 'deleting', 'deleted', 'Active', ''])
     def test_a_status_outside_the_public_pair_is_refused(self, table, status):
         with pytest.raises(ValidationError, match=r'^Project status must be active or archived$'):
-            projects.update_project('proj_1', {'status': status})
+            projects.update_project('proj_1', {'status': status}, workspace=None)
         table.update_item.assert_not_called()
 
     @pytest.mark.usefixtures('frozen_clock')
     def test_an_empty_body_still_touches_updated_at_under_the_writable_condition(self, table):
-        assert projects.update_project('proj_1', {}) == {'success': True}
+        assert projects.update_project('proj_1', {}, workspace=None) == {'success': True}
         table.update_item.assert_called_once_with(
             Key={'pk': 'PROJECT#proj_1', 'sk': 'META'},
             UpdateExpression='SET updated_at = :now',
@@ -1032,7 +1033,7 @@ class TestUpdateProject:
         projects.update_project('proj_1', {
             'name': 'N', 'description': 'D', 'purpose': ' P ', 'status': 'archived',
             'filters': {'days': 3}, 'kiro_export_prompt': 'K', 'owner_sub': 'ignored',
-        })
+        }, workspace=None)
         params = table.update_item.call_args.kwargs
         assert params['UpdateExpression'] == (
             'SET updated_at = :now, #name = :name, description = :desc, purpose = :purpose, '
@@ -1053,7 +1054,7 @@ class TestUpdateProject:
     ])
     @pytest.mark.usefixtures('frozen_clock')
     def test_each_field_alone_adds_only_its_clause(self, table, body, clause, values):
-        projects.update_project('proj_1', body)
+        projects.update_project('proj_1', body, workspace=None)
         params = table.update_item.call_args.kwargs
         assert params['UpdateExpression'] == 'SET updated_at = :now' + clause
         assert params['ExpressionAttributeValues'] == {
@@ -1063,27 +1064,27 @@ class TestUpdateProject:
     @pytest.mark.parametrize('name', ['', '   ', None, 7, ['x']])
     def test_a_blank_or_non_string_name_is_refused_before_the_write(self, table, name):
         with pytest.raises(ValidationError, match=r'^Project name must be a non-empty string$'):
-            projects.update_project('proj_1', {'name': name})
+            projects.update_project('proj_1', {'name': name}, workspace=None)
         table.update_item.assert_not_called()
 
     @pytest.mark.usefixtures('frozen_clock')
     def test_the_name_is_stored_trimmed(self, table):
-        projects.update_project('proj_1', {'name': '  Renamed  '})
+        projects.update_project('proj_1', {'name': '  Renamed  '}, workspace=None)
         assert table.update_item.call_args.kwargs['ExpressionAttributeValues'][':name'] == 'Renamed'
 
     @pytest.mark.parametrize('description', [None, 3, {'text': 'x'}])
     def test_a_non_string_description_is_refused_before_the_write(self, table, description):
         with pytest.raises(ValidationError, match=r'^Project description must be a string$'):
-            projects.update_project('proj_1', {'description': description})
+            projects.update_project('proj_1', {'description': description}, workspace=None)
         table.update_item.assert_not_called()
 
     def test_an_empty_description_clears_it(self, table):
-        projects.update_project('proj_1', {'description': ''})
+        projects.update_project('proj_1', {'description': ''}, workspace=None)
         assert table.update_item.call_args.kwargs['ExpressionAttributeValues'][':desc'] == ''
 
     def test_an_over_long_purpose_is_refused_before_the_write(self, table):
         with pytest.raises(ValidationError, match=r'^purpose must be at most 2000 characters$'):
-            projects.update_project('proj_1', {'purpose': 'p' * 2001})
+            projects.update_project('proj_1', {'purpose': 'p' * 2001}, workspace=None)
         table.update_item.assert_not_called()
 
 

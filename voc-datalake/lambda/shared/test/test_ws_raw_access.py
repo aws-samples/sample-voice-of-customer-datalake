@@ -275,7 +275,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # transact: 2, one of them the client's method kept as `transact` and called later.
     # voc-wiki's prototype builder (merged in 7.33.00): projects.py's prototype store reads the pin forms' table
     # (get_aggregates_table), projects_handler.py's prototype routes read the projects table five more times.
-    'lambda/api/projects.py': (3, {'batch': 3, 'copy_object': 1, 'get_aggregates_table': 1, 'get_feedback_table': 1, 'get_jobs_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'project accessor(workspace=None)': 15, 'transact': 2}),
+    # 3h-S3a: -4 accessor calls: the project core routes' store calls pass the request's scope
+    # (shared/project_request_scope.py).
+    'lambda/api/projects.py': (3, {'batch': 3, 'copy_object': 1, 'get_aggregates_table': 1, 'get_feedback_table': 1, 'get_jobs_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'project accessor(workspace=None)': 11, 'transact': 2}),
     # 3h-S1b: +2 accessor calls, the job row (`create_job` in `_started_job`) and the project assist
     # (`assist_jobs.start`).
     'lambda/api/projects_handler.py': (3, {'batch': 1, 'get_aggregates_table': 12, 'get_jobs_table': 3, 'get_projects_table': 16, 'meta.client': 3, 'project accessor(workspace=None)': 7, 'transact': 2}),

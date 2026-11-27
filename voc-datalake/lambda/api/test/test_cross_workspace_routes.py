@@ -65,6 +65,7 @@ from cross_workspace_closure import (
     INSTANCE_RESOLVER_METHODS,
     ROUTES_RESOLVER,
     ROUTES_RESOLVER_MIDDLEWARE,
+    SEAMS_OFF,
     first_app_middleware,
     routes_reaching_the_resolver,
 )
@@ -527,6 +528,30 @@ def test_every_route_that_reaches_the_resolver_through_any_module_is_workspace_s
     assert sorted(reaching - WORKSPACE_SCOPED) == [], (
         'These routes reach resolve_workspace (through helpers in any module) but are not workspace-scoped')
     assert sorted(WORKSPACE_SCOPED - reaching) == [], 'These workspace-scoped routes reach no resolver'
+
+
+def test_every_seam_the_scan_skips_is_off():
+    """A seam the cross-module scan does not follow (cross_workspace_closure.py ``SEAMS_OFF``) resolves nothing in
+    production: its flag is off. The flip that turns one on removes its entry, and its routes then need their cases."""
+    for (module, function), flag in SEAMS_OFF.items():
+        seam = importlib.import_module(module)
+        assert callable(getattr(seam, function)), f'{module}.{function} is gone: drop it from SEAMS_OFF'
+        assert getattr(seam, flag) is False, f'{module}.{flag} is on: drop the seam from SEAMS_OFF and classify its routes'
+        # Off means it resolves nothing: a request naming a workspace, the resolver made to fail, is the deployment's.
+        event = {'httpMethod': 'GET', 'path': '/projects', 'headers': {'X-Workspace-Id': WS_A},
+                 'requestContext': {'authorizer': {'claims': {'sub': 'sub-ada'}}}}
+        with patch.object(seam, 'request_workspace', side_effect=AssertionError('the off seam resolved')):
+            assert getattr(seam, function)(event, fresh=True) is seam.DEPLOYMENT
+
+
+def test_an_off_seam_is_not_followed_but_its_resolution_is_there():
+    """The projects API's middleware reaches the resolver only through the off seam: with the seam followed, every
+    project route would read as workspace-scoped, so the skip is what keeps them pending, and nothing else."""
+    reaching = routes_reaching_the_resolver(API_DIR.parent, INSTANCE_RESOLVER_FILES)
+    assert not {route for route in reaching if route[0] == 'projects_handler.py'}
+    with patch.dict(SEAMS_OFF, clear=True):
+        followed = routes_reaching_the_resolver(API_DIR.parent, INSTANCE_RESOLVER_FILES)
+    assert ('projects_handler.py', 'GET /projects/<project_id>') in followed
 
 
 def test_the_scan_follows_a_module_wide_middleware_that_resolves(tmp_path):

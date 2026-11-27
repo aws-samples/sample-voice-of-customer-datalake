@@ -106,26 +106,26 @@ class TestTheRoute:
     def test_protect_then_release(self, world):
         world.seed({'p1': ('Ada Moreno', False)})
 
-        assert projects.set_persona_protection(PROJECT, 'p1', {'protected': True}) == {
+        assert projects.set_persona_protection(PROJECT, 'p1', {'protected': True}, workspace=None) == {
             'success': True, 'persona_id': 'p1', 'protected': True}
         assert world.personas()['p1']['protected'] is True
-        projects.set_persona_protection(PROJECT, 'p1', {'protected': False})
+        projects.set_persona_protection(PROJECT, 'p1', {'protected': False}, workspace=None)
         assert world.personas()['p1']['protected'] is False
 
     @pytest.mark.parametrize('body', [{}, {'protected': 'false'}, {'protected': 1}, {'protected': None}])
     def test_anything_but_a_real_boolean_is_refused(self, world, body):
         world.seed({'p1': ('Ada Moreno', False)})
         with pytest.raises(ValidationError, match='protected must be true or false'):
-            projects.set_persona_protection(PROJECT, 'p1', body)
+            projects.set_persona_protection(PROJECT, 'p1', body, workspace=None)
         assert 'protected' not in world.personas()['p1']
 
     def test_a_persona_the_project_does_not_have_is_404_and_writes_nothing(self, world):
         world.seed({})
         with pytest.raises(NotFoundError):
-            projects.set_persona_protection(PROJECT, 'missing', {'protected': True})
+            projects.set_persona_protection(PROJECT, 'missing', {'protected': True}, workspace=None)
         assert world.personas() == {}
 
     def test_an_ordinary_persona_edit_cannot_change_protection(self, world):
         world.seed({'p1': ('Ada Moreno', True)})
-        projects.update_persona(PROJECT, 'p1', {'name': 'Ada M.', 'protected': False})
+        projects.update_persona(PROJECT, 'p1', {'name': 'Ada M.', 'protected': False}, workspace=None)
         assert world.personas()['p1']['protected'] is True

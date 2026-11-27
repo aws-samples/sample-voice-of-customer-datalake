@@ -801,7 +801,8 @@ class TestOwnerTransferSafety:
             pytest.raises(projects.ConflictError, match='Project ownership changed; reload and retry'),
         ):
             projects.transfer_project_owner(
-                'p1', {'sub': 'stranger-sub'}, project_access.Caller(subject=OWNER['sub']),
+                'p1', {'sub': 'stranger-sub'}, project_access.Caller(subject=OWNER['sub']), workspace=None,
+                membership=None,
             )
         assert _meta(table)['owner_sub'] == VIEWER['sub']
 
@@ -813,10 +814,10 @@ class TestOwnerTransferSafety:
         real_read = projects.read_project_meta
         reads = []
 
-        def read_then_lose_ownership(project_id):
+        def read_then_lose_ownership(project_id, *, workspace):
             # Passes the gate and the fresh read as OLIVIA, then a concurrent
             # transfer lands before this request's conditional write.
-            meta = real_read(project_id)
+            meta = real_read(project_id, workspace=workspace)
             if not reads:
                 table.update_item(Key={'pk': 'PROJECT#p1', 'sk': 'META'},
                                   UpdateExpression='SET owner_sub = :v',
@@ -962,7 +963,7 @@ class TestTheInternalReadCarriesNoEmail:
                               EDITOR['sub']: _member(EDITOR, 'editor')},
               filters={'sources': ['webscraper']})
         with patch.object(projects, 'projects_table', table):
-            project = projects.get_project('p1')['project']
+            project = projects.get_project('p1', workspace=None, membership=None)['project']
 
         assert _emails_in(project) == []
         assert 'owner_email' not in project
@@ -976,7 +977,7 @@ class TestTheInternalReadCarriesNoEmail:
 
         _seed(table, members={VIEWER['sub']: _member(VIEWER, 'viewer')})
         with patch.object(projects, 'projects_table', table):
-            projects.get_project('p1')
+            projects.get_project('p1', workspace=None, membership=None)
 
         stored = table.get_item(Key={'pk': 'PROJECT#p1', 'sk': 'META'})['Item']
         assert stored['owner_email'] == OWNER['email']
@@ -1001,7 +1002,8 @@ class TestGetProjectSigning:
             patch.object(projects, 'prototype_signed_url') as prototype_signer,
             pytest.raises(projects.NotFoundError),
         ):
-            projects.get_project('p1', project_access.Caller(subject=STRANGER['sub']))
+            projects.get_project('p1', project_access.Caller(subject=STRANGER['sub']), workspace=None,
+                                 membership=None)
 
         avatar_signer.assert_not_called()
         prototype_signer.assert_not_called()
@@ -1015,7 +1017,8 @@ class TestGetProjectSigning:
             patch.object(projects, 'get_avatar_cdn_url', return_value='https://cdn/a') as avatar,
             patch.object(projects, 'prototype_signed_url', return_value='https://cdn/p') as proto,
         ):
-            result = projects.get_project('p1', project_access.Caller(subject=VIEWER['sub']))
+            result = projects.get_project('p1', project_access.Caller(subject=VIEWER['sub']), workspace=None,
+                                          membership=None)
 
         assert result['personas'][0]['avatar_url'] == 'https://cdn/a'
         assert result['documents'][0]['prototype_url'] == 'https://cdn/p'
@@ -1056,7 +1059,8 @@ class TestListProjectsPagination:
         table = MagicMock()
         table.query.side_effect = query
         with patch.object(projects, 'projects_table', table):
-            result = projects.list_projects(project_access.Caller(subject=STRANGER['sub']))
+            result = projects.list_projects(project_access.Caller(subject=STRANGER['sub']), workspace=None,
+                                            membership=None)
 
         counts = {p['project_id']: (p['persona_count'], p['document_count'])
                   for p in result['projects']}

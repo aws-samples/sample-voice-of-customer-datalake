@@ -224,12 +224,12 @@ class TestDuplicateDocument:
     @pytest.mark.usefixtures('no_table')
     def test_without_a_table_the_refusal_names_it(self):
         with pytest.raises(ConfigurationError) as exc:
-            projects.duplicate_document('src', 'd1', 'dst')
+            projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         assert str(exc.value) == TABLE_NOT_CONFIGURED
 
     def test_the_same_project_is_refused_before_any_read(self, table):
         with pytest.raises(ValidationError) as exc:
-            projects.duplicate_document('src', 'd1', 'src')
+            projects.duplicate_document('src', 'd1', 'src', workspace=None)
         assert str(exc.value) == 'target_project_id must name a different project'
         table.get_item.assert_not_called()
 
@@ -237,8 +237,8 @@ class TestDuplicateDocument:
         table.get_item.return_value = {'Item': _source('DOC#d1')}
         with patch.object(projects, '_find_document', return_value={'sk': 'DOC#d1'}) as find, \
                 patch.object(projects, 'put_project_item_and_increment'):
-            projects.duplicate_document('src', 'd1', 'dst')
-        find.assert_called_once_with('src', 'd1')
+            projects.duplicate_document('src', 'd1', 'dst', workspace=None)
+        find.assert_called_once_with('src', 'd1', None)
         table.get_item.assert_called_once_with(
             Key={'pk': 'PROJECT#src', 'sk': 'DOC#d1'}, ConsistentRead=True,
         )
@@ -248,14 +248,14 @@ class TestDuplicateDocument:
         table.get_item.return_value = {'Item': item}
         with patch.object(projects, '_find_document', return_value={'sk': 'DOC#d1'}), \
                 pytest.raises(NotFoundError) as exc:
-            projects.duplicate_document('src', 'd1', 'dst')
+            projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         assert str(exc.value) == 'Document not found'
 
     def test_a_custom_copy_drops_identity_fields_and_derives_its_id(self, table):
         table.get_item.return_value = {'Item': _source('DOC#d1')}
         with patch.object(projects, '_find_document', return_value={'sk': 'DOC#d1'}), \
                 patch.object(projects, 'put_project_item_and_increment') as put:
-            result = projects.duplicate_document('src', 'd1', 'dst')
+            result = projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         expected_item = {
             'document_type': 'custom',
             'content': 'body',
@@ -279,7 +279,7 @@ class TestDuplicateDocument:
         table.get_item.return_value = {'Item': _source('RESEARCH#d1', title='')}
         with patch.object(projects, '_find_document', return_value={'sk': 'RESEARCH#d1'}), \
                 patch.object(projects, 'put_project_item_and_increment') as put:
-            projects.duplicate_document('src', 'd1', 'dst')
+            projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         item = put.call_args.args[2]
         assert (item['sk'], item['title']) == (f'RESEARCH#dup_{CUSTOM_DIGEST}', 'Untitled')
 
@@ -289,7 +289,7 @@ class TestDuplicateDocument:
         with patch.object(projects, '_find_document', return_value={'sk': 'DOC#d1'}), \
                 patch.object(projects, 'put_project_item_and_increment',
                              side_effect=_client_error('TransactionCanceledException')):
-            result = projects.duplicate_document('src', 'd1', 'dst')
+            result = projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         assert table.get_item.call_args_list[1] == call(
             Key={'pk': 'PROJECT#dst', 'sk': f'DOC#dup_{CUSTOM_DIGEST}'}, ConsistentRead=True,
         )
@@ -303,7 +303,7 @@ class TestDuplicateDocument:
         with patch.object(projects, '_find_document', return_value={'sk': 'DOC#d1'}), \
                 patch.object(projects, 'put_project_item_and_increment', side_effect=error), \
                 pytest.raises(ServiceError) as exc:
-            projects.duplicate_document('src', 'd1', 'dst')
+            projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         assert str(exc.value) == 'The target project is not accepting documents'
         assert exc.value.__cause__ is error
 
@@ -313,7 +313,7 @@ class TestDuplicateDocument:
         with patch.object(projects, '_find_document', return_value={'sk': 'DOC#d1'}), \
                 patch.object(projects, 'put_project_item_and_increment', side_effect=error), \
                 pytest.raises(ClientError) as exc:
-            projects.duplicate_document('src', 'd1', 'dst')
+            projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         assert exc.value is error
         assert table.get_item.call_count == 1
 
@@ -326,7 +326,7 @@ class TestDuplicateDocument:
         with patch.object(projects, '_find_document', return_value={'sk': sk}), \
                 patch.object(projects, 'persist_versioned_document', return_value=persisted) as persist, \
                 patch.object(projects, 'put_project_item_and_increment') as put:
-            result = projects.duplicate_document('src', 'd1', 'dst')
+            result = projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         put.assert_not_called()
         persist.assert_called_once_with(table, 'dst', doc_type, 'Base', 'duplicate:src:d1', {
             'document_type': 'custom', 'content': 'body',
@@ -346,7 +346,7 @@ class TestDuplicateDocument:
         table.get_item.return_value = {'Item': _source('PRD#d1', **fields)}
         with patch.object(projects, '_find_document', return_value={'sk': 'PRD#d1'}), \
                 patch.object(projects, 'persist_versioned_document', return_value={}) as persist:
-            projects.duplicate_document('src', 'd1', 'dst')
+            projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         assert persist.call_args.args[3] == title
 
     def test_a_prototype_copy_is_returned_when_the_allocation_already_exists(self, table):
@@ -357,7 +357,7 @@ class TestDuplicateDocument:
                              return_value=existing) as lookup, \
                 patch.object(projects, '_copy_prototype_html') as copy_html, \
                 patch.object(projects, 'persist_versioned_document') as persist:
-            result = projects.duplicate_document('src', 'd1', 'dst')
+            result = projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         lookup.assert_called_once_with(table, 'dst', 'prototype', 'duplicate:src:d1', workspace=None)
         copy_html.assert_not_called()
         persist.assert_not_called()
@@ -374,7 +374,7 @@ class TestDuplicateDocument:
                 patch.object(projects, '_copy_prototype_html',
                              return_value={'prototype_etag': 'E'}) as copy_html, \
                 patch.object(projects, 'persist_versioned_document', return_value={}) as persist:
-            projects.duplicate_document('src', 'd1', 'dst')
+            projects.duplicate_document('src', 'd1', 'dst', workspace=None)
         new_id.assert_called_once_with('dst', 'prototype', 'duplicate:src:d1')
         copy_html.assert_called_once_with('src', 'd1', 'dst', 'proto_new')
         fields = persist.call_args.args[5]
@@ -397,11 +397,11 @@ class TestUpdatePersona:
     @pytest.mark.usefixtures('no_table')
     def test_without_a_table_the_refusal_names_it(self):
         with pytest.raises(ConfigurationError) as exc:
-            projects.update_persona('p1', 'per_1', {})
+            projects.update_persona('p1', 'per_1', {}, workspace=None)
         assert str(exc.value) == TABLE_NOT_CONFIGURED
 
     def test_every_field_is_aliased_in_declaration_order(self, table):
-        result = projects.update_persona('p1', 'per_1', dict(FULL_PERSONA_UPDATE))
+        result = projects.update_persona('p1', 'per_1', dict(FULL_PERSONA_UPDATE), workspace=None)
         fields = list(FULL_PERSONA_UPDATE)
         assert _only_kwargs(table.update_item) == {
             'Key': PERSONA_KEY,
@@ -417,7 +417,7 @@ class TestUpdatePersona:
         assert result == {'success': True}
 
     def test_with_no_known_field_only_the_timestamp_moves_and_no_names_are_sent(self, table):
-        projects.update_persona('p1', 'per_1', {'persona_id': 'forged', 'pk': 'x'})
+        projects.update_persona('p1', 'per_1', {'persona_id': 'forged', 'pk': 'x'}, workspace=None)
         assert _only_kwargs(table.update_item) == {
             'Key': PERSONA_KEY,
             'UpdateExpression': 'SET updated_at = :now',
@@ -429,14 +429,14 @@ class TestUpdatePersona:
         ('AdaMoreno', 'Ada Moreno'), ('Ada', 'Ada'), ('', ''),
     ])
     def test_a_camel_cased_name_is_spaced_and_an_empty_one_left_alone(self, table, name, stored):
-        projects.update_persona('p1', 'per_1', {'name': name})
+        projects.update_persona('p1', 'per_1', {'name': name}, workspace=None)
         assert table.update_item.call_args.kwargs['ExpressionAttributeValues'][':name'] == stored
 
     def test_a_failed_write_is_logged_with_its_cause_and_reported(self, table, log):
         error = RuntimeError('boom')
         table.update_item.side_effect = error
         with pytest.raises(ServiceError) as exc:
-            projects.update_persona('p1', 'per_1', {'tagline': 't'})
+            projects.update_persona('p1', 'per_1', {'tagline': 't'}, workspace=None)
         assert str(exc.value) == 'Failed to update persona'
         assert exc.value.__cause__ is error
         log.exception.assert_called_once_with('Failed to update persona: boom')
@@ -446,18 +446,18 @@ class TestAddPersonaNote:
     @pytest.mark.usefixtures('no_table')
     def test_without_a_table_the_refusal_names_it(self):
         with pytest.raises(ConfigurationError) as exc:
-            projects.add_persona_note('p1', 'per_1', {'text': 'x'})
+            projects.add_persona_note('p1', 'per_1', {'text': 'x'}, workspace=None)
         assert str(exc.value) == TABLE_NOT_CONFIGURED
 
     @pytest.mark.parametrize('body', [{}, {'text': ''}])
     def test_an_empty_note_is_refused_before_any_write(self, table, body):
         with pytest.raises(ValidationError) as exc:
-            projects.add_persona_note('p1', 'per_1', body)
+            projects.add_persona_note('p1', 'per_1', body, workspace=None)
         assert str(exc.value) == 'Note text is required'
         table.update_item.assert_not_called()
 
     def test_the_note_is_appended_with_its_defaults(self, table):
-        result = projects.add_persona_note('p1', 'per_1', {'text': 'Spoke to 3 users'})
+        result = projects.add_persona_note('p1', 'per_1', {'text': 'Spoke to 3 users'}, workspace=None)
         note = {
             'note_id': f'note_{ID}', 'text': 'Spoke to 3 users', 'author': 'anonymous',
             'created_at': NOW, 'updated_at': None, 'tags': [],
@@ -476,7 +476,7 @@ class TestAddPersonaNote:
     @pytest.mark.usefixtures('table')
     def test_author_and_tags_are_taken_from_the_body(self):
         note = projects.add_persona_note(
-            'p1', 'per_1', {'text': 'x', 'author': 'ada', 'tags': ['ux']},
+            'p1', 'per_1', {'text': 'x', 'author': 'ada', 'tags': ['ux']}, workspace=None,
         )['note']
         assert (note['author'], note['tags']) == ('ada', ['ux'])
 
@@ -484,7 +484,7 @@ class TestAddPersonaNote:
         error = RuntimeError('boom')
         table.update_item.side_effect = error
         with pytest.raises(ServiceError) as exc:
-            projects.add_persona_note('p1', 'per_1', {'text': 'x'})
+            projects.add_persona_note('p1', 'per_1', {'text': 'x'}, workspace=None)
         assert str(exc.value) == 'Failed to add note'
         assert exc.value.__cause__ is error
         log.exception.assert_called_once_with('Failed to add persona note: boom')
@@ -843,13 +843,13 @@ class TestReadProjectMeta:
     @pytest.mark.usefixtures('no_table')
     def test_without_a_table_the_refusal_names_it(self):
         with pytest.raises(ConfigurationError) as exc:
-            projects.read_project_meta('p1')
+            projects.read_project_meta('p1', workspace=None)
         assert str(exc.value) == TABLE_NOT_CONFIGURED
 
     def test_a_consistent_read_of_the_meta_row(self, table):
         meta = {**META_KEY, 'name': 'Atlas'}
         table.get_item.return_value = {'Item': meta}
-        assert projects.read_project_meta('p1') == meta
+        assert projects.read_project_meta('p1', workspace=None) == meta
         table.get_item.assert_called_once_with(Key=META_KEY, ConsistentRead=True)
 
     @pytest.mark.parametrize('response', [
@@ -860,14 +860,14 @@ class TestReadProjectMeta:
     def test_missing_malformed_or_tombstoned_is_not_found(self, table, response):
         table.get_item.return_value = response
         with pytest.raises(NotFoundError) as exc:
-            projects.read_project_meta('p1')
+            projects.read_project_meta('p1', workspace=None)
         assert str(exc.value) == 'Project not found'
 
 
 class TestGuardedMetaUpdate:
     def test_without_a_condition_the_writable_fence_alone_guards(self, table):
         table.update_item.return_value = {'Attributes': {}}
-        result = projects._guarded_meta_update('p1', 'SET a = :a', values={':a': 1})
+        result = projects._guarded_meta_update('p1', 'SET a = :a', workspace=None, values={':a': 1})
         assert _only_kwargs(table.update_item) == {
             'Key': META_KEY,
             'UpdateExpression': 'SET a = :a',
@@ -880,7 +880,7 @@ class TestGuardedMetaUpdate:
 
     def test_a_condition_is_anded_in_parentheses_and_names_merged(self, table):
         projects._guarded_meta_update(
-            'p1', 'SET #x = :x', condition='attribute_exists(#x)', names={'#x': 'x'},
+            'p1', 'SET #x = :x', workspace=None, condition='attribute_exists(#x)', names={'#x': 'x'},
             values={':x': 2}, return_values='ALL_NEW',
         )
         kwargs = table.update_item.call_args.kwargs
@@ -893,22 +893,22 @@ class TestGuardedMetaUpdate:
         error = _client_error('ConditionalCheckFailedException')
         table.update_item.side_effect = error
         with pytest.raises(ClientError) as exc:
-            projects._guarded_meta_update('p1', 'SET a = :a')
+            projects._guarded_meta_update('p1', 'SET a = :a', workspace=None)
         assert exc.value is error
 
 
 class TestEnsureMembersMap:
     def test_an_existing_map_needs_no_write(self):
         with patch.object(projects, '_guarded_meta_update') as update:
-            assert projects._ensure_members_map('p1', {'members': {}}) is None
+            assert projects._ensure_members_map('p1', {'members': {}}, None) is None
         update.assert_not_called()
 
     @pytest.mark.parametrize('meta', [{}, {'members': None}, {'members': []}])
     def test_a_missing_map_is_created_only_if_still_absent(self, meta):
         with patch.object(projects, '_guarded_meta_update') as update:
-            projects._ensure_members_map('p1', meta)
+            projects._ensure_members_map('p1', meta, None)
         update.assert_called_once_with(
-            'p1', 'SET #members = :empty', condition='attribute_not_exists(#members)',
+            'p1', 'SET #members = :empty', workspace=None, condition='attribute_not_exists(#members)',
             names={'#members': 'members'}, values={':empty': {}},
         )
 
@@ -916,15 +916,15 @@ class TestEnsureMembersMap:
         with patch.object(projects, '_guarded_meta_update',
                           side_effect=_client_error('ConditionalCheckFailedException')), \
                 patch.object(projects, 'read_project_meta') as read:
-            projects._ensure_members_map('p1', {})
-        read.assert_called_once_with('p1')
+            projects._ensure_members_map('p1', {}, None)
+        read.assert_called_once_with('p1', workspace=None)
 
     def test_any_other_failure_propagates(self):
         error = _client_error('ValidationException')
         with patch.object(projects, '_guarded_meta_update', side_effect=error), \
                 patch.object(projects, 'read_project_meta') as read, \
                 pytest.raises(ClientError) as exc:
-            projects._ensure_members_map('p1', {})
+            projects._ensure_members_map('p1', {}, None)
         assert exc.value is error
         read.assert_not_called()
 
@@ -933,21 +933,21 @@ class TestSetProjectVisibility:
     @pytest.mark.parametrize('body', [None, 'public', ['public']])
     def test_a_non_object_body_is_refused(self, body):
         with pytest.raises(ValidationError) as exc:
-            projects.set_project_visibility('p1', body)
+            projects.set_project_visibility('p1', body, workspace=None)
         assert str(exc.value) == 'Request body must be a JSON object'
 
     def test_an_unknown_visibility_is_refused_before_any_write(self):
         with patch.object(projects, '_guarded_meta_update') as update, \
                 pytest.raises(ValidationError) as exc:
-            projects.set_project_visibility('p1', {'visibility': 'secret'})
+            projects.set_project_visibility('p1', {'visibility': 'secret'}, workspace=None)
         assert str(exc.value) == "visibility must be 'public' or 'private'"
         update.assert_not_called()
 
     def test_the_write_and_the_answer(self):
         with patch.object(projects, '_guarded_meta_update') as update:
-            result = projects.set_project_visibility('p1', {'visibility': 'public'})
+            result = projects.set_project_visibility('p1', {'visibility': 'public'}, workspace=None)
         update.assert_called_once_with(
-            'p1', 'SET #visibility = :visibility, updated_at = :now',
+            'p1', 'SET #visibility = :visibility, updated_at = :now', workspace=None,
             names={'#visibility': 'visibility'}, values={':visibility': 'public', ':now': NOW},
         )
         assert result == {'success': True, 'visibility': 'public'}
@@ -956,7 +956,7 @@ class TestSetProjectVisibility:
         error = _client_error('ConditionalCheckFailedException')
         with patch.object(projects, '_guarded_meta_update', side_effect=error), \
                 pytest.raises(NotFoundError) as exc:
-            projects.set_project_visibility('p1', {'visibility': 'private'})
+            projects.set_project_visibility('p1', {'visibility': 'private'}, workspace=None)
         assert str(exc.value) == 'Project not found'
         assert exc.value.__cause__ is error
 
@@ -964,7 +964,7 @@ class TestSetProjectVisibility:
         error = _client_error('ValidationException')
         with patch.object(projects, '_guarded_meta_update', side_effect=error), \
                 pytest.raises(ClientError) as exc:
-            projects.set_project_visibility('p1', {'visibility': 'private'})
+            projects.set_project_visibility('p1', {'visibility': 'private'}, workspace=None)
         assert exc.value is error
 
 
@@ -1123,14 +1123,14 @@ class TestSearchMemberCandidates:
     def test_fewer_than_three_characters_are_refused_before_any_read(self, query, cognito):
         with patch.object(projects, 'read_project_meta') as read, \
                 pytest.raises(ValidationError) as exc:
-            projects.search_member_candidates('p1', query)
+            projects.search_member_candidates('p1', query, workspace=None)
         assert str(exc.value) == 'Type at least 3 characters to search for people'
         read.assert_not_called()
         cognito.list_users.assert_not_called()
 
     @pytest.mark.usefixtures('meta')
     def test_three_characters_search_username_then_email_with_the_page_size(self, cognito):
-        projects.search_member_candidates('p1', ' sam ')
+        projects.search_member_candidates('p1', ' sam ', workspace=None)
         assert cognito.list_users.call_args_list == [
             call(UserPoolId='us-east-1_testpool', Limit=20, Filter='username ^= "sam"'),
             call(UserPoolId='us-east-1_testpool', Limit=20, Filter='email ^= "sam"'),
@@ -1139,7 +1139,7 @@ class TestSearchMemberCandidates:
     @pytest.mark.usefixtures('cognito')
     def test_a_long_query_is_refused_with_the_field_name(self):
         with pytest.raises(ValidationError) as exc:
-            projects.search_member_candidates('p1', 'q' * 65)
+            projects.search_member_candidates('p1', 'q' * 65, workspace=None)
         assert str(exc.value) == 'q must be at most 64 characters'
 
     @pytest.mark.usefixtures('meta')
@@ -1150,7 +1150,7 @@ class TestSearchMemberCandidates:
             {'Users': [_cognito_user('member-sub', 'mem'), _cognito_user('zed-sub', 'Zed'),
                        _cognito_user('amy2-sub', 'amy')]},
         ]
-        result = projects.search_member_candidates('p1', 'sam')
+        result = projects.search_member_candidates('p1', 'sam', workspace=None)
         # Case-insensitive by username, then by sub: 'Zed' sorts after 'amy', not before.
         assert [(u['username'], u['sub']) for u in result['users']] == [
             ('Amy', 'amy-sub'), ('amy', 'amy2-sub'), ('Zed', 'zed-sub'),
@@ -1159,7 +1159,7 @@ class TestSearchMemberCandidates:
     def test_a_project_without_an_owner_excludes_only_members(self, cognito):
         cognito.list_users.side_effect = [{'Users': [_cognito_user('a-sub', 'a')]}, {'Users': []}]
         with patch.object(projects, 'read_project_meta', return_value={'owner_sub': None, 'members': {}}):
-            result = projects.search_member_candidates('p1', 'abc')
+            result = projects.search_member_candidates('p1', 'abc', workspace=None)
         assert [u['sub'] for u in result['users']] == ['a-sub']
 
     @pytest.mark.parametrize(('found', 'listed'), [(20, 20), (21, 20)])
@@ -1169,7 +1169,7 @@ class TestSearchMemberCandidates:
             {'Users': [_cognito_user(f'u{i:02d}', f'user{i:02d}') for i in range(found)]},
             {'Users': []},
         ]
-        result = projects.search_member_candidates('p1', 'user')
+        result = projects.search_member_candidates('p1', 'user', workspace=None)
         assert len(result['users']) == listed
         assert result['users'][-1]['sub'] == f'u{listed - 1:02d}'
 
@@ -1210,8 +1210,8 @@ MEMBERS_META = {
 class TestGetProjectMembers:
     def test_a_manager_sees_visibility_owner_members_and_their_access(self):
         with patch.object(projects, 'read_project_meta', return_value=MEMBERS_META) as read:
-            result = projects.get_project_members('p1', OWNER)
-        read.assert_called_once_with('p1')
+            result = projects.get_project_members('p1', OWNER, workspace=None, membership=None)
+        read.assert_called_once_with('p1', workspace=None)
         assert result == {
             'visibility': 'private',
             'owner': {'sub': 'owner-sub', 'username': 'olivia', 'email': 'olivia@example.com'},
@@ -1222,7 +1222,7 @@ class TestGetProjectMembers:
 
     def test_a_member_sees_no_emails(self):
         with patch.object(projects, 'read_project_meta', return_value=MEMBERS_META):
-            result = projects.get_project_members('p1', Caller(subject='editor-sub'))
+            result = projects.get_project_members('p1', Caller(subject='editor-sub'), workspace=None, membership=None)
         assert result['owner'] == {'sub': 'owner-sub', 'username': 'olivia'}
         assert 'email' not in result['members'][0]
         assert result['access'] == {'role': 'editor', 'can_view': True, 'can_edit': True,
@@ -1263,26 +1263,26 @@ class TestAddProjectMember:
     @pytest.mark.parametrize('body', [None, 'x', []])
     def test_a_non_object_body_is_refused(self, body):
         with pytest.raises(ValidationError) as exc:
-            projects.add_project_member('p1', body, OWNER)
+            projects.add_project_member('p1', body, OWNER, workspace=None)
         assert str(exc.value) == 'Request body must be a JSON object'
 
     def test_the_sub_is_validated_before_the_role_and_both_before_any_read(self, env):
         with pytest.raises(ValidationError) as exc:
-            projects.add_project_member('p1', {'sub': '', 'role': 'owner'}, OWNER)
+            projects.add_project_member('p1', {'sub': '', 'role': 'owner'}, OWNER, workspace=None)
         assert str(exc.value) == 'sub must identify a user'
         with pytest.raises(ValidationError) as exc:
-            projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'owner'}, OWNER)
+            projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'owner'}, OWNER, workspace=None)
         assert str(exc.value) == "role must be 'viewer' or 'editor'"
         env['read'].assert_not_called()
 
     def test_the_entry_the_write_and_the_answer(self, env):
-        result = projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'viewer'}, OWNER)
+        result = projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'viewer'}, OWNER, workspace=None)
         entry = {'role': 'viewer', 'username': 'sam', 'email': 'sam@example.com',
                  'added_by': 'owner-sub', 'added_at': NOW}
         env['resolve'].assert_called_once_with('new-sub')
-        env['ensure'].assert_called_once_with('p1', MEMBERS_META)
+        env['ensure'].assert_called_once_with('p1', MEMBERS_META, None)
         env['update'].assert_called_once_with(
-            'p1', 'SET #members.#sub = :entry, updated_at = :now',
+            'p1', 'SET #members.#sub = :entry, updated_at = :now', workspace=None,
             condition=(
                 'attribute_not_exists(#members.#sub) AND size(#members) < :max '
                 'AND (attribute_not_exists(owner_sub) OR owner_sub <> :sub)'
@@ -1294,7 +1294,7 @@ class TestAddProjectMember:
 
     def test_a_refusal_from_the_read_stops_before_the_directory_lookup(self, env):
         with pytest.raises(ConflictError) as exc:
-            projects.add_project_member('p1', {'sub': 'editor-sub', 'role': 'viewer'}, OWNER)
+            projects.add_project_member('p1', {'sub': 'editor-sub', 'role': 'viewer'}, OWNER, workspace=None)
         assert str(exc.value) == 'User is already a member of this project'
         env['resolve'].assert_not_called()
         env['update'].assert_not_called()
@@ -1303,15 +1303,15 @@ class TestAddProjectMember:
         env['update'].side_effect = _client_error('ConditionalCheckFailedException')
         env['read'].side_effect = [dict(MEMBERS_META), {**MEMBERS_META, 'owner_sub': 'new-sub'}]
         with pytest.raises(ConflictError) as exc:
-            projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'viewer'}, OWNER)
+            projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'viewer'}, OWNER, workspace=None)
         assert str(exc.value) == 'User already owns this project'
-        assert env['read'].call_args_list == [call('p1'), call('p1')]
+        assert env['read'].call_args_list == [call('p1', workspace=None), call('p1', workspace=None)]
 
     def test_losing_the_race_without_a_visible_reason_asks_for_a_retry(self, env):
         error = _client_error('ConditionalCheckFailedException')
         env['update'].side_effect = error
         with pytest.raises(ConflictError) as exc:
-            projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'viewer'}, OWNER)
+            projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'viewer'}, OWNER, workspace=None)
         assert str(exc.value) == 'Project changed while adding the member; please retry'
         assert exc.value.__cause__ is error
 
@@ -1319,7 +1319,7 @@ class TestAddProjectMember:
         error = _client_error('ValidationException')
         env['update'].side_effect = error
         with pytest.raises(ClientError) as exc:
-            projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'viewer'}, OWNER)
+            projects.add_project_member('p1', {'sub': 'new-sub', 'role': 'viewer'}, OWNER, workspace=None)
         assert exc.value is error
         assert env['read'].call_count == 1
 
@@ -1328,13 +1328,13 @@ class TestUpdateProjectMember:
     @pytest.mark.parametrize('body', [None, 'x'])
     def test_a_non_object_body_is_refused(self, body):
         with pytest.raises(ValidationError) as exc:
-            projects.update_project_member('p1', 'editor-sub', body)
+            projects.update_project_member('p1', 'editor-sub', body, workspace=None)
         assert str(exc.value) == 'Request body must be a JSON object'
 
     def test_the_role_is_validated_before_any_write(self):
         with patch.object(projects, '_guarded_meta_update') as update, \
                 pytest.raises(ValidationError) as exc:
-            projects.update_project_member('p1', 'editor-sub', {'role': 'owner'})
+            projects.update_project_member('p1', 'editor-sub', {'role': 'owner'}, workspace=None)
         assert str(exc.value) == "role must be 'viewer' or 'editor'"
         update.assert_not_called()
 
@@ -1343,9 +1343,9 @@ class TestUpdateProjectMember:
                                                  'added_by': 'owner-sub', 'added_at': 'then'}}}
         with patch.object(projects, '_guarded_meta_update',
                           return_value={'Attributes': attributes}) as update:
-            result = projects.update_project_member('p1', 'editor-sub', {'role': 'viewer'})
+            result = projects.update_project_member('p1', 'editor-sub', {'role': 'viewer'}, workspace=None)
         update.assert_called_once_with(
-            'p1', 'SET #members.#sub.#role = :role, updated_at = :now',
+            'p1', 'SET #members.#sub.#role = :role, updated_at = :now', workspace=None,
             condition='attribute_exists(#members.#sub)',
             names={'#members': 'members', '#sub': 'editor-sub', '#role': 'role'},
             values={':role': 'viewer', ':now': NOW},
@@ -1360,7 +1360,7 @@ class TestUpdateProjectMember:
     def test_a_row_that_came_back_without_the_member_is_not_found(self, response):
         with patch.object(projects, '_guarded_meta_update', return_value=response), \
                 pytest.raises(NotFoundError) as exc:
-            projects.update_project_member('p1', 'editor-sub', {'role': 'viewer'})
+            projects.update_project_member('p1', 'editor-sub', {'role': 'viewer'}, workspace=None)
         assert str(exc.value) == 'Member not found'
 
 
@@ -1377,7 +1377,7 @@ class TestRemoveProjectMember:
     def test_only_a_manager_or_the_member_in_person_may_remove(self, caller):
         with patch.object(projects, '_guarded_meta_update') as update, \
                 pytest.raises(AuthorizationError) as exc:
-            projects.remove_project_member('p1', 'editor-sub', caller, VIEW)
+            projects.remove_project_member('p1', 'editor-sub', caller, VIEW, workspace=None)
         assert str(exc.value) == 'You do not have permission to manage this project'
         update.assert_not_called()
 
@@ -1385,9 +1385,9 @@ class TestRemoveProjectMember:
     def test_leaving_or_managing_removes_the_member(self, caller):
         access = MANAGE if caller.subject == 'owner-sub' else VIEW
         with patch.object(projects, '_guarded_meta_update') as update:
-            result = projects.remove_project_member('p1', 'editor-sub', caller, access)
+            result = projects.remove_project_member('p1', 'editor-sub', caller, access, workspace=None)
         update.assert_called_once_with(
-            'p1', 'REMOVE #members.#sub SET updated_at = :now',
+            'p1', 'REMOVE #members.#sub SET updated_at = :now', workspace=None,
             condition='attribute_exists(#members.#sub)',
             names={'#members': 'members', '#sub': 'editor-sub'},
             values={':now': NOW},
@@ -1397,15 +1397,16 @@ class TestRemoveProjectMember:
     def test_a_nameless_member_cannot_be_left_by_a_nameless_caller(self):
         with patch.object(projects, '_guarded_meta_update') as update, \
                 pytest.raises(AuthorizationError):
-            projects.remove_project_member('p1', '', Caller(subject=''), VIEW)
+            projects.remove_project_member('p1', '', Caller(subject=''), VIEW, workspace=None)
         update.assert_not_called()
 
 
 # The two member writes guarded by `attribute_exists(#members.#sub)`; each must translate a failed
 # condition the same way, so the failure cases run once per write.
 MEMBER_WRITES = [
-    pytest.param(lambda: projects.update_project_member('p1', 'editor-sub', {'role': 'viewer'}), id='update'),
-    pytest.param(lambda: projects.remove_project_member('p1', 'editor-sub', OWNER, MANAGE), id='remove'),
+    pytest.param(lambda: projects.update_project_member('p1', 'editor-sub', {'role': 'viewer'}, workspace=None), id='update'),
+    pytest.param(lambda: projects.remove_project_member('p1', 'editor-sub', OWNER, MANAGE, workspace=None),
+                 id='remove'),
 ]
 
 
@@ -1418,7 +1419,7 @@ class TestAGuardedMemberWriteThatFails:
                 patch.object(projects, 'read_project_meta') as read, \
                 pytest.raises(NotFoundError) as exc:
             write()
-        read.assert_called_once_with('p1')
+        read.assert_called_once_with('p1', workspace=None)
         assert str(exc.value) == 'Member not found'
         assert exc.value.__cause__ is error
 
@@ -1453,7 +1454,7 @@ class TestNewOwnerIdentity:
 
 class TestOwnerTransferUpdate:
     def test_a_previous_owner_and_a_non_admin_caller(self):
-        assert projects._owner_transfer_update(PREVIOUS, NEW_OWNER, OWNER, NOW) == (
+        assert projects._owner_transfer_update(PREVIOUS, NEW_OWNER, OWNER, NOW, is_admin=False) == (
             f'{TRANSFER_SET}, #members.#prev = :prev_entry REMOVE #members.#new',
             ('owner_sub = :prev_sub AND (attribute_exists(#members.#new) OR size(#members) < :max) '
             'AND owner_sub = :caller_sub'),
@@ -1465,7 +1466,7 @@ class TestOwnerTransferUpdate:
 
     def test_a_previous_owner_and_an_admin_caller(self):
         update, condition, _, values = projects._owner_transfer_update(
-            PREVIOUS, NEW_OWNER, ADMIN, NOW,
+            PREVIOUS, NEW_OWNER, ADMIN, NOW, is_admin=True,
         )
         assert update == f'{TRANSFER_SET}, #members.#prev = :prev_entry REMOVE #members.#new'
         assert condition == (
@@ -1475,7 +1476,7 @@ class TestOwnerTransferUpdate:
         assert values[':prev_entry']['added_by'] == 'admin-sub'
 
     def test_a_legacy_project_and_an_admin_caller(self):
-        assert projects._owner_transfer_update(None, NEW_OWNER, ADMIN, NOW) == (
+        assert projects._owner_transfer_update(None, NEW_OWNER, ADMIN, NOW, is_admin=True) == (
             f'{TRANSFER_SET} REMOVE #members.#new',
             'attribute_not_exists(owner_sub)',
             {'#members': 'members', '#new': 'new-sub'},
@@ -1483,7 +1484,7 @@ class TestOwnerTransferUpdate:
         )
 
     def test_a_legacy_project_and_a_non_admin_caller(self):
-        _, condition, _, values = projects._owner_transfer_update(None, NEW_OWNER, OWNER, NOW)
+        _, condition, _, values = projects._owner_transfer_update(None, NEW_OWNER, OWNER, NOW, is_admin=False)
         assert condition == 'attribute_not_exists(owner_sub) AND owner_sub = :caller_sub'
         assert values[':caller_sub'] == 'owner-sub'
 
@@ -1500,12 +1501,12 @@ class TestTransferProjectOwner:
     @pytest.mark.parametrize('body', [None, 'x'])
     def test_a_non_object_body_is_refused(self, body):
         with pytest.raises(ValidationError) as exc:
-            projects.transfer_project_owner('p1', body, OWNER)
+            projects.transfer_project_owner('p1', body, OWNER, workspace=None, membership=None)
         assert str(exc.value) == 'Request body must be a JSON object'
 
     def test_the_sub_is_validated_before_any_read(self, env):
         with pytest.raises(ValidationError) as exc:
-            projects.transfer_project_owner('p1', {'sub': 'mcp:x'}, OWNER)
+            projects.transfer_project_owner('p1', {'sub': 'mcp:x'}, OWNER, workspace=None, membership=None)
         assert str(exc.value) == 'sub must identify a user'
         env['read'].assert_not_called()
 
@@ -1516,64 +1517,64 @@ class TestTransferProjectOwner:
     def test_a_non_admin_who_no_longer_owns_the_project_is_told_it_changed(self, env, meta):
         env['read'].return_value = meta
         with pytest.raises(ConflictError) as exc:
-            projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER)
+            projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER, workspace=None, membership=None)
         assert str(exc.value) == 'Project ownership changed; reload and retry'
         assert projects.OWNERSHIP_CHANGED_MESSAGE == 'Project ownership changed; reload and retry'
         env['update'].assert_not_called()
 
     def test_handing_over_to_the_current_owner_writes_nothing(self, env):
-        result = projects.transfer_project_owner('p1', {'sub': 'owner-sub'}, OWNER)
+        result = projects.transfer_project_owner('p1', {'sub': 'owner-sub'}, OWNER, workspace=None, membership=None)
         assert result == {'success': True, 'owner': PREVIOUS}
         env['identity'].assert_not_called()
         env['ensure'].assert_not_called()
         env['update'].assert_not_called()
 
     def test_the_compare_and_swap_is_built_against_the_read_and_the_write_is_fenced(self, env):
-        expected = projects._owner_transfer_update(PREVIOUS, NEW_OWNER, OWNER, NOW)
-        result = projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER)
+        expected = projects._owner_transfer_update(PREVIOUS, NEW_OWNER, OWNER, NOW, is_admin=False)
+        result = projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER, workspace=None, membership=None)
         env['identity'].assert_called_once_with('new-sub')
-        env['ensure'].assert_called_once_with('p1', MEMBERS_META)
+        env['ensure'].assert_called_once_with('p1', MEMBERS_META, None)
         env['update'].assert_called_once_with(
-            'p1', expected[0], condition=expected[1], names=expected[2], values=expected[3],
+            'p1', expected[0], workspace=None, condition=expected[1], names=expected[2], values=expected[3],
         )
         assert result == {'success': True, 'owner': NEW_OWNER}
 
     def test_a_full_project_refuses_an_outsider_before_the_directory_lookup(self, env):
         env['read'].return_value = {**MEMBERS_META, 'members': _full(CAP)}
         with pytest.raises(ValidationError) as exc:
-            projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER)
+            projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER, workspace=None, membership=None)
         assert str(exc.value) == f'A project can have at most {CAP} members'
         env['identity'].assert_not_called()
 
     def test_a_full_project_still_hands_over_to_a_member(self, env):
         env['read'].return_value = {**MEMBERS_META, 'members': {**_full(CAP - 1), 'new-sub': {'role': 'viewer'}}}
-        assert projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER)['success'] is True
+        assert projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER, workspace=None, membership=None)['success'] is True
 
     def test_ninety_nine_members_accept_an_outsider(self, env):
         env['read'].return_value = {**MEMBERS_META, 'members': _full(CAP - 1)}
-        assert projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER)['success'] is True
+        assert projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER, workspace=None, membership=None)['success'] is True
 
     def test_a_legacy_project_has_no_previous_owner_to_re_add_so_no_cap_applies(self, env):
         env['read'].return_value = {**META_KEY, 'members': _full(CAP)}
-        expected = projects._owner_transfer_update(None, NEW_OWNER, ADMIN, NOW)
-        projects.transfer_project_owner('p1', {'sub': 'new-sub'}, ADMIN)
+        expected = projects._owner_transfer_update(None, NEW_OWNER, ADMIN, NOW, is_admin=True)
+        projects.transfer_project_owner('p1', {'sub': 'new-sub'}, ADMIN, workspace=None, membership=None)
         env['update'].assert_called_once_with(
-            'p1', expected[0], condition=expected[1], names=expected[2], values=expected[3],
+            'p1', expected[0], workspace=None, condition=expected[1], names=expected[2], values=expected[3],
         )
 
     def test_losing_the_race_re_reads_then_reports_the_change(self, env):
         error = _client_error('ConditionalCheckFailedException')
         env['update'].side_effect = error
         with pytest.raises(ConflictError) as exc:
-            projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER)
+            projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER, workspace=None, membership=None)
         assert str(exc.value) == 'Project ownership changed; reload and retry'
         assert exc.value.__cause__ is error
-        assert env['read'].call_args_list == [call('p1'), call('p1')]
+        assert env['read'].call_args_list == [call('p1', workspace=None), call('p1', workspace=None)]
 
     def test_any_other_failure_propagates_without_a_re_read(self, env):
         error = _client_error('ValidationException')
         env['update'].side_effect = error
         with pytest.raises(ClientError) as exc:
-            projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER)
+            projects.transfer_project_owner('p1', {'sub': 'new-sub'}, OWNER, workspace=None, membership=None)
         assert exc.value is error
         assert env['read'].call_count == 1

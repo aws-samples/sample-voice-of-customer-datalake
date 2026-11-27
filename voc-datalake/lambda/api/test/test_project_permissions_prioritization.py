@@ -97,7 +97,7 @@ class TestComposingNeedsEditOnTheProject:
         _, projects = tables
         with patch.object(projects_handler, 'get_projects_table', return_value=projects):
             access = projects_handler._project_access_for(
-                'legacy', Caller(subject=STRANGER), 'edit')
+                'legacy', Caller(subject=STRANGER), 'edit', projects_handler.DEPLOYMENT)
         assert access.can_edit
 
     def test_the_default_row_create_is_gated_the_same_way(self, tables):
@@ -204,7 +204,7 @@ class TestTheBatchedAccessRead:
             projects.put_item(Item={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
         with patch.object(projects_handler, 'get_projects_table', return_value=projects):
             viewable = projects_handler._viewable_project_ids(
-                [*ids, 'priv', 'missing'], Caller(subject=STRANGER))
+                [*ids, 'priv', 'missing'], Caller(subject=STRANGER), projects_handler.DEPLOYMENT)
         assert viewable == set(ids)
 
     def _stub_table(self, *responses):
@@ -224,7 +224,7 @@ class TestTheBatchedAccessRead:
             {'Responses': {'t': [{'pk': 'PROJECT#b'}]}, 'UnprocessedKeys': {}},
         )
         with patch.object(projects_handler.time, 'sleep'):
-            metas = projects_handler._gate_meta_batch_chunk(table, ['a', 'b'])
+            metas = projects_handler._gate_meta_batch_chunk(table, ['a', 'b'], None)
         assert set(metas) == {'a', 'b'}
         assert client.batch_get_item.call_count == 2
 
@@ -236,4 +236,4 @@ class TestTheBatchedAccessRead:
                  'UnprocessedKeys': {'t': {'Keys': [{'pk': 'PROJECT#a', 'sk': 'META'}]}}}
         table, _ = self._stub_table(*[stuck] * projects_handler._GATE_BATCH_ATTEMPTS)
         with patch.object(projects_handler.time, 'sleep'), pytest.raises(ServiceError):
-            projects_handler._gate_meta_batch_chunk(table, ['a'])
+            projects_handler._gate_meta_batch_chunk(table, ['a'], None)

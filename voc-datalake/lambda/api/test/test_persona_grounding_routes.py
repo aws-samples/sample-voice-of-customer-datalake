@@ -112,7 +112,8 @@ class TestFocusGroupDocument:
         with patch.object(projects, 'projects_table', object()), \
                 patch.object(projects, 'create_counted_project_child', side_effect=put), \
                 patch.object(projects.persona_grounding, 'visible_ids', side_effect=visible):
-            document = projects.create_document('p1', body, creator_sub='owner-sub', category_scope=scope)['document']
+            document = projects.create_document('p1', body, creator_sub='owner-sub', category_scope=scope,
+                                                workspace=None)['document']
         self.scopes = seen
         return document
 
@@ -154,7 +155,8 @@ class TestFocusGroupDocument:
         with patch.object(projects, 'projects_table', object()), \
                 patch.object(projects, '_source_document_item', return_value=stored), \
                 patch.object(projects, 'edit_document', return_value={'success': True}) as edit:
-            projects.update_document('p1', 'doc_1', {'content': 'Ada: late [fb:fb1]. Bea: new [fb:fb7].'})
+            projects.update_document('p1', 'doc_1', {'content': 'Ada: late [fb:fb1]. Bea: new [fb:fb7].'},
+                                     workspace=None)
         assert edit.call_args.args[3]['content'] == kept
 
     def test_the_saver_s_scope_decides_what_is_kept(self):

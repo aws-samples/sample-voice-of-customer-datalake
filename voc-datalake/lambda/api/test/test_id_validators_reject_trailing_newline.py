@@ -129,6 +129,7 @@ class TestPrototypePinDocumentIds:
     def test_a_document_id_with_a_trailing_newline_is_refused_before_any_read(self):
         with patch.object(projects_handler, '_project_access_for'), \
              patch.object(projects_handler, '_request_caller'), \
+             patch.object(projects_handler, '_request_scope'), \
              patch.object(projects_handler, 'get_projects_table') as get_table, \
              pytest.raises(ValidationError, match='Invalid document id'):
             projects_handler._pin_form_for('p1', 'doc1' + NL)
