@@ -300,26 +300,50 @@ class TestEachHitIsDecidedOnTheTablesRow:
         assert (_tombstones(aws, 'tickets'), _tombstones(aws, 'web')) == ({}, {})
 
 
+def _hand_over_after_two(aws: Any, worker_context: Any, invoke_mock: Any,
+                         event: dict) -> tuple[dict, dict, dict, list[Any]]:
+    """Run ``event`` until two items are deleted, hand over (the time runs out), and run the hand-over's payload: the
+    first answer, the payload, the second answer and every (pk, sk) deleted, in order."""
+    deleted: list[Any] = []
+    real = ItemDeleter.delete
+    handed: list[bool] = []
+
+    def delete(deleter: ItemDeleter, item: Any, store: str) -> None:
+        deleted.append((item['pk'], item['sk']))
+        real(deleter, item, store)
+
+    worker_context.get_remaining_time_in_millis.side_effect = (
+        lambda: 0 if len(deleted) == 2 and not handed else 900_000)
+    with _no_scan(), patch.object(ItemDeleter, 'delete', delete):
+        first = handler.handle_event(event, worker_context)
+        handed.append(True)
+        payload = invoke_mock.call_args.args[1]
+        second = handler.handle_event(payload, worker_context)
+    return first, payload, second, deleted
+
+
+def _run_to_the_end(worker_context: Any, invoke_mock: Any, event: dict) -> tuple[dict, list[Any]]:
+    """Run ``event`` and every hand-over after it (at most 40) inside the caller's patches: the last answer and the
+    items phase's cursor of each hand-over, in order."""
+    cursors: list[Any] = []
+    result: dict[str, Any] = {'status': 'not run'}
+    for _ in range(40):
+        result = handler.handle_event(event, worker_context)
+        if result['status'] != 'continued':
+            break
+        event = invoke_mock.call_args.args[1]
+        if event['phase'] == 'items':
+            cursors.append(event['cursor'])
+    return result, cursors
+
+
 class TestAHandOverResumesTheWalk:
     @pytest.mark.usefixtures('three_a_page')
     def test_mid_day_it_goes_on_right_after_the_last_item_erased(self, aws, worker_context, invoke_mock):
         _meta(aws)
         names = [_put(aws, WS, 'web', f'm{n}', author=JANE) for n in range(5)]
-        deleted: list[Any] = []
-        real = ItemDeleter.delete
-        handed: list[bool] = []
-
-        def delete(deleter: ItemDeleter, item: Any, store: str) -> None:
-            deleted.append((item['pk'], item['sk']))
-            real(deleter, item, store)
-
-        worker_context.get_remaining_time_in_millis.side_effect = (
-            lambda: 0 if len(deleted) == 2 and not handed else 900_000)
-        with _no_scan(), patch.object(ItemDeleter, 'delete', delete):
-            first = handler.handle_event(_job(aws, 'author', JANE), worker_context)
-            handed.append(True)
-            payload = invoke_mock.call_args.args[1]
-            second = handler.handle_event(payload, worker_context)
+        first, payload, second, deleted = _hand_over_after_two(aws, worker_context, invoke_mock,
+                                                               _job(aws, 'author', JANE))
 
         assert first['status'] == 'continued'
         assert (payload['phase'], payload['cursor']['day']) == ('items', days_ago(1))
@@ -332,17 +356,8 @@ class TestAHandOverResumesTheWalk:
     def test_across_days_each_invocation_goes_on_from_its_cursor(self, aws, worker_context, invoke_mock):
         _meta(aws, created_days_ago=3)
         names = [_put(aws, WS, 'web', f'x{n}', day=days_ago(n), author=JANE) for n in (4, 2, 0)]
-        cursors: list[Any] = []
-        event = _job(aws, 'author', JANE)
-        result: dict[str, Any] = {'status': 'not run'}
         with _no_scan(), patch.object(handler, 'MAX_PAGES', 1):
-            for _ in range(40):
-                result = handler.handle_event(event, worker_context)
-                if result['status'] != 'continued':
-                    break
-                event = invoke_mock.call_args.args[1]
-                if event['phase'] == 'items':
-                    cursors.append(event['cursor'])
+            result, cursors = _run_to_the_end(worker_context, invoke_mock, _job(aws, 'author', JANE))
 
         assert result['status'] == 'completed'
         assert not set(names) & _items(aws)
@@ -365,21 +380,8 @@ class TestAHandOverResumesTheWalk:
     def test_by_id_mid_page_it_goes_on_right_after_the_last_item_erased(self, aws, worker_context, invoke_mock):
         rows = self._sharing_one_id(aws, 5)
         web = _put(aws, WS, 'web', '12345')
-        deleted: list[Any] = []
-        real = ItemDeleter.delete
-        handed: list[bool] = []
-
-        def delete(deleter: ItemDeleter, item: Any, store: str) -> None:
-            deleted.append((item['pk'], item['sk']))
-            real(deleter, item, store)
-
-        worker_context.get_remaining_time_in_millis.side_effect = (
-            lambda: 0 if len(deleted) == 2 and not handed else 900_000)
-        with _no_scan(), patch.object(ItemDeleter, 'delete', delete):
-            first = handler.handle_event(_job(aws, 'source_id', '12345', source='tickets'), worker_context)
-            handed.append(True)
-            payload = invoke_mock.call_args.args[1]
-            second = handler.handle_event(payload, worker_context)
+        first, payload, second, deleted = _hand_over_after_two(
+            aws, worker_context, invoke_mock, _job(aws, 'source_id', '12345', source='tickets'))
 
         assert first['status'] == 'continued'
         assert payload['phase'] == 'items'
@@ -393,17 +395,9 @@ class TestAHandOverResumesTheWalk:
 
     def test_by_id_each_page_hand_over_goes_on_from_its_cursor(self, aws, worker_context, invoke_mock):
         rows = self._sharing_one_id(aws, 5)
-        cursors: list[Any] = []
-        event = _job(aws, 'source_id', '12345', source='tickets')
-        result: dict[str, Any] = {'status': 'not run'}
         with _no_scan(), patch.object(handler, 'MAX_PAGES', 1), patch.object(handler, 'PAGE_SIZE', 2):
-            for _ in range(40):
-                result = handler.handle_event(event, worker_context)
-                if result['status'] != 'continued':
-                    break
-                event = invoke_mock.call_args.args[1]
-                if event['phase'] == 'items':
-                    cursors.append(event['cursor'])
+            result, cursors = _run_to_the_end(worker_context, invoke_mock,
+                                              _job(aws, 'source_id', '12345', source='tickets'))
 
         assert result['status'] == 'completed'
         assert not set(rows) & _items(aws)
@@ -519,7 +513,7 @@ class TestTheGrantsMatchTheReads:
     @staticmethod
     def _list(name: str) -> list[str]:
         source = (REPO / 'voc-datalake/lib/stacks/retention-worker.ts').read_text(encoding='utf-8')
-        found = re.search(rf'export const {name} = \[([^\]]*)\]', source)
+        found = re.search(rf'(?:export )?const {name} = \[([^\]]*)\]', source)
         assert found, name
         return re.findall(r"'([^']*)'", found.group(1))
 
@@ -529,8 +523,8 @@ class TestTheGrantsMatchTheReads:
         assert self._list('FEEDBACK_DAY_INDEX_KEYS') == list(item_walk.DAY_KEYS) == list(FEEDBACK_BY_DATE_POSITION)
         assert self._list('FEEDBACK_ID_INDEX_KEYS') == list(item_walk.ID_KEYS)
         source = (REPO / 'voc-datalake/lib/stacks/retention-worker.ts').read_text(encoding='utf-8')
-        assert f"export const FEEDBACK_DAY_INDEX = '{FEEDBACK_BY_DATE_INDEX}'" in source
-        assert f"export const FEEDBACK_ID_INDEX = '{FEEDBACK_BY_ID_INDEX}'" in source
+        assert f"const FEEDBACK_DAY_INDEX = '{FEEDBACK_BY_DATE_INDEX}'" in source
+        assert f"const FEEDBACK_ID_INDEX = '{FEEDBACK_BY_ID_INDEX}'" in source
 
     def test_the_filter_names_only_attributes_the_grants_allow(self):
         """Each Query's filter (``erase_filter`` in a workspace, every workspace field, with and without a source)

@@ -212,17 +212,17 @@ export function projectIndexKeysQuery(projectsTable: dynamodb.ITable, sid: strin
  * strongly consistent, by the inline GetItem, and decided on that row. Never the deployment's partitions or another
  * index.
  */
-export const FEEDBACK_DAY_INDEX = 'gsi1-by-date';
-export const FEEDBACK_ID_INDEX = 'gsi4-by-feedback-id';
-export const FEEDBACK_DAY_INDEX_KEYS = ['pk', 'sk', 'gsi1pk', 'gsi1sk'];
-export const FEEDBACK_ID_INDEX_KEYS = ['pk', 'sk', 'gsi4pk'];
+const FEEDBACK_DAY_INDEX = 'gsi1-by-date';
+const FEEDBACK_ID_INDEX = 'gsi4-by-feedback-id';
+const FEEDBACK_DAY_INDEX_KEYS = ['pk', 'sk', 'gsi1pk', 'gsi1sk'];
+const FEEDBACK_ID_INDEX_KEYS = ['pk', 'sk', 'gsi4pk'];
 /**
  * The top-level attributes the Queries' filter names besides `pk` and `sk` (the erasure's own Scan filter,
  * lambda/shared/retention.py `erase_filter` in a workspace, every field; a Python test holds them equal): allowed in
  * `dynamodb:Attributes` beside the keys, since that key may count a filter's names and the Query must never be refused
  * for them. Nothing is returned but the keys: `SPECIFIC_ATTRIBUTES` stays required, `ALL_ATTRIBUTES` refused.
  */
-export const FEEDBACK_ERASE_FILTER_ATTRIBUTES = ['author', 'csv_row_id', 'metadata', 'source_id', 'source_platform'];
+const FEEDBACK_ERASE_FILTER_ATTRIBUTES = ['author', 'csv_row_id', 'metadata', 'source_id', 'source_platform'];
 const PROJECT_REGISTRY_PARTITIONS = ['PROJECT_IDS'];
 const PROJECT_REGISTRY_KEYS = ['pk', 'sk'];
 /**
