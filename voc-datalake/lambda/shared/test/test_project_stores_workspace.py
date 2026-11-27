@@ -4,8 +4,9 @@ Each threaded store takes ``workspace`` (keyword-only): in one it reads and writ
 through shared/ws_repo.py ``ws_table`` (shared/project_tables.py ``iter_project_rows`` over shared/scoped_query.py,
 shared/ingest_tables.py ``table_view``, shared/workspace_config.py ``get_scoped_item``, shared/project_writes.py
 ``transact_project_writes``), and never sees the deployment's rows or another workspace's; without one it reads and
-writes the deployment's ``PROJECT#…`` rows exactly as before, and never sees a workspace's. The access gate refuses
-one; the document versions and their series are per workspace since 7.27.00 (test_document_versions_workspace.py),
+writes the deployment's ``PROJECT#…`` rows exactly as before, and never sees a workspace's. The access gate reads its
+scope's META and decides a workspace's project only with that workspace's membership (since 7.101.00,
+test_project_gate_workspace.py); the document versions and their series are per workspace since 7.27.00 (test_document_versions_workspace.py),
 the comment threads, persona review and review links since 7.37.00 (test_document_comments_workspace.py). No route
 passes a workspace yet.
 """
@@ -173,28 +174,36 @@ def test_a_counted_child_is_created_in_its_workspace(table):
 
 # ── The gate ─────────────────────────────────────────────────────────────────
 
-GATE_REFUSED = 'Project gate is not per workspace yet'
+GATE_NEEDS_MEMBERSHIP = "Project gate decides a workspace's project from the caller's membership"
 
 
 @pytest.mark.parametrize('caller', [ADMIN, CALLER], ids=['deployment_admin', 'public_visibility'])
-def test_the_gate_refuses_a_workspace_even_where_the_deployments_policy_would_pass(table, caller):
+def test_the_gate_never_decides_a_workspace_on_the_deployments_policy(table, caller):
     # Workspace B's project is public: the deployment's policy would let its admin and every signed-in user in.
+    # Read as the deployment's it is refused (its META is B's), and without B's membership the gate decides nothing
+    # (3h-S2: test_project_gate_workspace.py decides with one).
     _meta(table, B, visibility='public', owner_sub='sub-other')
     meta = table.get_item(Key={'pk': _pk(B), 'sk': 'META'})['Item']
-    assert project_access.resolve_access(meta, caller, workspace=None).can_view
-    with pytest.raises(NotPerWorkspaceError, match=GATE_REFUSED):
-        project_access.resolve_access(meta, caller, workspace=B)
-    with pytest.raises(NotPerWorkspaceError, match=GATE_REFUSED):
-        project_gate.read_gate_meta(table, PROJECT, workspace=B)
-    with pytest.raises(NotPerWorkspaceError, match=GATE_REFUSED):
-        project_gate.require_project_level(lambda: meta, caller, project_access.LEVEL_VIEW, workspace=B)
-    with pytest.raises(NotPerWorkspaceError, match=GATE_REFUSED):
-        project_gate.require_viewable_pin(table, PROJECT, caller, workspace=B)
+    with pytest.raises(NotPerWorkspaceError, match="another scope's META"):
+        project_access.resolve_access(meta, caller, workspace=None, membership=None)
+    with pytest.raises(NotPerWorkspaceError, match=GATE_NEEDS_MEMBERSHIP):
+        project_access.resolve_access(meta, caller, workspace=B, membership=None)
+    with pytest.raises(NotPerWorkspaceError, match=GATE_NEEDS_MEMBERSHIP):
+        project_gate.require_project_level(lambda: meta, caller, project_access.LEVEL_VIEW, workspace=B,
+                                           membership=None)
+    with pytest.raises(NotPerWorkspaceError, match=GATE_NEEDS_MEMBERSHIP):
+        project_gate.require_viewable_pin(table, PROJECT, caller, workspace=B, membership=None)
+    non_member = project_access.WorkspaceMembership(scope=B, subject=caller.subject, role=None)
+    with pytest.raises(NotFoundError, match='Project not found'):
+        project_gate.require_project_level(lambda: meta, caller, project_access.LEVEL_VIEW, workspace=B,
+                                           membership=non_member)
 
 
-def test_the_gate_reads_the_deployments_meta_only(table):
+def test_the_gate_reads_its_scopes_meta_only(table):
     _meta(table, A, visibility='private', owner_sub='sub-ada')
     assert project_gate.read_gate_meta(table, PROJECT, workspace=None) is None
+    assert project_gate.read_gate_meta(table, PROJECT, workspace=B) is None
+    assert (project_gate.read_gate_meta(table, PROJECT, workspace=A) or {}).get('owner_sub') == 'sub-ada'
     _meta(table, None, visibility='public')
     assert (project_gate.read_gate_meta(table, PROJECT, workspace=None) or {}).get('visibility') == 'public'
 

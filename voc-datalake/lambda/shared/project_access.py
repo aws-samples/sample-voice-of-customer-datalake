@@ -42,6 +42,16 @@ as claims the agents runtime sets on a direct (IAM-authorised) invoke:
 
 API Gateway builds ``requestContext.authorizer.claims`` from the verified JWT
 alone, so none of these claims can be produced by a browser.
+
+Everything above is the deployment's policy. A project kept in a workspace
+(``WS#{ws}#PROJECT#{id}``, docs/multi-workspace.md "3h, the switch"; since
+7.101.00) is decided from the caller's membership of THAT workspace, which the
+route resolved and hands in as a ``WorkspaceMembership``: its admin bypass is
+the workspace's admin role (a platform admin's audited entry included), never
+the deployment's ``admins``; ``public`` means the workspace's members; the
+owner and the members map count only while the person is still a member, the
+workspace's viewer role caps them at view; a non-member and an agent get
+nothing. No route passes a workspace yet.
 """
 
 from __future__ import annotations
@@ -52,7 +62,8 @@ from typing import TYPE_CHECKING, Any, Final
 
 # claim_text(claims, key): the trimmed string claim ``key``, or '' for an absent or non-string one.
 from shared.dynamo_values import trimmed_text as claim_text
-from shared.project_keys import PROJECT_GATE_STORE, project_pk, require_deployment
+from shared.project_keys import PROJECT_GATE_STORE, NotPerWorkspaceError, project_id_of, project_pk
+from shared.ws_repo import is_workspace_key
 
 if TYPE_CHECKING:
     from shared.ws_repo import WorkspaceScope
@@ -179,6 +190,71 @@ class Caller:
     agent_id: str = ''
     agent_owner_sub: str = ''
     agent_editor_subs: tuple[str, ...] = ()
+
+
+class WorkspaceMembershipError(NotPerWorkspaceError):
+    """A project reached the gate in the wrong scope: a membership that is not its workspace's and its caller's (none
+    for a workspace's project, another workspace's, another person's or nobody's, or one for the deployment's
+    project), or a ``META`` of another scope than the one named. A programming error (500), never decided as the
+    deployment's project or as a non-member's."""
+
+
+@dataclass(frozen=True)
+class WorkspaceMembership:
+    """The caller's membership of the workspace a project lives in, as the request resolved it.
+
+    Built only by shared/workspace.py ``membership_of`` from ``resolve_workspace``'s context (a static check holds
+    every other module to it): ``scope`` the resolved workspace, ``subject`` whose ``MEMBER#`` row decided it (the
+    caller's ``Caller.subject``: the person a credential acts for), ``role`` that row's role (``admin``, ``editor`` or
+    ``viewer``; a platform admin who entered is ``admin``, live-checked and audited there; a delegated caller's is
+    capped at ``editor`` there), or None for no membership. The role is the one the route resolved: from the 30 s
+    membership cache, or from the table when the route resolves fresh, so a removed member loses the project within
+    those 30 s, at once on a fresh resolve. The gate reads no workspace table of its own. Any other role is none.
+    """
+
+    scope: WorkspaceScope
+    subject: str
+    role: object
+
+
+#: The workspace roles (shared/workspace.py ``ROLES``), spelled like the project roles they share names with.
+_WORKSPACE_ROLES: Final = frozenset({ROLE_VIEWER, ROLE_EDITOR, ROLE_ADMIN})
+
+
+def workspace_admits(caller: Caller, membership: WorkspaceMembership) -> bool:
+    """Whether a workspace's project may be decided for ``caller`` at all: a member there (``membership`` names one
+    of the workspace's roles; anything else is no membership), and not an agent (no agent runs in a workspace:
+    3g3-a's owner decision 1, revisited with 3g3-r). The one predicate of the gate's early 404 and the policy."""
+    role = membership.role
+    return isinstance(role, str) and role in _WORKSPACE_ROLES and not caller.agent_id
+
+
+def require_membership(caller: Caller, *, workspace: WorkspaceScope | None,
+                       membership: WorkspaceMembership | None) -> None:
+    """Refuse (``WorkspaceMembershipError``) unless ``membership`` fits: None for the deployment's project, else
+    ``workspace``'s own and ``caller``'s (its ``subject``, a non-empty text: a credential acting for nobody has no
+    membership anywhere)."""
+    if membership is None:
+        fits = workspace is None
+    else:
+        subject = membership.subject
+        fits = membership.scope == workspace and bool(subject) and subject == caller.subject
+    if not fits:
+        raise WorkspaceMembershipError(
+            f"{PROJECT_GATE_STORE} decides a workspace's project from the caller's membership of that workspace "
+            'only, and the deployment\'s without one')
+
+
+def _require_meta_in_scope(meta: Mapping[str, Any], workspace: WorkspaceScope | None) -> None:
+    """Refuse (``WorkspaceMembershipError``) a ``META`` of another scope than ``workspace``: a workspace's (``WS#``
+    key) read as the deployment's, or anything but that workspace's own project partition read as its project. A
+    deployment META carrying no ``pk`` reads as before (the policy's callers and fixtures that project it away)."""
+    partition = meta.get('pk')
+    fits = (not is_workspace_key(partition) if workspace is None
+            else project_id_of(partition, workspace=workspace) is not None)
+    if not fits:
+        raise WorkspaceMembershipError(
+            f"{PROJECT_GATE_STORE} refuses another scope's META: a project is decided only in the scope it is kept in")
 
 
 @dataclass(frozen=True)
@@ -328,31 +404,47 @@ def project_members(meta: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def resolve_access(meta: Mapping[str, Any] | None, caller: Caller, *,
-                   workspace: WorkspaceScope | None) -> ProjectAccess:
+                   workspace: WorkspaceScope | None,
+                   membership: WorkspaceMembership | None) -> ProjectAccess:
     """Effective access for ``caller`` on the project described by ``meta``.
 
     ``meta`` of None (missing project) yields no access; existence checks and
     tombstones are the caller's concern so this stays a pure policy function.
 
-    The deployment's policy only: a ``workspace`` is refused (``NotPerWorkspaceError``), because the admin
-    bypass (the deployment's ``admins``) and ``public`` visibility would reach past the workspace's members. A
-    workspace's project is decided from its own membership in the switch (docs/multi-workspace.md, slice 3h).
+    The deployment's project (``workspace`` None, ``membership`` None) by the deployment's policy, as before: its
+    ``admins`` group, ``public`` for every signed-in user. A workspace's project (docs/multi-workspace.md, "3h, the
+    switch"; since 7.101.00) only from ``membership``, the caller's of that workspace: see ``_workspace_role``. Either
+    way ``meta`` must be the scope's own (``_require_meta_in_scope``) and ``membership`` the scope's and the caller's
+    (``require_membership``), else ``WorkspaceMembershipError``.
     """
-    require_deployment(workspace, PROJECT_GATE_STORE)
+    require_membership(caller, workspace=workspace, membership=membership)
     if not meta:
         return ProjectAccess(role=None)
-    role = _base_role(meta, caller)
+    _require_meta_in_scope(meta, workspace)
+    role = _base_role(meta, caller) if membership is None else _workspace_role(meta, caller, membership)
     if caller.delegated and role in (ROLE_OWNER, ROLE_ADMIN):
         # A bearer credential acts for its minter but never administers.
         role = ROLE_EDITOR
     return ProjectAccess(role=role)
 
 
-def _base_role(meta: Mapping[str, Any], caller: Caller) -> str | None:
+def _owner_role(meta: Mapping[str, Any], caller: Caller) -> str | None:
+    """``owner`` for the project's owner (a real subject equal to ``owner_sub``), else None."""
     subject = caller.subject
     owner = meta.get('owner_sub')
-    if subject and isinstance(owner, str) and owner == subject:
-        return ROLE_OWNER
+    return ROLE_OWNER if subject and isinstance(owner, str) and owner == subject else None
+
+
+def _member_role(meta: Mapping[str, Any], caller: Caller) -> str | None:
+    """The caller's role in the project's members map, or None."""
+    member = project_members(meta).get(caller.subject) if caller.subject else None
+    return member.get('role') if member else None
+
+
+def _base_role(meta: Mapping[str, Any], caller: Caller) -> str | None:
+    """The deployment's policy: the owner, the deployment's admins, an agent on what it created, public, members."""
+    if owner := _owner_role(meta, caller):
+        return owner
     if caller.is_admin:
         return ROLE_ADMIN
     if caller.agent_id and meta.get(CREATED_BY_AGENT_ATTRIBUTE) == caller.agent_id:
@@ -361,8 +453,35 @@ def _base_role(meta: Mapping[str, Any], caller: Caller) -> str | None:
     if project_visibility(meta) == VISIBILITY_PUBLIC:
         # Public grants edit to every signed-in user; membership cannot lower it.
         return ROLE_EDITOR
-    member = project_members(meta).get(subject) if subject else None
-    return member.get('role') if member else None
+    return _member_role(meta, caller)
+
+
+def _workspace_role(meta: Mapping[str, Any], caller: Caller, membership: WorkspaceMembership) -> str | None:
+    """The caller's role on a workspace's project, from their membership of that workspace. In this order:
+
+    1. a non-member, or an agent (``workspace_admits``), gets nothing, whatever the project says: the deployment's
+       ``admins`` group, ``public``, the owner or a members entry of someone since removed from the workspace, and
+       ``created_by_agent``;
+    2. the owner;
+    3. the workspace's admin role (its admin bypass);
+    4. on a ``public`` project, an editor (public means the workspace's members);
+    5. the members map;
+    6. the workspace's viewer role reads only ("Roles": a viewer reads the projects shared with them), so it caps
+       whatever 2 to 5 gave at viewer.
+
+    A delegated credential is then capped at editor by ``resolve_access``, as in the deployment.
+    """
+    if not workspace_admits(caller, membership):
+        return None
+    workspace_role = membership.role
+    role = _owner_role(meta, caller)
+    if role is None and workspace_role == ROLE_ADMIN:
+        role = ROLE_ADMIN
+    if role is None and project_visibility(meta) == VISIBILITY_PUBLIC:
+        role = ROLE_EDITOR
+    if role is None:
+        role = _member_role(meta, caller)
+    return ROLE_VIEWER if role and workspace_role == ROLE_VIEWER else role
 
 
 def public_owner(meta: Mapping[str, Any]) -> dict[str, str] | None:
@@ -392,12 +511,14 @@ def public_members(meta: Mapping[str, Any]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: (row['username'].lower(), row['sub']))
 
 
-def sharing_summary(meta: Mapping[str, Any], caller: Caller) -> dict[str, Any]:
-    """Computed, never-stored fields every project read attaches to META."""
+def sharing_summary(meta: Mapping[str, Any], caller: Caller, *, workspace: WorkspaceScope | None,
+                    membership: WorkspaceMembership | None) -> dict[str, Any]:
+    """Computed, never-stored fields every project read attaches to META; its ``access`` decided in the project's
+    scope (``resolve_access``)."""
     return {
         'visibility': project_visibility(meta),
         'owner': public_owner(meta),
-        'access': resolve_access(meta, caller, workspace=None).to_dict(),
+        'access': resolve_access(meta, caller, workspace=workspace, membership=membership).to_dict(),
         'member_count': len(project_members(meta)),
     }
 

@@ -139,7 +139,7 @@ def _check_project(project_id: str, scope: WorkspaceScope | None, caller: Caller
     if scope is not None:
         raise ValidationError(NOT_IN_A_WORKSPACE)
     require_project_level(lambda: read_gate_meta(_table(), project_id, workspace=scope), caller, LEVEL_VIEW,
-                          workspace=scope)
+                          workspace=scope, membership=None)
 
 
 # ── The list and the composer's suggestions ─────────────────────────────────────────────────────────────────────

@@ -429,7 +429,7 @@ def list_projects(caller: Caller) -> dict:
         # excluding them from the by-id reads below would defeat that purpose.
         if is_verification_fixture(item):
             continue
-        if not project_access.resolve_access(item, caller, workspace=None).can_view:
+        if not project_access.resolve_access(item, caller, workspace=None, membership=None).can_view:
             continue
         project_id = item.get('project_id')
         persona_count, document_count = _count_project_children(project_id)
@@ -446,8 +446,8 @@ def list_projects(caller: Caller) -> dict:
             'document_count': document_count,
             **({'created_by_agent': item['created_by_agent']}
                if isinstance(item.get('created_by_agent'), str) else {}),
-            **project_access.sharing_summary(item, caller),
-        }, item, caller))
+            **project_access.sharing_summary(item, caller, workspace=None, membership=None),
+        }, item, caller, workspace=None, membership=None))
 
     return {'projects': projects}
 
@@ -488,7 +488,8 @@ def _count_project_children(project_id: object) -> tuple[int, int]:
 
 
 @tracer.capture_method
-def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | None) -> dict:
+def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | None,
+                   membership: project_access.WorkspaceMembership | None) -> dict:
     """Create a new project owned by ``caller`` (private unless asked otherwise).
 
     An autonomous-agent principal creates it for the run's handoff target
@@ -501,8 +502,11 @@ def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | No
     registry row in one scoped transaction
     (shared/project_writes.py ``create_workspace_project``). Either way a
     refused id (a same-second collision, or a claim already held) is retried
-    once with a fresh one.
+    once with a fresh one. ``membership`` (since 7.101.00) is the caller's of
+    that workspace (None for the deployment), checked before anything is
+    written: the answer's sharing fields are decided in the project's scope.
     """
+    project_access.require_membership(caller, workspace=workspace, membership=membership)
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     if caller.agent_id:
@@ -555,7 +559,7 @@ def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | No
     # is retried the same way; nothing was written.
     put_index = None if workspace is None else OUTSIDE_ENTRY_INDEX
     item = write_with_fresh_id('proj', put_project, put_index=put_index, now=now_dt)
-    return {'success': True, 'project': _with_sharing_fields(item, caller)}
+    return {'success': True, 'project': _with_sharing_fields(item, caller, workspace=workspace, membership=membership)}
 
 
 # What an agent maintains about a project so later runs can match issues to it.
@@ -635,17 +639,18 @@ def _validated_visibility(value: object) -> str:
         raise ValidationError(str(exc)) from exc
 
 
-def _with_sharing_fields(meta: dict, caller: Caller) -> dict:
-    """A response copy of META with the computed sharing fields attached.
+def _with_sharing_fields(meta: dict, caller: Caller, *, workspace: WorkspaceScope | None,
+                         membership: project_access.WorkspaceMembership | None) -> dict:
+    """A response copy of META with the computed sharing fields attached, decided in the project's scope.
 
     The stored ``members`` map is replaced by the client-facing list. These
     fields are COMPUTED, never written back (update_project is allowlisted).
     """
     return _without_emails_unless_manager({
         **meta,
-        **project_access.sharing_summary(meta, caller),
+        **project_access.sharing_summary(meta, caller, workspace=workspace, membership=membership),
         'members': project_access.public_members(meta),
-    }, meta, caller)
+    }, meta, caller, workspace=workspace, membership=membership)
 
 
 def _without_email(entry: object) -> object:
@@ -655,15 +660,16 @@ def _without_email(entry: object) -> object:
     return {key: value for key, value in entry.items() if key != 'email'}
 
 
-def _without_emails_unless_manager(payload: dict, meta: dict, caller: Caller) -> dict:
-    """`payload` with every owner/member email removed unless `caller` can manage.
+def _without_emails_unless_manager(payload: dict, meta: dict, caller: Caller, *, workspace: WorkspaceScope | None,
+                                   membership: project_access.WorkspaceMembership | None) -> dict:
+    """`payload` with every owner/member email removed unless `caller` can manage (in the project's scope).
 
     An email is a contact detail, needed only by whoever manages membership (the
     owner and admins); a viewer or editor gets the same owner and member entries
     without it. Covers the raw `owner_email` a META copy carries, the computed
     `owner`, and each entry of a `members` list.
     """
-    if project_access.resolve_access(meta, caller, workspace=None).can_manage:
+    if project_access.resolve_access(meta, caller, workspace=workspace, membership=membership).can_manage:
         return payload
     redacted = {key: value for key, value in payload.items() if key != 'owner_email'}
     if 'owner' in redacted:
@@ -947,9 +953,9 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
     if caller is None:
         project = _without_stored_emails(project)
     else:
-        if not project_access.resolve_access(project, caller, workspace=None).can_view:
+        if not project_access.resolve_access(project, caller, workspace=None, membership=None).can_view:
             raise NotFoundError('Project not found')
-        project = _with_sharing_fields(project, caller)
+        project = _with_sharing_fields(project, caller, workspace=None, membership=None)
 
     documents = [_with_signed_prototype_url(item, project_id) for item in documents]
 
@@ -1011,7 +1017,7 @@ def _viewable_ids(project_ids: list[str], caller: Caller) -> set[str]:
     return {
         project_id for meta in metas
         if (project_id := project_id_of(meta.get('pk'), workspace=None)) is not None and not is_project_tombstone(meta)
-        and project_access.resolve_access(meta, caller, workspace=None).can_view
+        and project_access.resolve_access(meta, caller, workspace=None, membership=None).can_view
     }
 
 
@@ -1121,7 +1127,7 @@ def get_project_chat_context(
     )
     if project is None or is_project_tombstone(project):
         raise NotFoundError('Project not found')
-    access = project_access.resolve_access(project, caller, workspace=None)
+    access = project_access.resolve_access(project, caller, workspace=None, membership=None)
     if not access.can_view:
         raise NotFoundError('Project not found')
     personas = [
@@ -4254,8 +4260,8 @@ def get_project_members(project_id: str, caller: Caller) -> dict:
         'visibility': project_access.project_visibility(meta),
         'owner': project_access.public_owner(meta),
         'members': project_access.public_members(meta),
-        'access': project_access.resolve_access(meta, caller, workspace=None).to_dict(),
-    }, meta, caller)
+        'access': project_access.resolve_access(meta, caller, workspace=None, membership=None).to_dict(),
+    }, meta, caller, workspace=None, membership=None)
 
 
 def _member_add_refusal(meta: dict, sub: str) -> None:

@@ -22,6 +22,7 @@ from shared.engagement_common import normalize_email
 from shared.exceptions import AuthorizationError, ConfigurationError, NotFoundError
 from shared.project_access import LEVEL_VIEW, claim_text, claims_from_event
 from shared.project_gate import PROJECT_NOT_FOUND, caller_from_event, read_gate_meta, require_project_level
+from shared.project_keys import PROJECT_GATE_STORE, require_deployment
 from shared.project_writes import is_project_tombstone
 from shared.row_ids import OPAQUE_ID_RE
 from shared.tables import get_projects_table
@@ -111,8 +112,10 @@ def require_project_access(event: Mapping[str, Any], project_id: object, level: 
                            workspace: WorkspaceScope | None = None) -> str:
     """The project id when the app caller has ``level`` on it (404 without view, 403 without the level).
 
-    The access gate is not per workspace yet (shared/project_gate.py ``read_gate_meta``): a ``workspace`` is refused
-    (``NotPerWorkspaceError``, a 500), never decided from the deployment's project instead."""
+    The participants' project gate is the deployment's: a ``workspace`` is refused (``NotPerWorkspaceError``, a 500),
+    never decided from the deployment's project instead. The access gate itself decides a workspace's project from
+    its membership since 7.101.00 (shared/project_gate.py), which these routes do not resolve yet (3h)."""
+    require_deployment(workspace, PROJECT_GATE_STORE)
     if not isinstance(project_id, str) or not OPAQUE_ID_RE.match(project_id):
         raise NotFoundError(PROJECT_NOT_FOUND)
     table = get_projects_table()
@@ -122,7 +125,7 @@ def require_project_access(event: Mapping[str, Any], project_id: object, level: 
     meta = read_gate_meta(table, project_id, workspace=workspace)
     if meta is None or is_project_tombstone(meta):
         raise NotFoundError(PROJECT_NOT_FOUND)
-    require_project_level(lambda: meta, caller_from_event(event), level, workspace=workspace)
+    require_project_level(lambda: meta, caller_from_event(event), level, workspace=workspace, membership=None)
     return project_id
 
 

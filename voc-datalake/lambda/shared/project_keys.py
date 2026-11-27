@@ -102,8 +102,9 @@ REVIEW_REGISTRIES_MARKER_KEY: Final = {'pk': DEPLOYMENT_LINK_REGISTRY_PK, 'sk': 
 #: ``REVIEWER_ROUTES_STORE`` (imported above): a review link kept in a workspace, refused by its reviewer routes and its
 #: sign-up trigger alike until the switch (3h); defined in the stdlib module the trigger bundle ships, re-exported here
 #: beside the other stores that refuse a workspace.
-#: The project access gate (shared/project_access.py, shared/project_gate.py): the deployment's admins and public
-#: visibility decide it, so it refuses a workspace until the switch decides from the workspace's own membership.
+#: The project access gate (shared/project_access.py, shared/project_gate.py): since 7.101.00 (3h-S2) it decides a
+#: workspace's project from the caller's membership there, but the callers that hold no membership yet (the persona
+#: copy, the voice sessions, the persona grounding, the participants' gate) refuse a workspace under this name.
 PROJECT_GATE_STORE: Final = 'Project gate'
 #: The work of a project job (since 7.29.00: the document generator and merger, the persona generator and importer,
 #: the research steps). Its job row is per workspace (shared/jobs.py), but the work reads the deployment's feedback,

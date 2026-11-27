@@ -799,7 +799,7 @@ class TestTheProjectGateIsConsultedExactlyWhenThereIsAProject:
         _, caller, level = gate.require_project_level.call_args.args
         assert (caller, level) == (gate.caller_from_event.return_value, 'view')
         assert gate.require_project_level.call_args.kwargs == {
-            'missing_message': 'Voting session not found', 'workspace': None,
+            'missing_message': 'Voting session not found', 'workspace': None, 'membership': None,
         }
         gate.read_gate_meta.assert_called_once_with('projects', gated_on, workspace=None)
 
@@ -826,7 +826,7 @@ class TestTheProjectGateIsConsultedExactlyWhenThereIsAProject:
         assert gate.require_project_level.call_args.kwargs == {
             'missing_message': 'that prioritization row does not exist; reload the page and '
                                'reopen the vote',
-            'workspace': None,
+            'workspace': None, 'membership': None,
         }
         gate.read_gate_meta.assert_called_once_with('projects', 'p1', workspace=None)
 

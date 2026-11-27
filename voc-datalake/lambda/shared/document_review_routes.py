@@ -22,7 +22,8 @@ The persona review and "Revise from comments" starts (``…/persona-review``,
 
 Workspaces (docs/multi-workspace.md, the project plan, 3e; plumbing since 7.37.00): every helper passes its
 ``workspace`` to every store it calls. The member routes take theirs from ``_project_scope``, the deployment until the
-switch (3h) resolves ``X-Workspace-Id`` there (the project gate refuses a workspace until then). A reviewer's link
+switch (3h) resolves ``X-Workspace-Id`` there (the project gate decides a workspace's project only with the caller's
+membership there since 7.101.00, which these routes pass once they resolve one). A reviewer's link
 names its own workspace (``document_share.require_share_for``: the routing row's, nothing a request sent); a link kept
 in a workspace is refused (``NotPerWorkspaceError``, ``REVIEWER_ROUTES_STORE``) once its row is read, before any
 document or thread is read from the workspace or anything is written there, since a reviewer's write would land in

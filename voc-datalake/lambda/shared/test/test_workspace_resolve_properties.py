@@ -133,9 +133,12 @@ def _oracle(world: dict[str, Any]) -> tuple[str, str] | WorkspaceContext:
     if (role is None and not elevated) or not active:
         return ('404', NOT_FOUND)
     if elevated:
-        return WorkspaceContext(ws=world['ws'], role='admin', name='Acme', slug='acme', platform_admin=True)
+        return WorkspaceContext(ws=world['ws'], role='admin', name='Acme', slug='acme', platform_admin=True,
+                                sub=PERSON)
     capped = DELEGATED_ROLE_CAP if delegated and role == 'admin' else role
-    return WorkspaceContext(ws=world['ws'], role=capped or '', name='Acme', slug='acme', platform_admin=False)
+    # Whose membership decided it (7.101.00): the person, whom every caller kind here acts as.
+    return WorkspaceContext(ws=world['ws'], role=capped or '', name='Acme', slug='acme', platform_admin=False,
+                            sub=PERSON)
 
 
 def _expected_reads(world: dict[str, Any], answer: tuple[str, str] | WorkspaceContext) -> int:

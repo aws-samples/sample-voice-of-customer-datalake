@@ -109,7 +109,7 @@ class TestRequireProjectLevel:
         read = MagicMock()
 
         access = project_gate.require_project_level(
-            read, Caller(subject='a', is_admin=True), project_access.LEVEL_MANAGE, workspace=None,
+            read, Caller(subject='a', is_admin=True), project_access.LEVEL_MANAGE, workspace=None, membership=None,
         )
 
         assert access.role == project_access.ROLE_ADMIN
@@ -117,7 +117,7 @@ class TestRequireProjectLevel:
 
     def test_owner_may_manage(self):
         access = project_gate.require_project_level(
-            _meta, Caller(subject=OWNER), project_access.LEVEL_MANAGE, workspace=None,
+            _meta, Caller(subject=OWNER), project_access.LEVEL_MANAGE, workspace=None, membership=None,
         )
 
         assert access.role == project_access.ROLE_OWNER
@@ -126,12 +126,12 @@ class TestRequireProjectLevel:
     def test_missing_or_tombstoned_is_404(self, meta):
         with pytest.raises(NotFoundError, match='Project not found'):
             project_gate.require_project_level(
-                lambda: meta, Caller(subject=OWNER), project_access.LEVEL_VIEW, workspace=None,
+                lambda: meta, Caller(subject=OWNER), project_access.LEVEL_VIEW, workspace=None, membership=None,
             )
 
     def test_the_missing_message_is_configurable(self):
         with pytest.raises(NotFoundError, match='Board not found'):
             project_gate.require_project_level(
                 lambda: None, Caller(subject=OWNER), project_access.LEVEL_VIEW,
-                missing_message='Board not found', workspace=None,
+                missing_message='Board not found', workspace=None, membership=None,
             )

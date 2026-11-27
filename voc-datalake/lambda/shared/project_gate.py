@@ -17,8 +17,7 @@ from shared.api import get_caller_groups
 from shared.company_personas import is_company_container
 from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 from shared.gate_reads import read_gate_item
-from shared.project_access import Caller, ProjectAccess
-from shared.project_keys import PROJECT_GATE_STORE, require_deployment
+from shared.project_access import Caller, ProjectAccess, WorkspaceMembership
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE, is_project_tombstone
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.ws_repo import WorkspaceScope
@@ -66,10 +65,9 @@ def read_gate_meta(table: Any, project_id: str, *, workspace: WorkspaceScope | N
     The company persona library's reserved container is never a project: it reads as
     missing here, so every gate that reads META (and every non-admin) answers it 404.
 
-    Not per workspace yet: a ``workspace`` is refused (``NotPerWorkspaceError``), see
-    ``require_project_level``.
+    The scope's ``META``: the deployment's ``PROJECT#{id}``, or ``WS#{ws}#PROJECT#{id}`` in a workspace (never
+    the other's, so an id of another scope reads as missing).
     """
-    require_deployment(workspace, PROJECT_GATE_STORE)
     if is_company_container(project_id):
         return None
     return read_gate_item(
@@ -86,24 +84,32 @@ def require_project_level(
     *,
     missing_message: str = PROJECT_NOT_FOUND,
     workspace: WorkspaceScope | None,
+    membership: WorkspaceMembership | None,
 ) -> ProjectAccess:
     """The caller's access at ``level`` or above, else the prescribed refusal.
 
-    Admins are decided without a read (``read_meta`` is not called), so every
-    admin path costs what it did before per-project permissions existed.
+    The deployment's project (``workspace`` None, no ``membership``): the deployment's admins are decided
+    without a read (``read_meta`` is not called), so every admin path costs what it did before per-project
+    permissions existed.
 
-    The gate is the deployment's and refuses a ``workspace`` (``NotPerWorkspaceError``): ``caller.is_admin``
-    is the deployment's ``admins`` group and ``visibility: public`` grants edit to every signed-in user, so
-    either would open a workspace's project to people outside it. The switch (slice 3h,
-    docs/multi-workspace.md) decides a workspace's project from that workspace's own membership.
+    A workspace's project (since 7.101.00, slice 3h-S2): decided from ``membership``, the caller's membership of
+    that workspace as the route resolved it (shared/workspace.py ``membership_of``; any other, or none, is a
+    ``WorkspaceMembershipError``, a 500, as is a read ``META`` of another scope). The deployment's ``admins`` group
+    grants nothing there. A caller ``project_access.workspace_admits`` does not admit (a non-member, an agent) is
+    answered the one 404 before any read, so the answer and its cost are those of a missing project; a member's is
+    decided on the read ``META``, the workspace admin's too, so a missing or tombstoned project is a 404 for them as
+    well. ``membership`` is required beside ``workspace`` (``membership=None`` for the deployment).
     """
-    require_deployment(workspace, PROJECT_GATE_STORE)
-    if caller.is_admin:
-        return ProjectAccess(role=project_access.ROLE_ADMIN)
+    project_access.require_membership(caller, workspace=workspace, membership=membership)
+    if membership is None:
+        if caller.is_admin:
+            return ProjectAccess(role=project_access.ROLE_ADMIN)
+    elif not project_access.workspace_admits(caller, membership):
+        raise NotFoundError(missing_message)
     meta = read_meta()
     if not meta or is_project_tombstone(meta):
         raise NotFoundError(missing_message)
-    access = project_access.resolve_access(meta, caller, workspace=workspace)
+    access = project_access.resolve_access(meta, caller, workspace=workspace, membership=membership)
     if not access.can_view:
         raise NotFoundError(missing_message)
     if not access.allows(level):
@@ -112,21 +118,23 @@ def require_project_level(
 
 
 def require_viewable_pin(table: Any, project_id: object, caller: Caller, *,
-                         workspace: WorkspaceScope | None) -> str | None:
+                         workspace: WorkspaceScope | None,
+                         membership: WorkspaceMembership | None) -> str | None:
     """The optional project pin of an MCP credential (token or OAuth grant), which ``caller`` must be able to view.
 
-    ``None`` / ``''`` = no pin. Checked for admins too (who skip the access gate), so a pin always names a
-    project that exists. Raises ValidationError (malformed id), NotFoundError or AuthorizationError. Not per
-    workspace yet: a ``workspace`` is refused (``NotPerWorkspaceError``), see ``require_project_level``.
+    ``None`` / ``''`` = no pin. Checked for the deployment's admins too (who skip the access gate), so a pin
+    always names a project that exists. Raises ValidationError (malformed id), NotFoundError or
+    AuthorizationError. In a workspace, ``membership`` decides it as in ``require_project_level``, whose read
+    already proves the project is there (a workspace admin's included).
     """
-    require_deployment(workspace, PROJECT_GATE_STORE)
+    project_access.require_membership(caller, workspace=workspace, membership=membership)
     if project_id is None or project_id == '':
         return None
     if not isinstance(project_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(project_id):
         raise ValidationError('project_id is not a valid project id')
     require_project_level(lambda: read_gate_meta(table, project_id, workspace=workspace), caller,
-                          project_access.LEVEL_VIEW, workspace=workspace)
-    if caller.is_admin and not read_gate_meta(table, project_id, workspace=workspace):
+                          project_access.LEVEL_VIEW, workspace=workspace, membership=membership)
+    if membership is None and caller.is_admin and not read_gate_meta(table, project_id, workspace=workspace):
         raise NotFoundError(PROJECT_NOT_FOUND)
     return project_id
 

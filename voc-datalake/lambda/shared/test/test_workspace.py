@@ -7,6 +7,7 @@ from botocore.exceptions import ClientError
 from moto import mock_aws
 
 from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
+from shared.project_access import WorkspaceMembership
 from shared.test.moto_tables import create_pk_sk_table
 from shared.workspace import (
     MAX_CACHED_MEMBERSHIPS,
@@ -17,10 +18,12 @@ from shared.workspace import (
     audit_key,
     is_workspace_id,
     list_my_workspaces,
+    membership_of,
     require_workspace_admin,
     resolve_workspace,
     ws_key,
 )
+from shared.ws_repo import WorkspaceScope
 
 WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 OTHER_WS = 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ'
@@ -89,7 +92,25 @@ def _workspace_rows(table, ws=WS):
 def test_the_header_is_found_whatever_its_case(table, header):
     context = _resolve(table,_ws_event(MEMBER, header=header), MembershipCache())
     assert context == WorkspaceContext(ws=WS, role='editor', name='Acme Outfitters', slug='acme',
-                                       platform_admin=False)
+                                       platform_admin=False, sub='sub-ana')
+
+
+@pytest.mark.parametrize(('claims', 'role'), [
+    (MEMBER, 'editor'),
+    ({'sub': 'mcp:tok_1', 'voc:acting_subject': 'sub-ana'}, 'editor'),
+], ids=['member', 'credential-acting-for-the-member'])
+def test_the_context_carries_whose_membership_decided_it(table, claims, role):
+    """The ``MEMBER#`` row's sub (a credential's person), from which ``membership_of`` builds the gate's membership."""
+    context = _resolve(table, _ws_event(claims), MembershipCache())
+    membership = membership_of(context)
+    assert (context.sub, context.role) == ('sub-ana', role)
+    assert membership == WorkspaceMembership(scope=WorkspaceScope(WS), subject='sub-ana', role=role)
+
+
+def test_a_platform_admins_entry_carries_their_own_sub(table):
+    context = _resolve(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+    assert (context.sub, context.role, context.platform_admin) == ('sub-pat', 'admin', True)
+    assert membership_of(context).subject == 'sub-pat'
 
 
 @pytest.mark.parametrize('headers', [None, {}, {'X-Workspace-Id': ''}, {'X-Workspace-Id': '   '},

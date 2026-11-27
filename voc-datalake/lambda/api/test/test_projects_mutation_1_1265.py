@@ -459,7 +459,7 @@ class TestCreateProject:
     def test_without_a_table_the_create_is_a_configuration_error(self):
         with patch.object(projects, 'projects_table', None), \
                 pytest.raises(ConfigurationError, match=r'^Projects table not configured$'):
-            projects.create_project({}, OWNER, workspace=None)
+            projects.create_project({}, OWNER, workspace=None, membership=None)
 
     @pytest.mark.parametrize('caller', [
         Caller(subject='minter-sub', delegated=True),
@@ -468,11 +468,11 @@ class TestCreateProject:
     ])
     def test_a_credential_or_subjectless_caller_cannot_own_a_project(self, table, caller):
         with pytest.raises(AuthorizationError, match=r'^Only a signed-in user can create a project$'):
-            projects.create_project({}, caller, workspace=None)
+            projects.create_project({}, caller, workspace=None, membership=None)
         table.put_item.assert_not_called()
 
     def test_the_stored_item_and_the_response_for_a_bare_body(self, table, frozen_clock, fixed_id_suffix):
-        result = projects.create_project({}, OWNER, workspace=None)
+        result = projects.create_project({}, OWNER, workspace=None, membership=None)
         project_id = f'proj_20260304050607_{fixed_id_suffix}'
         item = {
             'pk': f'PROJECT#{project_id}', 'sk': 'META', 'gsi1pk': 'TYPE#PROJECT',
@@ -504,7 +504,7 @@ class TestCreateProject:
         projects.create_project({
             'name': 'Named', 'description': 'Described', 'purpose': '  why  ', 'visibility': 'public',
             'filters': {'days': 7}, 'kiro_export_prompt': 'Do this', 'ignored': 'x',
-        }, OWNER, workspace=None)
+        }, OWNER, workspace=None, membership=None)
         item = table.put_item.call_args.kwargs['Item']
         assert item['name'] == 'Named'
         assert item['description'] == 'Described'
@@ -517,7 +517,7 @@ class TestCreateProject:
 
     def test_an_invalid_visibility_is_the_validators_message(self, table):
         with pytest.raises(ValidationError) as refusal:
-            projects.create_project({'visibility': 'secret'}, OWNER, workspace=None)
+            projects.create_project({'visibility': 'secret'}, OWNER, workspace=None, membership=None)
         with pytest.raises(ValueError, match=r'visibility') as original:
             project_access.validate_visibility('secret')
         assert str(refusal.value) == str(original.value)
@@ -529,7 +529,7 @@ class TestCreateProject:
         sharing = {'owner_sub': 'target', 'owner_username': 't', 'owner_email': 't@x', 'members': {},
                    'created_by_agent': 'agent-1'}
         with patch.object(projects, '_agent_created_sharing', return_value=sharing) as shared:
-            result = projects.create_project({}, agent, workspace=None)
+            result = projects.create_project({}, agent, workspace=None, membership=None)
         shared.assert_called_once_with(agent)
         item = table.put_item.call_args.kwargs['Item']
         assert item['owner_sub'] == 'target'
@@ -603,18 +603,20 @@ class TestEmailRedaction:
             'owner_email': 'owner@example.com', 'owner': {'sub': 'o', 'email': 'o@x', 'username': 'o'},
             'members': [{'sub': 'm', 'email': 'm@x'}, 'odd'], 'name': 'kept',
         }
-        assert projects._without_emails_unless_manager(payload, meta, VIEWER) == {
+        assert projects._without_emails_unless_manager(payload, meta, VIEWER, workspace=None, membership=None) == {
             'owner': {'sub': 'o', 'username': 'o'}, 'members': [{'sub': 'm'}, 'odd'], 'name': 'kept',
         }
 
     def test_a_manager_gets_the_payload_object_untouched(self):
         payload = {'owner_email': 'owner@example.com'}
-        assert projects._without_emails_unless_manager(payload, _meta(), OWNER) is payload
-        assert projects._without_emails_unless_manager(payload, _meta(), ADMIN) is payload
+        for caller in (OWNER, ADMIN):
+            assert projects._without_emails_unless_manager(payload, _meta(), caller, workspace=None,
+                                                           membership=None) is payload
 
     def test_a_payload_without_owner_or_list_members_is_only_stripped_of_owner_email(self):
         assert projects._without_emails_unless_manager(
-            {'owner_email': 'x', 'members': {'m': {'email': 'kept'}}}, _meta(), VIEWER,
+            {'owner_email': 'x', 'members': {'m': {'email': 'kept'}}}, _meta(), VIEWER, workspace=None,
+            membership=None,
         ) == {'members': {'m': {'email': 'kept'}}}
 
     @pytest.mark.parametrize('entry', ['text', None, 3])
@@ -633,7 +635,7 @@ class TestEmailRedaction:
         assert projects._without_stored_emails({'members': ['x'], 'owner_email': 'o'}) == {'members': ['x']}
 
     def test_with_sharing_fields_replaces_the_member_map_by_the_public_list(self):
-        result = projects._with_sharing_fields(_meta(), OWNER)
+        result = projects._with_sharing_fields(_meta(), OWNER, workspace=None, membership=None)
         assert result['members'] == [{
             'sub': 'viewer-sub', 'role': 'viewer', 'username': 'viewer', 'email': 'viewer@example.com',
             'added_by': 'owner-sub', 'added_at': '2026-01-01T00:00:00+00:00',

@@ -541,7 +541,7 @@ def _require_project_level(project_id: Any, level: str, missing_message: str, *,
         return project_gate.read_gate_meta(projects, project_id, workspace=workspace)
 
     project_gate.require_project_level(read_meta, caller, level, missing_message=missing_message,
-                                       workspace=workspace)
+                                       workspace=workspace, membership=None)
 
 
 def _require_row_project_edit(row: dict, *, workspace: 'WorkspaceScope | None' = None) -> None:
@@ -598,9 +598,9 @@ def _project_gone(project_id: Any, *, workspace: 'WorkspaceScope | None' = None)
 
     A missing project id is a session or row from before project scoping: nothing to
     check. A failed read raises (500) rather than answering either way. A workspace
-    is refused first (`BALLOT_ROWS_STORE`, before any table is opened), and the
-    gate's read (`project_gate.read_gate_meta`) refuses one too: never read as the
-    deployment's project.
+    is refused first (`BALLOT_ROWS_STORE`, before any table is opened), so the
+    gate's read (`project_gate.read_gate_meta`, which reads a workspace's own META
+    since 7.101.00) only ever reads the deployment's project here.
     """
     require_deployment(workspace, BALLOT_ROWS_STORE)
     if not isinstance(project_id, str) or not project_id:

@@ -64,12 +64,13 @@ from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 from shared.http_cache import request_header
 from shared.logging import logger
 from shared.platform_admin import is_platform_admin
-from shared.project_access import caller_from_claims, claims_from_event, is_synthetic_subject
+from shared.project_access import WorkspaceMembership, caller_from_claims, claims_from_event, is_synthetic_subject
 from shared.timestamps import now_iso
 
 # The id's form and the keys built from it live in shared/workspace_ids.py (no request-path imports), kept importable
 # from here: the request path's modules take them with the middleware.
 from shared.workspace_ids import ACTIVE, is_workspace_id, ws_key
+from shared.ws_repo import scope_of
 
 #: The request header that names the workspace (HTTP header names are case-insensitive).
 WORKSPACE_HEADER: Final = 'x-workspace-id'
@@ -96,6 +97,9 @@ class WorkspaceContext:
     slug: str
     #: True when a platform admin entered without being a member admin (audited).
     platform_admin: bool
+    #: Whose membership decided it (``member_subject``: the caller, or the person a credential or an agent acts for;
+    #: since 7.101.00, for ``membership_of``). '' on a context no request resolved (an audit's, a test's).
+    sub: str = ''
 
 
 class MembershipCache:
@@ -225,8 +229,8 @@ def _load(table: Any, event: dict, ws: str, platform_admin: bool,
     name, slug = text_fields(meta, 'name', 'slug')
     if enters_as_platform_admin:
         _audit_platform_admin_entry(table, ws, sub)
-        return WorkspaceContext(ws=ws, role='admin', name=name, slug=slug, platform_admin=True)
-    return WorkspaceContext(ws=ws, role=role or '', name=name, slug=slug, platform_admin=False)
+        return WorkspaceContext(ws=ws, role='admin', name=name, slug=slug, platform_admin=True, sub=sub)
+    return WorkspaceContext(ws=ws, role=role or '', name=name, slug=slug, platform_admin=False, sub=sub)
 
 
 def member_subject(event: dict) -> str:
@@ -271,6 +275,15 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
         # cache, which holds the person's own role (the person and their credential share the entry).
         return replace(context, role=DELEGATED_ROLE_CAP)
     return context
+
+
+def membership_of(context: WorkspaceContext) -> WorkspaceMembership:
+    """The access gate's membership (shared/project_access.py ``WorkspaceMembership``) of a context
+    ``resolve_workspace`` resolved: its workspace, whose membership it is and the role it acts with (a platform
+    admin's entry as ``admin``, a delegated caller's capped at ``editor``). The one builder a route uses (the keyword
+    guard, ``MEMBERSHIP_BUILDERS``, refuses any other); a context no request resolved names nobody, which the gate
+    refuses."""
+    return WorkspaceMembership(scope=scope_of(context), subject=context.sub, role=context.role)
 
 
 def is_workspace_admin(context: WorkspaceContext) -> bool:

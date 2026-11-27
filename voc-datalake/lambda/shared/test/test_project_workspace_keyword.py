@@ -18,6 +18,10 @@ the gate and the stores of ``GUARDED`` take ``workspace`` with no default, and e
   says why: ``# deployment: <reason>``.
 * **The ratchet.** ``LITERAL_NONE`` pins, per module, the guarded calls that name the deployment by a literal None;
   each later 3h slice lowers it.
+* **The membership** (since 7.101.00, 3h-S2). The access policy's calls (``MEMBERSHIP_CALLS``) also pass
+  ``membership=`` by name (``None`` beside ``workspace=None``; the ratchet does not count it), and a
+  ``WorkspaceMembership`` is built only in shared/project_access.py and shared/workspace.py ``membership_of``
+  (``MEMBERSHIP_BUILDERS``), so a route hands the gate only the membership it resolved.
 
 The Cognito triggers (``lambda/auth/board_triggers.py``) and the retention worker (``lambda/jobs/retention/``) read
 projects outside the API; ``NON_API_READERS`` names them so the scan is proved to reach them.
@@ -79,7 +83,10 @@ LITERAL_NONE: Final[dict[str, int]] = {
     # A credential's pin, the deployment's until 3h-S9 (marked on the line).
     'lambda/api/mcp_tokens_handler.py': 1,
     'lambda/api/product_context.py': 16,
-    'lambda/api/projects.py': 63,
+    # 3 more since 7.101.00 (3h-S2): the sharing summary and the email redaction take the project's scope, so the list
+    # (`list_projects`: its summary and its redaction), `get_project` and `get_project_members` name the deployment,
+    # while `_with_sharing_fields` and the create pass theirs on. Lifted with the projects routes' slice.
+    'lambda/api/projects.py': 66,
     'lambda/api/projects_handler.py': 32,
     'lambda/api/verification_fixture_provider.py': 7,
     'lambda/jobs/document_generator/handler.py': 20,
@@ -91,7 +98,6 @@ LITERAL_NONE: Final[dict[str, int]] = {
     'lambda/shared/mcp_oauth_consent_routes.py': 1,
     'lambda/shared/persona_copy_routes.py': 1,
     'lambda/shared/persona_grounding.py': 2,
-    'lambda/shared/project_access.py': 1,
     'lambda/shared/project_validation.py': 2,
     'lambda/shared/project_validation_routes.py': 7,
     'lambda/shared/project_writes.py': 1,
@@ -343,6 +349,17 @@ def _held_scopes(tree: ast.Module) -> dict[int, frozenset[str]]:
     return held
 
 
+#: The access policy's calls (3h-S2): each decides on the caller's membership of the project's workspace, so it takes
+#: ``membership`` as it takes ``workspace``, a required keyword spelled out at every call (``membership=None`` beside
+#: ``workspace=None`` for the deployment). The ratchet counts the ``workspace=None`` only: a ``membership=None``
+#: always stands beside one (``project_access.require_membership`` refuses any other pairing at run time), so counting
+#: it too would count each deployment call twice.
+MEMBERSHIP_CALLS: Final = frozenset({
+    'shared.project_access.resolve_access', 'shared.project_access.sharing_summary',
+    'shared.project_gate.require_project_level', 'shared.project_gate.require_viewable_pin'})
+MEMBERSHIP_MISSING: Final = 'is called without membership= (None for the deployment, membership_of(context) in one)'
+
+
 def _is_literal_none(node: ast.Call) -> bool:
     return any(keyword.arg == 'workspace' and isinstance(keyword.value, ast.Constant) and keyword.value.value is None
                for keyword in node.keywords)
@@ -378,12 +395,13 @@ def scan(path: Path, table: dict[str, frozenset[str]], source: str | None = None
             marked = any(DEPLOYMENT_MARKER.search(line) for line in lines[node.lineno - 1:node.end_lineno])
             if held.get(id(node)) and not marked:
                 findings.append(Finding(rel, node.lineno, name, LITERAL_NONE_HELD))
-        if any(keyword.arg == 'workspace' for keyword in node.keywords):
-            continue
-        spread = any(keyword.arg is None for keyword in node.keywords)
-        findings.append(Finding(rel, node.lineno, name,
-                                'gets its workspace through **kwargs: spell workspace= out' if spread
-                                else 'is called without workspace='))
+        if not any(keyword.arg == 'workspace' for keyword in node.keywords):
+            spread = any(keyword.arg is None for keyword in node.keywords)
+            findings.append(Finding(rel, node.lineno, name,
+                                    'gets its workspace through **kwargs: spell workspace= out' if spread
+                                    else 'is called without workspace='))
+        if name in MEMBERSHIP_CALLS and not any(keyword.arg == 'membership' for keyword in node.keywords):
+            findings.append(Finding(rel, node.lineno, name, MEMBERSHIP_MISSING))
     skipped = called | {id(inner) for node in ast.walk(tree) for annotation in _annotations(node)
                         for inner in ast.walk(annotation)}
     for node in ast.walk(tree):
@@ -551,3 +569,74 @@ def test_the_ratchet_counts_aliases_and_every_literal_none():
               'project_keys.project_pk("p", workspace=held)\n')
     found = scan(PROBE, _guarded_table(), source)
     assert (found.calls, found.literal_none, found.findings) == (3, 2, [])
+
+
+@pytest.mark.parametrize(('source', 'expected'), [
+    ('from shared.project_access import resolve_access\nresolve_access(m, c, workspace=None)\n',
+     [f'2: shared.project_access.resolve_access {MEMBERSHIP_MISSING}']),
+    ('from shared import project_gate\nproject_gate.require_project_level(r, c, "view", workspace=s)\n',
+     [f'2: shared.project_gate.require_project_level {MEMBERSHIP_MISSING}']),
+    ('from shared.project_gate import require_viewable_pin\nrequire_viewable_pin(t, p, c)\n',
+     [f'2: shared.project_gate.require_viewable_pin {MISSING}',
+      f'2: shared.project_gate.require_viewable_pin {MEMBERSHIP_MISSING}']),
+    ('from shared import project_access\nproject_access.sharing_summary(m, c, workspace=None, membership=None)\n', []),
+    ('from shared.project_gate import read_gate_meta\nread_gate_meta(t, p, workspace=None)\n', []),
+])
+def test_the_policys_calls_spell_their_membership(source, expected):
+    assert _probe(source) == expected
+
+
+def test_a_membership_none_is_not_counted_by_the_ratchet():
+    source = 'from shared import project_access\nproject_access.resolve_access(m, c, workspace=None, membership=None)\n'
+    found = scan(PROBE, _guarded_table(), source)
+    assert (found.calls, found.literal_none, found.findings) == (1, 1, [])
+
+
+# ── The one builder of a route's membership ─────────────────────────────────
+
+#: Where a ``WorkspaceMembership`` may be built: the policy's own module and shared/workspace.py ``membership_of``,
+#: the one builder a route uses (from the membership it resolved), so no route hands the gate a role it made up.
+MEMBERSHIP_BUILDERS: Final = frozenset({'lambda/shared/project_access.py', 'lambda/shared/workspace.py'})
+MEMBERSHIP_CLASS: Final = 'WorkspaceMembership'
+
+
+def membership_builds(source: str) -> list[int]:
+    """The lines of ``source`` that build a ``WorkspaceMembership`` (by its name or an attribute of that name), or
+    import it under another name (which the first rule could not see). Not seen: ``dataclasses.replace`` of one,
+    ``getattr``, a name rebound by assignment."""
+    lines = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if (isinstance(func, ast.Name) and func.id == MEMBERSHIP_CLASS) or (
+                    isinstance(func, ast.Attribute) and func.attr == MEMBERSHIP_CLASS):
+                lines.append(node.lineno)
+        elif isinstance(node, ast.ImportFrom) and any(
+                alias.name == MEMBERSHIP_CLASS and alias.asname not in (None, MEMBERSHIP_CLASS) for alias in node.names):
+            lines.append(node.lineno)
+    return sorted(lines)
+
+
+def test_only_membership_of_builds_a_routes_membership():
+    found = [f'{rel}:{line}' for path in production_files()
+             if (rel := path.relative_to(REPO).as_posix()) not in MEMBERSHIP_BUILDERS
+             for line in membership_builds(path.read_text(encoding='utf-8'))]
+    assert not found, ('a WorkspaceMembership is built outside shared/workspace.py membership_of: build it from the '
+                       f'resolved context with membership_of(context): {found}')
+
+
+def test_the_builders_exist_and_build_one():
+    assert all((REPO / rel).is_file() for rel in MEMBERSHIP_BUILDERS)
+    assert membership_builds((REPO / 'lambda/shared/workspace.py').read_text(encoding='utf-8'))
+
+
+@pytest.mark.parametrize(('source', 'expected'), [
+    ('from shared.project_access import WorkspaceMembership\nWorkspaceMembership(scope=s, subject="x", role="admin")\n',
+     [2]),
+    ('from shared import project_access\nproject_access.WorkspaceMembership(s, "x", "admin")\n', [2]),
+    ('from shared.project_access import WorkspaceMembership as M\nM(s, "x", "admin")\n', [1]),
+    ('from shared.project_access import WorkspaceMembership\ndef f(m: WorkspaceMembership) -> None: ...\n', []),
+    ('from shared.workspace import membership_of\nmembership_of(context)\n', []),
+])
+def test_a_membership_built_by_hand_is_seen(source, expected):
+    assert membership_builds(source) == expected

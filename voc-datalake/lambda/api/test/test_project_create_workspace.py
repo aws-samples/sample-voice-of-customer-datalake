@@ -18,7 +18,7 @@ from botocore.exceptions import ClientError
 from moto import mock_aws
 from moto_helpers import pk_sk_table
 
-from shared.project_access import Caller
+from shared.project_access import Caller, WorkspaceMembership, WorkspaceMembershipError
 from shared.project_keys import project_pk, project_registry_key, project_registry_pk
 from shared.project_tables import iter_registered_project_ids
 from shared.ws_repo import WorkspaceScope, project_claim
@@ -51,10 +51,15 @@ def table(monkeypatch) -> Iterator[Any]:
             yield projects
 
 
+def _membership(workspace: WorkspaceScope | None, role: str = 'editor') -> WorkspaceMembership | None:
+    """The creator's membership of ``workspace`` (a test builds one by hand; a route takes ``membership_of``)."""
+    return None if workspace is None else WorkspaceMembership(scope=workspace, subject=OWNER.subject, role=role)
+
+
 def _create(workspace: WorkspaceScope | None = None) -> dict:
     from projects import create_project
 
-    return create_project({'name': 'Launch'}, OWNER, workspace=workspace)['project']
+    return create_project({'name': 'Launch'}, OWNER, workspace=workspace, membership=_membership(workspace))['project']
 
 
 def _keys(table: Any) -> list[tuple[str, str]]:
@@ -79,6 +84,32 @@ def test_a_workspace_create_writes_the_claim_the_meta_and_the_registry_row(table
     assert project_claim(table, FIRST) == A
     assert list(iter_registered_project_ids(table, workspace=A)) == [FIRST]
     assert list(iter_registered_project_ids(table, workspace=B)) == []
+    # The answer's sharing fields are decided in A, from the creator's membership there (7.101.00).
+    assert project['access'] == {'role': 'owner', 'can_view': True, 'can_edit': True, 'can_manage': True}
+    assert project['owner_email'] == 'olivia@example.com'
+
+
+@pytest.mark.parametrize('membership', [None, WorkspaceMembership(scope=B, subject=OWNER.subject, role='editor'),
+                                        WorkspaceMembership(scope=A, subject='someone-else', role='editor')],
+                         ids=['none', 'another-workspace', 'another-person'])
+def test_a_workspace_create_without_the_creators_membership_writes_nothing(table, membership):
+    from projects import create_project
+
+    with pytest.raises(WorkspaceMembershipError):
+        create_project({'name': 'Launch'}, OWNER, workspace=A, membership=membership)
+    assert _keys(table) == []
+
+
+def test_a_workspace_viewer_creates_a_project_they_then_only_read():
+    """The create itself is the route's to allow (an editor or an admin, in its slice); the answer already says what
+    the workspace's viewer role leaves the owner: view."""
+    from projects import create_project
+
+    with patch('projects.projects_table', MagicMock()), \
+            patch('projects.create_workspace_project'), patch('shared.ids.secrets.token_hex', return_value='aaaa0000'):
+        project = create_project({'name': 'Launch'}, OWNER, workspace=A, membership=_membership(A, 'viewer'))['project']
+    assert project['access']['role'] == 'viewer'
+    assert 'owner_email' not in project
 
 
 def test_a_held_claim_mints_a_fresh_id(table):

@@ -229,7 +229,7 @@ def _project_access_for(project_id: str, caller: Caller, level: str) -> ProjectA
     if is_company_container(project_id):
         raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
     return project_gate.require_project_level(
-        lambda: _gate_meta(project_id), caller, level, workspace=None,
+        lambda: _gate_meta(project_id), caller, level, workspace=None, membership=None,
     )
 
 
@@ -383,7 +383,7 @@ def _viewable_project_ids(project_ids: Iterable[str], caller: Caller) -> set[str
         viewable.update(
             project_id for project_id, meta in metas.items()
             if not is_project_tombstone(meta)
-            and project_access.resolve_access(meta, caller, workspace=None).can_view
+            and project_access.resolve_access(meta, caller, workspace=None, membership=None).can_view
         )
     return viewable
 
@@ -555,7 +555,7 @@ def api_list_projects():
 @app.post("/projects")
 @tracer.capture_method
 def api_create_project():
-    return create_project(json_object_body(app), _request_caller(), workspace=None)
+    return create_project(json_object_body(app), _request_caller(), workspace=None, membership=None)
 
 
 @app.get("/projects/<project_id>")

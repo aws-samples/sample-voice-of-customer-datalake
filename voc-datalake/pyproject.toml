@@ -42,6 +42,9 @@ ignore_names = [
     # shape, read back as the DynamoDB `issue_attributes` map by metrics_handler, never by attribute.
     "parent_id", "state_reason", "author_association", "linked_prs", "comment_count",
     "software_version", "version_source",
+    # 3h-S2 (7.101.00): shared/workspace.py membership_of, the one builder of the access gate's membership; the
+    # projects routes call it in their 3h slice (no route passes a workspace yet); test_workspace.py pins it.
+    "membership_of",
     # Test seam: resets the module-level categories cache; 30+ API tests call it between cases.
     "clear_categories_cache",
     # Lockstep, read as source by lib/stacks/adoption-rollup-worker.test.ts (the role's dynamodb:Attributes equal it)

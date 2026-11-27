@@ -126,7 +126,7 @@ class TestStoredPromptIsUnused:
     def test_create_project_no_longer_stores_a_prompt(self):
         from projects import create_project
         item = create_project({'name': 'New Project', 'kiro_export_prompt': 'Use Rust.'}, ADMIN_CALLER,
-                              workspace=None)['project']
+                              workspace=None, membership=None)['project']
         assert 'kiro_export_prompt' not in item
 
     def test_update_project_ignores_the_prompt(self):

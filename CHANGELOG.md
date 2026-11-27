@@ -17,6 +17,109 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.101.00] - 2026-11-27
+
+The access gate decides a workspace's project from that workspace's own membership (slice 3h-S2 of
+docs/multi-workspace.md's project plan, part of "3h, the switch"; TENETS.md tenet 6). Until now the gate refused any
+workspace, because its admin bypass is the deployment's `admins` group and `public` opens a project to every
+signed-in user. It now decides a project kept in a workspace from the caller's membership there, as the request
+resolved it. No route passes a workspace yet, so nothing changes for anyone; the routes come in later slices.
+
+### Added
+
+- `lambda/shared/project_access.py` `WorkspaceMembership` (the workspace, whose membership it is, its role), the
+  caller's membership of a project's workspace as the request resolved it; `workspace_admits(caller, membership)`,
+  the one predicate of the gate's early 404 and the policy (a member, and not an agent); `require_membership`;
+  `WorkspaceMembershipError` (a `NotPerWorkspaceError`, a 500).
+- `lambda/shared/workspace.py` `membership_of(context)`, the one builder of a route's membership, and
+  `WorkspaceContext.sub` (whose `MEMBER#` row decided it: the caller, or the person a credential acts for), set by
+  `resolve_workspace`.
+
+### Changed
+
+- `resolve_access` decides a workspace's project from `membership`, in this precedence order: (1) a caller
+  `workspace_admits` does not admit gets nothing, whatever the project says: a non-member (no role, or a role that is
+  not a text the workspace knows; the deployment's `admins`, `public`, the owner or a members entry of someone since
+  removed all give nothing) or an agent (no agent run starts in a workspace: 3g3-a's owner decision 1, revisited with
+  3g3-r); (2) the owner; (3) the workspace's admin role, the admin bypass (a platform admin's live-checked, audited
+  entry included), never the deployment's `admins`; (4) on a `public` project an editor (public means the
+  workspace's members); (5) the members map; (6) the workspace's viewer role caps 2 to 5 at view; then a delegated
+  credential is capped at edit, as before. A removed member loses the project within the 30 s membership cache, at
+  once when the route resolves fresh.
+- Scope checks (`WorkspaceMembershipError`): `require_membership` refuses a workspace's project without a
+  membership, with another workspace's, another person's or nobody's (a blank subject), and the deployment's with
+  one; `resolve_access` refuses a `META` of another scope: a `WS#` `pk` read as the deployment's, or a workspace's
+  with a `pk` that is not its own project partition (none included). A deployment META with no `pk` reads as before.
+- `membership` is a required keyword, beside `workspace`, of `resolve_access`, `sharing_summary` (which now takes
+  both and passes them on), `require_project_level` and `require_viewable_pin`; every deployment call passes
+  `membership=None` (beside `workspace=None`, or a workspace variable its function refuses before the gate: ballots,
+  the library routes, the participants' check).
+- `lambda/shared/project_gate.py`: `read_gate_meta` reads the scope's `META` (`WS#{ws}#PROJECT#{id}` in a
+  workspace) instead of refusing one. `require_project_level` and `require_viewable_pin` answer a caller
+  `workspace_admits` does not admit the one 404 a missing project gets, before any read (never a 403, so nothing
+  confirms a project of another workspace exists); a member's access, the workspace admin's included, is decided on
+  the read `META`, so a missing, deleting or deleted project is a 404 for them too, and a workspace pin costs that one
+  read. The deployment's path is unchanged: its admins still skip the read.
+- `lambda/shared/engagement_identity.py` `require_project_access` (the participants' and feature requests' project
+  check) refuses a workspace itself (`PROJECT_GATE_STORE`), as the persona copy, the voice sessions and the persona
+  grounding already did: it relied on the gate's read refusing one, and it holds no membership yet.
+- The deployment's policy is exactly as before, `public` included: whether the deployment's `public` should stop
+  covering accounts that belong only to workspaces is open for the owner, [decision 23 in
+  docs/multi-workspace.md](docs/multi-workspace.md#decisions), unchanged pending it.
+- `api/projects.py`: `_with_sharing_fields` and `_without_emails_unless_manager` take `workspace` and `membership`
+  and pass them on, and `create_project` takes `membership` beside its `workspace` and checks it before anything is
+  written: the scope check found a workspace's create (the 3a plumbing, no route yet) answering its sharing fields
+  on the deployment's policy; it now answers them in its own scope.
+- Still on the deployment's policy, each guarded by the scope check (a workspace's `META` reaching one is refused,
+  never decided as the deployment's) and lifted with its route's slice: in `api/projects.py`, the list filter
+  (`list_projects`: the access, summary and email redaction of each listed project), `get_project`,
+  `_viewable_ids`, `get_project_chat_context` and `get_project_members`; in `api/projects_handler.py`, the gate (`_project_access_for`), the viewable filter and the create
+  route.
+- The keyword guard (`lambda/shared/test/test_project_workspace_keyword.py`): the policy's calls
+  (`MEMBERSHIP_CALLS`) must pass `membership=` by name; the ratchet does not count `membership=None` (it always
+  stands beside a `workspace=None`, which is counted, and `require_membership` refuses any other pairing at run time).
+  project_access.py's own literal None goes and `api/projects.py` gains 3 net (four new sites: the list's summary
+  and redaction, `get_project`'s fields and `get_project_members`' redaction; `_without_emails_unless_manager`'s own
+  literal None goes, now passing its scope): `LITERAL_NONE` 189 to 191. Each new site is in a function that reads
+  the deployment's keys and holds no workspace to pass on.
+  `MEMBERSHIP_BUILDERS`: a `WorkspaceMembership(` outside project_access.py and workspace.py fails the guard.
+- Stale docstrings fixed: `api/ballots_handler.py` `_project_gone`, `shared/document_review_routes.py`.
+
+### Tests
+
+- `lambda/shared/test/test_project_gate_workspace.py` (new; red on 7.100.00, every case refused by the gate; the
+  review round's cases red on its first version): a deployment admin who is not a member gets the 404 without a read,
+  and as a member only their membership; the workspace admin manages; public is for the workspace's members, a project
+  viewer included (an editor, or a viewer under the workspace's viewer role); the owner and members per workspace
+  role; a role that is not a known text (a list, a dict) is no membership; a removed member who is still in the
+  members map gets the 404; the levels' 403s; a credential never above edit; an agent refused before any read; each
+  tombstone case named; a membership of another workspace, another person, nobody, or none, is refused; a META of
+  another scope, both ways; the sharing summary in its scope; `workspace` and `membership` keyword-only with no
+  default; across workspaces on moto, a member of B asking for A's public project gets exactly the answer of an id
+  nobody has, with the reads counted (one in B, none in A as a non-member); a workspace admin's pin costs one read.
+- `test_project_stores_workspace.py`: a workspace's META read as the deployment's is refused; without the
+  workspace's membership the gate decides nothing; it reads only its scope's `META`.
+- `lambda/api/test/test_project_create_workspace.py`: a workspace's create answers the owner's access in its scope
+  (red before: the scope check refused the deployment's policy on the workspace's META); without the creator's
+  membership of that workspace (none, another workspace's, another person's) nothing is written; a workspace
+  viewer's answer is view, without the emails.
+- `test_workspace.py`: the context carries the deciding sub (a member, a credential's person, a platform admin) and
+  `membership_of` builds the membership from it.
+- `test_project_workspace_keyword.py`: probes for a policy call without `membership=`, the ratchet not counting
+  `membership=None`, and a membership built by hand (by name, by attribute, under another name).
+
+### Docs
+
+- docs/multi-workspace.md: the 7.101.00 status row; in 3h's entry, the access gate's part marked done, with the
+  members route's rule for its slice (only the workspace's current members, a strongly consistent `MEMBER#` read,
+  400 otherwise, and a picker listing only them); decision 23 (open); the Roles table's viewer reads the projects
+  shared with them.
+
+### Upgrade notes
+
+- Nothing to do: no route passes a workspace, no stored data, IAM or stack changes (the CDK baseline's template
+  hashes move with the Lambda code assets only).
+
 ## [7.100.00] - 2026-11-27
 
 The switch's upgrade check (slice 3h-S0 of docs/multi-workspace.md's project plan, part of "3h, the switch"; TENETS.md

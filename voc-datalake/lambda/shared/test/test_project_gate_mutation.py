@@ -48,7 +48,8 @@ class TestEveryRefusalIsTheExactContractMessage:
     ])
     def test_missing_and_invisible_projects_share_the_literal_404(self, meta, caller):
         with pytest.raises(NotFoundError) as raised:
-            project_gate.require_project_level(lambda: meta, caller, project_access.LEVEL_VIEW, workspace=None)
+            project_gate.require_project_level(lambda: meta, caller, project_access.LEVEL_VIEW, workspace=None,
+                                               membership=None)
 
         assert raised.value.message == 'Project not found'
         assert raised.value.status_code == 404
@@ -59,7 +60,7 @@ class TestEveryRefusalIsTheExactContractMessage:
     ])
     def test_a_viewer_is_refused_with_the_level_named(self, level, message):
         with pytest.raises(AuthorizationError) as raised:
-            project_gate.require_project_level(_meta, Caller(subject=VIEWER), level, workspace=None)
+            project_gate.require_project_level(_meta, Caller(subject=VIEWER), level, workspace=None, membership=None)
 
         assert raised.value.message == message
         assert raised.value.status_code == 403
@@ -72,7 +73,7 @@ class TestEveryRefusalIsTheExactContractMessage:
 
     def test_a_viewer_asking_for_view_is_admitted_not_refused(self):
         access = project_gate.require_project_level(
-            _meta, Caller(subject=VIEWER), project_access.LEVEL_VIEW, workspace=None,
+            _meta, Caller(subject=VIEWER), project_access.LEVEL_VIEW, workspace=None, membership=None,
         )
 
         assert access.role == project_access.ROLE_VIEWER
