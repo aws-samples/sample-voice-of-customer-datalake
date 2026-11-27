@@ -252,7 +252,11 @@ describe('WorkspaceGate with a slug', () => {
     page.workspace = { kind: 'slug', slug: 'acme' }
     serve([])
     renderGate()
+    // The page names who can add them, once: a workspace's admins or a platform admin.
     expect(await screen.findByText('You are not a member of any workspace yet.')).toBeInTheDocument()
+    expect(screen.getByText(
+      'This workspace does not exist, or you are not a member of it. Open one of yours, or ask one of its admins or a platform admin to add you.',
+    )).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Go to the start page' })).toHaveAttribute('href', '/')
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(signOut).toHaveBeenCalledExactlyOnceWith()

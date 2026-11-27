@@ -157,7 +157,7 @@
     },
     "notFound": {
       "title": "Arbeitsbereich nicht gefunden",
-      "body": "Dieser Arbeitsbereich existiert nicht, oder Sie sind kein Mitglied. Öffnen Sie einen Ihrer Arbeitsbereiche oder bitten Sie eine Administratorin oder einen Administrator des Arbeitsbereichs, Sie hinzuzufügen.",
+      "body": "Dieser Arbeitsbereich existiert nicht, oder Sie sind kein Mitglied. Öffnen Sie einen Ihrer Arbeitsbereiche oder bitten Sie einen Admin dieses Arbeitsbereichs oder einen Plattform-Admin, Sie hinzuzufügen.",
       "none": "Sie sind noch in keinem Arbeitsbereich Mitglied.",
       "notAvailable": "Dieser Arbeitsbereich ist nicht verfügbar.",
       "start": "Zur Startseite"

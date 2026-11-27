@@ -150,7 +150,7 @@
     },
     "notFound": {
       "title": "Nie znaleziono obszaru roboczego",
-      "body": "Ten obszar roboczy nie istnieje lub nie należysz do niego. Otwórz jeden ze swoich albo poproś administratora obszaru roboczego o dodanie.",
+      "body": "Ten obszar roboczy nie istnieje lub nie należysz do niego. Otwórz jeden ze swoich albo poproś jednego z jego administratorów lub administratora platformy o dodanie.",
       "none": "Nie należysz jeszcze do żadnego obszaru roboczego.",
       "notAvailable": "Ten obszar roboczy jest niedostępny.",
       "start": "Przejdź do strony startowej"

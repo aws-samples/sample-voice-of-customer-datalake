@@ -157,7 +157,7 @@
     },
     "notFound": {
       "title": "Workspace not found",
-      "body": "This workspace does not exist, or you are not a member of it. Open one of yours, or ask a workspace admin to add you.",
+      "body": "This workspace does not exist, or you are not a member of it. Open one of yours, or ask one of its admins or a platform admin to add you.",
       "none": "You are not a member of any workspace yet.",
       "notAvailable": "This workspace is not available.",
       "start": "Go to the start page"

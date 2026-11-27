@@ -205,8 +205,11 @@ a new key, so a taken slug (409) writes nothing and no workspace is ever half-wr
 1. A person signs in (one Cognito user pool) and the web app calls `GET /me/workspaces`. With exactly one workspace
    the picker is skipped; with none, it says so and names who can invite them. Since 6.12.00 (the table above) the
    picker and the one-workspace skip are built; a person with no workspace still gets the app as before workspaces,
-   because the data path is not keyed by workspace yet. The "no workspace, ask who can invite you" screen comes with
-   phase 2, when the data path requires a workspace.
+   because the data path is not keyed by workspace yet. The "no workspace, ask who can invite you" screen comes when
+   the deployment-wide mode without the header retires (when every deployment runs inside a workspace:
+   [Per-workspace configuration](#per-workspace-configuration)): until then it would stop a working
+   app. Since 7.92.01 the page for a workspace address the person cannot open names who can add them (the workspace's
+   admins or a platform admin), also when they belong to none.
 2. The web app keeps the current workspace in the URL (`/workspace/{slug}/…`) and sends `X-Workspace-Id` on every API call.
 3. Shared middleware (a new `workspace` module in the Lambdas' shared package, and its TypeScript twin in the stream
    and plan-step Lambdas)

@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.92.01] - 2026-11-27
+
+Copy only: the page for a workspace address a person cannot open now names who can add them
+([docs/multi-workspace.md](docs/multi-workspace.md), "Request flow").
+
+### Changed
+
+- "Workspace not found" says to ask one of the workspace's admins or a platform admin to add you, also for a person in
+  no workspace (nine languages). A copy change that states who may add a member, checked against the code: only the
+  workspace's admins and platform admins can (`lambda/shared/workspace_members.py`); the deployment's `admins` group
+  cannot unless also that workspace's admin or a platform admin. The line for a person in no workspace is unchanged.
+  The screen that stops the app for a person with no workspace waits for the mode without `X-Workspace-Id` to retire.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). Frontend copy only.
+
 ## [7.92.00] - 2026-11-27
 
 Multi-workspace: an account added to a workspace is told so. A workspace admin's add of an existing account sent

@@ -160,7 +160,7 @@
     },
     "notFound": {
       "title": "Espace de travail introuvable",
-      "body": "Cet espace de travail n’existe pas, ou vous n’en êtes pas membre. Ouvrez l’un des vôtres, ou demandez à un administrateur de l’espace de travail de vous ajouter.",
+      "body": "Cet espace de travail n’existe pas, ou vous n’en êtes pas membre. Ouvrez l’un des vôtres, ou demandez à l’un de ses administrateurs ou à un administrateur de la plateforme de vous ajouter.",
       "none": "Vous n’êtes encore membre d’aucun espace de travail.",
       "notAvailable": "Cet espace de travail n’est pas disponible.",
       "start": "Aller à la page d’accueil"

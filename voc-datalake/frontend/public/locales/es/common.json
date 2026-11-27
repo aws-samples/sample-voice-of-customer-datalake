@@ -160,7 +160,7 @@
     },
     "notFound": {
       "title": "Espacio de trabajo no encontrado",
-      "body": "Este espacio de trabajo no existe o no eres miembro. Abre uno de los tuyos o pide a un administrador del espacio de trabajo que te añada.",
+      "body": "Este espacio de trabajo no existe o no eres miembro. Abre uno de los tuyos o pide a uno de sus administradores o a un administrador de la plataforma que te añada.",
       "none": "Todavía no eres miembro de ningún espacio de trabajo.",
       "notAvailable": "Este espacio de trabajo no está disponible.",
       "start": "Ir a la página de inicio"
