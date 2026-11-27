@@ -115,8 +115,8 @@ class TestSweepWithoutABucketWarnsAndTouchesNothing:
                 patch.object(projects, '_delete_project_avatar_objects') as avatar_sweep:
             projects._sweep_project_objects('proj-1', ['persona_1'])
         assert prefix_sweep.call_args_list == [
-            call('proj-1', 'the-bucket', projects.prototype_project_prefix('proj-1')),
-            call('proj-1', 'the-bucket', projects.product_docs_project_prefix('proj-1')),
+            call('proj-1', 'the-bucket', projects.prototype_project_prefix('proj-1', workspace=None)),
+            call('proj-1', 'the-bucket', projects.product_docs_project_prefix('proj-1', workspace=None)),
         ]
         avatar_sweep.assert_called_once_with('proj-1', 'the-bucket', ['persona_1'])
 
@@ -524,7 +524,7 @@ class TestDeleteProjectSweepsBothPartitionsAndCollectsPersonaIds:
     def test_the_project_partition_then_the_version_partition_are_read(self):
         keys, jobs, _sweep, _batch = self._delete([], [])
         assert keys.call_args_list == [
-            call('PROJECT#proj-1'), call(projects.version_partition_key('proj-1')),
+            call('PROJECT#proj-1'), call(projects.version_partition_key('proj-1', workspace=None)),
         ]
         jobs.assert_called_once_with('proj-1')
 
@@ -1488,7 +1488,8 @@ class TestUpdateDocument:
         result, edit = self._update({'sk': 'DOC#d1', 'document_type': 'custom', 'title': 'Old'},
                                     {'title': 'New', 'content': '# new'})
         assert result == {'success': True}
-        assert edit.call_args.kwargs == {'now': '2026-03-04T05:06:07+00:00', 'title': 'New', 'revise': None}
+        assert edit.call_args.kwargs == {'now': '2026-03-04T05:06:07+00:00', 'title': 'New', 'revise': None,
+                                         'workspace': None}
         assert edit.call_args.args[3] == {'title': 'New', 'content': '# new'}
 
     @pytest.mark.parametrize('title', ['', '   ', 7])
@@ -1625,7 +1626,7 @@ class TestDeleteDocument:
     ])
     def test_a_managed_document_snapshots_every_document_first(self, document):
         _result, table, persist, preserve = _delete_document([META, document, OTHER_DOC, PERSONA_ROW])
-        persist.assert_called_once_with(table, 'proj-1', [document, OTHER_DOC])
+        persist.assert_called_once_with(table, 'proj-1', [document, OTHER_DOC], workspace=None)
         preserve.assert_not_called()
 
     @pytest.mark.parametrize(('allocation_id', 'preserved'), [
@@ -1635,7 +1636,7 @@ class TestDeleteDocument:
         document = {**CUSTOM_DOC, 'document_type': 'prd', 'version_allocation_id': allocation_id}
         _result, table, _persist, preserve = _delete_document([META, document])
         if preserved:
-            preserve.assert_called_once_with(table, 'proj-1', document)
+            preserve.assert_called_once_with(table, 'proj-1', document, workspace=None)
         else:
             preserve.assert_not_called()
 

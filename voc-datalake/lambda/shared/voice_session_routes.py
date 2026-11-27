@@ -55,7 +55,7 @@ def _start_finalize(project_id: str) -> StartFinalize:
     """Start a session's transcript job in its project's partition (polled like every project assist job)."""
     def start(row: Mapping[str, Any]) -> str:
         started = assist_jobs.start(
-            project_pk(project_id), ASSIST_VOICE_FINALIZE,
+            project_pk(project_id, workspace=None), ASSIST_VOICE_FINALIZE,
             {'project_id': project_id, 'persona_id': str(row['persona_id']), 'session_id': str(row['session_id'])},
             worker_function=assist_jobs.worker_function(), initiated_by=str(row.get('starter_sub') or ''),
             project_id=project_id)

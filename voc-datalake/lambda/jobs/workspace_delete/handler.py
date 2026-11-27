@@ -506,13 +506,13 @@ def _credentials_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
 def _projects_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
     """The registry's rows go last, each after its project's partitions and its claim, so a registry still holding
     a row means the projects sweep did not finish."""
-    return int(partition_has_rows(run.ctx.projects, project_registry_pk(run.scope))), None
+    return int(partition_has_rows(run.ctx.projects, project_registry_pk(workspace=run.scope))), None
 
 
 def _review_links_left(run: DeleteRun, _start: object) -> tuple[int, Any]:
     """The review link registry's rows go last, each after its link's routing row and its own row, so a registry
     still holding a row means the docshares sweep did not finish."""
-    return int(partition_has_rows(run.ctx.projects, review_link_registry_pk(run.scope))), None
+    return int(partition_has_rows(run.ctx.projects, review_link_registry_pk(workspace=run.scope))), None
 
 
 def _library_left(run: DeleteRun, _start: object) -> tuple[int, Any]:

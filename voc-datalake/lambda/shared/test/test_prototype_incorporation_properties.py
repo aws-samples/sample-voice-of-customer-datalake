@@ -224,10 +224,11 @@ class TestAPassTakesOnlyThisSeriesPinsAndWithholdsAnyNotMarkedClean:
         with patch.object(inc, 'series_pins', return_value=pins) as read:
             if not clean:
                 with pytest.raises(ValidationError, match=r'^Every selected pin was withheld'):
-                    inc.selected_pins('projects', 'pins', 'proj_1', {'document_id': 'doc_head'}, asked)
+                    inc.selected_pins('projects', 'pins', 'proj_1', {'document_id': 'doc_head'}, asked, workspace=None)
                 return
-            accepted, withheld = inc.selected_pins('projects', 'pins', 'proj_1', {'document_id': 'doc_head'}, asked)
-        read.assert_called_once_with('projects', 'pins', 'proj_1', {'document_id': 'doc_head'})
+            accepted, withheld = inc.selected_pins('projects', 'pins', 'proj_1', {'document_id': 'doc_head'}, asked,
+                                                   workspace=None)
+        read.assert_called_once_with('projects', 'pins', 'proj_1', {'document_id': 'doc_head'}, workspace=None)
         assert withheld == [pin_id for pin_id in asked if pin_id not in clean]
         assert accepted == [{'pin_id': pin_id, 'form_id': prototype_pins.pin_form_id(by_id[pin_id]['document_id']),
                              'document_id': by_id[pin_id]['document_id'], 'version': by_id[pin_id]['version']}
@@ -242,7 +243,7 @@ class TestAPassTakesOnlyThisSeriesPinsAndWithholdsAnyNotMarkedClean:
         pins = [_series_pin(pin_id, False, 1) for pin_id in known]
         asked = data.draw(st.permutations(known + strangers))
         with patch.object(inc, 'series_pins', return_value=pins), pytest.raises(ValidationError) as refused:
-            inc.selected_pins('projects', 'pins', 'proj_1', {'document_id': 'doc_head'}, asked)
+            inc.selected_pins('projects', 'pins', 'proj_1', {'document_id': 'doc_head'}, asked, workspace=None)
         assert str(refused.value) == f'{len(strangers)} of the selected pins are not pins of this prototype'
 
 
@@ -284,7 +285,7 @@ class _Pins:
         with (patch.object(prototype_pins, 'mark_addressed_once', side_effect=self.mark),
               patch.object(prototype_pins, 'append_reply_once', side_effect=self.reply),
               patch.object(prototype_pins, 'get_pin', side_effect=self.get)):
-            return inc.incorporate('pins', **kwargs)
+            return inc.incorporate('pins', **kwargs, workspace=None)
 
 
 STATES = st.sampled_from(['open', 'addressed', 'resolved', 'gone', 'full'])
@@ -395,7 +396,7 @@ class TestApplyActsOnTheAcceptedPinsOnlyAndAReplayWritesNothingTwice:
                 patch.object(prototype_pins, 'get_pin') as read, pytest.raises(ClientError):
             inc.incorporate('pins', draft_id='job_1', accepted=[{'pin_id': 'pin_a', 'form_id': 'pf_a'}],
                             outcomes=[{'pin_id': 'pin_a', 'outcome': outcome, 'note': 'Out of scope'}],
-                            new_document_id='doc_v2', actor={'sub': 'u'}, llm_metadata=None, now='T')
+                            new_document_id='doc_v2', actor={'sub': 'u'}, llm_metadata=None, now='T', workspace=None)
         read.assert_not_called()
 
 

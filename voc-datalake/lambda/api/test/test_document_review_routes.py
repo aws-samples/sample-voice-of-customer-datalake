@@ -620,7 +620,7 @@ def _stored_thread(table, comment_id):
     from shared import document_comments, document_series
 
     series = document_series.series_of('p1', V2)['series_id']
-    return document_comments.get_thread(table, 'p1', series, comment_id)
+    return document_comments.get_thread(table, 'p1', series, comment_id, workspace=None)
 
 
 def test_an_editor_marks_threads_addressed_by_the_paths_version(call, table):

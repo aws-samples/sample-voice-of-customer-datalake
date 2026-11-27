@@ -160,5 +160,5 @@ class TestSupersededAvatar:
 
         world.put_versions('avatars/x1/old.png', owner=P)
         world.put_versions('avatars/x1/new.png', owner=P)
-        delete_superseded_avatars(world.s3, BUCKET, 'x1', keep='avatars/x1/new.png', project_id=P)
+        delete_superseded_avatars(world.s3, BUCKET, 'x1', keep='avatars/x1/new.png', project_id=P, workspace=None)
         assert world.versions('avatars/') == ['avatars/x1/new.png'] * 2

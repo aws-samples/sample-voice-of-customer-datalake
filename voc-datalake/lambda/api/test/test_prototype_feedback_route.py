@@ -39,7 +39,7 @@ def _put_pin(aggregates, document_id: str, n: int, comment: str, *, selector: st
     form_id = prototype_pins.pin_form_id(document_id)
     pin_id = f'pin_2026111310{n:010d}abcdef'
     aggregates.put_item(Item={
-        **prototype_pins.pin_key(form_id, pin_id), 'pin_id': pin_id, 'form_id': form_id,
+        **prototype_pins.pin_key(form_id, pin_id, workspace=None), 'pin_id': pin_id, 'form_id': form_id,
         'project_id': PROJECT, 'document_id': document_id, 'status': status, 'flagged': flagged,
         'created_at': f'2026-11-13T10:00:{n:02d}+00:00', 'comment': comment, 'replies': replies or [],
         'anchor': {'selector': selector, 'text_snippet': snippet, 'route': route,
@@ -152,7 +152,7 @@ class TestTheAnswer:
             form_id = prototype_pins.pin_form_id(DOCS[1])
             for n in range(prototype_pins.MAX_PINS_LISTED + 1):
                 pin_id = f'pin_20261113{n:012d}abcdef'
-                batch.put_item(Item={**prototype_pins.pin_key(form_id, pin_id), 'pin_id': pin_id,
+                batch.put_item(Item={**prototype_pins.pin_key(form_id, pin_id, workspace=None), 'pin_id': pin_id,
                                      'status': 'open', 'flagged': False, 'comment': f'Pin number {n}',
                                      'created_at': '2026-11-13T10:00:00+00:00', 'anchor': {}})
         _put_pin(aggregates, DOCS[2], 1, 'One')

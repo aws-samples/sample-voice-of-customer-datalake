@@ -26,10 +26,13 @@ def job_status() -> Iterator[MagicMock]:
 
 @pytest.fixture
 def saved() -> Iterator[MagicMock]:
-    """The item create_counted_project_child is asked to write."""
+    """The item create_counted_project_child is asked to write (the deployment's project)."""
+    def create_child(_t: Any, _p: Any, _k: Any, build: Any, *, workspace: Any) -> Any:
+        assert workspace is None
+        return build('research_1')
+
     with patch('research_step_handler._get_projects_table', return_value=MagicMock()), \
-            patch('research_step_handler.create_counted_project_child',
-                  side_effect=lambda _t, _p, _k, build: build('research_1')) as create:
+            patch('research_step_handler.create_counted_project_child', side_effect=create_child) as create:
         yield create
 
 

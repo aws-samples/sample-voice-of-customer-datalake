@@ -61,7 +61,7 @@ class TestPinnedConstants:
 
 
 def test_meta_gate_read_is_a_consistent_projected_get():
-    assert pa.meta_gate_read('proj_1', 'deleting_at') == {
+    assert pa.meta_gate_read('proj_1', 'deleting_at', workspace=None) == {
         'Key': {'pk': 'PROJECT#proj_1', 'sk': 'META'},
         'ConsistentRead': True,
         'ProjectionExpression': (
@@ -109,7 +109,7 @@ class TestCallerDataclass:
     ],
 )
 def test_private_project_roles(sub, admin, role, view, edit, manage):
-    access = pa.resolve_access(_meta(), _user(sub, admin))
+    access = pa.resolve_access(_meta(), _user(sub, admin), workspace=None)
     assert access.role == role
     assert (access.can_view, access.can_edit, access.can_manage) == (view, edit, manage)
     assert access.to_dict() == {
@@ -118,21 +118,21 @@ def test_private_project_roles(sub, admin, role, view, edit, manage):
 
 
 def test_public_project_lets_every_signed_in_user_edit_but_not_manage():
-    access = pa.resolve_access(_meta('public'), _user(STRANGER))
+    access = pa.resolve_access(_meta('public'), _user(STRANGER), workspace=None)
     assert access.role == 'editor'
     assert access.can_edit
     assert not access.can_manage
 
 
 def test_public_project_viewer_membership_does_not_lower_access():
-    assert pa.resolve_access(_meta('public'), _user(VIEWER)).role == 'editor'
+    assert pa.resolve_access(_meta('public'), _user(VIEWER), workspace=None).role == 'editor'
 
 
 def test_legacy_project_reads_public_and_only_admins_manage():
     legacy = _meta(visibility=None, owner=None, members={})
     assert pa.project_visibility(legacy) == 'public'
-    assert pa.resolve_access(legacy, _user(STRANGER)).role == 'editor'
-    assert pa.resolve_access(legacy, _user(STRANGER, admin=True)).can_manage
+    assert pa.resolve_access(legacy, _user(STRANGER), workspace=None).role == 'editor'
+    assert pa.resolve_access(legacy, _user(STRANGER, admin=True), workspace=None).can_manage
 
 
 def test_unknown_visibility_value_reads_public():
@@ -140,7 +140,7 @@ def test_unknown_visibility_value_reads_public():
 
 
 def test_missing_meta_grants_nothing():
-    assert pa.resolve_access(None, _user(OWNER, admin=True)).role is None
+    assert pa.resolve_access(None, _user(OWNER, admin=True), workspace=None).role is None
 
 
 def test_malformed_member_entries_are_ignored():
@@ -150,7 +150,7 @@ def test_malformed_member_entries_are_ignored():
         '': {'role': 'editor'},
     })
     assert pa.project_members(meta) == {}
-    assert pa.resolve_access(meta, _user(STRANGER)).role is None
+    assert pa.resolve_access(meta, _user(STRANGER), workspace=None).role is None
 
 
 def test_members_that_are_not_a_map_read_as_none():
@@ -160,7 +160,7 @@ def test_members_that_are_not_a_map_read_as_none():
 
 def test_blank_subject_never_matches_an_ownerless_or_memberless_entry():
     meta = _meta(owner='', members={'': {'role': 'editor'}})
-    assert pa.resolve_access(meta, pa.Caller(subject='')).role is None
+    assert pa.resolve_access(meta, pa.Caller(subject=''), workspace=None).role is None
 
 
 class TestCallerFromClaims:
@@ -195,14 +195,14 @@ class TestCallerFromClaims:
         assert caller.subject == OWNER
         assert caller.delegated
         assert not caller.is_admin
-        access = pa.resolve_access(_meta(), caller)
+        access = pa.resolve_access(_meta(), caller, workspace=None)
         assert access.role == 'editor'
         assert not access.can_manage
 
     def test_delegated_credential_without_minter_reaches_only_public(self):
         caller = pa.caller_from_claims({'sub': 'mcp:tok1'}, [])
-        assert pa.resolve_access(_meta(), caller).role is None
-        assert pa.resolve_access(_meta('public'), caller).role == 'editor'
+        assert pa.resolve_access(_meta(), caller, workspace=None).role is None
+        assert pa.resolve_access(_meta('public'), caller, workspace=None).role == 'editor'
 
     def test_credential_cannot_act_as_another_credential(self):
         caller = pa.caller_from_claims(
@@ -215,7 +215,7 @@ class TestCallerFromClaims:
             {'sub': STRANGER, pa.ACTING_SUBJECT_CLAIM: OWNER}, [],
         )
         assert caller.subject == STRANGER
-        assert pa.resolve_access(_meta(), caller).role is None
+        assert pa.resolve_access(_meta(), caller, workspace=None).role is None
 
 
 @pytest.mark.parametrize('event', [

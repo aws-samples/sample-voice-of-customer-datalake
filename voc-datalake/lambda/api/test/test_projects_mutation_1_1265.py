@@ -240,7 +240,7 @@ class TestWrappers:
         with patch.object(projects, '_generate_persona_avatar', return_value={'avatar_url': 'u'}) as inner:
             result = projects.generate_persona_avatar({'name': 'A'}, 'bucket', 'proj_1')
         assert result == {'avatar_url': 'u'}
-        inner.assert_called_once_with({'name': 'A'}, 'bucket', 'proj_1')
+        inner.assert_called_once_with({'name': 'A'}, 'bucket', 'proj_1', workspace=None)
 
     def test_the_feedback_wrapper_reads_the_module_table_with_the_given_limit(self):
         with patch.object(projects, '_get_feedback_context', return_value=[{'id': 1}]) as inner, \
@@ -459,7 +459,7 @@ class TestCreateProject:
     def test_without_a_table_the_create_is_a_configuration_error(self):
         with patch.object(projects, 'projects_table', None), \
                 pytest.raises(ConfigurationError, match=r'^Projects table not configured$'):
-            projects.create_project({}, OWNER)
+            projects.create_project({}, OWNER, workspace=None)
 
     @pytest.mark.parametrize('caller', [
         Caller(subject='minter-sub', delegated=True),
@@ -468,11 +468,11 @@ class TestCreateProject:
     ])
     def test_a_credential_or_subjectless_caller_cannot_own_a_project(self, table, caller):
         with pytest.raises(AuthorizationError, match=r'^Only a signed-in user can create a project$'):
-            projects.create_project({}, caller)
+            projects.create_project({}, caller, workspace=None)
         table.put_item.assert_not_called()
 
     def test_the_stored_item_and_the_response_for_a_bare_body(self, table, frozen_clock, fixed_id_suffix):
-        result = projects.create_project({}, OWNER)
+        result = projects.create_project({}, OWNER, workspace=None)
         project_id = f'proj_20260304050607_{fixed_id_suffix}'
         item = {
             'pk': f'PROJECT#{project_id}', 'sk': 'META', 'gsi1pk': 'TYPE#PROJECT',
@@ -504,7 +504,7 @@ class TestCreateProject:
         projects.create_project({
             'name': 'Named', 'description': 'Described', 'purpose': '  why  ', 'visibility': 'public',
             'filters': {'days': 7}, 'kiro_export_prompt': 'Do this', 'ignored': 'x',
-        }, OWNER)
+        }, OWNER, workspace=None)
         item = table.put_item.call_args.kwargs['Item']
         assert item['name'] == 'Named'
         assert item['description'] == 'Described'
@@ -517,7 +517,7 @@ class TestCreateProject:
 
     def test_an_invalid_visibility_is_the_validators_message(self, table):
         with pytest.raises(ValidationError) as refusal:
-            projects.create_project({'visibility': 'secret'}, OWNER)
+            projects.create_project({'visibility': 'secret'}, OWNER, workspace=None)
         with pytest.raises(ValueError, match=r'visibility') as original:
             project_access.validate_visibility('secret')
         assert str(refusal.value) == str(original.value)
@@ -529,7 +529,7 @@ class TestCreateProject:
         sharing = {'owner_sub': 'target', 'owner_username': 't', 'owner_email': 't@x', 'members': {},
                    'created_by_agent': 'agent-1'}
         with patch.object(projects, '_agent_created_sharing', return_value=sharing) as shared:
-            result = projects.create_project({}, agent)
+            result = projects.create_project({}, agent, workspace=None)
         shared.assert_called_once_with(agent)
         item = table.put_item.call_args.kwargs['Item']
         assert item['owner_sub'] == 'target'
@@ -655,7 +655,7 @@ class TestSignedPrototypeUrl:
             assert projects._with_signed_prototype_url(item, 'proj_1') == {
                 'document_type': 'prototype', 'document_id': 'd1', 'prototype_url': 'https://signed',
             }
-        sign.assert_called_once_with('proj_1', 'd1')
+        sign.assert_called_once_with('proj_1', 'd1', workspace=None)
 
     def test_an_unsignable_prototype_loses_its_stale_url(self):
         item = {'document_type': 'prototype', 'document_id': 'd1', 'prototype_url': 'stale'}
@@ -819,7 +819,7 @@ class TestGetProject:
                 patch.object(projects, '_with_signed_prototype_url', side_effect=lambda item, _pid: {**item, 'signed': True}) as sign_prototype, \
                 patch.object(projects, 'normalize_document_versions', side_effect=lambda docs: [{**d, 'normalized': True} for d in docs]):
             result = projects.get_project('proj_1', OWNER)
-        sign_avatar.assert_called_once_with('s3://bucket/avatars/p1.png')
+        sign_avatar.assert_called_once_with('s3://bucket/avatars/p1.png', workspace=None)
         sign_prototype.assert_called_once_with(self._partition()[4], 'proj_1')
         assert result['personas'] == [
             {'sk': 'PERSONA#p1', 'persona_id': 'p1', 'avatar_url': 'https://cdn/signed'},
@@ -1164,8 +1164,8 @@ class TestStartProjectDeletion:
 
 class TestProjectPrefixes:
     def test_each_prefix_ends_with_a_slash_after_the_project_id(self):
-        assert projects.prototype_project_prefix('proj_1') == 'prototypes/proj_1/'
-        assert projects.product_docs_project_prefix('proj_1') == 'projects/proj_1/product_docs/'
+        assert projects.prototype_project_prefix('proj_1', workspace=None) == 'prototypes/proj_1/'
+        assert projects.product_docs_project_prefix('proj_1', workspace=None) == 'projects/proj_1/product_docs/'
 
 
 class TestDeleteProjectJobRows:

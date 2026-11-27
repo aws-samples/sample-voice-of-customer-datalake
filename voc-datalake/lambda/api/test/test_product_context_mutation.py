@@ -306,7 +306,7 @@ class TestUpdateContext:
             'pk': 'PROJECT#p1', 'sk': 'PRODUCT_CONTEXT',
             'created_at': FROZEN_ISO, 'updated_at': FROZEN_ISO,
             **EMPTY_CONTEXT, 'product_name': 'Acme',
-        })
+        }, workspace=None)
         assert table.get_item.call_args_list[0].kwargs == {
             'Key': CONTEXT_KEY, 'ProjectionExpression': 'pk',
         }
@@ -554,7 +554,7 @@ class TestCreateUploadUrl:
             's3_raw_key': 'projects/p1/product_docs/raw/abc123.md',
             's3_extracted_key': None, 'status': 'pending', 'error': None,
             'extracted_chars': 0, 'created_at': FROZEN_ISO,
-        })
+        }, workspace=None)
         s3.generate_presigned_url.assert_called_once_with(
             ClientMethod='put_object',
             Params={
@@ -1069,4 +1069,4 @@ class TestProductDocsPrefix:
 
         # An empty id would name every project's folder (``projects/product_docs/`` is no project's).
         with pytest.raises(ValueError, match='names a project id'):
-            product_docs_prefix('')
+            product_docs_prefix('', workspace=None)

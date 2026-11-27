@@ -64,7 +64,7 @@ class TestReadGateMeta:
         table = MagicMock()
         table.get_item.return_value = {'Item': _meta()}
 
-        assert project_gate.read_gate_meta(table, 'p1') == _meta()
+        assert project_gate.read_gate_meta(table, 'p1', workspace=None) == _meta()
         kwargs = table.get_item.call_args.kwargs
         assert kwargs['Key'] == {'pk': 'PROJECT#p1', 'sk': 'META'}
         assert kwargs['ConsistentRead'] is True
@@ -74,7 +74,7 @@ class TestReadGateMeta:
         table = MagicMock()
         table.get_item.return_value = response
 
-        assert project_gate.read_gate_meta(table, 'p1') is None
+        assert project_gate.read_gate_meta(table, 'p1', workspace=None) is None
 
     @pytest.mark.parametrize('error', [
         ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException',
@@ -86,7 +86,7 @@ class TestReadGateMeta:
         table.get_item.side_effect = error
 
         with pytest.raises(ServiceError, match='Could not verify project access') as raised:
-            project_gate.read_gate_meta(table, 'p1')
+            project_gate.read_gate_meta(table, 'p1', workspace=None)
         assert raised.value.__cause__ is error
 
     def test_other_exceptions_propagate_unchanged(self):
@@ -94,13 +94,13 @@ class TestReadGateMeta:
         table.get_item.side_effect = RuntimeError('bug')
 
         with pytest.raises(RuntimeError):
-            project_gate.read_gate_meta(table, 'p1')
+            project_gate.read_gate_meta(table, 'p1', workspace=None)
 
     def test_the_company_persona_library_reads_as_missing_without_a_read(self):
         table = MagicMock()
         table.get_item.return_value = {'Item': _meta()}
 
-        assert project_gate.read_gate_meta(table, 'company_personas') is None
+        assert project_gate.read_gate_meta(table, 'company_personas', workspace=None) is None
         table.get_item.assert_not_called()
 
 
@@ -109,7 +109,7 @@ class TestRequireProjectLevel:
         read = MagicMock()
 
         access = project_gate.require_project_level(
-            read, Caller(subject='a', is_admin=True), project_access.LEVEL_MANAGE,
+            read, Caller(subject='a', is_admin=True), project_access.LEVEL_MANAGE, workspace=None,
         )
 
         assert access.role == project_access.ROLE_ADMIN
@@ -117,7 +117,7 @@ class TestRequireProjectLevel:
 
     def test_owner_may_manage(self):
         access = project_gate.require_project_level(
-            _meta, Caller(subject=OWNER), project_access.LEVEL_MANAGE,
+            _meta, Caller(subject=OWNER), project_access.LEVEL_MANAGE, workspace=None,
         )
 
         assert access.role == project_access.ROLE_OWNER
@@ -126,12 +126,12 @@ class TestRequireProjectLevel:
     def test_missing_or_tombstoned_is_404(self, meta):
         with pytest.raises(NotFoundError, match='Project not found'):
             project_gate.require_project_level(
-                lambda: meta, Caller(subject=OWNER), project_access.LEVEL_VIEW,
+                lambda: meta, Caller(subject=OWNER), project_access.LEVEL_VIEW, workspace=None,
             )
 
     def test_the_missing_message_is_configurable(self):
         with pytest.raises(NotFoundError, match='Board not found'):
             project_gate.require_project_level(
                 lambda: None, Caller(subject=OWNER), project_access.LEVEL_VIEW,
-                missing_message='Board not found',
+                missing_message='Board not found', workspace=None,
             )

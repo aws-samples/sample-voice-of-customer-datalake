@@ -64,11 +64,11 @@ class World:
         """One built version: its row and its object, the widget naming its own form."""
         doc_id = versioned_document_id(project, 'prototype', job_id)
         html = inject_pin_widget(f'<!DOCTYPE html><html><body>{body}</body></html>', pin_form_id(doc_id))
-        self.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(project, doc_id), Body=html.encode())
+        self.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(project, doc_id, workspace=None), Body=html.encode())
         return persist_versioned_document(self.projects, project, 'prototype', title, job_id, {
             'content': '', 'prototype_format': 'html', 'created_at': f'2026-05-0{len(job_id) % 9 + 1}T00:00:00+00:00',
             'job_id': job_id, 'source_prd_id': 'prd_1', **fields,
-        })
+        }, workspace=None)
 
     def draft(self, base: dict, *, project: str = PROJECT, draft_id: str = DRAFT_ID, html: str | None = None,
               **row: Any) -> dict:
@@ -85,7 +85,8 @@ class World:
         }
         self.jobs.put_item(Item=item)
         page = html if html is not None else '<!DOCTYPE html><html><body><footer>Sticky</footer></body></html>'
-        self.s3.put_object(Bucket=BUCKET, Key=prototype_draft_s3_key(project, draft_id), Body=page.encode())
+        self.s3.put_object(Bucket=BUCKET, Key=prototype_draft_s3_key(project, draft_id, workspace=None),
+                           Body=page.encode())
         return item
 
     def pin(self, version: dict, pin_id: str, comment: str, *, flagged: bool = False, **fields: Any) -> dict:
@@ -116,7 +117,7 @@ class World:
                    'llm_metadata': {'model': 'test-model', 'prompt_version': '1.1.0'}, **detail})
 
     def html(self, doc_id: str) -> str:
-        return object_text(self.s3, BUCKET, prototype_s3_key(PROJECT, doc_id))
+        return object_text(self.s3, BUCKET, prototype_s3_key(PROJECT, doc_id, workspace=None))
 
     def prototype_rows(self) -> list[dict]:
         # The project's own partition: the version allocations (DOCUMENT_VERSIONS#…) share the sort key prefix.
@@ -166,10 +167,12 @@ def world(api_gateway_event, lambda_context, monkeypatch: pytest.MonkeyPatch) ->
         def call(claims: dict, method: str, path: str, body: dict | None = None) -> tuple[int, Any]:
             return project_route_call(api_gateway_event, lambda_context, claims, method, path, body)
 
-        def sign_draft(project_id: str, draft_id: str) -> str:
+        def sign_draft(project_id: str, draft_id: str, *, workspace: None) -> str:
+            assert workspace is None  # the deployment's object
             return f'https://cdn.example/prototypes/{project_id}/drafts/{draft_id}.html?Signature=s'
 
-        def sign(project_id: str, doc_id: str) -> str:
+        def sign(project_id: str, doc_id: str, *, workspace: None) -> str:
+            assert workspace is None  # the deployment's object
             return f'https://cdn.example/prototypes/{project_id}/{doc_id}.html?Signature=s'
 
         with (
@@ -196,9 +199,9 @@ def _apply_that_looked_before_the_other_landed(world: World, path: str) -> tuple
     real = prototype_drafts.get_versioned_document_by_allocation
     looks: list[tuple] = []
 
-    def looked_before_the_other_landed(*args: Any) -> dict | None:
+    def looked_before_the_other_landed(*args: Any, **kwargs: Any) -> dict | None:
         looks.append(args)
-        return None if len(looks) == 1 else real(*args)
+        return None if len(looks) == 1 else real(*args, **kwargs)
 
     with patch.object(prototype_drafts, 'get_versioned_document_by_allocation',
                       side_effect=looked_before_the_other_landed), \
@@ -274,14 +277,14 @@ class TestStartingADraft:
 
     def test_an_early_json_spec_head_is_a_400_and_a_lost_object_a_404(self, world):
         spec = persist_versioned_document(world.projects, PROJECT, 'prototype', 'Spec', 'job_9', {
-            'content': '{"screens": []}', 'created_at': '2026-01-01T00:00:00+00:00'})
+            'content': '{"screens": []}', 'created_at': '2026-01-01T00:00:00+00:00'}, workspace=None)
         status, answer = world.call(EDITOR, 'POST', f'/projects/{PROJECT}/prototypes/{spec["document_id"]}/drafts',
                                     {'instruction': INSTRUCTION})
         assert status == 400
         assert 'early screen spec' in answer['error']
 
         _, v2 = _two_versions(world)
-        world.s3.delete_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, v2['document_id']))
+        world.s3.delete_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, v2['document_id'], workspace=None))
         status, answer = world.call(EDITOR, 'POST', f'/projects/{PROJECT}/prototypes/{v2["document_id"]}/drafts',
                                     {'instruction': INSTRUCTION})
         assert status == 404
@@ -343,21 +346,21 @@ class TestTheOutline:
 
     def test_an_early_json_spec_is_a_400_and_a_lost_object_a_404(self, world):
         spec = persist_versioned_document(world.projects, PROJECT, 'prototype', 'Spec', 'job_9', {
-            'content': '{"screens": []}', 'created_at': '2026-01-01T00:00:00+00:00'})
+            'content': '{"screens": []}', 'created_at': '2026-01-01T00:00:00+00:00'}, workspace=None)
         status, body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{spec["document_id"]}/outline')
         # The words fit every reader of a version's HTML (the outline, a draft's start, Back to vN).
         assert (status, body['error']) == (
             400, 'This prototype is an early screen spec, not HTML. Build a new prototype instead.')
 
         v1, _ = _two_versions(world)
-        world.s3.delete_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, v1['document_id']))
+        world.s3.delete_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, v1['document_id'], workspace=None))
         status, body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{v1["document_id"]}/outline')
         assert (status, body['error']) == (404, "This version's HTML is no longer stored, so it cannot be read")
 
     def test_inline_html_of_the_oldest_prototypes_is_read_too(self, world):
         old = persist_versioned_document(world.projects, PROJECT, 'prototype', 'Old', 'job_8', {
             'content': '<!DOCTYPE html><html><body><p>Inline</p></body></html>',
-            'created_at': '2026-01-01T00:00:00+00:00'})
+            'created_at': '2026-01-01T00:00:00+00:00'}, workspace=None)
         body = world.call(VIEWER, 'GET', f'/projects/{PROJECT}/prototypes/{old["document_id"]}/outline')[1]
         assert body['screens'] == [{'route': '', 'headings': [], 'text': ['Inline']}]
 
@@ -535,7 +538,8 @@ class TestApplyingADraft:
         _, v2 = _two_versions(world)
         world.draft(v2)
         new_id = versioned_document_id(PROJECT, 'prototype', f'apply:{DRAFT_ID}')
-        earlier = world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, new_id), Body=b'<html></html>')
+        earlier = world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, new_id, workspace=None),
+                                      Body=b'<html></html>')
 
         status, body = world.call(EDITOR, 'POST', f'{world.draft_path(v2["document_id"])}/apply')
 
@@ -545,7 +549,7 @@ class TestApplyingADraft:
     def test_a_draft_whose_object_is_gone_is_a_404(self, world):
         _, v2 = _two_versions(world)
         world.draft(v2)
-        world.s3.delete_object(Bucket=BUCKET, Key=prototype_draft_s3_key(PROJECT, DRAFT_ID))
+        world.s3.delete_object(Bucket=BUCKET, Key=prototype_draft_s3_key(PROJECT, DRAFT_ID, workspace=None))
 
         status, body = world.call(EDITOR, 'POST', f'{world.draft_path(v2["document_id"])}/apply')
 

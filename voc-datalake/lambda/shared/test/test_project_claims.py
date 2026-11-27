@@ -159,7 +159,8 @@ def test_a_callers_own_claim_entry_stays_refused(table):
 
 def test_the_deployment_takes_no_claim(table):
     with pytest.raises(OutOfScopeError, match='never the deployment'):
-        transact_project_writes(table, [], outside=claim_project_id(PROJECT, workspace=A, claimed_at=STAMP))
+        transact_project_writes(table, [], outside=claim_project_id(PROJECT, workspace=A, claimed_at=STAMP),
+                                workspace=None)
     assert _keys(table) == []
 
 
@@ -169,7 +170,7 @@ def test_a_workspace_create_writes_the_claim_the_meta_and_the_registry_row(table
     create_workspace_project(table, _meta(PROJECT, A), workspace=A)
 
     assert _keys(table) == [(f'PROJECT_ID#{PROJECT}', 'CLAIM'), (project_pk(PROJECT, workspace=A), 'META'),
-                            (project_registry_pk(A), PROJECT)]
+                            (project_registry_pk(workspace=A), PROJECT)]
     registry_row = table.get_item(Key=project_registry_key(PROJECT, workspace=A))['Item']
     assert registry_row == {**project_registry_key(PROJECT, workspace=A), 'created_at': STAMP}
     assert project_claim(table, PROJECT) == A
@@ -196,7 +197,7 @@ def test_another_cancellation_is_not_a_claim_collision_and_leaves_no_claim(table
         create_workspace_project(table, _meta(PROJECT, A), workspace=A)
 
     assert not is_key_collision(cancelled.value, put_index=OUTSIDE_ENTRY_INDEX)
-    assert _keys(table) == [(project_registry_pk(A), PROJECT)]
+    assert _keys(table) == [(project_registry_pk(workspace=A), PROJECT)]
     assert project_claim(table, PROJECT) is None
 
 
@@ -291,7 +292,7 @@ def test_a_registry_row_read_with_its_projection_says_whether_its_project_is_del
     for project_id, deleted in marks:
         table.put_item(Item={**project_registry_key(project_id, workspace=A), 'created_at': STAMP,
                              **({} if deleted is None else {'deleted_at': deleted})})
-    page = ws_table(A, table).query('pk', project_registry_pk(A), ProjectionExpression=REGISTRY_PROJECTION,
+    page = ws_table(A, table).query('pk', project_registry_pk(workspace=A), ProjectionExpression=REGISTRY_PROJECTION,
                                     ConsistentRead=True)
     assert [registered_project(row) for row in page['Items']] == [
         ('proj_a_00', False, None), ('proj_a_01', True, STAMP), ('proj_a_02', True, None),

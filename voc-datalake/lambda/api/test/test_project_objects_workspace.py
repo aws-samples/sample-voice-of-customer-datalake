@@ -39,17 +39,17 @@ def s3() -> Iterator[Any]:
 
 
 def test_the_deployments_object_keys_are_the_ones_written_before():
-    assert avatar.avatar_object_key('persona_1', b'img', 'jpeg').startswith('avatars/persona_1/')
-    assert 'avatars/persona_1.jpeg' in avatar.avatar_object_keys('persona_1')
-    assert prototype_s3_key(PROJECT, 'doc_1') == f'prototypes/{PROJECT}/doc_1.html'
-    assert product_context.product_doc_raw_key(PROJECT, 'doc_1', 'pdf') == (
+    assert avatar.avatar_object_key('persona_1', b'img', 'jpeg', workspace=None).startswith('avatars/persona_1/')
+    assert 'avatars/persona_1.jpeg' in avatar.avatar_object_keys('persona_1', workspace=None)
+    assert prototype_s3_key(PROJECT, 'doc_1', workspace=None) == f'prototypes/{PROJECT}/doc_1.html'
+    assert product_context.product_doc_raw_key(PROJECT, 'doc_1', 'pdf', workspace=None) == (
         f'projects/{PROJECT}/product_docs/raw/doc_1.pdf')
 
 
 def test_a_workspaces_object_keys_are_the_same_keys_under_its_prefix():
     prefix = f'ws/{A.ws}/'
     assert avatar.avatar_object_key('persona_1', b'img', 'jpeg', workspace=A) == (
-        f"{prefix}{avatar.avatar_object_key('persona_1', b'img', 'jpeg')}")
+        f"{prefix}{avatar.avatar_object_key('persona_1', b'img', 'jpeg', workspace=None)}")
     assert prototype_s3_key(PROJECT, 'doc_1', workspace=A) == f'{prefix}prototypes/{PROJECT}/doc_1.html'
     assert product_context.product_doc_raw_key(PROJECT, 'doc_1', 'pdf', workspace=A) == (
         f'{prefix}projects/{PROJECT}/product_docs/raw/doc_1.pdf')
@@ -74,7 +74,7 @@ def test_the_extractor_reads_each_scopes_upload_key_with_its_own_pattern():
     configuration when it is first imported, after its own suite's conftest has set it.)"""
     from product_doc_extractor import handler as extractor
 
-    deployment = product_context.product_doc_raw_key(PROJECT, 'doc_1', 'md')
+    deployment = product_context.product_doc_raw_key(PROJECT, 'doc_1', 'md', workspace=None)
     workspace = product_context.product_doc_raw_key(PROJECT, 'doc_1', 'md', workspace=A)
     assert [bool(extractor.RAW_KEY_PATTERN.fullmatch(key)) for key in (deployment, workspace)] == [True, False]
     match = extractor.WORKSPACE_RAW_KEY_PATTERN.fullmatch(workspace)
@@ -87,8 +87,9 @@ def test_each_scope_lists_only_its_own_avatars(s3):
                 f'ws/{B.ws}/avatars/persona_1/cc.jpeg'):
         s3.put_object(Bucket=BUCKET, Key=key, Body=b'img')
     assert avatar.persona_avatar_keys(s3, BUCKET, 'persona_1', workspace=A) == [f'ws/{A.ws}/avatars/persona_1/bb.jpeg']
-    assert avatar.persona_avatar_keys(s3, BUCKET, 'persona_1')[-1] == 'avatars/persona_1/aa.jpeg'
-    assert f'ws/{A.ws}/avatars/persona_1/bb.jpeg' not in avatar.persona_avatar_keys(s3, BUCKET, 'persona_1')
+    assert avatar.persona_avatar_keys(s3, BUCKET, 'persona_1', workspace=None)[-1] == 'avatars/persona_1/aa.jpeg'
+    assert f'ws/{A.ws}/avatars/persona_1/bb.jpeg' not in avatar.persona_avatar_keys(s3, BUCKET, 'persona_1',
+                                                                                    workspace=None)
 
 
 @pytest.mark.parametrize(('scope', 'expected'), [
@@ -159,7 +160,7 @@ def test_a_workspace_avatar_key_that_is_not_a_plain_path_is_refused(key):
                                  'avatars/p//q.jpeg', 'avatars/p%2Fq.jpeg', 'avatars/p\\q.jpeg', 'avatars/p.jpeg?x'],
                          ids=['climbs-to-ws', 'leading-slash', 'dot-dot', 'empty', 'escape', 'backslash', 'query'])
 def test_the_deployments_reader_refuses_a_key_that_is_not_a_plain_path(key):
-    assert avatar.avatar_key_from_uri(f's3://{BUCKET}/{key}', BUCKET) is None
+    assert avatar.avatar_key_from_uri(f's3://{BUCKET}/{key}', BUCKET, workspace=None) is None
     assert _signing(key, None, bucket=BUCKET) == (None, [])
 
 
@@ -173,7 +174,7 @@ def test_the_avatars_bucket_defaults_to_the_raw_data_bucket(monkeypatch):
 def test_a_workspaces_prototype_is_never_signed_until_the_switch():
     with patch('shared.cloudfront_signing.sign_url', side_effect=lambda url: url):
         assert prototype_signed_url(PROJECT, 'doc_1', 'https://cdn.example.com/prototypes', workspace=A) is None
-        assert prototype_signed_url(PROJECT, 'doc_1', 'https://cdn.example.com/prototypes') == (
+        assert prototype_signed_url(PROJECT, 'doc_1', 'https://cdn.example.com/prototypes', workspace=None) == (
             f'https://cdn.example.com/prototypes/{PROJECT}/doc_1.html')
 
 

@@ -56,7 +56,7 @@ def require_admin_caller(caller: Caller) -> None:
         raise AuthorizationError('Admin access required')
 
 
-def read_gate_meta(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None) -> dict | None:
+def read_gate_meta(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> dict | None:
     """The project's META, projected to what the decision needs, or None.
 
     A failed read raises ServiceError (a JSON 500) rather than leaking a raw
@@ -75,7 +75,7 @@ def read_gate_meta(table: Any, project_id: str, *, workspace: WorkspaceScope | N
     return read_gate_item(
         table, log_message='Project access read failed',
         error_message='Could not verify project access. Please retry.',
-        **project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE),
+        **project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE, workspace=workspace),
     )
 
 
@@ -85,7 +85,7 @@ def require_project_level(
     level: str,
     *,
     missing_message: str = PROJECT_NOT_FOUND,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> ProjectAccess:
     """The caller's access at ``level`` or above, else the prescribed refusal.
 
@@ -103,7 +103,7 @@ def require_project_level(
     meta = read_meta()
     if not meta or is_project_tombstone(meta):
         raise NotFoundError(missing_message)
-    access = project_access.resolve_access(meta, caller)
+    access = project_access.resolve_access(meta, caller, workspace=workspace)
     if not access.can_view:
         raise NotFoundError(missing_message)
     if not access.allows(level):
@@ -112,7 +112,7 @@ def require_project_level(
 
 
 def require_viewable_pin(table: Any, project_id: object, caller: Caller, *,
-                         workspace: WorkspaceScope | None = None) -> str | None:
+                         workspace: WorkspaceScope | None) -> str | None:
     """The optional project pin of an MCP credential (token or OAuth grant), which ``caller`` must be able to view.
 
     ``None`` / ``''`` = no pin. Checked for admins too (who skip the access gate), so a pin always names a
@@ -124,8 +124,9 @@ def require_viewable_pin(table: Any, project_id: object, caller: Caller, *,
         return None
     if not isinstance(project_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(project_id):
         raise ValidationError('project_id is not a valid project id')
-    require_project_level(lambda: read_gate_meta(table, project_id), caller, project_access.LEVEL_VIEW)
-    if caller.is_admin and not read_gate_meta(table, project_id):
+    require_project_level(lambda: read_gate_meta(table, project_id, workspace=workspace), caller,
+                          project_access.LEVEL_VIEW, workspace=workspace)
+    if caller.is_admin and not read_gate_meta(table, project_id, workspace=workspace):
         raise NotFoundError(PROJECT_NOT_FOUND)
     return project_id
 

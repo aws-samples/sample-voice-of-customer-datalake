@@ -1020,7 +1020,7 @@ class TestGetProjectSigning:
         assert result['personas'][0]['avatar_url'] == 'https://cdn/a'
         assert result['documents'][0]['prototype_url'] == 'https://cdn/p'
         avatar.assert_called_once()
-        proto.assert_called_once_with('p1', 'd1')
+        proto.assert_called_once_with('p1', 'd1', workspace=None)
 
 
 class TestListProjectsPagination:

@@ -115,7 +115,7 @@ def test_the_type_index_keeps_each_scopes_projects_apart():
         for scope in SCOPES:
             projects.put_item(Item={'pk': _pk(scope), 'sk': 'META', 'gsi1pk': project_type_pk(workspace=scope),
                                     'gsi1sk': STAMP, 'name': _scope_name(scope)})
-        deployment = projects.query(IndexName=BY_TYPE, KeyConditionExpression=Key('gsi1pk').eq(project_type_pk()))
+        deployment = projects.query(IndexName=BY_TYPE, KeyConditionExpression=Key('gsi1pk').eq(project_type_pk(workspace=None)))
         assert [row['name'] for row in deployment['Items']] == ['deployment']
         listed = query_partition(A, projects, 'gsi1pk', project_type_pk(workspace=A), IndexName=BY_TYPE)
         assert [row['name'] for row in listed['Items']] == [A.ws]
@@ -181,7 +181,7 @@ def test_the_gate_refuses_a_workspace_even_where_the_deployments_policy_would_pa
     # Workspace B's project is public: the deployment's policy would let its admin and every signed-in user in.
     _meta(table, B, visibility='public', owner_sub='sub-other')
     meta = table.get_item(Key={'pk': _pk(B), 'sk': 'META'})['Item']
-    assert project_access.resolve_access(meta, caller).can_view
+    assert project_access.resolve_access(meta, caller, workspace=None).can_view
     with pytest.raises(NotPerWorkspaceError, match=GATE_REFUSED):
         project_access.resolve_access(meta, caller, workspace=B)
     with pytest.raises(NotPerWorkspaceError, match=GATE_REFUSED):
@@ -194,9 +194,9 @@ def test_the_gate_refuses_a_workspace_even_where_the_deployments_policy_would_pa
 
 def test_the_gate_reads_the_deployments_meta_only(table):
     _meta(table, A, visibility='private', owner_sub='sub-ada')
-    assert project_gate.read_gate_meta(table, PROJECT) is None
+    assert project_gate.read_gate_meta(table, PROJECT, workspace=None) is None
     _meta(table, None, visibility='public')
-    assert (project_gate.read_gate_meta(table, PROJECT) or {}).get('visibility') == 'public'
+    assert (project_gate.read_gate_meta(table, PROJECT, workspace=None) or {}).get('visibility') == 'public'
 
 
 # ── The stores ───────────────────────────────────────────────────────────────
@@ -205,11 +205,12 @@ def test_the_company_library_is_each_scopes_own(table):
     company_personas.ensure_company_personas_meta(table, workspace=A)
     library = company_personas.COMPANY_PERSONAS_CONTAINER
     table.put_item(Item={'pk': project_pk(library, workspace=A), 'sk': 'PERSONA#persona_a', 'persona_id': 'persona_a'})
-    table.put_item(Item={'pk': project_pk(library), 'sk': 'PERSONA#persona_d', 'persona_id': 'persona_d'})
+    table.put_item(Item={'pk': project_pk(library, workspace=None), 'sk': 'PERSONA#persona_d',
+                         'persona_id': 'persona_d'})
     assert [row['persona_id'] for row in company_personas.company_persona_items(table, workspace=A)] == ['persona_a']
     assert [row['persona_id'] for row in company_personas.company_persona_items(table)] == ['persona_d']
     assert company_personas.company_persona_items(table, workspace=B) == []
-    assert table.get_item(Key={'pk': project_pk(library), 'sk': 'META'}).get('Item') is None
+    assert table.get_item(Key={'pk': project_pk(library, workspace=None), 'sk': 'META'}).get('Item') is None
 
 
 @pytest.mark.parametrize('scope', SCOPES, ids=_scope_name)

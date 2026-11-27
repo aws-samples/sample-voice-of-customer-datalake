@@ -193,7 +193,7 @@ class TestPersistLegacyIdentity:
             'SET #expires = :expires, updated_at = :now'
         )
         assert _transactions(table) == [[
-            project_writable_condition('projects', 'p1'),
+            project_writable_condition('projects', 'p1', workspace=None),
             LEASE_CHECK,
             ASSIGNMENT_PUT,
             _legacy_document_update('projects', ORIGINAL, CANONICAL),
@@ -405,7 +405,7 @@ class TestDocumentIdentity:
         assert _document_key('p1', 'prd', 'a1', workspace=None) == DOC_KEY
 
     def test_counter_key(self):
-        assert version_counter_key('p1', 'prd', 'launch') == SERIES_KEY
+        assert version_counter_key('p1', 'prd', 'launch', workspace=None) == SERIES_KEY
 
 
 class TestAllocationItem:
@@ -454,7 +454,7 @@ class TestAllocationAssertions:
 
 
 HISTORY_PUT = [
-    project_writable_condition('projects', 'p1'),
+    project_writable_condition('projects', 'p1', workspace=None),
     {'Put': {
         'TableName': 'projects', 'Item': _allocation_row(), 'ConditionExpression': NOT_EXISTS,
     }},
@@ -538,7 +538,7 @@ class TestEnsureAllocationHistory:
 
 
 def _by_allocation(table: MagicMock) -> dict[str, Any] | None:
-    return get_versioned_document_by_allocation(table, 'p1', 'prd', 'a1')
+    return get_versioned_document_by_allocation(table, 'p1', 'prd', 'a1', workspace=None)
 
 
 class TestGetVersionedDocumentByAllocation:
@@ -588,7 +588,7 @@ class TestPreserveVersionedDocumentAllocation:
     ])
     def test_an_ungenerated_document_is_refused(self, document):
         with pytest.raises(ServiceError) as caught:
-            preserve_versioned_document_allocation(_store(), 'p1', document)
+            preserve_versioned_document_allocation(_store(), 'p1', document, workspace=None)
         assert _refusal(caught) == 'Stored document has no generated allocation to preserve'
 
     @pytest.mark.parametrize('override', [
@@ -596,12 +596,12 @@ class TestPreserveVersionedDocumentAllocation:
     ])
     def test_an_inconsistent_document_is_refused(self, override):
         with pytest.raises(ServiceError) as caught:
-            preserve_versioned_document_allocation(_store(), 'p1', _generated(**override))
+            preserve_versioned_document_allocation(_store(), 'p1', _generated(**override), workspace=None)
         assert _refusal(caught) == 'Stored generated document allocation is inconsistent'
 
     def test_a_vanished_document_is_refused(self):
         with pytest.raises(ServiceError) as caught:
-            preserve_versioned_document_allocation(_store(), 'p1', _generated())
+            preserve_versioned_document_allocation(_store(), 'p1', _generated(), workspace=None)
         assert _refusal(caught) == (
             'Document disappeared before its allocation history was preserved'
         )
@@ -609,7 +609,7 @@ class TestPreserveVersionedDocumentAllocation:
     def test_the_stored_copy_is_what_is_preserved(self):
         table = _store(META, _generated())
         preserve_versioned_document_allocation(
-            table, 'p1', _generated(title='stale', base_title='stale'),
+            table, 'p1', _generated(title='stale', base_title='stale'), workspace=None,
         )
         assert _transactions(table) == [HISTORY_PUT]
 
@@ -665,7 +665,7 @@ def _first_call(action: Callable[[], None]) -> Callable[..., None]:
 
 
 def _persist(table: MagicMock, title: object = ' Launch  (v9)') -> dict[str, Any]:
-    return persist_versioned_document(table, 'p1', 'prd', title, 'a1', dict(FIELDS))
+    return persist_versioned_document(table, 'p1', 'prd', title, 'a1', dict(FIELDS), workspace=None)
 
 
 @pytest.fixture

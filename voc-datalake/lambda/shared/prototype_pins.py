@@ -128,7 +128,7 @@ def new_pin_id(now: datetime | None = None) -> str:
     return f"pin_{moment.strftime('%Y%m%d%H%M%S%f')}{secrets.token_hex(3)}"
 
 
-def pins_pk(form_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def pins_pk(form_id: str, *, workspace: WorkspaceScope | None) -> str:
     """The pins' partition of a pin form: ``PINS#{form_id}``, a workspace's ``WS#{ws}#PINS#{form_id}`` (no route writes
     one before the switch, 3h; the retention worker's erasure reads it, jobs/retention/pins.py)."""
     return scoped_pk(workspace, f'PINS#{form_id}')
@@ -138,14 +138,14 @@ def pins_pk(form_id: str, *, workspace: WorkspaceScope | None = None) -> str:
 PIN_FORM_SK_PREFIX = 'FORM#pf_'
 
 
-def pin_forms_pk(*, workspace: WorkspaceScope | None = None) -> str:
+def pin_forms_pk(*, workspace: WorkspaceScope | None) -> str:
     """The scope's forms partition (``FEEDBACK_FORM``, a workspace's ``WS#{ws}#FEEDBACK_FORM``), which keeps a pin form
     after its project or prototype is deleted (nothing deletes one but the forms page's delete)."""
     return scoped_pk(workspace, FEEDBACK_FORM_PK)
 
 
-def pin_key(form_id: str, pin_id: str) -> dict[str, str]:
-    return {'pk': pins_pk(form_id), 'sk': f'PIN#{pin_id}'}
+def pin_key(form_id: str, pin_id: str, *, workspace: WorkspaceScope | None) -> dict[str, str]:
+    return {'pk': pins_pk(form_id, workspace=workspace), 'sk': f'PIN#{pin_id}'}
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +396,7 @@ def pin_item(form: dict, pin: dict, now: datetime | None = None) -> dict:
     moment = now or datetime.now(UTC)
     pin_id = new_pin_id(moment)
     return {
-        **pin_key(form['form_id'], pin_id),
+        **pin_key(form['form_id'], pin_id, workspace=None),
         'pin_id': pin_id, 'form_id': form['form_id'],
         'project_id': form.get('project_id', ''), 'document_id': form.get('document_id', ''),
         'status': STATUS_OPEN, 'flagged': bool(pin['screening']),
@@ -419,10 +419,11 @@ def public_pin(item: dict) -> dict:
     return plain({k: v for k, v in item.items() if k not in ('pk', 'sk', REPLY_IDS_FIELD, MARK_IDS_FIELD)})
 
 
-def list_pins(table: Any, form_id: str, status: str | None = None) -> list[dict]:
-    """The form's pins, oldest first, optionally one status, at most MAX_PINS_LISTED."""
+def list_pins(table: Any, form_id: str, status: str | None = None, *,
+              workspace: WorkspaceScope | None) -> list[dict]:
+    """The form's pins, oldest first, optionally one status, at most MAX_PINS_LISTED (the scope's pins)."""
     kwargs: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(pins_pk(form_id)) & Key('sk').begins_with('PIN#'),
+        'KeyConditionExpression': Key('pk').eq(pins_pk(form_id, workspace=workspace)) & Key('sk').begins_with('PIN#'),
     }
     pins = (i for i in iter_query(table, kwargs) if status is None or i.get('status') == status)
     return [public_pin(i) for i in islice(pins, MAX_PINS_LISTED)]
@@ -438,7 +439,7 @@ def validate_reply(body: dict) -> str:
 def append_reply(table: Any, form_id: str, pin_id: str, reply: dict) -> dict:
     """Append ``reply`` to the pin's thread (capped); returns the updated pin."""
     response = table.update_item(
-        Key=pin_key(form_id, pin_id),
+        Key=pin_key(form_id, pin_id, workspace=None),
         UpdateExpression='SET replies = list_append(if_not_exists(replies, :empty), :reply), updated_at = :now',
         ConditionExpression='attribute_exists(sk) AND (attribute_not_exists(replies) OR size(replies) < :max)',
         ExpressionAttributeValues={':empty': [], ':reply': [reply], ':now': reply['at'], ':max': MAX_REPLIES},
@@ -463,7 +464,7 @@ def append_reply_once(table: Any, form_id: str, pin_id: str, reply_id: str, repl
     its thread is full, or the id is already there (the caller tells them apart by reading the pin).
     """
     table.update_item(
-        Key=pin_key(form_id, pin_id),
+        Key=pin_key(form_id, pin_id, workspace=None),
         UpdateExpression=('SET replies = list_append(if_not_exists(replies, :empty), :reply), updated_at = :now '
                           'ADD #ids :id'),
         ConditionExpression=('attribute_exists(sk) AND (attribute_not_exists(replies) OR size(replies) < :max) '
@@ -486,7 +487,7 @@ def mark_addressed_once(table: Any, form_id: str, pin_id: str, mark_id: str, *, 
     ConditionalCheckFailedException otherwise (the caller reads the pin to tell why).
     """
     table.update_item(
-        Key=pin_key(form_id, pin_id),
+        Key=pin_key(form_id, pin_id, workspace=None),
         UpdateExpression=('SET #status = :addressed, addressed_by = :by, status_by = :actor, updated_at = :now '
                           'ADD #marks :mark'),
         ConditionExpression='attribute_exists(sk) AND #status = :open AND NOT contains(#marks, :mid)',
@@ -498,7 +499,7 @@ def mark_addressed_once(table: Any, form_id: str, pin_id: str, mark_id: str, *, 
 
 def get_pin(table: Any, form_id: str, pin_id: str) -> dict | None:
     """One stored pin (strongly consistent), or None."""
-    item = table.get_item(Key=pin_key(form_id, pin_id), ConsistentRead=True).get('Item')
+    item = table.get_item(Key=pin_key(form_id, pin_id, workspace=None), ConsistentRead=True).get('Item')
     return item if isinstance(item, dict) else None
 
 
@@ -515,7 +516,7 @@ def set_status(table: Any, form_id: str, pin_id: str, status: str, *, actor: str
     values = {f':{k}': v for k, v in sets.items()}
     allowed = {f':from{i}': s for i, s in enumerate(only_from)}
     response = table.update_item(
-        Key=pin_key(form_id, pin_id),
+        Key=pin_key(form_id, pin_id, workspace=None),
         UpdateExpression='SET ' + ', '.join(f'#{k} = :{k}' for k in sets),
         ConditionExpression=f"attribute_exists(sk) AND #status IN ({', '.join(allowed)})",
         ExpressionAttributeNames=names,

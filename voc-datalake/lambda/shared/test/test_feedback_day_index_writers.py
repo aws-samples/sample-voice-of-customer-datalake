@@ -71,7 +71,6 @@ OTHER_TABLES: Final = {
     'lambda/agents/store.py': 'voc-agents (a run active on RUNS_ACTIVE, removed when it ends)',
     'lambda/api/memory_handler.py': 'voc-memory (a restored memory relisted)',
     'lambda/api/verification_fixture_provider.py': 'voc-projects (a verification fixture project)',
-    'lambda/jobs/persona_importer/handler.py': 'voc-projects (an imported persona listed)',
     'lambda/jobs/retention/registries.py': "voc-projects (INDEX_ATTRIBUTES: what the registries check reads of "
                                            "gsi1-by-type, 7.93.00; read)",
     'lambda/jobs/workspace_export/project_fields.py': 'names an export leaves out (read)',
@@ -90,7 +89,8 @@ OTHER_TABLES: Final = {
     'lambda/shared/participants_store.py': 'voc-participants (people)',
     'lambda/shared/persona_copy.py': 'voc-projects (a copied persona)',
     'lambda/shared/plans_store.py': 'voc-agents (plans, on gsi1-by-agents-listing)',
-    'lambda/shared/project_keys.py': 'voc-projects (a project\'s documents listed)',
+    'lambda/shared/project_keys.py': 'voc-projects (a project\'s documents and personas listed; persona_keys, used by '
+                                     'the personas\' save and the persona importer since 7.99.00)',
     'lambda/shared/prototype_versions.py': 'voc-projects (fields a prototype version does not carry)',
     'lambda/shared/radar_store.py': 'voc-radar (a feedback item\'s index keys dropped from its radar copy)',
 }
@@ -99,7 +99,6 @@ OTHER_TABLES: Final = {
 FEEDBACK_MODULE_ENTRIES: Final = {
     ('lambda/api/projects.py', 'create_project.put_project'): 'voc-projects (a project listed by type)',
     ('lambda/api/projects.py', '_start_project_deletion.mark_existing'): 'voc-projects (a deleting project unlisted)',
-    ('lambda/api/projects.py', '_build_persona_items'): 'voc-projects (a persona listed)',
     ('lambda/api/projects.py', '<module>'): 'voc-projects (fields a duplicated document does not carry)',
     ('lambda/jobs/workspace_export/entities.py', '<module>'): 'EXCLUDED: the index keys the export says it leaves out '
                                                               '(read)',

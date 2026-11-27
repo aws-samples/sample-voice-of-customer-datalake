@@ -44,7 +44,7 @@ def export_main(argv: list[str] | None = None, session: Any = None) -> int:
     args = _export_parser().parse_args(argv)
     session = session or session_for(args.region)
     deployment = resolve(session, args.prefix)
-    exporter = Exporter(session, deployment)
+    exporter = Exporter(session, deployment, workspace=None)
     project_ids = live_project_ids(exporter.projects) if args.all else list(dict.fromkeys(args.projects))
     try:
         writer = bundle.BundleWriter(args.out.expanduser())

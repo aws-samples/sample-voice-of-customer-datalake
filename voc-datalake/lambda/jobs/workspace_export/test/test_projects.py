@@ -127,7 +127,7 @@ def seed_projects(world: World, monkeypatch: pytest.MonkeyPatch) -> dict[str, An
     # A registry row not shaped like a project id (counted malformed), and one naming the library's reserved id
     # (skipped, not counted: the library is walked once, after the registry).
     for odd in ('bad#id', COMPANY_PERSONAS_CONTAINER):
-        world.projects.put_item(Item={'pk': project_registry_pk(A), 'sk': odd, 'created_at': STAMP})
+        world.projects.put_item(Item={'pk': project_registry_pk(workspace=A), 'sk': odd, 'created_at': STAMP})
     library = project_pk(COMPANY_PERSONAS_CONTAINER, workspace=A)
     world.projects.put_item(Item={'pk': library, 'sk': 'META', 'kind': 'company_personas', 'name': 'Company personas'})
     world.projects.put_item(Item={'pk': library, 'sk': 'PERSONA#per_lib', 'persona_id': 'per_lib', 'name': 'Buyer'})

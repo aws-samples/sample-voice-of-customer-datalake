@@ -214,7 +214,7 @@ def checked_version(raw: object) -> int | None:
 
 def _series(projects_table: Any, project_id: str, document: Mapping[str, Any]) -> list[dict[str, Any]]:
     """``[{document_id, version}]`` newest first; a row outside any series is its own version 1."""
-    rows = series_versions(projects_table, project_id, dict(document))
+    rows = series_versions(projects_table, project_id, dict(document), workspace=None)
     series = [{'document_id': str(row['document_id']), 'version': int(row['version'])}
               for row in rows if isinstance(row.get('document_id'), str)]
     if not any(entry['document_id'] == document.get('document_id') for entry in series):
@@ -227,7 +227,8 @@ def _pins_of(pins_table: Any, read: list[dict[str, Any]], status: str | None) ->
     pins: list[dict] = []
     cut: list[dict] = []
     for entry in read:
-        listed = prototype_pins.list_pins(pins_table, prototype_pins.pin_form_id(entry['document_id']), status)
+        listed = prototype_pins.list_pins(pins_table, prototype_pins.pin_form_id(entry['document_id']), status,
+                                          workspace=None)
         if len(listed) >= prototype_pins.MAX_PINS_LISTED:
             cut.append({**entry, 'reason': CUT_REASON_PIN_CAP})
         pins += [{**pin, **entry} for pin in listed]
@@ -235,7 +236,7 @@ def _pins_of(pins_table: Any, read: list[dict[str, Any]], status: str | None) ->
 
 
 def series_pins(projects_table: Any, pins_table: Any, project_id: str, document: Mapping[str, Any], *,
-                workspace: WorkspaceScope | None = None) -> list[dict]:
+                workspace: WorkspaceScope | None) -> list[dict]:
     """Every pin the feedback read lists for ``document``'s series (the newest ``VERSION_LIST_LIMIT`` versions),
     each with its ``document_id`` and ``version``: what an editor can select, so what Incorporate accepts.
     The deployment's pin forms only: a workspace is refused (``PROTOTYPE_BUILDER_STORE``) until the switch (3h)."""
@@ -245,7 +246,7 @@ def series_pins(projects_table: Any, pins_table: Any, project_id: str, document:
 
 def read_feedback(projects_table: Any, pins_table: Any, project_id: str, document: Mapping[str, Any], *,
                   status: str | None = None, version: int | None = None,
-                  workspace: WorkspaceScope | None = None) -> dict:
+                  workspace: WorkspaceScope | None) -> dict:
     """The series' feedback answer for the prototype row ``document`` (docs/prototype-builder.md, Part 3).
     The deployment's pin forms only: a workspace is refused (``PROTOTYPE_BUILDER_STORE``) until the switch (3h)."""
     require_deployment(workspace, PROTOTYPE_BUILDER_STORE)

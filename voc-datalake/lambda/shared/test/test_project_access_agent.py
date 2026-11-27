@@ -70,7 +70,7 @@ def _private(**extra):
 def test_agent_keeps_edit_on_a_private_project_it_created():
     caller = _agent(**{pa.ACTING_SUBJECT_CLAIM: OWNER})
 
-    access = pa.resolve_access(_private(**{pa.CREATED_BY_AGENT_ATTRIBUTE: 'ag_1'}), caller)
+    access = pa.resolve_access(_private(**{pa.CREATED_BY_AGENT_ATTRIBUTE: 'ag_1'}), caller, workspace=None)
 
     assert access.role == pa.ROLE_EDITOR
     assert access.can_edit
@@ -80,19 +80,19 @@ def test_agent_keeps_edit_on_a_private_project_it_created():
 def test_another_agent_gets_nothing_on_that_project():
     caller = pa.caller_from_claims({'sub': 'agent:ag_2', pa.ACTING_SUBJECT_CLAIM: OWNER}, [])
 
-    assert pa.resolve_access(_private(**{pa.CREATED_BY_AGENT_ATTRIBUTE: 'ag_1'}), caller).role is None
+    assert pa.resolve_access(_private(**{pa.CREATED_BY_AGENT_ATTRIBUTE: 'ag_1'}), caller, workspace=None).role is None
 
 
 def test_an_agent_whose_owner_owns_the_project_is_capped_at_editor():
     caller = _agent(**{pa.ACTING_SUBJECT_CLAIM: HANDOFF})
 
-    assert pa.resolve_access(_private(), caller).role == pa.ROLE_EDITOR
+    assert pa.resolve_access(_private(), caller, workspace=None).role == pa.ROLE_EDITOR
 
 
 def test_people_never_inherit_the_created_by_agent_grant():
     person = pa.caller_from_claims({'sub': 'stranger'}, [])
 
-    assert pa.resolve_access(_private(**{pa.CREATED_BY_AGENT_ATTRIBUTE: 'ag_1'}), person).role is None
+    assert pa.resolve_access(_private(**{pa.CREATED_BY_AGENT_ATTRIBUTE: 'ag_1'}), person, workspace=None).role is None
 
 
 def test_agent_project_owner_prefers_the_handoff_target():

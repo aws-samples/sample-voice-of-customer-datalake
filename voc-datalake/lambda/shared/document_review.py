@@ -69,7 +69,7 @@ def validate_persona_ids(body: Mapping[str, Any]) -> list[str] | None:
 
 
 def project_personas(table: Any, project_id: str, *,
-                     workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+                     workspace: WorkspaceScope | None) -> list[dict[str, Any]]:
     """The project's personas (``workspace``'s project when given, shared/project_tables.py)."""
     rows = iter_project_rows(table, project_id, workspace=workspace, sort_prefix='PERSONA#', ConsistentRead=True)
     return [row for row in rows if isinstance(row.get('persona_id'), str)]
@@ -194,7 +194,7 @@ def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str,
 
 def run_review(table: Any, *, project_id: str, series_id: str, document: Mapping[str, Any], document_type: str,
                personas: Sequence[Mapping[str, Any]], invoke: Invoke = _default_invoke,
-               workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+               workspace: WorkspaceScope | None) -> dict[str, Any]:
     """Consult ``personas`` on ``document`` and file their comments; the job's ``result``. The threads are read and
     filed in ``workspace``'s series partition when given (shared/document_comments.py, since 7.37.00), the
     deployment's otherwise; no assist runs its work in a workspace yet (shared/assist_jobs.py ``ASSIST_WORK_STORE``)."""

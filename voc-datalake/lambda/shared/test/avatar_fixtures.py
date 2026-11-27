@@ -33,7 +33,7 @@ def avatar_after_image_model_raises(mock_prompt, mock_boto3, error: BaseExceptio
 
     return generate_persona_avatar(
         {'persona_id': 'p1', 'name': 'Test', 'identity': {}},
-        s3_bucket='bucket',
+        s3_bucket='bucket', workspace=None,
     )
 
 
@@ -84,6 +84,6 @@ def run_avatar_generation(config: dict, *, mock_bedrock: MagicMock, mock_s3: Mag
         mock_boto3.client.side_effect = client_factory
         from shared.avatar import generate_persona_avatar
         result = generate_persona_avatar(
-            {'persona_id': 'p1', 'name': 'N', 'identity': {}}, s3_bucket='b'
+            {'persona_id': 'p1', 'name': 'N', 'identity': {}}, s3_bucket='b', workspace=None
         )
     return mock_boto3, result

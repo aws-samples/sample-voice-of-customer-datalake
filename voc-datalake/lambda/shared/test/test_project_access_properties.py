@@ -75,7 +75,7 @@ class TestATokenActsForItsMinterButNeverAdministers:
     @given(meta=projects(), caller=callers())
     def test_a_delegated_caller_is_never_owner_or_admin(self, meta: dict, caller: pa.Caller) -> None:
         assume(caller.delegated)
-        access = pa.resolve_access(meta, caller)
+        access = pa.resolve_access(meta, caller, workspace=None)
         assert access.role not in (pa.ROLE_OWNER, pa.ROLE_ADMIN)
         assert not access.can_manage
 
@@ -83,8 +83,9 @@ class TestATokenActsForItsMinterButNeverAdministers:
     @given(meta=projects(), subject=SUBJECTS)
     def test_the_owner_owns_their_project_and_a_token_of_theirs_only_edits(self, meta: dict, subject: str) -> None:
         meta = {**meta, 'owner_sub': subject}
-        assert pa.resolve_access(meta, pa.Caller(subject=subject)).role == pa.ROLE_OWNER
-        assert pa.resolve_access(meta, pa.Caller(subject=subject, delegated=True)).role == pa.ROLE_EDITOR
+        assert pa.resolve_access(meta, pa.Caller(subject=subject), workspace=None).role == pa.ROLE_OWNER
+        assert pa.resolve_access(meta, pa.Caller(subject=subject, delegated=True),
+                                 workspace=None).role == pa.ROLE_EDITOR
 
 
 class TestATokenOrAnAgentIsNeverAnAdminWhateverItsGroupsSay:
@@ -159,7 +160,7 @@ class TestAPublicProjectIsEditableByEverySignedInPerson:
     def test_a_public_project_is_at_least_editable_by_a_signed_in_caller(self, meta: dict, caller: pa.Caller) -> None:
         meta = {**meta, 'visibility': pa.VISIBILITY_PUBLIC}
         assume(caller.subject)
-        assert pa.resolve_access(meta, caller).can_edit
+        assert pa.resolve_access(meta, caller, workspace=None).can_edit
 
     @PROPERTY
     @given(subject=SUBJECTS, role=ROLES, members=member_maps())
@@ -169,12 +170,12 @@ class TestAPublicProjectIsEditableByEverySignedInPerson:
         members[subject] = {'role': role}
         meta = {'owner_sub': 'sub-owner', 'visibility': pa.VISIBILITY_PRIVATE, 'members': members}
 
-        member_access = pa.resolve_access(meta, pa.Caller(subject=subject))
+        member_access = pa.resolve_access(meta, pa.Caller(subject=subject), workspace=None)
         assert member_access.role == role
         assert member_access.can_edit is (role == pa.ROLE_EDITOR)
         assert not member_access.can_manage
 
-        stranger = pa.resolve_access(meta, pa.Caller(subject='sub-stranger'))
+        stranger = pa.resolve_access(meta, pa.Caller(subject='sub-stranger'), workspace=None)
         assert stranger.role is None
         assert not stranger.can_view
 

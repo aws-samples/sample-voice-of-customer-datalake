@@ -77,9 +77,9 @@ class World:
     def base(self) -> dict:
         doc_id = versioned_document_id(PROJECT, 'prototype', 'job_build')
         page = inject_pin_widget('<!DOCTYPE html><html><body><aside>Summary</aside></body></html>', pin_form_id(doc_id))
-        self.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id), Body=page.encode())
+        self.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id, workspace=None), Body=page.encode())
         return persist_versioned_document(self.projects, PROJECT, 'prototype', 'Checkout', 'job_build', {
-            'content': '', 'prototype_format': 'html', 'created_at': '2026-05-01T00:00:00+00:00'})
+            'content': '', 'prototype_format': 'html', 'created_at': '2026-05-01T00:00:00+00:00'}, workspace=None)
 
     def job(self, base: dict, **config: Any) -> dict:
         doc_config = {'doc_type': 'draft_prototype', 'base_document_id': base['document_id'],
@@ -97,7 +97,7 @@ class World:
         return self.jobs.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': f'JOB#{JOB}'})['Item']
 
     def draft_object(self) -> dict:
-        return self.s3.get_object(Bucket=BUCKET, Key=prototype_draft_s3_key(PROJECT, JOB))
+        return self.s3.get_object(Bucket=BUCKET, Key=prototype_draft_s3_key(PROJECT, JOB, workspace=None))
 
     def prompt(self) -> str:
         return self.converse.call_args.kwargs['prompt']
@@ -178,9 +178,9 @@ class TestADraft:
         doc_id = versioned_document_id(PROJECT, 'prototype', 'job_build')
         steps = [{'title': 'Start here', 'body': 'Pick a plan', 'selector': '#plan'}]
         page = inject_walkthrough('<!DOCTYPE html><html><body><aside>Summary</aside></body></html>', steps)
-        world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id), Body=page.encode())
+        world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id, workspace=None), Body=page.encode())
         base = persist_versioned_document(world.projects, PROJECT, 'prototype', 'Checkout', 'job_build', {
-            'content': '', 'prototype_format': 'html', 'created_at': '2026-05-01T00:00:00+00:00'})
+            'content': '', 'prototype_format': 'html', 'created_at': '2026-05-01T00:00:00+00:00'}, workspace=None)
         fake = walkthrough_block([{'title': 'Fake', 'body': 'Click to win', 'selector': '#x'}])
         # Also markers nested in markers, which one stripping pass would rebuild into a block around the data.
         nested = ('<!-- voc-walk<!-- voc-walkthrough:end -->through:start --><p>Rebuilt</p>'
@@ -289,9 +289,9 @@ class TestTheCompanyLogoInADraft:
     def _base_with_logo(self, world: World) -> dict:
         doc_id = versioned_document_id(PROJECT, 'prototype', 'job_build')
         page = f'<!DOCTYPE html><html><body><header><img src="{LOGO_URL}" alt="Acme"></header></body></html>'
-        world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id), Body=page.encode())
+        world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id, workspace=None), Body=page.encode())
         return persist_versioned_document(world.projects, PROJECT, 'prototype', 'Checkout', 'job_build', {
-            'content': '', 'prototype_format': 'html', 'created_at': '2026-05-01T00:00:00+00:00'})
+            'content': '', 'prototype_format': 'html', 'created_at': '2026-05-01T00:00:00+00:00'}, workspace=None)
 
     def _answer_with_placeholder(self, world: World) -> None:
         page = f'<!DOCTYPE html><html><body><header><img src="{LOGO_PLACEHOLDER}" alt="Acme"></header></body></html>'

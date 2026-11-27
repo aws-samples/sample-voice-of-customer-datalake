@@ -31,6 +31,7 @@ from shared import prototype_pins as pins
 from shared.exceptions import ValidationError
 from shared.test.clock import frozen_clock
 from shared.test.moto_tables import create_pk_sk_table
+from shared.ws_repo import WorkspaceScope
 
 DOC = 'prototype_abc123'
 FORM = 'pf_4aa445243bed06a9'
@@ -119,8 +120,14 @@ class TestIdentifiers:
         assert pins.is_pin_id(value) is True
 
     def test_keys(self):
-        assert pins.pins_pk(FORM) == f'PINS#{FORM}'
-        assert pins.pin_key(FORM, PIN_ID) == {'pk': f'PINS#{FORM}', 'sk': f'PIN#{PIN_ID}'}
+        assert pins.pins_pk(FORM, workspace=None) == f'PINS#{FORM}'
+        assert pins.pin_key(FORM, PIN_ID, workspace=None) == {'pk': f'PINS#{FORM}', 'sk': f'PIN#{PIN_ID}'}
+
+    def test_a_workspaces_pin_key_is_in_its_scope(self):
+        """7.99.00: ``pin_key`` takes its scope (every route passes the deployment's until the switch, 3h)."""
+        scope = WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')
+        assert pins.pin_key(FORM, PIN_ID, workspace=scope) == {
+            'pk': f'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#PINS#{FORM}', 'sk': f'PIN#{PIN_ID}'}
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +518,7 @@ class TestListPins:
             {'Items': _rows(0, 2) + _rows(2, 1, 'resolved'), 'LastEvaluatedKey': {'k': 1}},
             {'Items': _rows(3, 1)},
         ]
-        assert pins.list_pins(table, FORM, 'open') == [
+        assert pins.list_pins(table, FORM, 'open', workspace=None) == [
             {'n': 0, 'status': 'open'}, {'n': 1, 'status': 'open'}, {'n': 3, 'status': 'open'}]
         assert [c.kwargs for c in table.query.call_args_list] == [
             _query_kwargs(), _query_kwargs(ExclusiveStartKey={'k': 1})]
@@ -519,31 +526,31 @@ class TestListPins:
     def test_the_first_query_has_no_start_key(self):
         table = MagicMock()
         table.query.side_effect = [{}]
-        assert pins.list_pins(table, FORM) == []
+        assert pins.list_pins(table, FORM, workspace=None) == []
         table.query.assert_called_once_with(**_query_kwargs())
 
     def test_no_status_lists_every_status(self):
         table = MagicMock()
         table.query.side_effect = [{'Items': _rows(0, 1, 'resolved') + _rows(1, 1)}]
-        assert [p['n'] for p in pins.list_pins(table, FORM)] == [0, 1]
+        assert [p['n'] for p in pins.list_pins(table, FORM, workspace=None)] == [0, 1]
 
     def test_at_most_200_and_no_query_once_reached(self):
         table = MagicMock()
         table.query.side_effect = [{'Items': _rows(0, 150), 'LastEvaluatedKey': {'k': 1}},
                                    {'Items': _rows(150, 100), 'LastEvaluatedKey': {'k': 2}}]
-        assert [p['n'] for p in pins.list_pins(table, FORM)] == list(range(200))
+        assert [p['n'] for p in pins.list_pins(table, FORM, workspace=None)] == list(range(200))
         assert table.query.call_count == 2
 
     def test_199_queries_again(self):
         table = MagicMock()
         table.query.side_effect = [{'Items': _rows(0, 199), 'LastEvaluatedKey': {'k': 1}}, {'Items': _rows(199, 5)}]
-        assert len(pins.list_pins(table, FORM)) == 200
+        assert len(pins.list_pins(table, FORM, workspace=None)) == 200
         assert table.query.call_count == 2
 
     def test_exactly_200_stops(self):
         table = MagicMock()
         table.query.side_effect = [{'Items': _rows(0, 200), 'LastEvaluatedKey': {'k': 1}}]
-        assert len(pins.list_pins(table, FORM)) == 200
+        assert len(pins.list_pins(table, FORM, workspace=None)) == 200
         assert table.query.call_count == 1
 
 
@@ -586,7 +593,8 @@ class TestReplies:
     def test_the_thread_holds_50_replies_against_dynamodb(self):
         with mock_aws():
             table = create_pk_sk_table('t')
-            table.put_item(Item={**pins.pin_key(FORM, PIN_ID), 'replies': [{'i': i} for i in range(49)]})
+            table.put_item(Item={**pins.pin_key(FORM, PIN_ID,
+                                                workspace=None), 'replies': [{'i': i} for i in range(49)]})
             assert len(pins.append_reply(table, FORM, PIN_ID, {'at': 'T', 'i': 49})['replies']) == 50
             with pytest.raises(ClientError):
                 pins.append_reply(table, FORM, PIN_ID, {'at': 'T', 'i': 50})

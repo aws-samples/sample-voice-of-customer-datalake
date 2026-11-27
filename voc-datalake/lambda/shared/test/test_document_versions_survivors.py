@@ -95,7 +95,7 @@ class TestATableWithoutANameIsRefused:
 
     def test_by_a_save(self):
         with pytest.raises(ValueError, match=r'^Projects table name is required for document persistence$'):
-            persist_versioned_document(SimpleNamespace(), 'p1', 'prd', 'Launch', 'a1', dict(FIELDS))
+            persist_versioned_document(SimpleNamespace(), 'p1', 'prd', 'Launch', 'a1', dict(FIELDS), workspace=None)
 
 
 class TestAClientErrorWithoutAnErrorMemberIsReRaised:
@@ -150,7 +150,7 @@ class TestAClientErrorWithoutAnErrorMemberIsReRaised:
 
 def _save(table: MagicMock, expected: int | None) -> dict[str, Any]:
     return persist_versioned_document(table, 'p1', 'prd', 'Launch', 'a1', dict(FIELDS),
-                                      expected_last_version=expected)
+                                      expected_last_version=expected, workspace=None)
 
 
 @pytest.mark.usefixtures('no_legacy')
@@ -219,7 +219,7 @@ class TestTheSeriesHeadAnEditorIsShown:
     ])
     def test_the_counter_or_every_version_in_use_past_it(self, rows, counter, head):
         table = _head_table(rows, counter)
-        assert series_head_version(table, 'p1', 'prd', ' LAUNCH — PRD (v7) ') == head
+        assert series_head_version(table, 'p1', 'prd', ' LAUNCH — PRD (v7) ', workspace=None) == head
         table.get_item.assert_called_once_with(Key=SERIES_KEY, ConsistentRead=True)
         query = table.query.call_args.kwargs
         assert query['KeyConditionExpression'] == Key('pk').eq('PROJECT#p1')
@@ -252,7 +252,7 @@ class TestAMigrationGroupsTitlesAsAReadDoes:
         ]
         with patch.object(dv, '_persist_legacy_series') as series:
             series.side_effect = lambda _t, _p, _type, _n, docs, **_scope: docs
-            dv.persist_legacy_document_versions(_table(), 'p1', documents)
+            dv.persist_legacy_document_versions(_table(), 'p1', documents, workspace=None)
         assert [(*c.args[2:4], [d['sk'] for d in c.args[4]]) for c in series.call_args_list] == [
             ('prd', 'plan', ['PRD#a', 'PRD#b']),
         ]

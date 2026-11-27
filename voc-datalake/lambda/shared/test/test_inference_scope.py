@@ -95,7 +95,8 @@ class TestAvatarsFlag:
         monkeypatch.setenv('RAW_DATA_BUCKET', 'bucket')
         with patch.object(avatar, 'generate_avatar_prompt_with_llm') as prompt, \
                 patch.object(avatar, 'get_image_model_client') as image_client:
-            result = avatar.generate_persona_avatar({'persona_id': 'p1', 'name': 'Ada'}, project_id='proj')
+            result = avatar.generate_persona_avatar({'persona_id': 'p1', 'name': 'Ada'}, project_id='proj',
+                                                    workspace=None)
 
         assert result['avatar_url'] is None
         assert result['avatar_prompt'] is None

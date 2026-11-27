@@ -72,7 +72,7 @@ _PROTOTYPE_ROW_FIELDS = frozenset({
 
 
 def put_prototype_html(s3: Any, bucket: str, project_id: str, doc_id: str, html: str,
-                       api_base: str | None, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+                       api_base: str | None, *, workspace: WorkspaceScope | None) -> dict[str, str]:
     """Create the write-once prototype object and return the winning S3 identity.
 
     A conditional conflict reads the existing winner instead of assuming the attempted
@@ -103,7 +103,7 @@ def put_prototype_html(s3: Any, bucket: str, project_id: str, doc_id: str, html:
 
 
 def read_prototype_html(s3: Any, bucket: str, project_id: str, doc_id: str, *,
-                        workspace: WorkspaceScope | None = None) -> str:
+                        workspace: WorkspaceScope | None) -> str:
     """A stored prototype version's HTML (the deployment's: a workspace is refused until the switch, 3h)."""
     require_deployment(workspace, PROTOTYPE_BUILDER_STORE)
     obj = s3.get_object(Bucket=bucket, Key=prototype_s3_key(project_id, doc_id, workspace=workspace))
@@ -115,11 +115,12 @@ class PrototypeStore:
 
     The deployment's only: a store asked for a workspace is refused (``PROTOTYPE_BUILDER_STORE``) before it is
     built, so nothing that takes one (Back to vN, a walkthrough save, a draft's start and Apply) reads or writes
-    the deployment's rows for a workspace; the switch (3h) threads it.
+    the deployment's rows for a workspace; the switch (3h) lifts the refusal. The store keeps its scope
+    (``workspace``) and every function that takes a store passes ``store.workspace`` on, so the lift changes no call.
     """
 
     def __init__(self, *, table: Any, pins_table: Any, s3: Any, bucket: str, api_base: str | None,
-                 workspace: WorkspaceScope | None = None) -> None:
+                 workspace: WorkspaceScope | None) -> None:
         require_deployment(workspace, PROTOTYPE_BUILDER_STORE)
         if not bucket:
             raise ConfigurationError('Prototype storage not configured')
@@ -128,6 +129,7 @@ class PrototypeStore:
         self.s3 = s3
         self.bucket = bucket
         self.api_base = api_base
+        self.workspace = workspace
 
 
 def version_from_html(store: PrototypeStore, project_id: str, source: Mapping[str, Any], html: str, *,
@@ -146,27 +148,28 @@ def version_from_html(store: PrototypeStore, project_id: str, source: Mapping[st
     restored version's own), re-validated and re-injected; a list replaces it (a walkthrough
     save; an applied draft: its base's steps, the draft's model HTML having none); ``[]`` none.
     """
-    existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
+    existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id,
+                                                    workspace=store.workspace)
     if existing is not None:
         return existing
     base = series_base(dict(source))
     if expected_last_version is not None and \
-            series_head_version(store.table, project_id, PROTOTYPE_TYPE, base) != expected_last_version:
+            series_head_version(store.table, project_id, PROTOTYPE_TYPE, base, workspace=store.workspace) != expected_last_version:
         raise ConflictError(STALE_SERIES_MESSAGE)
     doc_id = versioned_document_id(project_id, PROTOTYPE_TYPE, allocation_id)
     form_id = ensure_pin_form(store.pins_table, project_id, doc_id, base)
     body = strip_pin_widget(html)
     body = inject_walkthrough(body, extract_steps(body) if steps is None else steps)
     page = inject_pin_widget(body, form_id, pin_submit_url(form_id, store.api_base))
-    identity = put_prototype_html(store.s3, store.bucket, project_id, doc_id, page, store.api_base)
+    identity = put_prototype_html(store.s3, store.bucket, project_id, doc_id, page, store.api_base, workspace=store.workspace)
     fields = {key: value for key, value in source.items() if key not in _PROTOTYPE_ROW_FIELDS}
     fields.update({
         **identity, 'content': '', 'prototype_format': 'html',
-        **document_listing(project_id, now),
+        **document_listing(project_id, now, workspace=store.workspace),
         'created_at': now, 'updated_at': now, **provenance,
     })
     return persist_versioned_document(store.table, project_id, PROTOTYPE_TYPE, base, allocation_id, fields,
-                                      expected_last_version=expected_last_version)
+                                      expected_last_version=expected_last_version, workspace=store.workspace)
 
 
 # What JavaScript's ``trimStart`` drops and Python's ``str.lstrip`` keeps: a byte-order mark (U+FEFF is
@@ -193,7 +196,7 @@ _HTML_GONE = "This version's HTML is no longer stored, so it cannot be read"
 
 
 def version_html(s3: Any, bucket: str, project_id: str, row: Mapping[str, Any], *,
-                 workspace: WorkspaceScope | None = None) -> str:
+                 workspace: WorkspaceScope | None) -> str:
     """The HTML of a stored version: its object, or the HTML the oldest prototypes kept inline in ``content``.
 
     The same discriminator as the read path (``_with_signed_prototype_url`` in api/projects.py): a row
@@ -225,9 +228,9 @@ def restore_prototype_version(store: PrototypeStore, project_id: str, document: 
     matches the newest writes one more version (D1 keeps it; nothing is lost).
     ``edit_id`` makes a retried request the same version.
     """
-    source, latest = restore_rows(store.table, project_id, dict(document), version_id)
+    source, latest = restore_rows(store.table, project_id, dict(document), version_id, workspace=store.workspace)
     allocation_id = f"restore:{version_id}:{validated_edit_id(body.get('edit_id'), version_id)}"
-    html = version_html(store.s3, store.bucket, project_id, source)
+    html = version_html(store.s3, store.bucket, project_id, source, workspace=store.workspace)
     item = version_from_html(store, project_id, source, html, allocation_id=allocation_id, now=now, provenance={
         'edit_kind': EDIT_KIND_RESTORE, 'edited_from_id': latest['document_id'], 'edited_by': dict(actor),
         'restored_from_id': version_id, 'restored_from_version': source['version'],
@@ -247,16 +250,18 @@ def save_walkthrough(store: PrototypeStore, project_id: str, document: Mapping[s
     """
     key = validated_edit_id(edit_id, json.dumps(steps, sort_keys=True))
     allocation_id = f"walkthrough:{document['document_id']}:{key}"
-    existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
+    existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id,
+                                                    workspace=store.workspace)
     if existing is not None:
         return existing, False
-    html = version_html(store.s3, store.bucket, project_id, document)
+    html = version_html(store.s3, store.bucket, project_id, document, workspace=store.workspace)
     try:
         item = version_from_html(store, project_id, document, html, allocation_id=allocation_id, now=now, provenance={
             'edit_kind': EDIT_KIND_EDIT, 'edited_by': dict(actor), 'edited_from_id': document['document_id'],
         }, expected_last_version=int(document['version']), steps=steps)
     except ConflictError:
-        landed = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
+        landed = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id,
+                                                      workspace=store.workspace)
         if landed is None:
             raise
         return landed, False

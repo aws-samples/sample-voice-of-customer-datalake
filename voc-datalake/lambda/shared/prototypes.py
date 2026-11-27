@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 # importer does have the layer; this keeps that from being load-bearing.)
 
 
-def prototype_s3_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def prototype_s3_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope | None) -> str:
     """S3 key for a generated prototype's HTML, under the `/prototypes/*` prefix
     that the frontend distribution's cache behavior serves. In a workspace (since
     7.37.00; no caller passes one yet) the same key under `ws/{ws}/`, which that
@@ -38,7 +38,7 @@ def prototype_s3_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope 
     return scoped_object_key(workspace, f"prototypes/{project_id}/{doc_id}.html")
 
 
-def prototype_draft_s3_key(project_id: str, draft_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def prototype_draft_s3_key(project_id: str, draft_id: str, *, workspace: WorkspaceScope | None) -> str:
     """S3 key of a prototype draft's HTML (docs/prototype-builder.md, part 2).
 
     Inside the project's own prototype prefix, so every guard on prototype objects
@@ -53,7 +53,7 @@ def prototype_draft_s3_key(project_id: str, draft_id: str, *, workspace: Workspa
 
 
 def prototype_signed_url(project_id: str, doc_id: str, cdn_url: str | None = None, *,
-                         workspace: WorkspaceScope | None = None) -> str | None:
+                         workspace: WorkspaceScope | None) -> str | None:
     """Signed CloudFront URL for a generated prototype, or None.
 
     None means the prototype cannot be shown: either PROTOTYPES_CDN_URL is not
@@ -73,7 +73,7 @@ def prototype_signed_url(project_id: str, doc_id: str, cdn_url: str | None = Non
 
 
 def prototype_draft_signed_url(project_id: str, draft_id: str, cdn_url: str | None = None, *,
-                               workspace: WorkspaceScope | None = None) -> str | None:
+                               workspace: WorkspaceScope | None) -> str | None:
     """Signed CloudFront URL of a draft (``prototype_draft_s3_key``), or None as for ``prototype_signed_url``; a
     workspace's draft is never signed yet either (None until 3h)."""
     if workspace is not None or not draft_id:

@@ -189,7 +189,7 @@ def require_revisable(document: Mapping[str, Any], threads: Sequence[Mapping[str
 # ── Evidence ────────────────────────────────────────────────────────────────
 
 def read_evidence(feedback_table: Any, document: Mapping[str, Any], scope_config: object, *,
-                  workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+                  workspace: WorkspaceScope | None) -> list[dict[str, Any]]:
     """The document's input reviews the starter may see, at most ``MAX_EVIDENCE_ITEMS``.
 
     One keyed query per id on the by-id index (no partition read). An erased review is simply
@@ -408,7 +408,7 @@ def _result(outcome: str, document: Mapping[str, Any], recommendations: list, ch
 def run_revision(table: Any, *, project_id: str, series_id: str, document: Mapping[str, Any], document_type: str,
                  wanted: list[str] | None, outcome: str, revise_id: str, actor: Mapping[str, str],
                  evidence: Sequence[Mapping[str, Any]], invoke: Invoke = _default_invoke,
-                 workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+                 workspace: WorkspaceScope | None) -> dict[str, Any]:
     """One pass over ``document``; the job's ``result`` (shape in docs/document-review.md).
 
     The deployment's projects only: a workspace is refused (``REVISE_FROM_COMMENTS_STORE``) before anything is read,

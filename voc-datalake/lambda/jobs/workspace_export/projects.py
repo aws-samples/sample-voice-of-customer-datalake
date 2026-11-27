@@ -384,7 +384,7 @@ class ProjectSource:
         if not links:
             if cursor.get('done'):
                 return Page([], None)
-            listed, last = query_page(self._projects, review_link_registry_pk(self.scope),
+            listed, last = query_page(self._projects, review_link_registry_pk(workspace=self.scope),
                                       checked_key(cursor.get('registry')), Limit=ID_PAGE, ConsistentRead=True,
                                       ProjectionExpression='sk')
             ids = [str(item.get('sk', '')) for item in listed]
@@ -406,7 +406,7 @@ class ProjectSource:
         """Whether ``project_id`` is a live project of the workspace's registry (one Query of its one row)."""
         if not isinstance(project_id, str) or not is_project_id(project_id):
             return False
-        page = self._projects.query('pk', project_registry_pk(self.scope), ConsistentRead=True,
+        page = self._projects.query('pk', project_registry_pk(workspace=self.scope), ConsistentRead=True,
                                     ProjectionExpression=REGISTRY_PROJECTION, **_on_sk((_EQUALS, project_id)))
         found = items(page)
         return bool(found) and not registered_project(found[0]).deleted

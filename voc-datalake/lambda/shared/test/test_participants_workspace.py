@@ -465,7 +465,7 @@ def test_without_a_workspace_the_reads_are_the_deployments():
         ('query', (), {'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :prefix)',
                        'ExpressionAttributeValues': {':pk': f'LIST#{LIST_ID}', ':prefix': 'MEMBER#'}}),
         ('query', (), {'KeyConditionExpression': 'pk = :pk',
-                       'ExpressionAttributeValues': {':pk': project_pk(PROJECT)}}),
+                       'ExpressionAttributeValues': {':pk': project_pk(PROJECT, workspace=None)}}),
     ]
 
 

@@ -33,7 +33,7 @@ NOT_COMMENTABLE: Final = 'Comments are available on PR/FAQ and PRD documents onl
 
 
 def find_document(table: Any, project_id: str, document_id: str, *,
-                  workspace: WorkspaceScope | None = None) -> dict:
+                  workspace: WorkspaceScope | None) -> dict:
     """The stored document row (content included); 404 when absent (``workspace``'s project when given)."""
     rows = iter_project_rows(table, project_id, workspace=workspace, ConsistentRead=True,
                              ProjectionExpression='pk, sk, document_id')
@@ -70,7 +70,7 @@ def series_of(project_id: str, document: dict) -> dict[str, str]:
 
 
 def latest_version(table: Any, project_id: str, document_type: str, base: str, *,
-                   workspace: WorkspaceScope | None = None) -> dict | None:
+                   workspace: WorkspaceScope | None) -> dict | None:
     """The newest stored version of the series, or None when every version was deleted (``workspace``'s project
     when given, read through ``series_versions``)."""
     versions = series_versions(table, project_id, {'document_type': document_type, 'base_title': base},

@@ -81,9 +81,9 @@ class FakeS3:
 class TestTheObjectAVersionIsWrittenAs:
     def test_html_in_utf8_at_its_key_created_only_if_absent_with_its_metadata(self):
         s3 = FakeS3(put={'ETag': '"e1"'})
-        identity = pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, API_BASE)
+        identity = pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, API_BASE, workspace=None)
         assert s3.calls == [('put', {
-            'Bucket': BUCKET, 'Key': prototype_s3_key(PROJECT, 'doc_1'), 'Body': HTML.encode('utf-8'),
+            'Bucket': BUCKET, 'Key': prototype_s3_key(PROJECT, 'doc_1', workspace=None), 'Body': HTML.encode('utf-8'),
             'ContentType': 'text/html; charset=utf-8', 'IfNoneMatch': '*',
             'Metadata': prototype_object_metadata('doc_1', HTML, API_BASE)})]
         assert identity == {'prototype_etag': '"e1"'}
@@ -94,27 +94,28 @@ class TestTheObjectAVersionIsWrittenAs:
         ({'ETag': '"e1"', 'VersionId': None}, {'prototype_etag': '"e1"'}),
     ])
     def test_the_version_id_is_kept_only_when_s3_gives_one(self, answer, identity):
-        assert pv.put_prototype_html(FakeS3(put=answer), BUCKET, PROJECT, 'doc_1', HTML, None) == identity
+        assert pv.put_prototype_html(FakeS3(put=answer), BUCKET, PROJECT, 'doc_1', HTML, None,
+                                     workspace=None) == identity
 
     @pytest.mark.parametrize('code', ['PreconditionFailed', 'ConditionalRequestConflict'])
     def test_a_conflict_answers_the_object_already_there(self, code):
         s3 = FakeS3(put=_client_error(code), head={'ETag': '"winner"', 'VersionId': 'v1'})
-        identity = pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, None)
+        identity = pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, None, workspace=None)
         assert identity == {'prototype_etag': '"winner"', 'prototype_version_id': 'v1'}
-        assert s3.calls[1] == ('head', {'Bucket': BUCKET, 'Key': prototype_s3_key(PROJECT, 'doc_1')})
+        assert s3.calls[1] == ('head', {'Bucket': BUCKET, 'Key': prototype_s3_key(PROJECT, 'doc_1', workspace=None)})
 
     @pytest.mark.parametrize('code', ['AccessDenied', 'InternalError', ''])
     def test_any_other_s3_error_is_the_callers_and_nothing_is_read(self, code):
         s3 = FakeS3(put=_client_error(code))
         with pytest.raises(ClientError):
-            pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, None)
+            pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, None, workspace=None)
         assert [call for call, _ in s3.calls] == ['put']
 
     @pytest.mark.parametrize('s3', [FakeS3(put={'ETag': ''}), FakeS3(put={}),
                                     FakeS3(put=_client_error('PreconditionFailed'), head={})])
     def test_without_an_etag_it_is_an_error(self, s3):
         with pytest.raises(RuntimeError, match='did not identify the winning prototype object'):
-            pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, None)
+            pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, None, workspace=None)
 
 
 class TestReadingAVersionsHtml:
@@ -122,18 +123,19 @@ class TestReadingAVersionsHtml:
     def test_a_row_without_inline_text_reads_its_object_in_utf8(self, content):
         s3 = FakeS3(body=HTML.encode('utf-8'))
         row = {'document_id': 'doc_1', 'content': content, 'prototype_format': 'html'}
-        assert pv.version_html(s3, BUCKET, PROJECT, row) == HTML
-        assert s3.calls == [('get', {'Bucket': BUCKET, 'Key': prototype_s3_key(PROJECT, 'doc_1')})]
+        assert pv.version_html(s3, BUCKET, PROJECT, row, workspace=None) == HTML
+        assert s3.calls == [('get', {'Bucket': BUCKET, 'Key': prototype_s3_key(PROJECT, 'doc_1', workspace=None)})]
 
     def test_inline_html_is_answered_as_it_is_without_a_read(self):
         s3 = FakeS3()
-        assert pv.version_html(s3, BUCKET, PROJECT, {'document_id': 'doc_1', 'content': '\n<html>x'}) == '\n<html>x'
+        assert pv.version_html(s3, BUCKET, PROJECT, {'document_id': 'doc_1', 'content': '\n<html>x'},
+                               workspace=None) == '\n<html>x'
         assert s3.calls == []
 
     def test_any_s3_error_but_a_missing_object_is_the_callers(self):
         s3 = FakeS3(body=_client_error('AccessDenied'))
         with pytest.raises(ClientError):
-            pv.version_html(s3, BUCKET, PROJECT, {'document_id': 'doc_1', 'content': ''})
+            pv.version_html(s3, BUCKET, PROJECT, {'document_id': 'doc_1', 'content': ''}, workspace=None)
 
 
 class _Captured:
@@ -153,7 +155,8 @@ class _Captured:
 
 
 def _store(s3: FakeS3) -> pv.PrototypeStore:
-    return pv.PrototypeStore(table='projects', pins_table='pins', s3=s3, bucket=BUCKET, api_base=API_BASE)
+    return pv.PrototypeStore(table='projects', pins_table='pins', s3=s3, bucket=BUCKET, api_base=API_BASE,
+                             workspace=None)
 
 
 def _version_from_html(source: dict, captured: _Captured, **kwargs: Any) -> dict:
@@ -189,7 +192,7 @@ class TestTheRowANewVersionGets:
         assert args[5] == {**kept, 'prototype_etag': '"e"', 'prototype_version_id': 'v1', 'content': '',
                            'prototype_format': 'html', 'gsi1pk': f'PROJECT#{PROJECT}#DOCUMENTS', 'gsi1sk': NOW,
                            'created_at': NOW, 'updated_at': NOW, 'edit_kind': 'restore'}
-        assert kwargs == {'expected_last_version': None}
+        assert kwargs == {'expected_last_version': None, 'workspace': None}
 
     def test_an_allocation_that_landed_is_answered_and_nothing_is_written(self):
         captured = _Captured()
@@ -210,7 +213,7 @@ class TestTheRowANewVersionGets:
     def test_a_series_still_at_the_expected_version_is_written_with_that_expectation(self):
         captured = _Captured()
         _version_from_html({'title': 'Checkout (v4)'}, captured, expected_last_version=4)
-        assert captured.persisted[0][1] == {'expected_last_version': 4}
+        assert captured.persisted[0][1] == {'expected_last_version': 4, 'workspace': None}
 
 
 class TestBackToAVersion:
@@ -271,17 +274,18 @@ class TestTheRefusalsAreExact:
 
     def test_a_store_without_a_bucket_is_not_configured(self):
         with pytest.raises(ConfigurationError, match=r'^Prototype storage not configured$'):
-            pv.PrototypeStore(table='projects', pins_table='pins', s3=FakeS3(), bucket='', api_base=None)
+            pv.PrototypeStore(table='projects', pins_table='pins', s3=FakeS3(), bucket='', api_base=None,
+                              workspace=None)
 
     def test_an_answer_without_an_etag_names_the_object(self):
         with pytest.raises(RuntimeError, match=r'^S3 did not identify the winning prototype object\.$'):
-            pv.put_prototype_html(FakeS3(put={}), BUCKET, PROJECT, 'doc_1', HTML, None)
+            pv.put_prototype_html(FakeS3(put={}), BUCKET, PROJECT, 'doc_1', HTML, None, workspace=None)
 
     def test_an_s3_error_without_an_error_block_is_raised_as_it_came(self):
         bare = ClientError({}, 'PutObject')
         s3 = FakeS3(put=bare)
         with pytest.raises(ClientError) as raised:
-            pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, None)
+            pv.put_prototype_html(s3, BUCKET, PROJECT, 'doc_1', HTML, None, workspace=None)
         assert raised.value is bare
         assert [call for call, _ in s3.calls] == ['put']
 

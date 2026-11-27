@@ -142,8 +142,8 @@ ACCESS_ATTRIBUTES: Final = (
 _GATE_PROJECTION: Final = ', '.join(['pk', *ACCESS_ATTRIBUTES, '#status', '#deleting'])
 
 
-def meta_gate_read(project_id: str, deletion_attribute: str) -> dict[str, Any]:
-    """``get_item`` kwargs for the strongly consistent META read an access gate makes.
+def meta_gate_read(project_id: str, deletion_attribute: str, *, workspace: WorkspaceScope | None) -> dict[str, Any]:
+    """``get_item`` kwargs for the strongly consistent META read an access gate makes (the scope's ``META``).
 
     Shared by every Lambda that gates on a project (projects API, ballots), so
     they read the same attributes the same way. ``deletion_attribute`` is passed
@@ -151,7 +151,7 @@ def meta_gate_read(project_id: str, deletion_attribute: str) -> dict[str, Any]:
     key builder).
     """
     return {
-        'Key': {'pk': project_pk(project_id), 'sk': 'META'},
+        'Key': {'pk': project_pk(project_id, workspace=workspace), 'sk': 'META'},
         'ConsistentRead': True,
         'ProjectionExpression': _GATE_PROJECTION,
         'ExpressionAttributeNames': {
@@ -328,7 +328,7 @@ def project_members(meta: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def resolve_access(meta: Mapping[str, Any] | None, caller: Caller, *,
-                   workspace: WorkspaceScope | None = None) -> ProjectAccess:
+                   workspace: WorkspaceScope | None) -> ProjectAccess:
     """Effective access for ``caller`` on the project described by ``meta``.
 
     ``meta`` of None (missing project) yields no access; existence checks and
@@ -397,7 +397,7 @@ def sharing_summary(meta: Mapping[str, Any], caller: Caller) -> dict[str, Any]:
     return {
         'visibility': project_visibility(meta),
         'owner': public_owner(meta),
-        'access': resolve_access(meta, caller).to_dict(),
+        'access': resolve_access(meta, caller, workspace=None).to_dict(),
         'member_count': len(project_members(meta)),
     }
 

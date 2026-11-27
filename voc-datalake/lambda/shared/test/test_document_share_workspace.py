@@ -78,7 +78,7 @@ def test_a_workspace_link_is_its_row_its_pointer_its_listing_its_registry_row_an
     assert route['workspace_id'] == A.ws
     # The route expires with the link (its ttl), leaving an expired link dark; the registry row has none, so the
     # workspace's delete always finds the link.
-    [registry] = _partition(table, review_link_registry_pk(A))
+    [registry] = _partition(table, review_link_registry_pk(workspace=A))
     assert (registry['sk'], 'ttl' in registry, route['ttl']) == (share_id, False, share['ttl'])
     # The registry row names the link's project and series, so the per-project delete (3h) reaches its links.
     assert (registry['project_id'], registry['series_id']) == (PROJECT, SERIES['series_id'])
@@ -94,7 +94,7 @@ def test_a_deployment_link_is_its_one_row_and_its_pointer_as_before(table):
     assert 'workspace_id' not in _partition(table, share['pk'])[0]
     # The link, its pointer, and since 7.48.00 (3g-d) its rows in the deployment's link and series registries.
     assert sorted(row['pk'] for row in table.scan()['Items']) == sorted([
-        share['pk'], comments_pk(PROJECT, SERIES['series_id']), 'DOCSHARE_IDS', 'COMMENT_SERIES_IDS'])
+        share['pk'], comments_pk(PROJECT, SERIES['series_id'], workspace=None), 'DOCSHARE_IDS', 'COMMENT_SERIES_IDS'])
 
 
 def test_a_reviewer_resolves_a_workspace_link_by_its_id_alone(table):
@@ -138,7 +138,7 @@ def test_revoking_a_workspace_link_revokes_that_one_only(table):
 
 def test_a_reviewers_writes_are_counted_in_the_links_workspace(table):
     ds.count_reviewer_write(table, SHARE_ID, REVIEWER, workspace=A)
-    ds.count_reviewer_write(table, SHARE_ID, REVIEWER)
+    ds.count_reviewer_write(table, SHARE_ID, REVIEWER, workspace=None)
     rate = f'DCRATE#{SHARE_ID}#{email_digest(REVIEWER)}'
     assert [row['n'] for row in _partition(table, f'WS#{A.ws}#{rate}')] == [1]
     assert [row['n'] for row in _partition(table, rate)] == [1]
@@ -175,7 +175,8 @@ def test_the_deployments_create_is_the_transaction_sent_before_and_its_registry_
     monkeypatch.setattr(table.meta, 'client', recording)
     share = _create(table, None)
     at = share['created_at']
-    index = {'pk': comments_pk(PROJECT, SERIES['series_id']), 'sk': 'SHARE', 'share_id': share['share_id'],
+    index = {'pk': comments_pk(PROJECT, SERIES['series_id'], workspace=None), 'sk': 'SHARE',
+             'share_id': share['share_id'],
              'updated_at': at}
     series = {'pk': 'COMMENT_SERIES_IDS', 'sk': f"{PROJECT}#{SERIES['series_id']}", 'project_id': PROJECT,
               'series_id': SERIES['series_id'], 'listed_at': at}

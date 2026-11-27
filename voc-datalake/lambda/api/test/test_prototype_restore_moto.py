@@ -48,17 +48,17 @@ class World:
         """One built version: its row and its object, the widget naming its own form."""
         doc_id = versioned_document_id(PROJECT, 'prototype', job_id)
         html = inject_pin_widget(f'<!DOCTYPE html><html><body>{body}</body></html>', pin_form_id(doc_id))
-        self.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id), Body=html.encode())
+        self.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id, workspace=None), Body=html.encode())
         return persist_versioned_document(self.table, PROJECT, 'prototype', 'Checkout', job_id, {
             'content': '', 'prototype_format': 'html', 'created_at': f'2026-05-0{len(job_id)}T00:00:00+00:00',
             'job_id': job_id, 'source_prd_id': 'prd_1', 'revision_feedback': 'make it blue', **fields,
-        })
+        }, workspace=None)
 
     def html(self, doc_id: str) -> str:
-        return object_text(self.s3, BUCKET, prototype_s3_key(PROJECT, doc_id))
+        return object_text(self.s3, BUCKET, prototype_s3_key(PROJECT, doc_id, workspace=None))
 
     def metadata(self, doc_id: str) -> dict:
-        return self.s3.head_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id))['Metadata']
+        return self.s3.head_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id, workspace=None))['Metadata']
 
     def restore(self, document_id: str, version_id: str, body: dict | None = None) -> dict:
         from projects import restore_document
@@ -149,7 +149,8 @@ class TestBackToAVersion:
         v2 = world.prototype('job_22', '<h1>Two</h1>')
         signed: list[tuple[str, str]] = []
 
-        def sign(project_id: str, doc_id: str) -> str:
+        def sign(project_id: str, doc_id: str, *, workspace: None) -> str:
+            assert workspace is None  # the deployment's object
             signed.append((project_id, doc_id))
             return f'https://cdn.example/prototypes/{project_id}/{doc_id}.html?Signature=s'
 
@@ -187,7 +188,8 @@ class TestARetryIsTheSameVersion:
         v2 = world.prototype('job_22', '<h1>Two</h1>')
         allocation = f"restore:{v1['document_id']}:back-1"
         new_id = versioned_document_id(PROJECT, 'prototype', allocation)
-        earlier = world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, new_id), Body=b'<html></html>')
+        earlier = world.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, new_id, workspace=None),
+                                      Body=b'<html></html>')
 
         restored = world.restore(v2['document_id'], v1['document_id'], {'edit_id': 'back-1'})['document']
 
@@ -200,7 +202,7 @@ class TestTheOldestPrototypes:
         """A version from before S3 storage: its HTML (or JSON spec) inline in ``content``, no object."""
         return persist_versioned_document(world.table, PROJECT, 'prototype', 'Checkout', job_id, {
             'content': content, 'created_at': '2026-01-01T00:00:00+00:00', **fields,
-        })
+        }, workspace=None)
 
     def test_inline_html_is_restored_to_its_own_object_with_its_own_widget(self, world):
         old = self._inline(world, 'job_1', '<!DOCTYPE html><html><body><h1>Inline</h1></body></html>',
@@ -258,7 +260,7 @@ class TestTheOldestPrototypes:
     def test_a_version_whose_object_is_gone_is_not_found_and_nothing_is_written(self, world):
         v1 = world.prototype('job_1', '<h1>One</h1>')
         v2 = world.prototype('job_22', '<h1>Two</h1>')
-        world.s3.delete_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, v1['document_id']))
+        world.s3.delete_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, v1['document_id'], workspace=None))
 
         with pytest.raises(NotFoundError, match='no longer stored'):
             world.restore(v2['document_id'], v1['document_id'])

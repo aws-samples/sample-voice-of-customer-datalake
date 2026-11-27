@@ -109,8 +109,9 @@ ADMIN_ACCESS = ProjectAccess(role=ROLE_ADMIN)
 # (method, path, body, query, delegate, expected args, expected kwargs)
 THIN_ROUTES = [
     ('GET', '/projects', None, None, 'list_projects', (ADMIN,), {}),
-    ('POST', '/projects', BODY, None, 'create_project', (BODY, ADMIN), {}),
-    ('POST', '/projects', None, None, 'create_project', ({}, ADMIN), {}),
+    # (7.99.00: the create names its scope, the deployment's until the switch)
+    ('POST', '/projects', BODY, None, 'create_project', (BODY, ADMIN), {'workspace': None}),
+    ('POST', '/projects', None, None, 'create_project', ({}, ADMIN), {'workspace': None}),
     ('GET', '/projects/p1', None, None, 'get_project', ('p1', ADMIN), {}),
     ('POST', '/projects/p1/chat-context', {'selected_document_ids': ['d1']}, None,
      'get_project_chat_context', ('p1', ['d1'], ADMIN), {}),

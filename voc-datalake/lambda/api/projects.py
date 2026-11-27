@@ -116,7 +116,7 @@ from shared.project_access import Caller
 from shared.project_keys import (
     document_keys,
     document_listing,
-    personas_index_pk,
+    persona_keys,
     project_id_of,
     project_pk,
     project_type_pk,
@@ -341,7 +341,7 @@ def generate_persona_avatar(
     Returns:
         dict with 'avatar_url' and 'avatar_prompt'
     """
-    return _generate_persona_avatar(persona_data, s3_bucket, project_id)
+    return _generate_persona_avatar(persona_data, s3_bucket, project_id, workspace=None)
 
 
 def get_feedback_context(filters: dict, limit: int) -> list[dict]:
@@ -429,7 +429,7 @@ def list_projects(caller: Caller) -> dict:
         # excluding them from the by-id reads below would defeat that purpose.
         if is_verification_fixture(item):
             continue
-        if not project_access.resolve_access(item, caller).can_view:
+        if not project_access.resolve_access(item, caller, workspace=None).can_view:
             continue
         project_id = item.get('project_id')
         persona_count, document_count = _count_project_children(project_id)
@@ -464,7 +464,7 @@ def _iter_project_index_rows() -> Iterator[dict]:
     """Every project META row on the by-type index, newest first, all pages."""
     return _paginated_items({
         'IndexName': PROJECTS_BY_TYPE_INDEX,
-        'KeyConditionExpression': Key('gsi1pk').eq(project_type_pk()),
+        'KeyConditionExpression': Key('gsi1pk').eq(project_type_pk(workspace=None)),
         'ScanIndexForward': False,
     })
 
@@ -474,7 +474,7 @@ def _count_project_children(project_id: object) -> tuple[int, int]:
     persona_count = 0
     document_count = 0
     for child in _paginated_items({
-        'KeyConditionExpression': Key('pk').eq(project_pk(str(project_id))),
+        'KeyConditionExpression': Key('pk').eq(project_pk(str(project_id), workspace=None)),
         'ProjectionExpression': 'sk',
     }):
         sk = child.get('sk')
@@ -488,7 +488,7 @@ def _count_project_children(project_id: object) -> tuple[int, int]:
 
 
 @tracer.capture_method
-def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | None = None) -> dict:
+def create_project(body: dict, caller: Caller, *, workspace: WorkspaceScope | None) -> dict:
     """Create a new project owned by ``caller`` (private unless asked otherwise).
 
     An autonomous-agent principal creates it for the run's handoff target
@@ -663,7 +663,7 @@ def _without_emails_unless_manager(payload: dict, meta: dict, caller: Caller) ->
     without it. Covers the raw `owner_email` a META copy carries, the computed
     `owner`, and each entry of a `members` list.
     """
-    if project_access.resolve_access(meta, caller).can_manage:
+    if project_access.resolve_access(meta, caller, workspace=None).can_manage:
         return payload
     redacted = {key: value for key, value in payload.items() if key != 'owner_email'}
     if 'owner' in redacted:
@@ -715,7 +715,7 @@ def _with_signed_prototype_url(item: dict, project_id: str) -> dict:
         # Legacy inline prototype: leave it for the frontend's `srcDoc` path.
         item.pop('prototype_url', None)
         return item
-    signed = prototype_signed_url(project_id, doc_id)
+    signed = prototype_signed_url(project_id, doc_id, workspace=None)
     if signed:
         item['prototype_url'] = signed
     else:
@@ -736,7 +736,7 @@ def _query_partition_items(partition_key: str) -> list[dict]:
 def _find_document(project_id: str, document_id: str) -> dict | None:
     """Find one document using projected pages and stop at the first match."""
     query = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=None)),
         'ConsistentRead': True,
         'ProjectionExpression': (
             'pk, sk, document_id, #type, #title, base_title, #version'
@@ -810,7 +810,7 @@ def _fenced_json(raw: str | None, failure_message: str) -> dict:
 def _stored_persona(project_id: str, persona_id: str) -> dict:
     """The persona record, or a 404."""
     response = projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'}
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'}
     )
     item = response.get('Item')
     if not item:
@@ -923,7 +923,7 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
 
     # Read the complete partition before assigning legacy versions. A partial
     # collection can give two same-title documents the same apparent position.
-    items = _query_partition_items(project_pk(project_id))
+    items = _query_partition_items(project_pk(project_id, workspace=None))
     if not items:
         raise NotFoundError('Project not found')
 
@@ -947,7 +947,7 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
     if caller is None:
         project = _without_stored_emails(project)
     else:
-        if not project_access.resolve_access(project, caller).can_view:
+        if not project_access.resolve_access(project, caller, workspace=None).can_view:
             raise NotFoundError('Project not found')
         project = _with_sharing_fields(project, caller)
 
@@ -982,7 +982,7 @@ def with_signed_avatars(personas: list[dict]) -> list[dict]:
     """Each persona's S3 avatar URI swapped for a signed CloudFront CDN URL (in place)."""
     for persona in personas:
         if persona.get('avatar_url') and persona['avatar_url'].startswith('s3://'):
-            persona['avatar_url'] = get_avatar_cdn_url(persona['avatar_url'])
+            persona['avatar_url'] = get_avatar_cdn_url(persona['avatar_url'], workspace=None)
     return personas
 
 
@@ -1005,13 +1005,13 @@ def parse_project_detail_ids(raw: str) -> list[str]:
 def _viewable_ids(project_ids: list[str], caller: Caller) -> set[str]:
     """Which ids name a live project ``caller`` may VIEW — decided on META alone,
     before any partition read or URL signing on the caller's behalf."""
-    keys = [{'pk': project_pk(project_id), 'sk': 'META'} for project_id in project_ids]
+    keys = [{'pk': project_pk(project_id, workspace=None), 'sk': 'META'} for project_id in project_ids]
     metas = batch_get_all(projects_table, keys, failure=ServiceError('Failed to read projects'))
     # The ids were checked (LONG_OPAQUE_ID_RE: no `#`), so each META read back names its project's id.
     return {
         project_id for meta in metas
-        if (project_id := project_id_of(meta.get('pk'))) is not None and not is_project_tombstone(meta)
-        and project_access.resolve_access(meta, caller).can_view
+        if (project_id := project_id_of(meta.get('pk'), workspace=None)) is not None and not is_project_tombstone(meta)
+        and project_access.resolve_access(meta, caller, workspace=None).can_view
     }
 
 
@@ -1068,7 +1068,7 @@ def _query_project_chat_items(project_id: str) -> list[dict]:
     # `created_at` is load-bearing for normalize_document_versions; `status`
     # preserves compatibility with status-only historical tombstones.
     query = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=None)),
         'ConsistentRead': True,
         'ProjectionExpression': (
             'pk, sk, project_id, #name, #status, #deleting, persona_id, '
@@ -1121,7 +1121,7 @@ def get_project_chat_context(
     )
     if project is None or is_project_tombstone(project):
         raise NotFoundError('Project not found')
-    access = project_access.resolve_access(project, caller)
+    access = project_access.resolve_access(project, caller, workspace=None)
     if not access.can_view:
         raise NotFoundError('Project not found')
     personas = [
@@ -1172,7 +1172,7 @@ def get_project_chat_context(
             and isinstance(document_sk, str)
         ):
             response = projects_table.get_item(
-                Key={'pk': project_pk(project_id), 'sk': document_sk},
+                Key={'pk': project_pk(project_id, workspace=None), 'sk': document_sk},
                 ConsistentRead=True,
                 ProjectionExpression='document_id, content',
             )
@@ -1232,7 +1232,7 @@ def update_project(project_id: str, body: dict) -> dict:
         expr_values[':filters'] = body['filters']
 
     update_params = {
-        'Key': {'pk': project_pk(project_id), 'sk': 'META'},
+        'Key': {'pk': project_pk(project_id, workspace=None), 'sk': 'META'},
         'UpdateExpression': update_expr,
         'ConditionExpression': PROJECT_WRITABLE_CONDITION,
         'ExpressionAttributeValues': expr_values,
@@ -1301,7 +1301,7 @@ def _start_project_deletion(
     raise ServiceError('Could not establish the project deletion fence. Please retry.')
 
 
-def prototype_project_prefix(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def prototype_project_prefix(project_id: str, *, workspace: WorkspaceScope | None) -> str:
     """Every prototype object one project owns, and nothing another owns (under `ws/{ws}/` in a workspace).
 
     The trailing slash is load-bearing: `prototypes/proj_1` alone also matches
@@ -1310,7 +1310,7 @@ def prototype_project_prefix(project_id: str, *, workspace: WorkspaceScope | Non
     return scoped_object_key(workspace, f'prototypes/{project_id}/')
 
 
-def product_docs_project_prefix(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def product_docs_project_prefix(project_id: str, *, workspace: WorkspaceScope | None) -> str:
     """Every product-doc object (raw upload and extracted text) one project owns (under `ws/{ws}/` in a workspace).
 
     Trailing slash for the same reason as `prototype_project_prefix`. Pinned to
@@ -1336,7 +1336,7 @@ def _delete_project_job_rows(project_id: str) -> None:
         )
         return
     query: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=None)),
         'ConsistentRead': True,
         'ProjectionExpression': 'pk, sk',
     }
@@ -1386,7 +1386,7 @@ def _owned_avatar_keys(client: Any, bucket: str, project_id: str, persona_ids: l
     owned: list[str] = []
     foreign = 0
     for persona_id in persona_ids:
-        for key in persona_avatar_keys(client, bucket, persona_id):
+        for key in persona_avatar_keys(client, bucket, persona_id, workspace=None):
             owner = avatar_object_owner(client, bucket, key)
             if owner == project_id:
                 owned.append(key)
@@ -1437,8 +1437,8 @@ def _sweep_project_objects(project_id: str, persona_ids: list[str]) -> None:
             extra={'project_id': project_id},
         )
         return
-    _delete_objects_under_prefix(project_id, bucket, prototype_project_prefix(project_id))
-    _delete_objects_under_prefix(project_id, bucket, product_docs_project_prefix(project_id))
+    _delete_objects_under_prefix(project_id, bucket, prototype_project_prefix(project_id, workspace=None))
+    _delete_objects_under_prefix(project_id, bucket, product_docs_project_prefix(project_id, workspace=None))
     _delete_project_avatar_objects(project_id, bucket, persona_ids)
 
 
@@ -1456,8 +1456,8 @@ def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
-    project_key = project_pk(project_id)
-    meta_key = project_meta_key(project_id)
+    project_key = project_pk(project_id, workspace=None)
+    meta_key = project_meta_key(project_id, workspace=None)
     now = now_iso()
     _start_project_deletion(project_id, meta_key, now)
 
@@ -1480,7 +1480,7 @@ def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -
             batch.delete_item(Key=key)
 
     with projects_table.batch_writer() as batch:
-        for key in _iter_partition_keys(version_partition_key(project_id)):
+        for key in _iter_partition_keys(version_partition_key(project_id, workspace=None)):
             batch.delete_item(Key=key)
 
     _delete_project_job_rows(project_id)
@@ -1732,7 +1732,7 @@ def _existing_persona_names(project_id: str) -> list[str]:
     """
     try:
         items = projects_table.query(
-            KeyConditionExpression=Key('pk').eq(project_pk(project_id))
+            KeyConditionExpression=Key('pk').eq(project_pk(project_id, workspace=None))
             & Key('sk').begins_with('PERSONA#'),
             ProjectionExpression='#name',
             ExpressionAttributeNames={'#name': 'name'},
@@ -2398,10 +2398,7 @@ def _build_persona_items(
 
         # Build the full persona item with all 8 sections
         item = {
-            'pk': project_pk(project_id),
-            'sk': f'PERSONA#{persona_id}',
-            'gsi1pk': personas_index_pk(project_id),
-            'gsi1sk': now,
+            **persona_keys(project_id, persona_id, now, workspace=None),
             'persona_id': persona_id,
             'name': fix_persona_name(persona.get('name', f'Persona {i+1}')),
             'tagline': persona.get('tagline', ''),
@@ -3096,7 +3093,7 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '', categ
 
     def build(doc_id: str) -> dict:
         return {
-            **document_keys(project_id, f'DOC#{doc_id}', now),
+            **document_keys(project_id, f'DOC#{doc_id}', now, workspace=None),
             'document_id': doc_id,
             **fields,
             'created_at': now,
@@ -3105,7 +3102,7 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '', categ
         }
 
     item = create_counted_project_child(
-        projects_table, project_id, 'doc', build, now=now_dt,
+        projects_table, project_id, 'doc', build, now=now_dt, workspace=None,
     )
     return {'success': True, 'document': item}
 
@@ -3174,7 +3171,8 @@ def update_document(project_id: str, document_id: str, body: dict, *,
     if proposal is not None and not saves_nothing(document, body, title):
         content = body.get('content') if isinstance(body.get('content'), str) else document.get('content') or ''
         revise = verify_saved_proposal(proposal, project_id=project_id, document=document, content=str(content))
-    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title, revise=revise)
+    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title, revise=revise,
+                         workspace=None)
 
 
 @tracer.capture_method
@@ -3182,7 +3180,8 @@ def get_document_versions(project_id: str, document_id: str) -> dict:
     """The document's versions, newest first (content included, for open / compare)."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    return {'success': True, **list_document_versions(projects_table, project_id, _source_document_item(project_id, document_id))}
+    source = _source_document_item(project_id, document_id)
+    return {'success': True, **list_document_versions(projects_table, project_id, source, workspace=None)}
 
 
 def stored_document_type(project_id: str, document_id: str) -> str | None:
@@ -3199,7 +3198,7 @@ def prototype_store() -> PrototypeStore:
         raise ConfigurationError('Aggregates table not configured')
     return PrototypeStore(table=projects_table, pins_table=pins_table, s3=get_s3_client(),
                           bucket=os.environ.get('RAW_DATA_BUCKET', ''),
-                          api_base=os.environ.get(PIN_SUBMIT_API_BASE_ENV))
+                          api_base=os.environ.get(PIN_SUBMIT_API_BASE_ENV), workspace=None)
 
 
 def prototype_document(project_id: str, document_id: str) -> dict:
@@ -3207,7 +3206,7 @@ def prototype_document(project_id: str, document_id: str) -> dict:
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     item = projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': f'PROTOTYPE#{document_id}'}, ConsistentRead=True,
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PROTOTYPE#{document_id}'}, ConsistentRead=True,
     ).get('Item')
     if not item:
         raise NotFoundError('Prototype not found')
@@ -3238,7 +3237,7 @@ def restore_document(project_id: str, document_id: str, version_id: str, body: d
         # The SPA shows the answered row at once: it needs the fresh signed URL the project read would mint.
         return {**answer, 'document': _with_signed_prototype_url(dict(answer['document']), project_id)}
     return restore_document_version(projects_table, project_id, document, version_id, body,
-                                    now=now_iso())
+                                    now=now_iso(), workspace=None)
 
 
 @tracer.capture_method
@@ -3254,7 +3253,7 @@ def delete_document(
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
-    project_key = project_pk(project_id)
+    project_key = project_pk(project_id, workspace=None)
     items = _query_partition_items(project_key)
     document = _require_document(next(
         (
@@ -3289,12 +3288,12 @@ def delete_document(
         # keeps surviving legacy siblings on their assigned versions. Counters
         # and assignment rows intentionally remain as allocation history.
         persist_legacy_document_versions(
-            projects_table, project_id, project_documents,
+            projects_table, project_id, project_documents, workspace=None,
         )
         allocation_id = document.get('version_allocation_id')
         if isinstance(allocation_id, str) and allocation_id:
             preserve_versioned_document_allocation(
-                projects_table, project_id, document,
+                projects_table, project_id, document, workspace=None,
             )
 
     try:
@@ -3356,7 +3355,7 @@ def delete_document(
         if not current or current.get('document_id') != document_id:
             raise NotFoundError('Document no longer exists') from error
         current_meta_response = projects_table.get_item(
-            Key=project_meta_key(project_id),
+            Key=project_meta_key(project_id, workspace=None),
             ConsistentRead=True,
         )
         current_meta = (
@@ -3390,7 +3389,8 @@ def _delete_prototype_html(project_id: str, document_id: str) -> None:
     if not bucket:
         return
     try:
-        refused = delete_every_version(get_s3_client(), bucket, prototype_s3_key(project_id, document_id), exact=True)
+        refused = delete_every_version(get_s3_client(), bucket,
+                                       prototype_s3_key(project_id, document_id, workspace=None), exact=True)
     except Exception:
         logger.exception('Could not delete the HTML of a deleted prototype',
                          extra={'project_id': project_id, 'document_id': document_id})
@@ -3418,7 +3418,7 @@ def _delete_saved_revisions(project_id: str, document_id: str) -> None:
     project delete sweeps with the version partition; it must not fail this call.
     """
     try:
-        delete_document_revisions(projects_table, project_id, document_id)
+        delete_document_revisions(projects_table, project_id, document_id, workspace=None)
     except Exception:
         logger.exception('Could not delete the saved revisions of a deleted document',
                          extra={'project_id': project_id, 'document_id': document_id})
@@ -3440,7 +3440,7 @@ _MANAGED_DUPLICATE_TYPES = {'PRD#': 'prd', 'PRFAQ#': 'prfaq', 'PROTOTYPE#': 'pro
 def _source_document_item(project_id: str, document_id: str) -> dict:
     sk = _stored_document_sort_key(_find_document(project_id, document_id))
     item = projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': sk}, ConsistentRead=True,
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': sk}, ConsistentRead=True,
     ).get('Item')
     if not isinstance(item, dict) or item.get('document_id') != document_id:
         raise NotFoundError('Document not found')
@@ -3456,8 +3456,8 @@ def _copy_prototype_html(source_project: str, source_doc: str,
     try:
         response = get_s3_client().copy_object(
             Bucket=bucket,
-            Key=prototype_s3_key(target_project, target_doc),
-            CopySource={'Bucket': bucket, 'Key': prototype_s3_key(source_project, source_doc)},
+            Key=prototype_s3_key(target_project, target_doc, workspace=None),
+            CopySource={'Bucket': bucket, 'Key': prototype_s3_key(source_project, source_doc, workspace=None)},
             ContentType='text/html; charset=utf-8',
             MetadataDirective='REPLACE',
         )
@@ -3502,7 +3502,7 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
     now = now_iso()
     fields = {key: value for key, value in source.items() if key not in _DUPLICATE_DROPPED_FIELDS}
     fields.update({
-        **document_listing(target_project_id, now),
+        **document_listing(target_project_id, now, workspace=None),
         'created_at': now,
         'updated_at': now,
         'duplicated_from': {'project_id': project_id, 'document_id': document_id},
@@ -3515,14 +3515,14 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
         title, _ = split_versioned_title(source.get('base_title') or source.get('title') or 'Untitled')
         if managed_type == 'prototype':
             existing = get_versioned_document_by_allocation(
-                projects_table, target_project_id, 'prototype', allocation_id,
+                projects_table, target_project_id, 'prototype', allocation_id, workspace=None,
             )
             if existing is not None:
                 return {'success': True, 'document': _duplicate_summary(existing, target_project_id)}
             target_doc = versioned_document_id(target_project_id, 'prototype', allocation_id)
             fields.update(_copy_prototype_html(project_id, document_id, target_project_id, target_doc))
         item = persist_versioned_document(
-            projects_table, target_project_id, managed_type, title, allocation_id, fields,
+            projects_table, target_project_id, managed_type, title, allocation_id, fields, workspace=None,
         )
         return {'success': True, 'document': _duplicate_summary(item, target_project_id)}
 
@@ -3531,13 +3531,13 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
     new_id = f'dup_{digest}'
     item = {
         **fields,
-        'pk': project_pk(target_project_id),
+        'pk': project_pk(target_project_id, workspace=None),
         'sk': f'{prefix}{new_id}',
         'document_id': new_id,
         'title': source.get('title') or 'Untitled',
     }
     try:
-        put_project_item_and_increment(projects_table, target_project_id, item, 'document_count')
+        put_project_item_and_increment(projects_table, target_project_id, item, 'document_count', workspace=None)
     except ClientError as error:
         if error.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
             raise
@@ -3586,7 +3586,7 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
             expr_values[f':{field}'] = body[field]
 
     update_params = {
-        'Key': {'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
+        'Key': {'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'},
         'UpdateExpression': update_expr,
         'ConditionExpression': 'attribute_exists(pk) AND attribute_exists(sk)',
         'ExpressionAttributeValues': expr_values,
@@ -3627,7 +3627,7 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
 
     try:
         projects_table.update_item(
-            Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
+            Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'},
             UpdateExpression='SET research_notes = list_append(if_not_exists(research_notes, :empty), :note), updated_at = :now',
             ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
             ExpressionAttributeValues={
@@ -3682,7 +3682,7 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     # serve the previous one), then sweep the images it no longer names.
     now = now_iso()
     projects_table.update_item(
-        Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'},
         UpdateExpression='SET avatar_url = :url, avatar_prompt = :prompt, updated_at = :now',
         ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
         ExpressionAttributeValues={
@@ -3697,7 +3697,7 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     # not loadable, and the SPA shows the new image straight from this answer.
     return {
         'success': True,
-        'avatar_url': get_avatar_cdn_url(avatar_result['avatar_url']),
+        'avatar_url': get_avatar_cdn_url(avatar_result['avatar_url'], workspace=None),
         'avatar_prompt': avatar_result['avatar_prompt']
     }
 
@@ -3719,12 +3719,12 @@ def _avatar_job_error(failure: object) -> ApiError:
 def _sweep_superseded_avatar(project_id: str, persona_id: str, previous_url: object, current_url: str) -> None:
     """Best effort: remove the persona's earlier images now that ``current_url`` is saved."""
     bucket = os.environ.get('RAW_DATA_BUCKET', '')
-    keep = avatar_key_from_uri(current_url, bucket) if bucket else None
+    keep = avatar_key_from_uri(current_url, bucket, workspace=None) if bucket else None
     if keep is None:
         return
     delete_superseded_avatars(
         get_s3_client(), bucket, persona_id, keep=keep, project_id=project_id,
-        previous_key=avatar_key_from_uri(previous_url, bucket),
+        previous_key=avatar_key_from_uri(previous_url, bucket, workspace=None), workspace=None,
     )
 
 
@@ -3755,7 +3755,7 @@ def _persona_delete_transaction(
             'Delete': {
                 'TableName': table_name,
                 'Key': {
-                    'pk': project_pk(project_id),
+                    'pk': project_pk(project_id, workspace=None),
                     'sk': f'PERSONA#{persona_id}',
                 },
                 'ConditionExpression': (
@@ -3766,7 +3766,7 @@ def _persona_delete_transaction(
         {
             'Update': {
                 'TableName': table_name,
-                'Key': project_meta_key(project_id),
+                'Key': project_meta_key(project_id, workspace=None),
                 'UpdateExpression': update_expression,
                 'ConditionExpression': (
                     f'{PROJECT_WRITABLE_CONDITION} AND {counter_condition}'
@@ -3807,7 +3807,7 @@ def _persona_name(project_id: str, persona_id: str) -> str | None:
     """The persona's name (a fictional archetype), read before a delete; None when unreadable."""
     try:
         response = projects_table.get_item(
-            Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
+            Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'},
             ProjectionExpression='#name', ExpressionAttributeNames={'#name': 'name'},
         )
     except ClientError:
@@ -3977,7 +3977,7 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
 
         def build(research_id: str) -> dict:
             return {
-                **document_keys(project_id, f'RESEARCH#{research_id}', now),
+                **document_keys(project_id, f'RESEARCH#{research_id}', now, workspace=None),
                 'document_id': research_id,
                 'document_type': 'research',
                 'title': research_document_title(body.get('title'), research_question, now_dt),
@@ -3990,7 +3990,7 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
 
         logger.info(f"Saving research document, content size: {len(full_report)} chars, feedback items: {len(feedback_items)}")
         item = create_counted_project_child(
-            projects_table, project_id, 'research', build, now=now_dt,
+            projects_table, project_id, 'research', build, now=now_dt, workspace=None,
         )
 
     except Exception as e:
@@ -4054,7 +4054,7 @@ def read_project_meta(project_id: str) -> dict:
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     response = projects_table.get_item(
-        Key=project_meta_key(project_id), ConsistentRead=True,
+        Key=project_meta_key(project_id, workspace=None), ConsistentRead=True,
     )
     meta = response.get('Item') if isinstance(response, dict) else None
     if not isinstance(meta, dict) or is_project_tombstone(meta):
@@ -4080,7 +4080,7 @@ def _guarded_meta_update(
     if condition:
         full_condition = f'({full_condition}) AND ({condition})'
     params = {
-        'Key': project_meta_key(project_id),
+        'Key': project_meta_key(project_id, workspace=None),
         'UpdateExpression': update_expression,
         'ConditionExpression': full_condition,
         'ExpressionAttributeNames': {**PROJECT_WRITABLE_ATTRIBUTE_NAMES, **(names or {})},
@@ -4254,7 +4254,7 @@ def get_project_members(project_id: str, caller: Caller) -> dict:
         'visibility': project_access.project_visibility(meta),
         'owner': project_access.public_owner(meta),
         'members': project_access.public_members(meta),
-        'access': project_access.resolve_access(meta, caller).to_dict(),
+        'access': project_access.resolve_access(meta, caller, workspace=None).to_dict(),
     }, meta, caller)
 
 

@@ -79,29 +79,29 @@ def test_only_a_prfaq_or_prd_is_commentable(document):
 def test_find_document_returns_the_full_row_with_content(table):
     table.put_item(Item={'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1'})
     table.put_item(Item=_doc('d1', content='The full body'))
-    found = series.find_document(table, 'p1', 'd1')
+    found = series.find_document(table, 'p1', 'd1', workspace=None)
     assert found['content'] == 'The full body'
 
 
 def test_find_document_is_404_for_an_unknown_id_or_another_projects_document(table):
     table.put_item(Item={**_doc('d1'), 'pk': 'PROJECT#p2'})
     with pytest.raises(NotFoundError, match=series.DOCUMENT_NOT_FOUND):
-        series.find_document(table, 'p1', 'd1')
+        series.find_document(table, 'p1', 'd1', workspace=None)
     with pytest.raises(NotFoundError):
-        series.find_document(table, 'p2', 'missing')
+        series.find_document(table, 'p2', 'missing', workspace=None)
 
 
 def test_latest_version_is_the_newest_of_the_series_only(table):
     other_title, other_type = _doc('x9', base='Other', version=9), _doc('r9', document_type='prd', version=9)
     for item in (_doc('d1'), _doc('d3', version=3), _doc('d2', version=2), other_title, other_type):
         table.put_item(Item=item)
-    latest = series.latest_version(table, 'p1', 'prfaq', 'Launch')
+    latest = series.latest_version(table, 'p1', 'prfaq', 'Launch', workspace=None)
     assert latest is not None
     assert latest['document_id'] == 'd3'
 
 
 def test_latest_version_is_none_once_every_version_is_gone(table):
-    assert series.latest_version(table, 'p1', 'prfaq', 'Launch') is None
+    assert series.latest_version(table, 'p1', 'prfaq', 'Launch', workspace=None) is None
 
 
 # ── plain_text / collapse ───────────────────────────────────────────────────

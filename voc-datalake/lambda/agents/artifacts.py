@@ -75,7 +75,8 @@ def load_text(project_id: str, document_id: str, claims: dict[str, str]) -> tupl
     if document_type == 'prototype' or sk.startswith('PROTOTYPE#'):
         bucket = os.environ.get('RAW_DATA_BUCKET', '')
         try:
-            body = get_s3_client().get_object(Bucket=bucket, Key=prototype_s3_key(project_id, document_id))['Body']
+            key = prototype_s3_key(project_id, document_id, workspace=None)
+            body = get_s3_client().get_object(Bucket=bucket, Key=key)['Body']
             return 'prototype', visible_text(body.read().decode('utf-8', errors='replace'))
         except Exception as exc:
             raise ArtifactUnavailable('prototype HTML could not be read') from exc

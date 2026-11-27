@@ -103,7 +103,7 @@ def test_managed_merge_replay_returns_before_queries_or_model_work(
         mock_dynamodb['table'],
         merge_documents_event['project_id'],
         document_type,
-        merge_documents_event['job_id'],
+        merge_documents_event['job_id'], workspace=None,
     )
     mock_dynamodb['table'].query.assert_not_called()
     mock_converse.assert_not_called()

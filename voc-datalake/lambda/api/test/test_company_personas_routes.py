@@ -41,6 +41,12 @@ def _persona(container, persona_id, *, name, created_at='2026-10-01T00:00:00+00:
             'created_at': created_at, 'updated_at': created_at, **extra}
 
 
+def _signed(uri: str, *, workspace: object) -> str:
+    """The avatar signer's stand-in: the deployment's avatar only."""
+    assert workspace is None
+    return f'signed:{uri}'
+
+
 @pytest.fixture
 def world(monkeypatch) -> Iterator[dict]:
     monkeypatch.setenv('ASSIST_WORKER_FUNCTION', 'projects-assist')
@@ -67,7 +73,7 @@ def world(monkeypatch) -> Iterator[dict]:
             stack.enter_context(patch('projects_handler.invoke_lambda_async', invoke))
             stack.enter_context(patch('shared.assist_jobs.invoke_lambda_async', invoke))
             stack.enter_context(patch('projects_handler.ensure_persona_feedback'))
-            stack.enter_context(patch('projects.get_avatar_cdn_url', side_effect=lambda uri: f'signed:{uri}'))
+            stack.enter_context(patch('projects.get_avatar_cdn_url', side_effect=_signed))
             yield {'table': table, 'jobs': jobs, 's3': s3, 'invoke': invoke}
 
 

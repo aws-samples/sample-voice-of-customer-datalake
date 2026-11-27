@@ -387,7 +387,7 @@ def _keys(rows: Any) -> list[tuple[str, str]]:
 def _export(ex: ModuleType, world: dict[str, Any]) -> tuple[FakeWriter, list[dict[str, Any]]]:
     deployment = sys.modules['project_bundle.deployment'].Deployment('src-p', 'src-a', BUCKET, 'pool-src', None)
     writer = FakeWriter()
-    summaries = ex.Exporter(world['session'], deployment).run(list(world['chosen']), writer)
+    summaries = ex.Exporter(world['session'], deployment, workspace=None).run(list(world['chosen']), writer)
     return writer, summaries
 
 
@@ -558,7 +558,7 @@ class TestARefusedProjectStopsTheExportBeforeAnyWrite:
         writer = FakeWriter()
         deployment = sys.modules['project_bundle.deployment'].Deployment('src-p', 'src-a', BUCKET, 'pool-src', None)
         with pytest.raises(ex.ExportError) as refused:
-            ex.Exporter(world['session'], deployment).run(world['chosen'], writer)
+            ex.Exporter(world['session'], deployment, workspace=None).run(world['chosen'], writer)
         assert pid in str(refused.value)
         assert (writer.rows, writer.objects) == ([], [])
 

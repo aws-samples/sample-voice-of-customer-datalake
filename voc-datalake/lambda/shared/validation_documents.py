@@ -162,8 +162,8 @@ def create_document(table: Any, project_id: str, document_type: str, title: str,
         raise ValueError(f'not a Validate document type: {document_type}')
 
     def build(doc_id: str) -> dict[str, Any]:
-        return {**document_keys(project_id, f'DOC#{doc_id}', now), 'document_id': doc_id,
+        return {**document_keys(project_id, f'DOC#{doc_id}', now, workspace=None), 'document_id': doc_id,
                 'document_type': document_type, 'title': title[:MAX_TITLE_CHARS], 'content': content,
                 'created_at': now, 'updated_at': now, 'created_by_sub': creator_sub, **extra}
 
-    return create_counted_project_child(table, project_id, 'doc', build, now=now_dt)
+    return create_counted_project_child(table, project_id, 'doc', build, now=now_dt, workspace=None)

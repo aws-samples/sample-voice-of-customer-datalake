@@ -75,7 +75,7 @@ def _seed_comments(world: World) -> dict[str, list[str]]:
     _comment(world, None, 'proj_d', SERIES[0])
     return {'ws': [comments_pk(project, s, workspace=WorkspaceScope(WS)) for s in SERIES],
             'other': [comments_pk(other, SERIES[0], workspace=WorkspaceScope(OTHER))],
-            'deployment': [comments_pk('proj_d', SERIES[0])]}
+            'deployment': [comments_pk('proj_d', SERIES[0], workspace=None)]}
 
 
 class TestComments:
@@ -135,9 +135,9 @@ class TestDocshares:
         scope, other = WorkspaceScope(WS), WorkspaceScope(OTHER)
         assert [(_route(seeded, share_id), seeded.projects.get_item(Key=review_link_key(share_id, workspace=scope))
                  .get('Item')) for share_id in mine] == [({}, None), ({}, None)]
-        assert _rows(seeded, review_link_registry_pk(scope)) == []
+        assert _rows(seeded, review_link_registry_pk(workspace=scope)) == []
         assert _route(seeded, theirs)['workspace_id'] == OTHER
-        assert [row['sk'] for row in _rows(seeded, review_link_registry_pk(other))] == [theirs]
+        assert [row['sk'] for row in _rows(seeded, review_link_registry_pk(workspace=other))] == [theirs]
         assert _route(seeded, deployments)['share_id'] == deployments
         assert (counts['share_ids'], counts['share_routes_released']) == (2, 2)
 
@@ -152,7 +152,7 @@ class TestDocshares:
             seeded.projects.delete_item(Key=review_link_key(share_id, workspace=scope))
         counts = run(seeded, 'docshares')
         assert (counts['share_ids'], counts['share_routes_not_released']) == (1, 1)
-        assert _rows(seeded, review_link_registry_pk(scope)) == []
+        assert _rows(seeded, review_link_registry_pk(workspace=scope)) == []
         assert _rows(seeded, f'WS#{WS}#DOCSHARE#{share_id}') == []
 
     def test_a_route_naming_another_workspace_is_kept(self, seeded):
@@ -160,15 +160,15 @@ class TestDocshares:
         (release_share_route's condition), counted."""
         share_id = _share(seeded, OTHER, project_id_of(OTHER))
         scope = WorkspaceScope(WS)
-        seeded.projects.put_item(Item={'pk': review_link_registry_pk(scope), 'sk': share_id})
+        seeded.projects.put_item(Item={'pk': review_link_registry_pk(workspace=scope), 'sk': share_id})
         counts = run(seeded, 'docshares')
         assert _route(seeded, share_id)['workspace_id'] == OTHER
-        assert _rows(seeded, review_link_registry_pk(scope)) == []
+        assert _rows(seeded, review_link_registry_pk(workspace=scope)) == []
         assert counts['share_routes_not_released'] == 1
 
     def test_the_deployments_own_link_is_never_deleted(self, seeded):
         share_id = _share(seeded, None, 'proj_d')
-        seeded.projects.put_item(Item={'pk': review_link_registry_pk(WorkspaceScope(WS)), 'sk': share_id})
+        seeded.projects.put_item(Item={'pk': review_link_registry_pk(workspace=WorkspaceScope(WS)), 'sk': share_id})
         run(seeded, 'docshares')
         assert _route(seeded, share_id)['share_id'] == share_id
 
@@ -193,10 +193,10 @@ class TestDocshares:
     @pytest.mark.parametrize('bad', ['shr_short', 'DOCSHARE#x', 'shr_' + 'A' * 32])
     def test_a_registry_id_not_shaped_like_a_link_id_is_counted_and_its_row_deleted(self, seeded, bad):
         scope = WorkspaceScope(WS)
-        seeded.projects.put_item(Item={'pk': review_link_registry_pk(scope), 'sk': bad})
+        seeded.projects.put_item(Item={'pk': review_link_registry_pk(workspace=scope), 'sk': bad})
         with patch.object(sweeps, 'logger') as logger:
             counts = run(seeded, 'docshares')
         assert counts['share_ids_malformed'] == 1
-        assert _rows(seeded, review_link_registry_pk(scope)) == []
+        assert _rows(seeded, review_link_registry_pk(workspace=scope)) == []
         [warning] = logger.warning.call_args_list
         assert bad not in repr(warning)

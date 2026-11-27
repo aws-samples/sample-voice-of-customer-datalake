@@ -53,7 +53,7 @@ class Tables:
         form_id = pin_form_id(doc_id)
         prototype_pins.ensure_pin_form(self.aggregates, PROJECT, doc_id, 'Checkout')
         page = inject_pin_widget(HTML, form_id, pin_submit_url(form_id, API_BASE))
-        self.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id), Body=page.encode(),
+        self.s3.put_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, doc_id, workspace=None), Body=page.encode(),
                            Metadata=prototype_pins.prototype_object_metadata(doc_id, page, API_BASE))
         self.projects.put_item(Item={'pk': f'PROJECT#{PROJECT}', 'sk': f'PROTOTYPE#{doc_id}', 'document_id': doc_id,
                                      'document_type': 'prototype', 'prototype_format': 'html', 'version': 1,
@@ -219,7 +219,7 @@ class TestTheCard:
     def test_saving_it_writes_the_pin_forms_next_revision_and_never_the_prototype(self, call, tables):
         _criteria(tables, 'Quick')
         tables.add_prototype()
-        before = tables.s3.head_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, DOC))
+        before = tables.s3.head_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, DOC, workspace=None))
         status, body = call(EDITOR, 'PUT', f'{BASE}/form', {'tasks': [{'text': 'Pay'}], 'open': True,
                                                             'language': 'es'})
         assert status == 200, body
@@ -229,7 +229,7 @@ class TestTheCard:
         assert form['language'] == 'es'
         assert proto.asks_questions(form)
         assert tables.aggregates.get_item(Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORMREV#{FORM}#000001'}).get('Item')
-        after = tables.s3.head_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, DOC))
+        after = tables.s3.head_object(Bucket=BUCKET, Key=prototype_s3_key(PROJECT, DOC, workspace=None))
         assert after['ETag'] == before['ETag']
         assert after['Metadata'][PIN_SUBMIT_URL_METADATA_KEY] == pin_submit_url(FORM, API_BASE), (
             'the CSP keeps its one connect-src: the same form, the same submit URL')

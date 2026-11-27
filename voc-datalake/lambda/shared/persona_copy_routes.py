@@ -129,7 +129,7 @@ def promote_persona(project_id: str, persona_id: str):
 def _member_projects(caller: Caller, exclude: str) -> Iterator[dict]:
     """Live project METAs (index order) that ``caller`` owns or is a member of, except ``exclude``."""
     for item in iter_query(_table(), {
-        'IndexName': PROJECTS_BY_TYPE_INDEX, 'KeyConditionExpression': Key('gsi1pk').eq(project_type_pk()),
+        'IndexName': PROJECTS_BY_TYPE_INDEX, 'KeyConditionExpression': Key('gsi1pk').eq(project_type_pk(workspace=None)),
     }):
         project_id = item.get('project_id')
         if (

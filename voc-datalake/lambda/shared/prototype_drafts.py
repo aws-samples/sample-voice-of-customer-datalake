@@ -99,7 +99,7 @@ def validated_instruction(body: Mapping[str, Any]) -> str:
 
 
 def series_head(table: Any, project_id: str, document: Mapping[str, Any], *,
-                workspace: WorkspaceScope | None = None) -> dict:
+                workspace: WorkspaceScope | None) -> dict:
     """The newest stored version of ``document``'s series: a draft's base, whatever version was asked about
     (read in ``workspace`` when given, as ``series_versions`` reads it)."""
     versions = series_versions(table, project_id, dict(document), workspace=workspace)
@@ -116,14 +116,14 @@ def draft_config(store: PrototypeStore, project_id: str, document: Mapping[str, 
     (``selected_pins``: ids of this series only, flagged ones withheld), and its instruction is the server's.
     """
     kind, value = request
-    base = series_head(store.table, project_id, document)
+    base = series_head(store.table, project_id, document, workspace=store.workspace)
     feedback: dict[str, Any] = {}
     if kind == KIND_FEEDBACK:
-        accepted, withheld = selected_pins(store.table, store.pins_table, project_id, document, value)
+        accepted, withheld = selected_pins(store.table, store.pins_table, project_id, document, value, workspace=store.workspace)
         feedback = {'pins': accepted, 'withheld': withheld}
     # Read once and dropped: the job reads it again minutes later, and this one GET is what lets a
     # version that can never give HTML be refused before any job exists.
-    version_html(store.s3, store.bucket, project_id, base)
+    version_html(store.s3, store.bucket, project_id, base, workspace=store.workspace)
     return {
         'doc_type': DRAFT_JOB_TYPE, 'kind': kind, 'base_document_id': str(base['document_id']),
         'base_version': int(base['version']),
@@ -150,7 +150,7 @@ def parse_change_summary(raw: str) -> tuple[str, str]:
 
 
 def put_draft_html(s3: Any, bucket: str, project_id: str, draft_id: str, html: str, *,
-                   workspace: WorkspaceScope | None = None) -> None:
+                   workspace: WorkspaceScope | None) -> None:
     """The draft's write-once object, with NO metadata: the prototype CSP function never widens a draft.
 
     A conditional conflict is an earlier attempt of the same job (the key is the job's), kept as it is.
@@ -166,7 +166,7 @@ def put_draft_html(s3: Any, bucket: str, project_id: str, draft_id: str, html: s
 
 
 def record_draft(jobs_table: Any, project_id: str, job_id: str, detail: Mapping[str, Any], *,
-                 workspace: WorkspaceScope | None = None) -> None:
+                 workspace: WorkspaceScope | None) -> None:
     """Store ``detail`` as the job row's ``draft`` (no job route answers it, and the row's ``updated_at``
     moves); a 404 once the row is gone (``update_existing``, conditioned on the row).
 
@@ -179,7 +179,7 @@ def record_draft(jobs_table: Any, project_id: str, job_id: str, detail: Mapping[
 
 
 def draft_object_exists(s3: Any, bucket: str, project_id: str, draft_id: str, *,
-                        workspace: WorkspaceScope | None = None) -> bool:
+                        workspace: WorkspaceScope | None) -> bool:
     """Whether the draft's object is stored (the deployment's: a workspace is refused until the switch, 3h)."""
     require_deployment(workspace, PROTOTYPE_BUILDER_STORE)
     try:
@@ -193,7 +193,7 @@ def draft_object_exists(s3: Any, bucket: str, project_id: str, draft_id: str, *,
 
 def _read_draft_html(s3: Any, bucket: str, project_id: str, draft_id: str) -> str:
     try:
-        obj = s3.get_object(Bucket=bucket, Key=prototype_draft_s3_key(project_id, draft_id))
+        obj = s3.get_object(Bucket=bucket, Key=prototype_draft_s3_key(project_id, draft_id, workspace=None))
     except ClientError as error:
         if is_missing_s3_object(error):
             raise NotFoundError("This draft's HTML is no longer stored: ask for the change again") from error
@@ -235,7 +235,7 @@ def drafted_base_id(job: Mapping[str, Any] | None) -> str | None:
 
 
 def drafted_base(table: Any, project_id: str, document: Mapping[str, Any], draft: Mapping[str, Any], *,
-                 workspace: WorkspaceScope | None = None) -> dict:
+                 workspace: WorkspaceScope | None) -> dict:
     """The stored version the draft was made on, when it is a version of ``document``'s series; else a 404
     (read in ``workspace`` when given, as ``series_versions`` reads it)."""
     base = next((row for row in series_versions(table, project_id, dict(document), workspace=workspace)
@@ -299,7 +299,7 @@ def incorporation_of(store: PrototypeStore, job: Mapping[str, Any], draft: Mappi
     accepted = accepted_pins(config if isinstance(config, Mapping) else {})
     return incorporate(store.pins_table, draft_id=str(job['job_id']), accepted=accepted, outcomes=_outcomes(draft),
                        new_document_id=str(document['document_id']), actor=actor, llm_metadata=_llm_metadata(draft),
-                       now=now)
+                       now=now, workspace=store.workspace)
 
 
 def _llm_metadata(draft: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -324,14 +324,16 @@ def apply_draft(store: PrototypeStore, project_id: str, job: Mapping[str, Any], 
     """
     draft_id = str(job['job_id'])
     allocation_id = f'apply:{draft_id}'
-    existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
+    existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id,
+                                                    workspace=store.workspace)
     if existing is not None:
         return existing, False
     try:
         return _write_applied_version(store, project_id, draft, base, allocation_id=allocation_id,
                                       draft_id=draft_id, now=now, actor=actor), True
     except ConflictError:
-        landed = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
+        landed = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id,
+                                                      workspace=store.workspace)
         if landed is None:
             raise
         return landed, False
@@ -381,7 +383,7 @@ def _write_applied_version(store: PrototypeStore, project_id: str, draft: Mappin
     if derivation is not None:
         provenance[DERIVATION_FIELD] = derivation
     # The draft is model HTML with no walkthrough (stripped by the job): the version keeps its base's steps.
-    steps = extract_steps(version_html(store.s3, store.bucket, project_id, base))
+    steps = extract_steps(version_html(store.s3, store.bucket, project_id, base, workspace=store.workspace))
     return version_from_html(store, project_id, base, html, allocation_id=allocation_id, now=now,
                              provenance=provenance, expected_last_version=_epoch(draft.get('base_version')),
                              steps=steps)

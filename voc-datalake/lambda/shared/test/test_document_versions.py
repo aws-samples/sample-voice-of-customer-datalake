@@ -101,15 +101,15 @@ def test_assigns_stable_unique_versions_to_duplicate_legacy_titles():
 
 def test_allocates_versions_by_type_and_normalized_base_title(projects_table):
     prd_v1 = persist_versioned_document(
-        projects_table, 'p1', 'prd', 'Launch Plan', 'job-prd-1', fields(),
+        projects_table, 'p1', 'prd', 'Launch Plan', 'job-prd-1', fields(), workspace=None,
     )
     prd_v2 = persist_versioned_document(
         projects_table, 'p1', 'prd', ' launch   plan (v99) ', 'job-prd-2',
-        fields('2026-09-01T11:00:00+00:00'),
+        fields('2026-09-01T11:00:00+00:00'), workspace=None,
     )
     prfaq_v1 = persist_versioned_document(
         projects_table, 'p1', 'prfaq', 'Launch Plan', 'job-prfaq-1',
-        fields('2026-09-01T12:00:00+00:00'),
+        fields('2026-09-01T12:00:00+00:00'), workspace=None,
     )
 
     assert (prd_v1['version'], prd_v1['title']) == (1, 'Launch Plan (v1)')
@@ -121,12 +121,12 @@ def test_allocates_versions_by_type_and_normalized_base_title(projects_table):
 
 def test_replaying_the_same_job_returns_the_existing_document(projects_table):
     first = persist_versioned_document(
-        projects_table, 'p1', 'prd', 'Retry-safe', 'job-same', fields(),
+        projects_table, 'p1', 'prd', 'Retry-safe', 'job-same', fields(), workspace=None,
     )
     with patch('shared.document_versions._query_project_documents') as query:
         replay = persist_versioned_document(
             projects_table, 'p1', 'prd', 'Retry-safe', 'job-same',
-            fields('2026-09-01T13:00:00+00:00'),
+            fields('2026-09-01T13:00:00+00:00'), workspace=None,
         )
 
     assert replay == first
@@ -145,12 +145,12 @@ def test_bootstraps_after_legacy_documents_without_reusing_a_version(projects_ta
     })
 
     item = persist_versioned_document(
-        projects_table, 'p1', 'prd', 'Existing title', 'job-new', fields(),
+        projects_table, 'p1', 'prd', 'Existing title', 'job-new', fields(), workspace=None,
     )
 
     assert (item['version'], item['title']) == (2, 'Existing title (v2)')
     counters = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
+        KeyConditionExpression=Key('pk').eq(version_partition_key('p1', workspace=None)),
     )['Items']
     series_counters = [
         counter for counter in counters
@@ -164,7 +164,7 @@ def test_missing_project_metadata_commits_nothing(projects_table):
 
     with pytest.raises(ServiceError, match='Project deletion has started'):
         persist_versioned_document(
-            projects_table, 'p1', 'prd', 'Orphan', 'job-orphan', fields(),
+            projects_table, 'p1', 'prd', 'Orphan', 'job-orphan', fields(), workspace=None,
         )
 
     assert projects_table.scan()['Items'] == []
@@ -181,7 +181,7 @@ def _version_counter(table) -> dict:
     """The one row in the version partition that carries ``last_version``."""
     return next(
         row for row in table.query(
-            KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
+            KeyConditionExpression=Key('pk').eq(version_partition_key('p1', workspace=None)),
             ConsistentRead=True,
         )['Items']
         if row.get('last_version') is not None
@@ -223,12 +223,12 @@ def test_persisted_legacy_version_survives_older_sibling_deletion(projects_table
     for document in legacy:
         projects_table.put_item(Item=document)
 
-    first_read = persist_legacy_document_versions(projects_table, 'p1', legacy)
+    first_read = persist_legacy_document_versions(projects_table, 'p1', legacy, workspace=None)
     projects_table.delete_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRD#old'})
     remaining = projects_table.get_item(
         Key={'pk': 'PROJECT#p1', 'sk': 'PRD#new'}, ConsistentRead=True,
     )['Item']
-    second_read = persist_legacy_document_versions(projects_table, 'p1', [remaining])
+    second_read = persist_legacy_document_versions(projects_table, 'p1', [remaining], workspace=None)
 
     assert [(document['document_id'], document['version']) for document in first_read] == [
         ('old', 1), ('new', 2),
@@ -249,9 +249,9 @@ def test_persisted_legacy_suffix_sets_counter_high_water(projects_table):
     }
     projects_table.put_item(Item=legacy)
 
-    migrated = persist_legacy_document_versions(projects_table, 'p1', [legacy])
+    migrated = persist_legacy_document_versions(projects_table, 'p1', [legacy], workspace=None)
     generated = persist_versioned_document(
-        projects_table, 'p1', 'prfaq', 'Launch', 'job-next', fields(),
+        projects_table, 'p1', 'prfaq', 'Launch', 'job-next', fields(), workspace=None,
     )
 
     assert (migrated[0]['version'], migrated[0]['title']) == (10, 'Launch (v10)')
@@ -275,7 +275,7 @@ def test_retries_a_transient_transaction_conflict_once(projects_table):
         patch('shared.document_versions.time.sleep'),
     ):
         item = persist_versioned_document(
-            projects_table, 'p1', 'prd', 'Retry', 'job-retry', fields(),
+            projects_table, 'p1', 'prd', 'Retry', 'job-retry', fields(), workspace=None,
         )
 
     assert (calls, item['version'], item['title']) == (2, 1, 'Retry (v1)')
@@ -310,6 +310,7 @@ def test_competing_allocations_receive_unique_versions(projects_table):
                 'Concurrent',
                 f'job-{index}',
                 fields(f'2026-09-01T1{index}:00:00+00:00'),
+                workspace=None,
             )
             for index in range(2)
         ]
@@ -323,17 +324,17 @@ def test_competing_allocations_receive_unique_versions(projects_table):
 
 def test_legacy_backfill_allocates_above_existing_counter_history(projects_table):
     generated = persist_versioned_document(
-        projects_table, 'p1', 'prd', 'Launch', 'job-deleted', fields(),
+        projects_table, 'p1', 'prd', 'Launch', 'job-deleted', fields(), workspace=None,
     )
     projects_table.delete_item(Key={'pk': generated['pk'], 'sk': generated['sk']})
     legacy = late_legacy_document()
     projects_table.put_item(Item=legacy)
 
-    migrated = persist_legacy_document_versions(projects_table, 'p1', [legacy])
+    migrated = persist_legacy_document_versions(projects_table, 'p1', [legacy], workspace=None)
 
     assert (migrated[0]['version'], migrated[0]['title']) == (2, 'Launch (v2)')
     counters = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
+        KeyConditionExpression=Key('pk').eq(version_partition_key('p1', workspace=None)),
     )['Items']
     series_counter = next(
         item for item in counters if item['sk'].startswith('PRD#')
@@ -349,14 +350,14 @@ def test_expired_migration_lease_cannot_write_assignments(projects_table):
         patch('shared.document_versions.time.time', side_effect=[100, 100, 131]),
         pytest.raises(ServiceError, match='lease was lost'),
     ):
-        persist_legacy_document_versions(projects_table, 'p1', [legacy])
+        persist_legacy_document_versions(projects_table, 'p1', [legacy], workspace=None)
 
     stored = projects_table.get_item(
         Key={'pk': 'PROJECT#p1', 'sk': 'PRD#late'}, ConsistentRead=True,
     )['Item']
     assert 'version' not in stored
     counter_items = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
+        KeyConditionExpression=Key('pk').eq(version_partition_key('p1', workspace=None)),
     )['Items']
     assert all(not item['sk'].startswith('LEGACY_ASSIGNMENT#') for item in counter_items)
 
@@ -374,7 +375,7 @@ def test_legacy_backfill_uses_counter_floor_observed_during_lease_acquisition(
 
     def advance_counter_before_acquire(table, key, *, workspace):
         nonlocal counter_reads
-        if key.get('pk') == version_partition_key('p1'):
+        if key.get('pk') == version_partition_key('p1', workspace=None):
             counter_reads += 1
             if counter_reads == 2:
                 table.put_item(Item={
@@ -390,7 +391,7 @@ def test_legacy_backfill_uses_counter_floor_observed_during_lease_acquisition(
         'shared.document_versions._get_item',
         side_effect=advance_counter_before_acquire,
     ):
-        migrated = persist_legacy_document_versions(projects_table, 'p1', [legacy])
+        migrated = persist_legacy_document_versions(projects_table, 'p1', [legacy], workspace=None)
 
     assert (migrated[0]['version'], migrated[0]['title']) == (2, 'Launch (v2)')
 
@@ -429,11 +430,11 @@ def test_concurrent_first_reads_wait_and_return_the_same_persisted_identity(
         ThreadPoolExecutor(max_workers=2) as pool,
     ):
         first = pool.submit(
-            persist_legacy_document_versions, projects_table, 'p1', legacy,
+            persist_legacy_document_versions, projects_table, 'p1', legacy, workspace=None,
         )
         assert first_writer_entered.wait(timeout=5)
         second = pool.submit(
-            persist_legacy_document_versions, projects_table, 'p1', legacy,
+            persist_legacy_document_versions, projects_table, 'p1', legacy, workspace=None,
         )
         time.sleep(0.1)
         allow_first_writer.set()
@@ -481,7 +482,7 @@ def _migrate_with_first_transaction_throttled(projects_table, marker_attribute: 
         patch('shared.document_versions.time.sleep'),
     ):
         migrated = persist_legacy_document_versions(
-            projects_table, 'p1', [legacy],
+            projects_table, 'p1', [legacy], workspace=None,
         )
     return attempts, migrated
 
@@ -519,7 +520,7 @@ def test_release_throttling_does_not_fail_a_completed_migration(projects_table):
         projects_table, 'update_item', side_effect=fail_release_only,
     ):
         migrated = persist_legacy_document_versions(
-            projects_table, 'p1', [legacy],
+            projects_table, 'p1', [legacy], workspace=None,
         )
 
     assert (migrated[0]['version'], migrated[0]['title']) == (1, 'Launch (v1)')
@@ -531,7 +532,7 @@ def test_release_throttling_does_not_fail_a_completed_migration(projects_table):
 
 def _allocation_history(table, allocation_id: str) -> dict:
     items = table.query(
-        KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
+        KeyConditionExpression=Key('pk').eq(version_partition_key('p1', workspace=None)),
         ConsistentRead=True,
     )['Items']
     return next(item for item in items if item.get('allocation_id') == allocation_id)
@@ -544,15 +545,15 @@ def test_prototype_allocations_are_canonical_deterministic_and_replay_safe(proje
 
     first = persist_versioned_document(
         projects_table, 'p1', 'prototype', 'Launch Prototype', 'job-prototype-1',
-        fields(),
+        fields(), workspace=None,
     )
     second = persist_versioned_document(
         projects_table, 'p1', 'prototype', ' launch   prototype (v99) ',
-        'job-prototype-2', fields('2026-09-01T11:00:00+00:00'),
+        'job-prototype-2', fields('2026-09-01T11:00:00+00:00'), workspace=None,
     )
     replay = persist_versioned_document(
         projects_table, 'p1', 'prototype', 'A replay cannot rename this',
-        'job-prototype-1', fields('2026-09-01T12:00:00+00:00'),
+        'job-prototype-1', fields('2026-09-01T12:00:00+00:00'), workspace=None,
     )
 
     expected_ids = [
@@ -574,7 +575,7 @@ def test_prototype_allocations_are_canonical_deterministic_and_replay_safe(proje
         allocation = _allocation_history(projects_table, allocation_id)
         digest = hashlib.sha256(allocation_id.encode()).hexdigest()
         assert allocation == {
-            'pk': version_partition_key('p1'),
+            'pk': version_partition_key('p1', workspace=None),
             'sk': f'ALLOCATION#PROTOTYPE#{digest}',
             'allocation_id': allocation_id,
             'document_id': document['document_id'],
@@ -593,7 +594,7 @@ def test_prototype_allocations_are_canonical_deterministic_and_replay_safe(proje
 def test_deleted_allocation_replay_is_rejected_without_advancing_or_recreating(projects_table):
     item = persist_versioned_document(
         projects_table, 'p1', 'prototype', 'Deleted Prototype',
-        'job-deleted-prototype', fields(),
+        'job-deleted-prototype', fields(), workspace=None,
     )
     allocation = _allocation_history(projects_table, 'job-deleted-prototype')
     counter_before = _version_counter(projects_table)
@@ -605,7 +606,7 @@ def test_deleted_allocation_replay_is_rejected_without_advancing_or_recreating(p
     ):
         persist_versioned_document(
             projects_table, 'p1', 'prototype', 'Deleted Prototype',
-            'job-deleted-prototype', fields('2026-09-01T13:00:00+00:00'),
+            'job-deleted-prototype', fields('2026-09-01T13:00:00+00:00'), workspace=None,
         )
 
     assert projects_table.get_item(
@@ -625,14 +626,14 @@ def test_deleted_allocation_replay_is_rejected_without_advancing_or_recreating(p
 def test_generated_document_without_history_backfills_on_replay(projects_table):
     original = persist_versioned_document(
         projects_table, 'p1', 'prototype', 'Backfill Prototype',
-        'job-history-backfill', fields(),
+        'job-history-backfill', fields(), workspace=None,
     )
     allocation = _allocation_history(projects_table, 'job-history-backfill')
     projects_table.delete_item(Key={'pk': allocation['pk'], 'sk': allocation['sk']})
 
     replay = persist_versioned_document(
         projects_table, 'p1', 'prototype', 'A replay cannot rename this',
-        'job-history-backfill', fields('2026-09-01T14:00:00+00:00'),
+        'job-history-backfill', fields('2026-09-01T14:00:00+00:00'), workspace=None,
     )
 
     assert replay == original
@@ -658,7 +659,7 @@ def test_legacy_prototypes_without_document_type_migrate_durably_and_hold_high_w
     for document in legacy:
         projects_table.put_item(Item=document)
 
-    migrated = persist_legacy_document_versions(projects_table, 'p1', legacy)
+    migrated = persist_legacy_document_versions(projects_table, 'p1', legacy, workspace=None)
     assert [(item['document_id'], item['version'], item['title']) for item in migrated] == [
         ('old', 1, 'Launch (v1)'), ('new', 10, 'Launch (v10)'),
     ]
@@ -675,9 +676,9 @@ def test_legacy_prototypes_without_document_type_migrate_durably_and_hold_high_w
     remaining = projects_table.get_item(
         Key={'pk': 'PROJECT#p1', 'sk': 'PROTOTYPE#new'}, ConsistentRead=True,
     )['Item']
-    reread = persist_legacy_document_versions(projects_table, 'p1', [remaining])
+    reread = persist_legacy_document_versions(projects_table, 'p1', [remaining], workspace=None)
     generated = persist_versioned_document(
-        projects_table, 'p1', 'prototype', 'Launch', 'job-after-legacy', fields(),
+        projects_table, 'p1', 'prototype', 'Launch', 'job-after-legacy', fields(), workspace=None,
     )
 
     assert (reread[0]['version'], reread[0]['title']) == (10, 'Launch (v10)')
@@ -724,7 +725,7 @@ def test_legacy_bootstrap_does_not_consume_allocation_transaction_attempts(proje
     ):
         generated = persist_versioned_document(
             projects_table, 'p1', 'prototype', 'Retry Prototype',
-            'job-after-bootstrap', fields(),
+            'job-after-bootstrap', fields(), workspace=None,
         )
 
     assert migration_transactions >= 1
@@ -744,7 +745,7 @@ def test_late_legacy_row_is_persisted_before_next_allocation(
 ):
     first = persist_versioned_document(
         projects_table, 'p1', document_type, 'Launch',
-        f'job-{document_type}-1', fields(),
+        f'job-{document_type}-1', fields(), workspace=None,
     )
     late = {
         'pk': 'PROJECT#p1',
@@ -759,7 +760,7 @@ def test_late_legacy_row_is_persisted_before_next_allocation(
     before = normalize_document_versions([first, late])
     generated = persist_versioned_document(
         projects_table, 'p1', document_type, 'Launch',
-        f'job-{document_type}-3', fields('2026-09-01T11:00:00+00:00'),
+        f'job-{document_type}-3', fields('2026-09-01T11:00:00+00:00'), workspace=None,
     )
     stored_late = projects_table.get_item(
         Key={'pk': late['pk'], 'sk': late['sk']}, ConsistentRead=True,
@@ -782,20 +783,20 @@ def test_project_deletion_fence_blocks_all_managed_version_writes(
 
     with pytest.raises(ServiceError, match='Project deletion has started'):
         persist_versioned_document(
-            projects_table, 'p1', 'prd', 'Launch', 'job-after-delete', fields(),
+            projects_table, 'p1', 'prd', 'Launch', 'job-after-delete', fields(), workspace=None,
         )
 
     late = late_legacy_document()
     projects_table.put_item(Item=late)
     with pytest.raises(ServiceError, match='Project deletion has started'):
-        persist_legacy_document_versions(projects_table, 'p1', [late])
+        persist_legacy_document_versions(projects_table, 'p1', [late], workspace=None)
 
     stored_late = projects_table.get_item(
         Key={'pk': late['pk'], 'sk': late['sk']}, ConsistentRead=True,
     )['Item']
     assert 'version' not in stored_late
     assert projects_table.query(
-        KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
+        KeyConditionExpression=Key('pk').eq(version_partition_key('p1', workspace=None)),
         ConsistentRead=True,
     )['Items'] == []
 
@@ -809,7 +810,7 @@ def test_project_deletion_fence_blocks_allocation_history_repair(
     projects_table, tombstone,
 ):
     original = persist_versioned_document(
-        projects_table, 'p1', 'prototype', 'Launch', 'job-history-fence', fields(),
+        projects_table, 'p1', 'prototype', 'Launch', 'job-history-fence', fields(), workspace=None,
     )
     allocation = _allocation_history(projects_table, 'job-history-fence')
     projects_table.delete_item(Key={'pk': allocation['pk'], 'sk': allocation['sk']})
@@ -817,7 +818,7 @@ def test_project_deletion_fence_blocks_allocation_history_repair(
 
     with pytest.raises(ServiceError, match='Project deletion has started'):
         get_versioned_document_by_allocation(
-            projects_table, 'p1', 'prototype', 'job-history-fence',
+            projects_table, 'p1', 'prototype', 'job-history-fence', workspace=None,
         )
 
     assert projects_table.get_item(
@@ -830,7 +831,7 @@ def test_project_deletion_fence_blocks_allocation_history_repair(
 
 def test_fresh_allocation_waits_for_active_legacy_migration(projects_table):
     persist_versioned_document(
-        projects_table, 'p1', 'prd', 'Launch', 'job-first', fields(),
+        projects_table, 'p1', 'prd', 'Launch', 'job-first', fields(), workspace=None,
     )
     late = late_legacy_document()
     projects_table.put_item(Item=late)
@@ -856,7 +857,7 @@ def test_fresh_allocation_waits_for_active_legacy_migration(projects_table):
         ThreadPoolExecutor(max_workers=2) as pool,
     ):
         migration = pool.submit(
-            persist_legacy_document_versions, projects_table, 'p1', [late],
+            persist_legacy_document_versions, projects_table, 'p1', [late], workspace=None,
         )
         assert lease_acquired.wait(timeout=5)
         allocation = pool.submit(
@@ -867,6 +868,7 @@ def test_fresh_allocation_waits_for_active_legacy_migration(projects_table):
             'Launch',
             'job-after-migration',
             fields('2026-09-01T12:00:00+00:00'),
+            workspace=None,
         )
         time.sleep(0.05)
         assert not allocation.done()

@@ -202,7 +202,11 @@ ASYNC_API_WORKERS: Final = frozenset({'lambda/api/manual_import_processor.py'})
 # calls: every count of them below is the raw access each module held then, not a new one; each moves with its
 # module's phase (2 the data path, 3 everything else; the control plane's own transactions on voc-workspaces, in
 # shared/platform_workspaces.py and shared/workspace_members.py, are phase 3 like the workspaces API).
+# The `project accessor(workspace=None)` kind was counted from 7.99.00 (3h-S1): the project stores' `workspace` became
+# a required keyword, so each call that took the deployment's default before spells `workspace=None` out. Not new
+# access: the same calls, now visible here; each leaves its count when its route or job resolves its scope (3h).
 ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
+    'lambda/agents/artifacts.py': (3, {'project accessor(workspace=None)': 1}),
     'lambda/agents/context_blocks.py': (3, {'Table': 1}),
     # 7.47.00: an engineering agent's run status, one GetItem of voc-engineering's run META (the engineering agents'
     # own table, the deployment's like every agents module's until agents move per workspace: 3g3).
@@ -264,12 +268,13 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # module-level voc-feedback and voc-aggregates the views are taken of. batch: a page's full items, its keys
     # checked by `WorkspaceTable.check_keys` in a workspace (`WorkspaceTable.batch_get_item` can take it over).
     'lambda/api/metrics_handler.py': (2, {'Table': 2, 'batch': 1, 'meta.client': 1}),
-    'lambda/api/product_context.py': (3, {'generate_presigned_url': 1, 'get_projects_table': 1}),
+    'lambda/api/product_context.py': (3, {'generate_presigned_url': 1, 'get_projects_table': 1,
+                                          'project accessor(workspace=None)': 4}),
     # transact: 2, one of them the client's method kept as `transact` and called later.
     # voc-wiki's prototype builder (merged in 7.33.00): projects.py's prototype store reads the pin forms' table
     # (get_aggregates_table), projects_handler.py's prototype routes read the projects table five more times.
-    'lambda/api/projects.py': (3, {'batch': 3, 'copy_object': 1, 'get_aggregates_table': 1, 'get_feedback_table': 1, 'get_jobs_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'transact': 2}),
-    'lambda/api/projects_handler.py': (3, {'batch': 1, 'get_aggregates_table': 12, 'get_jobs_table': 3, 'get_projects_table': 16, 'meta.client': 3, 'transact': 2}),
+    'lambda/api/projects.py': (3, {'batch': 3, 'copy_object': 1, 'get_aggregates_table': 1, 'get_feedback_table': 1, 'get_jobs_table': 1, 'get_projects_table': 1, 'meta.client': 2, 'project accessor(workspace=None)': 15, 'transact': 2}),
+    'lambda/api/projects_handler.py': (3, {'batch': 1, 'get_aggregates_table': 12, 'get_jobs_table': 3, 'get_projects_table': 16, 'meta.client': 3, 'project accessor(workspace=None)': 5, 'transact': 2}),
     'lambda/api/radar_handler.py': (3, {'cached_table': 1, 'get_aggregates_table': 1}),
     # Both paths since the S3 import learned workspaces: its object calls name `ws/{ws}/…` keys built from the
     # resolved scope (`_bucket_key`, ws_repo.s3_prefix); its run rows go through shared/s3_import_runs.py's views.
@@ -312,8 +317,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # Since 7.33.00 (voc-wiki) a prototype draft reads and records its job row (get_jobs_table) and the HTML puts
     # moved to shared/prototype_versions.py and shared/prototype_drafts.py.
     'lambda/jobs/document_generator/handler.py': (3, {'Table': 6, 'delete_objects': 1, 'get_jobs_table': 2, 'put_object': 1}),
-    'lambda/jobs/document_merger/handler.py': (3, {'Table': 2}),
-    'lambda/jobs/persona_importer/handler.py': (3, {'Table': 1}),
+    'lambda/jobs/document_merger/handler.py': (3, {'Table': 2, 'project accessor(workspace=None)': 1}),
+    'lambda/jobs/persona_importer/handler.py': (3, {'Table': 1, 'project accessor(workspace=None)': 1}),
     'lambda/jobs/radar_scan/handler.py': (3, {'Table': 1}),
     'lambda/jobs/retention/boards.py': (3, {'raw/': 1}),
     'lambda/jobs/retention/boards_rekey.py': (3, {'meta.client': 1, 'transact': 1}),
@@ -344,7 +349,7 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # only its own text, put a moment before, when the record was deleted meanwhile (`_delete_own_output`).
     'lambda/product_doc_extractor/handler.py': (3, {'PROJECT#': 1, 'PROJECT_ID#': 1, 'Table': 1, 'delete_object': 1,
                                                     'put_object': 1}),
-    'lambda/research/research_step_handler.py': (3, {'delete_object': 1, 'get_feedback_table': 1, 'get_projects_table': 1, 'put_object': 2}),
+    'lambda/research/research_step_handler.py': (3, {'delete_object': 1, 'get_feedback_table': 1, 'get_projects_table': 1, 'project accessor(workspace=None)': 1, 'put_object': 2}),
     'lambda/shared/agent_run_resume.py': (3, {'meta.client': 1, 'transact': 1}),
     # 7.50.00: the engineering setup guide's one row in voc-agents and its history row, in one transaction (as the
     # hard cap's, engineering/settings.py): the deployment's, like the engineering agents (phase 3).
@@ -470,7 +475,7 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/mcp_oauth_consent_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
     'lambda/shared/mcp_oauth_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
     # voc-wiki's prototype builder (7.33.00): a version's and a draft's HTML, each one write-once put.
-    'lambda/shared/prototype_drafts.py': (3, {'put_object': 1}),
+    'lambda/shared/prototype_drafts.py': (3, {'project accessor(workspace=None)': 1, 'put_object': 1}),
     'lambda/shared/prototype_versions.py': (3, {'put_object': 1}),
     # Its DOCUMENT_VERSIONS# is the version partition's one spelling, moved from shared/document_versions.py in 7.27.00;
     # its STATUS# the jobs' status index partition's, shared/assist_jobs.py's own two spellings moved here in 7.29.00.
@@ -497,7 +502,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
                                                       'get_projects_table': 1}),
     # 7.68.00: the Validate step's routes read the deployment's projects, its pin forms and their answers.
     'lambda/shared/project_validation_routes.py': (3, {'get_aggregates_table': 1, 'get_feedback_table': 1,
-                                                       'get_projects_table': 1}),
+                                                       'get_projects_table': 1,
+                                                       'project accessor(workspace=None)': 2}),
+    'lambda/shared/validation_documents.py': (3, {'project accessor(workspace=None)': 1}),
     'lambda/shared/library_worker.py': (3, {'get_projects_table': 1}),
     # The voice sessions (7.69.00, docs/voice-personas.md): their keys' one spelling (a session's own partition, the
     # month's usage, the live set, a person's day and minute: the deployment's until projects move), a session's
@@ -505,6 +512,7 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # feedback for the evidence pack, the caller's category access row and the counters).
     'lambda/shared/voice_sessions.py': (3, {'VOICE#': 1, 'VOICEDAY#': 1, 'VOICERATE#': 1, 'VOICEUSE#': 2,
                                             'put_object': 1}),
+    'lambda/shared/voice_transcripts.py': (3, {'project accessor(workspace=None)': 1}),
     'lambda/shared/voice_session_routes.py': (3, {'get_aggregates_table': 2, 'get_feedback_table': 1,
                                                   'get_projects_table': 1}),
     'lambda/shared/library_index.py': (3, {'batch': 2}),

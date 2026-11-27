@@ -194,7 +194,7 @@ def _document(stores: Stores, row: Mapping[str, Any], persona_name: str, turns: 
     def build(doc_id: str) -> dict[str, Any]:
         now = stores.now().isoformat()
         return {
-            **document_keys(project_id, f'DOC#{doc_id}', now), 'document_id': doc_id,
+            **document_keys(project_id, f'DOC#{doc_id}', now, workspace=None), 'document_id': doc_id,
             'document_type': PERSONA_INTERVIEW_TYPE, 'synthetic': True,
             'title': f'Interview with {persona_name or "a persona"}'[:200] + (f' ({started[:10]})' if started else ''),
             'content': content_markdown(persona_name, turns, summary, quotes),
@@ -208,7 +208,7 @@ def _document(stores: Stores, row: Mapping[str, Any], persona_name: str, turns: 
             'created_at': now, 'updated_at': now,
         }
 
-    return create_counted_project_child(stores.projects, project_id, 'doc', build, now=stores.now())
+    return create_counted_project_child(stores.projects, project_id, 'doc', build, now=stores.now(), workspace=None)
 
 
 def _close(stores: Stores, row: Mapping[str, Any], status: str, document_id: str | None) -> None:

@@ -100,8 +100,8 @@ class TestASeriesKeyIgnoresHowItsTitleIsSpelled:
         spelled = data.draw(spellings(_clean(base), document_type))
         key = normalized_base_title(spelled, document_type)
         assert key == normalized_base_title(base, document_type) == _clean(base).casefold()
-        assert _counter_key('p1', document_type, key) == _counter_key(
-            'p1', document_type, normalized_base_title(base, document_type))
+        assert _counter_key('p1', document_type, key, workspace=None) == _counter_key(
+            'p1', document_type, normalized_base_title(base, document_type), workspace=None)
 
     @PROPERTY
     @given(base=clean_titles(words_of=st.sampled_from(PLAIN_WORDS)),
@@ -109,9 +109,10 @@ class TestASeriesKeyIgnoresHowItsTitleIsSpelled:
     def test_another_type_or_project_is_another_counter(self, base, types, project) -> None:
         first, second = types
         key = normalized_base_title(base, first)
-        assert _counter_key(project, first, key) != _counter_key(project, second, key)
-        assert _counter_key(project, first, key) != _counter_key(f'{project}0', first, key)
-        assert _counter_key(project, first, key)['pk'] == f'DOCUMENT_VERSIONS#PROJECT#{project}'
+        assert _counter_key(project, first, key, workspace=None) != _counter_key(project, second, key, workspace=None)
+        assert _counter_key(project, first, key,
+                            workspace=None) != _counter_key(f'{project}0', first, key, workspace=None)
+        assert _counter_key(project, first, key, workspace=None)['pk'] == f'DOCUMENT_VERSIONS#PROJECT#{project}'
 
 
 @st.composite
@@ -209,7 +210,7 @@ class TestAMigrationWritesTheSeriesAReadShows:
                      if any(_requires_legacy_persistence(r) for r in rows if r['sk'] in sks)}
         with patch.object(dv, '_persist_legacy_series') as series:
             series.side_effect = lambda _t, _p, _type, _n, docs, **_scope: docs
-            dv.persist_legacy_document_versions(MagicMock(), 'p1', rows)
+            dv.persist_legacy_document_versions(MagicMock(), 'p1', rows, workspace=None)
         written = {(c.args[2], c.args[3]): [d['sk'] for d in c.args[4]] for c in series.call_args_list}
         assert series.call_count == len(written)
         assert written == unsettled
@@ -408,7 +409,8 @@ class TestAGeneratedDocumentsKeysArePure:
             'pk': f'PROJECT#{project}', 'sk': f'{document_type.upper()}#{document_id}'}
         assume(other != (project, document_type, allocation))
         assert versioned_document_id(*other) != document_id
-        assert _allocation_key(*other) != _allocation_key(project, document_type, allocation)
+        assert _allocation_key(*other,
+                               workspace=None) != _allocation_key(project, document_type, allocation, workspace=None)
 
 
 class TestOnlyACanonicalRowIsSettled:

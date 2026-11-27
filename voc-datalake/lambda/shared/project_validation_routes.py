@@ -97,7 +97,7 @@ def _actor() -> dict[str, str]:
 def _rows(table: Any, project_id: str) -> list[dict[str, Any]]:
     names = {f'#f{i}': name for i, name in enumerate(_ROW_FIELDS)}
     return list(iter_project_rows(table, project_id, ProjectionExpression=', '.join(names),
-                                  ExpressionAttributeNames=names, ConsistentRead=True))
+                                  ExpressionAttributeNames=names, ConsistentRead=True, workspace=None))
 
 
 def _newest(rows: Sequence[Mapping[str, Any]], prefix: str) -> str | None:
@@ -107,7 +107,8 @@ def _newest(rows: Sequence[Mapping[str, Any]], prefix: str) -> str | None:
 
 
 def _row(table: Any, project_id: str, sort_key: str, missing: str) -> dict[str, Any]:
-    item = table.get_item(Key={'pk': project_pk(project_id), 'sk': sort_key}, ConsistentRead=True).get('Item')
+    item = table.get_item(Key={'pk': project_pk(project_id, workspace=None), 'sk': sort_key},
+                          ConsistentRead=True).get('Item')
     if not item:
         raise NotFoundError(missing)
     return item
@@ -133,7 +134,7 @@ def _language(body: Mapping[str, Any], key: str = 'response_language') -> str | 
 
 def _accepted(project_id: str, job_type: str, config: dict[str, Any], **extra: Any) -> Response:
     """Record the assist and hand it to the worker: 202 ``{success, job_id, status, …extra}``."""
-    started = assist_jobs.start(project_pk(project_id), job_type, {**config, 'project_id': project_id,
+    started = assist_jobs.start(project_pk(project_id, workspace=None), job_type, {**config, 'project_id': project_id,
                                                                    'actor': _actor()},
                                 worker_function=assist_jobs.worker_function(), initiated_by=_actor()['sub'],
                                 project_id=project_id)
@@ -144,7 +145,7 @@ def _accepted(project_id: str, job_type: str, config: dict[str, Any], **extra: A
 def _prototype_screens(table: Any, project_id: str, document_id: str) -> tuple[dict[str, Any], list[dict]]:
     """The prototype version's outline and walkthrough (what anyone who opens it sees, never its pins)."""
     row = _row(table, project_id, f'PROTOTYPE#{document_id}', 'Prototype not found')
-    html = version_html(get_s3_client(), os.environ.get('RAW_DATA_BUCKET', ''), project_id, row)
+    html = version_html(get_s3_client(), os.environ.get('RAW_DATA_BUCKET', ''), project_id, row, workspace=None)
     return outline_of(html), extract_steps(html)
 
 
@@ -154,7 +155,8 @@ def _run_figures(table: Any, project_id: str, run_id: object) -> dict[str, Any] 
     """The latest synthetic run's figures (labelled ``synthetic``), None without one."""
     if not isinstance(run_id, str) or not run_id:
         return None
-    item = table.get_item(Key={'pk': project_pk(project_id), 'sk': f'DOC#{run_id}'}, ConsistentRead=True).get('Item')
+    item = table.get_item(Key={'pk': project_pk(project_id, workspace=None), 'sk': f'DOC#{run_id}'},
+                          ConsistentRead=True).get('Item')
     run = plain(item.get('run')) if item and isinstance(item.get('run'), Mapping) else None
     if not run:
         return None
@@ -323,7 +325,7 @@ def write_validation_plan(project_id: str):
 
 def _persona_rows(table: Any, project_id: str, persona_ids: Sequence[str]) -> list[dict[str, Any]]:
     wanted = set(persona_ids)
-    rows = iter_project_rows(table, project_id, sort_prefix='PERSONA#', ConsistentRead=True)
+    rows = iter_project_rows(table, project_id, sort_prefix='PERSONA#', ConsistentRead=True, workspace=None)
     return [row for row in rows if row.get('persona_id') in wanted]
 
 
@@ -377,7 +379,7 @@ def _shows_card(table: Any, project_id: str, prototype_id: str) -> bool:
     """Whether that version's widget can draw the card (an older version's asks for none: make a new one)."""
     row = _row(table, project_id, f'PROTOTYPE#{prototype_id}', 'Prototype not found')
     try:
-        html = version_html(get_s3_client(), os.environ.get('RAW_DATA_BUCKET', ''), project_id, row)
+        html = version_html(get_s3_client(), os.environ.get('RAW_DATA_BUCKET', ''), project_id, row, workspace=None)
     except (NotFoundError, ValidationError):
         return False
     return CARD_WIDGET_MARKER in html

@@ -176,7 +176,7 @@ def block_of(meta: Mapping[str, Any] | None) -> dict[str, Any]:
 
 def read_meta(table: Any, project_id: str) -> dict[str, Any]:
     """The project's META (strongly consistent); 404 when it is gone or being deleted."""
-    meta = table.get_item(Key=project_meta_key(project_id), ConsistentRead=True).get('Item')
+    meta = table.get_item(Key=project_meta_key(project_id, workspace=None), ConsistentRead=True).get('Item')
     if not meta or is_project_tombstone(meta):
         raise NotFoundError('Project not found')
     return meta
@@ -204,7 +204,7 @@ def _write_block(table: Any, project_id: str, stored: Mapping[str, Any], changes
         condition = f'{PROJECT_WRITABLE_CONDITION} AND #validation.#revision = :expected'
     else:
         condition = f'{PROJECT_WRITABLE_CONDITION} AND attribute_not_exists(#validation)'
-    table.update_item(Key=project_meta_key(project_id), UpdateExpression='SET #validation = :block',
+    table.update_item(Key=project_meta_key(project_id, workspace=None), UpdateExpression='SET #validation = :block',
                       ConditionExpression=condition, ExpressionAttributeNames=names,
                       ExpressionAttributeValues=values)
     return plain(block)

@@ -139,19 +139,19 @@ def _save_merged_document(
             document_type,
             title,
             job_id,
-            item_fields,
+            item_fields, workspace=None,
         )
     def build(doc_id: str) -> dict:
         return {
             **item_fields,
-            'pk': project_pk(project_id),
+            'pk': project_pk(project_id, workspace=None),
             'sk': f'DOC#{doc_id}',
             'document_id': doc_id,
             'document_type': document_type,
             'title': title,
         }
 
-    return create_counted_project_child(projects_table, project_id, 'doc', build)
+    return create_counted_project_child(projects_table, project_id, 'doc', build, workspace=None)
 
 
 @job_handler(error_message='Document merge failed')
@@ -178,7 +178,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     )
     if document_type in MERGE_VERSIONED_DOCUMENT_TYPES:
         existing = get_versioned_document_by_allocation(
-            projects_table, project_id, document_type, job_id,
+            projects_table, project_id, document_type, job_id, workspace=None,
         )
         if existing is not None:
             return {
@@ -192,7 +192,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     selected_doc_ids = merge_config.get('selected_document_ids', [])
     selected_persona_ids = merge_config.get('selected_persona_ids', [])
 
-    resp = projects_table.query(KeyConditionExpression=Key('pk').eq(project_pk(project_id)))
+    resp = projects_table.query(KeyConditionExpression=Key('pk').eq(project_pk(project_id, workspace=None)))
     all_items = resp.get('Items', [])
 
     selected_docs = [
@@ -237,7 +237,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     ctx.update_progress(90, 'saving_document')
     now = now_iso()
     item_fields = {
-        **document_listing(project_id, now),
+        **document_listing(project_id, now, workspace=None),
         'content': content,
         'job_id': job_id,
         # Unchanged: the requested ids, in the merger's own long-standing shape.

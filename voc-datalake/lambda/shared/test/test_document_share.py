@@ -36,7 +36,7 @@ def table():
 
 def _index_key(project_id='p1'):
     """The series' current-link pointer row."""
-    return {'pk': comments_pk(project_id, SERIES['series_id']), 'sk': ds.SHARE_INDEX_SK}
+    return {'pk': comments_pk(project_id, SERIES['series_id'], workspace=None), 'sk': ds.SHARE_INDEX_SK}
 
 
 def _rate_key(share_id, email, day):
@@ -45,7 +45,7 @@ def _rate_key(share_id, email, day):
 
 def _create(table, **values):
     return ds.create_share(table, project_id='p1', series=SERIES, document_id='d1', creator=CREATOR,
-                           values=ds.validate_share_body(values))
+                           values=ds.validate_share_body(values), workspace=None)
 
 
 # ── validate_share_body ─────────────────────────────────────────────────────
@@ -132,18 +132,18 @@ def test_a_second_create_returns_the_active_link_unchanged(table):
 
 
 def test_current_share_is_the_active_link_and_none_without_one(table):
-    assert ds.current_share(table, 'p1', SERIES['series_id']) is None
+    assert ds.current_share(table, 'p1', SERIES['series_id'], workspace=None) is None
     share, _ = _create(table)
-    current = ds.current_share(table, 'p1', SERIES['series_id'])
+    current = ds.current_share(table, 'p1', SERIES['series_id'], workspace=None)
     assert current is not None
     assert current['share_id'] == share['share_id']
-    assert ds.current_share(table, 'p2', SERIES['series_id']) is None
+    assert ds.current_share(table, 'p2', SERIES['series_id'], workspace=None) is None
 
 
 def test_an_expired_link_is_no_longer_current_and_a_new_one_can_be_made(table, clock):
     old, _ = _create(table, expires_in_days=1)
     clock['now'] = NOW + 86_400
-    assert ds.current_share(table, 'p1', SERIES['series_id']) is None
+    assert ds.current_share(table, 'p1', SERIES['series_id'], workspace=None) is None
     new, created = _create(table)
     assert created is True
     assert new['share_id'] != old['share_id']
@@ -151,33 +151,33 @@ def test_an_expired_link_is_no_longer_current_and_a_new_one_can_be_made(table, c
 
 def test_a_stale_index_pointing_at_a_malformed_id_reads_as_no_link(table):
     table.put_item(Item={**_index_key(), 'share_id': 'DOCSHARE#x'})
-    assert ds.current_share(table, 'p1', SERIES['series_id']) is None
+    assert ds.current_share(table, 'p1', SERIES['series_id'], workspace=None) is None
 
 
 def test_revoking_keeps_the_link_as_revoked_and_clears_the_series_pointer(table):
     share, _ = _create(table)
-    assert ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner') is True
+    assert ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner', workspace=None) is True
     stored = table.get_item(Key=share_key(share['share_id']))['Item']
     assert stored['revoked'] is True
     assert stored['revoked_by'] == 'Olive Owner'
     assert 'Item' not in table.get_item(Key=_index_key())
-    assert ds.current_share(table, 'p1', SERIES['series_id']) is None
+    assert ds.current_share(table, 'p1', SERIES['series_id'], workspace=None) is None
 
 
 def test_revoking_without_a_link_reports_false(table):
-    assert ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner') is False
+    assert ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner', workspace=None) is False
 
 
 def test_revoking_a_pointer_whose_link_row_is_gone_still_clears_the_pointer(table):
     table.put_item(Item={**_index_key(), 'share_id': 'shr_' + 'c' * 32})
-    assert ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner') is True
+    assert ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner', workspace=None) is True
     assert 'Item' not in table.get_item(Key=_index_key())
     assert 'Item' not in table.get_item(Key=share_key('shr_' + 'c' * 32)), 'revoke must not create a link row'
 
 
 def test_a_share_id_collision_is_a_conflict(table, monkeypatch):
     first, _ = _create(table)
-    ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner')
+    ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner', workspace=None)
     monkeypatch.setattr(ds, 'new_share_id', lambda: first['share_id'])
     with pytest.raises(ConflictError):
         _create(table)
@@ -223,7 +223,7 @@ def test_an_expired_link_admits_nobody(table, clock):
 
 def test_a_revoked_link_admits_nobody(table):
     share, _ = _create(table)
-    ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner')
+    ds.revoke_share(table, 'p1', SERIES['series_id'], 'Olive Owner', workspace=None)
     with pytest.raises(NotFoundError, match=ds.LINK_GONE):
         ds.require_share_for(table, share['share_id'], REVIEWER)
 
@@ -249,9 +249,9 @@ def test_a_reviewer_may_write_the_daily_budget_and_no_more(table, monkeypatch):
     monkeypatch.setattr(ds, 'datetime', _FixedDay)
     share_id = 'shr_' + 'e' * 32
     for _ in range(ds.MAX_REVIEWER_WRITES_PER_DAY):
-        ds.count_reviewer_write(table, share_id, REVIEWER)
+        ds.count_reviewer_write(table, share_id, REVIEWER, workspace=None)
     with pytest.raises(TooManyRequestsError, match='rate_limited'):
-        ds.count_reviewer_write(table, share_id, REVIEWER)
+        ds.count_reviewer_write(table, share_id, REVIEWER, workspace=None)
     row = table.get_item(Key=_rate_key(share_id, REVIEWER, '2026-10-29'))['Item']
     assert row['n'] == ds.MAX_REVIEWER_WRITES_PER_DAY == 40
     assert row['ttl'] == NOW + ds.RATE_TTL_SECONDS
@@ -261,14 +261,14 @@ def test_the_budget_is_per_reviewer_per_link_and_resets_on_the_next_utc_day(tabl
     monkeypatch.setattr(ds, 'datetime', _FixedDay)
     share_id, other_link = 'shr_' + 'e' * 32, 'shr_' + 'f' * 32
     for _ in range(ds.MAX_REVIEWER_WRITES_PER_DAY):
-        ds.count_reviewer_write(table, share_id, REVIEWER)
-    ds.count_reviewer_write(table, share_id, 'other@partner.example')
-    ds.count_reviewer_write(table, other_link, REVIEWER)
+        ds.count_reviewer_write(table, share_id, REVIEWER, workspace=None)
+    ds.count_reviewer_write(table, share_id, 'other@partner.example', workspace=None)
+    ds.count_reviewer_write(table, other_link, REVIEWER, workspace=None)
     monkeypatch.setattr(_FixedDay, 'moment', datetime(2026, 10, 30, 0, 0, tzinfo=UTC))
-    ds.count_reviewer_write(table, share_id, REVIEWER)
+    ds.count_reviewer_write(table, share_id, REVIEWER, workspace=None)
     assert table.get_item(Key=_rate_key(share_id, REVIEWER, '2026-10-30'))['Item']['n'] == 1
 
 
 def test_the_rate_row_never_carries_the_address(table):
-    ds.count_reviewer_write(table, 'shr_' + 'e' * 32, REVIEWER)
+    ds.count_reviewer_write(table, 'shr_' + 'e' * 32, REVIEWER, workspace=None)
     assert REVIEWER not in str(table.scan()['Items'])

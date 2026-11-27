@@ -38,7 +38,7 @@ def table() -> Iterator[Any]:
 def _create_project() -> str:
     from projects import create_project
 
-    return create_project({'name': 'Same second'}, OWNER)['project']['project_id']
+    return create_project({'name': 'Same second'}, OWNER, workspace=None)['project']['project_id']
 
 
 def _meta_ids(table: Any) -> set[str]:

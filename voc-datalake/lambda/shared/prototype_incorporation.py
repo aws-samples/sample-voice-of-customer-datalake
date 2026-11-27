@@ -68,7 +68,7 @@ TAG_RE: Final = re.compile(r'<[^>]*>')
 
 def selected_pins(projects_table: Any, pins_table: Any, project_id: str, document: Mapping[str, Any],
                   pin_ids: Sequence[str], *,
-                  workspace: WorkspaceScope | None = None) -> tuple[list[dict[str, Any]], list[str]]:
+                  workspace: WorkspaceScope | None) -> tuple[list[dict[str, Any]], list[str]]:
     """``(accepted [{pin_id, form_id, document_id, version}], withheld ids)`` of the ids, in their order; else a 400.
 
     Every id must be a pin of ``document``'s series as the Feedback view lists it (the count is named,
@@ -76,7 +76,8 @@ def selected_pins(projects_table: Any, pins_table: Any, project_id: str, documen
     The deployment's pin forms only: a workspace is refused (``PROTOTYPE_BUILDER_STORE``) before any is read.
     """
     require_deployment(workspace, PROTOTYPE_BUILDER_STORE)
-    by_id = {str(pin.get('pin_id')): pin for pin in series_pins(projects_table, pins_table, project_id, document)}
+    by_id = {str(pin.get('pin_id')): pin
+             for pin in series_pins(projects_table, pins_table, project_id, document, workspace=workspace)}
     unknown = [pin_id for pin_id in pin_ids if pin_id not in by_id]
     if unknown:
         raise ValidationError(f'{len(unknown)} of the selected pins are not pins of this prototype')
@@ -188,7 +189,7 @@ def _reply(pins_table: Any, form_id: str, pin_id: str, rid: str, reply: dict) ->
 def incorporate(pins_table: Any, *, draft_id: str, accepted: Sequence[Mapping[str, Any]],
                 outcomes: Sequence[Mapping[str, Any]], new_document_id: str, actor: Mapping[str, str],
                 llm_metadata: Mapping[str, Any] | None, now: str,
-                workspace: WorkspaceScope | None = None) -> dict[str, list]:
+                workspace: WorkspaceScope | None) -> dict[str, list]:
     """Apply's marks and replies, after the version: ``{marked, replied, not_written: [{pin_id, reason}]}``.
 
     Only the outcomes of ``accepted`` pins (the job's stored set) are acted on; marks first, then replies.

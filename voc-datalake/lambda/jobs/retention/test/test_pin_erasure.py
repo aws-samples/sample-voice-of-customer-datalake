@@ -359,11 +359,11 @@ class TestTheWrites:
 
     def test_each_scope_has_its_own_pins_and_forms_partitions(self):
         form = prototype_pins.pin_form_id('doc_x')
-        assert (prototype_pins.pins_pk(form), prototype_pins.pins_pk(form, workspace=A)) == (
+        assert (prototype_pins.pins_pk(form, workspace=None), prototype_pins.pins_pk(form, workspace=A)) == (
             f'PINS#{form}', f'WS#{WS}#PINS#{form}')
-        assert (prototype_pins.pin_forms_pk(), prototype_pins.pin_forms_pk(workspace=B)) == (
+        assert (prototype_pins.pin_forms_pk(workspace=None), prototype_pins.pin_forms_pk(workspace=B)) == (
             'FEEDBACK_FORM', f'WS#{WS_TWO}#FEEDBACK_FORM')
-        assert prototype_pins.pin_key(form, PIN_ONE) == {'pk': f'PINS#{form}', 'sk': f'PIN#{PIN_ONE}'}
+        assert prototype_pins.pin_key(form, PIN_ONE, workspace=None) == {'pk': f'PINS#{form}', 'sk': f'PIN#{PIN_ONE}'}
 
     def test_only_the_name_is_replaced_and_every_other_field_kept(self):
         reply = {**_reply(f' {REVIEWER.upper()} ', 'Text'), 'id': 'r2'}
@@ -460,7 +460,7 @@ class TestTheWalkHandsOver:
 
     def test_a_prototype_id_not_shaped_like_one_is_counted_not_read(self, aws, worker_context):
         deployment_project(aws, DEP_LIVE)
-        aws['projects'].put_item(Item={'pk': project_pk(DEP_LIVE), 'sk': 'PROTOTYPE#bad#id'})
+        aws['projects'].put_item(Item={'pk': project_pk(DEP_LIVE, workspace=None), 'sk': 'PROTOTYPE#bad#id'})
 
         result = _erase_by_email(aws, worker_context)
 

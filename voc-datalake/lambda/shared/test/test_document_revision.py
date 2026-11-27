@@ -47,14 +47,14 @@ def table():
 def _thread(table, text='Say what it costs per seat', *, anchor=None, replies=(), status=dc.STATUS_OPEN,
             extra=None):
     item = dc.thread_item(project_id='p1', series_id=SERIES_ID, document=DOCUMENT, author=USER, text=text,
-                          anchor=anchor, extra=extra)
+                          anchor=anchor, extra=extra, workspace=None)
     item.update(status=status, replies=[dc.reply_item(USER, r) for r in replies])
-    dc.put_thread(table, item)
+    dc.put_thread(table, item, workspace=None)
     return item
 
 
 def _stored(table, comment_id) -> dict:
-    thread = dc.get_thread(table, 'p1', SERIES_ID, comment_id)
+    thread = dc.get_thread(table, 'p1', SERIES_ID, comment_id, workspace=None)
     assert thread is not None
     return thread
 
@@ -80,7 +80,7 @@ def _run(table, reply, *, outcome=rev.OUTCOME_PROPOSAL, wanted=None, evidence=()
         return ConverseResult(text=reply, model_id=model)
     result = rev.run_revision(table, project_id='p1', series_id=SERIES_ID, document=document, document_type='prfaq',
                               wanted=wanted, outcome=outcome, revise_id='rid1', actor=ACTOR, evidence=list(evidence),
-                              invoke=invoke)
+                              invoke=invoke, workspace=None)
     return result, prompts
 
 
@@ -120,7 +120,7 @@ def test_by_default_answered_unaddressed_placed_threads_are_selected(table):
     _thread(table, text='open and unanswered')
     _thread(table, replies=['x'], anchor=_anchor('a passage that is not there'))
     _thread(table, replies=['x'], extra={'addressed': {'version': 1}})
-    threads = dc.list_threads(table, 'p1', SERIES_ID)
+    threads = dc.list_threads(table, 'p1', SERIES_ID, workspace=None)
     chosen = rev.select_threads(threads, DOCUMENT, None)
     assert [t['comment_id'] for t in chosen] == [resolved['comment_id'], replied['comment_id']]
 
@@ -129,7 +129,7 @@ def test_chosen_threads_skip_status_and_addressed_but_not_placement(table):
     open_one = _thread(table)
     addressed = _thread(table, extra={'addressed': {'version': 1}})
     gone = _thread(table, anchor=_anchor('not in this version'))
-    threads = dc.list_threads(table, 'p1', SERIES_ID)
+    threads = dc.list_threads(table, 'p1', SERIES_ID, workspace=None)
     wanted = [open_one['comment_id'], addressed['comment_id'], gone['comment_id'], dc.new_comment_id()]
     chosen = rev.select_threads(threads, DOCUMENT, wanted)
     assert [t['comment_id'] for t in chosen] == [open_one['comment_id'], addressed['comment_id']]
@@ -167,7 +167,7 @@ def test_evidence_is_read_from_the_real_by_id_index():
         feedback = feedback_by_id_table()
         feedback.put_item(Item={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#fb1', 'feedback_id': 'fb1',
                                 'gsi4pk': 'FEEDBACK#fb1', 'category': 'billing', 'original_text': 'Too pricey'})
-        found = rev.read_evidence(feedback, {'input_feedback_ids': ['fb1', 'fb2']}, None)
+        found = rev.read_evidence(feedback, {'input_feedback_ids': ['fb1', 'fb2']}, None, workspace=None)
     assert [(row['feedback_id'], row['original_text']) for row in found] == [('fb1', 'Too pricey')]
 
 
@@ -176,22 +176,22 @@ def test_evidence_reads_each_input_review_once_under_the_starter_scope():
             'fb2': [{'feedback_id': 'fb2', 'category': 'secret', 'original_text': 'Hidden'}]}
     feedback = _feedback_table(rows)
     scope = {'all': False, 'categories': ['billing']}
-    assert [r['feedback_id'] for r in rev.read_evidence(feedback, DOCUMENT, scope)] == ['fb1']
+    assert [r['feedback_id'] for r in rev.read_evidence(feedback, DOCUMENT, scope, workspace=None)] == ['fb1']
     assert feedback.query.call_count == 2
     assert feedback.query.call_args.kwargs['IndexName'] == 'gsi4-by-feedback-id'
-    assert [r['feedback_id'] for r in rev.read_evidence(feedback, DOCUMENT, None)] == ['fb1', 'fb2']
+    assert [r['feedback_id'] for r in rev.read_evidence(feedback, DOCUMENT, None, workspace=None)] == ['fb1', 'fb2']
 
 
 def test_no_evidence_without_ids_or_table():
-    assert rev.read_evidence(MagicMock(), {'input_feedback_ids': 'x'}, None) == []
-    assert rev.read_evidence(MagicMock(), {'input_feedback_ids': ['fb1', 7]}, None) == []
-    assert rev.read_evidence(None, DOCUMENT, None) == []
+    assert rev.read_evidence(MagicMock(), {'input_feedback_ids': 'x'}, None, workspace=None) == []
+    assert rev.read_evidence(MagicMock(), {'input_feedback_ids': ['fb1', 7]}, None, workspace=None) == []
+    assert rev.read_evidence(None, DOCUMENT, None, workspace=None) == []
 
 
 def test_evidence_is_capped():
     document = {'input_feedback_ids': [f'fb{n}' for n in range(40)]}
     feedback = _feedback_table({})
-    rev.read_evidence(feedback, document, None)
+    rev.read_evidence(feedback, document, None, workspace=None)
     assert feedback.query.call_count == rev.MAX_EVIDENCE_ITEMS
 
 
@@ -372,7 +372,7 @@ def test_applied_on_a_version_someone_saved_over_is_a_conflict_before_the_model_
     with pytest.raises(ConflictError, match='changed by someone else'):
         rev.run_revision(table, project_id='p1', series_id=SERIES_ID, document=DOCUMENT, document_type='prfaq',
                          wanted=[thread['comment_id']], outcome=rev.OUTCOME_APPLIED, revise_id='rid2', actor=ACTOR,
-                         evidence=[], invoke=invoke)
+                         evidence=[], invoke=invoke, workspace=None)
     assert asked == []
     assert len(_versions(table)) == 2
 
@@ -491,7 +491,7 @@ def test_the_default_seam_calls_the_documents_surface(table):
     with patch('shared.document_revision.converse_detailed', return_value=answered) as converse:
         result = rev.run_revision(table, project_id='p1', series_id=SERIES_ID, document=DOCUMENT,
                                   document_type='prfaq', wanted=None, outcome=rev.OUTCOME_PROPOSAL, revise_id='r',
-                                  actor=ACTOR, evidence=[])
+                                  actor=ACTOR, evidence=[], workspace=None)
     assert result['model_id'] == MODEL
     assert converse.call_args.kwargs['surface'] == 'documents'
     assert converse.call_args.kwargs['max_tokens'] == rev.REVISE_MAX_TOKENS
@@ -529,11 +529,12 @@ def _entry(version, addressed=True):
 
 def test_marks_and_clears_are_appended_never_overwritten(table):
     thread = _thread(table)
-    dc.record_addressed(table, thread, _entry(2))
-    cleared = dc.record_addressed(table, _stored(table, thread['comment_id']), _entry(3, addressed=False))
+    dc.record_addressed(table, thread, _entry(2), workspace=None)
+    cleared = dc.record_addressed(table, _stored(table, thread['comment_id']), _entry(3, addressed=False),
+                                  workspace=None)
     assert cleared['addressed'] is None
     assert [(e['version'], e['addressed']) for e in cleared['addressed_history']] == [(2, True), (3, False)]
-    again = dc.record_addressed(table, cleared, _entry(4))
+    again = dc.record_addressed(table, cleared, _entry(4), workspace=None)
     assert (again['addressed']['version'], len(again['addressed_history'])) == (4, 3)
     assert 'addressed_seq' not in again
 
@@ -542,7 +543,7 @@ def test_the_mark_is_one_append_in_the_shape_of_a_reply(table):
     """No read, no rewrite: DynamoDB appends, so nothing written before can be lost or trimmed."""
     thread = _thread(table)
     spy = MagicMock(wraps=table)
-    dc.record_addressed(spy, thread, _entry(2))
+    dc.record_addressed(spy, thread, _entry(2), workspace=None)
     spy.get_item.assert_not_called()
     [call] = spy.update_item.call_args_list
     assert 'list_append(if_not_exists(addressed_history, :empty), :entry)' in call.kwargs['UpdateExpression']
@@ -553,8 +554,8 @@ def test_the_mark_is_one_append_in_the_shape_of_a_reply(table):
 def test_a_writer_with_a_stale_thread_keeps_the_other_writers_entry(table):
     """Two marks from the same read: the second appends after the first."""
     thread = _thread(table)
-    dc.record_addressed(table, thread, _entry(2))
-    late = dc.record_addressed(table, thread, _entry(3))
+    dc.record_addressed(table, thread, _entry(2), workspace=None)
+    late = dc.record_addressed(table, thread, _entry(3), workspace=None)
     assert [e['version'] for e in late['addressed_history']] == [2, 3]
 
 
@@ -562,43 +563,43 @@ def test_a_full_history_is_a_conflict_and_keeps_every_entry(table, monkeypatch):
     monkeypatch.setattr(dc, 'MAX_ADDRESSED_HISTORY', 3)
     thread = _thread(table)
     for version in range(1, 4):
-        dc.record_addressed(table, thread, _entry(version))
+        dc.record_addressed(table, thread, _entry(version), workspace=None)
     with pytest.raises(ConflictError, match='limit'):
-        dc.record_addressed(table, thread, _entry(4))
+        dc.record_addressed(table, thread, _entry(4), workspace=None)
     assert [e['version'] for e in _stored(table, thread['comment_id'])['addressed_history']] == [1, 2, 3]
 
 
 def test_a_full_thread_does_not_stop_the_others_from_being_marked(table, monkeypatch):
     monkeypatch.setattr(dc, 'MAX_ADDRESSED_HISTORY', 1)
     full, other = _thread(table), _thread(table, text='Name the plan')
-    dc.record_addressed(table, full, _entry(1))
+    dc.record_addressed(table, full, _entry(1), workspace=None)
     with pytest.raises(ConflictError, match='the others were'):
-        dc.record_threads_addressed(table, [full, other], _entry(2))
+        dc.record_threads_addressed(table, [full, other], _entry(2), workspace=None)
     assert [e['version'] for e in _stored(table, other['comment_id'])['addressed_history']] == [2]
     assert [e['version'] for e in _stored(table, full['comment_id'])['addressed_history']] == [1]
     with pytest.raises(ConflictError, match=dc.ADDRESSED_FULL):
-        dc.record_threads_addressed(table, [full], _entry(3))
+        dc.record_threads_addressed(table, [full], _entry(3), workspace=None)
 
 
 def test_marking_a_deleted_thread_raises_the_conditional_failure(table):
     thread = _thread(table)
-    dc.delete_thread(table, thread)
+    dc.delete_thread(table, thread, workspace=None)
     with pytest.raises(ClientError) as caught:
-        dc.record_addressed(table, thread, _entry(2))
+        dc.record_addressed(table, thread, _entry(2), workspace=None)
     assert caught.value.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException'
 
 
 def test_a_thread_deleted_before_its_mark_is_skipped(table):
     thread = _thread(table)
-    dc.delete_thread(table, thread)
-    assert dc.record_threads_addressed(table, [thread], _entry(2)) == []
+    dc.delete_thread(table, thread, workspace=None)
+    assert dc.record_threads_addressed(table, [thread], _entry(2), workspace=None) == []
 
 
 def test_marking_a_thread_raises_other_errors():
     broken = MagicMock()
     broken.update_item.side_effect = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'U')
     with pytest.raises(ClientError):
-        dc.record_threads_addressed(broken, [{'pk': 'a', 'sk': 'b'}], {'at': 'now'})
+        dc.record_threads_addressed(broken, [{'pk': 'a', 'sk': 'b'}], {'at': 'now'}, workspace=None)
 
 
 def test_only_a_managed_document_is_revised(table):
@@ -607,7 +608,7 @@ def test_only_a_managed_document_is_revised(table):
     custom = {'document_id': 'c1', 'document_type': 'custom', 'sk': 'DOC#c1'}
     with pytest.raises(ValidationError):
         revise_document(table, 'p1', custom, 'x', revise_id='r', now='t', actor=ACTOR,
-                        llm_metadata=rev.pass_llm_metadata(MODEL))
+                        llm_metadata=rev.pass_llm_metadata(MODEL), workspace=None)
 
 
 def test_the_same_revise_id_writes_one_version(table):
@@ -615,8 +616,10 @@ def test_the_same_revise_id_writes_one_version(table):
     from shared.document_history import revise_document
 
     llm = rev.pass_llm_metadata(MODEL)
-    first = revise_document(table, 'p1', dict(DOCUMENT), 'New', revise_id='r', now='t', actor=ACTOR, llm_metadata=llm)
-    again = revise_document(table, 'p1', dict(DOCUMENT), 'New', revise_id='r', now='t', actor=ACTOR, llm_metadata=llm)
+    first = revise_document(table, 'p1', dict(DOCUMENT), 'New', revise_id='r', now='t', actor=ACTOR, llm_metadata=llm,
+                            workspace=None)
+    again = revise_document(table, 'p1', dict(DOCUMENT), 'New', revise_id='r', now='t', actor=ACTOR, llm_metadata=llm,
+                            workspace=None)
     assert again['document_id'] == first['document_id']
     assert len(_versions(table)) == 2
 

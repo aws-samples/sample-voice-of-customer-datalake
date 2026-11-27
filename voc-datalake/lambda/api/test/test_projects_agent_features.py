@@ -237,16 +237,16 @@ class TestDuplicate:
         _doc(table, 'src', 'PROTOTYPE#prototype_a', document_id='prototype_a',
              document_type='prototype', title='Proto (v1)', base_title='Proto', version=1,
              version_allocation_id='job2', created_at='2026-01-01T00:00:00+00:00')
-        s3.put_object(Bucket=BUCKET, Key=prototype_s3_key('src', 'prototype_a'), Body=b'<html>x</html>')
+        s3.put_object(Bucket=BUCKET, Key=prototype_s3_key('src', 'prototype_a', workspace=None), Body=b'<html>x</html>')
 
         status, body = call(OWNER, 'POST', '/projects/src/documents/prototype_a/duplicate',
                             {'target_project_id': 'dst'})
 
         assert status == 200
         new_id = body['document']['document_id']
-        copied = s3.get_object(Bucket=BUCKET, Key=prototype_s3_key('dst', new_id))['Body'].read()
+        copied = s3.get_object(Bucket=BUCKET, Key=prototype_s3_key('dst', new_id, workspace=None))['Body'].read()
         assert copied == b'<html>x</html>'
-        assert s3.get_object(Bucket=BUCKET, Key=prototype_s3_key('src', 'prototype_a'))
+        assert s3.get_object(Bucket=BUCKET, Key=prototype_s3_key('src', 'prototype_a', workspace=None))
 
     def test_target_requires_edit_and_hides_its_existence(self, call, aws):
         table, _ = aws

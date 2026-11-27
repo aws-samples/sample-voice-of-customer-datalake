@@ -82,7 +82,7 @@ def test_a_revise_checks_and_writes_the_next_version_in_its_own_workspace(table)
     head = _version(table, A, 'job_2')
     document_history.require_series_head(table, PROJECT, head, workspace=A)
     with pytest.raises(ConflictError):
-        document_history.require_series_head(table, PROJECT, head)
+        document_history.require_series_head(table, PROJECT, head, workspace=None)
     revised = document_history.revise_document(
         table, PROJECT, head, 'Trail map, revised.', revise_id='r1', now=STAMP, actor=ACTOR,
         llm_metadata={'model': 'model-a', 'prompt_version': '1.0.0'}, workspace=A)
@@ -104,7 +104,7 @@ def test_a_drafts_base_is_read_in_its_own_workspace(table):
 
 
 def test_a_drafts_object_key_is_under_its_workspace_and_never_signed():
-    assert prototype_draft_s3_key('p1', 'job_1') == 'prototypes/p1/drafts/job_1.html'
+    assert prototype_draft_s3_key('p1', 'job_1', workspace=None) == 'prototypes/p1/drafts/job_1.html'
     assert prototype_draft_s3_key('p1', 'job_1', workspace=A) == f'ws/{A.ws}/prototypes/p1/drafts/job_1.html'
     assert prototype_draft_signed_url('p1', 'job_1', 'https://cdn.example/prototypes', workspace=A) is None
 

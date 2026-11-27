@@ -197,14 +197,14 @@ AVATAR_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 AVATAR_DIGEST_CHARS = 24
 
 
-def avatar_prefix(*, workspace: WorkspaceScope | None = None) -> str:
+def avatar_prefix(*, workspace: WorkspaceScope | None) -> str:
     """Where a scope's avatar objects live: ``avatars/`` for the deployment, ``ws/{ws}/avatars/`` in a workspace
     (shared/scoped_keys.py ``scoped_object_key``; docs/multi-workspace.md, the project plan, 3d and 3e)."""
     return scoped_object_key(workspace, AVATAR_KEY_PREFIX)
 
 
 def avatar_object_key(persona_id: str, image_data: bytes, image_format: str, *,
-                      workspace: WorkspaceScope | None = None) -> str:
+                      workspace: WorkspaceScope | None) -> str:
     """The S3 key one generated image is stored under: new per image, never reused.
 
     Content-addressed (`avatars/{persona_id}/{sha256}.{ext}`; under ``ws/{ws}/`` in a workspace). The key used to be
@@ -219,7 +219,7 @@ def avatar_object_key(persona_id: str, image_data: bytes, image_format: str, *,
     return f'{avatar_prefix(workspace=workspace)}{persona_id}/{digest}.{image_format}'
 
 
-def avatar_object_keys(persona_id: str, *, workspace: WorkspaceScope | None = None) -> tuple[str, ...]:
+def avatar_object_keys(persona_id: str, *, workspace: WorkspaceScope | None) -> tuple[str, ...]:
     """Every LEGACY flat key one persona's avatar may occupy (`avatars/{id}.{ext}`).
 
     The flat key embedded the image format, so a persona regenerated across an
@@ -235,7 +235,7 @@ def avatar_object_keys(persona_id: str, *, workspace: WorkspaceScope | None = No
 
 
 def persona_avatar_keys(s3_client, bucket: str, persona_id: str, *,
-                        workspace: WorkspaceScope | None = None) -> list[str]:
+                        workspace: WorkspaceScope | None) -> list[str]:
     """Every key one persona's avatar may occupy: the legacy flat keys + its prefix (the workspace's when given).
 
     The flat keys are candidates (they may not exist — the owner HEAD answers
@@ -250,7 +250,7 @@ def persona_avatar_keys(s3_client, bucket: str, persona_id: str, *,
     return keys
 
 
-def avatar_key_from_uri(s3_uri: object, bucket: str, *, workspace: WorkspaceScope | None = None) -> str | None:
+def avatar_key_from_uri(s3_uri: object, bucket: str, *, workspace: WorkspaceScope | None) -> str | None:
     """The key an `s3://{bucket}/avatars/...` URI names (``ws/{ws}/avatars/…`` in a workspace), or None for anything
     else: another bucket's, another scope's avatar, or a key that is not a plain path (``is_plain_key``), which could
     name another place than its prefix says (``ws/A/avatars/../../B/…``)."""
@@ -293,7 +293,7 @@ def avatar_object_owner(s3_client, bucket: str, key: str) -> str | None:
 
 def delete_superseded_avatars(
     s3_client, bucket: str, persona_id: str, *, keep: str, project_id: str | None,
-    previous_key: str | None = None, workspace: WorkspaceScope | None = None,
+    previous_key: str | None = None, workspace: WorkspaceScope | None,
 ) -> None:
     """Remove this persona's earlier avatar images once a new one is referenced.
 
@@ -428,7 +428,7 @@ def avatars_enabled() -> bool:
 @tracer.capture_method
 def generate_persona_avatar(
     persona_data: dict, s3_bucket: str | None = None, project_id: str | None = None, *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> dict:
     """
     Generate an AI avatar image for a persona.
@@ -557,7 +557,7 @@ def _no_image(result: dict, image_model: dict, persona_id: str, avatar_prompt: s
 
 def _store_avatar_image(
     image_data: bytes, image_format: str, persona_id: str, s3_bucket: str, project_id: str | None, *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> str:
     """Upload one generated image (under the workspace's prefix when given); its ``s3://`` URI."""
     s3_key = avatar_object_key(persona_id, image_data, image_format, workspace=workspace)
@@ -608,7 +608,7 @@ _WORKSPACE_OBJECTS: Final = 'ws/'
 
 
 def get_avatar_cdn_url(s3_uri: str | None, cdn_url: str | None = None, *,
-                       workspace: WorkspaceScope | None = None, bucket: str | None = None) -> str | None:
+                       workspace: WorkspaceScope | None, bucket: str | None = None) -> str | None:
     """Convert S3 URI to a SIGNED CloudFront CDN URL for avatar images.
 
     S3 URI format: s3://bucket/avatars/{persona_id}/{digest}.{ext}

@@ -101,33 +101,34 @@ class TestRevisionOf:
 class TestTheEditBody:
     def test_no_content_key_keeps_the_stored_content_and_none_is_empty(self):
         document = _custom(content=None)
-        assert dh.edit_document(_table(), 'p1', document, {}, now=NOW) == {
+        assert dh.edit_document(_table(), 'p1', document, {}, now=NOW, workspace=None) == {
             'success': True, 'unchanged': True, 'document': document}
 
     def test_a_rename_without_content_keeps_the_stored_text(self):
-        saved = dh.edit_document(_table(), 'p1', _custom(), {}, now=NOW, title='Renamed')['document']
+        saved = dh.edit_document(_table(), 'p1', _custom(), {}, now=NOW, title='Renamed', workspace=None)['document']
         assert (saved['content'], saved['title']) == ('old', 'Renamed')
 
     def test_non_string_content_is_a_400(self):
         with pytest.raises(ValidationError) as caught:
-            dh.edit_document(_table(), 'p1', _custom(), {'content': 5}, now=NOW)
+            dh.edit_document(_table(), 'p1', _custom(), {'content': 5}, now=NOW, workspace=None)
         assert str(caught.value) == 'content must be a string'
 
     def test_same_content_but_a_new_title_saves(self):
         table = _table()
-        result = dh.edit_document(table, 'p1', _custom(), {'content': 'old'}, now=NOW, title='Renamed')
+        result = dh.edit_document(table, 'p1', _custom(), {'content': 'old'}, now=NOW, title='Renamed', workspace=None)
         assert result['document']['title'] == 'Renamed'
         table.meta.client.transact_write_items.assert_called_once()
 
     def test_no_title_and_no_stored_title_is_unchanged_when_content_is(self):
         document = _custom()
         del document['title']
-        assert dh.edit_document(_table(), 'p1', document, {'content': 'old'}, now=NOW)['unchanged'] is True
+        assert dh.edit_document(_table(), 'p1', document, {'content': 'old'}, now=NOW,
+                                workspace=None)['unchanged'] is True
 
     def test_an_unmanaged_edit_still_validates_its_edit_id(self):
         table = _table()
         with pytest.raises(ValidationError):
-            dh.edit_document(table, 'p1', _custom(), {'content': 'new', 'edit_id': 'a b'}, now=NOW)
+            dh.edit_document(table, 'p1', _custom(), {'content': 'new', 'edit_id': 'a b'}, now=NOW, workspace=None)
         table.meta.client.transact_write_items.assert_not_called()
 
     @pytest.mark.parametrize(('stored', 'expected'), [({}, 2), ({'revision': 3}, 1), ({'revision': 3}, 4)])
@@ -135,7 +136,7 @@ class TestTheEditBody:
         table = _table()
         with pytest.raises(ConflictError) as caught:
             dh.edit_document(table, 'p1', _custom(**stored), {'content': 'new', 'expected_revision': expected},
-                             now=NOW)
+                             now=NOW, workspace=None)
         assert str(caught.value) == STALE
         table.meta.client.transact_write_items.assert_not_called()
 
@@ -146,7 +147,7 @@ class TestTheUnmanagedTransaction:
         document = _custom(updated_at='u0', edit_kind='restore', restored_from_version=2)
 
         result = dh.edit_document(table, 'p1', document, {'content': 'new', 'expected_revision': 1}, now=NOW,
-                                  title='T2')
+                                  title='T2', workspace=None)
 
         table.meta.client.transact_write_items.assert_called_once_with(TransactItems=[
             {'Put': {'TableName': 'projects', 'Item': {
@@ -175,7 +176,7 @@ class TestTheUnmanagedTransaction:
         document = {'pk': 'PROJECT#p1', 'sk': 'DOC#d1', 'document_id': 'd1', 'revision': Decimal('12'),
                     'created_at': 'c0'}
 
-        dh.edit_document(table, 'p1', document, {'content': 'new'}, now=NOW)
+        dh.edit_document(table, 'p1', document, {'content': 'new'}, now=NOW, workspace=None)
 
         put, update = table.meta.client.transact_write_items.call_args.kwargs['TransactItems']
         assert put['Put']['Item'] == {
@@ -191,7 +192,7 @@ class TestTheUnmanagedTransaction:
         table.meta.client.transact_write_items.side_effect = ClientError(
             {'Error': {'Code': 'TransactionCanceledException', 'Message': 'x'}}, 'TransactWriteItems')
         with pytest.raises(ConflictError) as caught:
-            dh.edit_document(table, 'p1', _custom(), {'content': 'new'}, now=NOW)
+            dh.edit_document(table, 'p1', _custom(), {'content': 'new'}, now=NOW, workspace=None)
         assert str(caught.value) == STALE
 
     def test_any_other_client_error_propagates(self):
@@ -199,7 +200,7 @@ class TestTheUnmanagedTransaction:
         error = ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'x'}}, 'TransactWriteItems')
         table.meta.client.transact_write_items.side_effect = error
         with pytest.raises(ClientError) as caught:
-            dh.edit_document(table, 'p1', _custom(), {'content': 'new'}, now=NOW)
+            dh.edit_document(table, 'p1', _custom(), {'content': 'new'}, now=NOW, workspace=None)
         assert caught.value is error
 
 
@@ -223,7 +224,7 @@ class TestAManagedEdit:
 
         table = _table()
         result = dh.edit_document(table, 'p1', document, {'content': 'new', 'edit_id': 'e1',
-                                                          'expected_revision': 3}, now=NOW)
+                                                          'expected_revision': 3}, now=NOW, workspace=None)
 
         persist.assert_called_once_with(
             table, 'p1', 'prd', 'Launch', 'edit:prd_1:e1',
@@ -235,7 +236,7 @@ class TestAManagedEdit:
     def test_without_an_edit_id_the_content_digest_allocates(self, persist: MagicMock):
         document = {'sk': 'PRFAQ#f1', 'document_id': 'f1', 'title': '', 'content': 'old'}
 
-        dh.edit_document(_table(), 'p1', document, {'content': 'abc'}, now=NOW)
+        dh.edit_document(_table(), 'p1', document, {'content': 'abc'}, now=NOW, workspace=None)
 
         args = persist.call_args
         assert args.args[2:5] == ('prfaq', 'Untitled', 'edit:f1:ba7816bf8f01cfea414140de5dae2223')
@@ -245,7 +246,7 @@ class TestAManagedEdit:
         document = {'sk': 'PRFAQ#f1', 'document_id': 'f1', 'title': 'L (v2)', 'base_title': 'L', 'content': 'old',
                     'edited_by': {'sub': 'earlier', 'kind': 'user'}, 'revise_job_id': 'job_earlier'}
         dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW,
-                         revise={'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1'})
+                         revise={'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1'}, workspace=None)
         fields = persist.call_args.args[5]
         assert {k: fields[k] for k in ('edit_kind', 'edited_by', 'revise_job_id', 'edited_from_id')} == {
             'edit_kind': 'revise', 'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1',
@@ -260,14 +261,14 @@ class TestAManagedEdit:
         llm = {'model': 'global.anthropic.claude-sonnet-5-5', 'prompt_version': '1.0.0'}
         dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW,
                          revise={'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1',
-                                 'llm_metadata': llm})
+                                 'llm_metadata': llm}, workspace=None)
         assert persist.call_args.args[5]['llm_metadata'] == llm
 
     def test_a_plain_edit_of_a_revised_row_drops_its_revise_provenance(self, persist: MagicMock):
         document = {'sk': 'PRFAQ#f1', 'document_id': 'f1', 'title': 'L (v2)', 'base_title': 'L', 'content': 'old',
                     'edit_kind': 'revise', 'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1',
                     'llm_metadata': {'model': 'm', 'prompt_version': '1.0.0'}}
-        dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW)
+        dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW, workspace=None)
         fields = persist.call_args.args[5]
         assert fields['edit_kind'] == 'edit'
         assert 'edited_by' not in fields
@@ -277,18 +278,18 @@ class TestAManagedEdit:
     def test_a_restore_of_a_revised_row_drops_its_llm_metadata(self, persist: MagicMock):
         revised = _prd('b', 2, 'two', edit_kind='revise', llm_metadata={'model': 'm', 'prompt_version': '1.0.0'})
         table = _table([{'Items': [revised, _prd('a', 1, 'one')]}])
-        dh.restore_document_version(table, 'p1', revised, 'a', {'edit_id': 'e'}, now=NOW)
+        dh.restore_document_version(table, 'p1', revised, 'a', {'edit_id': 'e'}, now=NOW, workspace=None)
         assert 'llm_metadata' not in persist.call_args.args[5]
 
     def test_a_revise_of_a_custom_document_is_refused(self):
         with pytest.raises(ValidationError):
             dh.edit_document(_table(), 'p1', _custom(), {'content': 'new'}, now=NOW,
-                             revise={'edited_by': {}, 'revise_job_id': 'job_1'})
+                             revise={'edited_by': {}, 'revise_job_id': 'job_1'}, workspace=None)
 
     def test_a_titled_row_without_base_title_takes_its_series_from_the_title(self, persist: MagicMock):
         document = {'sk': 'PRD#p', 'document_id': 'p', 'title': 'Launch (v4)', 'content': 'old'}
 
-        dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW)
+        dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW, workspace=None)
 
         assert persist.call_args.args[3] == 'Launch'
 
@@ -305,7 +306,7 @@ class TestManagedVersionList:
     def test_newest_first_one_series_only_across_pages(self):
         table = _series_table()
 
-        listed = dh.list_document_versions(table, 'p1', _prd('b', 2, None))
+        listed = dh.list_document_versions(table, 'p1', _prd('b', 2, None), workspace=None)
 
         assert listed == {'managed': True, 'versions': [
             {'version_id': 'b', 'document_id': 'b', 'version': 2, 'title': 'Launch (v2)', 'content': '',
@@ -326,7 +327,7 @@ class TestManagedVersionList:
         rows = [_prd('d', 4, 'w', llm_metadata={'model': 'retired-model', 'prompt_version': '1.0.0'}),
                 _prd('c', 3, 'x', llm_metadata={**llm, 'stray': 'not listed'}),
                 _prd('b', 2, 'y', llm_metadata={'prompt_version': '1.0.0'}), _prd('a', 1, 'z', llm_metadata='x')]
-        listed = dh.list_document_versions(_table([{'Items': rows}]), 'p1', rows[0])['versions']
+        listed = dh.list_document_versions(_table([{'Items': rows}]), 'p1', rows[0], workspace=None)['versions']
         assert [v['llm_metadata'] for v in listed] == [
             {'model': 'retired-model', 'prompt_version': '1.0.0', 'model_label': None},
             {**llm, 'model_label': 'Claude Sonnet 5.5'},
@@ -336,11 +337,12 @@ class TestManagedVersionList:
 
     def test_a_page_without_items_reads_as_empty(self):
         table = _table([{}])
-        assert dh.list_document_versions(table, 'p1', _prd('a', 1, 'x')) == {'managed': True, 'versions': []}
+        assert dh.list_document_versions(table, 'p1', _prd('a', 1, 'x'),
+                                         workspace=None) == {'managed': True, 'versions': []}
 
     def test_the_list_stops_at_25(self):
         rows = [_prd(f'd{n:02d}', n, f'c{n}', created_at=f'2026-01-{n:02d}') for n in range(1, 27)]
-        listed = dh.list_document_versions(_table([{'Items': rows}]), 'p1', rows[-1])['versions']
+        listed = dh.list_document_versions(_table([{'Items': rows}]), 'p1', rows[-1], workspace=None)['versions']
         assert [v['version'] for v in listed] == list(range(26, 1, -1))
         assert [v['current'] for v in listed] == [True] + [False] * 24
 
@@ -355,7 +357,7 @@ class TestUnmanagedVersionList:
         ]}])
         document = _custom(revision=3, updated_at='u3', edit_kind='restore', restored_from_version=1)
 
-        listed = dh.list_document_versions(table, 'p1', document)
+        listed = dh.list_document_versions(table, 'p1', document, workspace=None)
 
         assert listed == {'managed': False, 'versions': [
             {'version_id': 'r3', 'document_id': 'd1', 'version': 3, 'title': 'Notes', 'content': 'old',
@@ -370,25 +372,25 @@ class TestUnmanagedVersionList:
             ScanIndexForward=False, Limit=24, ConsistentRead=True)
 
     def test_never_saved_reads_its_created_at_and_no_items_is_empty(self):
-        listed = dh.list_document_versions(_table([{}]), 'p1', _custom())['versions']
+        listed = dh.list_document_versions(_table([{}]), 'p1', _custom(), workspace=None)['versions']
         assert [(v['version_id'], v['created_at']) for v in listed] == [('r1', 'c0')]
 
 
 class TestManagedRestore:
     def test_a_prototype_is_refused(self):
         with pytest.raises(ValidationError) as caught:
-            dh.restore_document_version(_table(), 'p1', {'sk': 'PROTOTYPE#x'}, 'x', {}, now=NOW)
+            dh.restore_document_version(_table(), 'p1', {'sk': 'PROTOTYPE#x'}, 'x', {}, now=NOW, workspace=None)
         assert str(caught.value) == 'Prototypes are restored through the prototype restore (Back to vN)'
 
     def test_an_unknown_version_is_a_404(self):
         with pytest.raises(NotFoundError) as caught:
-            dh.restore_document_version(_series_table(), 'p1', _prd('b', 2, None), 'z', {}, now=NOW)
+            dh.restore_document_version(_series_table(), 'p1', _prd('b', 2, None), 'z', {}, now=NOW, workspace=None)
         assert str(caught.value) == 'Version not found'
 
     def test_restoring_the_head_content_saves_nothing(self, persist: MagicMock):
         table = _table([{'Items': [_prd('a', 1, 'same'), _prd('b', 2, 'same')]}])
 
-        result = dh.restore_document_version(table, 'p1', _prd('a', 1, 'same'), 'a', {}, now=NOW)
+        result = dh.restore_document_version(table, 'p1', _prd('a', 1, 'same'), 'a', {}, now=NOW, workspace=None)
 
         assert result == {'success': True, 'unchanged': True, 'document': {**_prd('b', 2, 'same')}}
         persist.assert_not_called()
@@ -396,13 +398,15 @@ class TestManagedRestore:
     def test_an_empty_version_restored_onto_a_head_without_content_saves_nothing(self, persist: MagicMock):
         table = _table([{'Items': [_prd('a', 1, ''), _prd('b', 2, None)]}])
 
-        assert dh.restore_document_version(table, 'p1', _prd('b', 2, None), 'a', {}, now=NOW)['unchanged'] is True
+        assert dh.restore_document_version(table, 'p1', _prd('b', 2, None), 'a', {}, now=NOW,
+                                           workspace=None)['unchanged'] is True
         persist.assert_not_called()
 
     def test_a_restore_is_the_next_version_of_the_head(self, persist: MagicMock):
         table = _table([{'Items': [_prd('a', 1, None, feedback_count=1), _prd('b', 2, 'two', feedback_count=2)]}])
 
-        result = dh.restore_document_version(table, 'p1', _prd('a', 1, None), 'a', {'edit_id': 'r9'}, now=NOW)
+        result = dh.restore_document_version(table, 'p1', _prd('a', 1, None), 'a', {'edit_id': 'r9'}, now=NOW,
+                                             workspace=None)
 
         persist.assert_called_once_with(
             table, 'p1', 'prd', 'Launch', 'restore:a:r9',
@@ -417,14 +421,14 @@ class TestUnmanagedRestore:
     def test_a_malformed_version_id_is_a_404_without_a_read(self, version_id):
         table = _table()
         with pytest.raises(NotFoundError) as caught:
-            dh.restore_document_version(table, 'p1', _custom(revision=2), version_id, {}, now=NOW)
+            dh.restore_document_version(table, 'p1', _custom(revision=2), version_id, {}, now=NOW, workspace=None)
         assert str(caught.value) == 'Version not found'
         table.get_item.assert_not_called()
 
     def test_restoring_the_current_revision_saves_nothing(self):
         table = _table()
         document = _custom(revision=2)
-        assert dh.restore_document_version(table, 'p1', document, 'r2', {}, now=NOW) == {
+        assert dh.restore_document_version(table, 'p1', document, 'r2', {}, now=NOW, workspace=None) == {
             'success': True, 'unchanged': True, 'document': document}
         table.get_item.assert_not_called()
 
@@ -432,7 +436,7 @@ class TestUnmanagedRestore:
         table = _table()
         table.get_item.return_value = {}
         with pytest.raises(NotFoundError) as caught:
-            dh.restore_document_version(table, 'p1', _custom(revision=2), 'r999999', {}, now=NOW)
+            dh.restore_document_version(table, 'p1', _custom(revision=2), 'r999999', {}, now=NOW, workspace=None)
         assert str(caught.value) == 'Version not found'
         table.get_item.assert_called_once_with(Key={'pk': VERSIONS_PK, 'sk': 'REVISION#d1#999999'},
                                                ConsistentRead=True)
@@ -441,7 +445,7 @@ class TestUnmanagedRestore:
         table = _table()
         table.get_item.return_value = {'Item': {'content': 'v1 text', 'title': 'Old title'}}
 
-        result = dh.restore_document_version(table, 'p1', _custom(revision=2), 'r1', {}, now=NOW)
+        result = dh.restore_document_version(table, 'p1', _custom(revision=2), 'r1', {}, now=NOW, workspace=None)
 
         assert result == {'success': True, 'document': {
             **_custom(revision=3), 'content': 'v1 text', 'title': 'Old title', 'updated_at': NOW,
@@ -453,7 +457,8 @@ class TestUnmanagedRestore:
         table = _table()
         table.get_item.return_value = {'Item': {'sk': 'REVISION#d1#000001'}}
 
-        document = dh.restore_document_version(table, 'p1', _custom(revision=2), 'r1', {}, now=NOW)['document']
+        document = dh.restore_document_version(table, 'p1', _custom(revision=2), 'r1', {}, now=NOW,
+                                               workspace=None)['document']
 
         assert (document['content'], document['title']) == ('', 'Notes')
 
@@ -463,7 +468,8 @@ class TestUnmanagedRestore:
         document = _custom(revision=2)
         del document['title']
 
-        assert dh.restore_document_version(table, 'p1', document, 'r1', {}, now=NOW)['document']['title'] == ''
+        assert dh.restore_document_version(table, 'p1', document, 'r1', {}, now=NOW,
+                                           workspace=None)['document']['title'] == ''
 
 
 class TestDeletingRevisions:
@@ -474,7 +480,7 @@ class TestDeletingRevisions:
         ])
         batch = table.batch_writer.return_value.__enter__.return_value
 
-        assert dh.delete_document_revisions(table, 'p1', 'd1') is None
+        assert dh.delete_document_revisions(table, 'p1', 'd1', workspace=None) is None
 
         condition = Key('pk').eq(VERSIONS_PK) & Key('sk').begins_with('REVISION#d1#')
         base = {'KeyConditionExpression': condition, 'ProjectionExpression': 'pk, sk', 'ConsistentRead': True}
@@ -485,5 +491,5 @@ class TestDeletingRevisions:
 
     def test_a_page_without_items_deletes_nothing(self):
         table = _table([{}])
-        dh.delete_document_revisions(table, 'p1', 'd1')
+        dh.delete_document_revisions(table, 'p1', 'd1', workspace=None)
         table.batch_writer.return_value.__enter__.return_value.delete_item.assert_not_called()

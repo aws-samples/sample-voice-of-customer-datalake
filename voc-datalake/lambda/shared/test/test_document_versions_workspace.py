@@ -241,7 +241,8 @@ def test_the_deployments_revision_delete_goes_in_batches_as_before(table):
     _thirty_revisions(table)
     client = table.meta.client
     with patch.object(client, 'batch_write_item', wraps=client.batch_write_item) as sent:
-        _untouched(table, None, lambda: document_history.delete_document_revisions(table, PROJECT, 'doc_1'))
+        _untouched(table, None, lambda: document_history.delete_document_revisions(table, PROJECT, 'doc_1',
+                                                                                   workspace=None))
     requests = [recorded.kwargs['RequestItems'][TABLE] for recorded in sent.call_args_list]
     assert [len(request) for request in requests] == [25, 5]
     assert {entry['DeleteRequest']['Key']['pk'] for request in requests for entry in request} == {
@@ -269,7 +270,8 @@ def test_a_workspaces_revision_delete_is_the_layers_checked_batch_delete(table, 
 
 def test_a_refused_revision_key_deletes_nothing(table):
     """Every key is checked before anything is sent: one outside the workspace refuses the whole delete."""
-    rows = [document_revision_key(PROJECT, 'doc_1', 1, workspace=A), document_revision_key(PROJECT, 'doc_1', 1),
+    rows = [document_revision_key(PROJECT, 'doc_1', 1, workspace=A), document_revision_key(PROJECT, 'doc_1', 1,
+                                                                                           workspace=None),
             document_revision_key(PROJECT, 'doc_1', 2, workspace=A)]
     for key in rows:
         table.put_item(Item=key)
@@ -291,7 +293,8 @@ def test_a_workspace_refuses_a_document_row_of_another_scope(table):
         document_history.edit_document(table, PROJECT, _notes(None), {'content': 'x'}, now=LATER, workspace=A)
     with pytest.raises(OutOfScopeError, match='outside the workspace'):
         document_versions.persist_versioned_document(
-            table, PROJECT, 'prd', 'Trail map', 'job_1', {'created_at': STAMP, **document_listing(PROJECT, STAMP)},
+            table, PROJECT, 'prd', 'Trail map', 'job_1', {'created_at': STAMP, **document_listing(PROJECT, STAMP,
+                                                                                                  workspace=None)},
             workspace=A)
     assert table.scan()['Items'] == before
 
@@ -325,7 +328,7 @@ def test_the_deployments_create_sends_the_requests_it_always_sent(table):
 def test_the_deployments_revision_requests_are_the_ones_it_always_sent(table):
     table.put_item(Item=_notes(None))
     with patch.object(table.meta.client, 'transact_write_items', wraps=table.meta.client.transact_write_items) as sent:
-        document_history.edit_document(table, PROJECT, _notes(None), {'content': 'second'}, now=LATER)
+        document_history.edit_document(table, PROJECT, _notes(None), {'content': 'second'}, now=LATER, workspace=None)
     [[snapshot, update]] = [recorded.kwargs['TransactItems'] for recorded in sent.call_args_list]
     assert snapshot['Put']['Item']['pk'] == 'DOCUMENT_VERSIONS#PROJECT#proj_shared_id'
     assert snapshot['Put']['Item']['sk'] == 'REVISION#doc_1#000001'

@@ -69,6 +69,19 @@ def fix_legacy_assignment(item: dict[str, Any]) -> dict[str, Any]:
     return {**item, **keys.legacy_assignment_key(counter_key, source)}
 
 
+class WorkspaceRefusedError(ValueError):
+    """A bundle script was given a workspace: it reads and writes the deployment's projects only."""
+
+
+def deployment_only(workspace: object) -> None:
+    """Refuse a workspace (docs/multi-workspace.md, 3h: the bundle importer and exporter stay the deployment's, so a
+    workspace's project is never read or written as if it were the deployment's). Every project key the scripts build
+    names ``workspace=None``, the deployment, after this check."""
+    if workspace is not None:
+        raise WorkspaceRefusedError('a project bundle reads and writes the deployment\'s projects only; '
+                                    'a workspace is refused')
+
+
 def lambda_on_path() -> None:
     lambda_dir = str(Path(__file__).resolve().parents[2] / 'lambda')
     if lambda_dir not in sys.path:
@@ -108,7 +121,7 @@ def _allocated_ids(helpers: SimpleNamespace, rows: list[dict[str, Any]], old_pid
                    new_pid: str) -> dict[str, str]:
     """A versioned document's id is derived from the project id and its allocation."""
     found = {}
-    versions_pk = helpers.keys.version_partition_key(old_pid)
+    versions_pk = helpers.keys.version_partition_key(old_pid, workspace=None)
     for item in rows:
         allocation, document_type, document_id = (item.get('allocation_id'), item.get('document_type'),
                                                   item.get('document_id'))
@@ -131,8 +144,10 @@ def _series_ids(helpers: SimpleNamespace, documents: list[dict[str, Any]], old_p
     return mapped
 
 
-def new_id_map(rows: list[dict[str, Any]], old_pid: str) -> dict[str, str]:
-    """Every id the project owns -> a fresh one (the `--new-ids` map)."""
+def new_id_map(rows: list[dict[str, Any]], old_pid: str, *, workspace: None) -> dict[str, str]:
+    """Every id the project owns -> a fresh one (the `--new-ids` map); the deployment's project only
+    (`deployment_only`)."""
+    deployment_only(workspace)
     helpers = _shared_helpers()
     ids, pins = helpers.ids, helpers.pins
     new_pid = _fresh(ids, old_pid)

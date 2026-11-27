@@ -125,11 +125,11 @@ def _member_thread(text: str) -> dict[str, Any]:
     """A team member's thread on project p1's series, as the routes build it."""
     return comments.thread_item(project_id='p1', series_id=SERIES['series_id'],
                                 document={'document_id': 'd', 'version': 1},
-                                author=comments.user_author('s', LEAD), text=text, anchor=None)
+                                author=comments.user_author('s', LEAD), text=text, anchor=None, workspace=None)
 
 
 def _link(aws, share: dict[str, Any]) -> dict[str, Any]:
-    return _row(aws, review_link_key(share['share_id']))
+    return _row(aws, review_link_key(share['share_id'], workspace=None))
 
 
 def _everything(aws) -> dict[str, Any]:
@@ -160,7 +160,7 @@ class TestAnErasureByEmailReachesTheDeploymentsProjects:
             assert member['author'] == {'kind': 'user', 'sub': 'sub-lead', 'name': LEAD}
         assert 'owner_email' not in _meta(aws, DEP_GONE, None)
         assert _meta(aws, DEP_LIVE, None)['owner_email'] == DEP_OWNER
-        persona = _row(aws, {'pk': project_pk(DEP_LIVE), 'sk': 'PERSONA#per_1'})
+        persona = _row(aws, {'pk': project_pk(DEP_LIVE, workspace=None), 'sk': 'PERSONA#per_1'})
         assert persona['research_notes'][0]['author'] == comments.TEAM_MEMBER_NAME
         assert result[PROJECT_COUNTER] == CHANGED
 
@@ -254,20 +254,21 @@ class TestTheRowsMadeBeforeTheRegistries:
         is gone, a deleted project's reviewer thread, and that project's tombstoned META (off the index, as the
         delete's fence leaves it, naming the reviewer as its owner)."""
         revoked = 'shr_' + '7' * 32
-        aws['projects'].put_item(Item={**review_link_key(revoked), 'share_id': revoked, 'project_id': DEP_LIVE,
+        aws['projects'].put_item(Item={**review_link_key(revoked, workspace=None), 'share_id': revoked,
+                                       'project_id': DEP_LIVE,
                                        'series_id': SERIES_TWO['series_id'], 'revoked': True, 'revoked_by': LEAD,
                                        'audience': {'mode': 'list', 'emails': [REVIEWER], 'domains': []}})
         thread = comments.thread_item(project_id=DEP_GONE, series_id=SERIES['series_id'],
                                       document={'document_id': 'doc_1', 'version': 1},
                                       author=comments.reviewer_author(REVIEWER, REVIEWER_NAME), text='Old note',
-                                      anchor=None)
+                                      anchor=None, workspace=None)
         aws['projects'].put_item(Item=thread)
-        aws['projects'].put_item(Item={'pk': project_pk(DEP_GONE), 'sk': 'META', 'project_id': DEP_GONE,
+        aws['projects'].put_item(Item={'pk': project_pk(DEP_GONE, workspace=None), 'sk': 'META', 'project_id': DEP_GONE,
                                        'status': 'deleted', 'deleted_at': STAMP, 'owner_email': REVIEWER})
         return {'revoked': revoked}
 
     def _assert_reached(self, aws, legacy: dict[str, str]) -> None:
-        link = _row(aws, review_link_key(legacy['revoked']))
+        link = _row(aws, review_link_key(legacy['revoked'], workspace=None))
         assert (link['audience']['emails'], link['revoked']) == ([], True)
         [thread] = _threads(aws, DEP_GONE, None)
         assert thread['author'] == {'kind': 'reviewer'}
@@ -281,7 +282,7 @@ class TestTheRowsMadeBeforeTheRegistries:
             refused = _erase_by_email(aws, worker_context, job_id='er_00000000beef')
         # 7.93.00: no Scan finds them any more; the job fails by name and its row says to run the backfill.
         assert (scanned, refused['status']) == ([], 'failed')
-        assert _row(aws, review_link_key(legacy['revoked']))['audience']['emails'] == [REVIEWER]
+        assert _row(aws, review_link_key(legacy['revoked'], workspace=None))['audience']['emails'] == [REVIEWER]
 
         drained = datetime(2026, 11, 1, tzinfo=UTC)
         report = backfill.run(aws['projects'], apply=True, now=lambda: STAMP, clock=lambda: drained + timedelta(hours=1),
@@ -363,7 +364,7 @@ class TestTheDeploymentsWalkHandsOver:
         for n in range(3):
             aws['projects'].put_item(Item=comments.thread_item(
                 project_id=DEP_LIVE, series_id=SERIES['series_id'], document={'document_id': 'd', 'version': 1},
-                author=comments.reviewer_author(REVIEWER), text=f'More {n}', anchor=None))
+                author=comments.reviewer_author(REVIEWER), text=f'More {n}', anchor=None, workspace=None))
         before = aws['projects'].scan()['Items']
         one_run, _steps = _walk_to_the_end(aws, hand_over_each_step=False)
         expected = _everything(aws)
@@ -387,7 +388,7 @@ class TestTheDeploymentsWalkHandsOver:
         at = {'links_done': True, 'pairs_done': True, 'pairs': [pair], 'threads_from': None}
         moved = eraser._threads_step(None, dict(at))
         assert (moved['threads_from'], moved['pairs']) == (
-            {'pk': comments_pk(DEP_LIVE, SERIES['series_id']), 'sk': first['sk']}, [pair])
+            {'pk': comments_pk(DEP_LIVE, SERIES['series_id'], workspace=None), 'sk': first['sk']}, [pair])
         assert _threads(aws, DEP_LIVE, None)[1]['author']['email'] == REVIEWER  # the second, not yet
         after = eraser._threads_step(None, json.loads(json.dumps(moved)))
         assert (after['pairs'], after['threads_from']) == ([], None)
@@ -422,31 +423,33 @@ class TestTheStoresWriteTheRegistries:
 
     def test_a_link_and_its_series_are_listed_with_the_link_and_the_revoke_keeps_them(self, aws):
         share, _ = ds.create_share(aws['projects'], project_id='p1', series=SERIES, document_id='d',
-                                   creator={'sub': 's', 'name': LEAD}, values=ds.validate_share_body({}))
+                                   creator={'sub': 's', 'name': LEAD}, values=ds.validate_share_body({}),
+                                   workspace=None)
         listed = _row(aws, deployment_link_registry_key(share['share_id']))
         assert {name: listed[name] for name in ('project_id', 'series_id')} == {
             'project_id': 'p1', 'series_id': SERIES['series_id']}
         assert _row(aws, {'pk': 'COMMENT_SERIES_IDS', 'sk': f"p1#{SERIES['series_id']}"})['series_id'] == SERIES[
             'series_id']
-        assert ds.revoke_share(aws['projects'], 'p1', SERIES['series_id'], LEAD)
+        assert ds.revoke_share(aws['projects'], 'p1', SERIES['series_id'], LEAD, workspace=None)
         assert 'Item' in aws['projects'].get_item(Key=deployment_link_registry_key(share['share_id']))
         # A second link of the same series (the first revoked) is listed beside it.
         again, _ = ds.create_share(aws['projects'], project_id='p1', series=SERIES, document_id='d',
-                                   creator={'sub': 's', 'name': LEAD}, values=ds.validate_share_body({}))
+                                   creator={'sub': 's', 'name': LEAD}, values=ds.validate_share_body({}),
+                                   workspace=None)
         assert _registries(aws, 'DOCSHARE_IDS') == sorted([share['share_id'], again['share_id']])
 
     def test_a_series_first_thread_lists_it_once_and_a_later_thread_keeps_the_row(self, aws):
-        comments.put_thread(aws['projects'], _member_thread('one'))
+        comments.put_thread(aws['projects'], _member_thread('one'), workspace=None)
         key = {'pk': 'COMMENT_SERIES_IDS', 'sk': f"p1#{SERIES['series_id']}"}
         first = _row(aws, key)
-        comments.put_thread(aws['projects'], _member_thread('two'))
+        comments.put_thread(aws['projects'], _member_thread('two'), workspace=None)
         assert _row(aws, key) == first
         assert len(_threads(aws, 'p1', None)) == 2
 
     def test_a_thread_outside_its_series_partition_is_refused_before_anything_is_written(self, aws):
         item = _member_thread('x')
         with pytest.raises(comments.OutOfScopeError):
-            comments.put_thread(aws['projects'], {**item, 'pk': 'DCOMMENTS#p2#' + SERIES['series_id']})
+            comments.put_thread(aws['projects'], {**item, 'pk': 'DCOMMENTS#p2#' + SERIES['series_id']}, workspace=None)
         # Nothing but the backfill's marker the tables start with.
         assert [row['sk'] for row in aws['projects'].scan()['Items']] == [MARKER['sk']]
 
@@ -557,7 +560,7 @@ class TestRound1:
         assert _ts_list('PROJECT_REGISTRY_KEYS') == ['pk', 'sk']
         assert f"const PROJECTS_INDEX = '{registries.PROJECTS_BY_TYPE_INDEX}';" in source
         # The one partition, also the marker seed's (review-registries-marker.ts).
-        assert f"export const DEPLOYMENT_PROJECTS_PARTITION = '{project_type_pk()}';" in source
+        assert f"export const DEPLOYMENT_PROJECTS_PARTITION = '{project_type_pk(workspace=None)}';" in source
         assert 'const PROJECTS_INDEX_PARTITIONS = [DEPLOYMENT_PROJECTS_PARTITION];' in source
 
     def test_every_deployment_query_reads_only_what_iam_allows(self, aws, worker_context):
@@ -566,7 +569,8 @@ class TestRound1:
         ``SPECIFIC_ATTRIBUTES``, which the statement requires (round 3: none reads a whole item)."""
         _seed_deployment(aws)
         put_feedback(aws, 'f1', metadata={'email': REVIEWER})
-        aws['projects'].put_item(Item={'pk': project_pk(DEP_LIVE), 'sk': 'PERSONA#lin', 'input_feedback_ids': ['f1']})
+        aws['projects'].put_item(Item={'pk': project_pk(DEP_LIVE, workspace=None), 'sk': 'PERSONA#lin',
+                                       'input_feedback_ids': ['f1']})
         _with_marker(aws)
         sent: list[tuple[str, list[str], object]] = []
 
@@ -604,9 +608,9 @@ class TestRound1:
         for operation in ('GetItem', 'PutItem'):
             events.register(f'provide-client-params.dynamodb.{operation}', record)
 
-        comments.put_thread(aws['projects'], _member_thread('one'))
-        comments.put_thread(aws['projects'], _member_thread('two'))
-        comments.put_thread(aws['projects'], _member_thread('three'), series_listed=True)
+        comments.put_thread(aws['projects'], _member_thread('one'), workspace=None)
+        comments.put_thread(aws['projects'], _member_thread('two'), workspace=None)
+        comments.put_thread(aws['projects'], _member_thread('three'), series_listed=True, workspace=None)
         assert calls == ['GetItem', 'PutItem', 'GetItem']
 
 
@@ -619,12 +623,12 @@ class TestRound2:
         META (owner, members) and leftover personas, reached through ``PROJECT_IDS``."""
         deployment_project(aws, 'proj_half_000007', status='deleting', owner_email=REVIEWER,
                            members={'sub-r': {'role': 'viewer', 'username': 'r', 'email': REVIEWER}})
-        aws['projects'].put_item(Item={'pk': project_pk('proj_half_000007'), 'sk': 'PERSONA#p',
+        aws['projects'].put_item(Item={'pk': project_pk('proj_half_000007', workspace=None), 'sk': 'PERSONA#p',
                                        'research_notes': [{'author': REVIEWER, 'text': 'x'}]})
         result = _erase_by_email(aws, worker_context)
         meta = _meta(aws, 'proj_half_000007', None)
         assert ('owner_email' in meta, meta['members']['sub-r']) == (False, {'role': 'viewer', 'username': 'r'})
-        persona = _row(aws, {'pk': project_pk('proj_half_000007'), 'sk': 'PERSONA#p'})
+        persona = _row(aws, {'pk': project_pk('proj_half_000007', workspace=None), 'sk': 'PERSONA#p'})
         assert persona['research_notes'][0]['author'] == comments.TEAM_MEMBER_NAME
         assert result[PROJECT_COUNTER] == 2
 

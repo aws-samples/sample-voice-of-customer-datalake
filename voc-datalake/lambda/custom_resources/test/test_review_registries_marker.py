@@ -38,7 +38,7 @@ def _event(request_type: str = 'Create', **props: Any) -> dict[str, Any]:
     """The event as the stack sends it: the table, and the index and partition its policy allows (the Python stores'
     names; review-registries-marker.test.ts holds the stack's to the same values)."""
     return {'RequestType': request_type, 'ResourceProperties': {
-        'TableName': TABLE, 'IndexName': PROJECTS_BY_TYPE_INDEX, 'Partition': project_type_pk(), 'Release': '7.93.0',
+        'TableName': TABLE, 'IndexName': PROJECTS_BY_TYPE_INDEX, 'Partition': project_type_pk(workspace=None), 'Release': '7.93.0',
         **props}}
 
 
@@ -47,7 +47,7 @@ def _marker(table) -> dict[str, Any] | None:
 
 
 def _project(table, project_id: str = 'proj_live_000001') -> None:
-    table.put_item(Item={'pk': f'PROJECT#{project_id}', 'sk': 'META', 'gsi1pk': project_type_pk(),
+    table.put_item(Item={'pk': f'PROJECT#{project_id}', 'sk': 'META', 'gsi1pk': project_type_pk(workspace=None),
                          'gsi1sk': '2026-11-01T00:00:00+00:00'})
 
 
@@ -97,7 +97,7 @@ def test_a_missing_property_fails_the_deploy(name):
 def test_the_stack_sends_the_same_index_and_partition():
     stack = (Path(seed.__file__).parents[2] / 'lib' / 'stacks' / 'retention-worker.ts').read_text(encoding='utf-8')
     assert f"export const PROJECTS_INDEX = '{PROJECTS_BY_TYPE_INDEX}';" in stack
-    assert f"export const DEPLOYMENT_PROJECTS_PARTITION = '{project_type_pk()}';" in stack
+    assert f"export const DEPLOYMENT_PROJECTS_PARTITION = '{project_type_pk(workspace=None)}';" in stack
 
 
 def test_the_one_query_reads_one_row_of_keys_on_the_index():
@@ -108,12 +108,12 @@ def test_the_one_query_reads_one_row_of_keys_on_the_index():
             calls.append(kwargs)
             return {'Items': []}
 
-    assert seed.has_a_project(Recording(), PROJECTS_BY_TYPE_INDEX, project_type_pk()) is False
+    assert seed.has_a_project(Recording(), PROJECTS_BY_TYPE_INDEX, project_type_pk(workspace=None)) is False
     [call] = calls
     names = call['ExpressionAttributeNames']
     assert (call['IndexName'], call['Limit'], call['Select']) == (PROJECTS_BY_TYPE_INDEX, 1, 'SPECIFIC_ATTRIBUTES')
     assert {names[part.strip()] for part in call['ProjectionExpression'].split(',')} == {'pk', 'sk'}
-    assert call['ExpressionAttributeValues'] == {':p': project_type_pk()}
+    assert call['ExpressionAttributeValues'] == {':p': project_type_pk(workspace=None)}
 
 
 def test_its_names_are_the_python_stores():

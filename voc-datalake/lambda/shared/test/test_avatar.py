@@ -119,7 +119,7 @@ class TestGeneratePersonaAvatar:
             'identity': {'occupation': 'Engineer'},
         }
 
-        result = generate_persona_avatar(persona, s3_bucket='test-bucket')
+        result = generate_persona_avatar(persona, s3_bucket='test-bucket', workspace=None)
 
         # Deliberately a LITERAL. Deriving the extension from
         # get_image_model_config() would take the expectation from the same
@@ -148,7 +148,7 @@ class TestGetAvatarCdnUrl:
     def _signed_cdn_url(s3_uri: str, **kwargs) -> str:
         """get_avatar_cdn_url for a case that must produce a URL."""
         from shared.avatar import get_avatar_cdn_url
-        result = get_avatar_cdn_url(s3_uri, **kwargs)
+        result = get_avatar_cdn_url(s3_uri, **kwargs, workspace=None)
         assert result is not None
         return result
 
@@ -168,22 +168,23 @@ class TestGetAvatarCdnUrl:
         None makes the SPA draw its gradient fallback instead.
         """
         from shared.avatar import get_avatar_cdn_url
-        result = get_avatar_cdn_url('s3://bucket/avatars/persona_123.png', cdn_url='https://cdn.example.com')
+        result = get_avatar_cdn_url('s3://bucket/avatars/persona_123.png', cdn_url='https://cdn.example.com',
+                                    workspace=None)
         assert result is None
 
     def test_returns_none_for_empty_uri(self):
         from shared.avatar import get_avatar_cdn_url
-        assert get_avatar_cdn_url('') is None
-        assert get_avatar_cdn_url(None) is None
+        assert get_avatar_cdn_url('', workspace=None) is None
+        assert get_avatar_cdn_url(None, workspace=None) is None
 
     def test_returns_none_for_non_s3_uri(self):
         from shared.avatar import get_avatar_cdn_url
-        assert get_avatar_cdn_url('https://example.com/image.png') is None
+        assert get_avatar_cdn_url('https://example.com/image.png', workspace=None) is None
 
     def test_returns_none_when_no_cdn_url(self):
         from shared.avatar import get_avatar_cdn_url
         with patch.dict('os.environ', {'AVATARS_CDN_URL': ''}):
-            result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
+            result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='', workspace=None)
         assert result is None
 
     @pytest.mark.usefixtures("cdn_signing_configured")
@@ -235,7 +236,7 @@ class TestImageModelClientIsReused:
             results = [
                 generate_persona_avatar(
                     {'persona_id': persona_id, 'name': persona_id, 'identity': {}},
-                    s3_bucket='b',
+                    s3_bucket='b', workspace=None,
                 )
                 for persona_id in persona_ids
             ]
@@ -296,7 +297,7 @@ class TestImageModelClientIsReused:
                 results = list(pool.map(
                     lambda pid: generate_persona_avatar(
                         {'persona_id': pid, 'name': pid, 'identity': {}},
-                        s3_bucket='b',
+                        s3_bucket='b', workspace=None,
                     ),
                     persona_ids,
                 ))
@@ -362,7 +363,7 @@ class TestS3ClientIsSharedNotBuiltPerAvatar:
                 def one(pid):
                     return generate_persona_avatar(
                         {'persona_id': pid, 'name': pid, 'identity': {}},
-                        s3_bucket='b',
+                        s3_bucket='b', workspace=None,
                     )
 
                 if concurrent:

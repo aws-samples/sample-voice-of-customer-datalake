@@ -17,6 +17,52 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.99.00] - 2026-11-27
+
+The project stores name their scope at every call (slice 3h-S1 of docs/multi-workspace.md's project plan, the first
+part of "3h, the switch"; plumbing, no behaviour change). Until now the access gate and the project stores took
+`workspace` with a default, the deployment, so a call that forgot to pass a request's workspace read or wrote the
+deployment's rows without a sign. Now, in the gate and the stores listed in `GUARDED`
+(`lambda/shared/test/test_project_workspace_keyword.py`), `workspace` is a required keyword: a call that names no
+scope fails at once, and a static guard keeps every call spelling it out. The other project-adjacent modules that
+still default to the deployment join `GUARDED` in 3h-S1b, before the switch.
+
+### Changed
+
+- `workspace` is a required keyword-only parameter (no default) of every function that takes it in the modules of
+  `GUARDED`: the key and gate modules, the document stores, the object and pin modules, `api/product_context.py` and
+  `api/projects.py` (`create_project`, the object prefixes). `project_access.meta_gate_read`, `prototype_pins.pin_key`
+  and `list_pins` gain it; `project_keys.project_registry_pk` and `review_link_registry_pk` take it by keyword, not by
+  position (only a private helper and `require_deployment`, the refusal itself, take a scope by position).
+- New `project_keys.persona_keys(project_id, persona_id, listed_at, *, workspace)`, beside `document_keys`: a persona
+  row's keys, used by the personas' save (`api/projects.py`) and the persona importer.
+- Every caller that passed nothing now passes `workspace=None`, the deployment, as the default did: the API routes,
+  the job workers, the retention worker's reads, the agents and the operator scripts. Where a function already holds
+  a scope it passes that one on: the gate's own reads, its pin check, `prototype_incorporation.selected_pins`,
+  `agents/plan_waits.py` and the library's project link (each after its refusal of a workspace, so the value is the
+  same None). `PrototypeStore` keeps its `workspace`, and every function that takes a store passes `store.workspace`
+  on. The two MCP pin checks keep a literal None, marked: a credential's pin is a deployment project until 3h-S9. No
+  key, request or answer changes (the CDK baseline's template hashes move with the Lambda code assets only).
+- The project bundle scripts read the version partition as the deployment's (`workspace=None`); the exporter and the
+  `--new-ids` map take a required `workspace` and refuse any but None (`remap.deployment_only`,
+  `WorkspaceRefusedError`).
+
+### Tests
+
+- `test_project_workspace_keyword.py` (new): no default in `GUARDED`, every production call names its scope, a held
+  scope is passed on (a literal None needs `# deployment: <reason>`), and a ratchet of the literal Nones per module.
+- `test_ws_raw_access.py`: 35 calls of its project accessors took the default, which it did not count (35 is that
+  scan of 7.98.00's code with each default read as a literal None); 2 now pass `store.workspace`, the other 33 spell
+  `workspace=None`, which it counts, so 11 modules' `ALLOWED` entries gain `project accessor(workspace=None)`: the same
+  access, visible now.
+- The tests' own calls name their scope, and their fakes of a store accept it (and check it is None).
+
+### Docs
+
+- docs/multi-workspace.md: the 7.99.00 status row, 3h's required keyword and static check marked done (3h-S1), and
+  three follow-ups: 3h-S1b (the other project-adjacent modules join `GUARDED`), 3h-S9 (what the MCP server does with a
+  workspace credential's deployment pin) and the guard's blind spots (a store's methods on an instance).
+
 ## [7.98.00] - 2026-11-27
 
 An erasure by email reaches the prototype pins' replies (slice 3g-pin of docs/multi-workspace.md's project plan;

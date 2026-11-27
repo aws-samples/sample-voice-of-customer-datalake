@@ -25,7 +25,8 @@ def _run(series: list[dict], head: dict, counts: dict[str, int]) -> tuple[list[d
     forms = {prototype_pins.pin_form_id(row['document_id']): row['document_id'] for row in [*series, head]}
     calls: list[tuple] = []
 
-    def list_pins(_table: Any, form_id: str, status: str | None = None) -> list[dict]:
+    def list_pins(_table: Any, form_id: str, status: str | None = None, *, workspace: Any) -> list[dict]:
+        assert workspace is None  # the deployment's pins
         document_id = forms[form_id]
         calls.append((document_id, status))
         return [{'pin_id': f'pin_{document_id}x{n}', 'document_id': 'stale', 'version': 99, 'status': status_n}
@@ -34,8 +35,8 @@ def _run(series: list[dict], head: dict, counts: dict[str, int]) -> tuple[list[d
 
     with (patch.object(feedback, 'series_versions', return_value=series) as versions,
           patch.object(prototype_pins, 'list_pins', side_effect=list_pins)):
-        pins = feedback.series_pins('projects', 'pins', 'proj_1', head)
-    versions.assert_called_once_with('projects', 'proj_1', head)
+        pins = feedback.series_pins('projects', 'pins', 'proj_1', head, workspace=None)
+    versions.assert_called_once_with('projects', 'proj_1', head, workspace=None)
     return pins, calls
 
 
@@ -195,7 +196,8 @@ def _read(versions: int) -> dict:
     series = [{'document_id': f'doc_v{n}', 'version': Decimal(n)} for n in range(versions, 0, -1)]
     with (patch.object(feedback, 'series_versions', return_value=series),
           patch.object(prototype_pins, 'list_pins', return_value=[])):
-        return feedback.read_feedback('projects', 'pins', 'proj_1', {'document_id': series[0]['document_id']})
+        return feedback.read_feedback('projects', 'pins', 'proj_1', {'document_id': series[0]['document_id']},
+                                      workspace=None)
 
 
 class TestOneUnreadVersionIsPartial:

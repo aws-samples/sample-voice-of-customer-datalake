@@ -234,7 +234,8 @@ def _read(series: list[dict], pins_by_doc: dict[str, list[dict]] | None = None, 
     forms = {prototype_pins.pin_form_id(doc): doc for doc in [row['document_id'] for row in series] + ['doc_lone']}
     calls: list[tuple[str, str | None]] = []
 
-    def list_pins(_table: Any, form_id: str, status: str | None = None) -> list[dict]:
+    def list_pins(_table: Any, form_id: str, status: str | None = None, *, workspace: Any) -> list[dict]:
+        assert workspace is None  # the deployment's pins
         calls.append((forms[form_id], status))
         return pins_by_doc.get(forms[form_id], [])
 
@@ -244,8 +245,8 @@ def _read(series: list[dict], pins_by_doc: dict[str, list[dict]] | None = None, 
         patch.object(feedback, 'series_versions', return_value=series) as versions,
         patch.object(prototype_pins, 'list_pins', side_effect=list_pins),
     ):
-        answer = feedback.read_feedback('projects', 'pins', 'proj_1', head, **kwargs)
-    versions.assert_called_once_with('projects', 'proj_1', head)
+        answer = feedback.read_feedback('projects', 'pins', 'proj_1', head, **kwargs, workspace=None)
+    versions.assert_called_once_with('projects', 'proj_1', head, workspace=None)
     return answer, calls
 
 

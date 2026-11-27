@@ -28,12 +28,12 @@ class TestAbsentCdnEnvFailsClosed:
     def test_unset_env_var_returns_none_even_with_signing_configured(self):
         with patch.dict('os.environ'):
             os.environ.pop('PROTOTYPES_CDN_URL', None)
-            assert prototype_signed_url('p', 'd') is None
+            assert prototype_signed_url('p', 'd', workspace=None) is None
 
     def test_explicit_cdn_url_wins_over_an_unset_env_var(self):
         with patch.dict('os.environ'):
             os.environ.pop('PROTOTYPES_CDN_URL', None)
-            url = prototype_signed_url('p', 'd', cdn_url='https://d111.cloudfront.net/prototypes')
+            url = prototype_signed_url('p', 'd', cdn_url='https://d111.cloudfront.net/prototypes', workspace=None)
         assert url is not None
         assert url.split('?')[0] == 'https://d111.cloudfront.net/prototypes/p/d.html'
 
@@ -50,6 +50,6 @@ class TestOnlyTrailingSlashesAreStrippedFromTheCdnBase:
         ('https://dXXX.cloudfront.net/prototypes.', 'https://dXXX.cloudfront.net/prototypes./p/d.html'),
     ])
     def test_url_before_the_signature(self, cdn_url, unsigned):
-        url = prototype_signed_url('p', 'd', cdn_url=cdn_url)
+        url = prototype_signed_url('p', 'd', cdn_url=cdn_url, workspace=None)
         assert url is not None
         assert url.split('?')[0] == unsigned

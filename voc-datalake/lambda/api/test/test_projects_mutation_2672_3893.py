@@ -269,7 +269,7 @@ class TestDuplicateDocument:
             'document_id': f'dup_{CUSTOM_DIGEST}',
             'title': 'Source title',
         }
-        put.assert_called_once_with(table, 'dst', expected_item, 'document_count')
+        put.assert_called_once_with(table, 'dst', expected_item, 'document_count', workspace=None)
         assert result == {'success': True, 'document': {
             'project_id': 'dst', 'document_id': f'dup_{CUSTOM_DIGEST}',
             'document_type': 'custom', 'title': 'Source title',
@@ -332,7 +332,7 @@ class TestDuplicateDocument:
             'document_type': 'custom', 'content': 'body',
             'gsi1pk': 'PROJECT#dst#DOCUMENTS', 'gsi1sk': NOW, 'created_at': NOW, 'updated_at': NOW,
             'duplicated_from': {'project_id': 'src', 'document_id': 'd1'},
-        })
+        }, workspace=None)
         assert result == {'success': True, 'document': {
             'project_id': 'dst', 'document_id': 'new', 'document_type': doc_type, 'title': 'Base (v1)',
         }}
@@ -358,7 +358,7 @@ class TestDuplicateDocument:
                 patch.object(projects, '_copy_prototype_html') as copy_html, \
                 patch.object(projects, 'persist_versioned_document') as persist:
             result = projects.duplicate_document('src', 'd1', 'dst')
-        lookup.assert_called_once_with(table, 'dst', 'prototype', 'duplicate:src:d1')
+        lookup.assert_called_once_with(table, 'dst', 'prototype', 'duplicate:src:d1', workspace=None)
         copy_html.assert_not_called()
         persist.assert_not_called()
         assert result == {'success': True, 'document': {
@@ -515,7 +515,7 @@ class TestRegeneratePersonaAvatar:
             },
         }
         sweep.assert_called_once_with('p1', 'per_1', None, 's3://b/avatars/per_1/abc.png')
-        sign.assert_called_once_with('s3://b/avatars/per_1/abc.png')
+        sign.assert_called_once_with('s3://b/avatars/per_1/abc.png', workspace=None)
         assert result == {
             'success': True, 'avatar_url': 'https://cdn/signed', 'avatar_prompt': 'portrait',
         }

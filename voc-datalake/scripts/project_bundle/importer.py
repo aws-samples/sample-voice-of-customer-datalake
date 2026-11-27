@@ -203,7 +203,7 @@ class Importer:
     def plan(self, project: ProjectBundle, options: ImportOptions) -> ProjectPlan:
         summary, source_id = project.summary, project.project_id
         all_rows = [item for _, item in project.rows]
-        id_map = new_id_map(all_rows, source_id) if options.new_ids else {}
+        id_map = new_id_map(all_rows, source_id, workspace=None) if options.new_ids else {}
         plan = ProjectPlan(source_id=source_id, project_id=id_map.get(source_id, source_id),
                            name=str(summary.get('name') or ''))
         if self._exists(plan.project_id):

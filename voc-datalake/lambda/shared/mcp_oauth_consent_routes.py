@@ -135,7 +135,9 @@ def approve_consent():
     except AuthorizeRefused as refused:
         raise ValidationError(refused.description) from refused
     scope = _consented_scope(body, request)
-    project_id = project_gate.require_viewable_pin(_projects(), body.get('project_id'), caller)
+    project_id = project_gate.require_viewable_pin(
+        _projects(), body.get('project_id'), caller,
+        workspace=None)  # deployment: a credential's pin is a deployment project until 3h-S9
     now = _now()
     store.put_grant(_projects(), grants.grant_item(
         subject=caller.subject, username=caller.username, is_admin=caller.is_admin, client_id=request.client_id,

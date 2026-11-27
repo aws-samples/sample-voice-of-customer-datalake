@@ -97,7 +97,7 @@ class TestGetAvatarCdnUrl:
         from shared.avatar import get_avatar_cdn_url
 
         s3_uri = 's3://bucket/avatars/persona_123.png'
-        result = get_avatar_cdn_url(s3_uri, cdn_url='https://cdn.example.com')
+        result = get_avatar_cdn_url(s3_uri, cdn_url='https://cdn.example.com', workspace=None)
 
         assert result is not None
         assert result.startswith('https://cdn.example.com/persona_123.png?')
@@ -110,7 +110,7 @@ class TestGetAvatarCdnUrl:
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop('AVATARS_CDN_URL', None)
-            result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
+            result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='', workspace=None)
 
         assert result is None
 
@@ -118,7 +118,7 @@ class TestGetAvatarCdnUrl:
         """Returns None for invalid S3 URI."""
         from shared.avatar import get_avatar_cdn_url
 
-        result = get_avatar_cdn_url('not-an-s3-uri')
+        result = get_avatar_cdn_url('not-an-s3-uri', workspace=None)
 
         assert result is None
 
@@ -126,7 +126,7 @@ class TestGetAvatarCdnUrl:
         """Returns None for empty URI."""
         from shared.avatar import get_avatar_cdn_url
 
-        result = get_avatar_cdn_url('')
+        result = get_avatar_cdn_url('', workspace=None)
 
         assert result is None
 
@@ -383,9 +383,9 @@ class TestDocumentVersionBoundaries:
             'persist', 'preserve', 'transact',
         ]
         mock_persist.assert_called_once_with(
-            mock_table, 'p1', [target, sibling, custom],
+            mock_table, 'p1', [target, sibling, custom], workspace=None,
         )
-        mock_preserve.assert_called_once_with(mock_table, 'p1', target)
+        mock_preserve.assert_called_once_with(mock_table, 'p1', target, workspace=None)
         transaction = mock_table.meta.client.transact_write_items.call_args.kwargs[
             'TransactItems'
         ]

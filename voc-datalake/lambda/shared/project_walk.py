@@ -109,7 +109,7 @@ def registry_page(view: WorkspaceTable | DeploymentTable, scope: WorkspaceScope 
     deployment's ``PROJECT_IDS``: every project it made, a deleted one too, as its delete keeps the row), each row
     read with ``REGISTRY_PROJECTION`` (any ``deleted_at`` but null reads deleted); the library's reserved id is left
     out, not counted."""
-    partition = DEPLOYMENT_PROJECT_REGISTRY_PK if scope is None else project_registry_pk(scope)
+    partition = DEPLOYMENT_PROJECT_REGISTRY_PK if scope is None else project_registry_pk(workspace=scope)
     rows, following = query_page(view, partition, checked_key(start), Limit=ID_PAGE,
                                  ConsistentRead=True, ProjectionExpression=REGISTRY_PROJECTION)
     registered = [registered_project(row) for row in rows if row.get('sk') != COMPANY_PERSONAS_CONTAINER]

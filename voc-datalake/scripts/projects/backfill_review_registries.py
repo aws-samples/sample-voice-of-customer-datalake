@@ -177,7 +177,7 @@ def scan_page(table: Any, kind: str, start: Mapping[str, Any] | None, after: str
             if found is None and not is_workspace_id(item.get(ROUTE_WORKSPACE_FIELD)):
                 malformed += 1
         elif kind == PROJECTS:
-            project_id = project_id_of(pk)
+            project_id = project_id_of(pk, workspace=None)
             if project_id == COMPANY_PERSONAS_CONTAINER:
                 continue  # the persona library's container: the walks read it on their own
             found = project_id if is_project_id(project_id) else None

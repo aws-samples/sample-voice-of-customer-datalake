@@ -221,7 +221,7 @@ def session_key(session_id: str) -> dict[str, str]:
 
 def pointer_key(project_id: str, session_id: str) -> dict[str, str]:
     """The project's listing pointer to its session (the projects API's alone: the relay cannot reach ``PROJECT#``)."""
-    return {'pk': project_pk(project_id), 'sk': f'{SESSION_PREFIX}{session_id}'}
+    return {'pk': project_pk(project_id, workspace=None), 'sk': f'{SESSION_PREFIX}{session_id}'}
 
 
 def session_keys_of_pointers(keys: Iterable[Mapping[str, str]]) -> list[dict[str, str]]:
@@ -302,7 +302,8 @@ class Stores:
 def _project_persona(stores: Stores, project_id: str, persona_id: str) -> dict[str, Any]:
     if is_company_container(project_id):
         raise ValidationError('Only a project\'s personas can be talked to by voice')
-    persona = stores.projects.get_item(Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'}).get('Item')
+    key = {'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'}
+    persona = stores.projects.get_item(Key=key).get('Item')
     if not isinstance(persona, dict):
         raise NotFoundError('Persona not found')
     return persona
@@ -461,7 +462,7 @@ def _evidence(stores: Stores, project_id: str, persona: Mapping[str, Any], scope
 
 
 def _project_name(stores: Stores, project_id: str) -> str:
-    meta = stores.projects.get_item(Key=project_meta_key(project_id)).get('Item') or {}
+    meta = stores.projects.get_item(Key=project_meta_key(project_id, workspace=None)).get('Item') or {}
     return str(meta.get('name') or '')
 
 
@@ -668,7 +669,8 @@ def _save_left_sessions(stores: Stores, project_id: str, caller: Caller, start_f
         pointers = query_all(stores.projects, {
             'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :voice)', 'FilterExpression': 'starter_sub = :sub',
             'ProjectionExpression': 'session_id, persona_id, created_at',
-            'ExpressionAttributeValues': {':pk': project_pk(project_id), ':voice': SESSION_PREFIX, ':sub': caller.subject},
+            'ExpressionAttributeValues': {':pk': project_pk(project_id, workspace=None), ':voice': SESSION_PREFIX,
+                                          ':sub': caller.subject},
         })
     except Exception:  # noqa: BLE001 - the next offer tries again
         logger.warning('The voice sessions left unsaved could not be listed', extra={'project_id': project_id})

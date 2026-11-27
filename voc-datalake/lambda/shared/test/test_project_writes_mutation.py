@@ -93,11 +93,11 @@ def test_no_table_name_anywhere_is_refused(monkeypatch, env):
 
 
 def test_meta_key_addresses_the_project_partition_meta_row():
-    assert project_meta_key('p1') == {'pk': 'PROJECT#p1', 'sk': 'META'}
+    assert project_meta_key('p1', workspace=None) == {'pk': 'PROJECT#p1', 'sk': 'META'}
 
 
 def test_writable_condition_checks_the_meta_row_with_the_tombstone_fence():
-    assert project_writable_condition('voc-projects', 'p1') == {
+    assert project_writable_condition('voc-projects', 'p1', workspace=None) == {
         'ConditionCheck': {
             'TableName': 'voc-projects',
             'Key': {'pk': 'PROJECT#p1', 'sk': 'META'},
@@ -115,10 +115,10 @@ def test_writable_condition_checks_the_meta_row_with_the_tombstone_fence():
 
 
 def test_writable_condition_hands_out_fresh_mappings():
-    first = project_writable_condition('voc-projects', 'p1')['ConditionCheck']
+    first = project_writable_condition('voc-projects', 'p1', workspace=None)['ConditionCheck']
     first['ExpressionAttributeNames']['#extra'] = 'extra'
     first['ExpressionAttributeValues'][':extra'] = 1
 
-    second = project_writable_condition('voc-projects', 'p1')['ConditionCheck']
+    second = project_writable_condition('voc-projects', 'p1', workspace=None)['ConditionCheck']
     assert '#extra' not in second['ExpressionAttributeNames']
     assert ':extra' not in second['ExpressionAttributeValues']

@@ -1081,7 +1081,7 @@ def _review_link_pages(ctx: Context, _cursor: dict[str, Any] | None) -> Batch:
     """A page of the workspace's review link registry, ``WS#{ws}#DOCSHARE_IDS`` (keys alone; shared/project_keys.py
     ``review_link_registry_pk``). No cursor into it: each id's row is deleted when its link is done, so each page
     reads what is left, and a sweep stopped anywhere resumes from the registry."""
-    rows = items(_page(ctx.projects, 'pk', review_link_registry_pk(ctx.scope), None, Limit=PAGE, ConsistentRead=True,
+    rows = items(_page(ctx.projects, 'pk', review_link_registry_pk(workspace=ctx.scope), None, Limit=PAGE, ConsistentRead=True,
                        **KEYS_ONLY))
     return Batch(rows, {} if rows else None)
 

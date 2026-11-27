@@ -42,9 +42,9 @@ def _child(**extra):
 
 def _write(writer, table, item):
     if writer == 'child_only':
-        put_project_item(table, 'p1', item)
+        put_project_item(table, 'p1', item, workspace=None)
     else:
-        put_project_item_and_increment(table, 'p1', item, 'document_count')
+        put_project_item_and_increment(table, 'p1', item, 'document_count', workspace=None)
 
 
 @pytest.mark.parametrize('writer', ['child_only', 'child_and_count'])
@@ -87,7 +87,7 @@ def test_live_project_status_allows_project_child_creation(projects_table, statu
     item = _child(created_at='2026-09-03T12:01:00+00:00')
 
     put_project_item_and_increment(
-        projects_table, 'p1', item, 'document_count',
+        projects_table, 'p1', item, 'document_count', workspace=None,
     )
 
     assert _get(projects_table, CHILD_KEY)['document_id'] == 'new'
@@ -104,7 +104,7 @@ def test_child_without_created_at_stamps_meta_with_the_clock(projects_table):
     with frozen_clock(project_writes) as clock:
         clock.now.return_value = frozen
         put_project_item_and_increment(
-            projects_table, 'p1', _child(), 'document_count',
+            projects_table, 'p1', _child(), 'document_count', workspace=None,
         )
 
     clock.now.assert_called_once_with(UTC)
@@ -118,7 +118,7 @@ def test_first_child_counts_from_zero_when_meta_has_no_counter(projects_table):
 
     put_project_item_and_increment(
         projects_table, 'p1', _child(created_at='2026-09-03T12:01:00+00:00'),
-        'persona_count',
+        'persona_count', workspace=None,
     )
 
     assert _get(projects_table, META_KEY)['persona_count'] == 1
@@ -141,7 +141,7 @@ def test_child_only_write_leaves_meta_untouched(projects_table):
     meta = {**META_KEY, 'document_count': 4, 'updated_at': '2026-09-01T00:00:00+00:00'}
     projects_table.put_item(Item=meta)
 
-    put_project_item(projects_table, 'p1', _child(title='note'))
+    put_project_item(projects_table, 'p1', _child(title='note'), workspace=None)
 
     assert _get(projects_table, CHILD_KEY)['title'] == 'note'
     assert _get(projects_table, META_KEY) == meta

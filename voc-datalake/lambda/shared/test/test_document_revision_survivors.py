@@ -47,9 +47,9 @@ def table():
 
 def _thread(table, *, status=dc.STATUS_RESOLVED, replies=()):
     item = dc.thread_item(project_id='p1', series_id=SERIES_ID, document=DOCUMENT, author=USER,
-                          text='Say what it costs per seat', anchor=None)
-    item.update(status=status, replies=[dc.reply_item(USER, r) for r in replies])
-    dc.put_thread(table, item)
+                          text='Say what it costs per seat', anchor=None, workspace=None)
+    item |= {'status': status, 'replies': [dc.reply_item(USER, r) for r in replies]}
+    dc.put_thread(table, item, workspace=None)
     return item
 
 
@@ -69,7 +69,7 @@ def _run(table, reply, *, outcome=rev.OUTCOME_PROPOSAL, document=DOCUMENT, actor
         return ConverseResult(text=reply, model_id=MODEL)
     result = rev.run_revision(table, project_id='p1', series_id=SERIES_ID, document=document,
                               document_type=document_type, wanted=None, outcome=outcome, revise_id='rid1',
-                              actor=actor, evidence=[], invoke=invoke)
+                              actor=actor, evidence=[], invoke=invoke, workspace=None)
     return result, [system for _prompt, system in asked]
 
 
@@ -127,7 +127,7 @@ class TestEvidenceIsOneKeyedReadPerReview:
             def query(self, **kwargs):
                 calls.append(kwargs)
                 return {'Items': [{'feedback_id': 'fb1', 'original_text': 'Too pricey'}]}
-        found = rev.read_evidence(Feedback(), {'input_feedback_ids': ['fb1']}, None)
+        found = rev.read_evidence(Feedback(), {'input_feedback_ids': ['fb1']}, None, workspace=None)
         assert found == [{'feedback_id': 'fb1', 'original_text': 'Too pricey'}]
         assert calls == [{'IndexName': 'gsi4-by-feedback-id', 'Limit': 1,
                           'KeyConditionExpression': Key('gsi4pk').eq('FEEDBACK#fb1')}]
@@ -283,7 +283,8 @@ class TestTheDefaultSeamAsksTheDocumentsSurface:
         answered = ConverseResult(text=_answer(), model_id=MODEL)
         with patch('shared.document_revision.converse_detailed', return_value=answered) as converse:
             rev.run_revision(table, project_id='p1', series_id=SERIES_ID, document=DOCUMENT, document_type='prfaq',
-                             wanted=None, outcome=rev.OUTCOME_PROPOSAL, revise_id='r', actor=ACTOR, evidence=[])
+                             wanted=None, outcome=rev.OUTCOME_PROPOSAL, revise_id='r', actor=ACTOR, evidence=[],
+                             workspace=None)
         [(args, kwargs)] = converse.call_args_list
         assert args == ()
         assert set(kwargs) == {'prompt', 'system_prompt', 'max_tokens', 'temperature', 'surface', 'step_name'}
@@ -336,7 +337,7 @@ class TestTheResultOfEveryOutcome:
         thread = _thread(table)
         result, _ = _run(table, self.REPLY, outcome=rev.OUTCOME_APPLIED, actor={'kind': 'user'})
         assert result['addressed_thread_ids'] == [thread['comment_id']]
-        stored = dc.get_thread(table, 'p1', SERIES_ID, thread['comment_id'])
+        stored = dc.get_thread(table, 'p1', SERIES_ID, thread['comment_id'], workspace=None)
         assert stored is not None
         assert stored['addressed']['by_sub'] == ''
 

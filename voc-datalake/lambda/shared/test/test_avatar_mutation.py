@@ -58,7 +58,7 @@ CONFIG = {'system_prompt': 'S', 'user_prompt_template': '{name}', 'max_tokens': 
           'fallback_prompt_template': 'H', 'image_model': IMAGE_MODEL}
 PERSONA = {'persona_id': 'p1', 'name': 'Test Persona', 'identity': {}}
 # The content-addressed key the default stubbed image (b'image-bytes') is stored under.
-KEY = avatar_object_key('p1', b'image-bytes', 'jpeg')
+KEY = avatar_object_key('p1', b'image-bytes', 'jpeg', workspace=None)
 
 
 def _generate(persona: dict = PERSONA, *, config: dict = CONFIG, bedrock: MagicMock | None = None,
@@ -81,7 +81,7 @@ def _generate(persona: dict = PERSONA, *, config: dict = CONFIG, bedrock: MagicM
             patch('shared.avatar_failure.logger', logger), \
             patch.dict('os.environ', env or {}, clear=env is not None):
         boto3_mock.client.return_value = bedrock
-        result = generate_persona_avatar(persona, **kwargs)
+        result = generate_persona_avatar(persona, **kwargs, workspace=None)
     return result, logger, bedrock, s3
 
 
@@ -170,13 +170,13 @@ class TestImageModelConfig:
 
 class TestAvatarObjectInventory:
     def test_every_historical_extension_in_order(self):
-        assert avatar_object_keys('p1') == (
+        assert avatar_object_keys('p1', workspace=None) == (
             'avatars/p1.png', 'avatars/p1.jpeg', 'avatars/p1.jpg', 'avatars/p1.webp')
 
     def test_a_generated_image_gets_its_own_content_addressed_key(self):
         expected = 'avatars/p1/' + hashlib.sha256(b'image-bytes').hexdigest()[:24] + '.jpeg'
         assert expected == KEY
-        assert avatar_object_key('p1', b'other-bytes', 'jpeg') != KEY
+        assert avatar_object_key('p1', b'other-bytes', 'jpeg', workspace=None) != KEY
 
 
 class TestAvatarObjectOwner:
@@ -319,7 +319,7 @@ class TestGeneratePersonaAvatarHappyPath:
 
     def test_a_persona_without_an_id_is_written_as_unknown(self):
         result, _, _, _ = _generate({'name': 'N', 'identity': {}}, s3_bucket='b')
-        assert result['avatar_url'] == f"s3://b/{avatar_object_key('unknown', b'image-bytes', 'jpeg')}"
+        assert result['avatar_url'] == f"s3://b/{avatar_object_key('unknown', b'image-bytes', 'jpeg', workspace=None)}"
 
     def test_the_progress_log_lines_verbatim(self):
         _, logger, _, _ = _generate(s3_bucket='b')
@@ -475,16 +475,17 @@ class TestCdnUrl:
     def test_only_trailing_slashes_are_stripped_from_the_cdn_base(self):
         sign_url = MagicMock(return_value='signed')
         with patch('shared.cloudfront_signing.sign_url', sign_url):
-            assert get_avatar_cdn_url('s3://b/avatars/t.jpeg', cdn_url='https://cdn.example.com/X//') == 'signed'
+            assert get_avatar_cdn_url('s3://b/avatars/t.jpeg', cdn_url='https://cdn.example.com/X//',
+                                      workspace=None) == 'signed'
         sign_url.assert_called_once_with('https://cdn.example.com/X/t.jpeg')
 
     def test_an_unset_env_var_is_a_warning_and_none(self):
         with patch.dict('os.environ', {}, clear=True), patch('shared.avatar.logger') as logger:
-            assert get_avatar_cdn_url('s3://b/avatars/t.jpeg') is None
+            assert get_avatar_cdn_url('s3://b/avatars/t.jpeg', workspace=None) is None
         logger.warning.assert_called_once_with('AVATARS_CDN_URL not configured')
 
     def test_a_signing_failure_is_logged_with_the_uri(self):
         with patch('shared.cloudfront_signing.sign_url', side_effect=RuntimeError('no key')), \
                 patch('shared.avatar.logger') as logger:
-            assert get_avatar_cdn_url('s3://b/avatars/t.jpeg', cdn_url='https://cdn') is None
+            assert get_avatar_cdn_url('s3://b/avatars/t.jpeg', cdn_url='https://cdn', workspace=None) is None
         logger.exception.assert_called_once_with('Failed to generate CDN URL for s3://b/avatars/t.jpeg: no key')

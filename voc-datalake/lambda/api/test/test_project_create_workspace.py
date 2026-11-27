@@ -73,7 +73,7 @@ def test_a_workspace_create_writes_the_claim_the_meta_and_the_registry_row(table
 
     assert project['project_id'] == FIRST
     assert _keys(table) == [(f'PROJECT_ID#{FIRST}', 'CLAIM'), (project_pk(FIRST, workspace=A), 'META'),
-                            (project_registry_pk(A), FIRST)]
+                            (project_registry_pk(workspace=A), FIRST)]
     meta = table.get_item(Key={'pk': project_pk(FIRST, workspace=A), 'sk': 'META'})['Item']
     assert meta['gsi1pk'] == f'WS#{A.ws}#TYPE#PROJECT'
     assert project_claim(table, FIRST) == A
@@ -116,7 +116,7 @@ def test_another_cancellation_is_not_retried_and_writes_no_claim(table):
             pytest.raises(ClientError, match='TransactionCanceled'):
         _create(A)
 
-    assert _keys(table) == [(project_registry_pk(A), FIRST)]
+    assert _keys(table) == [(project_registry_pk(workspace=A), FIRST)]
     assert project_claim(table, FIRST) is None
 
 

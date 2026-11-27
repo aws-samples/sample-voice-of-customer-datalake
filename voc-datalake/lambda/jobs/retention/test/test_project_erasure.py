@@ -165,25 +165,27 @@ def _seed_deployment(aws) -> dict[str, dict[str, Any]]:
     creator = {'sub': 'sub-lead', 'name': LEAD}
     live, _ = ds.create_share(aws['projects'], project_id=DEP_LIVE, series=SERIES, document_id='doc_1', creator=creator,
                               values=ds.validate_share_body({'audience': {
-                                  'mode': 'list', 'emails': [REVIEWER, OTHER_REVIEWER], 'domains': ['partner.example']}}))
+                                  'mode': 'list', 'emails': [REVIEWER, OTHER_REVIEWER], 'domains': ['partner.example']}}),
+                              workspace=None)
     revoked, _ = ds.create_share(aws['projects'], project_id=DEP_LIVE, series=SERIES_TWO, document_id='doc_2',
                                  creator=creator, values=ds.validate_share_body(
-                                     {'audience': {'mode': 'list', 'emails': [REVIEWER]}}))
-    assert ds.revoke_share(aws['projects'], DEP_LIVE, SERIES_TWO['series_id'], LEAD)
+                                     {'audience': {'mode': 'list', 'emails': [REVIEWER]}}), workspace=None)
+    assert ds.revoke_share(aws['projects'], DEP_LIVE, SERIES_TWO['series_id'], LEAD, workspace=None)
     document = {'document_id': 'doc_1', 'version': 1}
     for project_id in (DEP_LIVE, DEP_GONE):
         member = comments.thread_item(project_id=project_id, series_id=SERIES['series_id'], document=document,
-                                      author=comments.user_author('sub-lead', LEAD), text='Member note', anchor=None)
+                                      author=comments.user_author('sub-lead', LEAD), text='Member note', anchor=None,
+                                      workspace=None)
         member['replies'] = [comments.reply_item(comments.reviewer_author(REVIEWER), 'A reviewer reply.')]
         reviewer = comments.thread_item(project_id=project_id, series_id=SERIES['series_id'], document=document,
                                         author=comments.reviewer_author(REVIEWER, REVIEWER_NAME), text='Reviewer note',
-                                        anchor=None, share_id=live['share_id'])
+                                        anchor=None, share_id=live['share_id'], workspace=None)
         for thread in (member, reviewer):
-            comments.put_thread(aws['projects'], thread)
+            comments.put_thread(aws['projects'], thread, workspace=None)
     # The deleted project: its META tombstoned (off the index, kept in PROJECT_IDS), its partition emptied by its
     # delete.
     deployment_project(aws, DEP_GONE, status='deleted', deleted_at=STAMP, owner_email=REVIEWER)
-    own, folder = project_pk(DEP_LIVE), _dep_docs(DEP_LIVE)
+    own, folder = project_pk(DEP_LIVE, workspace=None), _dep_docs(DEP_LIVE)
     for item in (
         {'pk': own, 'sk': 'PERSONA#per_1', 'persona_id': 'per_1', 'input_feedback_ids': ['f1', 'f2'],
          'research_notes': [{'note_id': 'n1', 'author': REVIEWER, 'text': 'Asked them'}]},
@@ -538,7 +540,7 @@ class TestAnErasureByEmailReachesTheWorkspacesProjects:
         _list_workspace(aws, WS, 'Alpha')
         create_workspace_project(aws['projects'], {'pk': project_pk(LIVE, workspace=A), 'sk': 'META',
                                                    'project_id': LIVE, 'created_at': STAMP}, workspace=A)
-        for item in ({'pk': project_registry_pk(A), 'sk': 'bad#id'},
+        for item in ({'pk': project_registry_pk(workspace=A), 'sk': 'bad#id'},
                      {**review_link_registry_key('shr_bad', workspace=A)},
                      {**comment_series_key(LIVE, 'ser_nope', workspace=A)}):
             aws['projects'].put_item(Item=item)
@@ -963,7 +965,7 @@ class TestTheWorkspacesLineage:
                                    {'mode': 'elsewhere'})
 
     def test_a_malformed_registry_row_is_counted(self, aws):
-        aws['projects'].put_item(Item={'pk': project_registry_pk(A), 'sk': 'bad#id'})
+        aws['projects'].put_item(Item={'pk': project_registry_pk(workspace=A), 'sk': 'bad#id'})
         run, _steps = _lineage_to_the_end(aws, {**_run(), 'erased_sources': ['web'], runs.LINEAGE_WORKSPACES: [WS]})
         assert run[MALFORMED_ID_COUNTER] == 1
 
@@ -978,8 +980,8 @@ def deployment_project(aws, project_id: str, **meta: Any) -> None:
     writer), then its ``META`` on ``gsi1-by-type``; one whose ``status`` is ``deleting`` or ``deleted`` as the
     delete's fence leaves it (``_start_project_deletion`` removes ``gsi1pk`` and ``gsi1sk``)."""
     register_deployment_project(aws['projects'], project_id, STAMP)
-    index = {} if meta.get('status') in ('deleting', 'deleted') else {'gsi1pk': project_type_pk(), 'gsi1sk': STAMP}
-    aws['projects'].put_item(Item={'pk': project_pk(project_id), 'sk': 'META', 'project_id': project_id,
+    index = {} if meta.get('status') in ('deleting', 'deleted') else {'gsi1pk': project_type_pk(workspace=None), 'gsi1sk': STAMP}
+    aws['projects'].put_item(Item={'pk': project_pk(project_id, workspace=None), 'sk': 'META', 'project_id': project_id,
                                    'created_at': STAMP, **index, **meta})
 
 
@@ -1041,7 +1043,7 @@ class TestTheDeploymentsLineageByQuery:
         for project_id in ('p1', 'p2', 'p3'):
             deployment_project(aws, project_id)
             for n in range(2):
-                aws['projects'].put_item(Item={'pk': project_pk(project_id), 'sk': f'PRD#d{n}',
+                aws['projects'].put_item(Item={'pk': project_pk(project_id, workspace=None), 'sk': f'PRD#d{n}',
                                                'input_feedback_ids': ['f1'] if n else ['f9']})
         with_marker(aws)
         run, cursor, steps = {**_run(), 'erased_sources': ['web']}, None, 0

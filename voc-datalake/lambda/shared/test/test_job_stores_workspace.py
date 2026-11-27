@@ -119,7 +119,7 @@ def test_a_job_is_created_and_updated_in_its_scope_only(table, scope):
 
 
 def test_a_workspace_jobs_status_partition_is_its_own():
-    assert job_status_pk('running') == 'STATUS#running'
+    assert job_status_pk('running', workspace=None) == 'STATUS#running'
     assert job_status_pk('running', workspace=A) == f'WS#{WS_A}#STATUS#running'
 
 
@@ -128,7 +128,7 @@ def test_an_update_in_another_scope_never_writes_a_row(table):
     jobs.update_job_status(PROJECT, job_id, 'failed', 0, 'error', error='x', workspace=B)
     jobs.update_job_status(PROJECT, job_id, 'failed', 0, 'error', error='x')
     assert _rows(table, project_pk(PROJECT, workspace=B)) == []
-    assert _rows(table, project_pk(PROJECT)) == []
+    assert _rows(table, project_pk(PROJECT, workspace=None)) == []
     row = _row(table, A, job_id)
     assert row is not None
     assert row['status'] == 'running'
@@ -195,7 +195,7 @@ def test_a_job_event_that_names_a_workspace_fails_its_own_row_and_runs_nothing(t
     assert row['status'] == 'failed'
     assert row['gsi1pk'] == f'WS#{WS_A}#STATUS#failed'
     assert row['error'] == 'Document generation failed: Project job work is not per workspace yet'
-    assert _rows(table, project_pk(PROJECT)) == []
+    assert _rows(table, project_pk(PROJECT, workspace=None)) == []
 
 
 def test_a_job_event_without_a_workspace_runs_as_before(table):
@@ -231,7 +231,8 @@ def test_progress_lands_in_the_contexts_workspace(table):
 def test_a_notice_reads_its_workspaces_row(table):
     table.put_item(Item={'pk': project_pk(PROJECT, workspace=A), 'sk': 'JOB#job_1', 'initiated_by': 'sub-a',
                          'job_type': 'research'})
-    table.put_item(Item={'pk': project_pk(PROJECT), 'sk': 'JOB#job_1', 'initiated_by': 'sub-deployment'})
+    table.put_item(Item={'pk': project_pk(PROJECT, workspace=None), 'sk': 'JOB#job_1',
+                         'initiated_by': 'sub-deployment'})
     with patch.object(job_notices.realtime, 'configured', return_value=True), \
             patch.object(job_notices.realtime, 'publish', return_value=True) as publish:
         assert job_notices.notify_project_job(PROJECT, 'job_1', 'completed', workspace=A) is True

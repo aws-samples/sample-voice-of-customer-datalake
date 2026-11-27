@@ -153,7 +153,7 @@ def validated_pack_request(body: Mapping[str, Any]) -> tuple[list[str], str, int
 # ── Reading ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def _persona_key(project_id: str, persona_id: str) -> dict[str, str]:
-    return {'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'}
+    return {'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'}
 
 
 def _stored_persona(reader: Reader, project_id: str, persona_id: str) -> dict | None:
@@ -164,7 +164,7 @@ def _stored_persona(reader: Reader, project_id: str, persona_id: str) -> dict | 
 def _project_filters(reader: Reader, project_id: str) -> dict[str, list[str]]:
     """The project's own feedback filters (``META.filters``): lists of strings only, anything else read as none."""
     meta = reader.projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': 'META'}, ProjectionExpression='filters',
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': 'META'}, ProjectionExpression='filters',
     ).get('Item') or {}
     stored = meta.get('filters')
     filters: Mapping[str, Any] = stored if isinstance(stored, Mapping) else {}

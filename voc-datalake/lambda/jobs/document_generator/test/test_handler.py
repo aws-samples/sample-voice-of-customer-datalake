@@ -672,7 +672,7 @@ class TestPrototypeVersionReplayAndStorage:
             mock_dynamodb['table'],
             sample_job_event['project_id'],
             'prototype',
-            sample_job_event['job_id'],
+            sample_job_event['job_id'], workspace=None,
         )
         mock_dynamodb['table'].query.assert_not_called()
         mock_dynamodb['table'].get_item.assert_not_called()
@@ -919,7 +919,7 @@ def test_generated_document_replay_returns_before_context_or_model_work(
         mock_dynamodb['table'],
         sample_job_event['project_id'],
         document_type,
-        sample_job_event['job_id'],
+        sample_job_event['job_id'], workspace=None,
     )
     mock_dynamodb['table'].query.assert_not_called()
     mock_converse_chain.assert_not_called()

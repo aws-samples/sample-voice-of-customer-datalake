@@ -244,7 +244,7 @@ def _records(
     ownership = _ownership(request, fixture_id)
     project_items = [
         {
-            'pk': project_pk(project_id),
+            'pk': project_pk(project_id, workspace=None),
             'sk': 'META',
             'gsi1pk': PROJECT_TYPE_PK,
             'gsi1sk': _FIXED_CREATED_AT,
@@ -262,7 +262,7 @@ def _records(
             **ownership,
         },
         {
-            **document_keys(project_id, f'PRD#{document_id}', _FIXED_CREATED_AT),
+            **document_keys(project_id, f'PRD#{document_id}', _FIXED_CREATED_AT, workspace=None),
             'document_id': document_id,
             'document_type': 'prd',
             'title': 'ABCA prioritization baseline',
@@ -298,7 +298,7 @@ def _existing_expiry(
 ) -> tuple[str, int] | None:
     """The owned fixture's (expires_at, ttl) when it can be reused as is, else None."""
     item = projects_table.get_item(
-        Key={'pk': project_pk(ids['project_id']), 'sk': 'META'},
+        Key={'pk': project_pk(ids['project_id'], workspace=None), 'sk': 'META'},
         ConsistentRead=True,
     ).get('Item')
     if item is None:
@@ -403,11 +403,11 @@ def probe_fixture(request: dict[str, str]) -> dict[str, Any]:
     ids = _ids(request)
     ownership = _ownership(request, ids['fixture_id'])
     project = _require_owned(_get_exact(
-        projects, {'pk': project_pk(ids['project_id']), 'sk': 'META'},
+        projects, {'pk': project_pk(ids['project_id'], workspace=None), 'sk': 'META'},
     ), ownership, 'project')
     document_id = ids['document_ids']['scorable_prd']
     document = _require_owned(_get_exact(
-        projects, {'pk': project_pk(ids['project_id']), 'sk': f'PRD#{document_id}'},
+        projects, {'pk': project_pk(ids['project_id'], workspace=None), 'sk': f'PRD#{document_id}'},
     ), ownership, 'document')
     row_id = ids['row_ids']['baseline_row']
     row = _require_owned(_get_exact(
@@ -439,8 +439,8 @@ def teardown_fixture(request: dict[str, str]) -> dict[str, Any]:
     row_id = ids['row_ids']['baseline_row']
     project_name, aggregate_name = _table_name(projects, 'Projects'), _table_name(aggregates, 'Aggregates')
     keys = [
-        (projects, project_name, {'pk': project_pk(project_id), 'sk': 'META'}),
-        (projects, project_name, {'pk': project_pk(project_id), 'sk': f'PRD#{document_id}'}),
+        (projects, project_name, {'pk': project_pk(project_id, workspace=None), 'sk': 'META'}),
+        (projects, project_name, {'pk': project_pk(project_id, workspace=None), 'sk': f'PRD#{document_id}'}),
         (aggregates, aggregate_name, {'pk': PRIORITIZATION_PK, 'sk': f'ROW#{row_id}'}),
     ]
     _transact(

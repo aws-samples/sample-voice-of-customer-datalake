@@ -196,7 +196,9 @@ def _token_expiry(body: dict, now: datetime) -> str:
 
 def _token_project(body: dict, caller: Caller) -> str | None:
     """The optional project pin, which the minter must be able to view (shared with OAuth consent)."""
-    return project_gate.require_viewable_pin(_projects_table(), body.get('project_id'), caller)
+    return project_gate.require_viewable_pin(
+        _projects_table(), body.get('project_id'), caller,
+        workspace=None)  # deployment: a credential's pin is a deployment project until 3h-S9
 
 
 def _require_room_for_another(caller: Caller, now: datetime) -> None:

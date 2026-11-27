@@ -396,7 +396,7 @@ class TestThePinMustNameAProjectTheMinterCanView:
             # The gate's reader is lazy: only the gate decides whether to spend the read.
             read_meta.assert_not_called()
             assert read_gate() == {'pk': 'x'}
-            read_meta.assert_called_once_with(table, ALPHA)
+            read_meta.assert_called_once_with(table, ALPHA, workspace=None)
 
 
 class TestTheActiveTokenCap:

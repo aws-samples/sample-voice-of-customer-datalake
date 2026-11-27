@@ -80,5 +80,5 @@ class TestTheOtherReaders:
         table = MagicMock()
         table.query.side_effect = lambda **kwargs: {'Items': [CUSTOMER if 'c1' in str(
             kwargs['KeyConditionExpression'].get_expression()['values'][1]) else APP]}
-        found = document_revision.read_evidence(table, {'input_feedback_ids': ['c1', 'app1']}, None)
+        found = document_revision.read_evidence(table, {'input_feedback_ids': ['c1', 'app1']}, None, workspace=None)
         assert _ids(found) == ['c1']

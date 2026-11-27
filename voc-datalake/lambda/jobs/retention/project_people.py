@@ -445,7 +445,7 @@ class ProjectPeopleEraser:
     def _link_pages_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
         """The next page of the scope's links: a workspace's link registry, or the deployment's (``DOCSHARE_IDS``, the
         backfill's own rows left out)."""
-        partition = DEPLOYMENT_LINK_REGISTRY_PK if scope is None else review_link_registry_pk(scope)
+        partition = DEPLOYMENT_LINK_REGISTRY_PK if scope is None else review_link_registry_pk(workspace=scope)
         links, following = self._registry_ids(scope, partition, at.get('links_from'), is_share_id)
         return {**at, 'links': links, 'links_from': following, 'links_done': following is None}
 

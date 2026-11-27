@@ -244,7 +244,7 @@ def persist_legacy_document_versions(
     project_id: str,
     documents: Iterable[dict[str, Any]],
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> list[dict[str, Any]]:
     """Persist deterministic identity for legacy managed documents once.
 
@@ -1117,7 +1117,7 @@ def get_versioned_document_by_allocation(
     document_type: str,
     allocation_id: str,
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> dict[str, Any] | None:
     """Return a committed allocation and reject replay after its deletion (``workspace``'s project when given)."""
     document_key = _document_key(project_id, document_type, allocation_id, workspace=workspace)
@@ -1156,7 +1156,7 @@ def preserve_versioned_document_allocation(
     project_id: str,
     document: dict[str, Any],
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> None:
     """Durably preserve a generated managed document's allocation before delete (``workspace``'s project when
     given)."""
@@ -1193,7 +1193,7 @@ def persist_versioned_document(
     item_fields: dict[str, Any],
     *,
     expected_last_version: int | None = None,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> dict[str, Any]:
     """Atomically persist one version-managed document and return its item.
 
@@ -1488,7 +1488,7 @@ STALE_SERIES_MESSAGE = 'The document was changed by someone else; reload it and 
 
 
 def series_head_version(table, project_id: str, document_type: str, requested_title: str, *,
-                        workspace: WorkspaceScope | None = None) -> int:
+                        workspace: WorkspaceScope | None) -> int:
     """The series' head as ``persist_versioned_document`` judges ``expected_last_version`` against it: its
     counter, or every version in use past it (0 for a series with none), read in ``workspace`` when given (since
     7.37.00) like the other readers here. Its callers (Revise from comments, a prototype's Back to vN and draft

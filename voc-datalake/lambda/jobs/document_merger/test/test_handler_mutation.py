@@ -348,7 +348,7 @@ class TestTheSave:
     def test_a_versioned_document_goes_through_the_allocator(self, world, output_type):
         result = _run(output_type=output_type, title='T')
 
-        world.lookup.assert_called_once_with(world.projects, PROJECT_ID, output_type, JOB_ID)
+        world.lookup.assert_called_once_with(world.projects, PROJECT_ID, output_type, JOB_ID, workspace=None)
         (table, project_id, document_type, title, allocation, fields), _ = world.persist.call_args
         assert (table, project_id, document_type, title, allocation) == (
             world.projects, PROJECT_ID, output_type, 'T', JOB_ID,

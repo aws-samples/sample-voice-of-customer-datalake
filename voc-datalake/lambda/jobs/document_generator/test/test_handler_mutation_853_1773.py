@@ -356,7 +356,7 @@ class TestGeneratePrototype:
         build['get_versioned_document_by_allocation'].return_value = {'document_id': 'old', 'title': 'Old'}
         assert build.run() == {'document_id': 'old', 'title': 'Old'}
         build['get_versioned_document_by_allocation'].assert_called_once_with(
-            build.table, PROJECT, 'prototype', JOB,
+            build.table, PROJECT, 'prototype', JOB, workspace=None,
         )
         build.ctx.update_progress.assert_called_once_with(100, 'saved')
         build['_source_document'].assert_not_called()
@@ -424,7 +424,7 @@ class TestGeneratePrototype:
             company_logo_included=None,
         )
         build['persist_versioned_document'].assert_called_once_with(
-            build.table, PROJECT, 'prototype', 'Prototype: Acme App', JOB, build.item_fields,
+            build.table, PROJECT, 'prototype', 'Prototype: Acme App', JOB, build.item_fields, workspace=None,
         )
         assert build.item_fields == {
             's3_key': 'k', 'gsi1pk': 'PROJECT#proj_1#DOCUMENTS', 'gsi1sk': NOW,
@@ -553,7 +553,7 @@ class TestHandleJob:
             get_versioned_document_by_allocation=existing, _gather_context=gather,
         )
         assert result == {'document_id': 'e', 'title': 'E'}
-        existing.assert_called_once_with(tables.projects, PROJECT, 'prd', JOB)
+        existing.assert_called_once_with(tables.projects, PROJECT, 'prd', JOB, workspace=None)
         gather.assert_not_called()
 
     def test_a_chain_document_is_generated_and_saved(self):
@@ -601,7 +601,7 @@ class TestHandleJob:
             {'feedback_items_used': 3, 'input_feedback_ids': ['f1']}, {'date_basis': 'b'}, {'m': 1},
         )
         mocks['persist_versioned_document'].assert_called_once_with(
-            tables.projects, PROJECT, 'prfaq', 'Mine', JOB, {'fields': 1},
+            tables.projects, PROJECT, 'prfaq', 'Mine', JOB, {'fields': 1}, workspace=None,
         )
         assert ctx.update_progress.call_args_list == [
             call(10, 'gathering_context'), call(50, 'generating_document'), call(90, 'saving_document'),
@@ -729,7 +729,7 @@ class TestBuildSteps:
         )
         assert result == {'doc_type': 'prfaq', 'title': 'T', 'feature_idea': 'idea',
                           'num_steps': 2, 'replayed': False}
-        allocation.assert_called_once_with(tables.projects, PROJECT, 'prfaq', JOB)
+        allocation.assert_called_once_with(tables.projects, PROJECT, 'prfaq', JOB, workspace=None)
         gather.assert_called_once_with(job_context.return_value, tables.projects, tables.feedback, PROJECT, config)
         spec.build_steps.assert_called_once_with(
             feature_idea='idea', personas_context='PE', feedback_context='FB',
@@ -847,7 +847,8 @@ class TestAssembleAndSave:
         mocks = self._patches(existing={'document_id': 'e'})
         result, tables, _ = self._run(mocks)
         assert result == {'done': 1}
-        mocks['get_versioned_document_by_allocation'].assert_called_once_with(tables.projects, PROJECT, 'prd', JOB)
+        mocks['get_versioned_document_by_allocation'].assert_called_once_with(tables.projects, PROJECT, 'prd', JOB,
+                                                                              workspace=None)
         mocks['_complete_with_existing'].assert_called_once_with(PROJECT, JOB, {'document_id': 'e'})
         mocks['_get_text'].assert_not_called()
 
@@ -863,7 +864,7 @@ class TestAssembleAndSave:
             PROJECT, JOB, 'idea', 'DOC', {'d': 1}, {'an': 1}, {'u': 1}, {'b': 1}, {},
         )
         mocks['persist_versioned_document'].assert_called_once_with(
-            tables.projects, PROJECT, 'prd', 'Title', JOB, {'f': 1},
+            tables.projects, PROJECT, 'prd', 'Title', JOB, {'f': 1}, workspace=None,
         )
         prefix = 'scratch/document_jobs/job_1/'
         mocks['_s3'].return_value.delete_objects.assert_called_once_with(Bucket=H.SCRATCH_BUCKET, Delete={'Objects': [

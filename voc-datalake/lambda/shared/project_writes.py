@@ -78,7 +78,7 @@ PROJECT_WRITABLE_ATTRIBUTE_VALUES = {
 PUT_AND_INCREMENT_PUT_INDEX = 0
 
 
-def project_meta_key(project_id: str, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+def project_meta_key(project_id: str, *, workspace: WorkspaceScope | None) -> dict[str, str]:
     return {'pk': project_pk(project_id, workspace=workspace), 'sk': 'META'}
 
 
@@ -101,7 +101,7 @@ def deployment_project_live(table: Any, project_id: str) -> bool:
     a ServiceError, never an answer. The agents API's PRD check (agents_handler.py ``_require_deployment_prd``)."""
     meta = read_gate_item(
         table, log_message='PRD project read failed', error_message='Could not check the PRD. Please retry.',
-        Key=project_meta_key(project_id), ConsistentRead=True, ProjectionExpression=LIVE_PROJECTION,
+        Key=project_meta_key(project_id, workspace=None), ConsistentRead=True, ProjectionExpression=LIVE_PROJECTION,
         ExpressionAttributeNames={'#status': 'status', '#deleting': PROJECT_DELETION_ATTRIBUTE})
     return meta is not None and not is_project_tombstone(meta)
 
@@ -135,7 +135,7 @@ def projects_table_name(table) -> str:
 
 
 def project_writable_condition(
-    table_name: str, project_id: str, *, workspace: WorkspaceScope | None = None,
+    table_name: str, project_id: str, *, workspace: WorkspaceScope | None,
 ) -> dict[str, Any]:
     """DynamoDB condition check shared by every project child mutation."""
     return {
@@ -157,7 +157,7 @@ def transact_project_writes(
     table,
     entries: list[dict[str, Any]],
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
     outside: OutsideEntry | None = None,
 ) -> None:
     """One TransactWriteItems of ``entries`` (boto3's client shape, each naming ``table`` in ``TableName``).
@@ -224,7 +224,7 @@ def transact_project_actions(
     project_id: str,
     actions: list[dict[str, Any]],
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> None:
     """Commit child-only actions iff the project META row is writable."""
     transact_project_writes(table, [
@@ -238,7 +238,7 @@ def put_project_item(
     project_id: str,
     item: dict[str, Any],
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> None:
     """Create one project child without allowing overwrite or resurrection."""
     transact_project_actions(table, project_id, [{
@@ -256,7 +256,7 @@ def put_project_item_and_increment(
     item: dict[str, Any],
     count_attribute: str,
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> None:
     """Atomically create one child and increment its project META count."""
     table_name = projects_table_name(table)
@@ -300,7 +300,7 @@ def create_counted_project_child(
     build_item: Callable[[str], dict[str, Any]],
     *,
     now: datetime | None = None,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> dict[str, Any]:
     """Mint a ``prefix`` id, build the document from it, put it and bump the project's ``document_count``.
 

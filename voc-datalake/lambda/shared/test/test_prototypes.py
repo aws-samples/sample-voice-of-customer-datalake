@@ -15,7 +15,7 @@ import pytest
 class TestPrototypeS3Key:
     def test_key_layout(self):
         from shared.prototypes import prototype_s3_key
-        assert prototype_s3_key('proj_1', 'prototype_2') == 'prototypes/proj_1/prototype_2.html'
+        assert prototype_s3_key('proj_1', 'prototype_2', workspace=None) == 'prototypes/proj_1/prototype_2.html'
 
 
 class TestPrototypeSignedUrl:
@@ -25,7 +25,7 @@ class TestPrototypeSignedUrl:
     def _signed(project_id: str, document_id: str, **kwargs) -> str:
         """prototype_signed_url for a case that must produce a URL."""
         from shared.prototypes import prototype_signed_url
-        url = prototype_signed_url(project_id, document_id, **kwargs)
+        url = prototype_signed_url(project_id, document_id, **kwargs, workspace=None)
         assert url is not None
         return url
 
@@ -43,7 +43,7 @@ class TestPrototypeSignedUrl:
 
         url = self._signed('proj_9', 'prototype_9', cdn_url=self.CDN)
 
-        assert urlparse(url).path == f'/{prototype_s3_key("proj_9", "prototype_9")}'
+        assert urlparse(url).path == f'/{prototype_s3_key("proj_9", "prototype_9", workspace=None)}'
 
     @pytest.mark.usefixtures("cdn_signing_configured")
     def test_strips_a_trailing_slash_on_the_cdn_base(self):
@@ -62,19 +62,19 @@ class TestPrototypeSignedUrl:
     def test_returns_none_without_a_cdn_base(self):
         from shared.prototypes import prototype_signed_url
         with patch.dict('os.environ', {'PROTOTYPES_CDN_URL': ''}):
-            assert prototype_signed_url('p', 'd') is None
+            assert prototype_signed_url('p', 'd', workspace=None) is None
 
     def test_returns_none_when_signing_is_unavailable(self):
         """Fail closed: prototype HTML is PRD/PR-FAQ-derived, so this is the
         higher-sensitivity of the two protected paths."""
         from shared.prototypes import prototype_signed_url
-        assert prototype_signed_url('p', 'd', cdn_url=self.CDN) is None
+        assert prototype_signed_url('p', 'd', cdn_url=self.CDN, workspace=None) is None
 
     @pytest.mark.usefixtures("cdn_signing_configured")
     def test_returns_none_for_missing_ids(self):
         from shared.prototypes import prototype_signed_url
-        assert prototype_signed_url('', 'd', cdn_url=self.CDN) is None
-        assert prototype_signed_url('p', '', cdn_url=self.CDN) is None
+        assert prototype_signed_url('', 'd', cdn_url=self.CDN, workspace=None) is None
+        assert prototype_signed_url('p', '', cdn_url=self.CDN, workspace=None) is None
 
 
 class TestNoCryptoDependencyForWriters:
@@ -103,17 +103,17 @@ class TestPrototypeDraftKeyAndUrl:
 
     def test_key_layout(self):
         from shared.prototypes import prototype_draft_s3_key
-        assert prototype_draft_s3_key('proj_1', 'job_2') == 'prototypes/proj_1/drafts/job_2.html'
+        assert prototype_draft_s3_key('proj_1', 'job_2', workspace=None) == 'prototypes/proj_1/drafts/job_2.html'
 
     @pytest.mark.usefixtures("cdn_signing_configured")
     def test_the_signed_url_is_the_drafts_key(self):
         from shared.prototypes import prototype_draft_s3_key, prototype_draft_signed_url
 
-        url = prototype_draft_signed_url('proj_9', 'job_9', cdn_url=f'{self.CDN}/')
+        url = prototype_draft_signed_url('proj_9', 'job_9', cdn_url=f'{self.CDN}/', workspace=None)
 
         assert url is not None
         assert url.split('?')[0] == f'{self.CDN}/proj_9/drafts/job_9.html'
-        assert urlparse(url).path == f'/{prototype_draft_s3_key("proj_9", "job_9")}'
+        assert urlparse(url).path == f'/{prototype_draft_s3_key("proj_9", "job_9", workspace=None)}'
         assert set(parse_qs(urlparse(url).query)) == {'Expires', 'Signature', 'Key-Pair-Id'}
 
     @pytest.mark.usefixtures("cdn_signing_configured")
@@ -123,8 +123,8 @@ class TestPrototypeDraftKeyAndUrl:
     def test_none_without_an_id_or_a_cdn_base(self, project_id, draft_id, cdn_url):
         from shared.prototypes import prototype_draft_signed_url
         with patch.dict('os.environ', {'PROTOTYPES_CDN_URL': ''}):
-            assert prototype_draft_signed_url(project_id, draft_id, cdn_url=cdn_url) is None
+            assert prototype_draft_signed_url(project_id, draft_id, cdn_url=cdn_url, workspace=None) is None
 
     def test_none_when_signing_is_unavailable(self):
         from shared.prototypes import prototype_draft_signed_url
-        assert prototype_draft_signed_url('p', 'job_1', cdn_url=self.CDN) is None
+        assert prototype_draft_signed_url('p', 'job_1', cdn_url=self.CDN, workspace=None) is None

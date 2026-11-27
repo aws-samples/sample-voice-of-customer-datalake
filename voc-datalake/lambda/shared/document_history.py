@@ -159,7 +159,7 @@ def _series_documents(table: Any, project_id: str, document: dict, document_type
 
 
 def series_versions(table: Any, project_id: str, document: dict, *,
-                    workspace: WorkspaceScope | None = None) -> list[dict]:
+                    workspace: WorkspaceScope | None) -> list[dict]:
     """Every version of a managed ``document``'s series, newest first ([] for an unmanaged one).
 
     ``document`` needs only ``document_type`` (or a typed ``sk``) and ``base_title`` / ``title``;
@@ -270,7 +270,7 @@ def saves_nothing(document: Mapping[str, Any], body: dict, title: str | None = N
 
 def edit_document(table: Any, project_id: str, document: dict, body: dict, *, now: str,
                   title: str | None = None, revise: Mapping[str, Any] | None = None,
-                  workspace: WorkspaceScope | None = None) -> dict:
+                  workspace: WorkspaceScope | None) -> dict:
     """Apply an edit as a new version. ``title`` is the new title of an UNMANAGED document.
 
     ``body['expected_revision']`` (optional) is the revision the caller loaded; a
@@ -317,7 +317,7 @@ def edit_document(table: Any, project_id: str, document: dict, body: dict, *, no
 
 
 def list_document_versions(table: Any, project_id: str, document: dict, *,
-                           workspace: WorkspaceScope | None = None) -> dict:
+                           workspace: WorkspaceScope | None) -> dict:
     """The document's versions, newest first, each with its content (``workspace``'s project when given: its
     series, or the revisions in its version partition)."""
     document_type = managed_document_type(document)
@@ -336,7 +336,7 @@ def list_document_versions(table: Any, project_id: str, document: dict, *,
 
 
 def restore_document_version(table: Any, project_id: str, document: dict, version_id: str, body: dict, *,
-                             now: str, workspace: WorkspaceScope | None = None) -> dict:
+                             now: str, workspace: WorkspaceScope | None) -> dict:
     """A NEW version carrying ``version_id``'s content (history is added to, never rewritten), in ``workspace``'s
     project when given."""
     document_type = managed_document_type(document)
@@ -351,7 +351,7 @@ def restore_document_version(table: Any, project_id: str, document: dict, versio
 
 
 def restore_rows(table: Any, project_id: str, document: dict, version_id: str, *,
-                 workspace: WorkspaceScope | None = None) -> tuple[dict, dict]:
+                 workspace: WorkspaceScope | None) -> tuple[dict, dict]:
     """``(the version to restore, the series head)`` of a managed ``document``'s series; 404 when
     ``version_id`` is not a version of it (a prose restore here, a prototype's in shared/prototype_versions.py).
     ``workspace``: the project's scope (its own partition only)."""
@@ -390,7 +390,7 @@ def _revise_allocation_id(document: dict, revise_id: str) -> str:
 
 
 def require_series_head(table: Any, project_id: str, document: dict, *,
-                        workspace: WorkspaceScope | None = None) -> None:
+                        workspace: WorkspaceScope | None) -> None:
     """The stale-series ConflictError (409) when the PR/FAQ / PRD ``document`` is no longer its series' head:
     a version was saved since it was read. ``revise_document`` checks it again in its write. Read in ``workspace``
     when given (since 7.37.00); its one caller, Revise from comments (shared/document_revision.py), refuses a
@@ -403,7 +403,7 @@ def require_series_head(table: Any, project_id: str, document: dict, *,
 
 def revise_document(table: Any, project_id: str, document: dict, content: str, *, revise_id: str, now: str,
                     actor: dict[str, str], llm_metadata: Mapping[str, str],
-                    workspace: WorkspaceScope | None = None) -> dict:
+                    workspace: WorkspaceScope | None) -> dict:
     """The revised ``content`` of a PR/FAQ / PRD as the NEXT version of its series (never an overwrite).
 
     Conditioned on ``document`` still being the series head (409 otherwise: someone saved since the
@@ -442,7 +442,7 @@ def _restore_unmanaged(table: Any, project_id: str, document: dict, version_id: 
 
 
 def delete_document_revisions(table: Any, project_id: str, document_id: str, *,
-                              workspace: WorkspaceScope | None = None) -> None:
+                              workspace: WorkspaceScope | None) -> None:
     """Remove an unmanaged document's saved revisions (its own rows only), in ``workspace``'s project when given.
 
     One delete per saved revision the paged Query reads, so the work is bounded by the rows it read. The

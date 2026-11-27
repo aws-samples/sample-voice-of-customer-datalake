@@ -220,7 +220,7 @@ def _gather_context(
     # Query project items once if we need personas or documents
     wants_documents = data_sources.get('documents') or data_sources.get('research')
     if data_sources.get('personas') or wants_documents:
-        resp = projects_table.query(KeyConditionExpression=Key('pk').eq(project_pk(project_id)))
+        resp = projects_table.query(KeyConditionExpression=Key('pk').eq(project_pk(project_id, workspace=None)))
         all_project_items = resp.get('Items', [])
 
         # Gather personas
@@ -822,7 +822,7 @@ def _document_item_fields(project_id: str, job_id: str, feature_idea: str,
     """
     now = now_iso()
     item_fields = {
-        **document_listing(project_id, now),
+        **document_listing(project_id, now, workspace=None),
         'feature_idea': clean_stored_text(feature_idea),
         'content': clean_stored_text(content),
         'job_id': job_id,
@@ -966,7 +966,7 @@ def _put_prototype_html(
     (lib/utils/prototype-csp.ts) reads it to allow exactly that one connect-src.
     """
     return put_prototype_html(_s3(), SCRATCH_BUCKET, project_id, doc_id, html,
-                              os.environ.get(PIN_SUBMIT_API_BASE_ENV))
+                              os.environ.get(PIN_SUBMIT_API_BASE_ENV), workspace=None)
 
 
 def _get_prototype_html(project_id: str, doc_id: str) -> str:
@@ -974,7 +974,7 @@ def _get_prototype_html(project_id: str, doc_id: str) -> str:
     feedback-driven regeneration, which needs the prior prototype's content to
     revise rather than start from scratch.
     """
-    return read_prototype_html(_s3(), SCRATCH_BUCKET, project_id, doc_id)
+    return read_prototype_html(_s3(), SCRATCH_BUCKET, project_id, doc_id, workspace=None)
 
 
 def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id: str) -> dict | None:
@@ -990,7 +990,7 @@ def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id
     client-supplied id here without a separate ownership check.
     """
     resp = projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': f'{sk_prefix}{document_id}'},
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'{sk_prefix}{document_id}'},
     )
     return resp.get('Item') or None
 
@@ -1038,7 +1038,8 @@ def _newest_document_id(projects_table, project_id: str, sk_prefix: str) -> str 
     """
     newest = None
     params: dict = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)) & Key('sk').begins_with(sk_prefix),
+        'KeyConditionExpression': (Key('pk').eq(project_pk(project_id, workspace=None))
+                                   & Key('sk').begins_with(sk_prefix)),
         # None of these names can collide with a DynamoDB reserved word (`sk` is
         # not one, and the others contain an underscore), so no
         # ExpressionAttributeNames are needed. `sk` is here only as the fallback
@@ -1420,7 +1421,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     from shared.converse import converse
 
     existing = get_versioned_document_by_allocation(
-        projects_table, project_id, 'prototype', job_id,
+        projects_table, project_id, 'prototype', job_id, workspace=None,
     )
     if existing is not None:
         ctx.update_progress(100, 'saved')
@@ -1562,7 +1563,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
 
     item_fields = {
         **prototype_identity,
-        **document_listing(project_id, now),
+        **document_listing(project_id, now, workspace=None),
         # NO prototype_url here. `/prototypes/*` is restricted by a CloudFront
         # trusted key group (issue #229), so a usable URL carries a signature
         # and an expiry — persisting one would bake in an expiry that outlives
@@ -1642,7 +1643,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         'prototype',
         title,
         job_id,
-        item_fields,
+        item_fields, workspace=None,
     )
     ctx.update_progress(100, 'saved')
     return {'document_id': item['document_id'], 'title': item['title']}
@@ -1718,7 +1719,7 @@ def _incorporation_input(doc_config: dict) -> tuple[str, list[str], list[str]]:
 
 def _project_name(projects_table, project_id: str) -> str:
     """The project's name from its ``META`` row ('Project' when it has none)."""
-    item = projects_table.get_item(Key={'pk': project_pk(project_id), 'sk': 'META'}).get('Item') or {}
+    item = projects_table.get_item(Key={'pk': project_pk(project_id, workspace=None), 'sk': 'META'}).get('Item') or {}
     return item.get('name') or 'Project'
 
 
@@ -1729,9 +1730,10 @@ def _prior_draft_attempt(project_id: str, job_id: str) -> bool:
     they describe the same HTML: the job completes without a second model call. Anything less
     is drafted again (the object, write-once, is only ever written after its own detail).
     """
-    row = get_jobs_table().get_item(Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
+    row = get_jobs_table().get_item(Key={'pk': project_pk(project_id, workspace=None), 'sk': f'JOB#{job_id}'},
                                     ConsistentRead=True).get('Item') or {}
-    return isinstance(row.get(DRAFT_FIELD), Mapping) and draft_object_exists(_s3(), SCRATCH_BUCKET, project_id, job_id)
+    return isinstance(row.get(DRAFT_FIELD), Mapping) and draft_object_exists(_s3(), SCRATCH_BUCKET, project_id, job_id,
+                                                                             workspace=None)
 
 
 def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
@@ -1757,7 +1759,7 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
         raise NotFoundError('The prototype version this draft was asked on no longer exists.')
     # The company logo WE inlined goes back to its placeholder, as in a revision: base64 would eat the prior-HTML cap.
     prior_html = with_logo_placeholder(
-        strip_walkthrough(strip_pin_widget(version_html(_s3(), SCRATCH_BUCKET, project_id, base))))
+        strip_walkthrough(strip_pin_widget(version_html(_s3(), SCRATCH_BUCKET, project_id, base, workspace=None))))
     instruction = str(doc_config.get('instruction') or '').strip()
     if not instruction:
         raise ValidationError('The draft has no instruction.')
@@ -1817,8 +1819,8 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
         # does, True only when the logo was actually inlined (company_logo.logo_record).
         DRAFT_LOGO_KEY: {'included': logo_record(logo.uploaded, logo_uses)},
         **detail,
-    })
-    put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, draft)
+    }, workspace=None)
+    put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, draft, workspace=None)
     ctx.update_progress(100, 'saved')
     return {'draft_id': job_id}
 
@@ -1886,7 +1888,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
     spec = _chain_doc_type(doc_type)
 
     existing = get_versioned_document_by_allocation(
-        projects_table, project_id, doc_type, job_id,
+        projects_table, project_id, doc_type, job_id, workspace=None,
     )
     if existing is not None:
         return {
@@ -1928,7 +1930,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         doc_type,
         title,
         job_id,
-        item_fields,
+        item_fields, workspace=None,
     )
     return {'document_id': item['document_id'], 'title': item['title'], **_without_corpus_ids(feedback_fields),
             'methodology': methodology_block}
@@ -2046,7 +2048,7 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     spec = _chain_doc_type(doc_type)
 
     existing = get_versioned_document_by_allocation(
-        projects_table, project_id, doc_type, job_id,
+        projects_table, project_id, doc_type, job_id, workspace=None,
     )
     if existing is not None:
         _complete_with_existing(project_id, job_id, existing)
@@ -2149,7 +2151,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
     dynamodb = get_dynamodb_resource()
     projects_table = dynamodb.Table(PROJECTS_TABLE)
     existing = get_versioned_document_by_allocation(
-        projects_table, project_id, doc_type, job_id,
+        projects_table, project_id, doc_type, job_id, workspace=None,
     )
     if existing is not None:
         return _complete_with_existing(project_id, job_id, existing)
@@ -2173,7 +2175,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
         doc_type,
         title,
         job_id,
-        item_fields,
+        item_fields, workspace=None,
     )
 
     # Best-effort cleanup of the scratch prefix for this job.

@@ -41,14 +41,14 @@ LISTED_AT = '2026-11-13T10:00:00+00:00'
 
 def test_the_keys_are_the_stored_rows_keys():
     assert (PROJECT_PREFIX, PROJECT_TYPE_PK) == ('PROJECT#', 'TYPE#PROJECT')
-    assert project_pk('proj_1') == 'PROJECT#proj_1'
-    assert personas_index_pk('proj_1') == 'PROJECT#proj_1#PERSONAS'
+    assert project_pk('proj_1', workspace=None) == 'PROJECT#proj_1'
+    assert personas_index_pk('proj_1', workspace=None) == 'PROJECT#proj_1#PERSONAS'
 
 
 def test_a_documents_keys_list_it_among_its_projects_documents():
-    assert document_listing('proj_1', LISTED_AT) == {
+    assert document_listing('proj_1', LISTED_AT, workspace=None) == {
         'gsi1pk': 'PROJECT#proj_1#DOCUMENTS', 'gsi1sk': LISTED_AT}
-    assert document_keys('proj_1', 'DOC#doc_1', LISTED_AT) == {
+    assert document_keys('proj_1', 'DOC#doc_1', LISTED_AT, workspace=None) == {
         'pk': 'PROJECT#proj_1', 'sk': 'DOC#doc_1', 'gsi1pk': 'PROJECT#proj_1#DOCUMENTS',
         'gsi1sk': LISTED_AT}
 
@@ -77,7 +77,7 @@ def test_every_workspace_key_is_owned_by_its_workspace_only():
                 project_type_pk(workspace=A), document_listing('proj_1', LISTED_AT, workspace=A)['gsi1pk']):
         assert A.owns(key)
         assert not B.owns(key)
-    assert not A.owns(project_pk('proj_1'))
+    assert not A.owns(project_pk('proj_1', workspace=None))
 
 
 @pytest.mark.parametrize(('partition_key', 'scope', 'expected'), [
@@ -111,11 +111,11 @@ SHARE = 'shr_' + 'b' * 32
 
 
 def test_the_comment_and_link_keys_are_the_deployments_stored_keys():
-    assert comments_pk('proj_1', SERIES) == f'DCOMMENTS#proj_1#{SERIES}'
     assert comments_pk('proj_1', SERIES, workspace=None) == f'DCOMMENTS#proj_1#{SERIES}'
-    assert review_link_key(SHARE) == {'pk': f'DOCSHARE#{SHARE}', 'sk': 'META'}
+    assert comments_pk('proj_1', SERIES, workspace=None) == f'DCOMMENTS#proj_1#{SERIES}'
+    assert review_link_key(SHARE, workspace=None) == {'pk': f'DOCSHARE#{SHARE}', 'sk': 'META'}
     assert review_link_key(SHARE, workspace=None) == share_key(SHARE)
-    assert reviewer_rate_pk(SHARE, 'd' * 24) == f"DCRATE#{SHARE}#{'d' * 24}"
+    assert reviewer_rate_pk(SHARE, 'd' * 24, workspace=None) == f"DCRATE#{SHARE}#{'d' * 24}"
 
 
 def test_a_workspaces_comment_and_link_keys_are_the_same_keys_inside_it():
@@ -146,9 +146,9 @@ ALLOCATION_SK = f"ALLOCATION#PRD#{sha('job_1')}"
 
 
 def test_the_version_keys_are_the_deployments_stored_keys():
-    assert version_partition_key('proj_1') == 'DOCUMENT_VERSIONS#PROJECT#proj_1'
     assert version_partition_key('proj_1', workspace=None) == 'DOCUMENT_VERSIONS#PROJECT#proj_1'
-    counter = version_counter_key('proj_1', 'prd', 'trail map')
+    assert version_partition_key('proj_1', workspace=None) == 'DOCUMENT_VERSIONS#PROJECT#proj_1'
+    counter = version_counter_key('proj_1', 'prd', 'trail map', workspace=None)
     assert counter == {'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': COUNTER_SK}
     assert version_allocation_key('proj_1', 'prd', 'job_1', workspace=None) == {
         'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': ALLOCATION_SK}
@@ -156,7 +156,7 @@ def test_the_version_keys_are_the_deployments_stored_keys():
     assert legacy_assignment_key(counter, 'PRD#legacy_1') == {
         'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': f"LEGACY_ASSIGNMENT#{COUNTER_SK}#{sha('PRD#legacy_1')}"}
     assert document_revisions_prefix('doc_1') == 'REVISION#doc_1#'
-    assert document_revision_key('proj_1', 'doc_1', 7) == {
+    assert document_revision_key('proj_1', 'doc_1', 7, workspace=None) == {
         'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': 'REVISION#doc_1#000007'}
 
 
@@ -172,11 +172,11 @@ def test_a_workspaces_version_keys_are_the_same_keys_inside_it():
     assert document_revision_key('proj_1', 'doc_1', 7, workspace=A) == {'pk': partition, 'sk': 'REVISION#doc_1#000007'}
     assert A.owns(partition)
     assert not B.owns(partition)
-    assert not A.owns(version_partition_key('proj_1'))
+    assert not A.owns(version_partition_key('proj_1', workspace=None))
 
 
 def test_a_projects_partitions_are_listed_with_their_tables():
-    assert project_partitions('proj_1') == (
+    assert project_partitions('proj_1', workspace=None) == (
         ProjectPartition('project', 'PROJECTS_TABLE', 'PROJECT#proj_1'),
         ProjectPartition('versions', 'PROJECTS_TABLE', 'DOCUMENT_VERSIONS#PROJECT#proj_1'),
         ProjectPartition('jobs', 'JOBS_TABLE', 'PROJECT#proj_1'),
@@ -191,6 +191,6 @@ def test_a_projects_partitions_are_listed_with_their_tables():
 
 
 def test_a_jobs_status_partition_is_the_stored_one():
-    assert job_status_pk('running') == 'STATUS#running'
+    assert job_status_pk('running', workspace=None) == 'STATUS#running'
     assert job_status_pk('failed', workspace=None) == 'STATUS#failed'
     assert job_status_pk('running', workspace=A) == f'WS#{WS_A}#STATUS#running'

@@ -70,8 +70,8 @@ def _unmark(aws) -> None:
 def _unlisted_live_project(aws, project_id: str = 'proj_unlisted_0001', listed_at: str = STAMP) -> None:
     """A live project on ``gsi1-by-type`` that ``PROJECT_IDS`` does not name (an older writer's, after a single-stack
     rollback or an older bundle's import), sorted on the index by ``listed_at``."""
-    aws['projects'].put_item(Item={'pk': project_pk(project_id), 'sk': 'META', 'project_id': project_id,
-                                   'created_at': STAMP, 'gsi1pk': project_type_pk(), 'gsi1sk': listed_at,
+    aws['projects'].put_item(Item={'pk': project_pk(project_id, workspace=None), 'sk': 'META', 'project_id': project_id,
+                                   'created_at': STAMP, 'gsi1pk': project_type_pk(workspace=None), 'gsi1sk': listed_at,
                                    'owner_email': REVIEWER})
 
 
@@ -437,7 +437,7 @@ class TestWhatTheCheckReads:
         names = index['ExpressionAttributeNames']
         assert {names[part.strip()] for part in index['ProjectionExpression'].split(',')} <= set(
             registries.INDEX_ATTRIBUTES)
-        assert (index['Select'], index['ExpressionAttributeValues'][':p']) == ('SPECIFIC_ATTRIBUTES', project_type_pk())
+        assert (index['Select'], index['ExpressionAttributeValues'][':p']) == ('SPECIFIC_ATTRIBUTES', project_type_pk(workspace=None))
         request = batch['RequestItems'][PROJECTS_TABLE]
         projected = {request['ExpressionAttributeNames'][part.strip()] for part in
                      request['ProjectionExpression'].split(',')}

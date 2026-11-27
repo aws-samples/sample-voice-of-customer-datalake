@@ -357,9 +357,20 @@ class TestRefusals:
         assert 'reserved for the verification fixture' in str(importer.reserved_id_refusal(reserved))
         assert '--new-ids' in str(importer.reserved_id_refusal(reserved))
         assert importer.reserved_id_refusal(PID) is None
-        assert importer.reserved_id_refusal(remap.new_id_map([], reserved)[reserved]) is None
+        assert importer.reserved_id_refusal(remap.new_id_map([], reserved, workspace=None)[reserved]) is None
         source = Path(str(importer.__file__)).read_text(encoding='utf-8')
         assert 'refusal := reserved_id_refusal(plan.project_id)' in source
+
+    @pytest.mark.usefixtures('scripts')
+    def test_a_workspace_is_refused(self):
+        """7.99.00 (3h-S1): the bundle scripts are the deployment's; a workspace given to them is refused before any
+        key is built or any table is reached."""
+        remap, exporter = sys.modules['project_bundle.remap'], sys.modules['project_bundle.exporter']
+        with pytest.raises(remap.WorkspaceRefusedError, match='deployment'):
+            remap.new_id_map([], PID, workspace=object())
+        with pytest.raises(remap.WorkspaceRefusedError, match='deployment'):
+            exporter.Exporter(object(), object(), workspace=object())
+        remap.deployment_only(None)
 
     def test_an_existing_project_id_is_refused_without_new_ids(self, world, capsys):
         world['tables']['tgt-p'].put_item(Item={'pk': f'PROJECT#{PID}', 'sk': 'META', 'status': 'deleted'})

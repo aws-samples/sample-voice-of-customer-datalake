@@ -33,19 +33,19 @@ def table():
 def _item(*, author=MEMBER, text='A comment', anchor=None, share_id=''):
     """A new thread row on ``DOCUMENT`` (not stored)."""
     return dc.thread_item(project_id='p1', series_id=SERIES_ID, document=DOCUMENT, author=author, text=text,
-                          anchor=anchor, share_id=share_id)
+                          anchor=anchor, share_id=share_id, workspace=None)
 
 
 def _thread(table, **fields):
     """A new thread row, stored."""
     item = _item(**fields)
-    dc.put_thread(table, item)
+    dc.put_thread(table, item, workspace=None)
     return item
 
 
 def _stored(table, comment_id):
     """The stored thread; failing here names the missing id."""
-    item = dc.get_thread(table, 'p1', SERIES_ID, comment_id)
+    item = dc.get_thread(table, 'p1', SERIES_ID, comment_id, workspace=None)
     assert item is not None, f'no stored thread {comment_id}'
     return item
 
@@ -66,7 +66,8 @@ def test_a_malformed_comment_id_is_refused(value):
 
 
 def test_threads_live_in_the_series_partition_not_the_projects():
-    assert dc.comment_key('p1', SERIES_ID, 'dc_x') == {'pk': f'DCOMMENTS#p1#{SERIES_ID}', 'sk': 'C#dc_x'}
+    assert dc.comment_key('p1', SERIES_ID, 'dc_x',
+                          workspace=None) == {'pk': f'DCOMMENTS#p1#{SERIES_ID}', 'sk': 'C#dc_x'}
 
 
 def test_an_email_digest_is_stable_and_hides_the_address():
@@ -142,7 +143,7 @@ def test_a_new_thread_is_open_on_its_version_with_no_replies():
     item = _item(text='Hi', anchor={'exact': 'q', 'prefix': '', 'suffix': '', 'heading': ''})
     assert (item['status'], item['replies'], item['flagged']) == ('open', [], False)
     assert (item['document_id'], item['version']) == ('d2', 2)
-    assert item['pk'] == dc.comments_pk('p1', SERIES_ID)
+    assert item['pk'] == dc.comments_pk('p1', SERIES_ID, workspace=None)
     assert item['sk'] == f'C#{item["comment_id"]}'
 
 
@@ -168,65 +169,65 @@ def test_a_stored_thread_reads_back_and_lists_oldest_first(table):
     first = _thread(table, text='first')
     second = _thread(table, text='second')
     assert _stored(table, first['comment_id'])['text'] == 'first'
-    assert [t['text'] for t in dc.list_threads(table, 'p1', SERIES_ID)] == ['first', 'second']
+    assert [t['text'] for t in dc.list_threads(table, 'p1', SERIES_ID, workspace=None)] == ['first', 'second']
     assert second['comment_id'] > first['comment_id']
 
 
 def test_the_series_share_pointer_is_not_listed_as_a_thread(table):
     _thread(table)
-    table.put_item(Item={'pk': dc.comments_pk('p1', SERIES_ID), 'sk': 'SHARE', 'share_id': 'shr_x'})
-    assert len(dc.list_threads(table, 'p1', SERIES_ID)) == 1
+    table.put_item(Item={'pk': dc.comments_pk('p1', SERIES_ID, workspace=None), 'sk': 'SHARE', 'share_id': 'shr_x'})
+    assert len(dc.list_threads(table, 'p1', SERIES_ID, workspace=None)) == 1
 
 
 def test_get_thread_is_none_for_a_malformed_or_unknown_id(table):
-    assert dc.get_thread(table, 'p1', SERIES_ID, 'SHARE') is None
-    assert dc.get_thread(table, 'p1', SERIES_ID, dc.new_comment_id()) is None
+    assert dc.get_thread(table, 'p1', SERIES_ID, 'SHARE', workspace=None) is None
+    assert dc.get_thread(table, 'p1', SERIES_ID, dc.new_comment_id(), workspace=None) is None
 
 
 def test_a_thread_id_is_never_overwritten(table):
     item = _thread(table)
     with pytest.raises(ClientError):
-        dc.put_thread(table, {**item, 'text': 'replaced'})
+        dc.put_thread(table, {**item, 'text': 'replaced'}, workspace=None)
 
 
 def test_replies_append_in_order(table):
     item = _thread(table)
-    dc.append_reply(table, item, dc.reply_item(MEMBER, 'one'))
-    updated = dc.append_reply(table, item, dc.reply_item(MEMBER, 'two'))
+    dc.append_reply(table, item, dc.reply_item(MEMBER, 'one'), workspace=None)
+    updated = dc.append_reply(table, item, dc.reply_item(MEMBER, 'two'), workspace=None)
     assert [r['text'] for r in updated['replies']] == ['one', 'two']
 
 
 def test_the_fifty_first_reply_is_refused_by_the_condition(table):
     item = _thread(table)
     for n in range(dc.MAX_REPLIES):
-        dc.append_reply(table, item, dc.reply_item(MEMBER, f'r{n}'))
+        dc.append_reply(table, item, dc.reply_item(MEMBER, f'r{n}'), workspace=None)
     with pytest.raises(ClientError) as raised:
-        dc.append_reply(table, item, dc.reply_item(MEMBER, 'too many'))
+        dc.append_reply(table, item, dc.reply_item(MEMBER, 'too many'), workspace=None)
     assert is_conditional_check_failure(raised.value)
     assert len(_stored(table, item['comment_id'])['replies']) == 50
 
 
 def test_a_reply_to_a_deleted_thread_is_refused_and_creates_nothing(table):
     item = _thread(table)
-    dc.delete_thread(table, item)
+    dc.delete_thread(table, item, workspace=None)
     with pytest.raises(ClientError):
-        dc.append_reply(table, item, dc.reply_item(MEMBER, 'late'))
-    assert dc.list_threads(table, 'p1', SERIES_ID) == []
+        dc.append_reply(table, item, dc.reply_item(MEMBER, 'late'), workspace=None)
+    assert dc.list_threads(table, 'p1', SERIES_ID, workspace=None) == []
 
 
 def test_resolve_and_reopen_record_who_did_it(table):
     item = _thread(table)
-    resolved = dc.set_status(table, item, dc.STATUS_RESOLVED, 'Mia Member')
+    resolved = dc.set_status(table, item, dc.STATUS_RESOLVED, 'Mia Member', workspace=None)
     assert (resolved['status'], resolved['status_by']) == ('resolved', 'Mia Member')
-    assert dc.set_status(table, item, dc.STATUS_OPEN, 'Rae')['status'] == 'open'
+    assert dc.set_status(table, item, dc.STATUS_OPEN, 'Rae', workspace=None)['status'] == 'open'
 
 
 def test_a_status_change_on_a_deleted_thread_is_refused(table):
     item = _thread(table)
-    dc.delete_thread(table, item)
+    dc.delete_thread(table, item, workspace=None)
     with pytest.raises(ClientError):
-        dc.set_status(table, item, dc.STATUS_RESOLVED, 'Mia')
-    assert dc.get_thread(table, 'p1', SERIES_ID, item['comment_id']) is None
+        dc.set_status(table, item, dc.STATUS_RESOLVED, 'Mia', workspace=None)
+    assert dc.get_thread(table, 'p1', SERIES_ID, item['comment_id'], workspace=None) is None
 
 
 # ── views ───────────────────────────────────────────────────────────────────

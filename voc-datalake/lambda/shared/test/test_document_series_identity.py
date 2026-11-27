@@ -63,7 +63,7 @@ def _fields(minute: int) -> dict:
 
 
 def _generate(table, document_type: str, title: str, job: str, minute: int) -> dict:
-    return persist_versioned_document(table, 'p1', document_type, title, job, _fields(minute))
+    return persist_versioned_document(table, 'p1', document_type, title, job, _fields(minute), workspace=None)
 
 
 def _wizard_dual(table, title: str, minute: int) -> tuple[dict, dict]:
@@ -144,7 +144,7 @@ def test_previously_split_series_continue_past_both_halves(projects_table):
         })
     # The plain series' counter (sk format of project_keys.version_counter_key).
     projects_table.put_item(Item={
-        'pk': version_partition_key('p1'),
+        'pk': version_partition_key('p1', workspace=None),
         'sk': f"PRD#{hashlib.sha256(b'checkout').hexdigest()}",
         'document_type': 'prd', 'base_title': 'Checkout',
         'normalized_base_title': 'checkout', 'last_version': 1,

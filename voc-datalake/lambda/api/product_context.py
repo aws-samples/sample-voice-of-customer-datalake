@@ -297,7 +297,7 @@ def get_context(project_id: str) -> dict:
         raise ConfigurationError('Projects table not configured')
 
     resp = projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': CONTEXT_SK}
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': CONTEXT_SK}
     )
     item = resp.get('Item')
     if not item:
@@ -332,25 +332,25 @@ def update_context(project_id: str, body: object) -> dict:
     # Build UpdateExpression for whatever fields are present in the patch.
     # Always set updated_at; ensure base item exists with put_item if missing.
     resp = projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': CONTEXT_SK},
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': CONTEXT_SK},
         ProjectionExpression='pk',
     )
     if not resp.get('Item'):
         base = {
-            'pk': project_pk(project_id),
+            'pk': project_pk(project_id, workspace=None),
             'sk': CONTEXT_SK,
             'created_at': now,
             'updated_at': now,
         }
         base.update(_empty_context())
         base.update(patch)
-        put_project_item(projects_table, project_id, base)
+        put_project_item(projects_table, project_id, base, workspace=None)
         return get_context(project_id)
 
     if not patch:
         # No-op patch; just bump updated_at so clients can detect activity.
         projects_table.update_item(
-            Key={'pk': project_pk(project_id), 'sk': CONTEXT_SK},
+            Key={'pk': project_pk(project_id, workspace=None), 'sk': CONTEXT_SK},
             UpdateExpression='SET updated_at = :now',
             ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
             ExpressionAttributeValues={':now': now},
@@ -369,7 +369,7 @@ def update_context(project_id: str, body: object) -> dict:
         expr_names[name_alias] = key
 
     projects_table.update_item(
-        Key={'pk': project_pk(project_id), 'sk': CONTEXT_SK},
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': CONTEXT_SK},
         UpdateExpression='SET ' + ', '.join(set_parts),
         ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
         ExpressionAttributeValues=expr_vals,
@@ -471,7 +471,7 @@ def _list_doc_items(project_id: str) -> list[dict]:
         return []
     kwargs: QueryInputTableQueryTypeDef = {
         'KeyConditionExpression': (
-            Key('pk').eq(project_pk(project_id)) &
+            Key('pk').eq(project_pk(project_id, workspace=None)) &
             Key('sk').begins_with(DOC_SK_PREFIX)
         )
     }
@@ -551,7 +551,7 @@ def _fail_if_stalled(project_id: str, item: dict) -> dict:
         raise ConfigurationError('Projects table not configured')
     try:
         projects_table.update_item(
-            Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
+            Key={'pk': project_pk(project_id, workspace=None), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
             UpdateExpression='SET #status = :failed, #error = :error',
             ConditionExpression='#status = :expected',
             # `status` and `error` are both DynamoDB reserved words — same
@@ -646,7 +646,7 @@ def _body_text(body: dict | None, key: str) -> str:
     return value.strip() if isinstance(value, str) else ''
 
 
-def product_doc_raw_key(project_id: str, doc_id: str, ext: str, *, workspace: WorkspaceScope | None = None) -> str:
+def product_doc_raw_key(project_id: str, doc_id: str, ext: str, *, workspace: WorkspaceScope | None) -> str:
     """Where a product document's upload goes: ``projects/{id}/product_docs/raw/{doc}.{ext}``, which the product-doc
     extractor is triggered on (product_doc_extractor/handler.py ``RAW_KEY_PATTERN``). In a workspace (since 7.37.00; no route
     passes one yet) the same key under ``ws/{ws}/``, which the extractor takes since 7.38.00 (3f: its ``ws/`` rules and
@@ -655,7 +655,7 @@ def product_doc_raw_key(project_id: str, doc_id: str, ext: str, *, workspace: Wo
     return scoped_object_key(workspace, f'projects/{project_id}/product_docs/raw/{doc_id}.{ext}')
 
 
-def product_doc_extracted_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def product_doc_extracted_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope | None) -> str:
     """Where the product-doc extractor puts a document's text: ``projects/{id}/product_docs/extracted/{doc}.txt``
     (under ``ws/{ws}/`` in a workspace), derivable from the ids alone, so a delete reaches it before the record names
     it (product_doc_extractor/handler.py ``_extracted_key``; schemas/project-keys-cases.json pins the two)."""
@@ -716,11 +716,11 @@ def create_upload_url(project_id: str, body: dict) -> dict:
 
     doc_id = _new_doc_id()
     ext = ALLOWED_CONTENT_TYPES[content_type]
-    s3_raw_key = product_doc_raw_key(project_id, doc_id, ext)
+    s3_raw_key = product_doc_raw_key(project_id, doc_id, ext, workspace=None)
     now = now_iso()
 
     item = {
-        'pk': project_pk(project_id),
+        'pk': project_pk(project_id, workspace=None),
         'sk': f'{DOC_SK_PREFIX}{doc_id}',
         'doc_id': doc_id,
         'filename': filename[:255],
@@ -733,7 +733,7 @@ def create_upload_url(project_id: str, body: dict) -> dict:
         'extracted_chars': 0,
         'created_at': now,
     }
-    put_project_item(projects_table, project_id, item)
+    put_project_item(projects_table, project_id, item, workspace=None)
 
     presigned = _s3().generate_presigned_url(
         ClientMethod='put_object',
@@ -780,19 +780,20 @@ def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None 
     bucket = os.environ.get('RAW_DATA_BUCKET')
 
     resp = projects_table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
     item = resp.get('Item')
     if not item:
         raise NotFoundError('document not found')
 
     projects_table.delete_item(
-        Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
 
     if bucket:
         stored = (item.get('s3_raw_key'), item.get('s3_extracted_key'))
-        keys = [key for key in (*stored, product_doc_extracted_key(project_id, doc_id)) if isinstance(key, str) and key]
+        keys = [key for key in (*stored, product_doc_extracted_key(project_id, doc_id, workspace=None))
+                if isinstance(key, str) and key]
         try:
             refused = delete_every_version_of_keys(_s3(), bucket, keys)
         except (ClientError, BotoCoreError) as e:
@@ -919,7 +920,7 @@ def generate_report(project_id: str, body: dict) -> dict:
 
     def build(report_id: str) -> dict:
         return {
-            **document_keys(project_id, f'PRODUCT_REPORT#{report_id}', now),
+            **document_keys(project_id, f'PRODUCT_REPORT#{report_id}', now, workspace=None),
             'document_id': report_id,
             'document_type': 'product_report',
             'title': title,
@@ -941,7 +942,7 @@ def generate_report(project_id: str, body: dict) -> dict:
         }
 
     item = create_counted_project_child(
-        projects_table, project_id, 'product_report', build, now=now_dt,
+        projects_table, project_id, 'product_report', build, now=now_dt, workspace=None,
     )
     return {'success': True, 'document': item}
 

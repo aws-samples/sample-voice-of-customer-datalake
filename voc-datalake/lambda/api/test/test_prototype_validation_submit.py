@@ -50,7 +50,7 @@ def submit(aggregates, feedback_form_handler, api_gateway_event, lambda_context)
 
 
 def _pins(aggregates) -> list[dict]:
-    return prototype_pins.list_pins(aggregates, FORM)
+    return prototype_pins.list_pins(aggregates, FORM, workspace=None)
 
 
 def _ask(aggregates, *, open_card: bool = True) -> None:

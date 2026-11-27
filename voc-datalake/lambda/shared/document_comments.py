@@ -90,7 +90,7 @@ _COMMENT_ID_RE: Final = re.compile(r'^dc_[0-9]{20}[0-9a-f]{6}\Z')
 
 
 def comment_key(project_id: str, series_id: str, comment_id: str, *,
-                workspace: WorkspaceScope | None = None) -> dict[str, str]:
+                workspace: WorkspaceScope | None) -> dict[str, str]:
     """A thread's key in its series' partition (``comments_pk``; the workspace's when given)."""
     return {'pk': comments_pk(project_id, series_id, workspace=workspace), 'sk': f'{COMMENT_SK_PREFIX}{comment_id}'}
 
@@ -185,7 +185,7 @@ def reviewer_author(email_lc: str, name: str = '') -> dict[str, str]:
 
 def thread_item(*, project_id: str, series_id: str, document: Mapping[str, Any], author: Mapping[str, Any],
                 text: str, anchor: Mapping[str, str] | None, share_id: str = '',
-                extra: Mapping[str, Any] | None = None, workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+                extra: Mapping[str, Any] | None = None, workspace: WorkspaceScope | None) -> dict[str, Any]:
     """A new thread row on the version ``document`` (in the workspace's series partition when given)."""
     moment = datetime.now(UTC)
     comment_id = new_comment_id(moment)
@@ -223,7 +223,7 @@ def list_deployment_series(table: Any, project_id: str, series_id: str) -> None:
             raise
 
 
-def put_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope | None = None,
+def put_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope | None,
                series_listed: bool = False) -> None:
     """Write a new thread (``thread_item``, of the same scope). Its series is listed first, in a workspace in the
     project's partition (``list_series``), the deployment's in its series registry (``list_deployment_series``, since
@@ -242,7 +242,7 @@ def put_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope
 
 
 def get_thread(table: Any, project_id: str, series_id: str, comment_id: str, *,
-               workspace: WorkspaceScope | None = None) -> dict[str, Any] | None:
+               workspace: WorkspaceScope | None) -> dict[str, Any] | None:
     if not is_comment_id(comment_id):
         return None
     key = comment_key(project_id, series_id, comment_id, workspace=workspace)
@@ -251,7 +251,7 @@ def get_thread(table: Any, project_id: str, series_id: str, comment_id: str, *,
 
 
 def list_threads(table: Any, project_id: str, series_id: str, *,
-                 workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+                 workspace: WorkspaceScope | None) -> list[dict[str, Any]]:
     """The series' threads, oldest first, at most ``MAX_THREADS_LISTED`` (shared/scoped_query.py ``iter_partition``:
     without a workspace the Query sent before, ``Key('pk').eq(…) & Key('sk').begins_with('C#')``)."""
     rows = iter_partition(workspace, table, 'pk', comments_pk(project_id, series_id, workspace=workspace),
@@ -260,7 +260,7 @@ def list_threads(table: Any, project_id: str, series_id: str, *,
 
 
 def append_reply(table: Any, item: Mapping[str, Any], reply: Mapping[str, Any], *,
-                 workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+                 workspace: WorkspaceScope | None) -> dict[str, Any]:
     """Add ``reply`` to the thread (capped); raises the conditional failure past ``MAX_REPLIES``."""
     response = scoped_calls(table, workspace).update_item(
         Key={'pk': item['pk'], 'sk': item['sk']},
@@ -273,7 +273,7 @@ def append_reply(table: Any, item: Mapping[str, Any], reply: Mapping[str, Any], 
 
 
 def set_status(table: Any, item: Mapping[str, Any], status: str, actor_name: str, *,
-               workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+               workspace: WorkspaceScope | None) -> dict[str, Any]:
     """Resolve or reopen; raises the conditional failure when the thread is gone."""
     response = scoped_calls(table, workspace).update_item(
         Key={'pk': item['pk'], 'sk': item['sk']},
@@ -321,7 +321,7 @@ def addressed_entry(*, version: int, document_id: str, by_kind: str, by_sub: str
 
 
 def record_addressed(table: Any, item: Mapping[str, Any], entry: Mapping[str, Any], *,
-                     workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+                     workspace: WorkspaceScope | None) -> dict[str, Any]:
     """Append ``entry`` to the thread's history and set ``addressed`` to it when it is a mark, else
     to null: one update, in ``append_reply``'s shape, so two writers never drop each other's entry
     and nothing already written is rewritten (D1).
@@ -352,7 +352,7 @@ def record_addressed(table: Any, item: Mapping[str, Any], entry: Mapping[str, An
 
 
 def record_threads_addressed(table: Any, threads: Iterable[Mapping[str, Any]], entry: Mapping[str, Any], *,
-                             workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+                             workspace: WorkspaceScope | None) -> list[dict[str, Any]]:
     """``record_addressed`` on each of ``threads`` (in ``workspace`` when given); one deleted meanwhile is skipped.
 
     A thread whose history is full does not stop the others: every thread is tried, then a 409 says
@@ -376,7 +376,7 @@ def record_threads_addressed(table: Any, threads: Iterable[Mapping[str, Any]], e
     return marked
 
 
-def delete_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope | None = None) -> None:
+def delete_thread(table: Any, item: Mapping[str, Any], *, workspace: WorkspaceScope | None) -> None:
     scoped_calls(table, workspace).delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
 
 

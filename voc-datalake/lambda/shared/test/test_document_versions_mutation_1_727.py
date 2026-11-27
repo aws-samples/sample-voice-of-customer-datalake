@@ -76,7 +76,7 @@ def frozen_clock() -> Iterator[tuple[MagicMock, MagicMock]]:
 
 class TestStoredKeysKeepTheirPrefixes:
     def test_version_partition(self):
-        assert version_partition_key('p1') == 'DOCUMENT_VERSIONS#PROJECT#p1'
+        assert version_partition_key('p1', workspace=None) == 'DOCUMENT_VERSIONS#PROJECT#p1'
 
     def test_legacy_assignment_key(self):
         assert legacy_assignment_key(COUNTER_KEY, 'PRD#x') == {
@@ -85,7 +85,7 @@ class TestStoredKeysKeepTheirPrefixes:
         }
 
     def test_allocation_key(self):
-        assert version_allocation_key('p1', 'prd', 'a1') == {
+        assert version_allocation_key('p1', 'prd', 'a1', workspace=None) == {
             'pk': 'DOCUMENT_VERSIONS#PROJECT#p1',
             'sk': f"ALLOCATION#PRD#{_sha('a1')}",
         }
@@ -434,7 +434,7 @@ class TestAcquireLegacyMigration:
         table.get_item.return_value = {}
         assert _acquire(table) == 0
         assert _transactions(table) == [[
-            project_writable_condition('projects', 'p1'),
+            project_writable_condition('projects', 'p1', workspace=None),
             {'Put': {
                 'TableName': 'projects',
                 'Item': {
@@ -774,7 +774,7 @@ class TestPersistLegacyDocumentVersions:
             {'pk': 'PROJECT#p1', 'sk': 'META'},
             {'pk': 'PROJECT#p1', 'sk': 'PRD#a', **CANONICAL},
         ]
-        assert persist_legacy_document_versions(table, 'p1', documents) == documents
+        assert persist_legacy_document_versions(table, 'p1', documents, workspace=None) == documents
         table.get_item.assert_not_called()
         table.query.assert_not_called()
 
@@ -790,7 +790,7 @@ class TestPersistLegacyDocumentVersions:
             series.side_effect = lambda _t, _p, _type, _n, docs, **_scope: [
                 {**d, 'planned': True} for d in docs
             ]
-            result = persist_legacy_document_versions(_table(), 'p1', documents)
+            result = persist_legacy_document_versions(_table(), 'p1', documents, workspace=None)
         assert [
             (c.args[2], c.args[3], [d['sk'] for d in c.args[4]])
             for c in series.call_args_list
@@ -803,7 +803,7 @@ class TestPersistLegacyDocumentVersions:
         assert _identity(result[2]) == ('T', 2, 'T (v2)')
 
 
-SERIES_KEY = version_counter_key('p1', 'prd', 't')
+SERIES_KEY = version_counter_key('p1', 'prd', 't', workspace=None)
 
 
 @pytest.fixture

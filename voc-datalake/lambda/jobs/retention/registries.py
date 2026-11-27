@@ -198,8 +198,8 @@ def step(projects_table: Any, run: dict[str, Any], cursor: Mapping[str, Any] | N
     checked = at.get('gap_checked')
     if not isinstance(checked, int) or isinstance(checked, bool) or checked < 0:
         raise ValueError('a carried gap count is not one')
-    rows, following = query_page(table_view(None, projects_table), project_type_pk(), checked_key(at.get('gap_from')),
-                                 partition_attribute='gsi1pk', IndexName=PROJECTS_BY_TYPE_INDEX,
+    rows, following = query_page(table_view(None, projects_table), project_type_pk(workspace=None),
+                                 checked_key(at.get('gap_from')), partition_attribute='gsi1pk', IndexName=PROJECTS_BY_TYPE_INDEX,
                                  Limit=project_walk.ID_PAGE,
                                  **_KEYS_ONLY)
     live = _live_ids(run, rows)
@@ -217,7 +217,7 @@ def _live_ids(run: dict[str, Any], rows: list[dict[str, Any]]) -> list[str]:
     verification fixture's project passed, a row of another shape counted (``project_ids_malformed``)."""
     ids: list[str] = []
     for row in rows:
-        project_id = project_id_of(row.get('pk')) if row.get('sk') == 'META' else None
+        project_id = project_id_of(row.get('pk'), workspace=None) if row.get('sk') == 'META' else None
         if project_id == COMPANY_PERSONAS_CONTAINER or is_verification_fixture_project(project_id):
             continue
         if is_project_id(project_id):

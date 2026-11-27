@@ -132,7 +132,7 @@ def _get(table: Any, key: Mapping[str, str], workspace: WorkspaceScope | None) -
 
 
 def current_share(table: Any, project_id: str, series_id: str, *,
-                  workspace: WorkspaceScope | None = None) -> dict[str, Any] | None:
+                  workspace: WorkspaceScope | None) -> dict[str, Any] | None:
     """The series' active link, or None (the workspace's series when given)."""
     index = _get(table, _index_key(project_id, series_id, workspace), workspace)
     share_id = index.get('share_id') if index else None
@@ -142,7 +142,7 @@ def current_share(table: Any, project_id: str, series_id: str, *,
 
 def create_share(table: Any, *, project_id: str, series: Mapping[str, str], document_id: str,
                  creator: Mapping[str, str], values: Mapping[str, Any],
-                 workspace: WorkspaceScope | None = None) -> tuple[dict[str, Any], bool]:
+                 workspace: WorkspaceScope | None) -> tuple[dict[str, Any], bool]:
     """The series' active link, creating one when there is none: ``(link, created)``. In a workspace the link's
     routing row, its series' listing and its registry row go in the same transaction (the module docstring)."""
     existing = current_share(table, project_id, series['series_id'], workspace=workspace)
@@ -207,7 +207,7 @@ def _deployment_rows(table: Any, project_id: str, series_id: str, share_id: str,
 
 
 def revoke_share(table: Any, project_id: str, series_id: str, actor_name: str, *,
-                 workspace: WorkspaceScope | None = None) -> bool:
+                 workspace: WorkspaceScope | None) -> bool:
     """Turn off the series' link (kept as revoked); False when there was none (the workspace's series when given)."""
     index = _get(table, _index_key(project_id, series_id, workspace), workspace)
     share_id = index.get('share_id') if index else None
@@ -242,7 +242,7 @@ def require_share_for(table: Any, share_id: str, email_lc: str) -> tuple[dict[st
     return share, workspace
 
 
-def count_reviewer_write(table: Any, share_id: str, email_lc: str, *, workspace: WorkspaceScope | None = None) -> None:
+def count_reviewer_write(table: Any, share_id: str, email_lc: str, *, workspace: WorkspaceScope | None) -> None:
     """One more reviewer write today; 429 ``rate_limited`` past the daily budget (the link's workspace when given)."""
     day = datetime.now(UTC).strftime('%Y-%m-%d')
     try:

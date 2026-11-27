@@ -217,7 +217,7 @@ def _gate_meta(project_id: str) -> dict | None:
     table = get_projects_table()
     if not table:
         raise ConfigurationError('Projects table not configured')
-    return project_gate.read_gate_meta(table, project_id)
+    return project_gate.read_gate_meta(table, project_id, workspace=None)
 
 
 def _project_access_for(project_id: str, caller: Caller, level: str) -> ProjectAccess:
@@ -229,7 +229,7 @@ def _project_access_for(project_id: str, caller: Caller, level: str) -> ProjectA
     if is_company_container(project_id):
         raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
     return project_gate.require_project_level(
-        lambda: _gate_meta(project_id), caller, level,
+        lambda: _gate_meta(project_id), caller, level, workspace=None,
     )
 
 
@@ -338,7 +338,7 @@ def _gate_meta_batch_chunk(table, project_ids: list[str]) -> dict[str, dict]:
     """
     client = table.meta.client
     gate_read = [
-        project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE)
+        project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE, workspace=None)
         for project_id in project_ids
     ]
     request: dict[str, Any] = {
@@ -383,7 +383,7 @@ def _viewable_project_ids(project_ids: Iterable[str], caller: Caller) -> set[str
         viewable.update(
             project_id for project_id, meta in metas.items()
             if not is_project_tombstone(meta)
-            and project_access.resolve_access(meta, caller).can_view
+            and project_access.resolve_access(meta, caller, workspace=None).can_view
         )
     return viewable
 
@@ -416,7 +416,7 @@ def _require_project_exists(project_id: str) -> None:
 def _methodology_items(project_id: str) -> list[dict]:
     """The keys of one project's artifacts, enough for shared/methodology.py (no content read)."""
     return query_all(get_projects_table(), {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=None)),
         'ConsistentRead': True,
         'ProjectionExpression': 'sk, document_id, persona_id',
     })
@@ -483,7 +483,7 @@ def _started_assist(project_id: str, job_type: str, config: dict) -> Response:
     """
     _require_project_exists(project_id)
     started = assist_jobs.start(
-        project_pk(project_id), job_type, config,
+        project_pk(project_id, workspace=None), job_type, config,
         worker_function=assist_jobs.worker_function(),
         initiated_by=_request_caller().subject, project_id=project_id,
     )
@@ -555,7 +555,7 @@ def api_list_projects():
 @app.post("/projects")
 @tracer.capture_method
 def api_create_project():
-    return create_project(json_object_body(app), _request_caller())
+    return create_project(json_object_body(app), _request_caller(), workspace=None)
 
 
 @app.get("/projects/<project_id>")
@@ -1223,7 +1223,7 @@ def _project_job_row(project_id: str, job_id: str) -> dict | None:
     """The project's job row (config included: never answered as is), or None."""
     # Consistent: an assist's first poll lands milliseconds after its start wrote the row.
     response = get_jobs_table().get_item(
-        Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'}, ConsistentRead=True,
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'JOB#{job_id}'}, ConsistentRead=True,
     )
     item = response.get('Item')
     return item if isinstance(item, dict) else None
@@ -1258,7 +1258,7 @@ def _project_job_rows(project_id: str) -> list[dict]:
     (``assist_*``) are request plumbing, not work a user started, so they are left
     out before the limit.
     """
-    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(project_pk(project_id))}
+    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=None))}
     rows: list[dict] = []
     scanned = 0
     while scanned < JOBS_LIST_SCAN_CAP:
@@ -1300,7 +1300,7 @@ def api_delete_job(project_id: str, job_id: str):
 
 def _delete_job_row(project_id: str, job_id: str) -> dict:
     """Delete one job row of the project (a missing row is no error); the job DELETE and a draft's Discard."""
-    get_jobs_table().delete_item(Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'})
+    get_jobs_table().delete_item(Key={'pk': project_pk(project_id, workspace=None), 'sk': f'JOB#{job_id}'})
     return {'success': True}
 
 
@@ -2699,7 +2699,7 @@ def _project_documents(project_id: str) -> list[dict]:
     if not table:
         raise ConfigurationError('Projects table not configured')
     query_kwargs: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id, workspace=None)),
         # `sk` identifies the type, `document_id` and `created_at` are what the
         # composition selects on. None is a DynamoDB reserved word.
         'ProjectionExpression': 'sk, document_id, created_at',
@@ -4741,7 +4741,7 @@ def _validated_source_id(project_id: str, sk_prefix: str, raw: Any, field: str) 
     if len(document_id) > MAX_KEY_SEGMENT_ID_LEN:
         raise ValidationError(f'{field} is not a valid document id')
     item = get_projects_table().get_item(
-        Key={'pk': project_pk(project_id), 'sk': f'{sk_prefix}{document_id}'},
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'{sk_prefix}{document_id}'},
     ).get('Item')
     if not item:
         raise NotFoundError(f'{field}: no such document in this project')
@@ -4862,7 +4862,7 @@ def _pin_prototype_row(project_id: str, document_id: str, *, whole: bool = False
     if not table:
         raise ConfigurationError('Projects table not configured')
     item = table.get_item(
-        Key={'pk': project_pk(project_id), 'sk': f'PROTOTYPE#{document_id}'},
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PROTOTYPE#{document_id}'},
         **({} if whole else {'ProjectionExpression': 'pk'}),
     ).get('Item')
     if not item:
@@ -4919,7 +4919,7 @@ def list_prototype_pins(project_id: str, document_id: str):
     status = (app.current_event.query_string_parameters or {}).get('status') or None
     if status is not None and status not in prototype_pins.STATUSES:
         raise ValidationError('status must be open, addressed or resolved')
-    pins = prototype_pins.list_pins(_pins_table(), form_id, status)
+    pins = prototype_pins.list_pins(_pins_table(), form_id, status, workspace=None)
     return {'form_id': form_id, 'document_id': document_id, 'count': len(pins), 'pins': pins}
 
 
@@ -4936,7 +4936,7 @@ def list_prototype_feedback(project_id: str, document_id: str):
     status = prototype_feedback.checked_status(query.get('status'))
     version = prototype_feedback.checked_version(query.get('version'))
     return prototype_feedback.read_feedback(get_projects_table(), _pins_table(), project_id, row,
-                                            status=status, version=version)
+                                            status=status, version=version, workspace=None)
 
 
 @app.post("/projects/<project_id>/prototypes/<document_id>/pins/<pin_id>/replies")
@@ -5031,7 +5031,7 @@ def _draft_job(project_id: str, document_id: str, draft_id: str) -> tuple[dict, 
     draft = prototype_drafts.usable_draft(job, now_epoch=int(time.time()))
     if job is None or draft is None:
         raise NotFoundError(prototype_drafts.DRAFT_NOT_FOUND)
-    base = prototype_drafts.drafted_base(get_projects_table(), project_id, document, draft)
+    base = prototype_drafts.drafted_base(get_projects_table(), project_id, document, draft, workspace=None)
     return job, dict(draft), base
 
 
@@ -5062,7 +5062,7 @@ def api_start_prototype_draft(project_id: str, document_id: str):
 def api_get_prototype_draft(project_id: str, document_id: str, draft_id: str):
     """``{draft_id, base_document_id, base_version, instruction, summary, preview_url, completed_at}``."""
     job, draft, _ = _draft_job(project_id, document_id, draft_id)
-    preview_url = prototype_draft_signed_url(project_id, str(job['job_id']))
+    preview_url = prototype_draft_signed_url(project_id, str(job['job_id']), workspace=None)
     return prototype_drafts.draft_view(job, draft, preview_url)
 
 
@@ -5104,7 +5104,8 @@ def api_discard_prototype_draft(project_id: str, document_id: str, draft_id: str
     base_id = prototype_drafts.drafted_base_id(job)
     if job is None or base_id is None:
         raise NotFoundError(prototype_drafts.DRAFT_NOT_FOUND)
-    prototype_drafts.drafted_base(get_projects_table(), project_id, document, {'base_document_id': base_id})
+    prototype_drafts.drafted_base(get_projects_table(), project_id, document, {'base_document_id': base_id},
+                                  workspace=None)
     return _delete_job_row(project_id, draft_id)
 
 
@@ -5118,7 +5119,7 @@ def api_prototype_outline(project_id: str, document_id: str):
     """
     document = projects.prototype_document(project_id, document_id)
     store = projects.prototype_store()
-    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document))
+    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document, workspace=None))
     version = document.get('version')
     return {'document_id': document_id, 'version': int(version) if version is not None else None, **outline}
 
@@ -5138,7 +5139,8 @@ def api_get_prototype_walkthrough(project_id: str, document_id: str):
     """``{steps}`` of that version: its block, re-validated (``[]`` for none, or one that fails)."""
     document = projects.prototype_document(project_id, document_id)
     store = projects.prototype_store()
-    return {'steps': prototype_walkthrough.extract_steps(version_html(store.s3, store.bucket, project_id, document))}
+    html = version_html(store.s3, store.bucket, project_id, document, workspace=None)
+    return {'steps': prototype_walkthrough.extract_steps(html)}
 
 
 @app.put("/projects/<project_id>/prototypes/<document_id>/walkthrough")
@@ -5170,7 +5172,7 @@ def api_draft_prototype_walkthrough(project_id: str, document_id: str):
     document = projects.prototype_document(project_id, document_id)
     store = projects.prototype_store()
     # Refused now (400 early spec, 404 lost object) rather than minutes later in the job.
-    version_html(store.s3, store.bucket, project_id, document)
+    version_html(store.s3, store.bucket, project_id, document, workspace=None)
     return _started_assist(project_id, ASSIST_WALKTHROUGH_DRAFT,
                            {'project_id': project_id, 'document_id': document_id,
                             'response_language': body.get('response_language')})
@@ -5184,7 +5186,8 @@ def _walkthrough_sources(project_id: str, document: dict) -> list[tuple[str, str
         source_id = document.get(key)
         if not isinstance(source_id, str) or not source_id:
             continue
-        row = table.get_item(Key={'pk': project_pk(project_id), 'sk': f'{prefix}{source_id}'}).get('Item') or {}
+        source_key = {'pk': project_pk(project_id, workspace=None), 'sk': f'{prefix}{source_id}'}
+        row = table.get_item(Key=source_key).get('Item') or {}
         content = row.get('content')
         if isinstance(content, str) and content:
             sources.append((label, content))
@@ -5195,7 +5198,7 @@ def _walkthrough_draft_work(config: dict) -> dict:
     project_id = config['project_id']
     document = projects.prototype_document(project_id, config['document_id'])
     store = projects.prototype_store()
-    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document))
+    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document, workspace=None))
     return prototype_walkthrough_draft.draft_steps(outline=outline,
                                                    sources=_walkthrough_sources(project_id, document),
                                                    language=config.get('response_language'))
@@ -5396,8 +5399,9 @@ def start_persona_review(project_id: str, document_id: str):
     table = get_projects_table()
     if not table:
         raise ConfigurationError('Projects table not configured')
-    document_series.series_of(project_id, document_series.find_document(table, project_id, document_id))
-    if not document_review.pick_personas(document_review.project_personas(table, project_id), persona_ids):
+    document_series.series_of(project_id, document_series.find_document(table, project_id, document_id, workspace=None))
+    personas = document_review.project_personas(table, project_id, workspace=None)
+    if not document_review.pick_personas(personas, persona_ids):
         raise ValidationError('This project has no personas to ask yet')
     return _started_assist(project_id, ASSIST_PERSONA_REVIEW, {
         'project_id': project_id, 'document_id': document_id, 'body_json': json.dumps({'persona_ids': persona_ids}),
@@ -5408,17 +5412,17 @@ def _assist_document(config: dict) -> tuple[Any, str, dict, dict]:
     """A document assist job's projects table, project id, document and its series, from the job config."""
     table = get_projects_table()
     project_id = config['project_id']
-    document = document_series.find_document(table, project_id, config['document_id'])
+    document = document_series.find_document(table, project_id, config['document_id'], workspace=None)
     return table, project_id, document, document_series.series_of(project_id, document)
 
 
 def _persona_review_work(config: dict) -> dict:
     table, project_id, document, series = _assist_document(config)
     personas = document_review.pick_personas(
-        document_review.project_personas(table, project_id), _assist_body(config).get('persona_ids'))
+        document_review.project_personas(table, project_id, workspace=None), _assist_body(config).get('persona_ids'))
     return document_review.run_review(
         table, project_id=project_id, series_id=series['series_id'], document=document,
-        document_type=series['document_type'], personas=personas)
+        document_type=series['document_type'], personas=personas, workspace=None)
 
 
 # ---- Revise a PR/FAQ / PRD from its comments (shared/document_revision.py, docs/document-review.md) ----
@@ -5451,10 +5455,10 @@ def start_revise_from_comments(project_id: str, document_id: str):
     table = get_projects_table()
     if not table:
         raise ConfigurationError('Projects table not configured')
-    document = document_series.find_document(table, project_id, document_id)
+    document = document_series.find_document(table, project_id, document_id, workspace=None)
     series = document_series.series_of(project_id, document)
     threads = document_revision.select_threads(
-        document_comments.list_threads(table, project_id, series['series_id']), document, wanted)
+        document_comments.list_threads(table, project_id, series['series_id'], workspace=None), document, wanted)
     document_revision.require_revisable(document, threads)
     return _started_assist(project_id, ASSIST_REVISE_FROM_COMMENTS, {
         'project_id': project_id, 'document_id': document_id,
@@ -5470,12 +5474,12 @@ def start_revise_from_comments(project_id: str, document_id: str):
 def _revise_work(config: dict) -> dict:
     table, project_id, document, series = _assist_document(config)
     evidence = document_revision.read_evidence(
-        projects.feedback_table, document, config.get(category_access.SCOPE_CONFIG_KEY))
+        projects.feedback_table, document, config.get(category_access.SCOPE_CONFIG_KEY), workspace=None)
     return document_revision.run_revision(
         table, project_id=project_id, series_id=series['series_id'], document=document,
         document_type=series['document_type'], wanted=_assist_body(config).get('thread_ids'),
         outcome=str(config.get('outcome')), revise_id=str(config['revise_id']),
-        actor=dict(config.get('actor') or {}), evidence=evidence)
+        actor=dict(config.get('actor') or {}), evidence=evidence, workspace=None)
 
 
 ASSIST_WORK = {

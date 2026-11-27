@@ -45,7 +45,7 @@ class World:
     def generate(self, persona: dict, project_id: str | None = None) -> dict:
         """generate_persona_avatar stand-in: a NEW image (new bytes) per call, stamped like the real one."""
         self.generated += 1
-        key = avatar_object_key(persona['persona_id'], f'image-{self.generated}'.encode(), 'jpeg')
+        key = avatar_object_key(persona['persona_id'], f'image-{self.generated}'.encode(), 'jpeg', workspace=None)
         self.put(key, owner=project_id)
         return {'avatar_url': f's3://{BUCKET}/{key}', 'avatar_prompt': f'prompt {self.generated}'}
 
@@ -124,7 +124,7 @@ class TestARegenerationIsANewObject:
         assert world.keys() == {_key(world.persona()['avatar_url'])}
 
     def test_another_projects_images_under_the_same_persona_id_are_kept(self, world):
-        neighbour_nested = avatar_object_key(PERSONA, b'theirs', 'jpeg')
+        neighbour_nested = avatar_object_key(PERSONA, b'theirs', 'jpeg', workspace=None)
         neighbour_flat = f'avatars/{PERSONA}.png'
         world.put(neighbour_nested, owner='proj-b')
         world.put(neighbour_flat, owner='proj-b')
@@ -139,8 +139,8 @@ class TestTheDeleteSweepsCoverBothLayouts:
     def test_deleting_a_persona_removes_its_nested_and_flat_images_and_keeps_a_neighbours(self, world):
         import projects
 
-        mine_nested = avatar_object_key(PERSONA, b'mine', 'jpeg')
-        theirs_nested = avatar_object_key(PERSONA, b'theirs', 'jpeg')
+        mine_nested = avatar_object_key(PERSONA, b'mine', 'jpeg', workspace=None)
+        theirs_nested = avatar_object_key(PERSONA, b'theirs', 'jpeg', workspace=None)
         world.put(mine_nested)
         world.put(f'avatars/{PERSONA}.png')
         world.put(theirs_nested, owner='proj-b')
@@ -153,8 +153,8 @@ class TestTheDeleteSweepsCoverBothLayouts:
     def test_deleting_the_project_removes_every_image_it_owns(self, world):
         import projects
 
-        world.put(avatar_object_key(PERSONA, b'one', 'jpeg'))
-        world.put(avatar_object_key(PERSONA, b'two', 'jpeg'))
+        world.put(avatar_object_key(PERSONA, b'one', 'jpeg', workspace=None))
+        world.put(avatar_object_key(PERSONA, b'two', 'jpeg', workspace=None))
         world.put(f'avatars/{PERSONA}.jpeg')
         world.seed()
 
@@ -166,8 +166,8 @@ class TestTheDeleteSweepsCoverBothLayouts:
 class TestTheCdnUrlKeepsThePath:
     def test_a_nested_key_signs_its_full_path_and_a_legacy_key_its_file_name(self):
         with patch('shared.cloudfront_signing.sign_url', side_effect=lambda url: url):
-            nested = get_avatar_cdn_url('s3://b/avatars/p1/abc.jpeg', cdn_url='https://cdn/avatars')
-            legacy = get_avatar_cdn_url('s3://b/avatars/p1.jpeg', cdn_url='https://cdn/avatars')
+            nested = get_avatar_cdn_url('s3://b/avatars/p1/abc.jpeg', cdn_url='https://cdn/avatars', workspace=None)
+            legacy = get_avatar_cdn_url('s3://b/avatars/p1.jpeg', cdn_url='https://cdn/avatars', workspace=None)
         assert (nested, legacy) == ('https://cdn/avatars/p1/abc.jpeg', 'https://cdn/avatars/p1.jpeg')
 
     def test_a_listing_failure_during_the_regeneration_sweep_is_logged_not_raised(self):
@@ -176,5 +176,5 @@ class TestTheCdnUrlKeepsThePath:
                 raise RuntimeError('denied')
 
         with patch.object(avatar, 'logger') as logger:
-            avatar.delete_superseded_avatars(Broken(), BUCKET, PERSONA, keep='k', project_id=PROJECT)
+            avatar.delete_superseded_avatars(Broken(), BUCKET, PERSONA, keep='k', project_id=PROJECT, workspace=None)
         assert 'Could not list superseded avatars' in logger.warning.call_args.args[0]

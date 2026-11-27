@@ -57,7 +57,7 @@ __all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_PARTITION_PREFIX', 
            'deployment_link_registry_key', 'deployment_project_item', 'deployment_series_item',
            'document_keys', 'document_listing', 'document_revision_key',
            'document_revisions_prefix', 'job_status_pk',
-           'legacy_assignment_key', 'legacy_assignment_prefix', 'personas_index_pk', 'product_docs_prefix',
+           'legacy_assignment_key', 'legacy_assignment_prefix', 'persona_keys', 'personas_index_pk', 'product_docs_prefix',
            'project_id_of',
            'project_partitions', 'project_pk', 'project_registry_key', 'project_registry_pk', 'project_type_pk',
            'require_deployment', 'review_link_key', 'review_link_registry_key', 'review_link_registry_pk',
@@ -161,18 +161,18 @@ def _project_prefix(workspace: WorkspaceScope | None) -> str:
     return PROJECT_PREFIX if workspace is None else f'{workspace.prefix}{PROJECT_PREFIX}'
 
 
-def project_pk(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def project_pk(project_id: str, *, workspace: WorkspaceScope | None) -> str:
     """A project's partition: its rows in voc-projects, its jobs in voc-jobs, its lists in voc-participants
     (``PROJECT#{id}``; ``WS#{ws}#PROJECT#{id}`` in a workspace)."""
     return scoped_pk(workspace, f'{PROJECT_PREFIX}{project_id}')
 
 
-def project_type_pk(*, workspace: WorkspaceScope | None = None) -> str:
+def project_type_pk(*, workspace: WorkspaceScope | None) -> str:
     """``gsi1-by-type``'s partition of the scope's project rows: ``TYPE#PROJECT``, ``WS#{ws}#TYPE#PROJECT``."""
     return scoped_pk(workspace, PROJECT_TYPE_PK)
 
 
-def project_registry_pk(workspace: WorkspaceScope) -> str:
+def project_registry_pk(*, workspace: WorkspaceScope) -> str:
     """The workspace's registry of its project ids in voc-projects: ``WS#{ws}#PROJECT_IDS`` (since 7.26.00). A Query
     of it, knowing only the workspace, names every project made there (the export, the delete, an erasure)."""
     return workspace.key(_PROJECT_REGISTRY)
@@ -183,7 +183,7 @@ def project_registry_key(project_id: str, *, workspace: WorkspaceScope) -> dict[
     transaction as the project's ``META`` (shared/project_writes.py ``create_workspace_project``)."""
     if not project_id:
         raise ValueError('a registry row names a project id')
-    return {'pk': project_registry_pk(workspace), 'sk': project_id}
+    return {'pk': project_registry_pk(workspace=workspace), 'sk': project_id}
 
 
 def deployment_project_registry_key(project_id: str) -> dict[str, str]:
@@ -201,7 +201,7 @@ def deployment_project_item(project_id: str, created_at: str) -> dict[str, str]:
     return {**deployment_project_registry_key(project_id), 'created_at': created_at}
 
 
-def project_id_of(partition_key: object, *, workspace: WorkspaceScope | None = None) -> str | None:
+def project_id_of(partition_key: object, *, workspace: WorkspaceScope | None) -> str | None:
     """The project id of a stored ``pk`` that is one of the scope's project partitions, else None (another scope's
     partition, a document or persona index partition is not one: it carries a ``#`` after the id)."""
     prefix = _project_prefix(workspace)
@@ -216,25 +216,33 @@ def _documents_index_pk(project_id: str, workspace: WorkspaceScope | None) -> st
     return f'{project_pk(project_id, workspace=workspace)}#DOCUMENTS'
 
 
-def document_listing(project_id: str, listed_at: str, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+def document_listing(project_id: str, listed_at: str, *, workspace: WorkspaceScope | None) -> dict[str, str]:
     """Where one of a project's documents is listed among them: ``gsi1pk`` / ``gsi1sk`` (``listed_at``)."""
     return {'gsi1pk': _documents_index_pk(project_id, workspace), 'gsi1sk': listed_at}
 
 
 def document_keys(project_id: str, sort_key: str, listed_at: str, *,
-                  workspace: WorkspaceScope | None = None) -> dict[str, str]:
+                  workspace: WorkspaceScope | None) -> dict[str, str]:
     """The keys of one of a project's documents: its row ``sort_key`` in the project's partition, listed among the
     project's documents at ``listed_at`` (``document_listing``)."""
     return {'pk': project_pk(project_id, workspace=workspace), 'sk': sort_key,
             **document_listing(project_id, listed_at, workspace=workspace)}
 
 
-def personas_index_pk(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def personas_index_pk(project_id: str, *, workspace: WorkspaceScope | None) -> str:
     """The ``gsi1pk`` of a project's personas."""
     return f'{project_pk(project_id, workspace=workspace)}#PERSONAS'
 
 
-def version_partition_key(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def persona_keys(project_id: str, persona_id: str, listed_at: str, *,
+                 workspace: WorkspaceScope | None) -> dict[str, str]:
+    """The keys of one of a project's personas: ``PERSONA#{id}`` in the project's partition, listed among the
+    project's personas at ``listed_at`` (``personas_index_pk``)."""
+    return {'pk': project_pk(project_id, workspace=workspace), 'sk': f'PERSONA#{persona_id}',
+            'gsi1pk': personas_index_pk(project_id, workspace=workspace), 'gsi1sk': listed_at}
+
+
+def version_partition_key(project_id: str, *, workspace: WorkspaceScope | None) -> str:
     """The partition of a project's document-version rows in voc-projects, apart from the project's own so they do not
     weigh on its document queries: ``DOCUMENT_VERSIONS#PROJECT#{id}`` (``WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}`` in a
     workspace)."""
@@ -242,14 +250,14 @@ def version_partition_key(project_id: str, *, workspace: WorkspaceScope | None =
 
 
 def version_counter_key(project_id: str, document_type: str, normalized_title: str, *,
-                        workspace: WorkspaceScope | None = None) -> dict[str, str]:
+                        workspace: WorkspaceScope | None) -> dict[str, str]:
     """A series' version counter: ``{TYPE}#{sha256 of the normalized base title}`` in the version partition."""
     return {'pk': version_partition_key(project_id, workspace=workspace),
             'sk': f'{document_type.upper()}#{sha256_hex(normalized_title)}'}
 
 
 def version_allocation_key(project_id: str, document_type: str, allocation_id: str, *,
-                           workspace: WorkspaceScope | None = None) -> dict[str, str]:
+                           workspace: WorkspaceScope | None) -> dict[str, str]:
     """An allocation's history row (kept after its document is deleted, so a late retry cannot recreate it):
     ``ALLOCATION#{TYPE}#{sha256 of the allocation id}`` in the version partition."""
     return {'pk': version_partition_key(project_id, workspace=workspace),
@@ -273,14 +281,14 @@ def document_revisions_prefix(document_id: str) -> str:
 
 
 def document_revision_key(project_id: str, document_id: str, revision: int, *,
-                          workspace: WorkspaceScope | None = None) -> dict[str, str]:
+                          workspace: WorkspaceScope | None) -> dict[str, str]:
     """One saved revision of an unmanaged document: ``REVISION#{document id}#{revision:06d}`` in the version
     partition."""
     return {'pk': version_partition_key(project_id, workspace=workspace),
             'sk': f'{document_revisions_prefix(document_id)}{revision:06d}'}
 
 
-def comments_pk(project_id: str, series_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def comments_pk(project_id: str, series_id: str, *, workspace: WorkspaceScope | None) -> str:
     """The partition of a series' comment threads and of its review link's pointer row (``SHARE``):
     ``DCOMMENTS#{project}#{series}``, ``WS#{ws}#DCOMMENTS#{project}#{series}`` in a workspace (since 7.37.00). The
     series id is the same in every scope (shared/document_series.py ``series_id``: project ids are unique in the
@@ -308,14 +316,14 @@ def comment_series_item(project_id: str, series_id: str, listed_at: str, *, work
             'listed_at': listed_at}
 
 
-def review_link_key(share_id: str, *, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+def review_link_key(share_id: str, *, workspace: WorkspaceScope | None) -> dict[str, str]:
     """A review link's row: the deployment's ``DOCSHARE#{id}`` / ``META`` (shared/review_share_audience.py
     ``share_key``); a workspace's ``WS#{ws}#DOCSHARE#{id}`` / ``META`` (since 7.37.00), whose deployment-wide
     ``DOCSHARE#{id}`` row only routes to it (shared/ws_repo.py ``route_share_id``)."""
     return {'pk': scoped_pk(workspace, f'{SHARE_PK_PREFIX}{share_id}'), 'sk': SHARE_SK}
 
 
-def review_link_registry_pk(workspace: WorkspaceScope) -> str:
+def review_link_registry_pk(*, workspace: WorkspaceScope) -> str:
     """The workspace's registry of its review link ids in voc-projects: ``WS#{ws}#DOCSHARE_IDS`` (since 7.37.00). The
     hard delete's ``docshares`` entry Queries it to release every routing row the workspace holds."""
     return workspace.key(_REVIEW_LINK_REGISTRY)
@@ -326,7 +334,7 @@ def review_link_registry_key(share_id: str, *, workspace: WorkspaceScope) -> dic
     transaction as the link and its routing row (shared/document_share.py ``create_share``)."""
     if not share_id:
         raise ValueError('a registry row names a review link id')
-    return {'pk': review_link_registry_pk(workspace), 'sk': share_id}
+    return {'pk': review_link_registry_pk(workspace=workspace), 'sk': share_id}
 
 
 def deployment_link_registry_key(share_id: str) -> dict[str, str]:
@@ -378,13 +386,13 @@ def comment_partition_ids(partition_key: object) -> tuple[str, str] | None:
     return series_registry_ids(partition_key[len(_COMMENTS_PREFIX):])
 
 
-def reviewer_rate_pk(share_id: str, email_digest: str, *, workspace: WorkspaceScope | None = None) -> str:
+def reviewer_rate_pk(share_id: str, email_digest: str, *, workspace: WorkspaceScope | None) -> str:
     """The partition of a reviewer's daily write counters on one link (``sk`` the UTC day, a ``ttl`` two days on):
     ``DCRATE#{share}#{email digest}``, ``WS#{ws}#DCRATE#…`` in a workspace."""
     return scoped_pk(workspace, f'{_REVIEWER_RATE_PREFIX}{share_id}#{email_digest}')
 
 
-def product_docs_prefix(project_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+def product_docs_prefix(project_id: str, *, workspace: WorkspaceScope | None) -> str:
     """The object prefix of a project's product documents, their uploads (``raw/``) and extracted text
     (``extracted/``): ``projects/{id}/product_docs/``, ``ws/{ws}/projects/{id}/product_docs/`` in a workspace
     (api/product_context.py builds both keys from it; an erasure lists it for review, jobs/retention/project_people.py).
@@ -394,7 +402,7 @@ def product_docs_prefix(project_id: str, *, workspace: WorkspaceScope | None = N
     return scoped_object_key(workspace, f'projects/{project_id}/product_docs/')
 
 
-def job_status_pk(status: str, *, workspace: WorkspaceScope | None = None) -> str:
+def job_status_pk(status: str, *, workspace: WorkspaceScope | None) -> str:
     """voc-jobs' ``gsi1-by-status`` partition of a project job's status: ``STATUS#{status}`` (one partition for every
     project of the deployment), ``WS#{ws}#STATUS#{status}`` in a workspace (since 7.27.00; the job stores write it
     since 7.29.00, slice 3c: shared/jobs.py, shared/assist_jobs.py; no route passes a workspace yet)."""
@@ -410,7 +418,7 @@ class ProjectPartition(NamedTuple):
     partition: str
 
 
-def project_partitions(project_id: str, *, workspace: WorkspaceScope | None = None) -> tuple[ProjectPartition, ...]:
+def project_partitions(project_id: str, *, workspace: WorkspaceScope | None) -> tuple[ProjectPartition, ...]:
     """The partitions keyed by the project id alone, each with its kind and table (since 7.27.00), for the workspace
     export, the hard delete's projects entry and the per-project delete (slices 3g, 3h; none calls it yet): in
     voc-projects its own partition (``project_pk``) and its document versions (``version_partition_key``: the saved

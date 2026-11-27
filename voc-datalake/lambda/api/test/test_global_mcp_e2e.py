@@ -227,8 +227,8 @@ class TestProjectScopedToken:
         series = document_series.series_of(ALPHA, prd)['series_id']
         thread = document_comments.thread_item(project_id=ALPHA, series_id=series, document=prd,
                                                author=document_comments.user_author('s', 'Ann'), text='Faster?',
-                                               anchor=None)
-        document_comments.put_thread(world.projects, thread)
+                                               anchor=None, workspace=None)
+        document_comments.put_thread(world.projects, thread, workspace=None)
         return thread['comment_id']
 
     @staticmethod

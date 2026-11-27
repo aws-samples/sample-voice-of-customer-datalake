@@ -50,7 +50,7 @@ def registered_project(row: Mapping[str, Any]) -> RegisteredProject:
     return RegisteredProject(str(row['sk']), marked is not None, at)
 
 
-def iter_project_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None,
+def iter_project_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None,
                       sort_prefix: str | None = None, **kwargs: Any) -> Iterator[dict]:
     """Every row of the project's partition (the workspace's project when given), only those whose ``sk`` begins
     with ``sort_prefix`` when given, across every page. ``kwargs``: the rest of the Query
@@ -59,7 +59,7 @@ def iter_project_rows(table: Any, project_id: str, *, workspace: WorkspaceScope 
                           sort_prefix=sort_prefix, **kwargs)
 
 
-def iter_version_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None,
+def iter_version_rows(table: Any, project_id: str, *, workspace: WorkspaceScope | None,
                       sort_prefix: str | None = None, **kwargs: Any) -> Iterator[dict]:
     """``iter_project_rows`` of the project's document-version partition (shared/project_keys.py
     ``version_partition_key``: its series counters, allocations, legacy assignments and revisions; since 7.27.00)."""
@@ -74,6 +74,6 @@ def iter_registered_project_ids(table: Any, *, workspace: WorkspaceScope) -> Ite
     workspace only: the deployment's projects have no registry (``OutOfScopeError`` for anything but a
     ``WorkspaceScope``)."""
     require_scope(workspace, 'only a workspace has a project registry')
-    rows = iter_partition(workspace, table, 'pk', project_registry_pk(workspace), ProjectionExpression='sk',
-                          ConsistentRead=True)
+    rows = iter_partition(workspace, table, 'pk', project_registry_pk(workspace=workspace),
+                          ProjectionExpression='sk', ConsistentRead=True)
     return (str(row['sk']) for row in rows)

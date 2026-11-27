@@ -69,7 +69,7 @@ def test_a_workspace_thread_is_in_the_workspaces_series_partition(table):
     item = _thread(table, A)
     assert item['pk'] == f'WS#{A.ws}#DCOMMENTS#{PROJECT}#{SERIES}'
     assert item['pk'] == comments_pk(PROJECT, SERIES, workspace=A)
-    assert _partition(table, comments_pk(PROJECT, SERIES)) == []
+    assert _partition(table, comments_pk(PROJECT, SERIES, workspace=None)) == []
 
 
 def test_a_workspace_thread_lists_its_series_in_the_project_first_and_once(table):
@@ -80,7 +80,7 @@ def test_a_workspace_thread_lists_its_series_in_the_project_first_and_once(table
     assert (listed['sk'], listed['series_id']) == (f'COMMENT_SERIES#{SERIES}', SERIES)
     # The deployment keeps no list (its requests are the ones sent before), nor does the other workspace.
     _thread(table, None)
-    assert _partition(table, project_pk(PROJECT)) == []
+    assert _partition(table, project_pk(PROJECT, workspace=None)) == []
     assert _partition(table, project_pk(PROJECT, workspace=B)) == []
 
 
@@ -131,7 +131,7 @@ def test_the_deployments_addressed_mark_is_the_request_sent_before(table):
     item = _thread(table, None)
     recording = Recording(table)
     entry = _addressed(2)
-    dc.record_addressed(recording, item, entry)
+    dc.record_addressed(recording, item, entry, workspace=None)
     assert recording.calls == [('update_item', {
         'Key': {'pk': item['pk'], 'sk': item['sk']},
         'UpdateExpression': ('SET addressed_history = list_append(if_not_exists(addressed_history, :empty), :entry), '
@@ -185,11 +185,11 @@ def test_the_deployments_requests_are_the_ones_sent_before(table):
     series registry (read, then put if absent), the requests it adds."""
     recording = Recording(table)
     item = dc.thread_item(project_id=PROJECT, series_id=SERIES, document=DOCUMENT, author={'kind': 'user'},
-                          text='x', anchor=None)
-    dc.put_thread(recording, item)
-    dc.get_thread(recording, PROJECT, SERIES, item['comment_id'])
-    dc.list_threads(recording, PROJECT, SERIES)
-    dc.delete_thread(recording, item)
+                          text='x', anchor=None, workspace=None)
+    dc.put_thread(recording, item, workspace=None)
+    dc.get_thread(recording, PROJECT, SERIES, item['comment_id'], workspace=None)
+    dc.list_threads(recording, PROJECT, SERIES, workspace=None)
+    dc.delete_thread(recording, item, workspace=None)
     key = {'pk': f'DCOMMENTS#{PROJECT}#{SERIES}', 'sk': f"C#{item['comment_id']}"}
     listed_at = recording.calls[1][1]['Item']['listed_at']
     assert recording.calls == [
@@ -228,8 +228,8 @@ def test_the_deployments_threads_never_stop_a_workspaces_review(table):
     """The dedupe reads the workspace's threads: the same persona's comment in the deployment is not seen there."""
     persona = {'persona_id': 'persona_1', 'name': 'Budget Traveller'}
     run_review(table, project_id=PROJECT, series_id=SERIES, document=DOCUMENT, document_type='prd',
-               personas=[persona], invoke=_persona_reply)
+               personas=[persona], invoke=_persona_reply, workspace=None)
     result = run_review(table, project_id=PROJECT, series_id=SERIES, document=DOCUMENT, document_type='prd',
                         personas=[persona], invoke=_persona_reply, workspace=A)
     assert result['filed'] == 2
-    assert len(dc.list_threads(table, PROJECT, SERIES)) == 2
+    assert len(dc.list_threads(table, PROJECT, SERIES, workspace=None)) == 2

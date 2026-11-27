@@ -43,7 +43,7 @@ def _generated_prd(table: Any, content: str = '# v1 text') -> dict:
     return persist_versioned_document(table, PROJECT, 'prd', 'Launch', 'job_1', {
         'content': content, 'created_at': '2026-04-01T00:00:00+00:00', 'source_prd_id': None,
         'feedback_count': 12,
-    })
+    }, workspace=None)
 
 
 def _custom_doc(table: Any, content: str = 'first draft') -> dict:
@@ -155,7 +155,7 @@ class TestAnUnmanagedEditSavesWhatItReplaces:
         from shared.document_history import edit_document
 
         with pytest.raises(ConflictError):
-            edit_document(table, PROJECT, {**stale}, {'content': 'mine'}, now=NOW)
+            edit_document(table, PROJECT, {**stale}, {'content': 'mine'}, now=NOW, workspace=None)
         assert _row(table, 'DOC#doc_1')['content'] == 'saved by someone else'
 
     def test_deleting_the_document_removes_its_saved_revisions(self, table):
@@ -168,7 +168,7 @@ class TestAnUnmanagedEditSavesWhatItReplaces:
         delete_document(PROJECT, 'doc_1')
 
         left = table.scan()['Items']
-        assert not [item for item in left if item['pk'] == version_partition_key(PROJECT)]
+        assert not [item for item in left if item['pk'] == version_partition_key(PROJECT, workspace=None)]
 
 
 class TestASecondTabsStaleSaveIsAConflictNotAnOverwrite:

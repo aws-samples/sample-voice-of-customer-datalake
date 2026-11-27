@@ -46,11 +46,11 @@ def _always(reply):
 
 def _run(table, invoke, personas=PERSONAS[:1], document=DOCUMENT):
     return dr.run_review(table, project_id='p1', series_id=SERIES_ID, document=document, document_type='prfaq',
-                         personas=personas, invoke=invoke)
+                         personas=personas, invoke=invoke, workspace=None)
 
 
 def _anchored(table):
-    return [t for t in dc.list_threads(table, 'p1', SERIES_ID) if t.get('anchor')]
+    return [t for t in dc.list_threads(table, 'p1', SERIES_ID, workspace=None) if t.get('anchor')]
 
 
 # ── locate_quote: the anchoring of a persona's quote ────────────────────────
@@ -158,7 +158,7 @@ def test_only_verbatim_comments_are_filed_anchored_by_their_quote(table):
 
 def test_the_verdict_is_a_whole_document_comment_carrying_the_stance(table):
     _run(table, _always(_reply(stance='negative', verdict='Too expensive.')))
-    threads = dc.list_threads(table, 'p1', SERIES_ID)
+    threads = dc.list_threads(table, 'p1', SERIES_ID, workspace=None)
     assert len(threads) == 1
     assert (threads[0]['anchor'], threads[0]['text'], threads[0]['verdict']) == (None, 'Too expensive.', 'negative')
 
@@ -169,7 +169,7 @@ def test_the_document_is_never_edited(table):
     assert table.get_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d1'})['Item'] == before
     written = {row['pk'] for row in table.scan()['Items']}
     # The threads, and (since 7.48.00) their series in the deployment's series registry.
-    assert written == {'PROJECT#p1', dc.comments_pk('p1', SERIES_ID), 'COMMENT_SERIES_IDS'}
+    assert written == {'PROJECT#p1', dc.comments_pk('p1', SERIES_ID, workspace=None), 'COMMENT_SERIES_IDS'}
 
 
 def test_a_review_lists_its_series_once_however_many_threads_it_files(table):
@@ -199,7 +199,7 @@ def test_a_rerun_on_the_same_version_files_nothing_twice(table):
     first = _run(table, invoke)
     second = _run(table, invoke)
     assert (first['filed'], second['filed']) == (2, 0)
-    assert len(dc.list_threads(table, 'p1', SERIES_ID)) == 2
+    assert len(dc.list_threads(table, 'p1', SERIES_ID, workspace=None)) == 2
 
 
 def test_a_rerun_on_a_new_version_files_again(table):
@@ -292,4 +292,4 @@ def test_project_personas_reads_only_that_projects_persona_rows(table):
     table.put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PERSONA#a', 'persona_id': 'a', 'name': 'A'})
     table.put_item(Item={'pk': 'PROJECT#p2', 'sk': 'PERSONA#b', 'persona_id': 'b'})
     table.put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PERSONA#broken'})
-    assert [p['persona_id'] for p in dr.project_personas(table, 'p1')] == ['a']
+    assert [p['persona_id'] for p in dr.project_personas(table, 'p1', workspace=None)] == ['a']

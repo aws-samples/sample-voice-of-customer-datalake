@@ -52,7 +52,7 @@ def _project_job_partition(workspace: WorkspaceScope | None, project_id: str) ->
     """A project job's partition, the deployment's only: a workspace plan's project jobs are still the deployment's
     (the project routes move at the switch, 3h), so a workspace is refused (``NotPerWorkspaceError``)."""
     require_deployment(workspace, _PROJECT_JOB_WAIT_STORE)
-    return project_pk(project_id)
+    return project_pk(project_id, workspace=workspace)
 
 
 @dataclass(frozen=True)
