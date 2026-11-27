@@ -66,6 +66,8 @@ const SPECIAL_FOLDS = { ł: 'l', Ł: 'l', ß: 'ss', ø: 'o', Ø: 'o', æ: 'ae', 
 export function familiarFilename(item) {
   const folded = (item.name ?? '').replace(/[łŁßøØæÆœŒđĐıþð]/gu, (char) => SPECIAL_FOLDS[char] ?? char);
   const words = folded.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  const slug = words.join('-').slice(0, 60).replace(/-+$/u, '');
+  // (the words are joined by single `-`, so the cut leaves at most one at the end)
+  const cut = words.join('-').slice(0, 60);
+  const slug = cut.endsWith('-') ? cut.slice(0, -1) : cut;
   return `${slug || item.form_id}-responses-${new Date().toISOString().slice(0, 10)}.csv`;
 }
