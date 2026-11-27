@@ -435,17 +435,80 @@ npx cdk deploy --all --require-approval never && bash scripts/refresh-api-stage.
 
 A clean `cdk synth`/`cdk deploy` prints **zero warnings**. Treat a new warning as something to investigate.
 
+**The review registries' backfill (required since 7.93.00).** The deployment's erasure by email finds the
+deployment's projects, review links and commented series through registries that the projects API keeps (since
+7.48.00), and since 7.93.00 only through them. Every run of the retention worker that names no workspace starts with
+its `registries` phase: the backfill's marker (`voc-datalake/scripts/projects/backfill_review_registries.py`), then a
+check that `PROJECT_IDS` lists every live project on `gsi1-by-type`. Without both:
+
+- an erasure by email of the deployment fails by name before it deletes anything (`ReviewRegistriesNotBackfilled`;
+  its job row asks the admin to have the deployment's operator run the backfill with `--apply`, then to run the
+  erasure again);
+- every other run (the daily retention window, an erasure by author, source or id) deletes as usual and owes its
+  lineage marks (its row says `lineage_owed: true`; one row in voc-aggregates, `JOB#retention` / `LINEAGE_OWED`,
+  holds the sources owed), which the first run after the backfill makes on its own; a run that fails after it deleted
+  owes them too, and a run whose owed row could not be written (more than 1,000 sources, or the row kept changing, or
+  an AWS error) still says `lineage_owed: true`, with a reason saying no later run makes them and that its audit row
+  lists its sources;
+- either way the run prints the `RetentionRunFailed` or `RetentionLineageOwed` metric, which alerting's
+  `retention-runs` alarm watches (Settings, Logs, Alerts).
+
+Administration's erasure panel does not show `lineage_owed` yet (planned: 3g-ui, docs/multi-workspace.md): until it
+does, owed lineage shows only in the `retention-runs` alarm (when alerting is on), the job row (`GET
+/settings/erasure`) and the `AUDIT#retention` rows in voc-aggregates.
+
+A workspace's own erasure is not affected. When the marker exists: once an applied backfill wrote it (after every
+writer ran 7.48.0 or later and drained), or, since 7.93.00, once a new deployment's first deploy found no project and
+wrote it (the marker's seed, `lib/stacks/review-registries-marker.ts`); and only until something deletes it: a full
+deploy that adds the marker's reset (in VocCoreStack: an upgrade from below 7.48.00, a full rollback below 7.48.00,
+and a new deployment's, which the seed follows) or the backfill's `--unmark`. The backfill's dry run says, on its last line, whether the
+marker is there and complete, incomplete or absent. So:
+
+- **Upgrading from 7.48.00 or later:** run the dry run before you deploy 7.93.00; unless it says the marker is there
+  and complete, run `--apply`. Take it before the deploy: after it, a deployment with no live project shows the
+  seed's marker, which cannot see a project made before 7.48.00 and deleted since (off the index, never listed).
+- **Upgrading from a release older than 7.48.00:** deploy, wait for the drain the script names (the longer of the
+  projects API's and its assist twin's timeouts plus 5 minutes after their last update), then run the backfill with
+  `--apply`, even if the dry run says the marker is there: a deployment with no live project gets the seed's marker,
+  and the backfill still has to list the threads of projects deleted before 7.48.00 (a deleted project is off the
+  index, so the seed cannot see them).
+- **A new deployment:** nothing to do. Its first deploy finds no project on `gsi1-by-type` and writes a complete
+  marker (each count 0), so an erasure by email works from the start; the dry run says the marker is there and
+  complete.
+
+```bash
+cd voc-datalake
+.venv/bin/python scripts/projects/backfill_review_registries.py            # dry run: says whether the marker is there
+.venv/bin/python scripts/projects/backfill_review_registries.py --apply    # lists, then writes the marker
+```
+
+**After deploying 7.93.00, check the new reads on the live site.** Start an erasure by email of an address nobody has
+(Administration, Privacy & access, Source policies, the erasure panel) and confirm its job row reads `completed` with
+`review_registries: complete`: that run read the marker, the project index and the registry under the worker's new
+grants. A row that reads `failed (AccessDeniedException)` means the walks' policy did not deploy: deploy
+VocProcessingStack again.
+
+Deploy 7.93.00 while no erasure of the deployment and no retention window is running (the window starts at 04:15 UTC):
+a run handed over from before the release reads the marker alone at its next invocation, without the gap check.
+
+A live project on `gsi1-by-type` that `PROJECT_IDS` does not list makes the result `incomplete`: an erasure by email
+fails by name (`ReviewRegistriesIncomplete`) and every other run owes; run the backfill with `--unmark`, then
+`--apply`, then the erasure again (a verification fixture's project, `proj_vf_` and 24 hex, is not a gap). The check
+cannot see an unlisted review link, an unlisted comment series or an unlisted deleted project (none is on the index),
+so the rules below still hold. The marker is read again at each invocation's start, so an `--unmark` during a run is
+seen.
+
 **Rolling back one stack below 7.48.00, or importing a bundle from an older checkout (the review registries' marker).**
-Since 7.48.00 the deployment's erasure by email finds the deployment's projects, review links and commented series
-through registries that the projects API keeps, once the operator's backfill has written its marker
-(`voc-datalake/scripts/projects/backfill_review_registries.py`, CHANGELOG 7.48.00). A writer older than 7.48.00
-keeps none of them. Rolling the whole release back (every stack from the older checkout) deletes the marker by
-itself (VocCoreStack's reset, `lib/stacks/review-registries-marker.ts`), but deploying an older VocApiStack alone
-does not, nor does a project bundle imported from an older checkout: before either, run
-`.venv/bin/python scripts/projects/backfill_review_registries.py --unmark` from `voc-datalake/`, so the erasures go
-back to their own Scans; then run the backfill again: after the next upgrade, for a rollback; right after the
-import, for an import (docs/project-export.md). Without it an erasure trusts registries that miss what the older
-writer made meanwhile: an imported project whole, with its series' threads.
+A writer older than 7.48.00 keeps none of the registries. Rolling the whole release back (every stack from the older
+checkout) deletes the marker by itself (VocCoreStack's reset), but deploying an older VocApiStack alone does not, nor
+does a project bundle imported from an older checkout (the reset stays in VocCoreStack: VocApiStack is at its
+resource gate, CHANGELOG 7.93.00): before either, run
+`.venv/bin/python scripts/projects/backfill_review_registries.py --unmark` from `voc-datalake/`, so the erasures by
+email fail by name, and the other runs owe, rather than trust the registries; then run the backfill again: after the
+next upgrade, for a rollback; right after the import, for an import (docs/project-export.md). Without it an erasure
+trusts registries that miss what the older writer made meanwhile: an imported project whole, with its links' and
+series' threads (the registries check catches a live project the older writer made, never its review links, its
+series or a deleted one).
 
 ### Two Deployments in One Account and Region
 

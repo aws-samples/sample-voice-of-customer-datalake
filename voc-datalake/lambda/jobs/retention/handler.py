@@ -56,8 +56,8 @@ A run walks its PHASES in order, each paged and time-budgeted:
    ``raw/{source}/`` and ``silver/{source}/`` (``shared/retention.delete_raw_prefix_page``);
 4. ``lineage`` — when the run deleted anything of the deployment's and ``PROJECTS_TABLE`` is set:
    the deployment's artifacts that cited a deleted item are marked, its projects found through its project registry
-   (``PROJECT_IDS``), or, until the review registries' backfill wrote its marker, a Scan of the projects' ``META`` rows
-   (since 7.48.00; ``lineage.py``); then ``engineering_lineage`` — with ``ENGINEERING_TABLE`` and ``AGENTS_TABLE`` set
+   (``PROJECT_IDS``, since 7.48.00; ``lineage.py``), which the review registries' backfill must have completed (its
+   marker) and which must list every live project (the gap check), since 7.93.00; then ``engineering_lineage`` — with ``ENGINEERING_TABLE`` and ``AGENTS_TABLE`` set
    (since 7.84.00), in every erasure of the deployment and a retention window that deleted an item of the deployment's
    feedback: the erased review ids leave the engineering runs' ``META`` and the issues' run claims
    (``engineering_lineage.py``); then ``workspace_lineage`` —
@@ -71,6 +71,18 @@ phase's scan cursor and its running state (``runs.py``). A scan that answers wit
 fails the run (``CursorStuck``) rather than reading the same page again. Deletes are idempotent, so a
 duplicate delivery or an overlapping daily run only repeats no-ops. Every
 finished run (and every failure) writes one audit row (``pk AUDIT#retention``).
+
+The deployment's review registries (since 7.93.00, projects 3g-d2): every run that names no workspace and can delete or replay, with
+``PROJECTS_TABLE`` set, starts with the ``registries`` phase (``registries.py``: the backfill's marker, then the gap
+check, bounded and handed over like the other phases), whose result is the run's (``review_registries`` on its rows).
+The deployment's erasure by email without a source fails there, by name, before it deletes anything (its people walk
+cannot be owed: the address is not stored). Every other run deletes as usual, and without complete registries it OWES
+its deployment ``lineage`` pass (one durable row, ``JOB#retention`` / ``LINEAGE_OWED``), which the next run with
+complete registries replays, whether it deleted anything or not, then clears. The marker is read again at each
+invocation's start, so an ``--unmark`` during a run is seen. A failure an admin fixes outside the job
+(``registries.NeedsAnAdmin``) puts what to do on the job's and audit rows beside its name, fixed text that quotes
+nothing of the erasure; a failed run and a run that owes print the alarm's EMF line (``RetentionRunFailed``,
+``RetentionLineageOwed``; shared/ops_alerts.py).
 
 A deployment-wide run (an erasure that names no workspace, the retention window) runs as the deployment; each step it
 takes inside one workspace is attributed to that workspace for its log lines (``workspaces.inside``, since 7.84.00).
@@ -102,6 +114,7 @@ from jobs.retention import (
     members,
     participants,
     project_people,
+    registries,
     workspaces,
 )
 from jobs.retention.copies import ItemDeleter, write_tombstones
@@ -158,6 +171,7 @@ from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, message_scope, scope
 JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
 STATUS_COMPLETED: Final = 'completed'
 STATUS_FAILED: Final = 'failed'
+PHASE_REGISTRIES: Final = registries.PHASE
 PHASE_ITEMS: Final = 'items'
 PHASE_FORM_TESTS: Final = 'form_tests'
 PHASE_EXPORTS: Final = 'exports'
@@ -206,10 +220,15 @@ class Walk:
     context: Any
     event: dict[str, Any]
     run: dict[str, Any]
-    filters: Filters
+    #: The store scans' filters; None for a run that scans no store (``owed_only``).
+    filters: Filters | None
     s3: Any
     time_left: TimeLeft
     clock: Callable[[], datetime] = workspaces.utc_now
+    #: A retention window that retains nothing but replays owed lineage (7.93.00): its registries and lineage phases.
+    owed_only: bool = False
+    #: Whether this invocation read the review registries' marker already (``_recheck_marker``, 7.93.00).
+    marker_read: bool = False
 
     @property
     def aggregates(self) -> Any:
@@ -506,6 +525,9 @@ def _unscoped(item: dict) -> bool:
 def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
     """Tombstone, then delete, every match of the phase's store from ``cursor`` on; a hand-over or None."""
     store = _PHASE_STORES[phase]
+    if walk.filters is None:
+        # An owed-only run's phases are ``registries`` and ``lineage`` (``_phases``): never a store's.
+        raise RuntimeError(f'a run that replays owed lineage only scanned {store}')
     table, condition, run = walk.tables[store], walk.filters(store), walk.run
     deleter = ItemDeleter(run, walk.s3, RAW_DATA_BUCKET, walk.tables)
     retention_run = run['mode'] == MODE_RETENTION
@@ -597,10 +619,94 @@ def _erase_exports(walk: Walk, _cursor: dict | None) -> dict | None:
 
 def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
     """Mark the deployment's artifacts that cited a deleted item (``lineage.deployment_step``: its projects by Query,
-    since 7.48.00), step by step; a workspace's rows are the ``workspace_lineage`` phase's."""
+    since 7.48.00), step by step; a workspace's rows are the ``workspace_lineage`` phase's. Once the pass ended, what an
+    earlier run owed and this one replayed is cleared (registries.py ``clear_owed``, 7.93.00)."""
     projects = walk.tables['projects']
-    return _step_walk(walk, PHASE_LINEAGE, cursor,
-                      lambda at: lineage.deployment_step(projects, walk.aggregates, walk.run, at))
+    handed_over = _step_walk(walk, PHASE_LINEAGE, cursor,
+                             lambda at: lineage.deployment_step(projects, walk.aggregates, walk.run, at))
+    if handed_over is None:
+        registries.clear_owed(walk.aggregates, walk.run)
+        walk.run[registries.LINEAGE_DONE] = True
+    return handed_over
+
+
+def _check_registries(walk: Walk, cursor: dict | None) -> dict | None:
+    """The ``registries`` phase (registries.py ``step``: the marker, then the gap check, one page a step), first in
+    every run that names no workspace and can delete or replay; then the deployment's erasure by email requires its
+    result. Resumed with a cursor, it reads the marker again first (round 2, R2-4): an ``--unmark`` between two
+    invocations ends the phase with ``not_backfilled`` before anything is deleted."""
+    projects = walk.tables['projects']
+    if cursor is not None and not walk.marker_read:
+        walk.marker_read = True
+        if not registries.marker_present(projects):
+            walk.run[registries.RESULT] = registries.REGISTRIES_NOT_BACKFILLED
+            _require_for_people(walk)
+            return None
+    handed_over = _step_walk(walk, PHASE_REGISTRIES, cursor, lambda at: registries.step(projects, walk.run, at))
+    if handed_over is None:
+        walk.marker_read = True
+        _require_for_people(walk)
+    return handed_over
+
+
+def _walks_deployment_people(walk: Walk) -> bool:
+    """The deployment's erasure by email without a source: its walk of the deployment's projects is the erasure."""
+    return project_people.applies(walk.run, walk.tables) and not walk.run.get('workspace_id')
+
+
+def _require_for_people(walk: Walk) -> None:
+    """The deployment's erasure by email cannot be owed (the address is not stored): without complete registries it
+    fails by name; what it already deleted (an ``--unmark`` between two invocations) owes its lineage marks first."""
+    run = walk.run
+    if not _walks_deployment_people(walk) or run.get(registries.RESULT) == registries.REGISTRIES_COMPLETE:
+        return
+    if _deleted_anything(run):
+        registries.owe(walk.aggregates, run)
+    raise registries.refusal(run.get(registries.RESULT))
+
+
+def _recheck_marker(walk: Walk) -> None:
+    """The backfill's marker read again at an invocation's start (7.93.00, review round 2: an ``--unmark`` during a run
+    is seen), once an invocation; a run handed over from before 7.93.00 (no result yet) takes the marker alone."""
+    if walk.marker_read:
+        return
+    walk.marker_read = True
+    run = walk.run
+    present = registries.marker_present(walk.tables['projects'])
+    if run.get(registries.RESULT) is None:
+        run[registries.RESULT] = registries.REGISTRIES_COMPLETE if present else registries.REGISTRIES_NOT_BACKFILLED
+    elif not present:
+        run[registries.RESULT] = registries.REGISTRIES_NOT_BACKFILLED
+
+
+def _people_walk_ahead(phases: list[str], resumed: str, cursor: dict | None) -> bool:
+    """Whether the deployment's people walk is still ahead of this invocation (a phase before ``workspace_projects``,
+    or that phase before its ``deployment_done``)."""
+    if PHASE_WORKSPACE_PROJECTS not in phases or resumed not in phases:
+        return False
+    if resumed == PHASE_WORKSPACE_PROJECTS:
+        return (cursor or {}).get(project_people.DEPLOYMENT_DONE) is not True
+    return phases.index(resumed) < phases.index(PHASE_WORKSPACE_PROJECTS)
+
+
+def _lineage_due(walk: Walk, cursor: dict | None) -> bool:
+    """Whether the deployment's lineage pass runs now (7.93.00): only with complete registries, and then when the run
+    deleted anything or an earlier run owes it a pass (registries.py ``load_owed``); without them, a run that deleted
+    anything owes the pass instead (``owe``), and walks on."""
+    run = walk.run
+    _recheck_marker(walk)
+    if run.get(registries.RESULT) != registries.REGISTRIES_COMPLETE:
+        if run.get(registries.LINEAGE_OWED) is not True:
+            if _deleted_anything(run) or run.get(registries.OWED_SOURCES):
+                registries.owe(walk.aggregates, run)
+            elif registries.owes(walk.aggregates):
+                # Nothing of its own owed, but it cannot replay what is (round 2, R2-3): it says so all the same.
+                registries.note_owed(run)
+        return False
+    if cursor is not None:
+        return True
+    registries.load_owed(walk.aggregates, run)
+    return _deleted_anything(run) or bool(run.get(registries.OWED_SOURCES))
 
 
 def _step_walk(walk: Walk, phase: str, cursor: dict | None, step: Callable[[dict | None], dict | None]) -> dict | None:
@@ -656,12 +762,17 @@ def _mark_engineering_lineage(walk: Walk, cursor: dict | None) -> dict | None:
 def _phases(walk: Walk) -> list[str]:
     """The phases this run walks, in order (the lineage ones are decided when they are reached).
 
-    A job that names a workspace walks the item scan, (an erasure by email) that workspace's projects and its
+    A retention window that retains nothing and replays owed lineage (``owed_only``) walks the registries and the
+    lineage pass only. A job that names a workspace walks the item scan, (an erasure by email) that workspace's projects and its
     participants, its exports and its projects' lineage marks only: Radar, the feedback boards and the workspace
     memberships are the deployment's (not keyed by workspace), and there is no whole-source sweep. A form's test
     responses follow the items in every run (their phase ends at once for a run that reaches none of them; a
     workspace's job walks its own test partition only)."""
+    if walk.owed_only:
+        return [PHASE_REGISTRIES, PHASE_LINEAGE]
     phases = [PHASE_ITEMS, PHASE_FORM_TESTS]
+    # 7.93.00 (3g-d2): every run that names no workspace and can delete or replay first checks the deployment's review registries.
+    first = [PHASE_REGISTRIES] if 'projects' in walk.tables and not walk.run.get('workspace_id') else []
     # The exports of every workspace the item scan, the memberships, the projects or the participants reached, after
     # them (decided when it is reached: exports.py), so an export started between them is swept too; before the
     # lineage passes. Each such workspace's exports were already closed (locked, marked erased) when the run first met
@@ -696,7 +807,7 @@ def _phases(walk: Walk) -> list[str]:
     if engineering_lineage.applies(walk.tables):
         phases.append(PHASE_ENGINEERING_LINEAGE)
     phases.extend(workspace_lineage)
-    return phases
+    return [*first, *phases]
 
 
 def _deleted_anything(run: dict[str, Any]) -> bool:
@@ -717,11 +828,18 @@ def _walk_phases(walk: Walk) -> dict | None:
     if PHASE_AGENT_MEMORY in phases:
         # Its job and audit rows say whether the memory was walked (runs.py ``agent_memory_fields``), failed or not.
         walk.run[AGENT_MEMORY_DUE] = True
-    resumed = walk.event.get('phase') or PHASE_ITEMS
+    # A hand-over without a phase but with a cursor (from before 6.00.00) was in the item scan.
+    resumed = walk.event.get('phase') or (PHASE_ITEMS if walk.event.get('cursor') else phases[0])
     remaining = phases[phases.index(resumed):] if resumed in phases else phases
     cursor = (walk.event.get('cursor') or None) if resumed in phases else None
+    if PHASE_REGISTRIES in phases and remaining[:1] != [PHASE_REGISTRIES]:
+        # An invocation past the registries phase reads the marker again first (7.93.00), and an erasure by email whose
+        # people walk is still ahead stops before it deletes anything more.
+        _recheck_marker(walk)
+        if _people_walk_ahead(phases, resumed, cursor):
+            _require_for_people(walk)
     for phase in remaining:
-        if (phase == PHASE_LINEAGE and not _deleted_anything(walk.run)) or (
+        if (phase == PHASE_LINEAGE and not _lineage_due(walk, cursor)) or (
                 phase == PHASE_EXPORTS and not exports.pending(walk.run)) or (
                 phase == PHASE_ENGINEERING_LINEAGE and not engineering_lineage.has_work(walk.run)) or (
                 phase == PHASE_WORKSPACE_LINEAGE
@@ -743,6 +861,7 @@ _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
     PHASE_MEMBERS: _erase_from_members,
     PHASE_RAW: _sweep_raw,
     PHASE_LINEAGE: _mark_lineage,
+    PHASE_REGISTRIES: _check_registries,
     PHASE_WORKSPACE_PROJECTS: _erase_from_projects,
     PHASE_WORKSPACE_LINEAGE: _mark_workspace_lineage,
     PHASE_PARTICIPANTS: _erase_participants,
@@ -788,6 +907,9 @@ def handle_event(event: dict[str, Any], context: Any) -> dict:
         # own (``workspaces.inside``), as an erasure's message scope sets it (``_erase_setup``).
         message_scope({})
     if state['generation'] >= MAX_GENERATIONS:
+        # A failure like any other (round 2, R2-1 and R2-2): counted by the alarm, and its lineage owed.
+        registries.emit(registries.FAILED_METRIC, 'TooManyHandOvers')
+        _owe_after_failure(tables, state)
         return _finish(tables['aggregates'], state, STATUS_FAILED, 'Stopped after too many hand-overs')
     before = (state['deleted_items'], state['deleted_radar_items'], _workspace_items(state))
     try:
@@ -806,6 +928,28 @@ def handle_event(event: dict[str, Any], context: Any) -> dict:
             bump_radar_version(tables[STORE_RADAR])
 
 
+def _owe_after_failure(tables: dict[str, Any], run: dict[str, Any]) -> None:
+    """A run that fails (any failure path: round 2, R2-1) after it deleted, before its deployment lineage pass ended,
+    owes that pass (registries.py ``owe``), so the next run with complete registries marks what it deleted; one that
+    deleted nothing but cannot replay what is owed says so (``note_owed``). It never raises (round 2, q-10): a failure
+    here is logged, the run's own failure stays the one recorded or raised, and a run that deleted still says its marks
+    are owed, that they could not be recorded (``OWE_FAILED_REASON``, the metric's ``OWE_FAILED``: q-1). Never a
+    workspace's own job (its lineage is ``workspace_lineage``)."""
+    if ('projects' not in tables or run.get('workspace_id') or run.get(registries.LINEAGE_DONE) is True
+            or run.get(registries.LINEAGE_OWED) is True):
+        return
+    try:
+        if _deleted_anything(run):
+            registries.owe(tables['aggregates'], run)
+        elif run.get(registries.RESULT) not in (None, registries.REGISTRIES_COMPLETE) and registries.owes(
+                tables['aggregates']):
+            registries.note_owed(run)
+    except Exception as e:  # noqa: BLE001 - recording what is owed must never replace the run's own failure
+        logger.warning('Could not record the owed lineage of a failed run', extra={'error_type': type(e).__name__})
+        if _deleted_anything(run):
+            registries.note_owed(run, reason=registries.OWE_FAILED_REASON, error_type=registries.OWE_FAILED)
+
+
 def _workspace_items(run: dict[str, Any]) -> int:
     return int(run.get(WORKSPACE_ITEM_COUNTER) or 0)
 
@@ -816,20 +960,35 @@ def _run(tables: dict[str, Any], context: Any, event: dict[str, Any], state: dic
     try:
         filters = (_retention_setup(aggregates_table, state) if mode == MODE_RETENTION
                    else _erase_setup(aggregates_table, event, state))
-        if filters is None:
+        owed_only = filters is None and mode == MODE_RETENTION and 'projects' in tables and registries.owes(
+            aggregates_table)
+        if filters is None and not owed_only:
             # Retention with no retained source still audits its (empty) run;
             # an erase event that cannot run leaves its job as it was.
             return (_finish(aggregates_table, state, STATUS_COMPLETED) if mode == MODE_RETENTION
                     else {'status': 'nothing_to_do'})
+        # 7.93.00: a window that retains nothing still replays the lineage an earlier run owed (its registries and
+        # lineage phases only; retention is opt-in, so a deployment may never run a window that deletes).
         handed_over = _walk_phases(Walk(tables, context, event, state, filters, get_s3_client(),
-                                        _lambda_clock(context)))
+                                        _lambda_clock(context), owed_only=owed_only))
     except (*_AWS_ERRORS, ValueError, RuntimeError) as e:
         failure = type(e).__name__
+        # An admin's next steps (7.93.00): the class's own fixed text, never the exception's message.
+        what_to_do = type(e).what_to_do if isinstance(e, registries.NeedsAnAdmin) else None
+    except Exception as e:
+        # Unexpected (round 2, R2-2): counted by the alarm too, its lineage owed, then raised as before.
+        registries.emit(registries.FAILED_METRIC, type(e).__name__)
+        _owe_after_failure(tables, state)
+        raise
     else:
         return handed_over or _finish(aggregates_table, state, STATUS_COMPLETED)
     # The error TYPE only: a message (or a traceback) could quote the erased value back.
     logger.error('Retention run failed', extra={'mode': mode, 'error_type': failure})
-    return _finish(aggregates_table, state, STATUS_FAILED, f'Run failed ({failure})')
+    # The alarm's metric (7.93.00; shared/ops_alerts.py): by service, and by service and the failure's name.
+    registries.emit(registries.FAILED_METRIC, failure)
+    _owe_after_failure(tables, state)
+    return _finish(aggregates_table, state, STATUS_FAILED,
+                   f'Run failed ({failure})' + (f': {what_to_do}' if what_to_do else ''))
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

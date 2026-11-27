@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { apiTemplate, functionIdForHandler, serviceEnvironment, synthApiTemplate } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
-import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
+import { GLOBAL_MCP_SERVICE_NAME, RETENTION_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { Template } from 'aws-cdk-lib/assertions';
 import { nonNegativeIntegerContext } from '../utils/context-flag';
 import { GLOBAL_MCP_RESERVED_CONCURRENCY } from './global-mcp';
@@ -58,5 +58,12 @@ describe('global MCP endpoint operations', () => {
   it('tells the logs API the service its MCP alarms filter on', () => {
     expect(serviceEnvironment(apiTemplate(), GLOBAL_MCP_SERVICE_NAME).POWERTOOLS_SERVICE_NAME).toBe(GLOBAL_MCP_SERVICE_NAME);
     expect(serviceEnvironment(apiTemplate(), 'voc-logs-api').OPS_ALERTS_MCP_SERVICE).toBe(GLOBAL_MCP_SERVICE_NAME);
+  });
+
+  it('tells the logs API the retention worker\'s service, which its retention alarm filters on (7.93.00)', () => {
+    // The worker's POWERTOOLS_SERVICE_NAME is RETENTION_FUNCTION_BASE_NAME (processing-stack-retention.test.ts pins it):
+    // the alarm sums RetentionRunFailed and RetentionLineageOwed by that service (lambda/shared/ops_alerts.py).
+    expect(serviceEnvironment(apiTemplate(), 'voc-logs-api').OPS_ALERTS_RETENTION_SERVICE)
+      .toBe(RETENTION_FUNCTION_BASE_NAME);
   });
 });

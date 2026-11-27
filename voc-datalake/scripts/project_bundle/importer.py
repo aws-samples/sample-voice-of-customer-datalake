@@ -3,6 +3,8 @@
 Every project is PLANNED before anything is written, and one refusal stops the whole import:
 
 * the project id already exists on the target (any META, a tombstone too), unless `--new-ids`;
+* the project id has the verification fixture provider's reserved shape (`proj_vf_` and 24 hex), unless `--new-ids`
+  (7.93.00: the retention worker's gap check passes such a project);
 * the owner's email matches no single user in the target pool, and `--owner-email` does not
   either (or was not given).
 
@@ -32,6 +34,18 @@ from project_bundle.users import TargetUser, UserDirectory
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def reserved_id_refusal(project_id: str) -> str | None:
+    """Why a project id may not be imported as it is: the verification fixture provider's exact id shape (7.93.00;
+    the retention worker's gap check passes such a project, live and never listed, so an import must never write one:
+    shared/project_writes.py ``is_verification_fixture_project``); `--new-ids` mints a create's id instead."""
+    lambda_on_path()
+    from shared.project_writes import is_verification_fixture_project
+
+    if is_verification_fixture_project(project_id):
+        return f'project id {project_id} is reserved for the verification fixture; pass --new-ids'
+    return None
 
 
 def _put_if_absent(table: Any, item: dict[str, Any]) -> None:
@@ -194,6 +208,8 @@ class Importer:
                            name=str(summary.get('name') or ''))
         if self._exists(plan.project_id):
             plan.refusals.append(f'project {plan.project_id} already exists on the target; pass --new-ids')
+        if refusal := reserved_id_refusal(plan.project_id):
+            plan.refusals.append(refusal)
         _resolve_owner(plan, summary, self.users, options)
         members = _resolve_members(plan, summary, self.users)
         if plan.owner is None:

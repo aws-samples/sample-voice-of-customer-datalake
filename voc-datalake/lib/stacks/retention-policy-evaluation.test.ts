@@ -26,12 +26,14 @@ import { findWorkerFunction } from '../test-support/worker-function';
 const WS = `ws_${'A'.repeat(26)}`;
 
 /** One request the worker's code sends: an action, on a table row (`table`, its partition key, the attributes it
- *  names), a raw-bucket object (`object`) or another resource (`fragment` of its ARN's token), with any other condition
- *  key it sends (`context`). */
+ *  names) or on one of the table's indexes (`index`, then `key` is the index's partition key), a raw-bucket object
+ *  (`object`) or another resource (`fragment` of its ARN's token), with any other condition key it sends
+ *  (`context`). */
 interface Request {
   readonly what: string;
   readonly action: string;
   readonly table?: string;
+  readonly index?: string;
   readonly key?: string;
   readonly attributes?: readonly string[];
   readonly object?: string;
@@ -100,16 +102,24 @@ export function holds(operator: string, conditionKey: string, values: readonly s
   return setOf(operator) === 'all' ? asked.every(test) : asked.some(test);
 }
 
-/** A resource element that names an index of a table (`<table arn>/index/…`): never a table's rows. */
-function namesAnIndex(element: unknown): boolean {
+/** The index a resource element names (`<table arn>/index/<name>`, a glob such as `*` too), or undefined for any other
+ *  resource: an index's ARN is never a table's rows, a table's never an index's. */
+function indexOf(element: unknown): string | undefined {
   const parts = z.object({ 'Fn::Join': z.tuple([z.string(), z.array(z.unknown())]) }).safeParse(element);
   const last = parts.success ? parts.data['Fn::Join'][1].at(-1) : element;
-  return typeof last === 'string' && last.includes('/index/');
+  if (typeof last !== 'string' || !last.includes('/index/')) return undefined;
+  return last.slice(last.indexOf('/index/') + '/index/'.length);
 }
 
 function resourceMatches(element: unknown, request: Request): boolean {
   if (element === '*') return true;
-  if (namesAnIndex(element)) return false;
+  const index = indexOf(element);
+  // An index's ARN reaches the requests of that index only (7.93.00: the gap check's Query), a table's none of them.
+  if (index === undefined) {
+    if (request.index !== undefined) return false;
+  } else if (request.index === undefined || !globMatches(index, request.index)) {
+    return false;
+  }
   const text = JSON.stringify(element);
   if (request.table !== undefined) return new RegExp(`${request.table}[0-9A-F]{8}`).test(text);
   if (request.object !== undefined) {
@@ -191,6 +201,11 @@ const EVERY_BUILD: readonly Request[] = [
     key: 'PERSON#pp_1' },
   { what: 'a workspace participant\'s own rows (a batch)', action: 'dynamodb:BatchWriteItem', table: 'Participants',
     key: `WS#${WS}#PERSON#pp_1` },
+  // 7.93.00 (3g-d2): the gap check's page of live projects (their keys) and its lookup of one in PROJECT_IDS.
+  { what: 'the project index\'s keys', action: 'dynamodb:Query', table: 'Projects', index: 'gsi1-by-type',
+    key: 'TYPE#PROJECT', attributes: ['pk', 'sk'], context: SPECIFIC },
+  { what: 'a page\'s registry rows (a batch)', action: 'dynamodb:BatchGetItem', table: 'Projects', key: 'PROJECT_IDS',
+    attributes: ['pk', 'sk'] },
   // Raw objects, each with both delete actions.
   ...['raw/web/2026/01/01/f1/0123456789abcdef.json', 'silver/web/f1/20260101T000000000000Z-0a.json',
     `ws/${WS}/raw/web/2026/01/01/f1/0a.json`, `ws/${WS}/silver/web/f1/20260101T000000000000Z-0a.json`,
@@ -226,6 +241,28 @@ const ENGINEERING: readonly Request[] = [
   { what: 'the account the address names', action: 'cognito-idp:AdminGetUser', fragment: 'UserPool' },
 ];
 
+/** What the worker may not do to voc-projects on any build (7.93.00, 3g-d2): no Scan (the fallback is gone), and the
+ *  project index read for its keys, in the deployment's partition, with `SPECIFIC_ATTRIBUTES`, and nothing more. */
+const PROJECTS_REFUSED: readonly Request[] = [
+  { what: 'a Scan of the projects', action: 'dynamodb:Scan', table: 'Projects', attributes: ['pk', 'sk'],
+    context: SPECIFIC },
+  { what: 'a Scan of the projects naming no attribute', action: 'dynamodb:Scan', table: 'Projects', attributes: [] },
+  { what: 'a project\'s owner through the index', action: 'dynamodb:Query', table: 'Projects', index: 'gsi1-by-type',
+    key: 'TYPE#PROJECT', attributes: ['pk', 'sk', 'owner_email'], context: SPECIFIC },
+  { what: 'whole rows through the index', action: 'dynamodb:Query', table: 'Projects', index: 'gsi1-by-type',
+    key: 'TYPE#PROJECT', attributes: [], context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+  { what: 'a workspace\'s projects through the index', action: 'dynamodb:Query', table: 'Projects',
+    index: 'gsi1-by-type', key: `WS#${WS}#TYPE#PROJECT`, attributes: ['pk', 'sk'], context: SPECIFIC },
+  { what: 'a project\'s documents through the index', action: 'dynamodb:Query', table: 'Projects',
+    index: 'gsi1-by-type', key: 'PROJECT#p1#DOCUMENTS', attributes: ['pk', 'sk'], context: SPECIFIC },
+  { what: 'a project\'s META in a batch', action: 'dynamodb:BatchGetItem', table: 'Projects', key: 'PROJECT#p1',
+    attributes: ['pk', 'sk'] },
+  { what: 'a registry row\'s other attributes in a batch', action: 'dynamodb:BatchGetItem', table: 'Projects',
+    key: 'PROJECT_IDS', attributes: ['pk', 'sk', 'created_at'] },
+  { what: 'whole registry rows in a batch', action: 'dynamodb:BatchGetItem', table: 'Projects', key: 'PROJECT_IDS',
+    attributes: [], context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+];
+
 /** The guarded tables voc-retention writes audit rows in on each build, and those where it is held to its own audit
  *  partitions (voc-aggregates: any `AUDIT#*` row is its own to put, retention rows and tombstones; never to change). */
 const CHANGES = ['dynamodb:DeleteItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem'];
@@ -242,6 +279,10 @@ describe.each([
     const answer = evaluate(statements, request);
     expect(answer.deniedBy).toStrictEqual([]);
     expect(answer.allowedBy).toBeGreaterThan(0);
+  });
+
+  it.each(PROJECTS_REFUSED.map((request) => [request.what, request]))('refuses %s', (_what, request) => {
+    expect(allowed(evaluate(statements, request))).toBe(false);
   });
 
   it.each(changesOf(guarded))('%s: the guard still refuses %s of an audit row', (table, action) => {

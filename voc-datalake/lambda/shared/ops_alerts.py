@@ -31,6 +31,15 @@ What is alarmed, and from where, comes from CDK as environment variables:
   ONE metric math alarm SUMs their ``EngineeringWorkspaceDeniedReads`` (namespace ``VoC``) over 5 minutes above
   ``ENGINEERING_DENIED_READS_THRESHOLD``: a plain missing object counts too, so a few a period are normal, and a
   broken bucket or key policy shows as the count rising well above that.
+* ``OPS_ALERTS_RETENTION_SERVICE`` — the retention worker's Powertools service name (7.93.00): ONE metric math alarm
+  SUMs its ``RetentionRunFailed`` and ``RetentionLineageOwed`` (namespace ``VoC``, EMF lines the worker prints,
+  jobs/retention/registries.py ``emit``) over 5 minutes above 0: every failure the handler sees in an erasure or a
+  retention window (a named failure, an unexpected error, which the worker counts before it raises it, and a run
+  stopped after too many hand-overs; a timeout, an out-of-memory or a killed invocation prints nothing and shows in
+  the worker's Lambda ``Errors`` metric and logs instead), and every run whose deployment lineage marks are owed (the
+  review registries are not backfilled or miss a live project, the run failed before its lineage pass, its owed row
+  could not be written, or it could not replay what an earlier run owes). Both are printed with an ``error_type``
+  dimension too, for the console; the alarm reads the ``service`` set only.
 """
 from __future__ import annotations
 
@@ -69,6 +78,10 @@ ENGINEERING_METRICS_NAMESPACE: Final = 'VoC'
 ENGINEERING_DENIED_READS_METRIC: Final = 'EngineeringWorkspaceDeniedReads'
 ENGINEERING_DENIED_READS_THRESHOLD: Final = 20   # per 5 minutes, across the readers
 
+# The retention worker's failures and owed lineage passes (jobs/retention/registries.py FAILED_METRIC, OWED_METRIC).
+RETENTION_METRICS_NAMESPACE: Final = 'VoC'
+RETENTION_ALARM_METRICS: Final = ('RetentionRunFailed', 'RetentionLineageOwed')
+
 # Deliberately simple and linear (every repetition is bounded or separated by a
 # literal): a local part, one `@`, then two or more dot-separated domain labels.
 # SNS sends the recipient a confirmation mail, which is the real check.
@@ -95,6 +108,7 @@ class AlertTargets:
     ingestor_functions: tuple[str, ...]
     mcp_service: str = ''
     engineering_services: tuple[str, ...] = ()
+    retention_service: str = ''
 
 
 def _csv(raw: str | None) -> list[str]:
@@ -126,6 +140,7 @@ def load_targets(env: Mapping[str, str] | None = None) -> AlertTargets | None:
         ingestor_functions=tuple(_csv(source.get('OPS_ALERTS_INGESTOR_FUNCTIONS'))),
         mcp_service=source.get('OPS_ALERTS_MCP_SERVICE', '').strip(),
         engineering_services=tuple(_csv(source.get('OPS_ALERTS_ENGINEERING_SERVICES'))),
+        retention_service=source.get('OPS_ALERTS_RETENTION_SERVICE', '').strip(),
     )
 
 
@@ -242,6 +257,28 @@ def _engineering_denied_reads_alarm(targets: AlertTargets) -> dict[str, Any]:
     }
 
 
+def _retention_alarm(targets: AlertTargets) -> dict[str, Any]:
+    metrics: list[dict[str, Any]] = [{
+        'Id': f'm{index}',
+        'MetricStat': {
+            'Metric': {'Namespace': RETENTION_METRICS_NAMESPACE, 'MetricName': metric,
+                       'Dimensions': [{'Name': 'service', 'Value': targets.retention_service}]},
+            'Period': PERIOD_SECONDS,
+            'Stat': 'Sum',
+        },
+        'ReturnData': False,
+    } for index, metric in enumerate(RETENTION_ALARM_METRICS)]
+    ids = ','.join(str(metric['Id']) for metric in metrics)
+    metrics.append({'Id': 'total', 'Expression': f'SUM([{ids}])', 'Label': 'Retention failures and owed lineage',
+                    'ReturnData': True})
+    description = ('A retention window or an erasure failed, as the worker saw it (a named failure, an unexpected '
+                   'error, or too many hand-overs; a timeout or a killed run shows in its Lambda Errors instead), or '
+                   'owes its lineage marks (the review registries are not backfilled or miss a live project, the run '
+                   'failed before its lineage pass, or its owed row could not be written). Read the erasure job or '
+                   'AUDIT#retention row: its error or incomplete_reason says what to run.')
+    return {**_base(targets, 'retention-runs', description), 'Metrics': metrics, **_ANY_IN_ONE_PERIOD}
+
+
 def alarm_definitions(targets: AlertTargets) -> list[dict[str, Any]]:
     """Every alarm alerting creates, as ``PutMetricAlarm`` arguments."""
     alarms = [_queue_alarm(targets, slug, queue) for slug, queue in targets.queues]
@@ -259,6 +296,8 @@ def alarm_definitions(targets: AlertTargets) -> list[dict[str, Any]]:
         alarms.extend(_mcp_alarm(targets, *alarm) for alarm in MCP_ALARMS)
     if targets.engineering_services:
         alarms.append(_engineering_denied_reads_alarm(targets))
+    if targets.retention_service:
+        alarms.append(_retention_alarm(targets))
     return alarms
 
 

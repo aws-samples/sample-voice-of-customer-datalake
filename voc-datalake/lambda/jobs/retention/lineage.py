@@ -23,9 +23,10 @@ Two passes (since 7.43.00, projects 3g-b; the deployment's by Query since 7.48.0
 - ``lineage``, the deployment's, run when the run deleted a deployment item or Radar review or de-identified a board
   request, each listed id looked up as ``{feedback_id}``: its projects through its project registry (``PROJECT_IDS``,
   shared/project_walk.py ``registry_page``: put at a project's create, kept by its delete, so a deleted or
-  half-deleted project, which the delete's fence takes off ``gsi1-by-type``, is listed too), or, until the backfill's
-  marker is there (workspaces.py ``deployment_found``), the backfill's Scan of the projects' ``META`` rows
-  (shared/review_registries.py ``PROJECTS``, one Scan page a step); then its company persona library
+  half-deleted project, which the delete's fence takes off ``gsi1-by-type``, is listed too). Since 7.93.00 (3g-d2) it
+  runs only once the run's ``registries`` phase found the registries complete (registries.py); otherwise the run OWES
+  the pass, and the next run whose registries are complete replays it, the owed sources' tombstones looked up beside
+  its own (``lineage_sources``), whether it deleted anything or not; no pass Scans. Then its company persona library
   (``PROJECT#company_personas``, on no list); in each, the project's own partition by the same filtered Query pages as
   a workspace's (``deployment_step``). Until 7.48.00 a Scan of the whole of voc-projects, every row read (until 7.43.00
   any row of the table marked); every writer of these lists writes in a project's own partition (personas, research, documents and
@@ -42,8 +43,8 @@ Two passes (since 7.43.00, projects 3g-b; the deployment's by Query since 7.48.0
   (``workspace_step``). A review id and a cited id are looked up as that workspace's tombstones,
   ``{ws}#{feedback_id}``; a board request id as the deployment's (``feature_requests`` / ``{id}``: the boards are the
   deployment's, not per workspace). Every mark is written through the workspace layer (shared/ws_repo.py
-  ``ws_table``). No Scan: what it reads is the walked workspaces' own projects. A registry row (or a scanned ``META``)
-  not shaped like a project id is skipped and counted (``project_ids_malformed``).
+  ``ws_table``). No Scan: what it reads is the walked workspaces' own projects. A registry row not shaped like a
+  project id is skipped and counted (``project_ids_malformed``).
 
 A persona's evidence refreshes (``evidence_updates``, 7.64.00: ``{at, by, reason, feedback_ids}`` entries) are read and
 marked the same way: an erased review leaves an entry's ``feedback_ids`` (the entry, its actor and time, stays), and
@@ -64,6 +65,7 @@ from botocore.exceptions import ClientError
 
 from jobs.retention import workspaces
 from jobs.retention.copies import tombstone_key
+from jobs.retention.registries import OWED_SOURCES
 from jobs.retention.runs import LINEAGE_ALL, LINEAGE_WORKSPACES
 from shared.aws import is_conditional_check_failure
 from shared.batch_get import batch_get_all
@@ -208,11 +210,15 @@ def mark_rows(projects_table: Any, aggregates_table: Any, run: dict[str, Any],
     """Mark every row of one page whose lists name an erased item (counted in ``run['artifacts_marked']``); a
     workspace's rows (``scope``) against that workspace's tombstones.
 
-    One tombstone lookup for the whole page (BatchGetItem, 100 keys a request).
+    One tombstone lookup for the whole page: a key for each source and each distinct listed id (``erased_ids``), so
+    sources x ids keys, sent as BatchGetItem requests of 100 keys (shared/batch_get.py ``batch_get_all``):
+    ceil(sources x ids / 100) requests a page. The deployment's pass's sources are the run's own and, since 7.93.00,
+    those an earlier run owed (``lineage_sources``, at most ``MAX_OWED_SOURCES`` more), so a replay of many owed
+    sources costs that many more keys a page, never more requests than its keys need.
     """
     if scope is None:
         listed = [_listed_ids(row) for row in rows]
-        erased = erased_ids(aggregates_table, list(run['erased_sources']),
+        erased = erased_ids(aggregates_table, lineage_sources(run),
                             (feedback_id for ids in listed for feedback_id in ids))
         hits_of = [erased.intersection(ids) for ids in listed]
     else:
@@ -272,27 +278,32 @@ def _own_partition(project_id: str, scope: WorkspaceScope | None) -> str:
     return own
 
 
+def lineage_sources(run: Mapping[str, Any]) -> list[str]:
+    """The sources whose tombstones the deployment's pass looks the listed ids up under: the run's own, then those an
+    earlier run owed it (registries.py ``OWED_SOURCES``, 7.93.00), each once. Each page's lookups are these sources
+    times its listed ids, in BatchGetItem requests of 100 keys (``mark_rows``)."""
+    return list(dict.fromkeys([*run.get('erased_sources', []), *run.get(OWED_SOURCES, [])]))
+
+
 def deployment_step(projects_table: Any, aggregates_table: Any, run: dict[str, Any],
                     cursor: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """One step of the deployment's pass (``lineage``, since 7.48.00 by Query: the module docstring): first how its
-    projects are found (``found``, workspaces.py ``deployment_found``: its registry once the backfill's marker is
-    there, else the backfill's ``PROJECTS`` Scan); then a filtered page of the first project's own partition and its
-    marks; or the next page of the deployment's projects; or its persona library; None once all are done. A cursor of
-    the Scan before 7.48.00 (a row's key, carried by a hand-over across the upgrade) names none of these steps: the
-    pass starts again from the top, every mark being idempotent."""
-    known = ('found', 'ids', 'start', 'library', *workspaces.projects_keys(None))
+    """One step of the deployment's pass (``lineage``, by Query since 7.48.00: the module docstring; the handler runs
+    it only once the run's registries are complete, 7.93.00): a filtered page of the first project's own partition
+    and its marks; or the next page of the deployment's projects; or its persona library; None once all are done. A
+    cursor that names none of these steps (a row's key of the Scan before 7.48.00) or that found the projects by Scan
+    (7.84.00's ``found``: ``scan``) starts the pass again from the top, every mark being idempotent."""
+    if (cursor or {}).get('found') == workspaces.LEGACY_FOUND_SCAN:
+        cursor = None
+    known = ('ids', 'start', 'library', *workspaces.projects_keys(None))
     at = {name: value for name, value in (cursor or {}).items() if name in known}
-    if 'found' not in at:
-        return {'found': workspaces.deployment_found(projects_table)}
-    workspaces.checked_found(at)
     return _projects_step(projects_table, aggregates_table, run, None, at)
 
 
 def _projects_step(projects_table: Any, aggregates_table: Any, run: dict[str, Any], scope: WorkspaceScope | None,
                    at: dict[str, Any]) -> dict[str, Any] | None:
     """One step of a scope's projects, as both passes walk them: a filtered page of the first project's own partition
-    and its marks; or the scope's next page of projects (workspaces.py ``registry_step``: a workspace's registry, the
-    deployment's, or its Scan); or its persona library (``library_step``); None once all are done."""
+    and its marks; or the scope's next page of projects (workspaces.py ``registry_step``: a workspace's registry or
+    the deployment's); or its persona library (``library_step``); None once all are done."""
     ids = checked_ids(at.get('ids'), is_project_id, 'ids')
     if ids:
         return _partition_step(projects_table, aggregates_table, run, scope, ids, at)

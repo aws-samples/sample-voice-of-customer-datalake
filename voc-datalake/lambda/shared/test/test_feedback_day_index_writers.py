@@ -62,6 +62,8 @@ OTHER_TABLES: Final = {
     'lambda/api/memory_handler.py': 'voc-memory (a restored memory relisted)',
     'lambda/api/verification_fixture_provider.py': 'voc-projects (a verification fixture project)',
     'lambda/jobs/persona_importer/handler.py': 'voc-projects (an imported persona listed)',
+    'lambda/jobs/retention/registries.py': "voc-projects (INDEX_ATTRIBUTES: what the registries check reads of "
+                                           "gsi1-by-type, 7.93.00; read)",
     'lambda/jobs/workspace_export/project_fields.py': 'names an export leaves out (read)',
     'lambda/shared/agent_run_resume.py': 'voc-agents (a resumed run back on RUNS_ACTIVE)',
     'lambda/shared/agents_store.py': 'voc-agents (agents, workflows, runs)',

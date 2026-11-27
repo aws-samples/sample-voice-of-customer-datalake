@@ -63,9 +63,9 @@ class TestThePageCap:
         assert (payload['phase'], payload['cursor']) == ('items', key('a5'))
         assert left(aws) == ['a6', 'a7']
         results = chain(payload, worker_context, invoke_mock)
-        # The lineage pass is steps since 7.48.00 (how its projects are found, their registry page, the persona
-        # library, its page): past the cap of two it hands over twice more.
-        assert [result['status'] for result in results] == ['continued', 'continued', 'completed']
+        # The lineage pass is steps since 7.48.00 (its registry page, the persona library, its page; since 7.93.00 the
+        # registries are checked in a phase of their own, first): past the cap of two it hands over once more.
+        assert [result['status'] for result in results] == ['continued', 'completed']
         assert (left(aws), tombstoned(aws)) == ([], names)
 
 

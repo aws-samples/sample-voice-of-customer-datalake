@@ -64,19 +64,20 @@ def merged(*parts: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-def query_page(view: WorkspaceTable | DeploymentTable, partition: str, start: Mapping[str, Any] | None,
-               **kwargs: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+def query_page(view: WorkspaceTable | DeploymentTable, partition: str, start: Mapping[str, Any] | None, *,
+               partition_attribute: str = 'pk', **kwargs: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """One Query page of ``partition`` in the view's scope from ``start``: its items and the key the next page starts
     from (None at the end). ``StuckQuery`` when DynamoDB answers with ``start`` itself. A projected Query says so
     (``Select`` ``SPECIFIC_ATTRIBUTES``): the retention worker's IAM requires it of every Query of the deployment's
     partitions, so a Query that named no projection, and would read whole rows, is refused (lib/stacks/
-    retention-worker.ts ``QueryDeploymentProjects``)."""
+    retention-worker.ts ``QueryDeploymentProjects``). ``partition_attribute``: an index's partition key, with its
+    ``IndexName`` among ``kwargs`` (7.93.00: the retention worker's gap check reads ``gsi1-by-type``)."""
     options = dict(kwargs)
     if 'ProjectionExpression' in options:
         options.setdefault('Select', 'SPECIFIC_ATTRIBUTES')
     if start:
         options['ExclusiveStartKey'] = dict(start)
-    page = view.query('pk', partition, **options)
+    page = view.query(partition_attribute, partition, **options)
     found = page.get('Items')
     rows = [dict(item) for item in found if isinstance(item, Mapping)] if isinstance(found, list) else []
     last = page.get('LastEvaluatedKey')

@@ -170,7 +170,9 @@ def test_a_run_walks_the_documented_phases(mode, field, source, workspace, store
         expected = ['items', 'form_tests', *(['workspace_projects'] if walks_projects else []),
                     *(['exports'] if erase else []), *(['workspace_lineage'] if projects else [])]
     else:
-        expected = ['items', 'form_tests', *(['radar'] if STORE_RADAR in stores else []),
+        # 7.93.00 (3g-d2): a run naming no workspace first checks the deployment's review registries.
+        expected = [*(['registries'] if projects else []), 'items', 'form_tests',
+                    *(['radar'] if STORE_RADAR in stores else []),
                     *(['boards'] if STORE_BOARDS in stores and by_email and source in (None, BOARDS_SOURCE)
                       else []),
                     *(['members'] if STORE_MEMBERS in stores and by_email and not source else []),

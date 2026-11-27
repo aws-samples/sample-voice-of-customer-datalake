@@ -77,6 +77,19 @@ def create_projects_table_with_type_index(table_name: str, resource=None):
     return _create_pk_sk_table_with_index(table_name, resource, 'gsi1-by-type', 'gsi1pk', 'gsi1sk')
 
 
+#: The review registries' complete marker as the backfill writes it (scripts/projects/backfill_review_registries.py):
+#: since 7.93.00 (3g-d2) the retention worker's deployment walks require it.
+REVIEW_REGISTRIES_MARKER = {'pk': 'DOCSHARE_IDS', 'sk': 'MIGRATION#review-registries',
+                            'completed_at': '2026-11-01T00:00:00+00:00', 'links_found': 0, 'series_found': 0,
+                            'projects_found': 0, 'release': '7.48.0'}
+
+
+def mark_review_registries_backfilled(projects_table):
+    """voc-projects of a deployment whose review registries' backfill ran: its complete marker put."""
+    projects_table.put_item(Item=dict(REVIEW_REGISTRIES_MARKER))
+    return projects_table
+
+
 def create_aggregates_table_with_metric_index(table_name: str, resource=None):
     """voc-aggregates as in core-stack.ts: ``pk`` + ``sk`` plus the ``gsi1-by-metric-type`` index
     (``metric_type`` HASH, ``pk`` RANGE, all attributes projected)."""

@@ -10,6 +10,7 @@ from jobs.retention.test.conftest import BUCKET, days_ago, put_feedback
 from shared.digests import sha256_hex
 from shared.feature_requests_store import support_key
 from shared.legal_basis import LEGACY_LEGAL_BASIS
+from shared.project_writes import register_deployment_project
 
 JOB_ID = 'er_00000000abcd'
 BASIS = 'GDPR art. 17 request #123'
@@ -210,8 +211,9 @@ class TestWholeFileUploads:
 
 
 def _artifact(aws, sk: str, **lists: Any) -> None:
-    """A row of project p1, and the project's ``META`` as made before 7.48.00, with no ``PROJECT_IDS`` row: no
-    backfill marker either, so the deployment's lineage pass finds it by its projects' Scan."""
+    """A row of project p1, and the project's ``META``, listed in ``PROJECT_IDS`` as the store (or the backfill, for
+    one made before 7.48.00) lists it: the deployment's lineage pass requires the registries (7.93.00)."""
+    register_deployment_project(aws['projects'], 'p1', '2026-01-01T00:00:00+00:00')
     aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': 'META', 'gsi1pk': 'TYPE#PROJECT', 'gsi1sk': '2026-01-01'})
     if sk != 'META':
         aws['projects'].put_item(Item={'pk': 'PROJECT#p1', 'sk': sk, 'name': 'Shopper', 'text': 'quote', **lists})
@@ -263,15 +265,15 @@ class TestLineage:
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'])
         _artifact(aws, 'PERSONA#b', input_feedback_ids=['f1'])
         event = _job(aws, 'author', 'Account manager', legal_basis=BASIS)
-        # Budget for the one item and the pass's first two steps (how its projects are found: no backfill marker, so
-        # by the projects' Scan; then the page of its projects): it hands over carrying the project still to read.
-        budget = iter([900_000, 900_000])
+        # Budget for the registries phase (7.93.00: the marker and the index's one page), the one item, then the page
+        # of the pass's projects: it hands over carrying the project still to read.
+        budget = iter([900_000] * 2)
         worker_context.get_remaining_time_in_millis.side_effect = lambda: next(budget, 0)
         with patch.object(lineage, 'PAGE_SIZE', 1):
             assert handler.handle_event(event, worker_context)['status'] == 'continued'
             payload = invoke_mock.call_args.args[1]
             assert (payload['phase'], payload['run']['artifacts_marked']) == ('lineage', 0)
-            assert (payload['cursor']['found'], payload['cursor']['ids']) == ('scan', ['p1'])
+            assert (payload['cursor']['ids'], payload['run']['review_registries']) == (['p1'], 'complete')
             worker_context.get_remaining_time_in_millis.side_effect = None
             assert handler.handle_event(payload, worker_context)['artifacts_marked'] == 2
 

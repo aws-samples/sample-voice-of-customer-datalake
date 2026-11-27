@@ -397,15 +397,19 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
 /**
  * The on-event handler behind a custom-resource Provider: a real, unit-tested
  * file under lambda/custom_resources (see its test/), inlined so a small
- * handler needs no asset bundling. Its log group is `<id>Logs`.
+ * handler needs no asset bundling. Its log group is `<id>Logs`, or, with `namedLogGroup`, `/aws/lambda/<function>`:
+ * the System logs' `/aws/lambda/[<prefix>-]voc-*` pattern already covers that name, so the logs API's policy needs no
+ * statement of its own for it (CORE_LAMBDA_LOG_GROUPS, api-logs-diagnostics.ts). Also the review registries marker's
+ * seed's (review-registries-marker.ts).
  */
-function createInlineCustomResourceHandler(
-  ctx: CoreBuildContext,
+export function createInlineCustomResourceHandler(
+  ctx: Pick<CoreBuildContext, 'stack' | 'uniqueName'>,
   id: string,
-  handler: { baseName: string; sourceFile: string; description: string },
+  handler: { baseName: string; sourceFile: string; description: string; namedLogGroup?: boolean },
 ): lambda.Function {
+  const functionName = ctx.uniqueName(handler.baseName);
   return new lambda.Function(ctx.stack, id, {
-    functionName: ctx.uniqueName(handler.baseName),
+    functionName,
     runtime: lambda.Runtime.PYTHON_3_14,
     architecture: lambda.Architecture.ARM_64,
     handler: 'index.handler',
@@ -414,7 +418,13 @@ function createInlineCustomResourceHandler(
     ),
     timeout: cdk.Duration.minutes(1),
     description: handler.description,
-    logGroup: lambdaLogGroup(ctx.stack, `${id}Logs`),
+    logGroup: handler.namedLogGroup === true
+      ? new logs.LogGroup(ctx.stack, `${id}Logs`, {
+        logGroupName: `/aws/lambda/${functionName}`,
+        retention: LOG_RETENTION,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      })
+      : lambdaLogGroup(ctx.stack, `${id}Logs`),
   });
 }
 

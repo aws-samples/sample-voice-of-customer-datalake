@@ -18,6 +18,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from jobs.retention import registries
 from jobs.retention.exports import ERASED_WORKSPACES
 from shared import job_notices
 from shared.aws import is_conditional_check_failure
@@ -125,7 +126,31 @@ def new_run(event: Mapping[str, Any], mode: str) -> dict[str, Any]:
             run[flag] = True
     if carried.get(DEPLOYMENT_FOUND) in ('registry', 'scan'):
         run[DEPLOYMENT_FOUND] = carried[DEPLOYMENT_FOUND]
+    _carry_registries(carried, run)
     return run
+
+
+def _carry_registries(carried: Mapping[str, Any], run: dict[str, Any]) -> None:
+    """The ``registries`` phase's result and the owed lineage's state (registries.py), each kept only in its shape.
+    Carried owed sources past ``MAX_OWED_SOURCES`` (more than any owed row holds) fail the invocation rather than be
+    cut (round 2, q-2): a dropped source would be cleared from the row unmarked."""
+    if carried.get(registries.RESULT) in registries.RESULTS:
+        run[registries.RESULT] = carried[registries.RESULT]
+    for flag in (registries.LINEAGE_OWED, registries.REPLAYED, registries.LINEAGE_DONE):
+        if carried.get(flag) is True:
+            run[flag] = True
+    if isinstance(carried.get(registries.INCOMPLETE_REASON), str):
+        run[registries.INCOMPLETE_REASON] = carried[registries.INCOMPLETE_REASON]
+    owed, version = carried.get(registries.OWED_SOURCES), carried.get(registries.OWED_VERSION)
+    if isinstance(owed, list) and isinstance(version, int) and not isinstance(version, bool):
+        if len(owed) > registries.MAX_OWED_SOURCES:
+            raise ValueError(f'a hand-over carried more than {registries.MAX_OWED_SOURCES} owed sources')
+        run[registries.OWED_SOURCES] = [str(source) for source in owed]
+        run[registries.OWED_VERSION] = version
+
+
+_REGISTRIES_CARRIED: Final = (registries.RESULT, registries.LINEAGE_OWED, registries.REPLAYED, registries.LINEAGE_DONE,
+                              registries.INCOMPLETE_REASON, registries.OWED_SOURCES, registries.OWED_VERSION)
 
 
 def carried_state(run: Mapping[str, Any]) -> dict[str, Any]:
@@ -138,6 +163,7 @@ def carried_state(run: Mapping[str, Any]) -> dict[str, Any]:
         **{name: list(run[name]) for name in _CARRIED_WORKSPACE_LISTS if run.get(name)},
         **{flag: True for flag in _CARRIED_FLAGS if run.get(flag) is True},
         **({DEPLOYMENT_FOUND: run[DEPLOYMENT_FOUND]} if run.get(DEPLOYMENT_FOUND) else {}),
+        **{name: run[name] for name in _REGISTRIES_CARRIED if name in run},
     }
 
 
@@ -187,7 +213,8 @@ def agent_memory_fields(run: Mapping[str, Any]) -> dict[str, Any]:
 def _job_fields(run: Mapping[str, Any]) -> dict[str, Any]:
     """The fields of the job and audit rows that say what an erasure by email walked (``deployment_fields``,
     ``participant_fields``, ``agent_memory_fields``)."""
-    return {**deployment_fields(run), **participant_fields(run), **agent_memory_fields(run)}
+    return {**deployment_fields(run), **participant_fields(run), **agent_memory_fields(run),
+            **registries.fields(run)}
 
 
 def optional_counts(run: Mapping[str, Any]) -> dict[str, int]:

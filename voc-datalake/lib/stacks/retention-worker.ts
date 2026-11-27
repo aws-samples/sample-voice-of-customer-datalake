@@ -44,9 +44,11 @@
  *     job, lock, setting or audit row;
  *   - radar: Scan / DeleteItem (a review and its dedupe marker) and the cache-version
  *     bump (UpdateItem on `SETTINGS#radar` only) — no Put, no Query;
- *   - projects: Scan (since 7.48.00 only the deployment walks' way of finding its review links, comment partitions and
- *     projects until the backfill of their registries has run; on the table only, of `SCAN_ATTRIBUTES` only),
- *     and UpdateItem in two statements (since
+ *   - projects: no Scan (7.93.00, projects 3g-d2: the deployment's walks require the review registries' backfill
+ *     marker, and the Scans that found the same rows until then are the operator's backfill's alone); a Query of
+ *     `gsi1-by-type`'s `TYPE#PROJECT` partition for the table's and the index's keys only (`PROJECTS_INDEX_*`) and a
+ *     BatchGetItem of `PROJECT_IDS` rows for their key only (`PROJECT_REGISTRY_KEYS`): the `registries` phase's check
+ *     that the project registry lists every live project; and UpdateItem in two statements (since
  *     7.43.00): of `LINEAGE_UPDATE_ATTRIBUTES` only (the lineage marks' id lists and `erased_evidence`) on the
  *     deployment's and one workspace id's `PROJECT#*` partitions, and of `PEOPLE_UPDATE_ATTRIBUTES` only (the
  *     addresses and names an erasure by email rewrites) on the deployment's and one workspace id's `PROJECT#*`,
@@ -55,7 +57,7 @@
  *     (`RETENTION_PROJECT_PARTITIONS`, 7.43.00; its `LIBRARY` since 7.62.00) and of the deployment's `PROJECT#*`,
  *     `DCOMMENTS#*`, `DOCSHARE#*`, `PROJECT_IDS`, `DOCSHARE_IDS`, `COMMENT_SERIES_IDS` and (7.62.00) `LIBRARY`
  *     (`RETENTION_DEPLOYMENT_PARTITIONS`, 7.48.00, of
- *     `DEPLOYMENT_QUERY_ATTRIBUTES` only), no index: the lineage marks and an erasure by email's addresses
+ *     `DEPLOYMENT_QUERY_ATTRIBUTES` only), no other index: the lineage marks and an erasure by email's addresses
  *     (lambda/jobs/retention/lineage.py, project_people.py). IAM holds neither the Query nor the update to one
  *     workspace (the pattern is any one workspace id), only the workspace layer does;
  *   - raw bucket, read: GetObject of a workspace's text product documents only (`WORKSPACE_PRODUCT_DOC_READS`:
@@ -166,12 +168,36 @@ const DEPLOYMENT_QUERY_ATTRIBUTES = ['pk', 'sk', 'author', 'replies', 'status_by
   'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
   'input_feature_request_ids', 'evidence_updates', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'];
 /**
- * What the worker's Scan of voc-projects may read (7.48.00; lambda/shared/review_registries.py `SCAN_ATTRIBUTES`, which
- * a test holds to this list): a row's key, a routing row's workspace, a link's project and series, and a link's or a
- * project's creation time. The Scan finds the deployment's links, comment partitions and projects until the backfill
- * of their registries has run; it reads every row of the table, but answers only these attributes of each.
+ * The registries check's read of voc-projects' project index (7.93.00, projects 3g-d2; lambda/jobs/retention/
+ * registries.py `step`, whose `INDEX_ATTRIBUTES` and index name a test holds to these): the deployment's live projects on
+ * `gsi1-by-type` (its `TYPE#PROJECT` partition only, never a workspace's or a project's documents), for the table's
+ * and the index's keys only, `dynamodb:Select` `SPECIFIC_ATTRIBUTES` required. Each project found is then looked up in
+ * `PROJECT_IDS` (one BatchGetItem a page: `PROJECT_REGISTRY_KEYS`, the key only, `SPECIFIC_ATTRIBUTES` required
+ * when the request names one; lambda/jobs/retention/registries.py `step`).
  */
-const SCAN_ATTRIBUTES = ['pk', 'sk', 'workspace_id', 'project_id', 'series_id', 'created_at'];
+export const PROJECTS_INDEX = 'gsi1-by-type';
+/** The deployment's own projects' partition there (lambda/shared/project_keys.py `project_type_pk`). */
+export const DEPLOYMENT_PROJECTS_PARTITION = 'TYPE#PROJECT';
+const PROJECTS_INDEX_PARTITIONS = [DEPLOYMENT_PROJECTS_PARTITION];
+const PROJECTS_INDEX_ATTRIBUTES = ['pk', 'sk', 'gsi1pk', 'gsi1sk'];
+
+/** The Query of the deployment's live projects' keys on `gsi1-by-type` (above): the worker's, and the review
+ *  registries marker seed's one Query (review-registries-marker.ts). A Query that names no attribute is refused. */
+export function projectIndexKeysQuery(projectsTable: dynamodb.ITable, sid: string): iam.PolicyStatement {
+  return new iam.PolicyStatement({
+    sid,
+    actions: ['dynamodb:Query'],
+    resources: [`${projectsTable.tableArn}/index/${PROJECTS_INDEX}`],
+    conditions: {
+      'ForAllValues:StringEquals': {
+        'dynamodb:LeadingKeys': PROJECTS_INDEX_PARTITIONS, 'dynamodb:Attributes': PROJECTS_INDEX_ATTRIBUTES,
+      },
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    },
+  });
+}
+const PROJECT_REGISTRY_PARTITIONS = ['PROJECT_IDS'];
+const PROJECT_REGISTRY_KEYS = ['pk', 'sk'];
 /**
  * The attributes the worker's UpdateItems name on voc-projects, the key included (`dynamodb:Attributes`), as two
  * statements: the lineage marks' three id lists, a persona's `evidence_updates` (7.64.00) and `erased_evidence`, on
@@ -420,23 +446,33 @@ function grantEngineeringAccess(worker: Construct, role: iam.Role, engineering: 
 }
 
 /**
- * voc-projects for the worker: the backfill fallback's Scan, the two UpdateItem statements and the Queries of a
- * workspace's and the deployment's project partitions (each pinned by processing-stack-retention.test.ts), in the
- * erasure walks' own customer-managed policy (`walk`, 7.72.00): none of them deletes anything, and the role's inline
- * policy, which keeps every delete and every audit put, would otherwise pass its size quota.
+ * voc-projects for the worker: the two UpdateItem statements, the Queries of a workspace's and the deployment's
+ * project partitions and the gap check's Query of the project index (each pinned by processing-stack-retention.test.ts
+ * and evaluated by retention-policy-evaluation.test.ts), in the erasure walks' own customer-managed policy (`walk`,
+ * 7.72.00): none of them deletes anything, and the role's inline policy, which keeps every delete and every audit put,
+ * would otherwise pass its size quota. No Scan (7.93.00, projects 3g-d2: the Scan the deployment's walks fell back to
+ * until the review registries' backfill had run is gone with that fallback; voc-datalake/scripts/projects/
+ * backfill_review_registries.py Scans with the operator's own credentials).
  */
 function grantProjectsAccess(walk: iam.ManagedPolicy, projectsTable: dynamodb.ITable): void {
-  // Scan (7.48.00): only the deployment's walks' way of finding its review links, comment partitions and projects
-  // until the backfill's marker is there (lambda/shared/review_registries.py; voc-datalake/scripts/projects/
-  // backfill_review_registries.py). A later release (3g-d2) drops it once every deployment ran the backfill. On the table only (no index), and only for SCAN_ATTRIBUTES (dynamodb:Select and
-  // dynamodb:Attributes): a Scan that reads any other attribute, or the whole item, is refused.
+  // 7.93.00 (3g-d2): the deployment's live projects on gsi1-by-type, for the keys only, so the walks can check that
+  // PROJECT_IDS lists each one (a gap fails the job by name): the deployment's TYPE#PROJECT partition only, and a
+  // Query that names no attribute (whole rows) refused.
+  walk.addStatements(projectIndexKeysQuery(projectsTable, 'QueryDeploymentProjectIndexKeys'));
+  // 7.93.00 (review round 2): each index page's projects looked up in PROJECT_IDS by one BatchGetItem, strongly
+  // consistent. IAM holds it to PROJECT_IDS, and to pk and sk when the request names attributes; it cannot refuse a
+  // batch that names none (BatchGetItem sends no dynamodb:Select, so the IfExists condition passes, and ForAllValues
+  // passes an empty set): the code keeps it to the keys (lambda/jobs/retention/registries.py `_all_listed`, whose
+  // projection a test records). A registry row names a project, never a person.
   walk.addStatements(new iam.PolicyStatement({
-    sid: 'ScanDeploymentReviewRows',
-    actions: ['dynamodb:Scan'],
+    sid: 'BatchGetDeploymentProjectRegistryKeys',
+    actions: ['dynamodb:BatchGetItem'],
     resources: [projectsTable.tableArn],
     conditions: {
-      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-      'ForAllValues:StringEquals': { 'dynamodb:Attributes': SCAN_ATTRIBUTES },
+      'ForAllValues:StringEquals': {
+        'dynamodb:LeadingKeys': PROJECT_REGISTRY_PARTITIONS, 'dynamodb:Attributes': PROJECT_REGISTRY_KEYS,
+      },
+      StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
     },
   }));
   // UpdateItem in two statements (7.43.00; jobs/retention/project_people.py, which a test holds to both): the
@@ -457,9 +493,10 @@ function grantProjectsAccess(walk: iam.ManagedPolicy, projectsTable: dynamodb.IT
     resources: [projectsTable.tableArn],
     conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': RETENTION_PROJECT_PARTITIONS } },
   }));
-  // 7.48.00 (projects 3g-d): the deployment's own projects by Query too, on the table only (no index: a deleted
-  // project's META is off gsi1-by-type, so its registry, PROJECT_IDS, lists the projects), each project's, series' and
-  // link's own partition and the deployment's project, link and series registries, of DEPLOYMENT_QUERY_ATTRIBUTES only.
+  // 7.48.00 (projects 3g-d): the deployment's own projects by Query too, on the table (a deleted project's META is off
+  // gsi1-by-type, so its registry, PROJECT_IDS, lists the projects; the index above only checks the registry), each
+  // project's, series' and link's own partition and the deployment's project, link and series registries, of
+  // DEPLOYMENT_QUERY_ATTRIBUTES only.
   walk.addStatements(new iam.PolicyStatement({
     sid: 'QueryDeploymentProjects',
     actions: ['dynamodb:Query'],

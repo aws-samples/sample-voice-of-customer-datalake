@@ -291,6 +291,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/briefing/handler.py': (3, {'Table': 1}),
     'lambda/briefing/signals.py': (3, {'DATE#': 2, 'METRIC#': 1, 'URGENCY#': 1, 'batch': 1, 'meta.client': 1}),
     'lambda/custom_resources/model_pin.py': (3, {'Table': 1, 'meta.client': 1}),
+    # 7.93.00: the review registries marker's seed, an inline custom resource (no `shared/`, as model_pin.py): one
+    # index row read once a deploy (the index and partition the stack's properties name) and the marker's put.
+    'lambda/custom_resources/review_registries_marker.py': (3, {'Table': 1, 'meta.client': 1}),
     'lambda/design_capture/capture_handler.py': (3, {'Table': 1}),
     'lambda/email_intake/handler.py': (2, {'Table': 2, 'delete_object': 1}),
     'lambda/email_intake/intake.py': (2, {'copy_object': 1}),
@@ -315,9 +318,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/jobs/retention/boards.py': (3, {'raw/': 1}),
     'lambda/jobs/retention/boards_rekey.py': (3, {'meta.client': 1, 'transact': 1}),
     'lambda/jobs/retention/handler.py': (3, {'Table': 3}),
-    # 7.48.00 (3g-d): the deployment's walks' one read of the backfill's marker (deployment_found), on voc-projects
-    # seen as itself (the marker is the deployment's; no workspace has one), shared by the erasure and the lineage pass.
-    'lambda/jobs/retention/workspaces.py': (3, {'ingest_table(None)': 1}),
+    # 7.93.00 (3g-d2): the registries phase's two reads of the deployment's own rows on voc-projects seen as itself
+    # (the marker is the deployment's, as is its project index; no workspace has either): the backfill's marker
+    # (marker_present, until 7.93.00 workspaces.py's deployment_found) and the project index's page (step).
+    'lambda/jobs/retention/registries.py': (3, {'ingest_table(None)': 2}),
     # A trial's end (7.71.00): voc-workspaces for the trial, its plugin rows and audit rows (the control plane); its
     # forms go through ws_table (shared/trial_pause.py).
     'lambda/jobs/trial_expiry/handler.py': (0, {'Table': 1}),

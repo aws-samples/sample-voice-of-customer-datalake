@@ -19,6 +19,7 @@ from shared.test.moto_tables import (
     create_aggregates_table_with_metric_index,
     create_pk_sk_table,
     create_projects_table_with_type_index,
+    mark_review_registries_backfilled,
 )
 
 SOURCE = 'web_reviews_example_air'
@@ -35,8 +36,10 @@ def aws():
         aggregates = create_aggregates_table_with_metric_index(worker.AGGREGATES_TABLE, resource)
         feedback = create_pk_sk_table(worker.FEEDBACK_TABLE, resource)
         create_pk_sk_table('test-radar', resource)
-        # With gsi1-by-type, as core-stack.ts: the lineage pass finds the deployment's projects there (7.48.00).
-        create_projects_table_with_type_index(worker.PROJECTS_TABLE or 'test-projects', resource)
+        # With gsi1-by-type, as core-stack.ts (7.48.00), and the review registries' backfill marker, which the lineage
+        # pass requires since 7.93.00.
+        mark_review_registries_backfilled(
+            create_projects_table_with_type_index(worker.PROJECTS_TABLE or 'test-projects', resource))
         invoke = MagicMock()
         with patch.object(settings_handler, 'aggregates_table', aggregates), \
                 patch.object(settings_handler, 'RETENTION_FUNCTION', 'voc-retention'), \

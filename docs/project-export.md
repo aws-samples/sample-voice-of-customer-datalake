@@ -88,9 +88,15 @@ delete the partial rows or run again with `--new-ids`.
 Import only from a checkout of 7.48.00 or later: an older checkout lists neither the project nor
 its comment series, so once the review registries' marker is there an erasure by email misses
 the imported project whole (its META, personas and product documents, live or deleted) and its
-series' threads. If you must import from an older checkout, run
+series' threads (since 7.93.00 the retention worker's registries check notices a live imported
+project missing from the registry: an erasure by email fails by name and the other runs owe their
+lineage marks; it cannot see the project's review links, its series or a deleted project). If you
+must import from an older checkout, run
 `.venv/bin/python scripts/projects/backfill_review_registries.py --unmark` from `voc-datalake/`
-first, then the backfill again (a dry run, then `--apply`) after the import. A bundle holds the reviewers'
+first, then the backfill again (a dry run, then `--apply`) after the import; in between, erasures by
+email fail by name. The import refuses a project id of the verification fixture's reserved shape
+(`proj_vf_` and 24 hex, which the registries check passes as the fixture's) unless `--new-ids`
+gives it a new id (since 7.93.00). A bundle holds the reviewers'
 and members' addresses and no erasure reaches it, so delete a bundle once it is imported.
 
 ## What is carried

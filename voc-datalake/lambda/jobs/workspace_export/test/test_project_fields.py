@@ -61,6 +61,9 @@ NOT_PROJECT_ROW_WRITERS: Final = {
                                                 "owner_email and members and a persona's research_notes "
                                                 '(classified), a thread or a link (their own allowlists), adds none '
                                                 '(its cursor keys look like writes)'),
+    'lambda/jobs/retention/registries.py': ("the erasure's registries check (7.93.00): reads the project index and "
+                                            'registry, keys only; writes only its owed lineage row in voc-aggregates '
+                                            '(JOB#retention / LINEAGE_OWED)'),
 }
 #: How a module shows it reaches a project's partition (a key builder or a project store's writer).
 _NAMES_A_PROJECT: Final = re.compile(r'project_pk\(|project_meta_key\(|document_keys\(|put_project_item|'

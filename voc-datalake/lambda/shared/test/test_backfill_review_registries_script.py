@@ -18,12 +18,12 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from boto3.dynamodb.conditions import Key
 from moto import mock_aws
 
-from shared import review_registries
 from shared.project_keys import REVIEW_REGISTRIES_MARKER_SK
 from shared.test.moto_tables import create_projects_table_with_type_index
 from shared.test.repo_paths import load_module_from_path, repo_root
@@ -169,7 +169,7 @@ def test_a_run_stopped_and_resumed_ends_as_one_that_never_stopped(backfill, tabl
     kept in its own row between runs, each resume under a run id of its own, and the marker sums every run's
     counts."""
     _seed(table)
-    monkeypatch.setattr(review_registries, 'SCAN_PAGE', 1)
+    monkeypatch.setattr(backfill, 'SCAN_PAGE', 1)
     report = _run(backfill, table, apply=True, max_pages=pages)
     runs, run_ids = 1, set()
     while report.stopped and runs < 300:
@@ -193,7 +193,7 @@ def test_a_resume_stops_the_run_it_resumes(backfill, table, monkeypatch):
     """The resume takes the walk over under a new run id, keeping when it began and where it was: the run it resumed,
     if still alive, stops at its next save."""
     _seed(table)
-    monkeypatch.setattr(review_registries, 'SCAN_PAGE', 1)
+    monkeypatch.setattr(backfill, 'SCAN_PAGE', 1)
     _run(backfill, table, apply=True, max_pages=1)
     before = dict(_written(table)['progress'])
     _run(backfill, table, apply=True, resume=True, max_pages=0)
@@ -209,7 +209,7 @@ def test_a_run_taken_over_by_another_stops(backfill, table, monkeypatch):
     """A second --apply started while the first runs takes the progress row over: the first stops at its next page,
     and never writes the marker."""
     _seed(table)
-    monkeypatch.setattr(review_registries, 'SCAN_PAGE', 1)
+    monkeypatch.setattr(backfill, 'SCAN_PAGE', 1)
     real, pages = backfill.scan_page, []
 
     def a_second_run_starts(*args: Any, **kwargs: Any) -> Any:
@@ -255,7 +255,7 @@ def test_resume_needs_an_applying_run_and_a_progress_row(backfill, table):
 
 def test_a_walk_without_max_pages_stops_at_a_cap(backfill, table, monkeypatch):
     _seed(table)
-    monkeypatch.setattr(review_registries, 'SCAN_PAGE', 1)
+    monkeypatch.setattr(backfill, 'SCAN_PAGE', 1)
     monkeypatch.setattr(backfill, 'MAX_PAGES', 3)
     # A dry run keeps no progress: it never offers --resume (round 3).
     with pytest.raises(RuntimeError, match='more than 3') as dry:
@@ -314,7 +314,7 @@ def test_a_walk_resumed_late_still_judges_the_writers_by_when_it_began(backfill,
     """The walk is begun with writers ready, stopped, and resumed after a later deploy: the marker is judged against
     when the walk began, so it is refused."""
     _seed(table)
-    monkeypatch.setattr(review_registries, 'SCAN_PAGE', 1)
+    monkeypatch.setattr(backfill, 'SCAN_PAGE', 1)
     first = _run(backfill, table, apply=True, max_pages=1)
     assert first.stopped
     resumed = backfill.run(table, apply=True, resume=True, now=lambda: NOW, clock=lambda: CLOCK + timedelta(hours=1),
@@ -373,6 +373,19 @@ def test_the_summary_says_how_to_go_on(backfill, table):
     assert 'run --apply again' in backfill.summary(waiting, True)
 
 
+def test_a_dry_run_says_whether_the_marker_is_there(backfill, table):
+    """7.93.00 (3g-d2): an operator learns from a dry run whether the erasures can run (the marker is there and
+    complete) before deciding to apply."""
+    _seed(table)
+    absent = _run(backfill, table, apply=False)
+    assert 'the marker is absent' in backfill.summary(absent, False)
+    _run(backfill, table, apply=True)
+    present = _run(backfill, table, apply=False)
+    assert 'the marker is there and complete' in backfill.summary(present, False)
+    table.put_item(Item={'pk': 'DOCSHARE_IDS', 'sk': REVIEW_REGISTRIES_MARKER_SK, 'completed_at': NOW})
+    assert 'the marker is there but incomplete' in backfill.summary(_run(backfill, table, apply=False), False)
+
+
 def test_the_table_comes_from_the_flag_or_the_stack(backfill, monkeypatch):
     monkeypatch.delenv('PROJECTS_TABLE', raising=False)
 
@@ -382,3 +395,57 @@ def test_the_table_comes_from_the_flag_or_the_stack(backfill, monkeypatch):
 
     assert backfill.table_name(backfill.parse_args(['--projects-table', 'named']), _Stacks()) == 'named'
     assert backfill.table_name(backfill.parse_args(['--stack', 'Core']), _Stacks()) == 'Core-t'
+
+
+# The Scans themselves (7.93.00, 3g-d2: they moved here from lambda/shared/review_registries.py, when the erasure's
+# fallback to them went; these tests came with them from the erasure's).
+
+def test_a_scan_page_is_consistent_and_projects_its_attributes_only(backfill):
+    table = MagicMock()
+    table.scan.return_value = {'Items': []}
+    backfill.scan_page(table, backfill.LINKS, None)
+    sent = table.scan.call_args.kwargs
+    assert (sent['ConsistentRead'], sent['Select']) == (True, 'SPECIFIC_ATTRIBUTES')
+    projected = [sent['ExpressionAttributeNames'][name.strip()] for name in sent['ProjectionExpression'].split(',')]
+    assert sorted(projected) == sorted(backfill.SCAN_ATTRIBUTES)
+
+
+def test_a_routing_row_and_the_link_on_different_pages(backfill, table, monkeypatch):
+    link, routed = 'shr_' + '4' * 32, 'shr_' + '5' * 32
+    table.put_item(Item={'pk': f'DOCSHARE#{routed}', 'sk': 'META', 'workspace_id': WS, 'routed_at': NOW})
+    table.put_item(Item={'pk': f'DOCSHARE#{link}', 'sk': 'META', 'share_id': link, 'project_id': 'p1'})
+    monkeypatch.setattr(backfill, 'SCAN_PAGE', 1)
+    found, malformed, start, pages = [], 0, None, 0
+    while pages < 10:
+        pages += 1
+        page = backfill.scan_page(table, backfill.LINKS, start)
+        found += page.ids
+        malformed += page.malformed
+        start = page.following
+        if start is None:
+            break
+    assert (found, malformed, pages >= 2) == ([link], 0, True)
+
+
+def test_a_routing_row_naming_no_workspace_id_is_malformed(backfill, table):
+    table.put_item(Item={'pk': 'DOCSHARE#shr_' + '6' * 32, 'sk': 'META', 'workspace_id': 'not-a-workspace'})
+    table.put_item(Item={'pk': 'DOCSHARE#shr_' + '8' * 32, 'sk': 'META', 'workspace_id': WS})
+    page = backfill.scan_page(table, backfill.LINKS, None)
+    assert (page.ids, page.malformed) == ([], 1)
+
+
+def test_a_malformed_series_is_counted_once_and_never_fails(backfill, table, monkeypatch):
+    bad = 'DCOMMENTS#not!a!project#ser_' + 'c' * 24
+    for n in range(3):
+        table.put_item(Item={'pk': bad, 'sk': f'C#dc_{n}'})
+    table.put_item(Item={'pk': 'DCOMMENTS#p1#ser_' + 'd' * 24, 'sk': 'C#dc_9'})
+    monkeypatch.setattr(backfill, 'SCAN_PAGE', 1)
+    found, malformed, start, after = [], 0, None, None
+    for _page in range(50):
+        page = backfill.scan_page(table, backfill.SERIES, start, after)
+        found += page.ids
+        malformed += page.malformed
+        start, after = page.following, page.last_pk or after
+        if start is None:
+            break
+    assert (found, malformed) == ([f"p1#ser_{'d' * 24}"], 1)

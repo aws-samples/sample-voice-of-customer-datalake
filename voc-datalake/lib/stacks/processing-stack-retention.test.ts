@@ -10,6 +10,7 @@ import type { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
 import { RETENTION_ENGINEERING_FILES, RETENTION_OWN_EXCLUDES } from './retention-worker';
+import { RETENTION_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { itemAt } from '../test-support/guards';
@@ -75,6 +76,12 @@ describe('voc-retention worker', () => {
     expect(variables).not.toHaveProperty('RETENTION_FUNCTION');
   });
 
+  it('prints its alarm\'s metrics under the service the logs API alarms on (7.93.00)', () => {
+    // lambda/jobs/retention/registries.py `emit` names POWERTOOLS_SERVICE_NAME; dlq-alarms.ts hands the logs API
+    // RETENTION_FUNCTION_BASE_NAME as OPS_ALERTS_RETENTION_SERVICE (api-stack-mcp-global-ops.test.ts).
+    expect(worker().Environment.Variables.POWERTOOLS_SERVICE_NAME).toBe(RETENTION_FUNCTION_BASE_NAME);
+  });
+
   it('holds exactly GetItem/Query/Scan/DeleteItem on feedback — never Put, Update or BatchWrite', () => {
     expect(allowedActions(statements(), 'dynamodb:', 'Feedback'))
       .toStrictEqual(['dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan']);
@@ -126,15 +133,40 @@ describe('voc-retention worker', () => {
     expect(JSON.stringify(template.toJSON())).toContain('"dynamodb:LeadingKeys":["SETTINGS#radar"]');
   });
 
-  it('holds exactly Scan/UpdateItem on projects, and Query of its project partitions — never deletes or puts', () => {
+  it('holds exactly BatchGetItem/Query/UpdateItem on projects, never a Scan, a delete or a put (7.93.00)', () => {
     expect(allowedActions(statements(), 'dynamodb:', 'Projects'))
-      .toStrictEqual(['dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+      .toStrictEqual(['dynamodb:BatchGetItem', 'dynamodb:Query', 'dynamodb:UpdateItem']);
     const queries = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
       && s.actions.includes('dynamodb:Query'));
-    // Query alone, on the table only: of any one workspace id's partitions (7.43.00) and of the deployment's
-    // (7.48.00). No index: a deleted project's META is off gsi1-by-type, so the deployment's registry lists them.
-    expect(queries.map((s) => [s.actions, s.resource.includes('/index/')]))
-      .toStrictEqual([[['dynamodb:Query'], false], [['dynamodb:Query'], false]]);
+    // Query alone: on the table, of any one workspace id's partitions (7.43.00) and of the deployment's (7.48.00); and
+    // (7.93.00, 3g-d2) one of gsi1-by-type, the gap check's, its one index. The registry lists the projects (a deleted
+    // project's META is off the index); the index only checks it.
+    expect(queries.map((s) => [s.actions, s.resource.includes('/index/')]).sort(
+      (a, b) => byCodeUnit(JSON.stringify(a), JSON.stringify(b))))
+      .toStrictEqual([[['dynamodb:Query'], false], [['dynamodb:Query'], false], [['dynamodb:Query'], true]]);
+    expect(queries.filter((s) => s.resource.includes('/index/')).map((s) => s.resource))
+      .toStrictEqual([expect.stringContaining('/index/gsi1-by-type')]);
+  });
+
+  it('batch-gets the project registry\'s rows for their key only (7.93.00, the gap check\'s lookup)', () => {
+    const batches = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
+      && s.actions.includes('dynamodb:BatchGetItem'));
+    expect(batches.map((s) => [s.actions, s.resource.includes('/index/')])).toStrictEqual([[['dynamodb:BatchGetItem'],
+      false]]);
+    expect(JSON.stringify(template.toJSON())).toContain(JSON.stringify({
+      'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['PROJECT_IDS'], 'dynamodb:Attributes': ['pk', 'sk'] },
+      StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    }));
+  });
+
+  it('reads the project index for the keys of the deployment\'s live projects only (7.93.00, the gap check)', () => {
+    // Its partition (never a workspace's, never a project's documents), the table's and the index's keys, and
+    // SPECIFIC_ATTRIBUTES required: no project row's other attributes can be read through it.
+    expect(JSON.stringify(template.toJSON())).toContain(JSON.stringify({
+      'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['TYPE#PROJECT'],
+        'dynamodb:Attributes': ['pk', 'sk', 'gsi1pk', 'gsi1sk'] },
+      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    }));
   });
 
   it('queries exactly these project partitions: one workspace id\'s and the deployment\'s, its registries included', () => {
@@ -227,8 +259,8 @@ describe('voc-retention worker', () => {
     expect(managed.map(([id]) => id.replace(/[0-9A-F]{8}$/, '')).sort(byCodeUnit)).toStrictEqual([
       'RetentionWorkerRetentionReadsPolicy', 'RetentionWorkerRetentionWalksPolicy']);
     const allowed = managed.flatMap(([, resource]) => allowedIn(resource));
-    expect([...new Set(allowed)].sort(byCodeUnit)).toStrictEqual(['dynamodb:ConditionCheckItem', 'dynamodb:GetItem',
-      'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem', 's3:GetObject']);
+    expect([...new Set(allowed)].sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchGetItem', 'dynamodb:ConditionCheckItem',
+      'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem', 's3:GetObject']);
     expect(overflowPolicies(template)).toStrictEqual([]);
   });
 
@@ -252,15 +284,11 @@ describe('voc-retention worker', () => {
     expect(tablesOf('DenyAuditRowWritesOutsideOwnPartition').join()).toContain('Participants');
   });
 
-  it('scans projects on the table only, for the attributes the backfill\'s Scan projects (7.48.00)', () => {
-    const scans = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Projects')
-      && s.actions.includes('dynamodb:Scan'));
-    expect(scans.map((s) => [s.actions, s.resource.includes('/index/')])).toStrictEqual([[['dynamodb:Scan'], false]]);
-    expect(JSON.stringify(template.toJSON())).toContain(JSON.stringify({
-      StringEquals: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'workspace_id', 'project_id', 'series_id',
-        'created_at'] },
-    }));
+  it('never scans projects: the Scan fallback\'s grant is gone (7.93.00, 3g-d2)', () => {
+    const scans = statements().filter((s) => s.resource.includes('Projects') && s.actions.some(
+      (a) => a === 'dynamodb:Scan' || a === 'dynamodb:*'));
+    expect(scans.filter((s) => s.effect === 'Allow')).toStrictEqual([]);
+    expect(JSON.stringify(template.toJSON())).not.toContain('ScanDeploymentReviewRows');
   });
 
   it('reads and updates feature requests, and puts / deletes only under FR#* (it re-keys an erased +1)', () => {

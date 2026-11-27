@@ -26,9 +26,12 @@ finds every link (a revoked one too), every comment partition and every project 
    ``cloudformation:DescribeStacks`` when the table is not named; GetFunctionConfiguration also answers each
    function's environment variable names and values, ARNs among them, which the script reads only for
    ``APP_VERSION``). It is judged before an applied walk starts (none starts otherwise) and again at its end, against
-   when it began: a writer updated during the walk (another deploy) voids it, and its progress row goes. Until the
-   marker is there an erasure finds the same rows by these Scans itself, whether or not this ran. It never changes or
-   deletes a link, a thread, a project or anything else.
+   when it began: a writer updated during the walk (another deploy) voids it, and its progress row goes. Since
+   7.93.00 (3g-d2) the retention worker requires the marker (jobs/retention/registries.py): until it is there, an
+   erasure by email of the deployment fails by name (``ReviewRegistriesNotBackfilled``) before it deletes anything, and
+   every other run of the deployment deletes and owes its lineage marks (the erasure no longer Scans). These Scans are
+   this script's alone. It never changes or deletes a link, a thread, a project or anything else. Every run, a dry run
+   too, reports the marker as it found it (``marker_state``: complete, incomplete or absent).
 
 DRY RUN BY DEFAULT: it reads, then prints a summary of what it would list. Idempotent: every put is conditional (a row
 the stores, or an earlier run, wrote is kept as it is), so a second run lists nothing and only rewrites the marker.
@@ -39,8 +42,9 @@ run fails past ``MAX_PAGES``); ``--resume`` goes on from that row only (nothing 
 new run id put on the condition of the old one (the run it resumes, if still alive, stops), and the marker's put and
 the progress row's delete are one transaction on the condition of the run id, so the marker is written only at the
 end of one applied walk nobody took over. ``--unmark`` deletes the marker and any progress row: do it before rolling
-back to a release older than 7.48.00 (which writes no registry row), so the next upgrade's erasures fall back to their
-own Scans until this runs again.
+back to a release older than 7.48.00 (which writes no registry row), or when an erasure failed with
+``ReviewRegistriesIncomplete`` (a live project its registry does not list), then run ``--apply`` again; until then
+the erasures by email fail by name and the other runs owe their lineage marks.
 
 Usage (from voc-datalake/):
     .venv/bin/python scripts/projects/backfill_review_registries.py [--stack VocCoreStack] [--region us-west-2]
@@ -60,26 +64,40 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
-# `lambda/`, so the keys, the Scan and the rows are the ones the stores and the erasure use.
+# `lambda/`, so the keys and the rows are the ones the stores and the erasure use.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'lambda'))
 
 from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
+from shared.company_personas import COMPANY_PERSONAS_CONTAINER
 from shared.project_keys import (
+    COMMENT_PARTITION_PREFIX,
     DEPLOYMENT_LINK_REGISTRY_PK,
+    PROJECT_PREFIX,
     REVIEW_REGISTRIES_MARKER_SK,
+    comment_partition_ids,
     deployment_link_registry_key,
     deployment_project_item,
     deployment_series_item,
+    project_id_of,
     series_registry_ids,
 )
-from shared.review_registries import FIRST_RELEASE, LINKS, PROJECTS, SERIES, release_of, scan_page
+from shared.project_walk import ID_PAGE, is_project_id, is_series_ref
+from shared.review_registries import FIRST_RELEASE, marker_complete, release_of
+from shared.review_share_audience import ROUTE_WORKSPACE_FIELD, SHARE_PK_PREFIX, SHARE_SK, is_share_id
+from shared.workspace_ids import is_workspace_id
 
-#: The three passes, in order (the links first, as the erasure reads them), and the progress row's ``pass`` once all
-#: are done but the marker is not written yet (a later ``--resume`` writes only the marker).
+#: The three passes, in this order: the links first, as the erasure reads them, then the series, then the projects
+#: (``PROJECT#{id}`` / ``META``: since the delete's fence takes a deleted project off ``gsi1-by-type``, only its
+#: registry row, ``PROJECT_IDS``, or this Scan finds it).
+LINKS = 'links'
+SERIES = 'series'
+PROJECTS = 'projects'
+#: The three passes, in order, and the progress row's ``pass`` once all are done but the marker is not written yet (a
+#: later ``--resume`` writes only the marker).
 PASSES = (LINKS, SERIES, PROJECTS)
 DONE = 'done'
 #: How long after a writer's last update its containers of the release before may still run: the longest writer's
@@ -99,6 +117,97 @@ _TAKEN_OVER = 'another run of the backfill took the walk over; this one stops'
 
 Writers = Callable[[], list[dict[str, Any]]]
 
+#: The rows one Scan page evaluates (DynamoDB applies the limit before the filter), so it answers at most a page of ids.
+SCAN_PAGE = ID_PAGE
+_PREFIX = {LINKS: SHARE_PK_PREFIX, SERIES: COMMENT_PARTITION_PREFIX, PROJECTS: PROJECT_PREFIX}
+#: What a page reads of a row: its key, a routing row's workspace, and what a link's or a project's registry row copies.
+SCAN_ATTRIBUTES = ('pk', 'sk', ROUTE_WORKSPACE_FIELD, 'project_id', 'series_id', 'created_at')
+_NAMES = {f'#a{n}': name for n, name in enumerate(SCAN_ATTRIBUTES)}
+
+
+class Found(NamedTuple):
+    """One Scan page: the ids found (a share id, or ``{project}#{series}``), each one's row as read (its project,
+    series and creation time, for its registry row), how many partitions were malformed, the rows evaluated, the key
+    the next page starts from (None at the end) and the last partition the page met."""
+
+    ids: list[str]
+    rows: dict[str, dict[str, Any]]
+    malformed: int
+    scanned: int
+    following: dict[str, Any] | None
+    last_pk: str | None
+
+
+def _request(kind: str, start: Mapping[str, Any] | None) -> dict[str, Any]:
+    meta = ' AND #a1 = :meta' if kind == PROJECTS else ''
+    request: dict[str, Any] = {
+        'Limit': SCAN_PAGE, 'ConsistentRead': True, 'Select': 'SPECIFIC_ATTRIBUTES',
+        'FilterExpression': f'begins_with(#a0, :prefix){meta}',
+        'ExpressionAttributeValues': {':prefix': _PREFIX[kind], **({':meta': 'META'} if meta else {})},
+        'ProjectionExpression': ', '.join(_NAMES), 'ExpressionAttributeNames': dict(_NAMES),
+    }
+    if start:
+        request['ExclusiveStartKey'] = dict(start)
+    return request
+
+
+def scan_page(table: Any, kind: str, start: Mapping[str, Any] | None, after: str | None = None) -> Found:
+    """One Scan page of the ``kind`` pass from ``start``: strongly consistent, projected to ``SCAN_ATTRIBUTES``, and
+    the ids of what it found. For the links, each deployment link (``DOCSHARE#{id}`` / ``META`` naming no workspace:
+    a workspace link's routing row is that workspace's, skipped uncounted); for the series, each comment partition
+    (``DCOMMENTS#{project}#{series}``) once, judged by the walker's own rule (shared/project_walk.py
+    ``is_series_ref``); for the projects, each ``PROJECT#{id}`` / ``META`` (a tombstoned one too), its id shaped like
+    one, the persona library's container left out, uncounted. Any other row under those prefixes is counted as
+    malformed, a comment partition once whatever rows it holds. A Scan returns one partition's rows together, so a
+    partition that runs over a page's end is met again by the next page's first rows only: ``after`` (the last
+    partition the previous page met, ``Found.last_pk``) drops that repeat."""
+    response = table.scan(**_request(kind, start))
+    items = [dict(item) for item in response.get('Items') or [] if isinstance(item, Mapping)]
+    last = response.get('LastEvaluatedKey')
+    following = dict(last) if isinstance(last, Mapping) and last else None
+    ids: list[str] = []
+    rows: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set() if after is None else {after}
+    malformed, last_pk = 0, None
+    for item in items:
+        pk = str(item.get('pk') or '')
+        if kind == LINKS:
+            found = _link_of(item)
+            # A routing row naming a workspace id is that workspace's, uncounted; one naming anything else is malformed.
+            if found is None and not is_workspace_id(item.get(ROUTE_WORKSPACE_FIELD)):
+                malformed += 1
+        elif kind == PROJECTS:
+            project_id = project_id_of(pk)
+            if project_id == COMPANY_PERSONAS_CONTAINER:
+                continue  # the persona library's container: the walks read it on their own
+            found = project_id if is_project_id(project_id) else None
+            malformed += found is None
+        else:
+            last_pk = pk
+            if pk in seen:
+                continue
+            seen.add(pk)
+            found = _series_of(item)
+            malformed += found is None
+        if found is not None and found not in rows:
+            ids.append(found)
+            rows[found] = item
+    return Found(ids, rows, malformed, int(response.get('ScannedCount') or 0), following, last_pk)
+
+
+def _link_of(item: Mapping[str, Any]) -> str | None:
+    """The deployment link a ``DOCSHARE#`` row is, or None (a routing row, which names a workspace, or a bad key)."""
+    if ROUTE_WORKSPACE_FIELD in item or item.get('sk') != SHARE_SK:
+        return None
+    share_id = str(item.get('pk') or '').removeprefix(SHARE_PK_PREFIX)
+    return share_id if is_share_id(share_id) else None
+
+
+def _series_of(item: Mapping[str, Any]) -> str | None:
+    ids = comment_partition_ids(item.get('pk'))
+    ref = None if ids is None else f'{ids[0]}#{ids[1]}'
+    return ref if is_series_ref(ref) else None
+
 
 def _per_pass() -> dict[str, int]:
     return dict.fromkeys(PASSES, 0)
@@ -116,6 +225,8 @@ class Report:
     stopped: bool = False
     marked: bool = False
     unmarked: str | None = None
+    #: The marker as the run found it (7.93.00): ``complete``, ``incomplete`` or ``absent``.
+    marker_found: str = 'absent'
 
 
 def _registry_row(kind: str, found: str, row: Mapping[str, Any], at: str) -> dict[str, Any]:
@@ -277,7 +388,7 @@ def run(table: Any, *, apply: bool, resume: bool = False, max_pages: int | None 
     ``MAX_PAGES``: past it the run fails); then, with ``apply``, the marker, if every writer was ready when the walk
     began (``writers_ready`` of ``deployed()``, judged both before a new applied walk starts and at its end, against
     when it began)."""
-    report = Report()
+    report = Report(marker_found=marker_state(table))
     if apply and not resume:
         why = writers_ready(deployed(), clock())
         if why is not None:
@@ -300,6 +411,15 @@ def run(table: Any, *, apply: bool, resume: bool = False, max_pages: int | None 
     if apply:
         _mark(table, state, report, now(), deployed)
     return report
+
+
+def marker_state(table: Any) -> str:
+    """The marker as it is now: ``complete`` (the erasures may run, shared/review_registries.py ``marker_complete``),
+    ``incomplete`` (a row that does not say it all: they fail by name, as without one) or ``absent``."""
+    item = table.get_item(Key=dict(MARKER_KEY), ConsistentRead=True).get('Item')
+    if not isinstance(item, Mapping):
+        return 'absent'
+    return 'complete' if marker_complete(item) else 'incomplete'
 
 
 def _mark(table: Any, state: dict[str, Any], report: Report, at: str, deployed: Writers) -> None:
@@ -338,7 +458,8 @@ def _mark(table: Any, state: dict[str, Any], report: Report, at: str, deployed: 
 
 
 def unmark(table: Any) -> None:
-    """Delete the marker and any progress row (before a rollback below 7.48.00: the erasures then Scan again)."""
+    """Delete the marker and any progress row (before a rollback below 7.48.00, or after a gap the erasure found: the
+    erasures then fail by name until a new ``--apply`` writes it)."""
     for key in (MARKER_KEY, PROGRESS_KEY):
         table.delete_item(Key=dict(key))
 
@@ -392,6 +513,13 @@ def summary(report: Report, apply: bool) -> str:
     lines = [f'{report.scanned} rows scanned; {report.malformed} malformed rows left alone',
              *(f'{kind}: {report.found[kind]} found, {verb} {report.listed[kind]}, '
                f'{report.already_listed[kind]} already listed' for kind in PASSES)]
+    if not report.marked:
+        # What the run found (an applied walk that wrote the marker says so below).
+        lines.append({
+            'complete': 'the marker is there and complete: erasures by email and the lineage passes can run',
+            'incomplete': 'the marker is there but incomplete: erasures by email fail by name until --apply writes it',
+        }.get(report.marker_found, 'the marker is absent: erasures by email fail by name, and the other runs owe '
+                                   'their lineage marks, until --apply writes it'))
     if report.stopped:
         # A dry run keeps no progress, so it has nothing to resume.
         lines.append('stopped; go on with --apply --resume' if apply
@@ -414,7 +542,7 @@ def main(argv: list[str] | None = None) -> int:
     projects = aws.resource('dynamodb').Table(table_name(options, cloudformation))
     if options.unmark:
         unmark(projects)
-        print('the marker and any progress are deleted: erasures by email find the deployment\'s rows by Scan')
+        print('the marker and any progress are deleted: erasures by email fail by name until --apply writes it again')
         return 0
     report = run(projects, apply=options.apply, resume=options.resume, max_pages=options.max_pages,
                  deployed=lambda: link_writers(cloudformation, aws.client('lambda'), options.api_stack))

@@ -588,7 +588,8 @@ export class VocCoreStack extends VocStack {
 
     // The review registries' backfill marker goes when a release that keeps the registries arrives or leaves (7.48.00:
     // review-registries-marker.ts), through this stack's one AwsCustomResource provider.
-    resetReviewRegistriesMarker(this, this.projectsTable, this.kmsKey);
+    // Since 7.93.00 a new deployment (no project yet) also gets a complete marker from its seed.
+    resetReviewRegistriesMarker(this, this.projectsTable, this.kmsKey, (baseName) => this.uniqueName(baseName));
 
     // Suppress CDK custom resource Lambda runtime warnings
     // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID

@@ -163,6 +163,10 @@
     {
       "key": "SLUG_PARTITION_PREFIX|SLUG_SK_PREFIX::lambda/shared/library_keys.py,lambda/shared/ws_repo.py",
       "reason": "a Documents Library item's slug guard, a sort key inside one library partition of voc-projects (shared/library_keys.py, 7.62.00), and a workspace's slug guard, a partition of voc-workspaces (shared/ws_repo.py): the same word in two tables, separate keys and lifecycles"
+    },
+    {
+      "key": "FEEDBACK_BY_DATE_POSITION|INDEX_ATTRIBUTES::lambda/jobs/retention/registries.py,lambda/shared/indexes.py",
+      "reason": "what the retention worker's IAM lets its registries check read of voc-projects' gsi1-by-type (jobs/retention/registries.py, 7.93.00; held to lib/stacks/retention-worker.ts PROJECTS_INDEX_ATTRIBUTES by a test) and a voc-feedback row's key and gsi1-by-date position, the workspace export's resume key and the reprocess day walk's cursor (shared/indexes.py FEEDBACK_BY_DATE_POSITION, 7.94.00): both tables name their keys and gsi1's alike, two tables and two rules that move apart"
     }
   ]
 }

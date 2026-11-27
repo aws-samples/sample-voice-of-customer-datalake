@@ -92,6 +92,7 @@ export const VARIABLE_PAYLOAD: Readonly<Record<string, string>> = {
 export const CPU_NOT_MEASURED: Readonly<Record<string, string>> = {
   'voc-cdn-signing-keys': 'deploy-time custom resource (Node), runs once per deploy',
   'voc-admin-bootstrap': 'deploy-time custom resource, runs once per deploy',
+  'voc-review-registries-seed': 'deploy-time custom resource, runs once per deploy',
   'voc-fixture-provider': 'deploy-time verification-fixture custom resource (only with the fixture context flag)',
 };
 
@@ -361,6 +362,10 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   // The stack's AwsCustomResource provider (7.48.00): one DeleteItem per deploy, the review registries' marker reset
   // (review-registries-marker.ts), at the CDK default.
   'VocCoreStack/AWS679f53fac002430cb0da5b7982bd22872D164C4C': null,
+  // The review registries marker's seed (7.93.00, review-registries-marker.ts): one Query and at most one PutItem on
+  // the resource's create, at the CDK default, and its provider's framework function.
+  'voc-review-registries-seed': null,
+  'VocCoreStack/ReviewRegistriesMarkerSeedProviderframeworkonEvent198F05CA': null,
   // The model agreements (BedrockModelAgreements under the id ImageModelAccess, bedrock-access-stack.ts):
   // deploy-time custom resource for the image model (5.45.00) and every Claude model, the CDK default.
   'VocCoreStack/ImageModelAccessModelAgreementLambda252AEB5F': null,

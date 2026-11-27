@@ -13,7 +13,11 @@ from jobs.retention import handler, runs
 from shared.digests import sha256_hex
 from shared.retention import ERASURE_JOB_PK
 from shared.test.moto_s3 import create_versioned_bucket
-from shared.test.moto_tables import create_pk_sk_table, create_projects_table_with_type_index
+from shared.test.moto_tables import (
+    create_pk_sk_table,
+    create_projects_table_with_type_index,
+    mark_review_registries_backfilled,
+)
 
 BUCKET = handler.RAW_DATA_BUCKET or 'test-raw-data-bucket'
 RADAR_TABLE = handler.RADAR_TABLE or 'test-radar'
@@ -60,6 +64,9 @@ def aws():
         radar = create_pk_sk_table(RADAR_TABLE, resource)
         # With gsi1-by-type, as core-stack.ts (the stores write it; the deployment's walks read PROJECT_IDS, 7.48.00).
         projects = create_projects_table_with_type_index(PROJECTS_TABLE, resource)
+        # A backfilled deployment (7.93.00, 3g-d2: the deployment's walks require the marker; a test of the refusal
+        # deletes it).
+        mark_review_registries_backfilled(projects)
         feature_requests = create_pk_sk_table(FEATURE_REQUESTS_TABLE, resource)
         workspaces = create_pk_sk_table(WORKSPACES_TABLE, resource)
         with patch.object(handler, 'get_dynamodb_resource', return_value=resource), \

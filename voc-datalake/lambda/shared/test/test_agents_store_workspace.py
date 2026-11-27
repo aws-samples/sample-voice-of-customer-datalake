@@ -271,7 +271,8 @@ class TestTheDeploymentsRequests:
         store.set_paused(table, self.AGENT, paused, by='sub-ada', username='ada', now=NOW)
         [update, put] = table.meta.client.transact_write_items.call_args.kwargs['TransactItems']
         sent = update['Update']
-        assert (sent.pop('TableName'), sent.pop('Key')) == ('test-agents', {'pk': f'AGENT#{self.AGENT}', 'sk': 'META'})
+        table_name, key = sent.pop('TableName'), sent.pop('Key')
+        assert (table_name, key) == ('test-agents', {'pk': f'AGENT#{self.AGENT}', 'sk': 'META'})
         if paused:
             assert sent == {
                 'UpdateExpression': 'SET paused = :true, paused_at = :at, paused_by = :username, updated_at = :at, '

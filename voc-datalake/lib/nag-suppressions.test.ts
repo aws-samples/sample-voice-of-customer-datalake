@@ -327,6 +327,8 @@ describe('cdk-nag acknowledgements', () => {
       // per-trial schedules: the expiry's hourly rule reads the ends from the listing.
       // 150 -> 151 (the all-features shape's -c workspaceHardDelete=true): voc-workspace-delete's version deletes and
       // upload aborts under the S3 import bucket's `ws/{one id}/*` (the `importObjects` grant), acknowledged on its role.
+      // 7.93.00 (3g-d2) adds none: the review registries marker seed's log group is named `/aws/lambda/<function>`,
+      // inside the logs API's existing pattern, so no new log-group wildcard is granted.
       expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 151, used: 151 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });

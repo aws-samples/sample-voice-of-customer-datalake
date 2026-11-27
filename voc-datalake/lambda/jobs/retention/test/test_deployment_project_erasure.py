@@ -8,9 +8,10 @@ row) are listed by the backfill (scripts/projects/backfill_review_registries.py)
 address in a deployment link's audience (a revoked one too), the threads and replies (a deleted project's too), a
 ``META`` (a deleted or half-deleted project's too) and a persona's research note, by the same code as a workspace's;
 lists for review a product document whose extracted text holds it (every kind alike: a PDF, an image's description),
-and as not checked only one with no text; finds the links, series and projects by the registries once the backfill's
-marker is there and by its own three Scans until then; leaves every workspace's rows to
-the workspace's walk and the other way round; and a walk handed over after every step ends as one that never was.
+and as not checked only one with no text; finds the links, series and projects by the registries, which since 7.93.00
+(3g-d2) require the backfill's marker (no Scan: test_registries_required.py; the conftest's tables carry the marker);
+leaves every workspace's rows to the workspace's walk and the other way round; and a walk handed over after every step
+ends as one that never was.
 """
 from __future__ import annotations
 
@@ -19,12 +20,12 @@ import re
 import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from boto3.dynamodb.conditions import Key
 
-from jobs.retention import boards, handler, project_people, runs, workspaces
+from jobs.retention import boards, handler, project_people, registries, runs, workspaces
 from jobs.retention.test.conftest import BUCKET, PROJECTS_TABLE, erasure_job, erasure_rows, put_feedback
 from jobs.retention.test.test_named_workspace_erasure import _job as _named_job
 from jobs.retention.test.test_project_erasure import (
@@ -61,11 +62,12 @@ from jobs.retention.test.test_project_erasure import (
 from jobs.retention.test.test_workspace_erasure import BASIS, JOB_ID, WS, _tombstones
 from shared import document_comments as comments
 from shared import document_share as ds
-from shared import project_walk, review_registries
+from shared import project_walk
 from shared.project_keys import (
     comments_pk,
     deployment_link_registry_key,
     project_pk,
+    project_type_pk,
     review_link_key,
 )
 from shared.retention import DOCS_NOT_CHECKED_COUNTER, MALFORMED_ID_COUNTER, PROJECT_COUNTER
@@ -105,6 +107,16 @@ def _with_marker(aws) -> None:
     aws['projects'].put_item(Item=dict(MARKER))
 
 
+def _unmark(aws) -> None:
+    aws['projects'].delete_item(Key={'pk': MARKER['pk'], 'sk': MARKER['sk']})
+
+
+def _registries(aws, pk: str) -> list[str]:
+    """The sort keys of one of the deployment's registries, the backfill's own rows (``MIGRATION#…``) left out."""
+    rows = aws['projects'].query(KeyConditionExpression=Key('pk').eq(pk))['Items']
+    return sorted(str(row['sk']) for row in rows if not str(row['sk']).startswith('MIGRATION#'))
+
+
 def _deployment_records(aws) -> dict[str, dict[str, Any]]:
     return _tombstones(aws, project_people.STORE_DEPLOYMENT_PROJECTS)
 
@@ -131,11 +143,8 @@ def _everything(aws) -> dict[str, Any]:
 
 @pytest.mark.usefixtures('projects_env')
 class TestAnErasureByEmailReachesTheDeploymentsProjects:
-    @pytest.mark.parametrize('backfilled', [False, True])
-    def test_every_row_that_holds_the_address_is_de_identified(self, aws, worker_context, backfilled):
+    def test_every_row_that_holds_the_address_is_de_identified(self, aws, worker_context):
         links = _seed_deployment(aws)
-        if backfilled:
-            _with_marker(aws)
 
         result = _erase_by_email(aws, worker_context, REVIEWER.upper())
 
@@ -155,17 +164,13 @@ class TestAnErasureByEmailReachesTheDeploymentsProjects:
         assert persona['research_notes'][0]['author'] == comments.TEAM_MEMBER_NAME
         assert result[PROJECT_COUNTER] == CHANGED
 
-    def test_the_backfill_marker_decides_query_or_scan(self, aws, worker_context):
+    def test_the_registries_are_walked_by_query_and_nothing_is_scanned(self, aws, worker_context):
         _seed_deployment(aws)
         with scans_of(aws) as scanned:
-            _erase_by_email(aws, worker_context)
-        # The three passes, links, series then projects: each one Scan page here (a small table).
-        assert scanned == ['test-projects'] * 3
-        _with_marker(aws)
-        with scans_of(aws) as scanned:
+            first = _erase_by_email(aws, worker_context)
             again = _erase_by_email(aws, worker_context, DEP_MEMBER, job_id='er_00000000c0df')
         assert scanned == []
-        assert again[PROJECT_COUNTER] == 1  # the live project's member entry
+        assert (first[PROJECT_COUNTER], again[PROJECT_COUNTER]) == (CHANGED, 1)  # then the live project's member
 
     def test_a_document_is_judged_by_its_extracted_text_of_any_kind(self, aws, worker_context):
         _seed_deployment(aws)
@@ -268,8 +273,16 @@ class TestTheRowsMadeBeforeTheRegistries:
         assert thread['author'] == {'kind': 'reviewer'}
         assert 'owner_email' not in _meta(aws, DEP_GONE, None)
 
-    def test_after_the_backfill_the_old_rows_are_reached_by_query(self, aws, worker_context, backfill):
+    def test_the_erasure_refuses_them_until_the_backfill_then_reaches_them_by_query(self, aws, worker_context,
+                                                                                   backfill):
         legacy = self._legacy(aws)
+        _unmark(aws)
+        with scans_of(aws) as scanned:
+            refused = _erase_by_email(aws, worker_context, job_id='er_00000000beef')
+        # 7.93.00: no Scan finds them any more; the job fails by name and its row says to run the backfill.
+        assert (scanned, refused['status']) == ([], 'failed')
+        assert _row(aws, review_link_key(legacy['revoked']))['audience']['emails'] == [REVIEWER]
+
         drained = datetime(2026, 11, 1, tzinfo=UTC)
         report = backfill.run(aws['projects'], apply=True, now=lambda: STAMP, clock=lambda: drained + timedelta(hours=1),
                               deployed=lambda: ready_writers(drained))
@@ -281,40 +294,6 @@ class TestTheRowsMadeBeforeTheRegistries:
 
         assert scanned == []
         self._assert_reached(aws, legacy)
-
-    def test_without_the_backfill_the_erasures_own_scan_finds_them(self, aws, worker_context):
-        legacy = self._legacy(aws)
-
-        with scans_of(aws) as scanned:
-            _erase_by_email(aws, worker_context)
-
-        # The links, the series, then the projects' META rows: three passes.
-        assert scanned == ['test-projects'] * 3
-        self._assert_reached(aws, legacy)
-
-    def test_a_series_over_many_scan_pages_is_walked_once(self, aws):
-        for n in range(5):
-            thread = comments.thread_item(project_id=DEP_LIVE, series_id=SERIES['series_id'],
-                                          document={'document_id': 'd', 'version': 1},
-                                          author=comments.reviewer_author(REVIEWER), text=f'n{n}', anchor=None)
-            aws['projects'].put_item(Item=thread)
-        eraser = project_people.ProjectPeopleEraser(_run(), _tables(aws), REVIEWER)
-        walked: list[str] = []
-        real = eraser._thread_page
-
-        def noted(scope, project_id, series_id, start):
-            if start is None:
-                walked.append(f'{project_id}#{series_id}')
-            return real(scope, project_id, series_id, start)
-
-        cursor = None
-        with patch.object(review_registries, 'SCAN_PAGE', 1), patch.object(eraser, '_thread_page', noted):
-            for _step in range(200):
-                cursor = eraser.step(cursor)
-                if cursor is None or project_people.DEPLOYMENT not in cursor:
-                    break
-        assert walked == [f"{DEP_LIVE}#{SERIES['series_id']}"]
-        assert all(row['author'] == {'kind': 'reviewer'} for row in _threads(aws, DEP_LIVE, None))
 
 
 @pytest.mark.usefixtures('projects_env')
@@ -353,10 +332,11 @@ class TestTheDeploymentAndTheWorkspacesStayApart:
 
     @pytest.mark.parametrize(('cursor', 'message'), [
         ({project_people.DEPLOYMENT: 'x'}, 'not a map'),
-        ({project_people.DEPLOYMENT: {'found': 'elsewhere'}}, 'way of finding'),
-        ({project_people.DEPLOYMENT: {'found': 'scan', 'links': ['shr_nope']}}, 'not a page of ids'),
-        ({project_people.DEPLOYMENT: {'found': 'scan', 'links_done': True, 'pairs': ['p#ser_x']}}, 'not a page'),
-        ({project_people.DEPLOYMENT: {'found': 'registry', 'links_from': 'x'}}, 'not a map'),
+        ({project_people.DEPLOYMENT: {'links': ['shr_nope']}},
+         'not a page of ids'),
+        ({project_people.DEPLOYMENT: {'links_done': True,
+                                      'pairs': ['p#ser_x']}}, 'not a page'),
+        ({project_people.DEPLOYMENT: {'links_from': 'x'}}, 'not a map'),
     ])
     def test_a_carried_deployment_cursor_of_the_wrong_shape_fails_the_step(self, aws, cursor, message):
         with pytest.raises(ValueError, match=message):
@@ -376,8 +356,7 @@ class TestTheDeploymentAndTheWorkspacesStayApart:
 
 @pytest.mark.usefixtures('projects_env')
 class TestTheDeploymentsWalkHandsOver:
-    @pytest.mark.parametrize('backfilled', [False, True])
-    def test_a_walk_resumed_after_every_step_ends_as_one_that_never_was(self, aws, backfilled):
+    def test_a_walk_resumed_after_every_step_ends_as_one_that_never_was(self, aws):
         _list_workspace(aws, WS, 'Alpha')
         _seed_deployment(aws)
         # More threads than a page, so each series takes several pages, every one resumed from a key.
@@ -385,15 +364,13 @@ class TestTheDeploymentsWalkHandsOver:
             aws['projects'].put_item(Item=comments.thread_item(
                 project_id=DEP_LIVE, series_id=SERIES['series_id'], document={'document_id': 'd', 'version': 1},
                 author=comments.reviewer_author(REVIEWER), text=f'More {n}', anchor=None))
-        if backfilled:
-            _with_marker(aws)
         before = aws['projects'].scan()['Items']
         one_run, _steps = _walk_to_the_end(aws, hand_over_each_step=False)
         expected = _everything(aws)
         reseed(aws, before)
 
         first, second, third = _one_row_pages()
-        with first, second, third, patch.object(review_registries, 'SCAN_PAGE', 1):
+        with first, second, third:
             run, steps = _walk_to_the_end(aws, hand_over_each_step=True)
 
         assert steps > 40
@@ -407,7 +384,7 @@ class TestTheDeploymentsWalkHandsOver:
         pair = f"{DEP_LIVE}#{SERIES['series_id']}"
         first, second = sorted(_threads(aws, DEP_LIVE, None), key=lambda row: row['sk'])
         eraser = project_people.ProjectPeopleEraser(_run(), _tables(aws), REVIEWER, time_left=lambda: False)
-        at = {'found': 'registry', 'links_done': True, 'pairs_done': True, 'pairs': [pair], 'threads_from': None}
+        at = {'links_done': True, 'pairs_done': True, 'pairs': [pair], 'threads_from': None}
         moved = eraser._threads_step(None, dict(at))
         assert (moved['threads_from'], moved['pairs']) == (
             {'pk': comments_pk(DEP_LIVE, SERIES['series_id']), 'sk': first['sk']}, [pair])
@@ -420,20 +397,21 @@ class TestTheDeploymentsWalkHandsOver:
         assert second['sk'] > first['sk']
 
     @pytest.mark.parametrize(('at', 'state'), [
-        ({}, 'found'),
-        ({'found': 'scan'}, 'link_pages'),
-        ({'found': 'scan', 'links': ['shr_' + 'a' * 32]}, 'link'),
-        ({'found': 'registry', 'links_done': True}, 'pair_pages'),
-        ({'found': 'registry', 'links_done': True, 'pairs': ['p#ser_' + 'a' * 24]}, 'threads'),
-        ({'found': 'registry', 'links_done': True, 'pairs_done': True}, 'projects'),
-        ({'found': 'registry', 'links_done': True, 'pairs_done': True, 'ids': ['p'], 'part': 'personas'}, 'personas'),
-        ({'found': 'registry', 'links_done': True, 'pairs_done': True, 'ids': ['p'], 'part': 'series'},
-         'project_done'),
-        ({'found': 'scan', 'links_done': True, 'pairs_done': True, 'projects_done': True}, 'library'),
-        ({'found': 'scan', 'links_done': True, 'pairs_done': True, 'projects_done': True, 'library': True},
-         'documents_library'),
-        ({'found': 'scan', 'links_done': True, 'pairs_done': True, 'projects_done': True, 'library': True,
-          'documents_library_done': True}, 'done'),
+        ({}, 'link_pages'),
+        ({'links': ['shr_' + 'a' * 32]}, 'link'),
+        ({'links_done': True}, 'pair_pages'),
+        ({'links_done': True, 'pairs': ['p#ser_' + 'a' * 24]}, 'threads'),
+        ({'links_done': True, 'pairs_done': True}, 'projects'),
+        ({'links_done': True, 'pairs_done': True, 'ids': ['p'],
+          'part': 'personas'}, 'personas'),
+        ({'links_done': True, 'pairs_done': True, 'ids': ['p'],
+          'part': 'series'}, 'project_done'),
+        ({'links_done': True, 'pairs_done': True, 'projects_done': True},
+         'library'),
+        ({'links_done': True, 'pairs_done': True, 'projects_done': True,
+          'library': True}, 'documents_library'),
+        ({'links_done': True, 'pairs_done': True, 'projects_done': True,
+          'library': True, 'documents_library_done': True}, 'done'),
     ])
     def test_each_hand_made_cursor_names_its_step(self, at, state):
         assert project_people.ProjectPeopleEraser.deployment_state(at) == state
@@ -455,8 +433,7 @@ class TestTheStoresWriteTheRegistries:
         # A second link of the same series (the first revoked) is listed beside it.
         again, _ = ds.create_share(aws['projects'], project_id='p1', series=SERIES, document_id='d',
                                    creator={'sub': 's', 'name': LEAD}, values=ds.validate_share_body({}))
-        rows = aws['projects'].query(KeyConditionExpression=Key('pk').eq('DOCSHARE_IDS'))['Items']
-        assert sorted(row['sk'] for row in rows) == sorted([share['share_id'], again['share_id']])
+        assert _registries(aws, 'DOCSHARE_IDS') == sorted([share['share_id'], again['share_id']])
 
     def test_a_series_first_thread_lists_it_once_and_a_later_thread_keeps_the_row(self, aws):
         comments.put_thread(aws['projects'], _member_thread('one'))
@@ -470,13 +447,13 @@ class TestTheStoresWriteTheRegistries:
         item = _member_thread('x')
         with pytest.raises(comments.OutOfScopeError):
             comments.put_thread(aws['projects'], {**item, 'pk': 'DCOMMENTS#p2#' + SERIES['series_id']})
-        assert aws['projects'].scan()['Items'] == []
+        # Nothing but the backfill's marker the tables start with.
+        assert [row['sk'] for row in aws['projects'].scan()['Items']] == [MARKER['sk']]
 
     def test_a_workspace_writes_none_of_the_deployments_registries(self, aws):
         _list_workspace(aws, WS, 'Alpha')
         _seed(aws)
-        assert [row for row in aws['projects'].scan()['Items']
-                if row['pk'] in ('DOCSHARE_IDS', 'COMMENT_SERIES_IDS')] == []
+        assert (_registries(aws, 'DOCSHARE_IDS'), _registries(aws, 'COMMENT_SERIES_IDS')) == ([], [])
 
 
 RETENTION_WORKER: Final = repo_root() / 'lib' / 'stacks' / 'retention-worker.ts'
@@ -502,13 +479,15 @@ class TestRound1:
         {**MARKER, 'release': 'x'},
     ])
     def test_an_incomplete_or_older_marker_reads_as_absent(self, aws, worker_context, marker):
+        """Since 7.93.00 an absent marker fails the job by name (test_registries_required.py), with no Scan."""
         _seed_deployment(aws)
+        _unmark(aws)
         aws['projects'].put_item(Item=marker)
         with scans_of(aws) as scanned:
             result = _erase_by_email(aws, worker_context)
-        assert scanned == ['test-projects'] * 3
-        assert result[PROJECT_COUNTER] == CHANGED
-        assert erasure_rows(aws, JOB_ID)[0]['deployment_rows_found'] == 'scan'
+        assert (scanned, result['status']) == ([], 'failed')
+        assert PROJECT_COUNTER not in result
+        assert 'ReviewRegistriesNotBackfilled' in erasure_rows(aws, JOB_ID)[0]['error']
 
     def test_a_cursor_carried_from_7_43_walks_the_deployment_first(self, aws):
         """A hand-over across the upgrade: the 7.43.00 cursor names neither ``deployment`` nor ``deployment_done``."""
@@ -535,14 +514,15 @@ class TestRound1:
         _seed_deployment(aws)
         _erase_by_email(aws, worker_context)
         job, audit = erasure_rows(aws, JOB_ID)
-        assert (job['deployment_rows_found'], job['deployment_projects_walked']) == ('scan', True)
-        assert (audit['deployment_rows_found'], audit['deployment_projects_walked']) == ('scan', True)
-        _with_marker(aws)
+        assert (job['deployment_rows_found'], job['deployment_projects_walked']) == ('registry', True)
+        assert (audit['deployment_rows_found'], audit['deployment_projects_walked']) == ('registry', True)
+        # Refused without the marker (7.93.00): it says it did not walk them, and names no way it found them.
+        _unmark(aws)
         for row in aws['aggregates'].query(KeyConditionExpression=Key('pk').eq(runs.AUDIT_PK))['Items']:
             aws['aggregates'].delete_item(Key={'pk': row['pk'], 'sk': row['sk']})
         _erase_by_email(aws, worker_context, job_id='er_00000000c0df')
         job, _audit = erasure_rows(aws, 'er_00000000c0df')
-        assert (job['deployment_rows_found'], job['deployment_projects_walked']) == ('registry', True)
+        assert (job.get('deployment_rows_found'), job['deployment_projects_walked']) == (None, False)
 
     def test_only_the_deployments_erasure_by_email_says_whether_it_walked(self, aws, worker_context):
         """Round 2: the fields are the deployment's erasures by email without a source only; any other job writes
@@ -568,15 +548,17 @@ class TestRound1:
             eraser._write(None, row, 'thread', eraser.changes('thread', row))
         assert _row(aws, {'pk': row['pk'], 'sk': row['sk']})['author']['email'] == REVIEWER
 
-    def test_the_fallback_scan_is_consistent_and_projects_what_iam_allows(self):
-        table = MagicMock()
-        table.scan.return_value = {'Items': []}
-        review_registries.scan_page(table, review_registries.LINKS, None)
-        request = table.scan.call_args.kwargs
-        assert (request['ConsistentRead'], request['Select']) == (True, 'SPECIFIC_ATTRIBUTES')
-        projected = [request['ExpressionAttributeNames'][name.strip()]
-                     for name in request['ProjectionExpression'].split(',')]
-        assert sorted(projected) == sorted(review_registries.SCAN_ATTRIBUTES) == sorted(_ts_list('SCAN_ATTRIBUTES'))
+    def test_the_worker_holds_no_scan_of_the_projects_and_its_index_query_reads_the_keys(self):
+        """7.93.00 (3g-d2): the Scan fallback and its grant are gone; the gap check's index Query is held to the keys
+        the code projects and queries by (registries.py ``INDEX_ATTRIBUTES``), on the index the code names."""
+        source = RETENTION_WORKER.read_text(encoding='utf-8')
+        assert 'SCAN_ATTRIBUTES' not in source
+        assert _ts_list('PROJECTS_INDEX_ATTRIBUTES') == list(registries.INDEX_ATTRIBUTES)
+        assert _ts_list('PROJECT_REGISTRY_KEYS') == ['pk', 'sk']
+        assert f"const PROJECTS_INDEX = '{registries.PROJECTS_BY_TYPE_INDEX}';" in source
+        # The one partition, also the marker seed's (review-registries-marker.ts).
+        assert f"export const DEPLOYMENT_PROJECTS_PARTITION = '{project_type_pk()}';" in source
+        assert 'const PROJECTS_INDEX_PARTITIONS = [DEPLOYMENT_PROJECTS_PARTITION];' in source
 
     def test_every_deployment_query_reads_only_what_iam_allows(self, aws, worker_context):
         """Round 2: the deployment's Query statement holds ``dynamodb:Attributes`` to ``DEPLOYMENT_QUERY_ATTRIBUTES``;
@@ -604,60 +586,12 @@ class TestRound1:
         assert deployment
         assert [one for one in deployment if not set(one[1]) <= allowed or one[2] != 'SPECIFIC_ATTRIBUTES'] == []
 
-    def test_a_malformed_series_in_the_scan_is_counted_once_and_never_fails(self, aws):
-        bad = 'DCOMMENTS#not!a!project#ser_' + 'c' * 24
-        for n in range(3):
-            aws['projects'].put_item(Item={'pk': bad, 'sk': f'C#dc_{n}'})
-        aws['projects'].put_item(Item={'pk': 'DCOMMENTS#' + DEP_LIVE + '#ser_' + 'd' * 24, 'sk': 'C#dc_9'})
-        run = _run()
-        eraser = project_people.ProjectPeopleEraser(run, _tables(aws), REVIEWER)
-        at: dict[str, Any] = {'found': 'scan', 'links_done': True}
-        found: list[str] = []
-        with patch.object(review_registries, 'SCAN_PAGE', 1):
-            for _page in range(50):
-                at = eraser._pair_pages_step(None, json.loads(json.dumps(at)))
-                found += at['pairs']
-                at['pairs'] = []
-                if at['pairs_done']:
-                    break
-        assert (found, run[MALFORMED_ID_COUNTER]) == ([f"{DEP_LIVE}#ser_{'d' * 24}"], 1)
-
-    def test_one_predicate_judges_a_series_in_both_modes(self):
+    def test_one_predicate_judges_a_series_in_the_walk_and_the_backfill(self, backfill):
         assert project_walk.is_series_ref(f"{DEP_LIVE}#ser_{'a' * 24}")
         for bad in ('p!x#ser_' + 'a' * 24, 'p#ser_x', 'a#b#ser_' + 'a' * 24, '', 7):
             assert not project_walk.is_series_ref(bad)
-        assert review_registries.is_series_ref is project_walk.is_series_ref
+        assert backfill.is_series_ref is project_walk.is_series_ref
         assert project_people.is_series_ref is project_walk.is_series_ref
-
-    def test_a_routing_row_and_the_link_on_different_pages(self, aws):
-        link, routed = 'shr_' + '4' * 32, 'shr_' + '5' * 32
-        aws['projects'].put_item(Item={**review_link_key(routed), 'workspace_id': WS, 'routed_at': STAMP})
-        aws['projects'].put_item(Item={**review_link_key(link), 'share_id': link, 'project_id': DEP_LIVE})
-        found, malformed, start, pages = [], 0, None, 0
-        with patch.object(review_registries, 'SCAN_PAGE', 1):
-            while pages < 10:
-                pages += 1
-                page = review_registries.scan_page(aws['projects'], review_registries.LINKS, start)
-                found += page.ids
-                malformed += page.malformed
-                start = page.following
-                if start is None:
-                    break
-        assert (found, malformed, pages >= 2) == ([link], 0, True)
-
-    def test_a_marker_written_mid_walk_changes_nothing(self, aws):
-        _seed_deployment(aws)
-        run = _run()
-        eraser = project_people.ProjectPeopleEraser(run, _tables(aws), REVIEWER, aws['s3'], BUCKET)
-        cursor = eraser.step(None)
-        assert cursor is not None
-        assert cursor[project_people.DEPLOYMENT]['found'] == 'scan'
-        _with_marker(aws)
-        for _step in range(500):
-            cursor = eraser.step(cursor)
-            if cursor is None:
-                break
-        assert (cursor, run[PROJECT_COUNTER], run[runs.DEPLOYMENT_FOUND]) == (None, CHANGED, 'scan')
 
     def test_a_thread_of_a_listed_series_reads_the_registry_and_writes_nothing_there(self, aws):
         calls: list[str] = []
@@ -680,16 +614,13 @@ class TestRound1:
 class TestRound2:
     """Review round 2 of 3g-d: each test failed before its fix."""
 
-    @pytest.mark.parametrize('backfilled', [False, True])
-    def test_a_half_deleted_project_off_the_index_is_walked(self, aws, worker_context, backfilled):
+    def test_a_half_deleted_project_off_the_index_is_walked(self, aws, worker_context):
         """The delete's fence removes ``gsi1pk``/``gsi1sk`` before its sweep: a project whose sweep stopped keeps its
-        META (owner, members) and leftover personas, reached through ``PROJECT_IDS`` (or the projects' Scan)."""
+        META (owner, members) and leftover personas, reached through ``PROJECT_IDS``."""
         deployment_project(aws, 'proj_half_000007', status='deleting', owner_email=REVIEWER,
                            members={'sub-r': {'role': 'viewer', 'username': 'r', 'email': REVIEWER}})
         aws['projects'].put_item(Item={'pk': project_pk('proj_half_000007'), 'sk': 'PERSONA#p',
                                        'research_notes': [{'author': REVIEWER, 'text': 'x'}]})
-        if backfilled:
-            _with_marker(aws)
         result = _erase_by_email(aws, worker_context)
         meta = _meta(aws, 'proj_half_000007', None)
         assert ('owner_email' in meta, meta['members']['sub-r']) == (False, {'role': 'viewer', 'username': 'r'})
@@ -745,13 +676,6 @@ class TestRound3:
             workspaces.named({'workspace_id': named})
         assert (workspaces.named({}), workspaces.named({'workspace_id': None})) == (None, None)
         assert workspaces.named({'workspace_id': WS}) == WS
-
-    def test_a_routing_row_naming_no_workspace_id_is_malformed(self, aws):
-        odd = 'shr_' + '6' * 32
-        aws['projects'].put_item(Item={**review_link_key(odd), 'workspace_id': 'not-a-workspace'})
-        aws['projects'].put_item(Item={**review_link_key('shr_' + '8' * 32), 'workspace_id': WS})
-        page = review_registries.scan_page(aws['projects'], review_registries.LINKS, None)
-        assert (page.ids, page.malformed) == ([], 1)
 
     def test_the_email_field_is_the_boards_erase_field(self):
         assert runs._EMAIL_FIELD == boards.ERASE_FIELD

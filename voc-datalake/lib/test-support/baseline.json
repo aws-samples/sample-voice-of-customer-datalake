@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "d492e6cdad296975d0bb9c89c335df569f0f236eba9db9140abdbcbc83142d00",
+      "templateSha256": "de05ef751951c0e6e534eb2e3d48bb8c18ecf255238dc724adcfcae54f3cf270",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -146,6 +146,7 @@
           "OPS_ALERTS_MCP_SERVICE = voc-mcp-global-api",
           "OPS_ALERTS_PROCESSOR_FUNCTION = voc-feedback-processor-<AWS::AccountId>-<AWS::Region>",
           "OPS_ALERTS_QUEUES = processing-dlq=voc-processing-dlq-<AWS::AccountId>-<AWS::Region>,ingest-schedule-dlq=voc-ingest-schedule-dlq-<AWS::AccountId>-<AWS::Region>,aggregator-stream-failures=voc-aggregator-stream-failures-<AWS::AccountId>-<AWS::Region>,memory-extract-dlq=voc-memory-extract-dlq-<AWS::AccountId>-<AWS::Region>,briefing-dlq=voc-briefing-dlq-<AWS::AccountId>-<AWS::Region>,api-async-failures=voc-api-async-failures-<AWS::AccountId>-<AWS::Region>",
+          "OPS_ALERTS_RETENTION_SERVICE = voc-retention",
           "OPS_ALERTS_TOPIC_ARN = arn:aws:sns:us-east-1:111111111111:voc-ops-alarms-<AWS::AccountId>-<AWS::Region>",
           "POWERTOOLS_SERVICE_NAME = voc-agents-api",
           "POWERTOOLS_SERVICE_NAME = voc-ballots-api",
@@ -187,7 +188,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "79ebabad8dbbe8d51271b3e8e879c6095242a0ef842b46be11168e136a919311",
+      "templateSha256": "66c7190382edf4424058946289cafb071097a2b1e00eb24337769f9c57f0fc6d",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -216,6 +217,8 @@
           "AWS::Lambda::Function FunctionName = voc-board-pre-sign-up-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-cdn-signing-keys-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-product-doc-extractor-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-review-registries-seed-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-review-registries-seed-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-access-logs-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-frontend-<AWS::AccountId>-<AWS::Region>",
           "AWS::S3::Bucket BucketName = voc-raw-data-<AWS::AccountId>-<AWS::Region>",
@@ -356,7 +359,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "be165a3919aee1656771d7fb3f6c38f4431cf900516b5403393423cf81535dc0",
+      "templateSha256": "9ee5d15f6b46b0d3275b95ab1a2553c5a8fa57382b535676ba8bf27110be6d26",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-adoption-rollup-schedule-<AWS::AccountId>-<AWS::Region>",

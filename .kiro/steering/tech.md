@@ -242,16 +242,18 @@ listing one Query per 100 workspaces, and at its end one filtered, strongly cons
 one when nothing moved, plus the walk again of each workspace renamed or created meanwhile:
 `lambda/jobs/retention/workspaces.py`; since 7.48.00 the deployment's job first walks the deployment's own projects
 the same way, recorded in `AUDIT#tombstone#deployment_projects`: its links, commented series and projects from its
-registries `DOCSHARE_IDS`, `COMMENT_SERIES_IDS` and `PROJECT_IDS` by Query once the backfill's marker is there, else
-by three Scans of voc-projects, one per pass, until the backfill runs (`lambda/shared/review_registries.py`; a
-deleted or half-deleted project is off `gsi1-by-type`, never off its registry), and its persona library; load: one
-Query for the marker, one per 100 links and one per link, one per 100 series and one per thread page of 100, one per
+registries `DOCSHARE_IDS`, `COMMENT_SERIES_IDS` and `PROJECT_IDS` by Query, trusted since 7.93.00 only once the run's
+`registries` phase (`lambda/jobs/retention/registries.py`, first in every run naming no workspace that can delete or replay: the backfill's
+marker, then every live project on `gsi1-by-type` looked up in `PROJECT_IDS`, one index Query and one BatchGetItem per
+100, keys only) found them complete, else this erasure fails there by name before it deletes anything
+(`ReviewRegistriesNotBackfilled`, `ReviewRegistriesIncomplete`; no Scan; the check cannot see an unlisted review link,
+an unlisted series or an unlisted deleted project), and its persona library; load: the phase's, one per 100 links
+and one per link, one per 100 series and one per thread page of 100, one per
 100 projects and about 3 per project, at most one GetObject per product document (its extracted text), the same
 writes per changed row; the three registries are single partitions (a Scale note: one hot key each), `PROJECT_IDS`
 written once per project create, `DOCSHARE_IDS` once per link create, `COMMENT_SERIES_IDS` read once per new thread
 (once per persona review, however many threads it files) and written once per first thread of a series (a
-single-partition write), far below a partition's limit; the fallback Scans are strongly consistent and read six
-attributes of each row), (since 7.72.00, the same erasures) the participants (`lambda/jobs/retention/participants.py`:
+single-partition write), far below a partition's limit), (since 7.72.00, the same erasures) the participants (`lambda/jobs/retention/participants.py`:
 the address, normalised as the guard is, looked up in the deployment's guard and people index and each listed
 workspace's, a workspace's own job its own; a workspace's exports closed first; each person found saved first in the
 job's partition, `PARTICIPANTS#{guard hash}` (its `ttl` 30 days after its last save; removed by the table's TTL,
@@ -280,9 +282,18 @@ copy (`lambda/jobs/retention/exports.py`:
 the export lock taken, its export jobs marked `erased`, its open uploads aborted, every version under
 `ws/{ws}/exports/` deleted, swept twice, the lock freed), then lineage (the deployment's artifacts in `voc-projects`
 citing an erased id lose it and get `erased_evidence`; since 7.48.00 its projects through their registry,
-`PROJECT_IDS`, or until the review registries' backfill has run a Scan of the projects' `META` rows, and its persona
-library, each project's partition by filtered Query pages of 100: one Query for the backfill's marker, one Query per
-100 projects, one Query per 100 rows of each project and one BatchGetItem per page of ids), then (since 7.84.00,
+`PROJECT_IDS`, and its persona library, each project's partition by filtered Query pages of 100: one Query per 100
+projects, one Query per 100 rows of each project and, a page, one BatchGetItem per 100 keys of its distinct ids
+times the run's sources (since 7.93.00 the sources owed beside its own, up to 1,000 more: a replay of many owed sources
+reads that many more keys a page); since 7.93.00 no Scan, and only
+once the run's `registries` phase found the registries complete: otherwise the run, which deleted as usual, owes the
+pass in one row (`JOB#retention` / `LINEAGE_OWED`: the sources owed, the latest 50 runs; a GetItem and a conditional
+PutItem), and the next run with complete registries replays it beside its own sources, deleting anything or not, and
+clears the row on the version it read; a run whose owed row could not be written still says `lineage_owed`, its reason
+that no later run makes the marks; a run that owes prints `RetentionLineageOwed`, every failure the handler sees
+`RetentionRunFailed` (a timeout, an out-of-memory or a killed invocation shows in the worker's Lambda `Errors` metric
+and its logs, not here: the worker has no DLQ), which alerting's `retention-runs` alarm sums; the marker is read again at each invocation's
+start), then (since 7.84.00,
 with `-c engineeringAgents=true`; every erasure of the deployment, and a retention window once it deleted an item of
 the deployment's own feedback; never a workspace's job) `engineering_lineage`
 (`lambda/jobs/retention/engineering_lineage.py`: an erased review's id removed from an engineering run's `META`
@@ -314,15 +325,16 @@ to the job row. Permissions (since 7.72.00 the voc-projects, product-document an
 reads and updates that delete nothing, are in the walks' own managed policy, `RetentionWalksPolicy`, so the inline
 policy that keeps every delete and audit put stays under its size quota): feedback Get/Query/Scan/DeleteItem (the table only, since 7.72.00),
 aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones one PutItem each; no BatchWrite, which would allow deletes),
-radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan (since 7.48.00 only the deployment walks' way
-of finding its links, series and projects until the backfill runs: the table only, six attributes,
-`dynamodb:Select` and `dynamodb:Attributes`) and UpdateItem in two statements since 7.43.00
+radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects: no Scan (since 7.93.00; 7.48.00 to 7.84.00 held
+one for the walks' fallback), Query of `gsi1-by-type`'s `TYPE#PROJECT` for `pk`, `sk`, `gsi1pk` and `gsi1sk` only
+(`SPECIFIC_ATTRIBUTES` required) and BatchGetItem of `PROJECT_IDS` for `pk` and `sk` only (the registries check,
+since 7.93.00), and UpdateItem in two statements since 7.43.00
 (`dynamodb:Attributes`): the lineage marks' id lists and `erased_evidence` on the deployment's and one workspace id's
 `PROJECT#*` only (since 7.48.00; any partition before), and the de-identification's attributes on the deployment's
 (since 7.48.00) and one workspace id's `PROJECT#*`, `DCOMMENTS#*` and `DOCSHARE#*` only; and (since 7.43.00)
 Query of one workspace id's `PROJECT_IDS`, `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions,
 (since 7.48.00) of the deployment's `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE#*`, `PROJECT_IDS`, `DOCSHARE_IDS` and
-`COMMENT_SERIES_IDS` (of the attributes its reads project only, `dynamodb:Select` `SPECIFIC_ATTRIBUTES` required; no index),
+`COMMENT_SERIES_IDS` (of the attributes its reads project only, `dynamodb:Select` `SPECIFIC_ATTRIBUTES` required; no other index),
 GetObject of `ws/{one id}/projects/*/product_docs/raw/*.md`, `ws/{one id}/projects/*/product_docs/raw/*.txt`,
 `ws/{one id}/projects/*/product_docs/extracted/*` and (since 7.48.00) `projects/*/product_docs/extracted/*` only,
 workspaces Scan + UpdateItem
