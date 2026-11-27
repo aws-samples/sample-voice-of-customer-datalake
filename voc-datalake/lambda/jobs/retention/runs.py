@@ -25,6 +25,7 @@ from shared.erasure_jobs import job_key
 from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.retention import (
+    AGENT_MEMORY_NOT_ERASED_COUNTER,
     ERASURE_JOB_COUNTERS,
     ERASURE_OPTIONAL_COUNTERS,
     GUARD_MALFORMED_COUNTER,
@@ -84,7 +85,15 @@ PARTICIPANTS_WALKED: Final = 'participants_walked'
 #: erased every person the address named in voc-participants (that store only). The rerun rule reads it: every such erasure whose row does not say
 #: ``participants_complete: true``.
 PARTICIPANTS_COMPLETE: Final = 'participants_complete'
-_CARRIED_FLAGS: Final = (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED, PARTICIPANTS_WALKED)
+#: (7.84.00, with -c engineeringAgents=true) The run walks the agents' memory (``AGENT_MEMORY_DUE``, set by the handler
+#: when the phase is in its list), whether that phase ended (``AGENT_MEMORY_WALKED``), and whether it then left no
+#: account holding the address unverified (``AGENT_MEMORY_COMPLETE``, ``agent_memory_accounts_not_erased`` 0): on the
+#: job and audit rows of such a run only (``agent_memory_fields``). The rerun rule reads ``agent_memory_complete``.
+AGENT_MEMORY_DUE: Final = 'agent_memory_due'
+AGENT_MEMORY_WALKED: Final = 'agent_memory_walked'
+AGENT_MEMORY_COMPLETE: Final = 'agent_memory_complete'
+_CARRIED_FLAGS: Final = (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED, PARTICIPANTS_WALKED, AGENT_MEMORY_DUE,
+                         AGENT_MEMORY_WALKED)
 #: The field of an erasure by email (boards.py ``ERASE_FIELD``; that module imports this one).
 _EMAIL_FIELD: Final = 'email'
 # ``workspace_id``: the one workspace a job named (its row's, checked by the handler's ``_named_workspace``).
@@ -165,10 +174,20 @@ def participant_fields(run: Mapping[str, Any]) -> dict[str, Any]:
     return {PARTICIPANTS_WALKED: walked, PARTICIPANTS_COMPLETE: walked and not left}
 
 
+def agent_memory_fields(run: Mapping[str, Any]) -> dict[str, Any]:
+    """What a run that walks the agents' memory (7.84.00) says of it on its job and audit rows:
+    ``AGENT_MEMORY_WALKED`` and ``AGENT_MEMORY_COMPLETE``; nothing for any other run."""
+    if run.get(AGENT_MEMORY_DUE) is not True:
+        return {}
+    walked = run.get(AGENT_MEMORY_WALKED) is True
+    return {AGENT_MEMORY_WALKED: walked,
+            AGENT_MEMORY_COMPLETE: walked and not int(run.get(AGENT_MEMORY_NOT_ERASED_COUNTER) or 0)}
+
+
 def _job_fields(run: Mapping[str, Any]) -> dict[str, Any]:
     """The fields of the job and audit rows that say what an erasure by email walked (``deployment_fields``,
-    ``participant_fields``)."""
-    return {**deployment_fields(run), **participant_fields(run)}
+    ``participant_fields``, ``agent_memory_fields``)."""
+    return {**deployment_fields(run), **participant_fields(run), **agent_memory_fields(run)}
 
 
 def optional_counts(run: Mapping[str, Any]) -> dict[str, int]:

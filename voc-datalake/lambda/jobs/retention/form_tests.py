@@ -172,7 +172,9 @@ class FormTestEraser:
 
     def _workspace_step(self, here: dict[str, Any], page: list[str]) -> dict[str, Any]:
         """One page of the first listed workspace's partition; once it is done, the cursor without that workspace."""
-        following = self._page(scope_from_message({WORKSPACE_FIELD: page[0]}), (here.get('at') or {}).get('start'))
+        scope = scope_from_message({WORKSPACE_FIELD: page[0]})
+        with workspaces.inside(scope):
+            following = self._page(scope, (here.get('at') or {}).get('start'))
         return {**here, 'ws': page[1:], 'at': {}} if following is None else {**here, 'at': {'start': following}}
 
     def _deployment_step(self, here: dict[str, Any], only: str | None) -> dict[str, Any] | None:

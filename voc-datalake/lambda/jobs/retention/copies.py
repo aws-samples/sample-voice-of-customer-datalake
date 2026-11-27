@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-from jobs.retention import exports
+from jobs.retention import exports, workspaces
 from jobs.retention.runs import MODE_ERASE, note_erased_source, note_lineage_workspace, note_review_file
 from shared import retention
 from shared.legal_basis import legal_basis_or_legacy
@@ -83,7 +83,10 @@ def write_tombstones(aggregates_table: Any, run: Mapping[str, Any], items: Seque
         return
     now = now_iso()
     for item in items:
-        aggregates_table.put_item(Item=_tombstone(run, item, store, now))
+        tombstone = _tombstone(run, item, store, now)
+        # A workspace item's tombstone is written inside its workspace (7.84.00): a line about it is that workspace's.
+        with workspaces.inside(None if store == STORE_RADAR else retention.item_scope(item)):
+            aggregates_table.put_item(Item=tombstone)
 
 
 class ItemDeleter:

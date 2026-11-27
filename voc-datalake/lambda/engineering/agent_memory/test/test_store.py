@@ -654,7 +654,8 @@ def test_an_erased_person_is_never_remembered_again(world: World) -> None:
     again = world.store.erase_person_memories(WS, DANA.id, by=ADMIN, legal_basis='GDPR art. 17 request 42')
     assert (again.deleted, again.partitions) == (0, 0)
     assert len(rows(world, TOMBSTONE_PK)) == 1
-    assert len(rows(world, AUDIT_PK)) == 2
+    # (7.84.00) a rerun that finds no row of theirs records no delete: the first record stands
+    assert len(rows(world, AUDIT_PK)) == 1
 
 
 def test_an_erased_person_is_refused_in_every_scope_and_no_reference_comes_back(world: World) -> None:

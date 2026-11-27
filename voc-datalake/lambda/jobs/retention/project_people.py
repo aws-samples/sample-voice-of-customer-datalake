@@ -312,7 +312,8 @@ class ProjectPeopleEraser:
             return workspaces.listing_page(self._run, self._workspaces, here, self._clock())
         scope = scope_from_message({WORKSPACE_FIELD: page[0]})
         at = dict(here.get('at') or {})
-        moved = self._steps()[self.state(at)](scope, at)
+        with workspaces.inside(scope):  # (7.84.00: its lines are that workspace's)
+            moved = self._steps()[self.state(at)](scope, at)
         return {**here, 'ws': page[1:], 'at': {}} if moved is None else {**here, 'at': moved}
 
     def _deployment_step(self, here: dict[str, Any], only: str | None) -> dict[str, Any]:

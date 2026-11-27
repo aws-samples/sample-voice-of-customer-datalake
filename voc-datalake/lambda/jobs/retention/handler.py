@@ -48,13 +48,19 @@ A run walks its PHASES in order, each paged and time-budgeted:
    the product documents that hold it are listed for review (``project_people.py``, since 7.43.00); then
    ``participants`` — the same erasures, when ``PARTICIPANTS_TABLE`` is set (since 7.72.00): the address is looked up
    in the deployment's participant guard and each listed workspace's (a workspace's own job: its own guard), and each
-   person found is erased in voc-participants, their ids saved first (``participants.py``);
+   person found is erased in voc-participants, their ids saved first (``participants.py``); then ``agent_memory`` —
+   the deployment's erasure by email without a source, with ``ENGINEERING_TABLE`` and ``USER_POOL_ID`` set (-c
+   engineeringAgents=true, since 7.84.00): the address's verified account in the user pool, its ``sub`` saved first,
+   erased from the engineering agents' memory (``agent_memory.py``);
 3. ``raw`` — whole-source erasure only: every object version left under
    ``raw/{source}/`` and ``silver/{source}/`` (``shared/retention.delete_raw_prefix_page``);
 4. ``lineage`` — when the run deleted anything of the deployment's and ``PROJECTS_TABLE`` is set:
    the deployment's artifacts that cited a deleted item are marked, its projects found through its project registry
    (``PROJECT_IDS``), or, until the review registries' backfill wrote its marker, a Scan of the projects' ``META`` rows
-   (since 7.48.00; ``lineage.py``); then ``workspace_lineage`` —
+   (since 7.48.00; ``lineage.py``); then ``engineering_lineage`` — with ``ENGINEERING_TABLE`` and ``AGENTS_TABLE`` set
+   (since 7.84.00), in every erasure of the deployment and a retention window that deleted an item of the deployment's
+   feedback: the erased review ids leave the engineering runs' ``META`` and the issues' run claims
+   (``engineering_lineage.py``); then ``workspace_lineage`` —
    when the run deleted a workspace's item: that workspace's artifacts that cite it, found through its project
    registry, never a Scan (``lineage.py``, since 7.43.00).
 
@@ -66,8 +72,12 @@ fails the run (``CursorStuck``) rather than reading the same page again. Deletes
 duplicate delivery or an overlapping daily run only repeats no-ops. Every
 finished run (and every failure) writes one audit row (``pk AUDIT#retention``).
 
+A deployment-wide run (an erasure that names no workspace, the retention window) runs as the deployment; each step it
+takes inside one workspace is attributed to that workspace for its log lines (``workspaces.inside``, since 7.84.00).
+
 Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``RAW_DATA_BUCKET``, ``RADAR_TABLE``, ``PROJECTS_TABLE``,
-``FEATURE_REQUESTS_TABLE``, ``WORKSPACES_TABLE``, ``PARTICIPANTS_TABLE``.
+``FEATURE_REQUESTS_TABLE``, ``WORKSPACES_TABLE``, ``PARTICIPANTS_TABLE``; with -c engineeringAgents=true also
+``ENGINEERING_TABLE``, ``AGENTS_TABLE`` and ``USER_POOL_ID``.
 """
 
 from __future__ import annotations
@@ -82,9 +92,21 @@ from typing import Any, Final, NoReturn
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
-from jobs.retention import boards, exports, form_tests, lineage, members, participants, project_people, workspaces
+from jobs.retention import (
+    agent_memory,
+    boards,
+    engineering_lineage,
+    exports,
+    form_tests,
+    lineage,
+    members,
+    participants,
+    project_people,
+    workspaces,
+)
 from jobs.retention.copies import ItemDeleter, write_tombstones
 from jobs.retention.runs import (
+    AGENT_MEMORY_DUE,
     MODE_ERASE,
     MODE_RETENTION,
     carried_state,
@@ -97,7 +119,13 @@ from jobs.retention.runs import (
     write_audit,
 )
 from shared import retention
-from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async
+from shared.aws import (
+    get_cognito_idp_client,
+    get_dynamodb_client,
+    get_dynamodb_resource,
+    get_s3_client,
+    invoke_lambda_async,
+)
 from shared.data_version import bump_data_version, bump_radar_version
 from shared.digests import sha256_hex
 from shared.erasure_jobs import refresh_workspace_lock, release_workspace_lock
@@ -121,10 +149,11 @@ from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, message_scope, scope
 
 # Bundled beside `shared/` (no sys.path shim); tests import `jobs.retention.handler`.
 (FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET, RADAR_TABLE, PROJECTS_TABLE, FEATURE_REQUESTS_TABLE,
- WORKSPACES_TABLE, PARTICIPANTS_TABLE) = (
+ WORKSPACES_TABLE, PARTICIPANTS_TABLE, ENGINEERING_TABLE, AGENTS_TABLE, USER_POOL_ID) = (
     os.environ.get(name, '')
     for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE',
-                 'FEATURE_REQUESTS_TABLE', 'WORKSPACES_TABLE', 'PARTICIPANTS_TABLE'))
+                 'FEATURE_REQUESTS_TABLE', 'WORKSPACES_TABLE', 'PARTICIPANTS_TABLE', 'ENGINEERING_TABLE',
+                 'AGENTS_TABLE', 'USER_POOL_ID'))
 
 JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
 STATUS_COMPLETED: Final = 'completed'
@@ -140,6 +169,8 @@ PHASE_LINEAGE: Final = 'lineage'
 PHASE_WORKSPACE_PROJECTS: Final = project_people.STORE_PROJECTS
 PHASE_WORKSPACE_LINEAGE: Final = 'workspace_lineage'
 PHASE_PARTICIPANTS: Final = participants.STORE_PARTICIPANTS
+PHASE_AGENT_MEMORY: Final = 'agent_memory'
+PHASE_ENGINEERING_LINEAGE: Final = 'engineering_lineage'
 _PHASE_STORES: Final = {PHASE_ITEMS: STORE_FEEDBACK, PHASE_RADAR: STORE_RADAR}
 
 PAGE_SIZE: Final = 100
@@ -196,7 +227,10 @@ def _tables() -> dict[str, Any]:
     for name, table_name in ((STORE_RADAR, RADAR_TABLE), ('projects', PROJECTS_TABLE),
                              (boards.STORE_BOARDS, FEATURE_REQUESTS_TABLE),
                              (members.STORE_MEMBERS, WORKSPACES_TABLE),
-                             (participants.STORE_PARTICIPANTS, PARTICIPANTS_TABLE)):
+                             (participants.STORE_PARTICIPANTS, PARTICIPANTS_TABLE),
+                             # Only with -c engineeringAgents=true (7.84.00): voc-engineering and voc-agents.
+                             (engineering_lineage.STORE_ENGINEERING, ENGINEERING_TABLE),
+                             (engineering_lineage.STORE_AGENTS, AGENTS_TABLE)):
         if table_name:
             tables[name] = dynamodb.Table(table_name)
     return tables
@@ -483,9 +517,13 @@ def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
             _only_in_workspace(str(named), page)
         return _without_unscoped_rows(run, page) if retention_run else page
 
+    def erase(item: dict) -> None:
+        # Inside the item's workspace (a deployment-wide run's workspace item): its lines are that workspace's.
+        with workspaces.inside(None if store == STORE_RADAR else retention.item_scope(item)):
+            deleter.delete(item, store)
+
     return _erase_pages(walk, phase, cursor, scan,
-                        lambda items: write_tombstones(walk.aggregates, run, items, store),
-                        lambda item: deleter.delete(item, store))
+                        lambda items: write_tombstones(walk.aggregates, run, items, store), erase)
 
 
 def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
@@ -600,6 +638,21 @@ def _erase_participants(walk: Walk, cursor: dict | None) -> dict | None:
     return _step_walk(walk, PHASE_PARTICIPANTS, cursor, eraser.step)
 
 
+def _erase_agent_memory(walk: Walk, cursor: dict | None) -> dict | None:
+    """Erase, from the engineering agents' memory, the person the address's account names (``agent_memory.py``)."""
+    directory = agent_memory.cognito_directory(get_cognito_idp_client(), USER_POOL_ID)
+    eraser = agent_memory.AgentMemoryEraser(walk.run, walk.tables, str(walk.event.get('value') or ''), directory,
+                                            client=get_dynamodb_client(), clock=walk.clock)
+    return _step_walk(walk, PHASE_AGENT_MEMORY, cursor, eraser.step)
+
+
+def _mark_engineering_lineage(walk: Walk, cursor: dict | None) -> dict | None:
+    """Remove the erased review ids the engineering runs and the issues' run claims keep
+    (``engineering_lineage.py``)."""
+    walker = engineering_lineage.EngineeringLineage(walk.run, walk.tables, walk.clock)
+    return _step_walk(walk, PHASE_ENGINEERING_LINEAGE, cursor, walker.step)
+
+
 def _phases(walk: Walk) -> list[str]:
     """The phases this run walks, in order (the lineage ones are decided when they are reached).
 
@@ -631,11 +684,17 @@ def _phases(walk: Walk) -> list[str]:
     if members.STORE_MEMBERS in walk.tables and members.applies(walk.run):
         phases.append(PHASE_MEMBERS)
     phases.extend(projects_phase)
+    # With -c engineeringAgents=true (7.84.00): the agents' memory of the address's person, the deployment's job only.
+    if agent_memory.applies(walk.run, walk.tables, bool(USER_POOL_ID)):
+        phases.append(PHASE_AGENT_MEMORY)
     if walk.run.get('field') == SOURCE_FIELD:
         phases.append(PHASE_RAW)
     phases.extend(exports_phase)
     if 'projects' in walk.tables:
         phases.append(PHASE_LINEAGE)
+    # The engineering runs' and issue claims' review ids (decided when reached: once a deployment item was deleted).
+    if engineering_lineage.applies(walk.tables):
+        phases.append(PHASE_ENGINEERING_LINEAGE)
     phases.extend(workspace_lineage)
     return phases
 
@@ -655,12 +714,16 @@ def _walk_phases(walk: Walk) -> dict | None:
     scan. The event's cursor belongs to that first phase only.
     """
     phases = _phases(walk)
+    if PHASE_AGENT_MEMORY in phases:
+        # Its job and audit rows say whether the memory was walked (runs.py ``agent_memory_fields``), failed or not.
+        walk.run[AGENT_MEMORY_DUE] = True
     resumed = walk.event.get('phase') or PHASE_ITEMS
     remaining = phases[phases.index(resumed):] if resumed in phases else phases
     cursor = (walk.event.get('cursor') or None) if resumed in phases else None
     for phase in remaining:
         if (phase == PHASE_LINEAGE and not _deleted_anything(walk.run)) or (
                 phase == PHASE_EXPORTS and not exports.pending(walk.run)) or (
+                phase == PHASE_ENGINEERING_LINEAGE and not engineering_lineage.has_work(walk.run)) or (
                 phase == PHASE_WORKSPACE_LINEAGE
                 and not lineage.has_work(walk.run, walk.tables.get(members.STORE_MEMBERS))):
             continue
@@ -683,6 +746,8 @@ _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
     PHASE_WORKSPACE_PROJECTS: _erase_from_projects,
     PHASE_WORKSPACE_LINEAGE: _mark_workspace_lineage,
     PHASE_PARTICIPANTS: _erase_participants,
+    PHASE_AGENT_MEMORY: _erase_agent_memory,
+    PHASE_ENGINEERING_LINEAGE: _mark_engineering_lineage,
 }
 
 
@@ -718,6 +783,10 @@ def handle_event(event: dict[str, Any], context: Any) -> dict:
     state = new_run(event, mode)
     if mode == MODE_ERASE:
         _workspace_job(event, state)
+    else:
+        # The daily window names no workspace: it runs as the deployment (7.84.00), each workspace's item inside its
+        # own (``workspaces.inside``), as an erasure's message scope sets it (``_erase_setup``).
+        message_scope({})
     if state['generation'] >= MAX_GENERATIONS:
         return _finish(tables['aggregates'], state, STATUS_FAILED, 'Stopped after too many hand-overs')
     before = (state['deleted_items'], state['deleted_radar_items'], _workspace_items(state))

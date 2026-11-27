@@ -31,7 +31,10 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   ProjectsTable: ['VocApiStack/PersonaGeneratorRole', 'VocApiStack/ProjectsLambdaRole'],
   // voc-retention since 7.72.00 (projects 3g2): a participant's tombstone and delete record, its PutItem pinned to
   // those two partitions (lib/stacks/retention-worker.ts).
-  ParticipantsTable: ['VocApiStack/EngagementLambdaRole', 'VocProcessingStack/RetentionWorkerRetentionRole'],
+  // Since 7.84.00 also its reads policy, which holds the participants' update: named a writer of the same two
+  // partitions, so no Deny of it cancels the role's puts.
+  ParticipantsTable: ['VocApiStack/EngagementLambdaRole', 'VocProcessingStack/RetentionWorkerRetentionReadsPolicy',
+    'VocProcessingStack/RetentionWorkerRetentionRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
   ConversationsTable: ['VocApiStack/ChatLambdaRole'],
   // A platform admin's entry, a workspace's creation and its membership changes (AUDIT#WS#<ws>); the users API a
@@ -131,16 +134,18 @@ describe('audit rows (AUDIT#*) across every stack', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
     expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual(['VocApiStack/FeedbackFormLambdaRole',
       'VocApiStack/LogsLambdaRole', 'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
-      'VocProcessingStack/RetentionWorkerRetentionRole', 'VocProcessingStack/TrialExpiryRole',
-      'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
+      'VocProcessingStack/RetentionWorkerRetentionReadsPolicy', 'VocProcessingStack/RetentionWorkerRetentionRole',
+      'VocProcessingStack/TrialExpiryRole', 'VocProcessingStack/WorkspaceDeleteWorkerDeleteRole']);
   });
 
-  it('voc-retention may put only a participant\'s tombstone and delete record in voc-participants (7.72.00)', () => {
-    expect(partitionLimits('VocProcessingStack/RetentionWorkerRetentionRole')).toStrictEqual([
-      { tables: ['ParticipantsTable'], condition: { ...AUDIT_CONDITION,
-        'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#participant', 'AUDIT#delete'] } } },
-    ]);
-  });
+  // (7.72.00; since 7.84.00 its reads policy too, which holds the participants' update: named a writer of the same two)
+  it.each(['VocProcessingStack/RetentionWorkerRetentionRole', 'VocProcessingStack/RetentionWorkerRetentionReadsPolicy'])(
+    '%s may put only a participant\'s tombstone and delete record in voc-participants', (holder) => {
+      expect(partitionLimits(holder)).toStrictEqual([
+        { tables: ['ParticipantsTable'], condition: { ...AUDIT_CONDITION,
+          'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#tombstone#participant', 'AUDIT#delete'] } } },
+      ]);
+    });
 
   it('the logs API puts only a deployment clear\'s AUDIT#delete in voc-aggregates (7.77.00)', () => {
     expect(partitionLimits('VocApiStack/LogsLambdaRole')).toStrictEqual([
@@ -213,9 +218,12 @@ describe('audit rows (AUDIT#*) across every stack', () => {
   });
 
   it('voc-retention may not put, change or remove an audit row in voc-workspaces (it de-identifies members only)', () => {
-    const deny = denied(byRole.get('VocProcessingStack/RetentionWorkerRetentionRole') ?? [], AUDIT_DENY_WRITE_SID);
+    // Its membership update lives in its reads policy since 7.84.00, which the guard guards in itself; its role writes
+    // voc-workspaces no more.
+    const deny = denied(byRole.get('VocProcessingStack/RetentionWorkerRetentionReadsPolicy') ?? [], AUDIT_DENY_WRITE_SID);
     expect(tablesOf(deny)).toContain('WorkspacesTable');
     expect(actionsOf(deny)).toContain('dynamodb:PutItem');
+    expect(writtenBy(byRole.get('VocProcessingStack/RetentionWorkerRetentionRole') ?? [])).not.toContain('WorkspacesTable');
   });
 
   it('the workspaces API may not change or remove an entry audit row in voc-workspaces', () => {
@@ -317,5 +325,47 @@ describe('applyAuditRowGuard (one stack)', () => {
   it('a customer-managed policy that puts is guarded in itself, like a role', () => {
     expect(managedSids([])).toStrictEqual([AUDIT_DENY_WRITE_SID]);
     expect(managedSids(['/M'], 'AUDIT#WS#*')).toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID]);
+  });
+}, SYNTH_TIMEOUT_MS);
+
+// 7.84.00 (projects 3g3-b): with the engineering agents, voc-engineering holds the agents' memory erasure's tombstone
+// and delete record (lambda/engineering/agent_memory/erasure.py), so it is guarded too: voc-retention, their one writer,
+// puts only those two partitions; every other role or policy that writes voc-engineering may not put, change or remove
+// an audit row there.
+describe('audit rows in voc-engineering, with -c engineeringAgents=true (7.84.00)', () => {
+  const engineering = statementsByRole(synthApp({ engineeringAgents: 'true' }));
+  const onEngineering = (statement: Statement): boolean =>
+    /EngineeringTable[0-9A-F]{8}/.test(JSON.stringify(statement.Resource));
+  const writesEngineering = (statements: Statement[]): boolean => statements.some((s) =>
+    (s.Effect ?? 'Allow') === 'Allow' && actionsOf(s).some((a) => WRITES.test(a)) && onEngineering(s));
+  const holders = [...engineering].filter(([, statements]) => writesEngineering(statements));
+  const RETENTION = 'VocProcessingStack/RetentionWorkerRetentionRole';
+
+  it('finds voc-retention and the engineering roles among its writers', () => {
+    expect(holders.map(([role]) => role)).toContain(RETENTION);
+    expect(holders.length).toBeGreaterThan(5);
+  }, SYNTH_TIMEOUT_MS);
+
+  it.each(holders)('%s may not change or remove an audit row in voc-engineering', (_role, statements) => {
+    const deny = statements.find((s) => s.Effect === 'Deny' && [AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID]
+      .includes(s.Sid ?? '') && onEngineering(s)) ?? NO_STATEMENT;
+    expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
+    expect(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem']
+      .filter((action) => !actionsOf(deny).includes(action))).toStrictEqual([]);
+  });
+
+  it('only voc-retention (its role and its engineering policy) may put an audit row there, only the erasure\'s two', () => {
+    // Its engineering policy updates voc-engineering, so it is guarded in itself: named a writer of the role's two
+    // partitions, never a Deny of the role's own puts (a Deny in any policy of the role would cancel them).
+    const ENGINEERING_POLICY = 'VocProcessingStack/RetentionWorkerRetentionEngineeringPolicy';
+    const mayPut = holders.filter(([, statements]) => !statements.some((s) => s.Sid === AUDIT_DENY_WRITE_SID
+      && onEngineering(s))).map(([role]) => role).sort(byCodeUnit);
+    expect(mayPut).toStrictEqual([RETENTION, ENGINEERING_POLICY].sort(byCodeUnit));
+    for (const holder of [RETENTION, ENGINEERING_POLICY]) {
+      const limit = (engineering.get(holder) ?? []).find((s) => (s.Sid ?? '').startsWith(AUDIT_DENY_OTHER_PARTITION_SID)
+        && onEngineering(s));
+      expect(limit?.Condition, holder).toStrictEqual({ ...AUDIT_CONDITION, 'ForAnyValue:StringNotEquals': {
+        'dynamodb:LeadingKeys': ['AUDIT#tombstone#agent_memory_person', 'AUDIT#delete'] } });
+    }
   });
 }, SYNTH_TIMEOUT_MS);

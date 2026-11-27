@@ -205,8 +205,11 @@ How it works:
   update is conditional, so an artifact regenerated meanwhile is left for the next run.
 - The worker walks its phases in order (`items`, `form_tests` when the run reaches the `feedback_form` source,
   `radar`, `boards` for an email erasure, `members`,
-  `workspace_projects` and (since 7.72.00) `participants` for an email erasure without a source, `raw` for a whole source, `exports` for an erasure
-  that reached a workspace, `lineage`, `workspace_lineage` for a run that deleted a workspace's item) and
+  `workspace_projects` and (since 7.72.00) `participants` for an email erasure without a source, (since 7.84.00, with
+  `-c engineeringAgents=true`) `agent_memory` for the deployment's email erasure without a source, `raw` for a whole
+  source, `exports` for an erasure that reached a workspace, `lineage`, (since 7.84.00, with the engineering agents)
+  `engineering_lineage` for every erasure of the deployment (and a retention window that deleted a deployment item), `workspace_lineage` for a run that deleted a
+  workspace's item) and
   hands over to a fresh invocation of itself, with its phase and cursor, before its 15-minute timeout.
 - `POST /settings/erasure` answers 202 `{job}`. `GET /settings/erasure` lists the newest 20
   jobs, and the sources a whole-source erasure may name. A job shows `legal_basis`,
@@ -463,6 +466,23 @@ How it works:
   A board supporter, or a +1's customer contact, promoted to a list is a participant too: the `boards` phase first
   re-keys the person's +1s without the address and removes a matching `contact_email` from a +1 or a request, so a
   later promote cannot make them a participant again. A person erased by id keeps their +1s (erase them by email).
+- **The engineering agents** (since 7.84.00, with `-c engineeringAgents=true`; [multi-workspace.md](multi-workspace.md#the-project-plan-phase-3),
+  3g3-b). The `engineering_lineage` phase removes an erased review's id from an engineering run's `feedback.ids` and
+  from an issue's run claim (`feedback_id`), each marked `erased_evidence`, by the deployment's tombstones only, in
+  every erasure of the deployment: it looks the ids up under every source a run ever deleted from, so running an older
+  erasure again reaches the ids it left. The deployment's erasure by email without a source also erases the person
+  from the agents' memory (`agent_memory`): the address is looked up in the user pool (one `AdminGetUser`, the pool's
+  email alias, whatever its case), and only an account whose verified email it is is taken; that person's memories
+  are erased under the job's legal basis, their tombstone first (and a delete record when anything of theirs is
+  deleted). The tombstone is a lasting refusal, also for a person the memory never held: the memory never learns them
+  again; an operator lifts it only by deleting that one row in voc-engineering with the account's own credentials. The
+  job row counts `engineering_rows_marked`, `agent_memory_people_erased` (rows deleted), `agent_memory_people_refused`
+  (the tombstone only) and `agent_memory_accounts_not_erased` (an account holding the address unverified, which is not
+  erased), and says `agent_memory_walked` and `agent_memory_complete`: run again every such erasure whose row does not
+  say `agent_memory_complete: true`. Not reached: an account deleted before the erasure; an account whose email changed
+  since, or whose email is unverified (also erase by the account's current, verified address); on a pool made before
+  #105 an address stored in a spelling other than the typed or lower-cased one (erase with the stored spelling); a
+  workspace's own erasure (the engineering agents are the deployment's).
 - **S3 import originals.** The `s3_import` plugin keeps each imported file as uploaded under
   `raw/s3_import/…` (`ws/{ws}/raw/s3_import/…` for a run in a workspace) when its profile keeps whole files,
   and no row links an item to the file it came from. An erasure (by email, author, …) that deletes an S3 import's
@@ -613,7 +633,12 @@ hash and the legal basis, so it is safe to reference.
 
 Least-privilege grants (`lib/stacks/retention-worker.ts`; since 7.72.00 the projects table's grants, the product
 documents' and the library's text reads and the participants' reads, reads and updates that delete nothing, are in
-the role's managed policy `RetentionWalksPolicy`, every other one in its inline policy):
+the role's managed policy `RetentionWalksPolicy`; since 7.84.00 the feedback boards' `Scan`, `GetItem`, `Query` and
+`UpdateItem`, the memberships' `Scan`, de-identifying `UpdateItem` and listing `Query`, and the participants'
+`UpdateItem`, none a delete or a put, in a second one, `RetentionReadsPolicy`, and with the engineering agents their
+reads and updates in `RetentionEngineeringPolicy`, each attached to the role alone and named an audit writer of the
+role's own audit partitions where it writes their table (lib/utils/audit-row-guard.ts); every delete and put in its
+inline policy):
 
 | Resource | Allowed actions |
 |---|---|
@@ -621,9 +646,10 @@ the role's managed policy `RetentionWalksPolicy`, every other one in its inline 
 | Participants table (since 7.72.00) | The participant erasure's calls only, each pinned by `dynamodb:LeadingKeys` to the deployment's and one workspace id's partitions (the pattern matches any one workspace id; only the code holds a job to its own): `GetItem`, `Query` and `ConditionCheckItem` of the address guards and people (`EMAIL#*`, `PERSON#*`); `Query` of the people index's `PEOPLE` partitions, of `pk`, `gsi1pk` and `gsi1sk` only (`SPECIFIC_ATTRIBUTES` required); `GetItem` of `AUDIT#tombstone#participant` (the workspace layer's tombstone put asks for a taken key's row); `PutItem` of `AUDIT#tombstone#participant` and `AUDIT#delete` only; `UpdateItem` of a person's `list_ids`, a list's `member_count` and an ask recipient's `response_token_hash` and `error` only (`PERSON#*`, `LIST#*`, the deployment's `ASK#*`; no returned values); `DeleteItem` of `EMAIL#*`, `PERSON#*`, `LIST#*` and a workspace's `PARTICIPANTS`; `BatchWriteItem` of the deployment's `TOKEN#*` and both scopes' `PROJECT#*` and `PERSON#*` (which would also allow puts there: the code sends deletes only). No Scan. What only the code limits (IAM cannot pin the sort key, nor stop a put from overwriting): the DeleteItem of any row of a workspace's `WS#<ws>#PARTICIPANTS` index (the code deletes the guard's own row, only while no guard is back); the DeleteItem of a list's `META` in `LIST#*` (the code deletes `MEMBER#` rows only); the UpdateItem of an ask's rows, which IAM lets SET those attributes too (the code REMOVEs them); the PutItem of `AUDIT#tombstone#participant` and `AUDIT#delete`, which IAM lets overwrite a row (the code puts only if new) |
 | Radar table | `Scan`, `DeleteItem`; `UpdateItem` on the `SETTINGS#radar` partition only (the Radar cache version) |
 | Projects table | `Scan` (since 7.48.00 only the deployment walks' way of finding its links, comment partitions and projects until their backfill has run: on the table only, and of six attributes only), `UpdateItem` (since 7.43.00 only of the lineage lists, `erased_evidence` and the address and name fields an erasure rewrites; since 7.48.00 only on the deployment's and one workspace id's project, comment and link partitions; no delete, no put); since 7.43.00 `Query` of one workspace id's `PROJECT_IDS`, `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE_IDS` and `DOCSHARE#*` partitions (a workspace's lineage marks and addresses), and since 7.48.00 of the deployment's `PROJECT#*`, `DCOMMENTS#*`, `DOCSHARE#*`, `PROJECT_IDS`, `DOCSHARE_IDS` and `COMMENT_SERIES_IDS`, of the attributes its reads project only (`dynamodb:Attributes`, with `dynamodb:Select` `SPECIFIC_ATTRIBUTES` required); no index. Its attribute-limited UpdateItems ask for no returned values (`dynamodb:ReturnValues` `NONE`) |
-| Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |
+| Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals; the table only, no index, since 7.84.00); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |
 | Workspaces table | `Scan` (finds the membership rows that hold an erased email); `Query` of the `WORKSPACES` listing only (since 7.43.00: the workspaces an erasure by email walks); `GetItem` of a `META`'s status; `UpdateItem` pinned to `WS#*` and the attributes `email` and `name` (de-identifies a `MEMBER#` row). No put, no delete; the audit-row guard denies it any `AUDIT#` row |
 | Raw bucket | `GetObject` of a workspace's `ws/ws_<26 ?>/projects/*/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*` (since 7.43.00: an erasure by email reads its text documents for the address) and of the deployment's `projects/*/product_docs/extracted/*` (since 7.48.00) only; `DeleteObject` and `DeleteObjectVersion` on `raw/*`, `silver/*` and each workspace's `ws/ws_<26 ?>/raw/*` and `ws/ws_<26 ?>/silver/*` (one workspace id per pattern: IAM's `*` also matches `/`), plus `ListBucketVersions` with those prefixes. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source. The workspace prefixes are reached by an erasure by email and a retention window (D5, legal obligations), never by any other erasure (in code). An explicit Deny refuses deletes under `ws/ws_<26 ?>/raw/s3_import/*`: a workspace's S3 import originals are listed for review, never deleted |
 | Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); `DeleteItem` in the test responses' partitions only (`dynamodb:LeadingKeys` `FEEDBACK_FORM_TEST` and one workspace id's `WS#<ws>#FEEDBACK_FORM_TEST`: the forms' test responses, which those partitions hold alone), no other delete: never a form's definition, revision or funnel row (`FEEDBACK_FORM`) |
+| Agents and engineering tables, user pool (since 7.84.00, with `-c engineeringAgents=true` only; the reads and updates in the managed policy `RetentionEngineeringPolicy`, attached to this role alone, the puts and the delete in its inline policy) | voc-agents: `Query` and `UpdateItem` of `ISSUE_RUN#default`, of `pk`, `sk`, `feedback_id`, `engineering_run_id`, `erased_evidence` only. voc-engineering: `Query` of `WS#default#RUNLIST#*` and `WS#default#RUN#*`, `UpdateItem` of `WS#default#RUN#*`, of `pk`, `sk`, `feedback`, `erased_evidence` only; `Query`, `UpdateItem` (of the attributes that name a person), `PutItem` (of a confirmation row's attributes) and `DeleteItem` in `WS#default#AMEM#*`; `PutItem` of `AUDIT#tombstone#agent_memory_person` and `AUDIT#delete` (voc-engineering under the audit-row guard). `cognito-idp:AdminGetUser` on the user pool |
 | KMS | Encrypt/decrypt |
 | Lambda | Invoke itself |

@@ -138,7 +138,9 @@ def erased_ids(aggregates_table: Any, sources: Sequence[str], ids: Iterable[str]
     return {str(row['sk']).removeprefix(prefix) for row in rows}
 
 
-def _mark(row: Mapping[str, Any], removed: int, run: Mapping[str, Any]) -> dict[str, Any]:
+def erased_mark(row: Mapping[str, Any], removed: int, run: Mapping[str, Any]) -> dict[str, Any]:
+    """The row's ``erased_evidence`` once ``removed`` more of its ids went (``count`` adds up over runs): this run's
+    job (or run) id, its mode and the time; engineering_lineage.py marks with it too."""
     previous = row.get(MARK_FIELD)
     before = previous.get('count') if isinstance(previous, Mapping) else 0
     return {
@@ -182,7 +184,7 @@ def mark_artifact(projects_table: Any, row: Mapping[str, Any], erased: set[str],
         'UpdateExpression': f"SET {', '.join(sets)}, #mark = :mark",
         'ConditionExpression': ' AND '.join(conditions),
         'ExpressionAttributeNames': {**names, '#mark': MARK_FIELD},
-        'ExpressionAttributeValues': {**values, ':mark': _mark(row, removed, run)},
+        'ExpressionAttributeValues': {**values, ':mark': erased_mark(row, removed, run)},
     }
     if not set(update['ExpressionAttributeNames'].values()) <= set(LINEAGE_UPDATE_ATTRIBUTES):
         # IAM refuses any other (dynamodb:Attributes): fail here, saying so, rather than as AccessDenied.
@@ -348,7 +350,8 @@ def workspace_step(projects_table: Any, aggregates_table: Any, run: dict[str, An
         run.pop(LINEAGE_WORKSPACES, None)
         return None
     scope = scope_from_message({WORKSPACE_FIELD: page[0]})
-    moved = _projects_step(projects_table, aggregates_table, run, scope, dict(here.get('at') or {}))
+    with workspaces.inside(scope):  # (7.84.00: its lines are that workspace's)
+        moved = _projects_step(projects_table, aggregates_table, run, scope, dict(here.get('at') or {}))
     return _workspace_done(run, here, page) if moved is None else {**here, 'at': moved}
 
 

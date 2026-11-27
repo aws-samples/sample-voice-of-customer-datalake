@@ -24,11 +24,13 @@ and, when the list is the platform's, where its listing is:
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import re
+from collections.abc import Callable, Generator, Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
-from shared import review_registries
+from shared import review_registries, usage_meter
 from shared.company_personas import COMPANY_PERSONAS_CONTAINER
 from shared.ingest_tables import table_view
 from shared.platform_workspaces import LISTING_PK, RENAMED_AT, listing_ids_page
@@ -70,6 +72,30 @@ class ListingKeptMoving(RuntimeError):
 def utc_now() -> datetime:
     """The walks' wall clock (each phase takes it injected)."""
     return datetime.now(UTC)
+
+
+@contextmanager
+def inside(scope: WorkspaceScope | None) -> Generator[None]:
+    """A step of a deployment-wide walk inside workspace ``scope`` (7.84.00, TENETS.md D8): its log lines and any
+    Bedrock call are attributed to that workspace (shared/usage_meter.py ``attributed``), and after the step to what
+    they were before (the deployment's, for the deployment's job). None (the deployment's own rows) changes nothing: a
+    workspace's own job is attributed to it already (``message_scope``), and the deployment's job to the
+    deployment."""
+    if scope is None:
+        yield
+        return
+    with usage_meter.attributed(scope.ws):
+        yield
+
+
+def checked_strings(carried: object, *, cap: int, pattern: re.Pattern[str], error: str) -> list[str]:
+    """A carried or saved collection of strings (a list or a set, at most ``cap``, each matching ``pattern``), sorted;
+    ValueError(``error``) otherwise: a malformed run state never reaches anything else."""
+    if not isinstance(carried, list | set | frozenset) or len(carried) > cap:
+        raise ValueError(error)
+    if not all(isinstance(each, str) and pattern.fullmatch(each) for each in carried):
+        raise ValueError(error)
+    return sorted(carried)
 
 
 def count(run: dict[str, Any], counter: str, n: int = 1) -> None:

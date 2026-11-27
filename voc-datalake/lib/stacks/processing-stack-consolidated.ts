@@ -23,7 +23,7 @@ import { AGGREGATOR_FUNCTION_BASE_NAME, AGGREGATOR_STREAM_FAILURES_BASE_NAME, FE
 import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { addDailyRollups } from './daily-rollups';
-import { ENGINEERING_ROLE_NAME_TEMPLATE as ROLE_NAMES } from './engineering-broker';
+import { ENGINEERING_ROLE_NAME_TEMPLATE as ROLE_NAMES, engineeringAgentsEnabled } from './engineering-broker';
 import { addProcessingEngineering } from './processing-engineering';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
@@ -323,14 +323,13 @@ export class VocProcessingStack extends VocStack {
     const retentionWorker = createRetentionWorker(this, 'RetentionWorker', {
       uniqueName: (baseName) => this.uniqueName(baseName),
       layer: processingLayer,
-      kmsKey,
-      feedbackTable,
-      aggregatesTable,
+      kmsKey, feedbackTable, aggregatesTable,
       radarTable: props.radarTable,
       projectsTable,
       featureRequestsTable: props.featureRequestsTable,
-      workspacesTable: props.workspacesTable, participantsTable: props.participantsTable,
-      rawDataBucket,
+      workspacesTable: props.workspacesTable, participantsTable: props.participantsTable, // engineering: 3g3-b, 7.84.00
+      rawDataBucket, engineering: engineeringAgentsEnabled(this) && props.engineeringTable ? {
+        engineeringTable: props.engineeringTable, agentsTable: props.agentsTable, userPool: props.userPool } : undefined,
     });
     // An erasure job's end reaches the admin who started it (jobs/retention/runs.py, docs/realtime.md): a publish
     // grant (the `jobs` managed policy) and the host only; nothing else on the only customer-data delete role changes (D5).

@@ -263,7 +263,17 @@ failing the job; without voc-workspaces the deployment's job reads its own scope
 `participants_walked: false`; load: three reads per listed workspace (the guard's GetItem, one people-index Query, at
 most 10 pages, the GetItem of its saved row), two for the deployment, the listing walked again (one Query per 100
 workspaces plus its re-walk), one UpdateItem per page that finds anyone and one or two per person erased, the
-participant erasure's own reads and writes per person, and one GetItem of the job's saved row at the end), the
+participant erasure's own reads and writes per person, and one GetItem of the job's saved row at the end), (since
+7.84.00, with `-c engineeringAgents=true`, the deployment's job only) the engineering agents' memory
+(`lambda/jobs/retention/agent_memory.py`: the address resolved to its account's `sub` in the user pool, a verified
+email only; the subs saved first in the job's partition, `AGENT_MEMORY#{address hash}`, 30-day `ttl`; each erased by
+`lambda/engineering/agent_memory/erasure.py` `erase_person_rows`; load: one `AdminGetUser` by the address (two on a
+pool made before #105, the second lower-cased), once per erasure job, one GetItem and one UpdateItem of the saved
+row, then per person the erasure's own: a strongly
+consistent Query of their whole partition and of each partition their `REF#` rows name, two PutItems, one write per
+row naming them elsewhere, one DeleteItem per row of theirs; their partition is unbounded across connections (about
+12,500 rows per connection at the store's caps), and one person is one step with no hand-over inside it: a step the
+timeout cuts fails the job and a rerun finishes it, follow-up 3g3-b-paging), the
 whole-source raw sweep, then (an erasure only) the
 exports of every workspace whose item it deleted, membership it de-identified or project row it changed, a derived
 copy (`lambda/jobs/retention/exports.py`:
@@ -272,7 +282,18 @@ the export lock taken, its export jobs marked `erased`, its open uploads aborted
 citing an erased id lose it and get `erased_evidence`; since 7.48.00 its projects through their registry,
 `PROJECT_IDS`, or until the review registries' backfill has run a Scan of the projects' `META` rows, and its persona
 library, each project's partition by filtered Query pages of 100: one Query for the backfill's marker, one Query per
-100 projects, one Query per 100 rows of each project and one BatchGetItem per page of ids), then (since
+100 projects, one Query per 100 rows of each project and one BatchGetItem per page of ids), then (since 7.84.00,
+with `-c engineeringAgents=true`; every erasure of the deployment, and a retention window once it deleted an item of
+the deployment's own feedback; never a workspace's job) `engineering_lineage`
+(`lambda/jobs/retention/engineering_lineage.py`: an erased review's id removed from an engineering run's `META`
+`feedback.ids` and from an `ISSUE_RUN#` claim's `feedback_id`, each marked; load: an erasure reads the retention
+audit's sources once per job (the Query of `AUDIT#retention`, one row per run, its pages limited to 1 MB of whole
+rows; the sources then carried in the cursor), then one Query per 100 claims of the
+one `ISSUE_RUN#default` partition (every issue that ever started a run: a whole-partition read, a Scale note,
+bounded by the claims), one Query per 100 rows of each month's runs list since 2026-11 (one partition a month) and
+one Query per listed run for its `META` (a hot row of the run's board and router, read once and updated only where
+an erased id is cited, conditionally, read again and tried again at most 3 times), one BatchGetItem per 100 keys of
+ids times sources, one UpdateItem per marked row; the numbers: docs/multi-workspace.md, the 7.84.00 row's Load), then (since
 7.43.00) `workspace_lineage` (each workspace whose item it deleted, up to 500, or every listed workspace once it
 de-identified a board request or passed 500, the listing walked as for the addresses: its projects through its
 registry and its persona library, by Query, a
@@ -284,7 +305,8 @@ carry up to 500 people to erase and 500 refused, about 45 KB more, so the bound 
 its item goes, its membership or a project row changes, and closed again at each hand-over (the lock renewed, any
 export that slipped in marked); a job that names one workspace closes them at its start (so it deletes them even
 when it matches nothing) and walks the items, (by email) its projects' addresses and its participants, the exports and its projects'
-lineage only. Whole-file uploads (`raw/csv_upload/*`,
+lineage only. Since 7.84.00 the deployment's runs (an erasure, the retention window) log each step inside one
+workspace as that workspace's (`workspaces.py` `inside`, the shared logger's `workspace_id`: no extra call). Whole-file uploads (`raw/csv_upload/*`,
 `raw/json_upload/*`) are deleted only by a whole-source erasure of their source,
 else listed as `files_needing_review`. A whole-source erasure (`field: 'source'`) scans by
 `source_platform`, then sweeps `raw/{source}/` (every version), writing progress
@@ -315,7 +337,19 @@ and ConditionCheckItem of `EMAIL#*`, `PERSON#*`; the people index `gsi1`'s Query
 those two; UpdateItem of `list_ids`, `member_count`, `response_token_hash` and `error` on `PERSON#*`, `LIST#*` and the
 deployment's `ASK#*`; DeleteItem `EMAIL#*`, `PERSON#*`, `LIST#*` and a workspace's `PARTICIPANTS`; BatchWriteItem the
 deployment's `TOKEN#*` and both scopes' `PROJECT#*` and `PERSON#*`, which IAM would let put there too: the code sends
-deletes only), raw bucket
+deletes only), (since 7.84.00, with `-c engineeringAgents=true` only; the reads and updates in a customer-managed
+policy of their own, `RetentionEngineeringPolicy`, attached to this role alone) voc-agents Query and UpdateItem of
+`ISSUE_RUN#default`, of `pk`, `sk`, `feedback_id`, `engineering_run_id`, `erased_evidence` only; voc-engineering Query of
+`WS#default#RUNLIST#*` and `WS#default#RUN#*` and UpdateItem of `WS#default#RUN#*`, of `pk`, `sk`, `feedback`,
+`erased_evidence` only (`SPECIFIC_ATTRIBUTES`, no returned values), Query of `WS#default#AMEM#*` and UpdateItem there of
+`author`, `prov_person`, `approved_by`, `by` only, `cognito-idp:AdminGetUser` on the user pool; (in the role's own
+policy) PutItem of `AUDIT#tombstone#agent_memory_person` and `AUDIT#delete`, PutItem of `WS#default#AMEM#*` of a
+confirmation row's attributes only, DeleteItem of `WS#default#AMEM#*`; voc-engineering under the audit-row guard;
+(since 7.84.00, every build) the boards' reads and update, the memberships' Scan, update and listing Query and the
+participants' update, none a delete or a put, in a customer-managed policy of their own, `RetentionReadsPolicy`,
+attached to this role alone, so the role's own policy holds about 7,960 of its 10,240 characters with the engineering
+agents (the tests' estimate; at about 9,780 CDK split it); the bundle carries `engineering/__init__.py`, `engineering/rows.py` and
+`engineering/agent_memory/{__init__,erasure}.py` of that tree, raw bucket
 `s3:DeleteObject`/`DeleteObjectVersion` on `raw/*`, `silver/*` and (since 7.03.00: an erasure by email and a
 retention window reach a workspace's items, tombstoned `AUDIT#tombstone#{source}` / `{ws}#{feedback_id}`) each
 workspace's `ws/{ws}/raw/*` and `ws/{ws}/silver/*` and (since 7.17.00) `ws/{ws}/exports/*` (one workspace id per

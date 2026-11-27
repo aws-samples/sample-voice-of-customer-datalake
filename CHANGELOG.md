@@ -17,6 +17,119 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.84.00] - 2026-11-27
+
+An erasure now reaches the engineering agents' rows (slice 3g3-b of docs/multi-workspace.md's project plan; TENETS.md
+D5 and D8), with `-c engineeringAgents=true`: an erased review's id leaves the engineering runs and the issues' run
+claims that cite it, and the deployment's erasure by email erases the person from the agents' memory. Every deployment
+also gets the log follow-up of 7.76.00: the erasure and the retention window tag each step inside one workspace with
+that workspace, so those lines stay out of the deployment admins' System logs.
+
+### Added
+
+- The `engineering_lineage` phase (`lambda/jobs/retention/engineering_lineage.py`), after `lineage`: in every
+  erasure of the deployment (whatever it deletes, nothing included), and in a retention window once it deleted an item
+  of the deployment's own feedback. An erased review's id is removed from an engineering run's `META`
+  (`feedback.ids`; its `count` and `category` kept) and from an issue's run claim in voc-agents (`ISSUE_RUN#default`,
+  its act and triage claims' `feedback_id`; the claim kept, so the issue starts no second run), each row marked
+  `erased_evidence` `{count, job_id, mode, at}`, each update conditional on the value read; a row changed meanwhile is
+  read again and tried again (3 times), then the job fails naming the engineering run. Only the deployment's
+  tombstones apply: the engineering agents' scope is `default`, never a workspace. An erasure looks a cited id up
+  under every source a run of voc-retention ever deleted from (its audit rows' `erased_sources`), so rerunning an
+  erasure made before this release reaches the ids it left. Found by Query only: the claims' one partition, then the
+  runs list's month partitions from 2026-11 to the current month and each listed run's `META`. Counted:
+  `engineering_rows_marked`.
+- The `agent_memory` phase (`lambda/jobs/retention/agent_memory.py`), after the participants, in the deployment's
+  erasure by email without a source: the address is resolved to its account's `sub` with one `AdminGetUser` (the pool
+  resolves its email sign-in alias, whatever its case since #105; a pool made before #105 matches the exact spelling,
+  so the job asks again lower-cased); only an account whose email is the address and is verified is taken. The subs
+  are saved in the job's partition before anything is erased (`AGENT_MEMORY#<address hash>`, 30-day `ttl`), and each
+  person is erased with the store's own erasure under the job's legal basis (the tombstone first, then the delete
+  record when any row of theirs is deleted; actor `kind` `erasure`). A failed job or a hand-over is finished by the next
+  erasure of the address, even once the account is gone. Counted: `agent_memory_people_erased` (rows deleted),
+  `agent_memory_people_refused` (the tombstone only: the memory held nothing of them) and
+  `agent_memory_accounts_not_erased` (an account holding the address unverified, which is not erased). The job and audit
+  rows and `GET /settings/erasure` say `agent_memory_walked` and `agent_memory_complete`; the rerun rule: every such
+  erasure whose row does not say `agent_memory_complete: true`.
+- The tombstone is a lasting refusal: the memory never learns the person again, even one it never held. An operator
+  lifts it only by deleting that one row (`AUDIT#tombstone#agent_memory_person` / the sha-256 of the account's `sub`
+  in voc-engineering) with the account's own credentials: no role of the app may.
+- `lambda/shared/usage_meter.py` `attributed`: an attribution for one `with` block, restored after it (raised or not);
+  `lambda/jobs/retention/workspaces.py` `inside` uses it, the one new pinned attribution site.
+
+### Changed
+
+- The agents' memory erasure moved from `AgentMemoryStore.erase_person_memories` into
+  `lambda/engineering/agent_memory/erasure.py` `erase_person_rows`, which the store calls; one change: a run that finds
+  nothing of the person records no `AUDIT#delete` row (its tombstone still records the request); the retention bundle carries
+  that module, `engineering/rows.py` and the two package files, nothing else of the engineering tree.
+- The deployment-wide erasure and the retention window log each workspace step (its items and tombstones, form test
+  responses, memberships, projects walk, participants, exports and lineage marks) as that workspace's; the retention
+  window runs as the deployment (it was unattributed).
+
+### Security
+
+- With the engineering agents only. In a customer-managed policy `RetentionEngineeringPolicy`, attached to
+  voc-retention's role alone, the reads and the updates that delete nothing: voc-agents Query and UpdateItem of
+  `ISSUE_RUN#default` held to `pk`, `sk`, `feedback_id`, `engineering_run_id`, `erased_evidence`; voc-engineering Query
+  of `WS#default#RUNLIST#*` and `WS#default#RUN#*` and UpdateItem of `WS#default#RUN#*` held to `pk`, `sk`, `feedback`,
+  `erased_evidence` (`SPECIFIC_ATTRIBUTES`, no returned values); Query and an attribute-held UpdateItem in
+  `WS#default#AMEM#*`; `cognito-idp:AdminGetUser` on the user pool. In the role's own inline policy, as every other
+  delete and audit put: PutItem of `AUDIT#tombstone#agent_memory_person` and `AUDIT#delete`, PutItem in
+  `WS#default#AMEM#*` held to a confirmation row's attributes, DeleteItem in `WS#default#AMEM#*`. IAM cannot pin the
+  sort key: the memory's put and delete reach any memory row, and the runs' update any row of a run's partition (for
+  `feedback` and the mark only); the code holds them to the erased person's rows and each run's `META`.
+- voc-engineering is under the audit-row guard: voc-retention may put only those two audit partitions there, and no
+  role may change or remove an `AUDIT#` row there.
+- In every build, voc-retention's statements that neither delete nor put and sat in its inline policy (the feedback
+  boards' Scan, GetItem, Query and UpdateItem, now on the table only, no index, which it never read; the memberships'
+  Scan, de-identifying UpdateItem and listing Query; the participants' UpdateItem) move, unchanged otherwise, into a
+  customer-managed policy of their own, `RetentionReadsPolicy`, attached to its role alone and under the audit-row
+  guard, so the inline policy that keeps every delete and audit put stays whole: about 7,960 of its 10,240 characters
+  with the engineering agents.
+- The audit-row guard names those managed policies writers where they write a table the role puts audit rows in, of
+  the role's own partitions only: `RetentionReadsPolicy` in voc-participants (`AUDIT#tombstone#participant`,
+  `AUDIT#delete`), `RetentionEngineeringPolicy` in voc-engineering (`AUDIT#tombstone#agent_memory_person`,
+  `AUDIT#delete`). Guarded as non-writers, their Deny of every audit put would cancel the role's inline Allow (an
+  explicit Deny in any policy attached to a role wins), so a participant's or a person's erasure would fail.
+- Pinned by `lib/stacks/processing-stack-retention.test.ts`, `lib/customer-data-deletes.test.ts` and
+  `lib/utils/audit-row-guard.test.ts`, each also on the engineering build, and by
+  `lib/stacks/retention-policy-evaluation.test.ts`, which evaluates every Allow and Deny of the role and its policies
+  together, on both builds, for a listed set of the worker's requests: its audit puts, its deletes (DeleteItem, the
+  participant erasure's BatchWriteItem deletes, s3:DeleteObject and DeleteObjectVersion), the updates and Queries
+  7.84.00 moved into managed policies and the directory's AdminGetUser; and that the guard still refuses a change of an
+  audit row in voc-participants, voc-aggregates and voc-engineering and a forged audit put in the first and the last.
+
+### Not yet
+
+- A run started between 7.47.00 and 7.51.00 (2026-11-16 to 17) has no runs-list row: its `META` is not reached.
+- The review ids an agent memory version keeps (`VER#` `feedback_ids`, create-only) are not removed.
+- An account deleted before the erasure is not resolved (no address names it any more); its memories stay. An
+  account whose email changed since, or whose email is unverified, is not found by the old or unverified address:
+  an admin also erases by the account's current, verified address.
+- On a pool made before #105 an address stored in a third spelling (neither as typed nor lower-cased) is not found:
+  erase again with the stored spelling.
+- Text that may carry a review's words is not searched: an engineering run's `goal` when a person typed it (a
+  trigger's names only an issue's repository and number or a review count), on `META` and its runs-list row, and the
+  agents' session transcripts (the GitHub issue's text, redacted when written).
+- The erasure panel does not show the new counters yet (the job row and `GET /settings/erasure` carry them).
+- A run's `META` or an issue claim written while an erasure runs, citing an id that erasure deletes after its walk
+  passed that row, keeps the id until the next erasure of the deployment.
+- One person's memory erasure is one step: it reads their partition and every partition their `REF#` rows name whole
+  (about 12,500 rows per connection at the store's caps), with no hand-over inside it; a step the timeout cuts fails
+  the job and a rerun finishes it (follow-up 3g3-b-paging).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). No stored data moves. With `-c engineeringAgents=true`, voc-retention gains
+  the grants above and three environment variables (`ENGINEERING_TABLE`, `AGENTS_TABLE`, `USER_POOL_ID`). An erasure
+  run before this release left the engineering rows and the memory as they were: run it again (the rerun deletes
+  nothing more, and still removes the ids the first one left and erases the person from the memory).
+- After the deploy, check on the live site that an erasure by email that reaches a participant completes: its job row
+  reads `completed` with `participants_complete: true`, and the participant's tombstone and `AUDIT#delete` row are in
+  voc-participants. With `-c engineeringAgents=true`, also that one reaching an account completes with
+  `agent_memory_complete: true` and its tombstone in voc-engineering.
+
 ## [7.83.00] - 2026-11-26
 
 Multi-workspace, phase 4: the platform console shows the cost per workspace. `GET /platform/costs` (7.30.00) had no

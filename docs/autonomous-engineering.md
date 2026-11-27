@@ -4198,21 +4198,29 @@ connection (a person's: per person and connection, so one connection never fills
 own), and a memory at most 21 confirmation rows; every learn, recall and proposal reads one key range of at most
 that many rows. **Erasure (D5)**: a person's memories are their own data, erased for a legal obligation by an
 administrator (`erase_person_memories`, with the legal basis, which holds no personal data): first a tombstone
-(`AUDIT#tombstone#agent_memory_person` / the sha-256 of their user id: the legal basis, who, when) and an
-`AUDIT#delete` row (what: their hashed id and how many rows and partitions; who; when; why), then every row naming
+(`AUDIT#tombstone#agent_memory_person` / the sha-256 of their user id: the legal basis, who, when) and, when any row
+of theirs is found (since 7.84.00: none is recorded where nothing is deleted), an `AUDIT#delete` row (what: their
+hashed id and how many rows and partitions; who; when; why), then every row naming
 them in another scope is de-identified (their id as author, provenance, approver, log actor or confirmer becomes
 one random `erased-…` id for this erasure; a confirmation row is re-keyed, since its key hashes its source), then
 every row of their partition is deleted. Only an erasure reads a partition whole, and a re-run finishes a failed
 one. The learning loop drafts a role's lessons ([above](#getting-better-skills-the-coach-the-learning-loop-memory));
 a run's provenance may name the board task it was learned from (`task_id`, the version's `prov_task`), which never
-counts as another source. Not yet: the harness reading the recall, the routes, a retention pass
-for memories past their review date, and the call from the platform's erasure of a person (today
-`POST /settings/erasure` erases feedback, `DELETE /participants/people/{id}` participants, and `DELETE
-/users/{username}` removes a sign-in but none of its data; whatever comes to erase a signed-in user's data must
-call `erase_person_memories` for each workspace, with the request's legal basis; its role needs Query,
-PutItem, UpdateItem and DeleteItem on `voc-engineering`, the delete pinned to that caller as the customer-data
-deletes are, and the `AUDIT#` row guard, `voc-datalake/lib/utils/audit-row-guard.ts`, must cover `voc-engineering`
-so that no role changes or removes the erasure's tombstone and delete record). An erased person is refused in
+counts as another source. **The platform's erasure (7.84.00)**: the deployment's erasure by email without a source
+(`POST /settings/erasure`, voc-retention's `agent_memory` phase, `voc-datalake/lambda/jobs/retention/agent_memory.py`)
+resolves the address to its account's `sub` with one `AdminGetUser` (the pool's email sign-in alias, a verified email
+only, whatever its case since #105) and erases that person with the same erasure, which lives in
+`agent_memory/erasure.py` since then (the store's `erase_person_memories` calls it), under the job's legal basis, the
+subs saved first so a failed job is finished by the next erasure of the address; its grants are pinned to
+`WS#default#AMEM#*` and the two audit partitions, and voc-engineering is under the `AUDIT#` row guard
+(`voc-datalake/lib/utils/audit-row-guard.ts`: no role but voc-retention puts an audit row there, none changes or removes
+one; docs/multi-workspace.md, the 7.84.00 row). The tombstone is written even when the memory holds nothing of the
+person (then no delete record): a lasting refusal, which an operator lifts only by deleting that row with the account's
+own credentials. The same erasure's lineage pass removes an erased review's id from a run's `META` and from the issue's
+run claim. Not yet: the harness reading the recall, the routes, a retention pass for memories past their review date,
+an erasure of an account already deleted (`DELETE /users/{username}` removes a sign-in but none of its data, and no
+address names it any more), and of an account whose email changed or is unverified by that address (an admin also
+erases by the account's current, verified address). An erased person is refused in
 every scope, not only their own: whatever would name them again (a write, an edit, a confirmation, an approval,
 a forget or a restore, by them as a person or an administrator) is refused before anything is written, so no
 `REF#` row comes back into their deleted partition.

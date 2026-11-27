@@ -71,6 +71,9 @@ export interface AuditRowTables {
   readonly featureRequestsTable?: dynamodb.ITable;
   readonly conversationsTable?: dynamodb.ITable;
   readonly workspacesTable?: dynamodb.ITable;
+  /** voc-engineering (7.84.00): the agents' memory erasure's tombstone and delete record (built only with
+   *  -c engineeringAgents=true). */
+  readonly engineeringTable?: dynamodb.ITable;
 }
 
 /** An audit writer of one table, by the construct-path suffix of its role (or of a customer-managed policy). */
@@ -113,6 +116,11 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // (its PutItem grant names them too: lib/stacks/retention-worker.ts `PARTICIPANT_ACCESS`).
   { table: 'participantsTable', rolePathSuffix: '/RetentionWorker/RetentionRole',
     partitionKey: ['AUDIT#tombstone#participant', 'AUDIT#delete'] },
+  // Its reads policy (7.84.00, attached to that role alone) holds the participants' UpdateItem, so the guard guards it
+  // in itself: named a writer of the same two partitions, it carries the change Deny and the other-partition Deny, never
+  // a Deny of the role's own puts (an explicit Deny in any policy of the role would cancel the role's inline Allow).
+  { table: 'participantsTable', rolePathSuffix: '/RetentionWorker/RetentionReadsPolicy',
+    partitionKey: ['AUDIT#tombstone#participant', 'AUDIT#delete'] },
   { table: 'featureRequestsTable', rolePathSuffix: '/EngagementLambdaRole' },
   // A deleted conversation.
   { table: 'conversationsTable', rolePathSuffix: '/ChatLambdaRole' },
@@ -138,10 +146,19 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // A trial workspace's end (7.71.00, lib/stacks/trial-expiry.ts): its trial_paused row and each plugin's
   // plugin_disabled row (AUDIT#WS#<ws> only).
   { table: 'workspacesTable', rolePathSuffix: '/TrialExpiry/Role', partitionKey: 'AUDIT#WS#*' },
+  // voc-retention (7.84.00, projects 3g3-b; with -c engineeringAgents=true): an erasure by email's erasure of a person
+  // from the agents' memory writes their tombstone (AUDIT#tombstone#agent_memory_person, put only if new) and delete
+  // record (AUDIT#delete); those two partitions only (lambda/engineering/agent_memory/erasure.py).
+  { table: 'engineeringTable', rolePathSuffix: '/RetentionWorker/RetentionRole',
+    partitionKey: ['AUDIT#tombstone#agent_memory_person', 'AUDIT#delete'] },
+  // Its engineering policy (attached to that role alone) updates voc-engineering: named a writer of the same two
+  // partitions, as its reads policy is in voc-participants.
+  { table: 'engineeringTable', rolePathSuffix: '/RetentionWorker/RetentionEngineeringPolicy',
+    partitionKey: ['AUDIT#tombstone#agent_memory_person', 'AUDIT#delete'] },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',
-  'conversationsTable', 'workspacesTable'] as const satisfies readonly (keyof AuditRowTables)[];
+  'conversationsTable', 'workspacesTable', 'engineeringTable'] as const satisfies readonly (keyof AuditRowTables)[];
 
 /** The guard options for the audit tables `tables` names (the tables it leaves out are not guarded). */
 export function auditRowGuardFor(tables: AuditRowTables): AuditGuardOptions {

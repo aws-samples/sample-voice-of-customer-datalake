@@ -73,13 +73,19 @@ export const HARD_CAP_DENY_SID = 'DenyHardCapWrites';
  * partitions. An explicit Deny wins over every Allow, so a later broad grant cannot reopen it.
  */
 export function denyHardCapWrites(role: iam.IRole, agentsTable: dynamodb.ITable): void {
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
+  role.addToPrincipalPolicy(hardCapDenyStatement(agentsTable));
+}
+
+/** {@link denyHardCapWrites}' statement, for a customer-managed policy that writes voc-agents (7.84.00: the
+ *  retention worker's engineering policy, retention-worker.ts). */
+export function hardCapDenyStatement(agentsTable: dynamodb.ITable): iam.PolicyStatement {
+  return new iam.PolicyStatement({
     sid: HARD_CAP_DENY_SID,
     effect: iam.Effect.DENY,
     actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
     resources: [agentsTable.tableArn],
     conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [HARD_CAP_PARTITION, CONNECTIONS_PARTITIONS] } },
-  }));
+  });
 }
 
 /**
@@ -132,13 +138,18 @@ export const ISSUE_TRIAGE_DENY_SID = 'DenyIssueTriageWrites';
 export function denyIssueTriageWrites(scope: Construct, role: iam.IRole, agentsTable: dynamodb.ITable): void {
   // (only with the engineering module: without it no row of the kind exists and the default synth stays as it was)
   if (!engineeringAgentsEnabled(scope)) return;
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
+  role.addToPrincipalPolicy(issueTriageDenyStatement(agentsTable));
+}
+
+/** {@link denyIssueTriageWrites}' statement, for a customer-managed policy that writes voc-agents (7.84.00). */
+export function issueTriageDenyStatement(agentsTable: dynamodb.ITable): iam.PolicyStatement {
+  return new iam.PolicyStatement({
     sid: ISSUE_TRIAGE_DENY_SID,
     effect: iam.Effect.DENY,
     actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
     resources: [agentsTable.tableArn],
     conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [ISSUE_TRIAGE_PARTITIONS] } },
-  }));
+  });
 }
 
 /** An understander's recorded triage of a run (7.50.00, lambda/engineering/runtime/triage_end.py). */

@@ -728,9 +728,11 @@ or failed agreement shows there as a warning.
   the page adds a note in the reader's language), and a state machine's failure its type and error, never its
   cause. A request's lines are withheld whole when any names a workspace. A failure queue shows a body only when it
   parses as JSON, names no workspace and holds no long encoded run; the others are counted in `withheld`. The page,
-  and the JSON download, say how many were not shown. Known gap (TENETS.md D8): a deployment-wide job that walks
-  every workspace's items (the erasure by email, the retention window, a scheduled fan-out) runs as the deployment, so a line it writes
-  while handling a workspace's item reads as the deployment's unless it names the workspace's id. Anyone with CloudWatch access in the account still reads
+  and the JSON download, say how many were not shown. Since 7.84.00 the erasure by email and the retention window
+  (voc-retention) tag each step inside one workspace with that workspace's id (`lambda/jobs/retention/workspaces.py`
+  `inside`), so those lines are held back here; a retention window's own lines read `DEPLOYMENT`. Known gap (TENETS.md
+  D8): a scheduled fan-out still runs as the deployment, so a line it writes while handling a workspace's item reads as
+  the deployment's unless it names the workspace's id. Anyone with CloudWatch access in the account still reads
   every line there: this holds the app's view, not the account's. A platform admin who needs a workspace's details
   enters that workspace (decision 2, live-checked and audited); these routes are no way round that.
 - **Routes** (all admin-only, 403 otherwise, `Cache-Control: no-store`, every returned

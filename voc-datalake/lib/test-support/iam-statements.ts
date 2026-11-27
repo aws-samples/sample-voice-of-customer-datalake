@@ -46,6 +46,13 @@ const IamStatementSchema = z.object({
   Condition: z.unknown().optional(),
 });
 
+/** One raw statement with every field a policy evaluator must see (NotAction and NotResource kept, so an evaluator
+ *  can refuse them; any other field passed through). */
+export const RawIamStatementSchema = IamStatementSchema.partial({ Action: true, Resource: true }).extend({
+  NotAction: z.unknown().optional(),
+  NotResource: z.unknown().optional(),
+}).loose();
+
 /** A synthesized template's resources, each still `unknown` (parse the ones a case reads). */
 export const TemplateResourcesSchema = z.object({ Resources: z.record(z.string(), z.unknown()) });
 

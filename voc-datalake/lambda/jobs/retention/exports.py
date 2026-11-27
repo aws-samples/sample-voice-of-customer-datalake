@@ -38,6 +38,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from jobs.retention.workspaces import inside as _inside
 from shared import retention
 from shared.export_jobs import ERASURE_HOLDER_PREFIX, hold_for_erasure, mark_erased, release_after_erasure
 from shared.retention import EXPORT_OBJECT_COUNTER
@@ -98,7 +99,9 @@ def renew(run: dict[str, Any], aggregates: Any) -> None:
     ``erased``): the handler does it at each hand-over, so a lock taken by ``note_workspace`` never goes stale while
     the run is still on its way to the ``exports`` phase (an invocation lasts 15 minutes, the lock an hour)."""
     for ws in pending(run):
-        _close(run, scope_from_message({WORKSPACE_FIELD: ws}), aggregates)
+        scope = scope_from_message({WORKSPACE_FIELD: ws})
+        with _inside(scope):
+            _close(run, scope, aggregates)
 
 
 def pending(run: dict[str, Any]) -> list[str]:
@@ -111,18 +114,29 @@ def clear(run: dict[str, Any], s3: Any, bucket: str, aggregates: Any, time_left:
     (the phase resumes the workspace it was in: each step is idempotent)."""
     for ws in pending(run):
         scope = scope_from_message({WORKSPACE_FIELD: ws})
-        # Again (the lock may have gone stale over a long item scan, and an export may have started since).
-        _close(run, scope, aggregates)
-        objects = ExportObjects(scope, s3, bucket)
-        for _sweep in range(_SWEEPS):
-            for key, upload_id in objects.open_uploads():
-                objects.abort_multipart_upload(key, upload_id)
-            more = True
-            while more:
-                if not time_left():
-                    return False
-                deleted, more = retention.delete_raw_prefix_page(s3, bucket, exports_prefix(scope))
-                run[EXPORT_OBJECT_COUNTER] = int(run.get(EXPORT_OBJECT_COUNTER) or 0) + deleted
-        release_after_erasure(ws_table(scope, aggregates), _holder(run), datetime.now(UTC))
+        # Inside the workspace (7.84.00): a line about its exports is that workspace's.
+        with _inside(scope):
+            if not _clear_one(run, scope, s3, bucket, aggregates, time_left):
+                return False
         run[ERASED_WORKSPACES].remove(ws)
+    return True
+
+
+def _clear_one(run: dict[str, Any], scope: WorkspaceScope, s3: Any, bucket: str, aggregates: Any,
+               time_left: Callable[[], bool]) -> bool:
+    """One workspace's exports closed again, its open uploads aborted, every version deleted and swept once more, and
+    its export lock freed; False when the time ran low first."""
+    # Again (the lock may have gone stale over a long item scan, and an export may have started since).
+    _close(run, scope, aggregates)
+    objects = ExportObjects(scope, s3, bucket)
+    for _sweep in range(_SWEEPS):
+        for key, upload_id in objects.open_uploads():
+            objects.abort_multipart_upload(key, upload_id)
+        more = True
+        while more:
+            if not time_left():
+                return False
+            deleted, more = retention.delete_raw_prefix_page(s3, bucket, exports_prefix(scope))
+            run[EXPORT_OBJECT_COUNTER] = int(run.get(EXPORT_OBJECT_COUNTER) or 0) + deleted
+    release_after_erasure(ws_table(scope, aggregates), _holder(run), datetime.now(UTC))
     return True

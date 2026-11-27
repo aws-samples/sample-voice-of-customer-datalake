@@ -21,7 +21,9 @@ follow-up).
 
 ATTRIBUTION. The call's workspace is this context's ``attribute`` value, set only where a workspace resolves:
 shared/workspace.py ``resolve_workspace``, shared/ws_repo.py ``message_scope`` and shared/request_workspace.py
-``request_workspace`` (shared/test/test_usage_meter.py pins those call sites). ``reset`` runs at each invocation
+``request_workspace``, and for one ``with`` block (``attributed``) jobs/retention/workspaces.py ``inside``, each step a
+deployment-wide erasure or retention run takes inside one workspace (7.84.00; shared/test/test_usage_meter.py pins
+those call sites). ``reset`` runs at each invocation
 (shared/invocation_cost.py ``measure_invocation_cost``), so a warm container never carries the last request's
 workspace into the next one, and shared/concurrency.py runs each task in a copy of its caller's context. A raw thread
 pool's tasks never attribute (pinned by the test above), so their calls stay ``UNATTRIBUTED``, never a wrong
@@ -36,7 +38,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Generator, Mapping, MutableMapping
 from contextvars import ContextVar
 from typing import Any, Final
 
@@ -107,6 +109,18 @@ def attribute(workspace: str | None) -> None:
     workspace.
     """
     _attribution.set(DEPLOYMENT if workspace is None else workspace if is_workspace_id(workspace) else UNATTRIBUTED)
+
+
+@contextlib.contextmanager
+def attributed(workspace: str) -> Generator[None]:
+    """Count this context's calls (and tag its lines) to ``workspace`` inside the ``with`` block only, then to what was
+    attributed before it, also when the block raises: a deployment-wide job's step inside one workspace
+    (jobs/retention/workspaces.py ``inside``, 7.84.00). A value that is not a workspace id is UNATTRIBUTED."""
+    token = _attribution.set(workspace if is_workspace_id(workspace) else UNATTRIBUTED)
+    try:
+        yield
+    finally:
+        _attribution.reset(token)
 
 
 def current_attribution() -> str:
