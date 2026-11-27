@@ -33,6 +33,27 @@ def test_other_keys_are_allowed(key):
 
 
 @pytest.mark.usefixtures('redacting')
+@pytest.mark.parametrize('content', ['{"source_platform": "support_tickets"}',
+                                     '{"source_platform": "support_tickets", "text": "t"}'])
+def test_a_raw_object_whose_content_names_a_redact_source_is_refused_under_an_allowed_key(content):
+    with pytest.raises(ValidationError, match='Source "support_tickets" keeps no raw copies'):
+        h._refuse_policy_blocked_archive('raw/webscraper/2026/x.json', content)
+
+
+@pytest.mark.usefixtures('redacting')
+@pytest.mark.parametrize('content', ['{"source_platform": "support_tickets"}', 'not json'])
+def test_the_content_source_is_not_checked_outside_raw(content):
+    assert h._refuse_policy_blocked_archive('exports/x.json', content) is None
+
+
+@pytest.mark.usefixtures('redacting')
+@pytest.mark.parametrize('content', ['', 'not json', '[1]', '{"source_platform": ""}', '{"source_platform": null}',
+                                     '{"source_platform": "webscraper"}'])
+def test_content_naming_no_source_or_an_allowed_one_leaves_the_keys_check(content):
+    assert h._refuse_policy_blocked_archive('raw/webscraper/2026/x.json', content) is None
+
+
+@pytest.mark.usefixtures('redacting')
 def test_the_queued_copy_is_redacted_and_points_at_no_raw_object():
     message = h._policy_queue_message(
         {'id': 'x', 'source_platform': 'support_tickets', 'text': 'a@b.io', 'author': 'Ann'}, 'bkt', 'k.json')

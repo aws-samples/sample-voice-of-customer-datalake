@@ -58,13 +58,18 @@ def _is_summarizable(obj: dict) -> bool:
             and key.endswith('.json') and 0 < int(obj.get('size', 0)) <= MAX_SUMMARY_BYTES)
 
 
-def add_summaries(s3_client: Any, bucket: str, objects: list[dict]) -> None:
-    """Attach ``summary`` to the first ``MAX_SUMMARIES`` small raw JSON files in ``objects`` (in place)."""
+def add_summaries(s3_client: Any, bucket: str, objects: list[dict], *, root: str = '') -> None:
+    """Attach ``summary`` to the first ``MAX_SUMMARIES`` small raw JSON files in ``objects`` (in place).
+
+    ``root``: where the listing's keys start in the bucket (a workspace's ``ws/{ws}/``, built by the caller from the
+    request's resolved workspace): each ``fullKey`` is relative to it, as the Data Explorer's wire names it; '' (the
+    deployment's listing) reads the keys as they are.
+    """
     targets = [obj for obj in objects if _is_summarizable(obj)][:MAX_SUMMARIES]
 
     def read(obj: dict) -> dict[str, str] | None:
         try:
-            body = s3_client.get_object(Bucket=bucket, Key=obj['fullKey'])['Body'].read()
+            body = s3_client.get_object(Bucket=bucket, Key=root + obj['fullKey'])['Body'].read()
             return summarize_record(json.loads(body))
         except (BotoCoreError, ClientError, ValueError, KeyError, TypeError):  # one unreadable file never fails the listing
             return None

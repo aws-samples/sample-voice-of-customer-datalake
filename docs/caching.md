@@ -45,8 +45,8 @@ Routes opt in with `@memoized_route`:
 The cache key is the route, the workspace the request acts in (`X-Workspace-Id`, or none:
 deployment-wide; [Multi-workspace](multi-workspace.md)), the path, the normalized query string, today's UTC date,
 the caller's scope fingerprint and the versions (with the watermark). In a workspace the versions read takes the
-workspace's own `WS#{ws}#METRIC#meta / data_version` and watermark (the aggregator and the feedback edits bump it for
-that workspace's writes only) and its own `config_version` (its settings saves bump it, since 7.78.00: a save in one
+workspace's own `WS#{ws}#METRIC#meta / data_version` and watermark (the aggregator, the feedback edits and, since
+7.90.00, the Data Explorer's edits bump it for that workspace's writes only) and its own `config_version` (its settings saves bump it, since 7.78.00: a save in one
 workspace refreshes only that workspace's cached reads; nothing the deployment saves changes a workspace's answer,
 its settings being its own or the defaults and a caller's category access in the scope fingerprint), so an answer
 never crosses from the deployment to a workspace or between workspaces. The resolved
@@ -112,7 +112,8 @@ the metrics and Radar entries depend on.
 
 - The bumps need `UpdateItem`, and each grant added for them is pinned by
   `dynamodb:LeadingKeys` to the version partition: feedback edit, data explorer and
-  users on aggregates `METRIC#meta`, and the Radar API and Radar scan on Radar
+  users on aggregates `METRIC#meta`, the feedback edit and data explorer also on one workspace id's
+  `WS#{ws}#METRIC#meta` (each workspace's own data version; the data explorer's since 7.90.00), and the Radar API and Radar scan on Radar
   `SETTINGS#radar` and one workspace id's `WS#{ws}#SETTINGS#radar` (each workspace's own Radar counter, since
   7.73.00).
 - The Radar API holds `BatchGetItem` on both tables.

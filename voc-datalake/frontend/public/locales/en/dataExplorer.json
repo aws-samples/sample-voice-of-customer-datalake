@@ -64,6 +64,10 @@
     "label": "Data view"
   },
   "title": "Data Explorer",
+  "workspaceAdminsOnly": {
+    "title": "For this workspace's admins",
+    "body": "Only the admins of {{name}} can use the Data Explorer in it. Ask one of them to make you an admin of the workspace, or open the Data Explorer outside the workspace to see the deployment's data."
+  },
   "details": {
     "title": "Title",
     "text": "Review",

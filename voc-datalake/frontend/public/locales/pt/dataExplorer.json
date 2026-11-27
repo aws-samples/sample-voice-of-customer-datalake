@@ -64,6 +64,10 @@
     "label": "Visualização de dados"
   },
   "title": "Explorador de Dados",
+  "workspaceAdminsOnly": {
+    "title": "Para os administradores deste espaço de trabalho",
+    "body": "Somente os administradores de {{name}} podem usar o Explorador de Dados nele. Peça a um deles que torne você administrador do espaço de trabalho, ou abra o Explorador de Dados fora do espaço de trabalho para ver os dados da implantação."
+  },
   "details": {
     "title": "Título",
     "text": "Avaliação",

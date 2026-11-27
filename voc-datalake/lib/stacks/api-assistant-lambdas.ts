@@ -16,11 +16,13 @@ import {
   MEMORY_API_FUNCTION_BASE_NAME,
 } from '../utils/function-names';
 import { snapStartFunctionProps } from '../utils/snapstart';
-import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
+import {
+  AGGREGATES_VERSION_PARTITION, grantCacheVersionBump, grantWorkspaceCacheVersionBump,
+} from '../utils/cache-version-grants';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
 import { appVersion } from '../utils/connector-version';
 import {
-  grantWorkspaceMembershipReads, grantWorkspaceResolution, grantWorkspaceRoleAndStatusReads,
+  grantRequestWorkspace, grantWorkspaceMembershipReads, grantWorkspaceResolution, grantWorkspaceRoleAndStatusReads,
 } from '../utils/workspace-resolution-grants';
 import type { ApiStackContext } from './api-context';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
@@ -585,6 +587,10 @@ export function createAssistantLambdas(
   // Raw data is immutable and customer data is never deleted: read + put
   // (new objects; the handler refuses to overwrite raw/), no s3:DeleteObject*,
   // and no dynamodb:DeleteItem — only the in-place UpdateItem edit.
+  // On both paths (lambda/api/data_explorer_handler.py): with X-Workspace-Id it acts in that workspace, its objects
+  // the bucket's ws/{ws}/… and its reviews in its partitions. The S3 grant stays bucket-wide (the deployment's path
+  // needs the root keys, and IAM's `*` matches `/`): the handler builds the workspace's root from the resolved scope
+  // only, and refuses ws/ deployment-wide (decision 1's soft isolation, as the S3 import API's).
   const dataExplorerRole = ctx.role('DataExplorerLambdaRole');
   rawDataBucket.grantRead(dataExplorerRole);
   rawDataBucket.grantPut(dataExplorerRole);
@@ -596,14 +602,19 @@ export function createAssistantLambdas(
   feedbackTable.grantReadData(dataExplorerRole);
   feedbackTable.grant(dataExplorerRole, 'dynamodb:UpdateItem');
   // Read-only: the categories config a category edit is validated against
-  // (shared/feedback_category.py, the same rules as FeedbackEditApi).
+  // (shared/feedback_category.py, the same rules as FeedbackEditApi) and the source profiles, the deployment's
+  // SETTINGS#… rows or, in a workspace, its own WS#{ws}#SETTINGS#… rows (GetItem only, table-wide).
   aggregatesTable.grant(dataExplorerRole, 'dynamodb:GetItem');
-  // The data_version bump after a feedback edit (docs/caching.md).
+  // The data_version bump after a feedback edit (docs/caching.md); an edit in a workspace bumps the workspace's own
+  // (`WS#{one id}#METRIC#meta`).
   grantCacheVersionBump(aggregatesTable, dataExplorerRole, AGGREGATES_VERSION_PARTITION);
+  grantWorkspaceCacheVersionBump(aggregatesTable, dataExplorerRole);
   kmsKey.grantEncryptDecrypt(dataExplorerRole);
   dataExplorerRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
   // A put to raw/ that is re-queued gets its source's PII policy first.
   dataExplorerRole.addToPolicy(piiDetectionStatement());
+  // A request's X-Workspace-Id, as the S3 import API resolves it (lib/utils/workspace-resolution-grants.ts).
+  const dataExplorerWorkspaceEnv = grantRequestWorkspace(ctx.props.workspacesTable, dataExplorerRole, ctx.props.userPool);
 
   const dataExplorerLambda = new lambda.Function(stack, 'DataExplorerApi', {
     functionName: ctx.uniqueName('voc-data-explorer-api'),
@@ -622,6 +633,7 @@ export function createAssistantLambdas(
       AGGREGATES_TABLE: aggregatesTable.tableName,
       PROCESSING_QUEUE_URL: processingQueueUrl,
       ...PII_REDACTION_ENV,
+      ...dataExplorerWorkspaceEnv,
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: 'voc-data-explorer-api',
       LOG_LEVEL: 'INFO',

@@ -555,7 +555,9 @@ describe('the Documents Library is reached by the projects API alone (7.62.00, d
     .filter((grant) => rawBucketGlobs(grant).some((glob) => samples.some((key) => globMatches(glob, key))))
     .map((grant) => grant.role))].sort(byCodeUnit);
 
-  // The admin data explorer reads the whole raw bucket by design (admins only, api/data_explorer_handler.py).
+  // The admin data explorer's S3 grant is bucket-wide (IAM's `*` matches `/`, so no resource pattern keeps the root's
+  // keys from a workspace's); since 7.90.00 api/data_explorer_handler.py keeps a request in its resolved workspace's
+  // ws/{ws}/ and refuses ws/ without the header.
   const DATA_EXPLORER = 'VocApiStack/DataExplorerLambdaRole';
   // voc-retention's text read is in its erasure walks' managed policy, attached to its role (7.72.00).
   const RETENTION_WALKS = 'VocProcessingStack/RetentionWorkerRetentionWalksPolicy';

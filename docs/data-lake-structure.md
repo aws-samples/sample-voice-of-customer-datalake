@@ -269,6 +269,25 @@ operational/debugging surface, not a replacement for project and version APIs. I
 route (raw S3 cannot be filtered by category access), and it cannot delete: there is no DELETE route at API
 Gateway and its role holds no delete permission.
 
+**In a workspace** (since 7.90.00, [multi-workspace.md](multi-workspace.md)): every route resolves `X-Workspace-Id`
+first (400 for an empty header, the one 404 for a workspace the caller is not in) and is the workspace's admins' (a
+member admin or an entered platform admin; an editor or a viewer 403, the deployment's `admins` group grants nothing
+there; the web app waits for the role the server applies there, then shows a "for this workspace's admins" notice
+to anyone else and sends nothing). It works on the workspace's own
+objects, `ws/{ws}/…` of the raw bucket (shared/ws_repo.py `s3_prefix`, built from the resolved workspace only), and
+every prefix and key on the wire is relative to that root (`raw/…`, `silver/…`, `exports/…`), so the browser reads
+the same on both paths. A write in a workspace goes under `raw/` only (append-only, as the deployment's `raw/`; any
+other prefix is a 400), checked against the workspace's own source profiles (on both paths for the key's source,
+`raw/<source>/…`, and the content's `source_platform` when it differs: the stricter refuses); a write that asks for a reprocess is
+queued for the workspace (its `workspace_id`, its source policy, its `s3_raw_uri` under `ws/{ws}/raw/`). A record
+edit finds and updates the workspace's own item, with its categories and PII profile, keeps the record as it was
+under `ws/{ws}/silver/` and bumps the workspace's data version. Without the header the routes are the deployment's,
+as before, but never a workspace's: the root lists no `ws/` folder, a prefix or key that is not plain names (an
+empty, `.` or `..` segment, a control character) is a 400 on both paths, and then any whose first segment is `ws` is
+one fixed 400 (until 7.90.00 a deployment admin could browse and preview every workspace's objects,
+exports included). The role's S3 grant stays bucket-wide (IAM's `*` matches `/`), so the root comes from the
+resolved workspace only (decision 1's soft isolation).
+
 Folders read by name, the stored key staying the row's tooltip: the top folders and source folders by their
 label, and an avatar folder (`avatars/<persona id>`) by the persona and when it was made, "Persona 2 · Oct
 24, 2026, 12:34 PM" (`persona_<stamp>_<hex>_<index>`), or "Persona · Oct 24, 2026, 12:34 PM" for an id

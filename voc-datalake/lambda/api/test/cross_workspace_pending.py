@@ -20,13 +20,6 @@ PHASE_2: dict[str, frozenset[str]] = {
         'POST /voting-sessions/<session_id>/close',
         'POST /voting-sessions/<session_id>/submit',
     }),
-    'data_explorer_handler.py': frozenset({
-        'GET /data-explorer/buckets',
-        'GET /data-explorer/s3',
-        'GET /data-explorer/s3/preview',
-        'PUT /data-explorer/feedback',
-        'PUT /data-explorer/s3',
-    }),
     # The public form routes find the workspace from FORM#{id}.
     # (The signed-in routes resolve X-Workspace-Id, `_request_scope`, and have their cases since 7.72.02.)
     'feedback_form_handler.py': frozenset({

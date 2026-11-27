@@ -5,6 +5,7 @@
 
 import { api } from '../../api/client'
 import type { EditModalState } from './EditModal'
+import { newFilePrefix, type ExplorerPlace } from './writablePlace'
 
 export async function openS3Editor(
   fullKey: string,
@@ -19,11 +20,13 @@ export async function openS3Editor(
   })
 }
 
+/** A new file in the current folder, or in `raw/` where `place` writes nothing (writablePlace.ts). */
 export function openS3Creator(
-  s3Path: string[],
+  s3Path: readonly string[],
+  place: ExplorerPlace,
   setEditModal: (state: EditModalState) => void
 ): void {
-  const prefix = s3Path.length > 0 ? s3Path.join('/') + '/' : 'raw/'
+  const prefix = newFilePrefix(s3Path, place)
   setEditModal({
     isOpen: true, mode: 'create', type: 's3',
     data: { source_platform: 'manual', text: '', created_at: new Date().toISOString() },

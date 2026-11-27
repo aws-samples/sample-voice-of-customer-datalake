@@ -229,8 +229,12 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/agents_handler.py': (3, {'Table': 5, 'get_aggregates_table': 1, 'get_projects_table': 1}),
     'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1, 'get_projects_table': 2, 'meta.client': 1, 'transact': 1}),
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
+    # Both paths since the Data Explorer learned workspaces: its object calls name keys under the request's root
+    # (`ws/{ws}/…` built from the resolved scope, ws_repo.s3_prefix; deployment-wide never in `ws/`); a feedback edit's
+    # key from shared/feedback_partitions.py `item_key` (its SOURCE# moved there), read and written through
+    # `ScopedUpdates`, its by-id query through shared/scoped_query.py. Table: the voc-feedback the view is taken of.
     'lambda/api/data_explorer_handler.py': (
-        2, {'SOURCE#': 1, 'Table': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
+        2, {'Table': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
     # Phase 0 since 7.76.02 (handle plumbing): every route is proved on both paths by the cross-workspace suite
     # (lambda/api/test/cross_workspace_worlds.py CASES), and every use of its two handles passes the request's
     # scope on (query_partition, table_view, ScopedUpdates, the scoped config readers, bump_data_version and

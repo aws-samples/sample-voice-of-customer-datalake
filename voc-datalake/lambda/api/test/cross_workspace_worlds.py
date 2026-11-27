@@ -1209,6 +1209,69 @@ def s3_import_world(lambda_context: Any) -> Generator[World]:
                     doubles={'cognito': cognito, 'ingestor': ingestor}, deployment_mark='before_workspaces')
 
 
+# ── voc-data-explorer-api (lambda/api/data_explorer_handler.py): the raw bucket's objects and feedback edits ──
+
+#: The raw bucket's name as the handler's catalogue holds it (``AVAILABLE_BUCKETS``, from the test environment).
+_EXPLORER_BUCKET = 'test-raw-data-bucket'
+#: A raw object of each place, named on the wire relative to the place's root (``ws/{ws}/`` in a workspace): A's and
+#: the deployment's under the same name (a request without the header names the deployment's own), B's carrying
+#: ``B_MARK``.
+_RAW_A, _RAW_B, _RAW_UNKNOWN = 'raw/app/2026/june.json', f'raw/app/2026/{B_MARK}.json', 'raw/app/2026/nowhere.json'
+_RAW_IDS = {'A': {'key': _RAW_A}, 'B': {'key': _RAW_B}, UNKNOWN: {'key': _RAW_UNKNOWN}}
+#: Without the header the deployment's raw bucket and feedback, its ``admins``', never a workspace's (ResolvedRoutes).
+_DEPLOYMENT_EXPLORER = ("the deployment as before: the bucket's own objects (never ws/) and its feedback, no "
+                        "workspace's (ResolvedRoutes)")
+#: Each place keeps a raw copy of the ``app`` source (allow), so a raw object may be created in each.
+_EXPLORER_PROFILES = [{'id': 'app', 'pii': 'allow'}]
+
+
+def _seed_explorer(s3: Any, feedback: Any) -> None:
+    """Every place's raw object and export, and its review (the deployment's under A's id)."""
+    for root, key, mark in ((f'ws/{WS_A}/', _RAW_A, A_MARK), (f'ws/{WS_B}/', _RAW_B, B_MARK),
+                            ('', _RAW_A, 'before_workspaces')):
+        s3.put_object(Bucket=_EXPLORER_BUCKET, Key=f'{root}{key}',
+                      Body=json.dumps({'title': f'{mark} trail shoes', 'text': f'{mark} review'}).encode())
+        s3.put_object(Bucket=_EXPLORER_BUCKET, Key=f'{root}exports/{mark}.csv', Body=f'{mark} export'.encode())
+    feedback.put_item(Item=_review('', FEEDBACK_A, 'before_workspaces review'))
+    feedback.put_item(Item=_review(f'WS#{WS_A}#', FEEDBACK_A, f'{A_MARK} parcel came late'))
+    feedback.put_item(Item=_review(f'WS#{WS_B}#', FEEDBACK_B, f'{B_MARK} chain slipped'))
+
+
+@contextmanager
+def data_explorer_world(lambda_context: Any) -> Generator[World]:
+    """The Data Explorer Lambda over two seeded workspaces (their admins only, ``require_request_admin``): a moto raw
+    bucket holding A's, B's and the deployment's objects and exports (in ``table_snapshot``; a feedback edit's kept
+    version lands there too), each place's review, the processing queue as a double (``queue``: each message's
+    body, decoded, as its second argument)."""
+    from moto_helpers import feedback_by_id_table
+
+    import data_explorer_handler as h
+    from shared.test.source_profile_fixtures import seeded_source_profiles
+    from shared.workspace_request import RequestWorkspace
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        workspaces = boto3.resource('dynamodb', region_name='us-east-1').Table('workspaces')
+        feedback, aggregates = feedback_by_id_table(), pk_sk_table('aggregates')
+        s3 = boto3.client('s3', region_name='us-east-1')
+        s3.create_bucket(Bucket=_EXPLORER_BUCKET)
+        _seed_explorer(s3, feedback)
+        queue = MagicMock(name='queue')
+        sqs = MagicMock(name='sqs')
+        sqs.send_message.side_effect = lambda QueueUrl, MessageBody: queue(QueueUrl, json.loads(MessageBody))
+        resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: False)
+        for target, value in (('s3_client', s3), ('sqs_client', sqs), ('PROCESSING_QUEUE_URL', 'q'),
+                              ('dynamodb', boto3.resource('dynamodb', region_name='us-east-1')),
+                              ('FEEDBACK_TABLE', 'feedback')):
+            stack.enter_context(patch.object(h, target, value))
+        stack.enter_context(patch.object(h._request, 'workspace', resolver))
+        stack.enter_context(patch.dict('os.environ', {'RAW_DATA_BUCKET': _EXPLORER_BUCKET}))
+        stack.enter_context(seeded_source_profiles(_EXPLORER_PROFILES, {WS_A: _EXPLORER_PROFILES,
+                                                                        WS_B: _EXPLORER_PROFILES}))
+        yield World(call=_caller(h, lambda_context, aggregates=aggregates),
+                    doubles={'cognito': cognito, 'queue': queue}, deployment_mark='before_workspaces')
+
+
 # ── voc-scrapers-api (lambda/api/scrapers_handler.py): a workspace's scrapers, their runs, the URL assist ──
 
 #: A scraper of each workspace (its config row ``WS#{ws}#PLUGIN_CONFIG`` / ``webscraper``) and the deployment's copy of
@@ -1502,6 +1565,7 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'feedback_form_handler.py': feedback_forms_world,
     'manual_import_handler.py': manual_import_world,
     's3_import_handler.py': s3_import_world,
+    'data_explorer_handler.py': data_explorer_world,
     'scrapers_handler.py': scrapers_world,
     'integrations_handler.py': integrations_world,
     'metrics_handler.py': metrics_reads_world,
@@ -2022,6 +2086,29 @@ CASES: dict[tuple[str, str], RouteCase] = {
         without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
     ('s3_import_handler.py', 'GET /s3-import/reprocess/<run_id>'): RouteCase(
         ids=_S3_RUN_IDS, without_a_workspace=_DEPLOYMENT_FILES, deployment_admins_without_a_workspace=True),
+    # The Data Explorer (``ResolvedRoutes.middleware`` before every route, ``require_request_admin`` first in each):
+    # A's admins browse, preview and create A's objects only (the bucket's ``ws/{A}/…``, named relative to it) and
+    # edit A's reviews only; without the header the deployment's, its ``admins``', as before, never ``ws/``.
+    ('data_explorer_handler.py', 'GET /data-explorer/buckets'): RouteCase(
+        no_ids='the bucket catalogue is the same in every place: check 1',
+        without_a_workspace=_DEPLOYMENT_EXPLORER, deployment_admins_without_a_workspace=True),
+    ('data_explorer_handler.py', 'GET /data-explorer/s3'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's objects; A lists its own)", query={'prefix': 'raw/app/2026'},
+        literals={'raw/app/2026': 'a folder path relative to the place, the same words in every place'},
+        without_a_workspace=_DEPLOYMENT_EXPLORER, deployment_admins_without_a_workspace=True),
+    ('data_explorer_handler.py', 'GET /data-explorer/s3/preview'): RouteCase(
+        ids=_RAW_IDS, query={'key': '{key}'}, without_a_workspace=_DEPLOYMENT_EXPLORER,
+        deployment_admins_without_a_workspace=True),
+    ('data_explorer_handler.py', 'PUT /data-explorer/s3'): RouteCase(
+        no_ids="the object is new in A's own raw tier, the workspace is the header: check 1",
+        body={'key': 'raw/app/2026/july.json', 'content': {'text': 'Great trail shoes'}, 'sync_to_dynamo': True},
+        literals={'raw/app/2026/july.json': 'the name of the file the admin creates, relative to the place',
+                  'Great trail shoes': 'its text'},
+        payload_names_a='queue', without_a_workspace=_DEPLOYMENT_EXPLORER, deployment_admins_without_a_workspace=True),
+    ('data_explorer_handler.py', 'PUT /data-explorer/feedback'): RouteCase(
+        ids=_FEEDBACK_IDS, body={'feedback_id': '{feedback_id}', 'data': {'urgency': 'high'}},
+        literals={'high': 'an urgency value, the same in every place'},
+        without_a_workspace=_DEPLOYMENT_EXPLORER, deployment_admins_without_a_workspace=True),
     # The scrapers (``ResolvedRoutes.middleware`` before every route): any member reads A's scrapers, connectors,
     # learned methods and runs; A's admins save, delete and run A's scrapers; without the header the deployment's.
     **{('scrapers_handler.py', f'GET /scrapers{tail}'): RouteCase(

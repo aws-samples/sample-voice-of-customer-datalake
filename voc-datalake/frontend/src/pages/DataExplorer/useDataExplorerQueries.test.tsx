@@ -6,11 +6,18 @@
  * calls `/feedback/search`, whose `total` counts every match in the window.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { createTestQueryClient } from '@test/query-client'
+import { createQueryWrapper, createTestQueryClient } from '@test/query-client'
+import { JUNIPER } from '@test/workspaceFixtures'
 import { useConfigStore } from '../../store/configStore'
+import { ApiError } from '../../lib/errors'
+import { setCurrentWorkspace, type CurrentWorkspace } from '../../workspace/currentWorkspace'
+import { workspacesApi, type ServerWorkspace } from '../../api/workspacesApi'
+
+/** The workspace as `GET /me/workspaces/current` serves it, with the role the server applies there. */
+const served = (workspace: CurrentWorkspace): ServerWorkspace => ({ ...workspace, trial: null, playbook: null })
 
 const apiMocks = vi.hoisted(() => ({
   getFeedback: vi.fn(),
@@ -35,6 +42,28 @@ const item = (id: string) => ({ feedback_id: id, original_text: `checkout ${id}`
 
 function render(search: string) {
   return renderHook(() => useDataExplorerQueries('dynamodb-processed', 'raw-data', [], '', search), { wrapper })
+}
+
+type ExplorerResult = ReturnType<typeof render>['result']
+
+/** Runs *check* on the S3 tab's queries inside JUNIPER (a fresh query client), then leaves the workspace and
+ * restores the spies, whatever the check did. */
+async function inJuniper(check: (result: ExplorerResult) => Promise<void>) {
+  act(() => setCurrentWorkspace(JUNIPER))
+  try {
+    const { result } = renderHook(() => useDataExplorerQueries('s3-raw', 'raw-data', [], '', ''), { wrapper: createQueryWrapper() })
+    await check(result)
+  } finally {
+    act(() => setCurrentWorkspace(null))
+    vi.restoreAllMocks()
+  }
+}
+
+/** Gives the queries a moment to fire, then holds that neither the listing nor the buckets were asked for. */
+async function expectNothingAsked() {
+  await new Promise((resolve) => { setTimeout(resolve, 20) })
+  expect(apiMocks.getDataExplorerS3).not.toHaveBeenCalled()
+  expect(apiMocks.getDataExplorerBuckets).not.toHaveBeenCalled()
 }
 
 beforeEach(() => {
@@ -112,5 +141,52 @@ describe('processed feedback paging', () => {
 
     await waitFor(() => expect(apiMocks.getDataExplorerS3).toHaveBeenCalledWith('', 'raw-data'))
     expect(apiMocks.getSources).not.toHaveBeenCalled()
+  })
+})
+
+// Inside a workspace every /data-explorer/* route is for its admins only (lambda/api/data_explorer_handler.py).
+describe('who may read the explorer here', () => {
+  it('reports a 403 from the API as forbidden, not as a failed listing alone', async () => {
+    apiMocks.getDataExplorerS3.mockRejectedValue(new ApiError(403, 'Workspace admin access required'))
+    const { result } = renderHook(() => useDataExplorerQueries('s3-raw', 'raw-data', [], '', ''), { wrapper })
+
+    await waitFor(() => expect(result.current.forbidden).toBe(true))
+  })
+
+  it('is not forbidden on any other failure', async () => {
+    apiMocks.getDataExplorerS3.mockRejectedValue(new ApiError(500))
+    const { result } = renderHook(() => useDataExplorerQueries('s3-raw', 'raw-data', [], '', ''), { wrapper })
+
+    await waitFor(() => expect(result.current.s3Failure.loadFailed).toBe(true))
+    expect(result.current.forbidden).toBe(false)
+  })
+
+  it("asks nothing of the API inside a workspace the caller is not an admin of (its admins only: a 403)", async () => {
+    vi.spyOn(workspacesApi, 'current').mockResolvedValue(served(JUNIPER))
+    await inJuniper(async (result) => {
+      await waitFor(() => expect(result.current.forbidden).toBe(true))
+      expect(result.current.roleLoading).toBe(false)
+      await expectNothingAsked()
+    })
+  })
+
+  it('asks nothing and refuses nothing until the server says the role it applies in the workspace', async () => {
+    vi.spyOn(workspacesApi, 'current').mockReturnValue(new Promise<ServerWorkspace>(() => {}))
+    await inJuniper(async (result) => {
+      expect(result.current.roleLoading).toBe(true)
+      expect(result.current.forbidden).toBe(false)
+      await expectNothingAsked()
+    })
+  })
+
+  it("reads the explorer for a platform admin whom the membership list calls an editor but the server an admin", async () => {
+    vi.spyOn(workspacesApi, 'current').mockResolvedValue(served({ ...JUNIPER, role: 'admin' }))
+    apiMocks.getDataExplorerS3.mockResolvedValue({ objects: [], prefix: '' })
+    apiMocks.getDataExplorerBuckets.mockResolvedValue({ buckets: [] })
+    await inJuniper(async (result) => {
+      await waitFor(() => expect(apiMocks.getDataExplorerS3).toHaveBeenCalledWith('', 'raw-data'))
+      expect(result.current.forbidden).toBe(false)
+      expect(result.current.roleLoading).toBe(false)
+    })
   })
 })

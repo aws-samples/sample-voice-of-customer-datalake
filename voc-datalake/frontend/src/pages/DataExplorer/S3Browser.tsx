@@ -15,6 +15,8 @@ import type { S3ObjectSummary } from './dataExplorerSchema'
 import { RowAction } from './RowAction'
 import { TruncatedText } from '../../components/Tooltip/TruncatedText'
 import { Tooltip } from '../../components/Tooltip/Tooltip'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { canEditExisting, explorerPlace } from './writablePlace'
 
 interface S3Object {
   key: string
@@ -61,15 +63,6 @@ function objectIcon(obj: Readonly<{ isFolder: boolean; key: string }>): LucideIc
 function isEditableFile(filename: string): boolean {
   const ext = extensionOf(filename)
   return ![...IMAGE_EXTENSIONS, 'pdf'].includes(ext)
-}
-
-/**
- * Raw ingested data is immutable: the API refuses to overwrite an existing
- * object under `raw/` (409), so the browser never offers to edit one. New files
- * can still be created there (see `openS3Creator`).
- */
-function isImmutableRawKey(fullKey: string): boolean {
-  return fullKey.startsWith('raw/')
 }
 
 function Crumb({ label, isCurrent, onClick }: Readonly<{ label: string; isCurrent: boolean; onClick: () => void }>) {
@@ -194,6 +187,7 @@ function RowText({ obj, folderLabel }: Readonly<{ obj: S3Object; folderLabel: (k
 
 function S3ObjectRow({ obj, folderLabel, onNavigateToFolder, onView, onEdit, onDownload }: S3ObjectRowProps) {
   const { t } = useTranslation('dataExplorer')
+  const place = explorerPlace(useCurrentWorkspace())
   const fullKey = obj.fullKey ?? obj.key
 
   // The row's primary action is a real <button>: it was a clickable <div>, which
@@ -216,7 +210,8 @@ function S3ObjectRow({ obj, folderLabel, onNavigateToFolder, onView, onEdit, onD
         <div className="flex items-center flex-shrink-0">
           <RowAction icon={Eye} label={t('s3Browser.view')} onClick={() => onView(fullKey)} className="hover:text-accent-text" />
           <RowAction icon={Download} label={t('s3Browser.download')} onClick={() => onDownload(fullKey, obj.key)} className="hover:text-accent-text" />
-          {isEditableFile(obj.key) && !isImmutableRawKey(fullKey) && (
+          {/* Never over a raw object (write-once, 409), nor where the API refuses a write: writablePlace.ts. */}
+          {isEditableFile(obj.key) && canEditExisting(fullKey, place) && (
             <RowAction icon={Pencil} label={t('s3Browser.edit')} onClick={() => onEdit(fullKey)} className="hover:text-accent-text" />
           )}
         </div>

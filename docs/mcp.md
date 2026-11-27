@@ -219,7 +219,8 @@ MCP call never sees an archived board.
 | `engineering_run_request` | write + admin-minted | `POST /agents/engineering/requests` (agents) `{agent_id, issue? \| prd?, note?}`: a request for a Run now that waits for an administrator's confirm in the app; without `agent_id`, `GET /agents/engineering/requests/automations` |
 
 **Not tools, and why.** Every import route (`/scrapers/manual/*` paste / CSV / JSON, `/s3-import/*`) is admin-only
-(the handlers' `admins_only` middleware, #242: importing writes customer data), and an MCP token is never admin, so
+(each route's first statement is `ResolvedRoutes.require_request_admin`, the deployment's `admins` group or the
+caller's admin role in the request's workspace, #242: importing writes customer data), and an MCP token is never admin, so
 there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes, and a
 board request's status. Of an engineering run (only with `-c engineeringAgents=true`), the five `engineering_` tools
 reach the runs list, its overview, its retrospective, its steering and a request for a Run now

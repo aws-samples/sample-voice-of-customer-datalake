@@ -406,6 +406,28 @@ describe('the S3 import calls follow the scope they are given (7.86.00)', () => 
   })
 })
 
+describe("the Data Explorer calls act in the app's workspace (lambda/api/data_explorer_handler.py)", () => {
+  // The API resolves X-Workspace-Id on every /data-explorer/* route: inside a workspace its own objects (keys relative
+  // to its root) and its own feedback, for its admins; without the header the deployment's. No call may opt out.
+  afterEach(() => setCurrentWorkspace(null))
+
+  const DATA_EXPLORER_CALLS: ReadonlyArray<readonly [string, () => Promise<unknown>]> = [
+    ['list the buckets', () => api.getDataExplorerBuckets()],
+    ['list a folder', () => api.getDataExplorerS3('raw/', 'raw-data')],
+    ['preview a file', () => api.getDataExplorerS3Preview('raw/a.json', 'raw-data')],
+    ['save a file', () => api.saveDataExplorerS3('raw/a.json', '{}', false, 'raw-data')],
+    ['edit a processed record', () => api.saveDataExplorerFeedback('fb-1', { urgency: 'high' })],
+  ]
+
+  it.each(DATA_EXPLORER_CALLS)('%s names the current workspace', async (_name, call) => {
+    expect(await workspaceSent(call)).toBe(ACME.id)
+  })
+
+  it.each(DATA_EXPLORER_CALLS)('%s names none outside every workspace', async (_name, call) => {
+    expect(await workspaceSent(call, null)).toBeUndefined()
+  })
+})
+
 describe("the agents and workflows calls name no workspace, inside one too (7.80.00)", () => {
   // The agents API acts in the workspace a request names since 7.80.00 (docs/multi-workspace.md 3g3-a), but the web
   // app keeps the deployment's agents and workflows until the workspace Agents page ships (3g3-ui-agents): every call

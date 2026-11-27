@@ -17,6 +17,56 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.90.00] - 2026-11-27
+
+Multi-workspace: the Data Explorer works per workspace, and the deployment's no longer reaches a workspace's
+objects. It ignored `X-Workspace-Id`: a deployment admin could browse and preview every workspace's objects under
+`ws/` (exports included), and a record edit inside a workspace looked the item up in the deployment's partitions
+([docs/data-lake-structure.md](docs/data-lake-structure.md#data-explorer)).
+
+### Added
+
+- The Data Explorer's routes (`/data-explorer/*`) resolve `X-Workspace-Id` before anything (400 for an empty header,
+  the one 404 for a workspace the caller is not in); in a workspace they are its admins' (an editor or a viewer 403)
+  and act on its own objects, `ws/{ws}/…`, with every prefix and key on the wire relative to that root. A write goes
+  under `raw/` only (append-only, the workspace's source profiles), a reprocess is queued for the workspace, and a
+  record edit updates the workspace's own item with its categories and PII profile, keeping the old version under
+  `ws/{ws}/silver/` and bumping the workspace's data version.
+- The dev mock serves the Data Explorer per workspace as the API does, and archives a manual import, JSON upload or
+  CSV upload made in a workspace under that workspace's `ws/{ws}/raw/` (the store its Data Explorer reads).
+- The cross-workspace suite covers the five routes (taken off the pending list).
+
+### Changed
+
+- Inside a workspace the web app's Data Explorer shows the workspace's own objects and reviews (before, the
+  deployment's: the header was ignored), or, for a caller the server does not take as its admin there, a "for this
+  workspace's admins" notice (nine languages) with nothing sent; until the server says the role it applies there
+  (`GET /me/workspaces/current`), the page shows its loading state, so a platform admin who is an editor in the
+  workspace is not shown the notice first.
+- On the deployment path Edit is no longer offered under `prototypes/`, `silver/` and `engineering/` (the API refuses
+  those writes), and New File there starts under `raw/`; in a workspace no existing object offers Edit (only `raw/`
+  takes a write there, and it is write-once) and New File starts under `raw/` outside it.
+- A deployment key or prefix with an empty, `.` or `..` segment (or a control character, or a key that is not text)
+  is now the one 400 (`The path must be folder and file names…`), checked before the `ws/` rule (a listing's prefix
+  keeps its outer slashes trimmed first, as before): `raw/../ws/…`, `./ws/…` and `/ws/…` keys no longer pass.
+
+### Fixed
+
+- Without the header the Data Explorer never reaches a workspace: the root lists no `ws/` folder, and any prefix or
+  key whose first segment is `ws` is one 400 (a deployment admin could list, preview and presign every workspace's
+  objects, exports included).
+- A raw object created in the Data Explorer is checked against the PII policy of the source its content names
+  (`source_platform`) as well as the key's (`raw/<source>/…`), on both paths, and the stricter refuses: a file under
+  `raw/app/…` whose content said a redacting source was stored unredacted as a write-once raw object.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all`). IAM: the Data Explorer role gets the workspace-resolution grants and the
+  workspace data-version bump. No stored data changes. The page stays under Administration, so a workspace admin who
+  is not a deployment admin cannot open it yet.
+- An operator who used the explorer to inspect a workspace's `ws/…` now gets a 400: enter the workspace as a
+  platform admin (audited, decision 2) or be one of its admins. An empty `X-Workspace-Id` is a 400.
+
 ## [7.88.00] - 2026-11-27
 
 Multi-workspace, phase 2: the web app's S3 import works inside a workspace. Since 7.86.00 the API acts in the

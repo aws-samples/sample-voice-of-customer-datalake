@@ -15,13 +15,17 @@ export interface ListingFailure {
 
 const NO_FAILURE: ListingFailure = { loadFailed: false, retrying: false, retry: () => {} }
 
-/** The hook's result; `failure` names each view's listing state (none failed by default). */
+/** The hook's result; `failure` names each view's listing state (none failed by default); `forbidden`, a 403. */
 export function dataExplorerQueriesResult(
   isConfigured = true,
   failure: (view: ExplorerView) => ListingFailure = () => NO_FAILURE,
+  forbidden = false,
+  roleLoading = false,
 ) {
   return {
     isConfigured,
+    forbidden,
+    roleLoading,
     s3Data: { folders: [], files: [] },
     s3Loading: false,
     feedbackData: { items: [], total: 0, isLowerBound: false },

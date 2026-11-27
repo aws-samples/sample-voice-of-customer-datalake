@@ -120,7 +120,7 @@ RESOLVERS: dict[str, str] = {RESOLVER: RESOLVER_MODULE, 'request_workspace': 'sh
 #: every file using the instance is in it and it can go.
 INSTANCE_RESOLVER_FILES = frozenset({'feedback_edit_handler.py', 'feedback_form_handler.py',
                                      'manual_import_handler.py', 's3_import_handler.py', 'scrapers_handler.py',
-                                     'integrations_handler.py', 'metrics_handler.py'})
+                                     'integrations_handler.py', 'metrics_handler.py', 'data_explorer_handler.py'})
 MISSING_HEADER = 'The X-Workspace-Id header is required'
 #: Calls that write: one of them before the resolution means the route may act before it knows the workspace.
 WRITE_CALLS = frozenset({'put_item', 'update_item', 'delete_item', 'transact_write_items', 'batch_writer',

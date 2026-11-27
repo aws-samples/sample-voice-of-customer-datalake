@@ -45,17 +45,19 @@ beforeAll(() => {
 }, SYNTH_TIMEOUT_MS);
 
 describe('cache version bumps are the only aggregates write of read-mostly API roles', () => {
-  it.each(['DataExplorerLambdaRole', 'UsersLambdaRole'])(
-    '%s may UpdateItem only the METRIC#meta partition',
+  it('UsersLambdaRole may UpdateItem only the METRIC#meta partition', () => {
+    expect(updatePartitions(policyStatementsOf(apiTemplate(), 'UsersLambdaRole'), 'Aggregates'))
+      .toStrictEqual([['METRIC#meta']]);
+  });
+
+  // The feedback edits and the Data Explorer's (both paths): a workspace's edit bumps the workspace's own row.
+  it.each(['FeedbackEditLambdaRole', 'DataExplorerLambdaRole'])(
+    '%s may UpdateItem only the METRIC#meta partition and one workspace\'s',
     (role) => {
-      expect(updatePartitions(policyStatementsOf(apiTemplate(), role), 'Aggregates')).toStrictEqual([['METRIC#meta']]);
+      expect(updatePartitions(policyStatementsOf(apiTemplate(), role), 'Aggregates'))
+        .toStrictEqual([['METRIC#meta'], [WORKSPACE_VERSION_PARTITION]]);
     },
   );
-
-  it('FeedbackEditLambdaRole may UpdateItem only the METRIC#meta partition and one workspace\'s', () => {
-    expect(updatePartitions(policyStatementsOf(apiTemplate(), 'FeedbackEditLambdaRole'), 'Aggregates'))
-      .toStrictEqual([['METRIC#meta'], [WORKSPACE_VERSION_PARTITION]]);
-  });
 });
 
 /** A workspace's own Radar settings partition, one id (lambda/shared/radar_keys.py). */

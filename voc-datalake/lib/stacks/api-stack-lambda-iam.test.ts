@@ -572,6 +572,18 @@ describe('the data explorer never deletes customer data', () => {
     expect(lambdaEnv(apiTemplate(), 'data_explorer_handler.lambda_handler').AGGREGATES_TABLE).toBeDefined();
   });
 
+  it('resolves a request\'s workspace: the resolver\'s environment and the live platform-admin check', () => {
+    // lambda/api/data_explorer_handler.py `ResolvedRoutes` (lambda/shared/workspace_request.py): the workspaces table
+    // and the user pool the platform admin's live check reads (lib/utils/workspace-resolution-grants.ts).
+    expect(Object.keys(lambdaEnv(apiTemplate(), 'data_explorer_handler.lambda_handler')))
+      .toStrictEqual(expect.arrayContaining(['WORKSPACES_TABLE', 'USER_POOL_ID']));
+    const cognito = roleStatements(apiTemplate(), ROLE)
+      .filter((s) => s.effect === 'Allow' && s.actions.some((a) => a.startsWith('cognito-idp:')))
+      .flatMap((s) => s.actions)
+      .sort(byCodeUnit);
+    expect(cognito).toStrictEqual(['cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser']);
+  });
+
   it('can keep the Silver version of an edit: a put that covers silver/*, the raw bucket and the app release', () => {
     // lambda/shared/silver_provenance.py writes silver/{source}/{id}/…; the bucket-wide put covers it, and the
     // bucket policy's write-once Deny applies (the writer sends If-None-Match).

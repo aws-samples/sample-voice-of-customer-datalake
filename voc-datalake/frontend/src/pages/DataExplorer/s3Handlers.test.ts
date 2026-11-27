@@ -31,12 +31,18 @@ describe('openS3Editor', () => {
 
 describe('openS3Creator', () => {
   it.each([
-    [[], 'raw/'],
-    [['raw', 'webscraper'], 'raw/webscraper/'],
-  ])('creates a new JSON file under %j (key prefix %s)', (path, prefix) => {
+    [[], 'deployment', 'raw/'],
+    [['raw', 'webscraper'], 'deployment', 'raw/webscraper/'],
+    [['exports'], 'deployment', 'exports/'],
+    [['silver'], 'deployment', 'raw/'],
+    // A workspace writes only under raw/ (the API's 400 elsewhere): a new file opened elsewhere starts in raw/.
+    [[], 'workspace', 'raw/'],
+    [['raw', 'webscraper'], 'workspace', 'raw/webscraper/'],
+    [['exports'], 'workspace', 'raw/'],
+  ] as const)('creates a new JSON file under %j in the %s (key prefix %s)', (path, place, prefix) => {
     const setEditModal = vi.fn<(state: EditModalState) => void>()
 
-    openS3Creator(path, setEditModal)
+    openS3Creator(path, place, setEditModal)
 
     const state = setEditModal.mock.calls[0]?.[0]
     expect(state).toMatchObject({ isOpen: true, mode: 'create', type: 's3' })

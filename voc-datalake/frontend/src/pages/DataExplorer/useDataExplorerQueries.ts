@@ -13,6 +13,10 @@ import type { DateRangeParams } from '../../api/client'
 import type { FeedbackItem } from '../../api/types'
 import { metricsKeys } from '../../api/queryKeys'
 import { FEEDBACK_SEARCH_MIN_CHARS } from '../../api/feedbackSearch'
+import { apiErrorStatus, HTTP_FORBIDDEN } from '../../api/apiErrorStatus'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { useServerRole } from '../../workspace/useMyWorkspaces'
+import { explorerAccess } from './writablePlace'
 
 type ViewMode = 's3-raw' | 'dynamodb-processed'
 
@@ -103,19 +107,26 @@ export function useDataExplorerQueries(
   const searchText = debounced.length >= FEEDBACK_SEARCH_MIN_CHARS ? debounced : ''
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
+  // Inside a workspace every /data-explorer/* route is for its admins only (403): a member who is not one is not
+  // sent to be refused, and nothing is sent until the server says the role it applies there (`useServerRole`).
+  // The API stays the boundary: its 403 to anyone else reads the same (`forbidden`).
+  const workspace = useCurrentWorkspace()
+  const access = explorerAccess(workspace, useServerRole(workspace))
+  const refused = access === 'refused'
+  const canRead = isConfigured && access === 'open'
 
   const bucketsQuery = useQuery({
     queryKey: ['data-explorer-buckets'],
     queryFn: () => api.getDataExplorerBuckets(),
     select: selectBuckets,
-    enabled: isConfigured,
+    enabled: canRead,
   })
 
   const s3Query = useQuery({
     queryKey: dataExplorerKeys.s3(selectedBucket, s3Path.join('/')),
     queryFn: () => api.getDataExplorerS3(s3Path.join('/'), selectedBucket),
     select: normalizeS3Listing,
-    enabled: isConfigured && viewMode === 's3-raw',
+    enabled: canRead && viewMode === 's3-raw',
   })
 
   const isProcessed = viewMode === 'dynamodb-processed'
@@ -124,7 +135,7 @@ export function useDataExplorerQueries(
     queryFn: ({ pageParam }) => readProcessedPage(dateParams, sourceFilter || undefined, searchText, pageParam),
     initialPageParam: FIRST_PAGE,
     getNextPageParam: (last) => last.next,
-    enabled: isConfigured && isProcessed,
+    enabled: canRead && isProcessed,
   })
 
   // The source filter only exists on the processed tab: the S3 tab is not
@@ -132,7 +143,7 @@ export function useDataExplorerQueries(
   const sourcesQuery = useQuery({
     queryKey: metricsKeys.sources(dateParams),
     queryFn: () => api.getSources(dateParams),
-    enabled: isConfigured && isProcessed,
+    enabled: canRead && isProcessed,
   })
 
   const refetch = () => {
@@ -142,6 +153,10 @@ export function useDataExplorerQueries(
 
   return {
     isConfigured,
+    /** Not this caller's here: a workspace they are not an admin of, or the API's 403 to a read. */
+    forbidden: refused || [bucketsQuery.error, s3Query.error].some((error) => apiErrorStatus(error) === HTTP_FORBIDDEN),
+    /** In a workspace, the role the server applies there not known yet: nothing is read, nothing refused. */
+    roleLoading: access === 'pending',
     bucketsData: bucketsQuery.data,
     s3Data: s3Query.data,
     s3Loading: s3Query.isLoading,

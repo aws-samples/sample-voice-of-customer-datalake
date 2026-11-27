@@ -64,6 +64,10 @@
     "label": "Vue des données"
   },
   "title": "Explorateur de données",
+  "workspaceAdminsOnly": {
+    "title": "Réservé aux administrateurs de cet espace de travail",
+    "body": "Seuls les administrateurs de {{name}} peuvent y utiliser l'Explorateur de données. Demandez à l'un d'eux de vous nommer administrateur de l'espace de travail, ou ouvrez l'Explorateur de données hors de l'espace de travail pour voir les données du déploiement."
+  },
   "details": {
     "title": "Titre",
     "text": "Avis",

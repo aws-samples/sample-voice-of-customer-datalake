@@ -29,6 +29,10 @@
  *    starts empty, and an upload asks for its URL with acme's `X-Workspace-Id` and lists the file; a second workspace
  *    the spec creates (acme-depot, the caller its admin) lists none of it; the platform admin's deployment view inside
  *    acme (`?scope=deployment`) reads without the header and lists the deployment's seeded files, not acme's.
+ * 10. The Data Explorer follows its place too (lambda/api/data_explorer_handler.py): in acme (`/workspace/acme/data-explorer`)
+ *    every listing carries acme's `X-Workspace-Id` and its root holds only acme's own raw/ (the mock's one fictional
+ *    review, keyed relative to acme's root); neither the deployment's listing nor step 9's workspace has it; the
+ *    deployment's root lists no `ws/` and a `ws`-first prefix or key is a 400; in acme a write outside raw/ is a 400.
  *
  * MOCK ONLY: on a deployment these would create a workspace and change real memberships (the deployment-side
  * lifecycle, which deletes what it made, is workspace-lifecycle.spec.ts). The mock's state lives in its process: the
@@ -414,7 +418,71 @@ test.describe('workspace administration', () => {
       expect(deploymentReads.every((request) => request.headers()['x-workspace-id'] === undefined)).toBe(true)
     })
   })
+
+  test("the Data Explorer in a workspace lists the workspace's own objects; the deployment's never reaches ws/", async ({ page }, testInfo) => {
+    await assertStep(page, roleOf(testInfo), 'workspace-admin-10-data-explorer', async () => {
+      const acmeId = await workspaceId('acme')
+      expect(acmeId).not.toBe('')
+      const listings = s3ImportRequests(page, 'GET', '/data-explorer/s3')
+
+      // In acme: its own root (raw/ only, the mock's one fictional review), read with acme's X-Workspace-Id.
+      await page.goto(site('/workspace/acme/data-explorer'), { waitUntil: 'domcontentloaded' })
+      await expect(page.getByRole('heading', { name: 'Data Explorer', level: 1 })).toBeVisible()
+      await page.getByRole('button', { name: 'Raw', exact: true }).click()
+      await expect(page.getByRole('button', { name: 'Web scraper', exact: true })).toBeVisible()
+      // The deployment's other raw sources (mock-sources.js seedRawObjects) are not acme's.
+      expect((await objectKeys('raw', acmeId))).toStrictEqual(['webscraper'])
+      expect(listings.length).toBeGreaterThan(0)
+      expect(listings.every((request) => request.headers()['x-workspace-id'] === acmeId)).toBe(true)
+
+      // acme's review, under its relative key, and nowhere in the deployment's listing of the same folder.
+      const acmeFiles = await fileKeysUnder('raw/webscraper', acmeId)
+      expect(acmeFiles).toStrictEqual([expect.stringMatching(/^raw\/webscraper\/\d{4}\/\d{2}\/\d{2}\/rev_acme_1\.json$/)])
+      expect(await fileKeysUnder('raw/webscraper', null)).not.toContain(acmeFiles[0])
+      // The other workspace (step 9's) has its own, never acme's.
+      const depotId = await workspaceId(DEPOT_SLUG)
+      expect(await fileKeysUnder('raw/webscraper', depotId)).not.toContain(acmeFiles[0])
+
+      // The deployment (no header): no ws/ at its root, and any ws-first prefix or key is a 400.
+      expect(await objectKeys('', null)).not.toContain('ws')
+      expect((await apiCall('admin', 'GET', `/data-explorer/s3?prefix=${encodeURIComponent(`ws/${acmeId}/raw`)}`, undefined,
+        { expect: [400] })).status).toBe(400)
+      expect((await apiCall('admin', 'GET',
+        `/data-explorer/s3/preview?key=${encodeURIComponent(`ws/${acmeId}/${acmeFiles[0] ?? ''}`)}`, undefined,
+        { expect: [400] })).status).toBe(400)
+
+      // In a workspace only raw/ is written: elsewhere a 400 that says so.
+      const outsideRaw = await apiCall('admin', 'PUT', '/data-explorer/s3', { key: 'exports/note.json', content: '{}' },
+        { workspace: acmeId, expect: [400] })
+      expect(outsideRaw.status).toBe(400)
+      expect(JSON.stringify(outsideRaw.body)).toContain('creates files under raw/ only')
+    })
+  })
 })
+
+/** The names (folders and files) `GET /data-explorer/s3` lists under `prefix`, in the workspace `workspace` (null: the deployment's). */
+async function objectKeys(prefix: string, workspace: string | null): Promise<string[]> {
+  const { status, body } = await apiCall('admin', 'GET', `/data-explorer/s3?prefix=${encodeURIComponent(prefix)}`, undefined,
+    workspace === null ? {} : { workspace })
+  expect(status).toBe(200)
+  const objects = isRecord(body) && Array.isArray(body['objects']) ? body['objects'] : []
+  return objects.flatMap((object: unknown) => (isRecord(object) && typeof object['key'] === 'string' ? [object['key']] : []))
+}
+
+/** Every file key (`fullKey`) under `prefix`, walking its folders, in `workspace` (null: the deployment's). */
+async function fileKeysUnder(prefix: string, workspace: string | null): Promise<string[]> {
+  const { status, body } = await apiCall('admin', 'GET', `/data-explorer/s3?prefix=${encodeURIComponent(prefix)}`, undefined,
+    workspace === null ? {} : { workspace })
+  expect(status).toBe(200)
+  const objects: unknown[] = isRecord(body) && Array.isArray(body['objects']) ? body['objects'] : []
+  const files: string[] = []
+  for (const object of objects) {
+    if (!isRecord(object) || typeof object['key'] !== 'string') continue
+    if (object['isFolder'] === true) files.push(...await fileKeysUnder(`${prefix}/${object['key']}`, workspace))
+    else if (typeof object['fullKey'] === 'string') files.push(object['fullKey'])
+  }
+  return files
+}
 
 /** The stored brand, of the workspace `id` (its X-Workspace-Id) or of the deployment (`null`: no header). */
 async function storedBrand(page: Page, id: string | null): Promise<Record<string, unknown>> {

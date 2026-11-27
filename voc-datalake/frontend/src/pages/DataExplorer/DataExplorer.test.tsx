@@ -1,16 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { configStoreModule } from '../Categories/categories-fixtures'
 import enCommon from '../../../public/locales/en/common.json'
+import { ACME, JUNIPER } from '@test/workspaceFixtures'
+import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
 
 // Mock hooks. `isConfigured` is the hook's verdict on the API endpoint; a test flips it.
-// `failed` names the view whose listing read failed with nothing cached.
+// `failed` names the view whose listing read failed with nothing cached; `forbidden`, the hook's verdict that the
+// caller is not an admin here (the server's role there, or the API's 403); `roleLoading`, that role not known yet.
 const queriesState = vi.hoisted(() => {
-  const state: { isConfigured: boolean; failed: 's3' | 'feedback' | null; retry: () => void } = {
-    isConfigured: true, failed: null, retry: () => {},
+  const state: {
+    isConfigured: boolean; failed: 's3' | 'feedback' | null; forbidden: boolean; roleLoading: boolean; retry: () => void
+  } = {
+    isConfigured: true, failed: null, forbidden: false, roleLoading: false, retry: () => {},
   }
   return state
 })
@@ -19,7 +24,10 @@ const failure = (view: 's3' | 'feedback') => ({
 })
 vi.mock('./useDataExplorerQueries', async () => {
   const { dataExplorerQueriesResult } = await import('./data-explorer-fixtures')
-  return { useDataExplorerQueries: () => dataExplorerQueriesResult(queriesState.isConfigured, failure) }
+  return {
+    useDataExplorerQueries: () => dataExplorerQueriesResult(
+      queriesState.isConfigured, failure, queriesState.forbidden, queriesState.roleLoading),
+  }
 })
 
 vi.mock('./useDataExplorerMutations', () => ({
@@ -188,5 +196,76 @@ describe('DataExplorer - the tab is in the URL', () => {
 
     await user.click(screen.getByRole('tab', { name: /processed feedback/i }))
     expect(screen.getByTestId('data-quality-section')).toBeInTheDocument()
+  })
+})
+
+// A deployment admin inside a workspace they are not an admin of: the API answers 403 on every /data-explorer/*
+// route there (its admins only). The page says so, rather than an empty or broken listing.
+describe('DataExplorer - inside a workspace, its admins only', () => {
+  const ONLY_ADMINS = /Only the admins of (Acme Outfitters|Juniper Trail Co\.) can use the Data Explorer in it/
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    queriesState.isConfigured = true
+    queriesState.failed = null
+    queriesState.forbidden = false
+    queriesState.roleLoading = false
+  })
+  afterEach(() => { act(() => setCurrentWorkspace(null)) })
+
+  it("says, under the page's title, that only the workspace's admins can use it, to an editor", () => {
+    act(() => setCurrentWorkspace(JUNIPER))
+    queriesState.forbidden = true
+    renderDataExplorer()
+
+    expect(screen.getByRole('heading', { name: 'Data Explorer', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent(ONLY_ADMINS)
+  })
+
+  it('offers an editor no listing, tab or new file', () => {
+    act(() => setCurrentWorkspace(JUNIPER))
+    queriesState.forbidden = true
+    renderDataExplorer()
+
+    expect(screen.queryByTestId('s3-browser')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /new file/i })).not.toBeInTheDocument()
+  })
+
+  it('says the same when the API refuses (403) someone the app still takes for an admin', () => {
+    act(() => setCurrentWorkspace(ACME))
+    queriesState.forbidden = true
+    renderDataExplorer()
+
+    expect(screen.getByRole('note')).toHaveTextContent(ONLY_ADMINS)
+    expect(screen.queryByTestId('s3-browser')).not.toBeInTheDocument()
+  })
+
+  it('shows the loading state, never the notice, until the server says the role it applies here', () => {
+    act(() => setCurrentWorkspace(JUNIPER))
+    queriesState.roleLoading = true
+    renderDataExplorer()
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading')
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('s3-browser')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+
+  it('shows the explorer to a platform admin the membership list calls an editor once the server says admin', () => {
+    // JUNIPER's membership role is editor; the page reads the hook's verdict (the server's role there), not it.
+    act(() => setCurrentWorkspace(JUNIPER))
+    renderDataExplorer()
+
+    expect(screen.getByTestId('s3-browser')).toBeInTheDocument()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+
+  it("shows the explorer to the workspace's admins", () => {
+    act(() => setCurrentWorkspace(ACME))
+    renderDataExplorer()
+
+    expect(screen.getByTestId('s3-browser')).toBeInTheDocument()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 })

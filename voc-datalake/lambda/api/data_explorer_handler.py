@@ -13,15 +13,42 @@ writes back to the raw object it came from.
 
 ADMIN ONLY, every route: raw S3 objects cannot be filtered by the per-user category
 scope the rest of the API enforces, so the explorer is not a route a restricted
-user may reach at all. Enforced by one resolver middleware, so a new route is
-covered without having to remember the check.
+user may reach at all. Each route's first statement is the two-path gate
+(`_request.require_request_admin()`, shared/workspace_request.py `ResolvedRoutes`).
+
+ON EITHER PATH (docs/multi-workspace.md, "Request flow"): `_request.middleware` resolves `X-Workspace-Id` before
+every route (400 for an empty header, the one 404 for a workspace the caller is not in; a write resolves the role from
+the table).
+
+* Without the header the deployment's `admins` browse and edit the deployment's data, as before, except that nothing
+  reaches a workspace: a prefix or key must be plain names (as in a workspace, below: `INVALID_PATH`; a listing's
+  prefix has its outer slashes trimmed first, as before), then one whose first segment is `ws` (the workspaces'
+  folder) is the one fixed 400 (`WORKSPACES_FOLDER`, structural: it confirms no workspace), and the root listing
+  hides the `ws/` folder.
+* With it, the workspace's admins only (a member admin or an entered platform admin; an editor or a viewer 403, the
+  deployment's `admins` group grants nothing there) act in that workspace. Its objects are the bucket's
+  `ws/{ws}/…` (shared/ws_repo.py `s3_prefix`), and every prefix and key on the wire, a request's and an answer's, is
+  relative to that root (`raw/…`, `exports/…`), so the web app is the same on both paths; a relative path must be
+  plain names (no leading `/`, no empty, `.` or `..` segment, no control character: `INVALID_PATH`). A PUT writes
+  under `raw/` only (`WORKSPACE_READ_ONLY` elsewhere), write-once with its connector, as the deployment's raw tier;
+  the raw-copy check (on both paths the key's source and the content's `source_platform`, the stricter refusing),
+  the reprocess message's PII policy and a feedback edit's fields use the workspace's source profiles; the reprocess message names the workspace (`workspace_payload`, set last) and its raw root; a feedback
+  edit finds, validates (the workspace's categories), writes, keeps (`ws/{ws}/silver/`) and bumps (its data version)
+  in that workspace only.
+
+The root is built from the request's RESOLVED workspace only (`_request.scope()`), never from a header, body or key
+the caller sent. The Lambda's S3 grant stays bucket-wide: the deployment's path needs the root keys, and IAM's `*`
+matches `/`, so no resource pattern could keep a workspace's request from the deployment's keys or another
+workspace's; the isolation is this module's (decision 1's soft isolation, as the S3 import API's).
 
 Dedicated Lambda to avoid 20KB IAM policy limit.
 """
 
 import json
 import os
+import re
 import sys
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Final
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,7 +59,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 if TYPE_CHECKING:
     from mypy_boto3_s3.type_defs import PutObjectRequestTypeDef
 
-from shared.api import admins_only, api_handler, create_api_resolver
+from shared.api import api_handler, create_api_resolver
 from shared.aws import (
     S3_CONDITIONAL_WRITE_CONFLICTS,
     get_dynamodb_resource,
@@ -67,19 +94,24 @@ from shared.feedback_category import (
     validate_target,
 )
 from shared.feedback_field_edits import EDITABLE_FIELDS, FieldEdits, field_edits
-from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
+from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition, item_key
 from shared.indexes import FEEDBACK_BY_ID_INDEX
+from shared.ingest_tables import ScopedUpdates
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
 from shared.raw_object_summary import add_summaries
-from shared.raw_versions import app_connector
+from shared.raw_versions import app_connector, raw_root
 from shared.request_body import json_object_body
 from shared.retention import RAW_PREFIX
+from shared.scoped_query import query_partition
 from shared.silver_provenance import REASON_DATA_EXPLORER_EDIT, SILVER_PREFIX
 from shared.source_policy import apply_source_policy, raw_archive_allowed
 from shared.source_profiles import cached_source_profile_strict
 from shared.tables import get_aggregates_table
 from shared.timestamps import now_iso
+from shared.workspace_request import ResolvedRoutes
+from shared.workspace_routing import workspace_payload
+from shared.ws_repo import WorkspaceScope, has_plain_segments, s3_prefix
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
@@ -111,11 +143,47 @@ FAILED_SAVE = 'Failed to save file'
 DATA_EXPLORER_CONNECTOR = 'data_explorer'
 
 
+# The workspaces' folder of the raw bucket (`ws/{ws}/…`, shared/ws_repo.py `s3_prefix`): never reached deployment-wide.
+WORKSPACE_FOLDER: Final = 'ws'
+#: The one answer deployment-wide to a prefix or key in the workspaces' folder: fixed, it repeats nothing it was sent.
+WORKSPACES_FOLDER: Final = "The ws/ folder holds the workspaces' own data: open the workspace to browse its files"
+#: The one answer in a workspace to a prefix or key that is not plain names (it repeats nothing it was sent).
+INVALID_PATH: Final = 'The path must be folder and file names separated by single slashes'
+#: In a workspace a PUT creates raw objects only: everything else of the workspace is written by its own pipeline.
+WORKSPACE_READ_ONLY: Final = 'In a workspace, Data Explorer creates files under raw/ only; the other folders are read-only'
+_CONTROL_CHARS: Final = re.compile(r'[\x00-\x1f\x7f]')
+
 app = create_api_resolver()
 
+# The request's workspace (shared/workspace_request.py ResolvedRoutes, the S3 import's own), resolved before every
+# route; each route then gates on the admin role on its path (see the module docstring).
+_request = ResolvedRoutes(app)
+app.use(middlewares=[_request.middleware])
 
-# Every data-explorer route is admin-only (403 otherwise). See the module docstring.
-app.use(middlewares=[admins_only])
+
+def _root(scope: WorkspaceScope | None) -> str:
+    """Where the request's objects start: the bucket's root deployment-wide, `ws/{ws}/` in *scope* (the request's
+    resolved workspace, never anything the caller sent)."""
+    return '' if scope is None else s3_prefix(scope)
+
+
+def _check_path(path: object, scope: WorkspaceScope | None) -> str:
+    """*path* as the text it is, else 400 for a prefix or key the request may not name: on both paths one that is not
+    plain names (`INVALID_PATH`: text, no control character, no empty, `.` or `..` segment), relative to the request's
+    root; deployment-wide then one in the workspaces' folder (`WORKSPACES_FOLDER`). *path* is whatever the request held
+    (a JSON body's `key` can be a number, a list or an object). S3 keys are literal, so `raw/../ws/…` would name no
+    workspace's object today: the guard does not rest on that. (A listing's prefix arrives with its outer slashes
+    trimmed, as before.)"""
+    if not isinstance(path, str) or not path or _CONTROL_CHARS.search(path) or not has_plain_segments(path):
+        raise ValidationError(INVALID_PATH)
+    if scope is None and path.split('/', 1)[0] == WORKSPACE_FOLDER:
+        raise ValidationError(WORKSPACES_FOLDER)
+    return path
+
+
+def _relative(bucket_key: str, root: str) -> str:
+    """A bucket key as the wire names it: without the request's root."""
+    return bucket_key[len(root):]
 
 
 def _reject_read_only_prefix(key: str) -> None:
@@ -135,11 +203,12 @@ def _is_raw_key(key: str) -> bool:
     return key.startswith(RAW_PREFIX)
 
 
-def _keyed_bucket_request(request: dict) -> tuple[str, str]:
+def _keyed_bucket_request(request: Mapping[str, Any]) -> tuple[str, object]:
     """`(bucket name, object key)` from a request naming a `bucket` id and a `key`.
 
     The bucket must be one of `AVAILABLE_BUCKETS` and configured (else a 500: the
-    deployment, not the caller, is missing it); the key must be present (else 400).
+    deployment, not the caller, is missing it); the key must be present (else 400),
+    and is returned as the request held it: `_check_path` makes it a path.
     """
     bucket_id = request.get('bucket', 'raw-data')
     key = request.get('key', '')
@@ -158,10 +227,15 @@ def _keyed_bucket_request(request: dict) -> tuple[str, str]:
 @app.get("/data-explorer/s3")
 @tracer.capture_method
 def list_s3_objects():
-    """List objects in an S3 bucket with folder navigation."""
+    """List objects in an S3 bucket with folder navigation (in a workspace, its own root's; see the module docstring)."""
+    _request.require_request_admin()
+    scope = _request.scope()
     params = app.current_event.query_string_parameters or {}
     bucket_id = params.get('bucket', 'raw-data')
     prefix = params.get('prefix', '').strip('/')
+    if prefix:
+        # (the empty prefix is the request's own root: the bucket's, or the workspace's)
+        _check_path(prefix, scope)
 
     # Get bucket name from available buckets
     bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
@@ -172,20 +246,23 @@ def list_s3_objects():
 
     if prefix:
         prefix = f"{prefix}/"
+    root = _root(scope)
 
     try:
         response = s3_client.list_objects_v2(
             Bucket=bucket_name,
-            Prefix=prefix,
+            Prefix=f'{root}{prefix}',
             Delimiter='/',
             MaxKeys=500
         )
 
         objects = []
 
-        # Folders
+        # Folders (deployment-wide, the root's `ws/` is the workspaces' folder: never listed)
         for common_prefix in response.get('CommonPrefixes', []):
             folder_path = common_prefix.get('Prefix', '')
+            if scope is None and not prefix and folder_path == f'{WORKSPACE_FOLDER}/':
+                continue
             folder_name = folder_path.rstrip('/').split('/')[-1]
             objects.append({
                 'key': folder_name,
@@ -196,9 +273,11 @@ def list_s3_objects():
 
         # Files
         for obj in response.get('Contents', []):
-            key = obj.get('Key', '')
-            if key == prefix:
+            bucket_key = obj.get('Key', '')
+            # (every key listed starts with the root it was listed under; the wire names it without that root)
+            if bucket_key == f'{root}{prefix}' or not bucket_key.startswith(root):
                 continue
+            key = _relative(bucket_key, root)
             filename = key.split('/')[-1]
             if filename:
                 last_modified = obj.get('LastModified')
@@ -212,7 +291,7 @@ def list_s3_objects():
 
         objects.sort(key=lambda x: (not x['isFolder'], x['key'].lower()))
         # Raw review files are named after the source's item id: say what each is about.
-        add_summaries(s3_client, bucket_name, objects)
+        add_summaries(s3_client, bucket_name, objects, root=root)
 
         return {
             'objects': objects,
@@ -298,11 +377,15 @@ def preview_s3_file():
 
     For text/JSON files: returns the content directly.
     For binary files (images, PDFs): returns a presigned URL.
+    In a workspace only an object under its root, named relative to it (see the module docstring).
     """
-    bucket_name, key = _keyed_bucket_request(app.current_event.query_string_parameters or {})
+    _request.require_request_admin()
+    scope = _request.scope()
+    bucket_name, requested_key = _keyed_bucket_request(app.current_event.query_string_parameters or {})
+    key = _check_path(requested_key, scope)
 
     try:
-        preview = _object_preview(bucket_name, key)
+        preview = _object_preview(bucket_name, f'{_root(scope)}{key}')
     except s3_client.exceptions.NoSuchKey as e:
         # The get_object path. Kept beside the ClientError clause below rather
         # than folded into it, so the 404 does not rest on botocore's modelling.
@@ -319,11 +402,12 @@ def preview_s3_file():
     except Exception as e:
         logger.exception("Failed to preview S3 file")
         raise ServiceError(FAILED_PREVIEW) from e
-    return preview
+    # The wire's key, relative to the request's root (the presigned URL itself names the object's own key).
+    return {**preview, 'key': key}
 
 
-def _put_object(bucket_name: str, key: str, content: str) -> None:
-    """Write one object; under `raw/` only if no object exists at `key` yet.
+def _put_object(bucket_name: str, key: str, content: str, *, root: str = '') -> None:
+    """Write one object at `root` + `key`; under `raw/` (of the root) only if no object exists there yet.
 
     The check is S3's own conditional write (`IfNoneMatch='*'`), not a HEAD
     followed by a PUT, so two concurrent saves cannot both "create" the object.
@@ -331,7 +415,7 @@ def _put_object(bucket_name: str, key: str, content: str) -> None:
     write_once = _is_raw_key(key)
     request: PutObjectRequestTypeDef = {
         'Bucket': bucket_name,
-        'Key': key,
+        'Key': f'{root}{key}',
         'Body': content.encode('utf-8'),
         'ContentType': 'application/json',
     }
@@ -356,43 +440,79 @@ def _raw_key_source(key: str) -> str | None:
     return parts[1] if len(parts) > 2 and parts[0] == 'raw' and parts[1] else None
 
 
-def _refuse_policy_blocked_archive(key: str) -> None:
-    """A redact / summary-only source keeps no raw copy, so no raw object may be created for it."""
-    source = _raw_key_source(key)
-    # Strict: an unreadable policy is a 503 (retry), never "allow" by default.
-    if source is not None and not raw_archive_allowed(cached_source_profile_strict(source)):
-        raise ValidationError(f'Source "{source}" keeps no raw copies (its PII policy is not "allow")')
+def _content_source(content: str) -> str | None:
+    """The source a saved object's content names (`source_platform` of a JSON object, read as
+    `_policy_queue_message` reads it), or None when it names none."""
+    try:
+        parsed = json.loads(content)
+    except ValueError:
+        return None
+    value = parsed.get('source_platform') if isinstance(parsed, dict) else None
+    return str(value) if value else None
 
 
-def _policy_queue_message(parsed: dict, bucket_name: str, key: str) -> dict | None:
-    """The saved object as a processing-queue message, under its source's PII policy."""
+def _refuse_policy_blocked_archive(key: str, content: str = '', scope: WorkspaceScope | None = None) -> None:
+    """A redact / summary-only source keeps no raw copy, so no raw object may be created for it (*scope*'s profile:
+    the workspace's in a workspace, the deployment's without one). A raw object's source is checked twice when they
+    differ: the key's (`raw/{source}/…`) and its content's `source_platform` (the one its queued message's policy
+    takes first), so the stricter of the two refuses."""
+    if not _is_raw_key(key):
+        return
+    sources = [_raw_key_source(key), _content_source(content)]
+    for source in dict.fromkeys(s for s in sources if s is not None):
+        # Strict: an unreadable policy is a 503 (retry), never "allow" by default.
+        if not raw_archive_allowed(cached_source_profile_strict(source, scope)):
+            raise ValidationError(f'Source "{source}" keeps no raw copies (its PII policy is not "allow")')
+
+
+def _policy_queue_message(parsed: dict, bucket_name: str, key: str,
+                          scope: WorkspaceScope | None = None) -> dict | None:
+    """The saved object (`key`, relative to *scope*'s root) as a processing-queue message, under its source's PII
+    policy (*scope*'s profile); its `s3_raw_uri` the object's own key (in a workspace under its raw root,
+    shared/raw_versions.py `raw_root`). It names no workspace: the caller adds the request's (`workspace_payload`)."""
     source = str(parsed.get('source_platform') or _raw_key_source(key) or '')
-    profile = cached_source_profile_strict(source)
+    profile = cached_source_profile_strict(source, scope)
     message = apply_source_policy(parsed, profile)
     if message is not None and raw_archive_allowed(profile):
-        message['s3_raw_uri'] = f"s3://{bucket_name}/{key}"
+        object_key = key if scope is None else f'{raw_root(scope)}{key.removeprefix(RAW_PREFIX)}'
+        message['s3_raw_uri'] = f"s3://{bucket_name}/{object_key}"
     return message
+
+
+def _refuse_unwritable_key(requested_key: object, scope: WorkspaceScope | None) -> str:
+    """The key a PUT may create, else 400: deployment-wide the workspaces' folder and the read-only prefixes; in a
+    workspace anything but plain names under `raw/` (`WORKSPACE_READ_ONLY`: its other folders are its pipeline's)."""
+    key = _check_path(requested_key, scope)
+    if scope is None:
+        _reject_read_only_prefix(key)
+    elif not _is_raw_key(key):
+        raise ValidationError(WORKSPACE_READ_ONLY)
+    return key
 
 
 @app.put("/data-explorer/s3")
 @tracer.capture_method
 def save_s3_file():
-    """Create a file in S3 (update only outside `raw/`, whose objects are write-once)."""
+    """Create a file in S3 (update only outside `raw/`, whose objects are write-once; in a workspace a raw object of
+    its own only, see the module docstring)."""
+    _request.require_request_admin()
+    context = _request.context()
+    scope = _request.scope()
     body = json_object_body(app)
     bucket_id = body.get('bucket', 'raw-data')
     content = body.get('content', '')
     sync_to_dynamo = body.get('sync_to_dynamo', False)
-    bucket_name, key = _keyed_bucket_request(body)
-    _reject_read_only_prefix(key)
+    bucket_name, requested_key = _keyed_bucket_request(body)
+    key = _refuse_unwritable_key(requested_key, scope)
 
     # Ensure content is a string
     if isinstance(content, dict):
         content = json.dumps(content, indent=2)
     if not isinstance(content, str):
         raise ValidationError('content must be a string or a JSON object')
-    _refuse_policy_blocked_archive(key)
+    _refuse_policy_blocked_archive(key, content, scope)
     try:
-        _put_object(bucket_name, key, content)
+        _put_object(bucket_name, key, content, root=_root(scope))
     except ApiError:
         raise
     except Exception as e:
@@ -404,11 +524,12 @@ def save_s3_file():
     if sync_to_dynamo and PROCESSING_QUEUE_URL and bucket_id == 'raw-data':
         # Send to processing queue to process the new raw object
         try:
-            message = _policy_queue_message(json.loads(content), bucket_name, key)
+            message = _policy_queue_message(json.loads(content), bucket_name, key, scope)
             if message is not None:
+                # The request's resolved workspace, set last (none deployment-wide: a body's `workspace_id` is gone).
                 sqs_client.send_message(
                     QueueUrl=PROCESSING_QUEUE_URL,
-                    MessageBody=json.dumps(message)
+                    MessageBody=json.dumps(workspace_payload(message, context))
                 )
                 synced = True
                 logger.info("Sent new raw object to the processing queue")
@@ -430,15 +551,20 @@ def save_s3_file():
 CATEGORY_FIELDS = ('category', 'subcategory')
 
 
-def _feedback_key_by_id(table, feedback_id: str) -> dict:
-    """The record's primary key via the by-id GSI (its deployment-wide partition), or 404."""
-    response = table.query(
-        IndexName=FEEDBACK_BY_ID_INDEX,
-        KeyConditionExpression='#fid = :fid',
-        ExpressionAttributeNames={'#fid': FEEDBACK_ID_INDEX_PARTITION},
-        ExpressionAttributeValues={':fid': feedback_id_partition(None, feedback_id)},
-        Limit=1
-    )
+def _feedback_key_by_id(table, feedback_id: str, scope: WorkspaceScope | None = None) -> dict:
+    """The record's primary key via the by-id GSI (its deployment-wide partition, or *scope*'s workspace's only,
+    through its view: shared/scoped_query.py), or 404."""
+    if scope is None:
+        response = table.query(
+            IndexName=FEEDBACK_BY_ID_INDEX,
+            KeyConditionExpression='#fid = :fid',
+            ExpressionAttributeNames={'#fid': FEEDBACK_ID_INDEX_PARTITION},
+            ExpressionAttributeValues={':fid': feedback_id_partition(None, feedback_id)},
+            Limit=1
+        )
+    else:
+        response = query_partition(scope, table, FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition(scope, feedback_id),
+                                   IndexName=FEEDBACK_BY_ID_INDEX, Limit=1)
     items = response.get('Items') or []
     if not items:
         raise NotFoundError('Feedback not found')
@@ -446,27 +572,31 @@ def _feedback_key_by_id(table, feedback_id: str) -> dict:
 
 
 def _stored_item(table, key: dict) -> dict:
-    """The record at `key`, strongly read, or 404."""
+    """The record at `key`, strongly read, or 404 (`table`: the table, or a workspace's view of it, `ScopedUpdates`,
+    through which a key outside the workspace never reaches DynamoDB)."""
     item = table.get_item(Key=key, ConsistentRead=True).get('Item')
     if not item:
         raise NotFoundError('Feedback not found')
     return item
 
 
-def _located_item(table, feedback_id: str, source_platform: str) -> tuple[dict, dict]:
-    """`(key, item)` of the record: tried at `SOURCE#{source_platform}` first, else found by id.
+def _located_item(table, feedback_id: str, source_platform: str,
+                  scope: WorkspaceScope | None = None) -> tuple[dict, dict]:
+    """`(key, item)` of the record: tried at its source's partition first, else found by id; in *scope*'s
+    partitions only (`WS#{ws}#SOURCE#…`, `WS#{ws}#FEEDBACK#…`), so another place's id is not found.
 
     The editor sends `source_platform` back with the record, but a branded review lives under
     `SOURCE#{brand_name}` (the processor's partition), so that key alone would answer 404 for it.
     """
+    view = ScopedUpdates(scope, table)
     if source_platform:
         try:
-            key = {'pk': f"SOURCE#{source_platform}", 'sk': f"FEEDBACK#{feedback_id}"}
-            return key, _stored_item(table, key)
+            key = item_key(scope, source_platform, feedback_id)
+            return key, _stored_item(view, key)
         except NotFoundError:
             pass
-    key = _feedback_key_by_id(table, feedback_id)
-    return key, _stored_item(table, key)
+    key = _feedback_key_by_id(table, feedback_id, scope)
+    return key, _stored_item(view, key)
 
 
 def _requested_category(item: dict, data: dict) -> tuple[str, str | None] | None:
@@ -487,8 +617,9 @@ def _requested_category(item: dict, data: dict) -> tuple[str, str | None] | None
     return None if (category, subcategory) == current else (category, subcategory)
 
 
-def _category_change(item: dict, data: dict) -> CategoryChange | None:
-    """The validated, audited category move `data` asks for (see `shared.feedback_category`)."""
+def _category_change(item: dict, data: dict, scope: WorkspaceScope | None = None) -> CategoryChange | None:
+    """The validated, audited category move `data` asks for (see `shared.feedback_category`): against *scope*'s
+    categories, its `gsi2pk` in *scope*'s partitions."""
     requested = _requested_category(item, data)
     if requested is None:
         return None
@@ -496,9 +627,9 @@ def _category_change(item: dict, data: dict) -> CategoryChange | None:
     aggregates_table = get_aggregates_table()
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
-    validate_target(categories_config(aggregates_table), category, subcategory)
+    validate_target(categories_config(aggregates_table, scope), category, subcategory)
     caller = caller_from_event(app.current_event.raw_event)
-    return category_change(item, category, subcategory, override_record(item, caller))
+    return category_change(item, category, subcategory, override_record(item, caller), scope)
 
 
 def _unchanged_since_read(item: dict) -> ConditionBase:
@@ -565,7 +696,13 @@ def save_feedback():
     `PUT /feedback/{id}/category` does (409 on a concurrent change). Once the update
     landed, the record as it was is kept under `silver/`, and the update stamps `updated_by` (the admin),
     `updated_at` and `change_reason` (the enrichment provenance is left as it was).
+
+    In a workspace (see the module docstring) the record is found in its partitions only, validated against its
+    categories and source profiles, written through its view, kept under `ws/{ws}/silver/` and its own data version
+    bumped; another place's id is the same 404 as an unknown one.
     """
+    _request.require_request_admin()
+    scope = _request.scope()
     if not FEEDBACK_TABLE:
         raise ConfigurationError('Feedback table not configured')
 
@@ -582,11 +719,11 @@ def save_feedback():
 
     table = dynamodb.Table(FEEDBACK_TABLE)
     try:
-        key, item = _located_item(table, feedback_id, str(data.get('source_platform') or ''))
+        key, item = _located_item(table, feedback_id, str(data.get('source_platform') or ''), scope)
         # Before any field check: a stale editor reloads, even when its values match or one fails today's rules.
         _refuse_stale_editor(item, data)
-        change = _category_change(item, data)
-        edits = field_edits(item, data)
+        change = _category_change(item, data, scope)
+        edits = field_edits(item, data, scope=scope)
     except ApiError:
         raise
     except Exception as e:
@@ -597,25 +734,28 @@ def save_feedback():
 
     edit = ManualEdit(actor=actor_from_event(app.current_event.raw_event, admin=True), reason=REASON_DATA_EXPLORER_EDIT)
     kwargs = _update_kwargs(item, key, edits, change, edit)
+    # The table itself deployment-wide, the workspace's view in one (a key outside it never reaches DynamoDB).
+    view = ScopedUpdates(scope, table)
     try:
-        apply_conditional_update(table, kwargs)
+        apply_conditional_update(view, kwargs)
     except ConflictError:
         # The item vanished (404) or changed since it was read (the shared lost-update 409).
-        if not table.get_item(Key=key, ConsistentRead=True).get('Item'):
+        if not view.get_item(Key=key, ConsistentRead=True).get('Item'):
             raise NotFoundError('Feedback not found') from None
         raise
     # The review as it was before the edit (TENETS.md D1), kept once the edit landed, so a refused
-    # edit leaves no version; never fails the edit.
-    keep_before_edit(item, edit, kwargs)
-    # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
-    bump_data_version(get_aggregates_table())
+    # edit leaves no version; never fails the edit (a workspace's under its own silver tier).
+    keep_before_edit(item, edit, kwargs, scope=scope)
+    # Read-your-write: cached reads move on now, not when the stream reaches the aggregator (the workspace's own).
+    bump_data_version(get_aggregates_table(), scope)
     return {'success': True, 'message': 'Feedback updated'}
 
 
 @app.get("/data-explorer/buckets")
 @tracer.capture_method
 def list_buckets():
-    """List available S3 buckets for browsing."""
+    """List available S3 buckets for browsing (the same answer on both paths, after the request's gate)."""
+    _request.require_request_admin()
     buckets = []
     for bucket_id, config in AVAILABLE_BUCKETS.items():
         if config.get('name'):

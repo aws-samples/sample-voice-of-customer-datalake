@@ -29,8 +29,10 @@ every rule:
   the route refuses it.
 
 No import tool: every CSV / JSON / paste / S3 import route is admin-only (the
-manual-import and S3-import handlers' ``admins_only`` middleware), and an MCP
-token is never admin.
+manual-import and S3-import handlers gate every route with
+``ResolvedRoutes.require_request_admin``: the deployment's ``admins`` group, or
+the caller's admin role in the request's workspace), and an MCP token is never
+admin.
 """
 from __future__ import annotations
 

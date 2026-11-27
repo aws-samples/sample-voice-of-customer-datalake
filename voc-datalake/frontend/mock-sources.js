@@ -170,6 +170,18 @@ function putRawObject(_shared, key, content, contentType = 'application/json') {
   rawObjects.set(key, { content, contentType, lastModified: new Date().toISOString() });
 }
 
+/**
+ * Where a manual import's raw archive starts in this store (manual_import_handler.py `raw_root`): `ws/{ws}/` when
+ * X-Workspace-Id names a workspace the caller is an admin of (or enters as a platform admin), the same root the Data
+ * Explorer mock reads there; else the bucket's root. (The mock does not model these routes' workspace refusals: a
+ * header it cannot resolve archives deployment-wide, as before.)
+ */
+function importArchiveRoot({ req, shared }) {
+  if (req.headers['x-workspace-id'] === undefined) return '';
+  const entry = resolveWorkspace(req, shared);
+  return entry.refusal || entry.role !== 'admin' ? '' : `${WORKSPACE_FOLDER}/${entry.workspace.id}/`;
+}
+
 function seedRawObjects() {
   const twoDays = new Date(Date.now() - 2 * DAY_MS);
   rawObjects.set(rawKey('webscraper', 'rev_8f2a1c.json', twoDays), {
@@ -708,7 +720,8 @@ function missingDatesError(reviews) {
   return null;
 }
 
-function confirmImport({ shared }, body) {
+function confirmImport(ctx, body) {
+  const { shared } = ctx;
   const jobId = body.job_id;
   const reviews = Array.isArray(body.reviews) ? body.reviews : [];
   if (!jobId) return fail(400, 'Job ID is required');
@@ -717,7 +730,7 @@ function confirmImport({ shared }, body) {
   if (datesError) return fail(400, datesError);
   const job = parseJobs.get(String(jobId));
   if (!job) return fail(404, 'Job not found');
-  const key = rawKey('manual_import', `${jobId}.json`);
+  const key = importArchiveRoot(ctx) + rawKey('manual_import', `${jobId}.json`);
   const finalReviews = reviews.map((r) => pick(r, ['text', 'rating', 'author', 'date', 'title']));
   putRawObject(shared, key, JSON.stringify({
     job_id: jobId, source_url: job.source_url, source_origin: job.source_origin, raw_text: job.raw_text,
@@ -776,7 +789,8 @@ function jsonRunOrigin(body, sourceId) {
   return { method: 'assistant', source: label.slice(0, 120).trim() || sourceId };
 }
 
-function jsonUpload({ shared }, body) {
+function jsonUpload(ctx, body) {
+  const { shared } = ctx;
   const radar = uploadRadarBrand(body, shared);
   if (radar.error) return fail(400, radar.error);
   const items = body.items;
@@ -786,7 +800,7 @@ function jsonUpload({ shared }, body) {
   if (errors.length) return fail(400, `Validation failed: ${errors.slice(0, 10).join('; ')}`);
   const fields = ['id', 'text', 'rating', 'author', 'user_id', 'title', 'url', 'source', 'source_channel', 'timestamp', 'created_at', 'dimensions', 'tags'];
   const clean = items.map((item) => pick(item, fields));
-  const key = rawKey('json_upload', `${shared.nextMockId('job')}.json`);
+  const key = importArchiveRoot(ctx) + rawKey('json_upload', `${shared.nextMockId('job')}.json`);
   putRawObject(shared, key, JSON.stringify({ items: clean, uploaded_at: new Date().toISOString() }));
   const sourceId = str(body.source_id).trim() || 'manual_import';
   const leftOut = unreadablePlaces(clean);
@@ -955,7 +969,8 @@ function csvItems(csvText, defaultSource, columnMap, dataset = null) {
   return { items, warnings, drops };
 }
 
-function csvUpload({ shared }, body) {
+function csvUpload(ctx, body) {
+  const { shared } = ctx;
   const csvText = body.csv_text;
   const defaultSource = str(body.default_source).trim() || 'csv_upload';
   const sourceId = str(body.source_id).trim() || 'manual_import';
@@ -980,12 +995,14 @@ function csvUpload({ shared }, body) {
   if (plan.changed.length && body.apply_updates !== true) {
     return fail(409, `This upload changes ${plan.changed.length} stored row(s): preview it (dry_run) and confirm the updates (apply_updates) to apply them`);
   }
-  return [200, importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, items, warnings, drops, dataset: dataset.key })];
+  return [200, importCsvPlan(shared, {
+    csvText, sourceId, defaultSource, radar, plan, items, warnings, drops, dataset: dataset.key, root: importArchiveRoot(ctx),
+  })];
 }
 
-/** Archive the file, store new rows, apply confirmed updates; unchanged rows are left out. */
-function importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, items, warnings, drops, dataset }) {
-  const key = rawKey('csv_upload', `${shared.nextMockId('job')}.csv`);
+/** Archive the file (under `root`, the request's place), store new rows, apply confirmed updates; unchanged rows are left out. */
+function importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, items, warnings, drops, dataset, root }) {
+  const key = root + rawKey('csv_upload', `${shared.nextMockId('job')}.csv`);
   putRawObject(shared, key, csvText, 'text/csv; charset=utf-8');
   const leftOut = [...plan.v1_rows, ...plan.new].filter((item) => unreadable(item.text)).map((item) => item.row).sort((a, b) => a - b);
   const fresh = [...plan.v1_rows, ...plan.new].filter((item) => !unreadable(item.text));
@@ -1244,6 +1261,78 @@ function trimSlashes(text) {
   return text.slice(start, end);
 }
 
+// The Data Explorer per place (data_explorer_handler.py, the S3 import's resolution above): without X-Workspace-Id
+// the deployment's objects, where the workspaces' `ws/` folder is never reached; with it the named workspace's own
+// (`ws/{ws}/…` in the bucket), for its admins only, every prefix and key relative to its root, written under raw/ only.
+const WORKSPACE_FOLDER = 'ws';
+const WORKSPACES_FOLDER = "The ws/ folder holds the workspaces' own data: open the workspace to browse its files";
+const INVALID_PATH = 'The path must be folder and file names separated by single slashes';
+const WORKSPACE_READ_ONLY = 'In a workspace, Data Explorer creates files under raw/ only; the other folders are read-only';
+/** The deployment's read-only prefixes, `_reject_read_only_prefix`'s order and text. */
+const READ_ONLY_PREFIXES = [
+  ['prototypes/', 'Generated prototypes are read-only in Data Explorer'],
+  ['silver/', 'Feedback history (silver/) is read-only in Data Explorer'],
+  ['engineering/', 'Engineering files (engineering/) are read-only in Data Explorer'],
+];
+
+/** A place: where its objects start in the one raw store (the bucket's root, or `ws/{ws}/`). */
+const deploymentExplorer = { inWorkspace: false, root: '' };
+
+/** A workspace's place; its first request seeds one fictional review under its raw/ (the bucket's `ws/{ws}/raw/`). */
+function workspaceExplorer(workspace) {
+  const root = `${WORKSPACE_FOLDER}/${workspace.id}/`;
+  if (!workspace.dataExplorerSeeded) {
+    workspace.dataExplorerSeeded = true;
+    const twoDays = new Date(Date.now() - 2 * DAY_MS);
+    const id = `rev_${workspace.slug}_1`;
+    rawObjects.set(root + rawKey('webscraper', `${id}.json`, twoDays), {
+      contentType: 'application/json', lastModified: twoDays.toISOString(),
+      content: JSON.stringify({
+        id, source_platform: 'webscraper', text: `The ${workspace.name} sizing guide was easy to follow.`,
+        rating: 5, created_at: twoDays.toISOString(),
+      }, null, 2),
+    });
+  }
+  return { inWorkspace: true, root };
+}
+
+/**
+ * The place a /data-explorer request acts in, or [status, error]: without X-Workspace-Id the deployment's; with it
+ * (an empty one is a 400, workspace_request.py) the named workspace's, for its admins only (403), else the one 404.
+ */
+function explorerPlaceOf({ req, shared }) {
+  if (req.headers['x-workspace-id'] === undefined) return { place: deploymentExplorer };
+  const entry = resolveWorkspace(req, shared);
+  if (entry.refusal) return { refusal: entry.refusal };
+  if (entry.role !== 'admin') return { refusal: [403, NOT_WORKSPACE_ADMIN] };
+  return { place: workspaceExplorer(entry.workspace) };
+}
+
+/** `handler(place, ctx, ...rest)` in the request's place; a refusal answers instead. */
+const inExplorerPlace = (handler) => (ctx, ...rest) => {
+  const found = explorerPlaceOf(ctx);
+  return found.refusal ? fail(found.refusal[0], found.refusal[1]) : handler(found.place, ctx, ...rest);
+};
+
+const hasControlChar = (text) => [...text].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f);
+
+/**
+ * The 400 text for a prefix or key the place refuses (`_check_path`), else null: on both paths one that is not
+ * plain names (not text, a control character, an empty, `.` or `..` segment); deployment-wide then the ws/ folder.
+ */
+function pathError(place, path) {
+  const plain = typeof path === 'string' && path !== '' && !hasControlChar(path)
+    && path.split('/').every((s) => s !== '' && s !== '.' && s !== '..');
+  if (!plain) return INVALID_PATH;
+  return !place.inWorkspace && path.split('/', 1)[0] === WORKSPACE_FOLDER ? WORKSPACES_FOLDER : null;
+}
+
+/** The 400 text for a write the place refuses: in a workspace anything outside raw/, else the read-only prefixes. */
+function readOnlyError(place, key) {
+  if (place.inWorkspace) return key.startsWith('raw/') ? null : WORKSPACE_READ_ONLY;
+  return READ_ONLY_PREFIXES.find(([prefix]) => key.startsWith(prefix))?.[1] ?? null;
+}
+
 /** GET /data-explorer/buckets, per AVAILABLE_BUCKETS. */
 function listBuckets() {
   return [200, { buckets: [{ id: 'raw-data', name: RAW_BUCKET_NAME, label: RAW_BUCKET_LABEL, description: 'Raw feedback data from all sources' }] }];
@@ -1276,22 +1365,30 @@ function withRawSummary(file, content) {
  * GET /data-explorer/s3 — list_objects_v2 with Delimiter '/' over the same
  * object store the preview and save routes use, so every listed file previews.
  */
-function listObjects({ url }) {
+function listObjects(place, { url }) {
   const bucketId = url.searchParams.get('bucket') ?? 'raw-data';
+  const trimmed = trimSlashes(url.searchParams.get('prefix') ?? '');
+  // (the empty prefix is the place's own root)
+  const refused = trimmed ? pathError(place, trimmed) : null;
+  if (refused) return fail(400, refused);
   if (!DATA_EXPLORER_BUCKETS.has(bucketId)) {
     return [200, { objects: [], bucket: null, bucketId, prefix: '', error: 'Bucket not configured' }];
   }
-  const trimmed = trimSlashes(url.searchParams.get('prefix') ?? '');
   const prefix = trimmed ? `${trimmed}/` : '';
+  const listed = `${place.root}${prefix}`;
   const folders = new Set();
   const files = [];
-  for (const [key, object] of rawObjects) {
-    if (!key.startsWith(prefix) || key === prefix) continue;
-    const rest = key.slice(prefix.length);
+  for (const [bucketKey, object] of rawObjects) {
+    if (!bucketKey.startsWith(listed) || bucketKey === listed) continue;
+    // The wire names a key without the place's root.
+    const key = bucketKey.slice(place.root.length);
+    const rest = bucketKey.slice(listed.length);
     const slash = rest.indexOf('/');
     if (slash >= 0) folders.add(rest.slice(0, slash));
     else files.push(withRawSummary({ key: rest, fullKey: key, size: Buffer.byteLength(object.content), lastModified: object.lastModified, isFolder: false }, object.content));
   }
+  // Deployment-wide the root's `ws/` is the workspaces' folder: never listed.
+  if (!place.inWorkspace && !prefix) folders.delete(WORKSPACE_FOLDER);
   // Folders first, then case-insensitive by name (the backend's sort key).
   const byName = (a, b) => a.key.toLowerCase().localeCompare(b.key.toLowerCase());
   const objects = [
@@ -1308,11 +1405,13 @@ function bucketKeyError(request) {
   return null;
 }
 
-function previewObject({ url }) {
+function previewObject(place, { url }) {
   const request = { bucket: url.searchParams.get('bucket') ?? undefined, key: url.searchParams.get('key') ?? '' };
   const error = bucketKeyError(request);
   if (error) return error;
-  const object = rawObjects.get(request.key);
+  const refused = pathError(place, request.key);
+  if (refused) return fail(400, refused);
+  const object = rawObjects.get(`${place.root}${request.key}`);
   if (!object) return fail(404, 'File not found');
   let content = object.content;
   try {
@@ -1323,17 +1422,20 @@ function previewObject({ url }) {
   return [200, { content, size: Buffer.byteLength(object.content), contentType: object.contentType, key: request.key }];
 }
 
-function saveObject({ shared }, body) {
+function saveObject(place, { shared }, body) {
   const error = bucketKeyError(body);
   if (error) return error;
-  const key = String(body.key);
-  if (key.startsWith('prototypes/')) return fail(400, 'Generated prototypes are read-only in Data Explorer');
+  // (a key that is not text is the API's INVALID_PATH, never coerced)
+  const key = body.key;
+  const refused = pathError(place, key) ?? readOnlyError(place, key);
+  if (refused) return fail(400, refused);
   const content = isPlainObject(body.content) ? JSON.stringify(body.content, null, 2) : (body.content ?? '');
   if (typeof content !== 'string') return fail(400, 'content must be a string or a JSON object');
-  if (key.startsWith('raw/') && rawObjects.has(key)) {
+  if (key.startsWith('raw/') && rawObjects.has(`${place.root}${key}`)) {
     return fail(409, 'Raw data is immutable: an object already exists at this key under raw/');
   }
-  putRawObject(shared, key, content);
+  putRawObject(shared, `${place.root}${key}`, content);
+  // (the mock keeps one feedback list for every place, as its /feedback does: a synced file lands there)
   const synced = body.sync_to_dynamo === true && (body.bucket ?? 'raw-data') === 'raw-data' && syncToFeedback(shared, content);
   return [200, { success: true, message: 'File saved', key, synced }];
 }
@@ -1390,7 +1492,8 @@ function categoryChange(shared, item, data) {
 const LOST_UPDATE_MESSAGE = 'This review was changed by someone else. Reload and retry.';
 const staleEditor = (item, data) => Object.hasOwn(data, 'updated_at') && (data.updated_at || null) !== (item.updated_at || null);
 
-function saveFeedback({ shared }, body) {
+/** In a workspace the API edits the workspace's own item; the mock's one feedback list serves every place. */
+function saveFeedback(_place, { shared }, body) {
   const feedbackId = body.feedback_id;
   const data = body.data ?? {};
   if (!feedbackId) return fail(400, 'Feedback ID is required');
@@ -1458,11 +1561,11 @@ const ROUTES = [
   ['POST', /^\/s3-import\/reprocess$/, 'json', inImportPlace(startReprocess)],
   ['GET', /^\/s3-import\/reprocess\/([^/]+)$/, 'none', inImportPlace(getReprocessRun)],
   ['PUT', /^\/mock-s3-import-upload\/([^/]+)\/(.+)$/, 'raw', receiveUpload],
-  ['GET', /^\/data-explorer\/buckets$/, 'none', listBuckets],
-  ['GET', /^\/data-explorer\/s3$/, 'none', listObjects],
-  ['GET', /^\/data-explorer\/s3\/preview$/, 'none', previewObject],
-  ['PUT', /^\/data-explorer\/s3$/, 'json', saveObject],
-  ['PUT', /^\/data-explorer\/feedback$/, 'json', saveFeedback],
+  ['GET', /^\/data-explorer\/buckets$/, 'none', inExplorerPlace(listBuckets)],
+  ['GET', /^\/data-explorer\/s3$/, 'none', inExplorerPlace(listObjects)],
+  ['GET', /^\/data-explorer\/s3\/preview$/, 'none', inExplorerPlace(previewObject)],
+  ['PUT', /^\/data-explorer\/s3$/, 'json', inExplorerPlace(saveObject)],
+  ['PUT', /^\/data-explorer\/feedback$/, 'json', inExplorerPlace(saveFeedback)],
 ];
 
 function matchRoute(method, pathname) {

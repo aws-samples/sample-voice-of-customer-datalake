@@ -78,6 +78,10 @@
   "notConfigured": "Skonfiguruj endpoint API w Administracja → Ogólne, aby przeglądać dane",
   "refresh": "Odśwież",
   "title": "Eksplorator danych",
+  "workspaceAdminsOnly": {
+    "title": "Dla administratorów tego obszaru roboczego",
+    "body": "Tylko administratorzy obszaru roboczego {{name}} mogą w nim używać Eksploratora danych. Poproś jednego z nich, aby nadał Ci rolę administratora obszaru roboczego, albo otwórz Eksplorator danych poza obszarem roboczym, aby zobaczyć dane wdrożenia."
+  },
   "dataQuality": {
     "title": "Jakość danych",
     "description": "Na ile przydatne są opinie z każdego źródła: poziom wyznaczany regułami na podstawie długości, szczegółów (liczby, nazwy produktów) i tego, czy opisują konkretny problem lub prośbę. Źródło z przewagą niskich opinii często oznacza źle skonfigurowany scraper lub pomijane pole formularza.",

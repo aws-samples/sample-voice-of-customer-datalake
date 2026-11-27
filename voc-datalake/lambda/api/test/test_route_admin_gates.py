@@ -16,8 +16,11 @@ explicit tables kept below:
   - that statement calls a module helper that does so itself (to any depth); a
     helper also counts when it is a check, i.e. a top-level ``if`` that tests
     ``.is_admin`` and raises ``AuthorizationError``, like `project_gate.require_admin_caller`;
-  - the module installs such a function as an ``app.use(middlewares=[...])``
-    middleware, like `shared.api.admins_only` in `data_explorer_handler`.
+  - the module installs such a function, defined in the module itself, as an
+    ``app.use(middlewares=[...])`` middleware: a module-wide gate. A middleware
+    imported by name is not trusted (no shared one gates today: the two-path
+    modules gate each route with ``require_request_admin`` behind
+    ``ResolvedRoutes.middleware``, checked below).
 
   A gate that only runs inside an ``if``/``try``/loop or a nested function does NOT
   count. Drop the gate and the route fails here.
@@ -55,8 +58,6 @@ ERASURE_GATE = 'require_erasure_admin'
 AGENTS_GATE = 'require_agents_admin'
 GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin', 'require_settings_admin',
                              TWO_PATH_GATE, ERASURE_GATE, AGENTS_GATE})
-# Shared resolver middlewares that gate a whole module (checked the same way, below).
-GATE_MIDDLEWARES = frozenset({'admins_only'})
 SHARED_DIR = API_DIR.parent / 'shared'
 MUTATING_METHODS = frozenset({'post', 'put', 'patch', 'delete'})
 # Top-level statements whose `.value` call runs unconditionally: `f()`, `x = f()`, `x: T = f()`, `return f()`.
@@ -166,6 +167,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     # The leadership view's time-saved baselines (7.70.00): the scope's admins (require_settings_admin), acting as
     # themselves (a delegated caller is refused); without a workspace the deployment's `admins`.
     'adoption_routes.py': frozenset({'PUT /settings/adoption'}),
+    # The Data Explorer (raw objects cannot be filtered by category access): each route's first statement is the
+    # two-path gate (since it learned workspaces: in one, the caller's admin role there; without the header the
+    # deployment's admins, as before). Its reads are in TWO_PATH_ADMIN_READS.
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
     # A form's test link (7.55.00): issuing or rotating its token. A token opens the form while it is Off, so only an
     # admin of the workspace (acting as themselves), else of the deployment (`_require_test_link_admin` ->
@@ -587,7 +591,7 @@ def routes_with_gates(source: str, methods: frozenset[str]) -> dict[str, bool]:
     """Every `@app.<method in *methods*>` route in *source* -> whether it is structurally admin-gated."""
     tree = ast.parse(source)
     gates = gate_functions(tree)
-    module_gated = bool(_middlewares(tree) & (gates | GATE_MIDDLEWARES))
+    module_gated = bool(_middlewares(tree) & gates)
     routes: dict[str, bool] = {}
     for fn in _module_functions(tree).values():
         gated = module_gated or bool(_top_level_calls(fn) & gates)
@@ -868,6 +872,13 @@ WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
         'GET /s3-import/sources', 'POST /s3-import/sources', 'GET /s3-import/files', 'POST /s3-import/upload-url',
         'DELETE /s3-import/file/<key>', 'POST /s3-import/reprocess', 'GET /s3-import/reprocess/<run_id>',
     }),
+    # The Data Explorer: every route acts in the request's workspace (its objects the bucket's ws/{ws}/…, named
+    # relative to that root on the wire; its feedback edits in its partitions), its admins only (ADMIN_ONLY and
+    # TWO_PATH_ADMIN_READS, the two-path gate first); without the header the deployment's, never a workspace's.
+    'data_explorer_handler.py': frozenset({
+        'GET /data-explorer/buckets', 'GET /data-explorer/s3', 'GET /data-explorer/s3/preview',
+        'PUT /data-explorer/s3', 'PUT /data-explorer/feedback',
+    }),
 }
 #: How each module resolves the workspace before a route reads: a middleware (module-wide: its name and the call
 #: its first statement makes, afresh for each request) or a per-route call.
@@ -891,7 +902,7 @@ WORKSPACE_WRITE_CALL = {'feedback_form_handler.py': "_request_scope(write=True)"
 #: `_request.require_request_admin()`.
 SHARED_RESOLVER = 'ResolvedRoutes'
 TWO_PATH_MODULES = frozenset({'integrations_handler.py', 'scrapers_handler.py', 'manual_import_handler.py',
-                              's3_import_handler.py'})
+                              's3_import_handler.py', 'data_explorer_handler.py'})
 #: Routes of a two-path module that a request in a workspace may not use: each calls the module's refusal as an
 #: unconditional top-level statement, right after its admin gate.
 WORKSPACE_REFUSAL = 'refuse_in_workspace'
@@ -1100,6 +1111,11 @@ TWO_PATH_ADMIN_READS: dict[str, frozenset[str]] = {
     # #242: the import bucket's folders, files and reprocess runs.
     's3_import_handler.py': frozenset({
         'GET /s3-import/sources', 'GET /s3-import/files', 'GET /s3-import/reprocess/<run_id>',
+    }),
+    # The raw bucket's listing, an object's preview and the bucket catalogue (raw objects cannot be filtered by
+    # category access).
+    'data_explorer_handler.py': frozenset({
+        'GET /data-explorer/buckets', 'GET /data-explorer/s3', 'GET /data-explorer/s3/preview',
     }),
 }
 
@@ -1358,10 +1374,6 @@ def test_every_shared_gate_primitive_is_an_admin_check():
     api_functions = _module_functions(ast.parse((SHARED_DIR / 'api.py').read_text(encoding='utf-8')))
     require_admin = api_functions[GATE_PRIMITIVE]
     assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body) for stmt in require_admin.body)
-    for name in GATE_MIDDLEWARES:   # a shared middleware gates only if its first statement is the gate
-        first = api_functions[name].body[1] if ast.get_docstring(api_functions[name]) else api_functions[name].body[0]
-        assert isinstance(first, ast.Expr)
-        assert _called_name(first.value) == GATE_PRIMITIVE
     # require_settings_admin (shared/request_workspace.py): its whole body is one `if` that calls require_admin on one
     # branch and, on the other, the workspace branch: require_workspace_admin (itself an `if ...: raise
     # AuthorizationError`) as its first statement, then an `if` that raises for a delegated caller (7.08.00).
@@ -1394,6 +1406,8 @@ def _assert_two_branch_gate(module: str, gate: str, deployment_gate: str, worksp
     assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body) for stmt in branch[1:])
 
 
-def test_the_shared_admin_middleware_gates_every_route_of_its_module():
+def test_a_middleware_the_module_does_not_define_gates_nothing():
+    # Only a middleware whose body the detector can read gates a module: an imported name (the shared `admins_only`
+    # was one, until its last user moved to ResolvedRoutes) is not taken on trust, whatever it is called.
     source = (_PRELUDE + 'app.use(middlewares=[admins_only])\n\n\n@app.put("/a")\ndef a():\n    return {}\n')
-    assert mutating_routes(source) == {'PUT /a': True}
+    assert mutating_routes(source) == {'PUT /a': False}

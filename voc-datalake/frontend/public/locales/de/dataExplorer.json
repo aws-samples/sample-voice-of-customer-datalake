@@ -64,6 +64,10 @@
     "label": "Datenansicht"
   },
   "title": "Daten-Explorer",
+  "workspaceAdminsOnly": {
+    "title": "Für die Admins dieses Arbeitsbereichs",
+    "body": "Nur die Admins von {{name}} können den Daten-Explorer darin verwenden. Bitten Sie einen von ihnen, Sie zum Admin des Arbeitsbereichs zu machen, oder öffnen Sie den Daten-Explorer außerhalb des Arbeitsbereichs, um die Daten der Bereitstellung zu sehen."
+  },
   "details": {
     "title": "Titel",
     "text": "Bewertung",

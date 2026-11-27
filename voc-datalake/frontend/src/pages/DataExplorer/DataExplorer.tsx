@@ -5,9 +5,9 @@
  * @module pages/DataExplorer
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Database, HardDrive, Plus, RefreshCw, Search, Filter } from 'lucide-react'
+import { Database, HardDrive, Lock, Plus, RefreshCw, Search, Filter } from 'lucide-react'
 import type { FeedbackItem } from '../../api/types'
 import clsx from 'clsx'
 import S3Browser from './S3Browser'
@@ -17,6 +17,10 @@ import FeedbackFieldsPanel from './FeedbackFieldsPanel'
 import EditModal, { type EditModalState } from './EditModal'
 import { useDataExplorerQueries } from './useDataExplorerQueries'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import Notice from '../../components/Notice/Notice'
+import PageLoader from '../../components/PageLoader/PageLoader'
+import { useCurrentWorkspace, type CurrentWorkspace } from '../../workspace/currentWorkspace'
+import { explorerPlace } from './writablePlace'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { isStaleEditorRefusal, savedFeedbackBody } from './openedStamp'
 import { useAppSourceLabel } from './useAppSourceLabel'
@@ -60,6 +64,8 @@ export default function DataExplorer() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sourceFilter, setSourceFilter] = useState<string>('')
   const [editModal, setEditModal] = useState<EditModalState | null>(null)
+  const workspace = useCurrentWorkspace()
+  const place = explorerPlace(workspace)
 
   const queries = useDataExplorerQueries(viewMode, selectedBucket, s3Path, sourceFilter, searchQuery)
   const mutations = useDataExplorerMutations(selectedBucket, {
@@ -88,8 +94,8 @@ export default function DataExplorer() {
   }, [selectedBucket, showEditor])
 
   const handleOpenS3Creator = useCallback(() => {
-    openS3Creator(s3Path, showEditor)
-  }, [s3Path, showEditor])
+    openS3Creator(s3Path, place, showEditor)
+  }, [s3Path, place, showEditor])
 
   const handleDownloadS3File = useCallback((fullKey: string, filename: string) => {
     downloadS3File(fullKey, filename, selectedBucket).catch(console.error)
@@ -116,9 +122,8 @@ export default function DataExplorer() {
   const feedbackSaveError = mutations.saveFeedbackMutation.error
   const feedbackSaveMessage = isStaleEditorRefusal(feedbackSaveError) ? t('editModal.staleRecord') : feedbackSaveError?.message
 
-  if (!queries.isConfigured) {
-    return <NotConfiguredView />
-  }
+  const blocked = blockedView(queries, workspace)
+  if (blocked !== null) return blocked
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -177,6 +182,36 @@ function NotConfiguredView() {
     <div className="card flex flex-col items-center justify-center text-center py-12 gap-2">
       <Database size={20} className="text-muted" />
       <p className="text-sm text-muted">{t('notConfigured')}</p>
+    </div>
+  )
+}
+
+/**
+ * The page's whole view when it cannot explore: no API endpoint; in a workspace, the loading state until the server
+ * says the role it applies there (a platform admin who is an editor there is not shown the notice first), then the
+ * notice for a known non-admin role or the API's 403 (`forbidden`).
+ */
+function blockedView(
+  { isConfigured, roleLoading, forbidden }: Readonly<{ isConfigured: boolean; roleLoading: boolean; forbidden: boolean }>,
+  workspace: CurrentWorkspace | null,
+): ReactElement | null {
+  if (!isConfigured) return <NotConfiguredView />
+  if (workspace === null) return null
+  if (roleLoading) return <PageLoader />
+  return forbidden ? <WorkspaceAdminsOnlyView name={workspace.name} /> : null
+}
+
+/**
+ * Inside a workspace the explorer is its admins' (the API's 403 to anyone else, a deployment admin included): say
+ * so, and what to do, instead of an empty or failed listing.
+ */
+function WorkspaceAdminsOnlyView({ name }: Readonly<{ name: string }>) {
+  const { t } = useTranslation('dataExplorer')
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight text-text-strong">{t('title')}</h1>
+      <Notice variant="empty" role="note" icon={Lock} title={t('workspaceAdminsOnly.title')}
+        text={t('workspaceAdminsOnly.body', { name })} />
     </div>
   )
 }

@@ -93,9 +93,11 @@ REVERT MAP — each assertion below names the mutation it catches:
 
   TestTheInventoryIsOneHandlers
     — lets a reader take the nine-route inventory for the whole `/scrapers/*`
-      prefix. It is not: `manual_import_handler` serves five more, gated by a
-      module middleware rather than per route. Pins that module's inventory and
-      the middleware, so dropping `app.use(middlewares=[admins_only])` fails here.
+      prefix. It is not: `manual_import_handler` serves eight more, behind its one
+      `ResolvedRoutes` middleware (`app.use(middlewares=[_request.middleware])`),
+      each route's first statement the two-path gate
+      `_request.require_request_admin()`. Pins that module's inventory, its
+      middleware and every route's gate, so dropping either fails here.
 """
 import ast
 import inspect

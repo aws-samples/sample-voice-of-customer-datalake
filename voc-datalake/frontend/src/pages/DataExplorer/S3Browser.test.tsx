@@ -3,11 +3,13 @@ import type { ComponentProps } from 'react'
  * @fileoverview Tests for S3Browser component
  */
 import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import { render } from '@test/test-utils'
 import userEvent from '@testing-library/user-event'
 import S3Browser from './S3Browser'
 import { at } from '@test/defined'
+import { ACME } from '@test/workspaceFixtures'
+import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
 
 const mockData = {
   bucket: 'voc-raw-data',
@@ -56,6 +58,26 @@ describe('S3Browser', () => {
       expect(screen.getByText('Web scraper')).toHaveAccessibleDescription('webscraper')
       // Live finding: a connector folder read `Acme Android_android`.
       expect(screen.getByText('Acme (Android)')).toHaveAccessibleDescription('Acme Android_android')
+    })
+
+    // In a workspace the API answers keys relative to the workspace's root (ws/{ws}/), so the same listing reads
+    // the same on both paths: the folder labels do not depend on the place.
+    it('labels the same top folders the same inside a workspace and outside every workspace', () => {
+      const root = { bucket: 'voc-raw-data', prefix: '', objects: ['exports', 'library', 'raw', 'silver'].map((key) => (
+        { key, size: 0, lastModified: '', isFolder: true }
+      )) }
+      const labels = () => ['Exports', 'Library', 'Raw', 'Silver'].map((label) => screen.getByText(label).textContent)
+      const outside = render(<S3Browser {...defaultProps} data={root} />)
+      const deploymentLabels = labels()
+      outside.unmount()
+      act(() => setCurrentWorkspace(ACME))
+      try {
+        render(<S3Browser {...defaultProps} data={root} />)
+
+        expect(labels()).toStrictEqual(deploymentLabels)
+      } finally {
+        act(() => setCurrentWorkspace(null))
+      }
     })
 
     it('names a persona avatar folder by the persona and when it was made, never its raw id', () => {
@@ -203,6 +225,28 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} />)
 
       expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    })
+
+    it.each(['prototypes', 'silver', 'engineering'])('offers no edit under the read-only %s/ (the API refuses it)', (prefix) => {
+      const data = { bucket: 'voc-raw-data', prefix: `${prefix}/`, objects: [
+        { key: 'a.json', fullKey: `${prefix}/a.json`, size: 10, lastModified: '2025-01-15T10:30:00Z', isFolder: false },
+      ] }
+      render(<S3Browser {...defaultProps} path={[prefix]} data={data} />)
+
+      expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    })
+
+    it('offers no edit in a workspace, where only raw/ is written and raw/ is write-once', () => {
+      act(() => setCurrentWorkspace(ACME))
+      try {
+        render(<S3Browser {...defaultProps} path={['exports']} data={editableData} />)
+
+        expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
+        expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+      } finally {
+        act(() => setCurrentWorkspace(null))
+      }
     })
 
     it('offers no delete action (customer data is never deleted)', () => {

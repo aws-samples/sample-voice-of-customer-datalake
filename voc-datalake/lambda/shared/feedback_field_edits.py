@@ -9,7 +9,8 @@ Each changed field is validated (type, bound, enum: the values the enrichment pr
 store what ingestion would have refused (TENETS.md D2; ``shared/source_policy.py``):
 
 - the policy is the stricter of the item's stored ``pii_policy`` and its source profile's
-  current one; an unreadable profile FAILS CLOSED (503, ``SourceProfilesUnavailable``);
+  current one (the profile of the item's own place: the workspace's ``scope`` in a workspace, the
+  deployment's without one); an unreadable profile FAILS CLOSED (503, ``SourceProfilesUnavailable``);
 - ``redact``: every free-text field goes through ``shared.pii_redaction.redact_text``;
 - ``summary_only``: the item stores no customer words, so an edit of ``original_text`` /
   ``normalized_text`` is refused (400); the other text fields are redacted.
@@ -30,6 +31,7 @@ from shared.exceptions import ValidationError
 from shared.ingest_schemas import MAX_RATING, MAX_TEXT_LENGTH
 from shared.pii_redaction import redact_text
 from shared.source_profiles import PII_ALLOW, PII_POLICIES, PII_SUMMARY_ONLY, cached_source_profile_strict
+from shared.ws_repo import WorkspaceScope
 
 __all__ = ['EDITABLE_FIELDS', 'ENUM_VALUES', 'FieldEdits', 'field_edits']
 
@@ -118,10 +120,11 @@ def _same(stored: object, value: object) -> bool:
     return stored == value
 
 
-def _policy(item: Mapping[str, Any]) -> str:
-    """The stricter of the item's stored policy and its source's current one (fails closed)."""
+def _policy(item: Mapping[str, Any], *, scope: WorkspaceScope | None = None) -> str:
+    """The stricter of the item's stored policy and its source's current one in ``scope``'s workspace (the
+    deployment's without one; fails closed)."""
     source = str(item.get('source_platform') or '')
-    current = cached_source_profile_strict(source).get('pii')
+    current = cached_source_profile_strict(source, scope).get('pii')
     stored = item.get('pii_policy')
     ranks = [PII_POLICIES.index(p) for p in (current, stored) if isinstance(p, str) and p in PII_POLICIES]
     return PII_POLICIES[max(ranks, default=0)]
@@ -138,8 +141,10 @@ def _apply_policy(edits: FieldEdits, language: str | None) -> None:
         edits.sets[name] = redact_text(edits.sets[name], language).text[:_TEXTS[name]]
 
 
-def field_edits(item: Mapping[str, Any], data: Mapping[str, Any]) -> FieldEdits:
-    """The changed editable fields of ``data`` against the stored ``item``, validated and policy-applied."""
+def field_edits(item: Mapping[str, Any], data: Mapping[str, Any], *,
+                scope: WorkspaceScope | None = None) -> FieldEdits:
+    """The changed editable fields of ``data`` against the stored ``item``, validated and policy-applied (the PII
+    policy of ``scope``'s workspace for an item of a workspace; None: the deployment's, as before)."""
     edits = FieldEdits()
     for name in EDITABLE_FIELDS:
         if name not in data or _same(item.get(name), data[name]):
@@ -153,7 +158,7 @@ def field_edits(item: Mapping[str, Any], data: Mapping[str, Any]) -> FieldEdits:
             continue
         edits.sets[name] = _valid(name, value)
     if edits.sets or edits.removes:
-        edits.pii_policy = _policy(item)
+        edits.pii_policy = _policy(item, scope=scope)
         language = item.get('original_language')
         _apply_policy(edits, language if isinstance(language, str) else None)
     return edits
